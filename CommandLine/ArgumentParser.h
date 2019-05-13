@@ -1,0 +1,59 @@
+#ifndef ARGUMENT_PARSER_H
+#define ARGUMENT_PARSER_H
+#include <string>
+#include <iomanip>
+#include <cpprest/json.h>
+#include <cpprest/http_client.h>
+#include <boost/program_options.hpp>
+
+using namespace web;                        // Common features like URIs.
+using namespace web::http;                  // Common HTTP functionality
+using namespace web::http::client;          // HTTP client features
+using namespace concurrency::streams;       // Asynchronous streams
+
+namespace po = boost::program_options;
+
+//////////////////////////////////////////////////////////////////////////
+// Command Line arguments parse and request/print
+//////////////////////////////////////////////////////////////////////////
+class ArgumentParser
+{
+public:
+	ArgumentParser(int argc, char* argv[], int listenPort);
+	virtual ~ArgumentParser();
+
+	void parse();
+
+private:
+	void printMainHelp();
+	void processReg(const char* appName = 0);
+	void processUnReg();
+	void processView();
+	void processConfig();
+	void processResource();
+	void processStartStop(bool start);
+	void processTest();
+	void processShell();
+
+	bool confirmInput(const char* msg);
+	http_response requestHttp(const method & mtd, const std::string& path);
+	http_response requestHttp(const method & mtd, const std::string& path, web::json::value& body);
+	http_response requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body = nullptr);
+	
+	void addHttpHeader(http_request& request);
+
+private:
+	bool isAppExist(const std::string& appName);
+	std::map<std::string, bool> getAppList();
+	void printApps(web::json::value json, bool reduce);
+	void moveForwardCommandLineVariables(po::options_description& desc);
+	std::string reduceStr(std::string source, int limit);
+
+private:
+	po::variables_map m_commandLineVariables;
+	std::vector<po::option> m_pasrsedOptions;
+	int m_listenPort;
+	std::string m_hostname;
+};
+#endif
+

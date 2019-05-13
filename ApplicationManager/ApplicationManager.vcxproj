@@ -1,0 +1,132 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|ARM">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM">
+      <Configuration>Release</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x86">
+      <Configuration>Debug</Configuration>
+      <Platform>x86</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x86">
+      <Configuration>Release</Configuration>
+      <Platform>x86</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{637d26f0-ba40-4158-9f4e-661d2d423129}</ProjectGuid>
+    <Keyword>Linux</Keyword>
+    <RootNamespace>ApplicationManager</RootNamespace>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+    <ApplicationType>Linux</ApplicationType>
+    <ApplicationTypeRevision>1.0</ApplicationTypeRevision>
+    <TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+    <LinuxProjectType>{D51BCBC9-82E9-4017-911E-C93873C4EA2B}</LinuxProjectType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <TargetName>appsvc</TargetName>
+    <TargetExt>
+    </TargetExt>
+    <IncludePath>D:\develop\boost_1_67_0\boost_1_67_vs2017\include\boost-1_67;D:\develop\ACE_wrappers;D:\develop\cpprestsdk-2.10.10\Release\include;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Include="..\common\TimeZoneHelper.cpp" />
+    <ClCompile Include="..\common\Utility.cpp" />
+    <ClCompile Include="Application.cpp" />
+    <ClCompile Include="ApplicationPeriodRun.cpp" />
+    <ClCompile Include="ApplicationShortRun.cpp" />
+    <ClCompile Include="Configuration.cpp" />
+    <ClCompile Include="DailyLimitation.cpp" />
+    <ClCompile Include="LinuxCgroup.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="MonitoredProcess.cpp" />
+    <ClCompile Include="Process.cpp" />
+    <ClCompile Include="ResourceCollection.cpp" />
+    <ClCompile Include="ResourceLimitation.cpp" />
+    <ClCompile Include="RestHandler.cpp" />
+    <ClCompile Include="TimerHandler.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common\os\linux.hpp" />
+    <ClInclude Include="..\common\os\net.hpp" />
+    <ClInclude Include="..\common\os\process.hpp" />
+    <ClInclude Include="..\common\os\pstree.hpp" />
+    <ClInclude Include="..\common\TimeZoneHelper.h" />
+    <ClInclude Include="..\common\Utility.h" />
+    <ClInclude Include="Application.h" />
+    <ClInclude Include="ApplicationPeriodRun.h" />
+    <ClInclude Include="ApplicationShortRun.h" />
+    <ClInclude Include="Configuration.h" />
+    <ClInclude Include="DailyLimitation.h" />
+    <ClInclude Include="LinuxCgroup.h" />
+    <ClInclude Include="MonitoredProcess.h" />
+    <ClInclude Include="Process.h" />
+    <ClInclude Include="ResourceCollection.h" />
+    <ClInclude Include="ResourceLimitation.h" />
+    <ClInclude Include="RestHandler.h" />
+    <ClInclude Include="TimerHandler.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="appsvc.json">
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </DeploymentContent>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </ExcludedFromBuild>
+      <RemoteCopyToOutputDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">appsvc.out.json</RemoteCopyToOutputDir>
+    </None>
+    <None Include="Makefile" />
+  </ItemGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Link>
+      <LibraryDependencies>pthread;crypto;ssl;ACE;cpprest;boost_thread;boost_system;jsoncpp;log4cpp;%(LibraryDependencies)</LibraryDependencies>
+    </Link>
+    <ClCompile />
+    <ClCompile>
+      <AdditionalOptions>-DBOOST_LOG_DYN_LINK %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+  <ProjectExtensions>
+    <VisualStudio>
+      <UserProperties />
+    </VisualStudio>
+  </ProjectExtensions>
+</Project>
