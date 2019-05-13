@@ -19,7 +19,7 @@ Periodic long running application |Long running applicatin but will be restart p
 Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support <br> Collect host/app resource usage <br> Remote run shell commands
 
 
-## Setup build environment on CentOS/
+## Setup build environment on CentOS/Ubuntu/Debian
 ```
 git clone https://github.com/laoshanxi/app-manager.git
 sudo sh app-manager/autogen.sh
