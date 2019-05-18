@@ -42,7 +42,6 @@ int main(int argc, char * argv[])
 		LOG_DBG << fname << "Entered.";
 
 		auto config = readConfiguration();
-		config->dump();
 		Utility::setLogLevel(config->getLogLevel());
 		if (config->getRestEnabled())
 		{
