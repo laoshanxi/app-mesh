@@ -38,6 +38,7 @@ public:
 	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
+	bool getRestEnabled() const;
 
 	static std::string prettyJson(const std::string & jsonStr);
 	void dump();
@@ -57,6 +58,7 @@ private:
 	std::string m_jsonFilePath;
 
 	bool m_sslEnabled;
+	bool m_restEnabled;
 	std::string m_sslCertificateFile;
 	std::string m_sslCertificateKeyFile;
 
