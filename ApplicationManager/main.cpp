@@ -43,7 +43,10 @@ int main(int argc, char * argv[])
 
 		auto config = readConfiguration();
 		Utility::setLogLevel(config->getLogLevel());
-		m_httpHandler = std::make_shared<RestHandler>(config->getRestListenPort());
+		if (config->getRestEnabled())
+		{
+			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenPort());
+		}
 
 		auto apps = config->getApps();
 		std::map<std::string, int> process;

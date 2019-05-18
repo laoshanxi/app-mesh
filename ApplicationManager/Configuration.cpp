@@ -7,7 +7,7 @@
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
-	:m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_sslEnabled(false)
+	:m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_sslEnabled(false), m_restEnabled(true)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
@@ -47,6 +47,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, "RestListenPort");
 	config->m_logLevel = GET_JSON_STR_VALUE(jobj, "LogLevel");
 	config->m_sslEnabled = GET_JSON_BOOL_VALUE(jobj, "SSLEnabled");
+	config->m_restEnabled = GET_JSON_BOOL_VALUE(jobj, "RestEnabled");
 	config->m_sslCertificateFile = GET_JSON_STR_VALUE(jobj, "SSLCertificateFile");
 	config->m_sslCertificateKeyFile = GET_JSON_STR_VALUE(jobj, "SSLCertificateKeyFile");
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
@@ -176,6 +177,11 @@ std::string Configuration::getSSLCertificateKeyFile() const
 	return m_sslCertificateKeyFile;
 }
 
+bool Configuration::getRestEnabled() const
+{
+	return m_restEnabled;
+}
+
 void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
@@ -184,6 +190,9 @@ void Configuration::dump()
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		LOG_DBG << fname << "m_hostDescription:" << m_hostDescription;
 		LOG_DBG << fname << "m_scheduleInterval:" << m_scheduleInterval;
+		LOG_DBG << fname << "m_sslEnabled:" << m_sslEnabled;
+		LOG_DBG << fname << "m_restEnabled:" << m_restEnabled;
+		LOG_DBG << fname << "m_restListenPort:" << m_restListenPort;
 		LOG_DBG << fname << "m_configContent:" << GET_STD_STRING(this->getConfigContentStr());
 	}
 	auto apps = getApps();
