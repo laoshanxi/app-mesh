@@ -47,7 +47,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, "RestListenPort");
 	config->m_logLevel = GET_JSON_STR_VALUE(jobj, "LogLevel");
 	config->m_sslEnabled = GET_JSON_BOOL_VALUE(jobj, "SSLEnabled");
-	config->m_restEnabled = GET_JSON_BOOL_VALUE(jobj, "RestEnabled");
+	SET_JSON_BOOL_VALUE(jobj, "RestEnabled", config->m_restEnabled);
 	config->m_sslCertificateFile = GET_JSON_STR_VALUE(jobj, "SSLCertificateFile");
 	config->m_sslCertificateKeyFile = GET_JSON_STR_VALUE(jobj, "SSLCertificateKeyFile");
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
