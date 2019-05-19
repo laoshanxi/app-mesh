@@ -37,10 +37,7 @@ void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, co
 		LOG_WAR << fname << "Short running application did not set start_time, set start_time to : " << Utility::convertTime2Str(app->m_startTime);
 	}
 	
-	if (HAS_JSON_FIELD(jobj, "start_interval_timeout"))
-	{
-		app->m_bufferTime = GET_JSON_INT_VALUE(jobj, "start_interval_timeout");
-	}
+	SET_JSON_INT_VALUE(jobj, "start_interval_timeout", app->m_bufferTime);
 	if (HAS_JSON_FIELD(jobj, "start_time") && app->m_posixTimeZone.length())
 	{
 		app->m_startTime = TimeZoneHelper::convert2tzTime(app->m_startTime, app->m_posixTimeZone);
