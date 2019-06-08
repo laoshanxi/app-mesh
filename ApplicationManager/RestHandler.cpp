@@ -242,7 +242,7 @@ void RestHandler::handle_post(http_request message)
 				message.reply(status_codes::ServiceUnavailable, "Require action query flag");
 			}
 		}
-		else if (path == "/login")
+		else if (path == "/authenticate")
 		{
 			if (message.headers().has("username") && message.headers().has("password"))
 			{
@@ -275,11 +275,14 @@ void RestHandler::handle_post(http_request message)
 						.set_payload_claim("name", std::string(JWT_ADMIN_NAME))
 						.sign(jwt::algorithm::hs256{ JWT_ADMIN_KEY });
 
-					//web::json::value result = web::json::value::object();
-					//result[GET_STRING_T("code")] = web::json::value::number(0);
-					//result[GET_STRING_T("msg")] = web::json::value::string("success");
-					//result[GET_STRING_T("token")] = web::json::value::string(GET_STRING_T(token));
-					message.reply(status_codes::OK, token);
+					web::json::value result = web::json::value::object();
+					web::json::value profile = web::json::value::object();
+					profile[GET_STRING_T("name")] = web::json::value::string(JWT_ADMIN_NAME);
+					profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count());
+					result[GET_STRING_T("profile")] = profile;
+					result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
+					result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
+					message.reply(status_codes::OK, result);
 					LOG_DBG << fname << "User <" << uname << "> login success";
 				}
 			}
@@ -382,9 +385,14 @@ bool RestHandler::verifyToken(const std::string& token)
 std::string RestHandler::getToken(const http_request& message)
 {
 	std::string token;
-	if (message.headers().has("token"))
+	if (message.headers().has("Authorization"))
 	{
-		token = GET_STD_STRING(message.headers().find("token")->second);
+		token = GET_STD_STRING(message.headers().find("Authorization")->second);
+		std::string bearerFlag = "Bearer ";
+		if (Utility::startWith(token, bearerFlag))
+		{
+			token = token.substr(bearerFlag.length());
+		}
 	}
 	return token;
 }

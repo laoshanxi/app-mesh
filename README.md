@@ -43,6 +43,7 @@ GET | /app-manager/config | Get all the configuration
 PUT | /app/$app-name | Register a new application
 POST| /app/$app-name?action=start | Start an application
 POST| /app/$app-name?action=stop | Stop an application
+POST| /authenticate | JWT authenticate
 DELETE| /app/$app-name | Unregister an application
 
 ## How to install

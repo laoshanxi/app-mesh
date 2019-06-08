@@ -625,7 +625,7 @@ void ArgumentParser::addAuthenToken(http_request & request)
 		config.set_validate_certificates(false);
 		http_client client(restPath, config);
 		http_request requestLogin(web::http::methods::POST);
-		uri_builder builder(GET_STRING_T("/login"));
+		uri_builder builder(GET_STRING_T("/authenticate"));
 		requestLogin.set_request_uri(builder.to_uri());
 		requestLogin.headers().add("username", JWT_ADMIN_NAME);
 		requestLogin.headers().add("password", JWT_ADMIN_KEY);
@@ -636,10 +636,11 @@ void ArgumentParser::addAuthenToken(http_request & request)
 		}
 		else
 		{
-			jwtToken = response.extract_utf8string(true).get();
+			auto jwtContent = response.extract_json(true).get();
+			jwtToken = GET_JSON_STR_VALUE(jwtContent.as_object(), "access_token");
 		}
 	}
-	request.headers().add("token", jwtToken);
+	request.headers().add("Authorization", std::string("Bearer ") + jwtToken);
 }
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)
