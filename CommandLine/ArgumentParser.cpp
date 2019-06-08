@@ -585,7 +585,7 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 	});
 	
 	http_request request(mtd);
-	addHttpHeader(request);
+	addAuthenToken(request);
 	request.set_request_uri(builder.to_uri());
 	if (body != nullptr)
 	{
@@ -614,26 +614,32 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	return apps;
 }
 
-void ArgumentParser::addHttpHeader(http_request & request)
+void ArgumentParser::addAuthenToken(http_request & request)
 {
-	auto protocol = m_sslEnabled ? U("https://") : U("http://");
-	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
-	http_client_config config;
-	config.set_validate_certificates(false);
-	http_client client(restPath, config);
-	http_request requestLogin(web::http::methods::POST);
-	requestLogin.set_request_uri("/login");
-	requestLogin.headers().add("username", JWT_ADMIN_NAME);
-	requestLogin.headers().add("password", JWT_ADMIN_KEY);
-	http_response response = client.request(requestLogin).get();
-	if (response.status_code() != status_codes::OK)
+	static std::string jwtToken;
+	if (jwtToken.empty())
 	{
-		std::cout << "login failed : " << response.extract_utf8string(true).get();
+		auto protocol = m_sslEnabled ? U("https://") : U("http://");
+		auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+		http_client_config config;
+		config.set_validate_certificates(false);
+		http_client client(restPath, config);
+		http_request requestLogin(web::http::methods::POST);
+		uri_builder builder(GET_STRING_T("/login"));
+		requestLogin.set_request_uri(builder.to_uri());
+		requestLogin.headers().add("username", JWT_ADMIN_NAME);
+		requestLogin.headers().add("password", JWT_ADMIN_KEY);
+		http_response response = client.request(requestLogin).get();
+		if (response.status_code() != status_codes::OK)
+		{
+			std::cout << "login failed : " << response.extract_utf8string(true).get();
+		}
+		else
+		{
+			jwtToken = response.extract_utf8string(true).get();
+		}
 	}
-	else
-	{
-		request.headers().add("token", response.extract_utf8string(true).get());
-	}
+	request.headers().add("token", jwtToken);
 }
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)

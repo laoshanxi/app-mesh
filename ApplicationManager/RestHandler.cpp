@@ -169,7 +169,7 @@ void RestHandler::handle_put(http_request message)
 	try
 	{
 		REST_INFO_PRINT;
-		checkToken(getToken(message));
+		verifyToken(getToken(message));
 
 		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 		if (path == "/app/sh")
@@ -214,7 +214,7 @@ void RestHandler::handle_post(http_request message)
 		auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 		if (Utility::startWith(path, "/app/"))
 		{
-			checkToken(getToken(message));
+			verifyToken(getToken(message));
 
 			auto appName = path.substr(strlen("/app/"), path.length() - strlen("/app/"));
 
@@ -309,7 +309,7 @@ void RestHandler::handle_delete(http_request message)
 	{
 		REST_INFO_PRINT;
 
-		checkToken(getToken(message));
+		verifyToken(getToken(message));
 		auto path = GET_STD_STRING(message.relative_uri().path());
 		
 		if (Utility::startWith(path, "/app/"))
@@ -355,20 +355,27 @@ void RestHandler::handle_error(pplx::task<void>& t)
 }
 
 
-bool RestHandler::checkToken(const std::string& token)
+bool RestHandler::verifyToken(const std::string& token)
 {
-	const static char fname[] = "Configuration::checkToken() ";
+	const static char fname[] = "Configuration::verifyToken() ";
 
-	auto decoded_token = jwt::decode(token);
-	for (auto& e : decoded_token.get_payload_claims())
+	if (Configuration::instance()->getJwtEnabled())
 	{
-		LOG_DBG << fname << e.first << " = " << e.second.as_string();
+		if (token.empty())
+		{
+			throw std::invalid_argument("Access denied: must have a token.");
+		}
+		auto decoded_token = jwt::decode(token);
+		for (auto& e : decoded_token.get_payload_claims())
+		{
+			LOG_DBG << fname << e.first << " = " << e.second.as_string();
+		}
+		auto verifier = jwt::verify()
+			.allow_algorithm(jwt::algorithm::hs256{ JWT_ADMIN_KEY })
+			.with_issuer(JWT_ISSUER)
+			.with_claim("name", std::string(JWT_ADMIN_NAME));
+		verifier.verify(decoded_token);
 	}
-	auto verifier = jwt::verify()
-		.allow_algorithm(jwt::algorithm::hs256{ JWT_ADMIN_KEY })
-		.with_issuer(JWT_ISSUER)
-		.with_claim("name", std::string(JWT_ADMIN_NAME));
-	verifier.verify(decoded_token);
 	return true;
 }
 
@@ -378,11 +385,6 @@ std::string RestHandler::getToken(const http_request& message)
 	if (message.headers().has("token"))
 	{
 		token = GET_STD_STRING(message.headers().find("token")->second);
-		//token = Utility::decode64(token);
-	}
-	else
-	{
-		throw std::invalid_argument("Access denied:must have token.");
 	}
 	return token;
 }

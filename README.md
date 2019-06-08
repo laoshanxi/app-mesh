@@ -304,6 +304,7 @@ application <58de823f-cecf-4b67-b362-d08db46167f6> removed.
 - [boost](https://github.com/boostorg/boost)
 - [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 - [log4cpp](http://log4cpp.sourceforge.net)
+- [jwt_cpp](https://thalhammer.it/projects/jwt_cpp)
 
 ## Design
 ### Thread model

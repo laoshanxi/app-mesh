@@ -28,7 +28,7 @@ private:
 	void handle_post(http_request message);
 	void handle_delete(http_request message);
 	void handle_error(pplx::task<void>& t);
-	bool checkToken(const std::string& token);
+	bool verifyToken(const std::string& token);
 	std::string getToken(const http_request& message);
 
 	void  registerShellApp(const http_request& message);

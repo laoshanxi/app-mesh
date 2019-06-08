@@ -40,7 +40,7 @@ private:
 	http_response requestHttp(const method & mtd, const std::string& path, web::json::value& body);
 	http_response requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body = nullptr);
 	
-	void addHttpHeader(http_request& request);
+	void addAuthenToken(http_request& request);
 
 private:
 	bool isAppExist(const std::string& appName);

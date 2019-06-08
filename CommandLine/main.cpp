@@ -37,7 +37,16 @@ void getListenPort(int& port, bool& sslEnabled)
 	web::json::value jsonValue;
 	auto configPath = Utility::getSelfFullPath();
 	configPath[configPath.length()] = '\0';
-	auto file = Utility::readFileCpp(configPath + ".json");
+	auto pos = configPath.rfind("/");
+	if (pos != std::string::npos)
+	{
+		configPath = configPath.substr(0, pos + 1);
+	}
+	else
+	{
+		assert(false);
+	}
+	auto file = Utility::readFileCpp(configPath + "appsvc.json");
 	if (file.length() > 0)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(file));
