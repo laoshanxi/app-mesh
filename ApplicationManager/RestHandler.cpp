@@ -367,8 +367,21 @@ bool RestHandler::verifyAdminToken(const std::string& token)
 
 bool RestHandler::verifyUserToken(const std::string & token)
 {
-	return verifyToken(token, Configuration::instance()->getJwtUserName(), Configuration::instance()->getJwtUserKey()) ||
-		verifyToken(token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
+	auto decoded_token = jwt::decode(token);
+	auto claims = decoded_token.get_payload_claims();
+	auto userIter = claims.find("name");
+	if (userIter != claims.end())
+	{
+		if (userIter->second.as_string() == "admin")
+		{
+			return verifyToken(token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
+		}
+		else if (userIter->second.as_string() == "user")
+		{
+			return verifyToken(token, Configuration::instance()->getJwtUserName(), Configuration::instance()->getJwtUserKey());
+		}
+	}
+	throw std::invalid_argument("Unsupported jwt claims format");
 }
 
 bool RestHandler::verifyToken(const std::string& token, const std::string& user, const std::string& key)
