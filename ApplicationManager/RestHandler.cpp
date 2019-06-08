@@ -365,9 +365,9 @@ bool RestHandler::checkToken(const std::string& token)
 		LOG_DBG << fname << e.first << " = " << e.second.as_string();
 	}
 	auto verifier = jwt::verify()
-		.allow_algorithm(jwt::algorithm::hs256{ JWT_PASSWD })
+		.allow_algorithm(jwt::algorithm::hs256{ JWT_ADMIN_KEY })
 		.with_issuer(JWT_ISSUER)
-		.with_claim("name", std::string(JWT_UNAME));
+		.with_claim("name", std::string(JWT_ADMIN_NAME));
 	verifier.verify(decoded_token);
 	return true;
 }
