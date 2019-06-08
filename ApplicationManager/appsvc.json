@@ -1,6 +1,6 @@
 {
-  "HostDescription": "Host01",
-  "ScheduleIntervalSec": 2,
+  "Description": "myhost",
+  "ScheduleIntervalSeconds": 2,
   "RestListenPort": 6060,
   "RestEnabled":  true,
   "LogLevel": "DEBUG",
@@ -38,5 +38,15 @@
       "run_as": "root",
       "working_dir": "/tmp"
     }
-  ]
+  ],
+  "jwt": {
+    "admin": {
+      "name": "admin",
+      "key": "app-mgr-admin-secret-key"
+    },
+    "user": {
+      "name": "user",
+      "key": "app-mgr-user-secret-key"
+    }
+  }
 }

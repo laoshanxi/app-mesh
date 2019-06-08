@@ -42,8 +42,8 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	}
 	web::json::object jobj = jval.as_object();
 	auto config = std::make_shared<Configuration>();
-	config->m_hostDescription = GET_JSON_STR_VALUE(jobj, "HostDescription");
-	config->m_scheduleInterval = GET_JSON_INT_VALUE(jobj, "ScheduleIntervalSec");
+	config->m_hostDescription = GET_JSON_STR_VALUE(jobj, "Description");
+	config->m_scheduleInterval = GET_JSON_INT_VALUE(jobj, "ScheduleIntervalSeconds");
 	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, "RestListenPort");
 	config->m_logLevel = GET_JSON_STR_VALUE(jobj, "LogLevel");
 	SET_JSON_BOOL_VALUE(jobj, "SSLEnabled", config->m_sslEnabled);
@@ -71,6 +71,11 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		app->dump();
 		config->registerApp(app);
 	}
+	auto& jwt = jobj.at(GET_STRING_T("jwt")).as_object();
+	config->m_jwtAdminName = GET_STD_STRING(jwt.at(GET_STRING_T("admin")).as_object().at(GET_STRING_T("name")).as_string());
+	config->m_jwtAdminKey = GET_STD_STRING(jwt.at(GET_STRING_T("admin")).as_object().at(GET_STRING_T("key")).as_string());
+	config->m_jwtUserName = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("name")).as_string());
+	config->m_jwtUserKey = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("key")).as_string());
 	m_instance = config;
 	return config;
 }
@@ -84,14 +89,26 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 
-	result[GET_STRING_T("HostDescription")] = web::json::value::string(GET_STRING_T(m_hostDescription));
+	result[GET_STRING_T("Description")] = web::json::value::string(GET_STRING_T(m_hostDescription));
 	result[GET_STRING_T("RestListenPort")] = web::json::value::number(m_restListenPort);
-	result[GET_STRING_T("ScheduleIntervalSec")] = web::json::value::number(m_scheduleInterval);
+	result[GET_STRING_T("ScheduleIntervalSeconds")] = web::json::value::number(m_scheduleInterval);
 	result[GET_STRING_T("LogLevel")] = web::json::value::string(GET_STRING_T(m_logLevel));
 
 	result[GET_STRING_T("SSLEnabled")] = web::json::value::boolean(m_sslEnabled);
 	result[GET_STRING_T("SSLCertificateFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateFile));
 	result[GET_STRING_T("SSLCertificateKeyFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateKeyFile));
+
+	result[GET_STRING_T("JWTEnabled")] = web::json::value::boolean(m_jwtEnabled);
+	web::json::value jwt = web::json::value::object();
+	web::json::value jwtAdmin = web::json::value::object();
+	web::json::value jwtUser = web::json::value::object();
+	jwtAdmin[GET_STRING_T("name")] = web::json::value::string(m_jwtAdminName);
+	jwtAdmin[GET_STRING_T("key")] = web::json::value::string(m_jwtAdminKey);
+	jwtUser[GET_STRING_T("name")] = web::json::value::string(m_jwtUserName);
+	jwtUser[GET_STRING_T("key")] = web::json::value::string(m_jwtUserKey);
+	jwt[GET_STRING_T("admin")] = jwtAdmin;
+	jwt[GET_STRING_T("user")] = jwtUser;
+	result[GET_STRING_T("jwt")] = jwt;
 	
 	result[GET_STRING_T("Applications")] = apps;
 	return result;
@@ -188,6 +205,26 @@ bool Configuration::getJwtEnabled() const
 	return m_jwtEnabled;
 }
 
+const std::string & Configuration::getJwtAdminName() const
+{
+	return m_jwtAdminName;
+}
+
+const std::string & Configuration::getJwtUserName() const
+{
+	return m_jwtUserName;
+}
+
+const std::string & Configuration::getJwtAdminKey() const
+{
+	return m_jwtAdminKey;
+}
+
+const std::string & Configuration::getJwtUserKey() const
+{
+	return m_jwtUserKey;
+}
+
 void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
@@ -198,8 +235,14 @@ void Configuration::dump()
 		LOG_DBG << fname << "m_scheduleInterval:" << m_scheduleInterval;
 		LOG_DBG << fname << "m_sslEnabled:" << m_sslEnabled;
 		LOG_DBG << fname << "m_restEnabled:" << m_restEnabled;
+		LOG_DBG << fname << "m_jwtEnabled:" << m_jwtEnabled;
 		LOG_DBG << fname << "m_restListenPort:" << m_restListenPort;
 		LOG_DBG << fname << "m_configContent:" << GET_STD_STRING(this->getConfigContentStr());
+
+		LOG_DBG << fname << "m_jwtAdminName:" << m_jwtAdminName;
+		LOG_DBG << fname << "m_jwtUserName:" << m_jwtUserName;
+		LOG_DBG << fname << "m_jwtAdminKey:" << m_jwtAdminKey;
+		LOG_DBG << fname << "m_jwtUserKey:" << m_jwtUserKey;
 	}
 	auto apps = getApps();
 	for (auto app : apps)

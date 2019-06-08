@@ -40,6 +40,10 @@ public:
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getJwtEnabled() const;
+	const std::string & getJwtAdminName() const;
+	const std::string & getJwtUserName() const;
+	const std::string & getJwtAdminKey() const;
+	const std::string & getJwtUserKey() const;
 
 	static std::string prettyJson(const std::string & jsonStr);
 	void dump();
@@ -63,6 +67,11 @@ private:
 	bool m_jwtEnabled;
 	std::string m_sslCertificateFile;
 	std::string m_sslCertificateKeyFile;
+
+	std::string m_jwtAdminName;
+	std::string m_jwtUserName;
+	std::string m_jwtAdminKey;
+	std::string m_jwtUserKey;
 
 	static std::shared_ptr<Configuration> m_instance;
 };

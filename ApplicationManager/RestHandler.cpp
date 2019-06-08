@@ -81,6 +81,7 @@ void RestHandler::handle_get(http_request message)
 	try
 	{
 		REST_INFO_PRINT;
+		verifyUserToken(getToken(message));
 		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 		if (path == std::string("/app-manager/applications"))
@@ -169,7 +170,7 @@ void RestHandler::handle_put(http_request message)
 	try
 	{
 		REST_INFO_PRINT;
-		verifyToken(getToken(message));
+		verifyAdminToken(getToken(message));
 
 		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 		if (path == "/app/sh")
@@ -214,7 +215,7 @@ void RestHandler::handle_post(http_request message)
 		auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 		if (Utility::startWith(path, "/app/"))
 		{
-			verifyToken(getToken(message));
+			verifyAdminToken(getToken(message));
 
 			auto appName = path.substr(strlen("/app/"), path.length() - strlen("/app/"));
 
@@ -248,42 +249,43 @@ void RestHandler::handle_post(http_request message)
 			{
 				auto uname = GET_STD_STRING(message.headers().find("username")->second);
 				auto passwd = GET_STD_STRING(message.headers().find("password")->second);
-				if (passwd != JWT_ADMIN_KEY || uname != JWT_ADMIN_NAME)
+				// https://thalhammer.it/projects/jwt_cpp
+				// 1. Header
+				//{
+				//	"typ": "JWT",
+				//  "alg" : "HS256"
+				//}
+
+				// 2. Payload
+				//{
+				//  "iss": "appmgr-auth0",
+				//	"name" : "u-name",
+				//}
+
+				// 3. Signature
+				// HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
+				auto token = jwt::create()
+					.set_issuer(JWT_ISSUER)
+					.set_type("JWT")
+					.set_payload_claim("name", std::string(uname))
+					.sign(jwt::algorithm::hs256{ passwd });
+
+				web::json::value result = web::json::value::object();
+				web::json::value profile = web::json::value::object();
+				profile[GET_STRING_T("name")] = web::json::value::string(uname);
+				profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count());
+				result[GET_STRING_T("profile")] = profile;
+				result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
+				result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
+
+				if (verifyUserToken(token))
 				{
-					message.reply(status_codes::Unauthorized, "Incorrect authentication info");
+					message.reply(status_codes::OK, result);
+					LOG_DBG << fname << "User <" << uname << "> login success";
 				}
 				else
 				{
-					// https://thalhammer.it/projects/jwt_cpp
-					// 1. Header
-					//{
-					//	"typ": "JWT",
-					//  "alg" : "HS256"
-					//}
-
-					// 2. Payload
-					//{
-					//  "iss": "appmgr-auth0",
-					//	"name" : "u-name",
-					//}
-
-					// 3. Signature
-					// HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
-					auto token = jwt::create()
-						.set_issuer(JWT_ISSUER)
-						.set_type("JWT")
-						.set_payload_claim("name", std::string(JWT_ADMIN_NAME))
-						.sign(jwt::algorithm::hs256{ JWT_ADMIN_KEY });
-
-					web::json::value result = web::json::value::object();
-					web::json::value profile = web::json::value::object();
-					profile[GET_STRING_T("name")] = web::json::value::string(JWT_ADMIN_NAME);
-					profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count());
-					result[GET_STRING_T("profile")] = profile;
-					result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
-					result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
-					message.reply(status_codes::OK, result);
-					LOG_DBG << fname << "User <" << uname << "> login success";
+					message.reply(status_codes::Unauthorized, "Incorrect authentication info");
 				}
 			}
 			else
@@ -312,7 +314,7 @@ void RestHandler::handle_delete(http_request message)
 	{
 		REST_INFO_PRINT;
 
-		verifyToken(getToken(message));
+		verifyAdminToken(getToken(message));
 		auto path = GET_STD_STRING(message.relative_uri().path());
 		
 		if (Utility::startWith(path, "/app/"))
@@ -358,7 +360,18 @@ void RestHandler::handle_error(pplx::task<void>& t)
 }
 
 
-bool RestHandler::verifyToken(const std::string& token)
+bool RestHandler::verifyAdminToken(const std::string& token)
+{
+	return verifyToken(token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
+}
+
+bool RestHandler::verifyUserToken(const std::string & token)
+{
+	return verifyToken(token, Configuration::instance()->getJwtUserName(), Configuration::instance()->getJwtUserKey()) ||
+		verifyToken(token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
+}
+
+bool RestHandler::verifyToken(const std::string& token, const std::string& user, const std::string& key)
 {
 	const static char fname[] = "Configuration::verifyToken() ";
 
@@ -374,9 +387,9 @@ bool RestHandler::verifyToken(const std::string& token)
 			LOG_DBG << fname << e.first << " = " << e.second.as_string();
 		}
 		auto verifier = jwt::verify()
-			.allow_algorithm(jwt::algorithm::hs256{ JWT_ADMIN_KEY })
+			.allow_algorithm(jwt::algorithm::hs256{ key })
 			.with_issuer(JWT_ISSUER)
-			.with_claim("name", std::string(JWT_ADMIN_NAME));
+			.with_claim("name", std::string(user));
 		verifier.verify(decoded_token);
 	}
 	return true;

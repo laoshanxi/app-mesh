@@ -172,13 +172,13 @@ $ appc config
                         "working_dir" : "/tmp"
                 }
         ],
-        "HostDescription" : "Host01",
+        "Description" : "myhost",
         "LogLevel" : "DEBUG",
         "RestListenPort" : 6060,
         "SSLCertificateFile" : "server.crt",
         "SSLCertificateKeyFile" : "server.key",
         "SSLEnabled" : true,
-        "ScheduleIntervalSec" : 2
+        "ScheduleIntervalSeconds" : 2
 }
 
 ```
