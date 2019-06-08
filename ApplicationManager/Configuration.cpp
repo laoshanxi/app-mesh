@@ -99,16 +99,19 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[GET_STRING_T("SSLCertificateKeyFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateKeyFile));
 
 	result[GET_STRING_T("JWTEnabled")] = web::json::value::boolean(m_jwtEnabled);
-	web::json::value jwt = web::json::value::object();
-	web::json::value jwtAdmin = web::json::value::object();
-	web::json::value jwtUser = web::json::value::object();
-	jwtAdmin[GET_STRING_T("name")] = web::json::value::string(m_jwtAdminName);
-	jwtAdmin[GET_STRING_T("key")] = web::json::value::string(m_jwtAdminKey);
-	jwtUser[GET_STRING_T("name")] = web::json::value::string(m_jwtUserName);
-	jwtUser[GET_STRING_T("key")] = web::json::value::string(m_jwtUserKey);
-	jwt[GET_STRING_T("admin")] = jwtAdmin;
-	jwt[GET_STRING_T("user")] = jwtUser;
-	result[GET_STRING_T("jwt")] = jwt;
+	if (!returnRuntimeInfo)
+	{
+		web::json::value jwt = web::json::value::object();
+		web::json::value jwtAdmin = web::json::value::object();
+		web::json::value jwtUser = web::json::value::object();
+		jwtAdmin[GET_STRING_T("name")] = web::json::value::string(m_jwtAdminName);
+		jwtAdmin[GET_STRING_T("key")] = web::json::value::string(m_jwtAdminKey);
+		jwtUser[GET_STRING_T("name")] = web::json::value::string(m_jwtUserName);
+		jwtUser[GET_STRING_T("key")] = web::json::value::string(m_jwtUserKey);
+		jwt[GET_STRING_T("admin")] = jwtAdmin;
+		jwt[GET_STRING_T("user")] = jwtUser;
+		result[GET_STRING_T("jwt")] = jwt;
+	}
 	
 	result[GET_STRING_T("Applications")] = apps;
 	return result;
