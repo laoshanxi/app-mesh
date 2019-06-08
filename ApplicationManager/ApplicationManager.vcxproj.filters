@@ -34,16 +34,16 @@
     <ClInclude Include="ResourceLimitation.h" />
     <ClInclude Include="RestHandler.h" />
     <ClInclude Include="..\common\os\net.hpp">
-      <Filter>os</Filter>
+      <Filter>common\os</Filter>
     </ClInclude>
     <ClInclude Include="..\common\os\process.hpp">
-      <Filter>os</Filter>
+      <Filter>common\os</Filter>
     </ClInclude>
     <ClInclude Include="..\common\os\pstree.hpp">
-      <Filter>os</Filter>
+      <Filter>common\os</Filter>
     </ClInclude>
     <ClInclude Include="..\common\os\linux.hpp">
-      <Filter>os</Filter>
+      <Filter>common\os</Filter>
     </ClInclude>
     <ClInclude Include="..\common\Utility.h">
       <Filter>common</Filter>
@@ -52,17 +52,29 @@
       <Filter>common</Filter>
     </ClInclude>
     <ClInclude Include="TimerHandler.h" />
+    <ClInclude Include="..\common\jwt-cpp\base.h">
+      <Filter>common\jwt-cpp</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\jwt-cpp\jwt.h">
+      <Filter>common\jwt-cpp</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\jwt-cpp\picojson.h">
+      <Filter>common\jwt-cpp</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />
     <None Include="Makefile" />
   </ItemGroup>
   <ItemGroup>
-    <Filter Include="os">
-      <UniqueIdentifier>{22cd69f3-0570-4dd3-9f77-5c02bbd4d736}</UniqueIdentifier>
-    </Filter>
     <Filter Include="common">
       <UniqueIdentifier>{6bc39c78-a77e-458f-b5a3-2e4d1c6fb228}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\jwt-cpp">
+      <UniqueIdentifier>{facf9041-1082-43d6-9cd6-670a0f5a8f5f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\os">
+      <UniqueIdentifier>{22cd69f3-0570-4dd3-9f77-5c02bbd4d736}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

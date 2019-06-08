@@ -2,6 +2,7 @@
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
+#include "../common/jwt-cpp/jwt.h"
 
 #define REST_INFO_PRINT \
 	LOG_DBG << "Method: " << message.method(); \
@@ -203,15 +204,18 @@ void RestHandler::handle_put(http_request message)
 
 void RestHandler::handle_post(http_request message)
 {
+	const static char fname[] = "RestHandler::handle_post() ";
+
 	try
 	{
 		REST_INFO_PRINT;
 
-		checkToken(getToken(message));
 		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 		auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 		if (Utility::startWith(path, "/app/"))
 		{
+			checkToken(getToken(message));
+
 			auto appName = path.substr(strlen("/app/"), path.length() - strlen("/app/"));
 
 			if (querymap.find(U("action")) != querymap.end())
@@ -236,6 +240,52 @@ void RestHandler::handle_post(http_request message)
 			else
 			{
 				message.reply(status_codes::ServiceUnavailable, "Require action query flag");
+			}
+		}
+		else if (path == "/login")
+		{
+			if (message.headers().has("username") && message.headers().has("password"))
+			{
+				auto uname = GET_STD_STRING(message.headers().find("username")->second);
+				auto passwd = GET_STD_STRING(message.headers().find("password")->second);
+				if (passwd != JWT_ADMIN_KEY || uname != JWT_ADMIN_NAME)
+				{
+					message.reply(status_codes::Unauthorized, "Incorrect authentication info");
+				}
+				else
+				{
+					// https://thalhammer.it/projects/jwt_cpp
+					// 1. Header
+					//{
+					//	"typ": "JWT",
+					//  "alg" : "HS256"
+					//}
+
+					// 2. Payload
+					//{
+					//  "iss": "appmgr-auth0",
+					//	"name" : "u-name",
+					//}
+
+					// 3. Signature
+					// HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
+					auto token = jwt::create()
+						.set_issuer(JWT_ISSUER)
+						.set_type("JWT")
+						.set_payload_claim("name", std::string(JWT_ADMIN_NAME))
+						.sign(jwt::algorithm::hs256{ JWT_ADMIN_KEY });
+
+					//web::json::value result = web::json::value::object();
+					//result[GET_STRING_T("code")] = web::json::value::number(0);
+					//result[GET_STRING_T("msg")] = web::json::value::string("success");
+					//result[GET_STRING_T("token")] = web::json::value::string(GET_STRING_T(token));
+					message.reply(status_codes::OK, token);
+					LOG_DBG << fname << "User <" << uname << "> login success";
+				}
+			}
+			else
+			{
+				message.reply(status_codes::NetworkAuthenticationRequired, "username or password missing");
 			}
 		}
 		else
@@ -307,13 +357,18 @@ void RestHandler::handle_error(pplx::task<void>& t)
 
 bool RestHandler::checkToken(const std::string& token)
 {
-	auto clientTime = Utility::convertStr2Time(token);
-	auto diff = std::abs(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - clientTime).count());
-	if (diff > 15)
+	const static char fname[] = "Configuration::checkToken() ";
+
+	auto decoded_token = jwt::decode(token);
+	for (auto& e : decoded_token.get_payload_claims())
 	{
-		throw std::invalid_argument("token invalid: untrusted");
+		LOG_DBG << fname << e.first << " = " << e.second.as_string();
 	}
-	// TODO: token check here.
+	auto verifier = jwt::verify()
+		.allow_algorithm(jwt::algorithm::hs256{ JWT_PASSWD })
+		.with_issuer(JWT_ISSUER)
+		.with_claim("name", std::string(JWT_UNAME));
+	verifier.verify(decoded_token);
 	return true;
 }
 
@@ -322,11 +377,10 @@ std::string RestHandler::getToken(const http_request& message)
 	std::string token;
 	if (message.headers().has("token"))
 	{
-		auto tokenInHeader = message.headers().find("token");
-		token = Utility::decode64(tokenInHeader->second);
+		token = GET_STD_STRING(message.headers().find("token")->second);
+		//token = Utility::decode64(token);
 	}
-	
-	if (token.empty())
+	else
 	{
 		throw std::invalid_argument("Access denied:must have token.");
 	}

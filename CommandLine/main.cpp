@@ -10,15 +10,17 @@
 #include "../common/Utility.h"
 
 namespace po = boost::program_options;
-int getListenPort();
+void getListenPort(int& port, bool& sslEnabled);
 
 int main(int argc, char * argv[])
 {
 	PRINT_VERSION();
 	try
 	{
-		int port = getListenPort();
-		ArgumentParser parser(argc, argv, port);
+		int port;
+		bool ssl;
+		getListenPort(port, ssl);
+		ArgumentParser parser(argc, argv, port, ssl);
 		parser.parse();
 	}
 	catch (const std::exception& e)
@@ -28,10 +30,10 @@ int main(int argc, char * argv[])
 	return 0;
 }
 
-int getListenPort()
+void getListenPort(int& port, bool& sslEnabled)
 {
 	// Get listen port
-	int port = DEFAULT_REST_LISTEN_PORT;
+	port = DEFAULT_REST_LISTEN_PORT;
 	web::json::value jsonValue;
 	auto configPath = Utility::getSelfFullPath();
 	configPath[configPath.length()] = '\0';
@@ -44,6 +46,6 @@ int getListenPort()
 		{
 			port = p;
 		}
+		sslEnabled = GET_JSON_BOOL_VALUE(jsonValue.as_object(), "SSLEnabled");
 	}
-	return port;
 }

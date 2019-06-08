@@ -19,7 +19,7 @@ namespace po = boost::program_options;
 class ArgumentParser
 {
 public:
-	ArgumentParser(int argc, char* argv[], int listenPort);
+	ArgumentParser(int argc, char* argv[], int listenPort, bool sslEnabled);
 	virtual ~ArgumentParser();
 
 	void parse();
@@ -53,6 +53,7 @@ private:
 	po::variables_map m_commandLineVariables;
 	std::vector<po::option> m_pasrsedOptions;
 	int m_listenPort;
+	bool m_sslEnabled;
 	std::string m_hostname;
 };
 #endif

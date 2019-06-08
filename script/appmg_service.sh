@@ -34,7 +34,7 @@ start() {
         exit 1
     else
         if [ "${WATCHDOG_INSTENCE_NUM}" -ge "1" ];then
-            killall -9 ${PROG_WATCHDOG}
+            ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | awk '{print $2}'|xargs kill -9
         fi
         cd $PROG_PATH
         ## Change from /dev/null to something like /var/log/$PROG if you want to save output.
@@ -48,12 +48,10 @@ stop() {
     WATCHDOG_INSTENCE_NUM=`ps aux | grep -w ${PROG_PATH}/script/${PROG_WATCHDOG} | grep -v grep |wc -l`
     #echo "APPMG_INSTENCE_NUM:${APPMG_INSTENCE_NUM}  WATCHDOG_INSTENCE_NUM:${WATCHDOG_INSTENCE_NUM}"
     if [ "${WATCHDOG_INSTENCE_NUM}" -ge "1" ];then
-         killall -9 ${PROG_WATCHDOG}
+        ps aux | grep -w ${PROG_PATH}/script/${PROG_WATCHDOG} | grep -v grep | awk '{print $2}'|xargs kill -9
     fi
     if [ "${APPMG_INSTENCE_NUM}" -ge "1" ];then
-        #appc view -l | awk '{if (NR>1){cmd="appc stop -n "$2;print(cmd);system(cmd)}}'
-        #sleep 2
-        killall -9 ${PROG}
+        ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | awk '{print $2}'|xargs kill -9
         log "$PROG stopped"
     else
         log "$PROG not started"

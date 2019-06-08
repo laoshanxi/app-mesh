@@ -11,8 +11,8 @@
 #define RESPONSE_CHECK_WITH_RETURN if (response.status_code() != status_codes::OK) { std::cout << response.extract_utf8string(true).get() << std::endl; return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
 
-ArgumentParser::ArgumentParser(int argc, char* argv[], int listenPort)
-	:m_listenPort(listenPort)
+ArgumentParser::ArgumentParser(int argc, char* argv[], int listenPort, bool sslEnabled)
+	:m_listenPort(listenPort), m_sslEnabled(sslEnabled)
 {
 	po::options_description global("Global options");
 	global.add_options()
@@ -527,7 +527,7 @@ void ArgumentParser::processShell()
 		argc_test -= 2;
 	}
 	argv_test[8] = strdup("\0");
-	ArgumentParser testParser(argc_test, argv_test, m_listenPort);
+	ArgumentParser testParser(argc_test, argv_test, m_listenPort, m_sslEnabled);
 	testParser.parse();
 
 	OUTPUT_SPLITOR_PRINT;
@@ -543,7 +543,7 @@ void ArgumentParser::processShell()
 	argv_unreg[5] = strdup(appName.c_str());
 	argv_unreg[6] = strdup("-f");
 	argv_unreg[7] = strdup("\0");
-	ArgumentParser unregParser(argc_unreg, argv_unreg, m_listenPort);
+	ArgumentParser unregParser(argc_unreg, argv_unreg, m_listenPort, m_sslEnabled);
 	unregParser.parse();
 
 	OUTPUT_SPLITOR_PRINT;
@@ -571,8 +571,9 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 
 http_response ArgumentParser::requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body)
 {
+	auto protocol = m_sslEnabled ? U("https://") : U("http://");
 	// Create http_client to send the request.
-	auto restPath = (U("https://") + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
 	http_client_config config;
 	config.set_validate_certificates(false);
 	http_client client(restPath, config);
@@ -615,9 +616,24 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 
 void ArgumentParser::addHttpHeader(http_request & request)
 {
-	auto tokenPlain = Utility::convertTime2Str(std::chrono::system_clock::now());
-	auto token = Utility::encode64(tokenPlain);
-	request.headers().add("token", token);
+	auto protocol = m_sslEnabled ? U("https://") : U("http://");
+	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	http_client_config config;
+	config.set_validate_certificates(false);
+	http_client client(restPath, config);
+	http_request requestLogin(web::http::methods::POST);
+	requestLogin.set_request_uri("/login");
+	requestLogin.headers().add("username", JWT_ADMIN_NAME);
+	requestLogin.headers().add("password", JWT_ADMIN_KEY);
+	http_response response = client.request(requestLogin).get();
+	if (response.status_code() != status_codes::OK)
+	{
+		std::cout << "login failed : " << response.extract_utf8string(true).get();
+	}
+	else
+	{
+		request.headers().add("token", response.extract_utf8string(true).get());
+	}
 }
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)

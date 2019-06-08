@@ -84,6 +84,9 @@
     <ClCompile Include="TimerHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\jwt-cpp\base.h" />
+    <ClInclude Include="..\common\jwt-cpp\jwt.h" />
+    <ClInclude Include="..\common\jwt-cpp\picojson.h" />
     <ClInclude Include="..\common\os\linux.hpp" />
     <ClInclude Include="..\common\os\net.hpp" />
     <ClInclude Include="..\common\os\process.hpp" />
