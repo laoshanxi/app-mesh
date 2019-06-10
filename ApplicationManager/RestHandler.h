@@ -28,9 +28,9 @@ private:
 	void handle_post(http_request message);
 	void handle_delete(http_request message);
 	void handle_error(pplx::task<void>& t);
-	bool verifyAdminToken(const std::string& token);
-	bool verifyUserToken(const std::string& token);
-	bool verifyToken(const std::string& token, const std::string& user, const std::string& key);
+	bool verifyAdminToken(const http_request& message, const std::string& token);
+	bool verifyUserToken(const http_request& message, const std::string& token);
+	bool verifyToken(const http_request& message, const std::string& token, const std::string& user, const std::string& key);
 	std::string getToken(const http_request& message);
 
 	void  registerShellApp(const http_request& message);

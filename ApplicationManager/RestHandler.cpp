@@ -7,8 +7,8 @@
 #define REST_INFO_PRINT \
 	LOG_DBG << "Method: " << message.method(); \
 	LOG_DBG << "URI: " << http::uri::decode(message.relative_uri().path()); \
-	LOG_DBG << "Query: " << http::uri::decode(message.relative_uri().query());
-	//LOG_DBG << "Remote: " << message.remote_address(); // for new version of cpprestsdk
+	LOG_DBG << "Query: " << http::uri::decode(message.relative_uri().query()); \
+	LOG_DBG << "Remote: " << message.remote_address(); // for new version of cpprestsdk
 
 RestHandler::RestHandler(int port)
 {
@@ -157,16 +157,19 @@ void RestHandler::handle_get(http_request message)
 	}
 	catch (const std::exception& e)
 	{
+		LOG_WAR << fname << e.what();
 		message.reply(web::http::status_codes::InternalError, e.what());
 	}
 	catch (...)
 	{
+		LOG_WAR << fname << "unknown exception";
 		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
 	}
 }
 
 void RestHandler::handle_put(http_request message)
 {
+	const static char fname[] = "RestHandler::handle_put() ";
 	try
 	{
 		REST_INFO_PRINT;
@@ -194,10 +197,12 @@ void RestHandler::handle_put(http_request message)
 	}
 	catch (const std::exception& e)
 	{
+		LOG_WAR << fname << e.what();
 		message.reply(web::http::status_codes::InternalError, e.what());
 	}
 	catch (...)
 	{
+		LOG_WAR << fname << "unknown exception";
 		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
 	}
 	return;
@@ -300,16 +305,20 @@ void RestHandler::handle_post(http_request message)
 	}
 	catch (const std::exception& e)
 	{
+		LOG_WAR << fname << e.what();
 		message.reply(web::http::status_codes::InternalError, e.what());
 	}
 	catch (...)
 	{
+		LOG_WAR << fname << "unknown exception";
 		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
 	}
 }
 
 void RestHandler::handle_delete(http_request message)
 {
+	const static char fname[] = "RestHandler::handle_delete() ";
+
 	try
 	{
 		REST_INFO_PRINT;
@@ -332,10 +341,12 @@ void RestHandler::handle_delete(http_request message)
 	}
 	catch (const std::exception& e)
 	{
+		LOG_WAR << fname << e.what();
 		message.reply(web::http::status_codes::InternalError, e.what());
 	}
 	catch (...)
 	{
+		LOG_WAR << fname << "unknown exception";
 		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
 	}
 	return;
@@ -343,7 +354,7 @@ void RestHandler::handle_delete(http_request message)
 
 void RestHandler::handle_error(pplx::task<void>& t)
 {
-	const static char fname[] = "Configuration::handle_error() ";
+	const static char fname[] = "RestHandler::handle_error() ";
 
 	try
 	{
@@ -360,12 +371,12 @@ void RestHandler::handle_error(pplx::task<void>& t)
 }
 
 
-bool RestHandler::verifyAdminToken(const std::string& token)
+bool RestHandler::verifyAdminToken(const http_request& message, const std::string& token)
 {
-	return verifyToken(token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
+	return verifyToken(message, token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
 }
 
-bool RestHandler::verifyUserToken(const std::string & token)
+bool RestHandler::verifyUserToken(const http_request& message, const std::string & token)
 {
 	auto decoded_token = jwt::decode(token);
 	auto claims = decoded_token.get_payload_claims();
@@ -374,24 +385,25 @@ bool RestHandler::verifyUserToken(const std::string & token)
 	{
 		if (userIter->second.as_string() == "admin")
 		{
-			return verifyToken(token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
+			return verifyToken(message, token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
 		}
 		else if (userIter->second.as_string() == "user")
 		{
-			return verifyToken(token, Configuration::instance()->getJwtUserName(), Configuration::instance()->getJwtUserKey());
+			return verifyToken(message, token, Configuration::instance()->getJwtUserName(), Configuration::instance()->getJwtUserKey());
 		}
 	}
 	throw std::invalid_argument("Unsupported jwt claims format");
 }
 
-bool RestHandler::verifyToken(const std::string& token, const std::string& user, const std::string& key)
+bool RestHandler::verifyToken(const http_request& message, const std::string& token, const std::string& user, const std::string& key)
 {
-	const static char fname[] = "Configuration::verifyToken() ";
+	const static char fname[] = "RestHandler::verifyToken() ";
 
 	if (Configuration::instance()->getJwtEnabled())
 	{
 		if (token.empty())
 		{
+			LOG_WAR << fname << "Authentication failed for Remote: " << message.remote_address();
 			throw std::invalid_argument("Access denied: must have a token.");
 		}
 		auto decoded_token = jwt::decode(token);
@@ -405,6 +417,7 @@ bool RestHandler::verifyToken(const std::string& token, const std::string& user,
 			.with_claim("name", std::string(user));
 		verifier.verify(decoded_token);
 	}
+	LOG_DBG << fname << "Authentication success for Remote: " << message.remote_address();
 	return true;
 }
 
