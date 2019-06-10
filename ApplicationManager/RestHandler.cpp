@@ -81,7 +81,7 @@ void RestHandler::handle_get(http_request message)
 	try
 	{
 		REST_INFO_PRINT;
-		verifyUserToken(getToken(message));
+		verifyUserToken(message, getToken(message));
 		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 		if (path == std::string("/app-manager/applications"))
@@ -173,7 +173,7 @@ void RestHandler::handle_put(http_request message)
 	try
 	{
 		REST_INFO_PRINT;
-		verifyAdminToken(getToken(message));
+		verifyAdminToken(message, getToken(message));
 
 		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 		if (path == "/app/sh")
@@ -220,7 +220,7 @@ void RestHandler::handle_post(http_request message)
 		auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 		if (Utility::startWith(path, "/app/"))
 		{
-			verifyAdminToken(getToken(message));
+			verifyAdminToken(message, getToken(message));
 
 			auto appName = path.substr(strlen("/app/"), path.length() - strlen("/app/"));
 
@@ -283,7 +283,7 @@ void RestHandler::handle_post(http_request message)
 				result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
 				result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
 
-				if (verifyUserToken(token))
+				if (verifyUserToken(message, token))
 				{
 					message.reply(status_codes::OK, result);
 					LOG_DBG << fname << "User <" << uname << "> login success";
@@ -323,7 +323,7 @@ void RestHandler::handle_delete(http_request message)
 	{
 		REST_INFO_PRINT;
 
-		verifyAdminToken(getToken(message));
+		verifyAdminToken(message, getToken(message));
 		auto path = GET_STD_STRING(message.relative_uri().path());
 		
 		if (Utility::startWith(path, "/app/"))
