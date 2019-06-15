@@ -309,4 +309,4 @@ application <58de823f-cecf-4b67-b362-d08db46167f6> removed.
 
 ## Design
 ### Thread model
-<div align=center><img src="https://github.com/laoshanxi/app-manager/master/doc/threadmodel.jpg" align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-manager/blob/master/doc/threadmodel.jpg?raw=true" align=center /></div>
