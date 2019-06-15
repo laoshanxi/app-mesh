@@ -59,7 +59,7 @@ cd Release
 cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align" 
 make
 make install
-ls -al ls /usr/local/lib*/libcpprest.so
+ls -al /usr/local/lib*/libcpprest.so
 cd $ROOTDIR
 
 
