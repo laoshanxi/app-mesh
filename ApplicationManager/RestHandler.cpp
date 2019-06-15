@@ -1,3 +1,4 @@
+#include <chrono>
 #include "RestHandler.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
@@ -269,10 +270,13 @@ void RestHandler::handle_post(http_request message)
 
 				// 3. Signature
 				// HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
+				// creating a token that will expire in one hour
 				auto token = jwt::create()
 					.set_issuer(JWT_ISSUER)
 					.set_type("JWT")
 					.set_payload_claim("name", std::string(uname))
+					.set_issued_at(std::chrono::system_clock::now())
+					.set_expires_at(std::chrono::system_clock::now() + std::chrono::seconds{ 3600 })
 					.sign(jwt::algorithm::hs256{ passwd });
 
 				web::json::value result = web::json::value::object();
