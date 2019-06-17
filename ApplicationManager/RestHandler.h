@@ -32,6 +32,7 @@ private:
 	bool verifyUserToken(const http_request& message, const std::string& token);
 	bool verifyToken(const http_request& message, const std::string& token, const std::string& user, const std::string& key);
 	std::string getToken(const http_request& message);
+	std::string createToken(const std::string uname, const std::string passwd);
 
 	void  registerShellApp(const http_request& message);
 

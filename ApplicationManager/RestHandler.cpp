@@ -255,29 +255,7 @@ void RestHandler::handle_post(http_request message)
 			{
 				auto uname = GET_STD_STRING(message.headers().find("username")->second);
 				auto passwd = GET_STD_STRING(message.headers().find("password")->second);
-				// https://thalhammer.it/projects/jwt_cpp
-				// 1. Header
-				//{
-				//	"typ": "JWT",
-				//  "alg" : "HS256"
-				//}
-
-				// 2. Payload
-				//{
-				//  "iss": "appmgr-auth0",
-				//	"name" : "u-name",
-				//}
-
-				// 3. Signature
-				// HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
-				// creating a token that will expire in one hour
-				auto token = jwt::create()
-					.set_issuer(JWT_ISSUER)
-					.set_type("JWT")
-					.set_payload_claim("name", std::string(uname))
-					.set_issued_at(std::chrono::system_clock::now())
-					.set_expires_at(std::chrono::system_clock::now() + std::chrono::seconds{ 3600 })
-					.sign(jwt::algorithm::hs256{ passwd });
+				auto token = createToken(uname, passwd);
 
 				web::json::value result = web::json::value::object();
 				web::json::value profile = web::json::value::object();
@@ -437,6 +415,32 @@ std::string RestHandler::getToken(const http_request& message)
 			token = token.substr(bearerFlag.length());
 		}
 	}
+	return token;
+}
+
+std::string RestHandler::createToken(const std::string uname, const std::string passwd)
+{
+	// https://thalhammer.it/projects/jwt_cpp
+	// 1. Header
+	//{
+	//	"typ": "JWT",
+	//  "alg" : "HS256"
+	//}
+
+	// 2. Payload
+	//{
+	//  "iss": "appmgr-auth0",
+	//	"name" : "u-name",
+	//}
+
+	// 3. Signature
+	// HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
+	// creating a token that will expire in one hour
+	auto token = jwt::create()
+		.set_issuer(JWT_ISSUER)
+		.set_type("JWT")
+		.set_payload_claim("name", std::string(uname))
+		.sign(jwt::algorithm::hs256{ passwd });
 	return token;
 }
 
