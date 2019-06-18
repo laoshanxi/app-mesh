@@ -389,10 +389,10 @@ bool RestHandler::verifyToken(const http_request& message, const std::string& to
 			throw std::invalid_argument("Access denied: must have a token.");
 		}
 		auto decoded_token = jwt::decode(token);
-		for (auto& e : decoded_token.get_payload_claims())
-		{
-			LOG_DBG << fname << e.first << " = " << e.second.as_string();
-		}
+		//for (auto& e : decoded_token.get_payload_claims())
+		//{ // not all the claims are string here.
+		//	LOG_DBG << fname << e.first << " = " << e.second.as_string();
+		//}
 		auto verifier = jwt::verify()
 			.allow_algorithm(jwt::algorithm::hs256{ key })
 			.with_issuer(JWT_ISSUER)
@@ -415,7 +415,7 @@ std::string RestHandler::getToken(const http_request& message)
 			token = token.substr(bearerFlag.length());
 		}
 	}
-	return token;
+	return std::move(token);
 }
 
 std::string RestHandler::createToken(const std::string uname, const std::string passwd)
@@ -439,9 +439,11 @@ std::string RestHandler::createToken(const std::string uname, const std::string 
 	auto token = jwt::create()
 		.set_issuer(JWT_ISSUER)
 		.set_type("JWT")
+		.set_issued_at(jwt::date(std::chrono::system_clock::now()))
+		.set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::minutes{ 60 }))
 		.set_payload_claim("name", std::string(uname))
 		.sign(jwt::algorithm::hs256{ passwd });
-	return token;
+	return std::move(token);
 }
 
 void RestHandler::registerShellApp(const http_request& message)
