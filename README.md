@@ -295,8 +295,9 @@ application <58de823f-cecf-4b67-b362-d08db46167f6> removed.
 ![appc_sh](https://github.com/laoshanxi/app-manager/blob/master/doc/appc_sh.gif?raw=true) 
 
 ## Usage scenarios
-1. Integrate with package installation script and register package startup command to app manager automaticlly
-2. Install on remote host to execute command remotly and get output
+1. Integrate with package installation script and register startup command to app manager automaticlly
+2. Install on remote host to execute command remotly and get output (can build-up web ssh)
+3. Get resource usage (cpu/memory) for each application and host resource status
 
 ## 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
