@@ -8,12 +8,10 @@
 #include <ace/Event_Handler.h>
 #include <ace/Reactor.h>
 
-/**
-* @class TimerHandler
-*
-* @brief The class use timer event should implement from this class.
-*
-*/
+//////////////////////////////////////////////////////////////////////////
+// Timer Event base class 
+// The class which use timer event should implement from this class.
+//////////////////////////////////////////////////////////////////////////
 class TimerHandler : public ACE_Event_Handler, public std::enable_shared_from_this<TimerHandler>
 {
 private:
