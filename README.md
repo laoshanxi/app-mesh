@@ -1,7 +1,7 @@
 # Application Manager
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![coverage](https://img.shields.io/badge/coverage-90%25-yellowgreen.svg?maxAge=2592000)
-![version](https://img.shields.io/badge/version-1.9.0-blue.svg?maxAge=2592000)
+![version](https://img.shields.io/badge/version-1.1.0-blue.svg?maxAge=2592000)
 
 ## Introduction
 Application Manager is a daemon application to manage different types of sub-applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line to start/stop and register new app easily. Also can be a JWT server.
