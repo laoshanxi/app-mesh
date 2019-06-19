@@ -389,10 +389,6 @@ bool RestHandler::verifyToken(const http_request& message, const std::string& to
 			throw std::invalid_argument("Access denied: must have a token.");
 		}
 		auto decoded_token = jwt::decode(token);
-		//for (auto& e : decoded_token.get_payload_claims())
-		//{ // not all the claims are string here.
-		//	LOG_DBG << fname << e.first << " = " << e.second.as_string();
-		//}
 		auto verifier = jwt::verify()
 			.allow_algorithm(jwt::algorithm::hs256{ key })
 			.with_issuer(JWT_ISSUER)
@@ -420,21 +416,16 @@ std::string RestHandler::getToken(const http_request& message)
 
 std::string RestHandler::createToken(const std::string uname, const std::string passwd)
 {
-	// https://thalhammer.it/projects/jwt_cpp
-	// 1. Header
-	//{
-	//	"typ": "JWT",
-	//  "alg" : "HS256"
-	//}
+	if (uname.empty() || passwd.empty())
+	{
+		throw std::invalid_argument("must provide name and password to generate token");
+	}
 
-	// 2. Payload
-	//{
-	//  "iss": "appmgr-auth0",
-	//	"name" : "u-name",
-	//}
-
-	// 3. Signature
-	// HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
+	// https://thalhammer.it/projects/
+	// https://www.cnblogs.com/mantoudev/p/8994341.html
+	// 1. Header {"typ": "JWT","alg" : "HS256"}
+	// 2. Payload{"iss": "appmgr-auth0","name" : "u-name",}
+	// 3. Signature HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
 	// creating a token that will expire in one hour
 	auto token = jwt::create()
 		.set_issuer(JWT_ISSUER)
