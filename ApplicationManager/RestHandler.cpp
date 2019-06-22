@@ -11,13 +11,20 @@
 	LOG_DBG << "Query: " << http::uri::decode(message.relative_uri().query()); \
 	LOG_DBG << "Remote: " << message.remote_address(); // for new version of cpprestsdk
 
-RestHandler::RestHandler(int port)
+RestHandler::RestHandler(std::string ipaddress, int port)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 	
 	// Construct URI
 	web::uri_builder uri;
-	uri.set_host("0.0.0.0");
+	if (ipaddress.empty())
+	{
+		uri.set_host("0.0.0.0");
+	}
+	else
+	{
+		uri.set_host(ipaddress);
+	}
 	uri.set_port(port);
 	uri.set_path("/");
 	if (Configuration::instance()->getSslEnabled())

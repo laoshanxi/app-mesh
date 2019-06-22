@@ -15,7 +15,7 @@ using namespace http::experimental::listener;
 class RestHandler
 {
 public:
-	explicit RestHandler(int port);
+	explicit RestHandler(std::string ipaddress, int port);
 	virtual ~RestHandler();
 
 protected:
