@@ -42,12 +42,12 @@ fi
 
 # update cmake on RHEL
 if [ -f "/usr/bin/yum" ]; then
-	wget https://github.com/Kitware/CMake/releases/download/v3.13.0/cmake-3.13.0-Linux-x86_64.tar.gz
-	tar zxvf cmake-3.13.0-Linux-x86_64.tar.gz
+	yum install epel-release -y
+	yum install cmake3 -y
 	CMAKE_PATH=`which cmake`
 	mv ${CMAKE_PATH} ${CMAKE_PATH}2
-	ln -s `pwd`/cmake-3.13.0-Linux-x86_64/bin/cmake ${CMAKE_PATH}
-	ls -al ${CMAKE_PATH}
+	ln -s ${CMAKE_PATH}3 ${CMAKE_PATH}
+	ls -al ${CMAKE_PATH}*
 fi
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
