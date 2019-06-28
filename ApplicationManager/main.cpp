@@ -45,7 +45,7 @@ int main(int argc, char * argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		if (config->getRestEnabled())
 		{
-			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenPort());
+			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenIp(), config->getRestListenPort());
 		}
 
 		auto apps = config->getApps();

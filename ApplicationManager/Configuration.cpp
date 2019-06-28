@@ -45,6 +45,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_hostDescription = GET_JSON_STR_VALUE(jobj, "Description");
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jobj, "ScheduleIntervalSeconds");
 	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, "RestListenPort");
+	config->m_restListenIp = GET_JSON_STR_VALUE(jobj, "RestListenAddress");
 	config->m_logLevel = GET_JSON_STR_VALUE(jobj, "LogLevel");
 	SET_JSON_BOOL_VALUE(jobj, "SSLEnabled", config->m_sslEnabled);
 	SET_JSON_BOOL_VALUE(jobj, "RestEnabled", config->m_restEnabled);
@@ -147,6 +148,11 @@ int Configuration::getScheduleInterval()
 int Configuration::getRestListenPort()
 {
 	return m_restListenPort;
+}
+
+std::string Configuration::getRestListenIp()
+{
+	return m_restListenIp;
 }
 
 const utility::string_t Configuration::getConfigContentStr()

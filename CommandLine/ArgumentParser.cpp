@@ -6,7 +6,7 @@
 #include "ArgumentParser.h"
 #include "../common/Utility.h"
 
-#define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("127.0.0.1"), "host name or ip address")
+#define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
 #define HELP_ARG_CHECK_WITH_RETURN if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
 #define RESPONSE_CHECK_WITH_RETURN if (response.status_code() != status_codes::OK) { std::cout << response.extract_utf8string(true).get() << std::endl; return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
