@@ -45,10 +45,11 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install epel-release -y
 	yum install cmake3 -y
 	# make cmake3 as default cmake
-	CMAKE3_PATH=$(which cmake3)
 	CMAKE_PATH=$(which cmake)
-	mv $(which cmake) $(which cmake)2
-	cp ${CMAKE3_PATH} ${CMAKE_PATH}
+	rm -rf ${CMAKE_PATH}2
+	cp ${CMAKE_PATH} ${CMAKE_PATH}2
+	rm -rf ${CMAKE_PATH}
+	cp $(which cmake3) ${CMAKE_PATH}
 fi
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
