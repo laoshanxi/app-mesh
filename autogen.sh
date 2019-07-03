@@ -46,7 +46,7 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install cmake3 -y
 	# make cmake3 as default cmake
 	CMAKE3_PATH=$(which cmake3)
-	CMAKE_PATH=$(which cmake3)
+	CMAKE_PATH=$(which cmake)
 	mv $(which cmake) $(which cmake)2
 	cp ${CMAKE3_PATH} ${CMAKE_PATH}
 fi
