@@ -44,8 +44,11 @@ fi
 if [ -f "/usr/bin/yum" ]; then
 	yum install epel-release -y
 	yum install cmake3 -y
-	CMAKE_PATH=`which cmake3`
-	ls -al ${CMAKE_PATH}*
+	# make cmake3 as default cmake
+	CMAKE3_PATH=$(which cmake3)
+	CMAKE_PATH=$(which cmake3)
+	mv $(which cmake) $(which cmake)2
+	cp ${CMAKE3_PATH} ${CMAKE_PATH}
 fi
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
@@ -54,7 +57,7 @@ git clone https://github.com/laoshanxi/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-cmake3 .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align" 
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align" 
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so
