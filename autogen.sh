@@ -40,16 +40,12 @@ if [ -f "/usr/bin/yum" ]; then
 	cd $ROOTDIR
 fi
 
+CMAKE=$(which cmake)
 # update cmake on RHEL
 if [ -f "/usr/bin/yum" ]; then
 	yum install epel-release -y
 	yum install cmake3 -y
-	# make cmake3 as default cmake
-	CMAKE_PATH=$(which cmake)
-	rm -rf ${CMAKE_PATH}2
-	cp ${CMAKE_PATH} ${CMAKE_PATH}2
-	rm -rf ${CMAKE_PATH}
-	cp $(which cmake3) ${CMAKE_PATH}
+	CMAKE=$(which cmake3)
 fi
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
@@ -58,7 +54,7 @@ git clone https://github.com/laoshanxi/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align" 
+$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align" 
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so
@@ -82,7 +78,7 @@ git clone https://github.com/open-source-parsers/jsoncpp.git jsoncpp
 cd jsoncpp
 mkdir -p build/release
 cd build/release
-cmake -DCMAKE_BUILD_TYPE=release -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DARCHIVE_INSTALL_DIR=. -G "Unix Makefiles" ../..
+$CMAKE -DCMAKE_BUILD_TYPE=release -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DARCHIVE_INSTALL_DIR=. -G "Unix Makefiles" ../..
 make
 make install
 ls -al /usr/local/lib*/libjsoncpp.a
