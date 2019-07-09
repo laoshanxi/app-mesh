@@ -135,9 +135,9 @@ void ApplicationShortRun::start()
 	LOG_DBG << fname << "Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_active == STOPPED)
+	if (m_status == STOPPED)
 	{
-		m_active = NORMAL;
+		m_status = NORMAL;
 		initTimer();
 	}
 }

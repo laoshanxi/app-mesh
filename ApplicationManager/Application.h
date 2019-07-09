@@ -62,7 +62,7 @@ public:
 	void destroy();
 
 protected:
-	STATUS m_active;
+	STATUS m_status;
 	std::string m_name;
 	std::string m_commandLine;
 	std::string m_user;

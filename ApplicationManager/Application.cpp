@@ -5,7 +5,7 @@
 #include "Configuration.h"
 
 Application::Application()
-	:m_active(NORMAL), m_return(0), m_runOnce(false), m_pid(-1), m_processIndex(0)
+	:m_status(NORMAL), m_return(0), m_runOnce(false), m_pid(-1), m_processIndex(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -27,7 +27,7 @@ std::string Application::getName()
 bool Application::isNormal()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return (m_active == NORMAL);
+	return (m_status == NORMAL);
 }
 
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::object& jobj)
@@ -44,9 +44,9 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 		throw std::invalid_argument("char '>' is not supported for command line");
 	}
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "working_dir"));
-	if (HAS_JSON_FIELD(jobj, "active"))
+	if (HAS_JSON_FIELD(jobj, "status"))
 	{
-		app->m_active = static_cast<STATUS>GET_JSON_INT_VALUE(jobj, "active");
+		app->m_status = static_cast<STATUS>GET_JSON_INT_VALUE(jobj, "status");
 	}
 	if (HAS_JSON_FIELD(jobj, "daily_limitation"))
 	{
@@ -71,7 +71,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
 	app->m_runOnce = GET_JSON_BOOL_VALUE(jobj, "run_once");
-	if (app->m_runOnce) app->m_active = STOPPED;	// Just set to stopped for shell app
+	if (app->m_runOnce) app->m_status = STOPPED;	// Just set to stopped for shell app
 }
 
 void Application::refreshPid()
@@ -143,10 +143,10 @@ void Application::stop()
 	const static char fname[] = "Application::stop() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_active != STOPPED)
+	if (m_status != STOPPED)
 	{
 		if (m_process != nullptr) m_process->killgroup();
-		m_active = STOPPED;
+		m_status = STOPPED;
 		m_return = -1;
 		LOG_INF << fname << "Application <" << m_name << "> stopped.";
 	}
@@ -157,9 +157,9 @@ void Application::start()
 	const static char fname[] = "Application::start() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_active == STOPPED)
+	if (m_status == STOPPED)
 	{
-		m_active = NORMAL;
+		m_status = NORMAL;
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
 	}
@@ -224,7 +224,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	result[GET_STRING_T("run_as")] = web::json::value::string(GET_STRING_T(m_user));
 	result[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(m_commandLine));
 	result[GET_STRING_T("working_dir")] = web::json::value::string(GET_STRING_T(m_workdir));
-	result[GET_STRING_T("active")] = web::json::value::number(m_active);
+	result[GET_STRING_T("status")] = web::json::value::number(m_status);
 	if (m_comments.length()) result[GET_STRING_T("commentss")] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)
 	{
@@ -264,7 +264,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	LOG_DBG << fname << "m_user:" << m_user;
-	LOG_DBG << fname << "m_status:" << m_active;
+	LOG_DBG << fname << "m_status:" << m_status;
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
@@ -342,7 +342,7 @@ void Application::destroy()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	this->stop();
-	this->m_active = DESTROYED;
+	this->m_status = DESTROYED;
 	// clean test run process
 	if (m_testProcess != nullptr) m_testProcess->killgroup();
 }

@@ -60,7 +60,7 @@ appc: error while loading shared libraries: libcpprest.so.2.10: cannot open shar
 $ source /opt/appmanager/script/app.bashrc 
 
 $ appc view
-id user  active pid   return memory name        command_line
+id user  status pid   return memory name        command_line
 1  root  start  4485  0      0.3M   period      /bin/sleep 20
 2  root  start  2048  0      1.9M   ping        ping www.baidu.com
 ```
@@ -95,11 +95,11 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 
 ```
 $ appc view
-id user  active pid   return memory name        command_line
+id user  status pid   return memory name        command_line
 1  root  start  2350  0      0.3M   period      /bin/sleep 20
 2  root  start  1860  0      1.9M   ping        ping www.baidu.com
 $ appc view -n ping
-id user  active pid   return memory name        command_line
+id user  status pid   return memory name        command_line
 1  root  start  1860  0      1.9M   ping        ping www.baidu.com
 ```
 
@@ -135,7 +135,7 @@ $ appc config
         "Applications" : 
         [
                 {
-                        "active" : 1,
+                        "status" : 1,
                         "command_line" : "/bin/sleep 20",
                         "daily_limitation" : 
                         {
@@ -164,7 +164,7 @@ $ appc config
                         "working_dir" : "/opt"
                 },
                 {
-                        "active" : 1,
+                        "status" : 1,
                         "command_line" : "ping www.baidu.com",
                         "name" : "ping",
                         "run_as" : "root",
@@ -192,7 +192,7 @@ Register a new application:
   -u [ --user ] arg (=root)      application process running user name
   -c [ --cmd ] arg               full command line with arguments
   -w [ --workdir ] arg (=/tmp)   working directory
-  -a [ --active ] arg (=1)       application active status (start is true, stop
+  -a [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
   -t [ --start_time ] arg        start date time for short running app (e.g., 
                                  '2018-01-01 09:00:00')
@@ -220,7 +220,7 @@ $ appc reg -n ping -u kfc -c 'ping www.google.com' -w /opt
 Application already exist, are you sure you want to update the application (y/n)?
 y
 {
-   "active" : 1,
+   "status" : 1,
    "command_line" : "ping www.google.com",
    "name" : "ping",
    "pid" : -1,
@@ -266,7 +266,7 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 ``` sh
 $ appc sh -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view" 
 {
-        "active" : 0,
+        "status" : 0,
         "command_line" : "/bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'",
         "env" : 
         {
@@ -281,7 +281,7 @@ $ appc sh -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view"
         "working_dir" : "/tmp"
 }
 
-id user  active pid   return memory name        command_line
+id user  status pid   return memory name        command_line
 1  root  start  2605  0      0.3M   period      /bin/sleep 20
 2  root  start  1860  0      1.9M   ping        ping www.baidu.com
 3  root  stop   0     0      0      58de823f-c* /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'

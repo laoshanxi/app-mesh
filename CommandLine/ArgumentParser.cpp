@@ -134,7 +134,7 @@ void ArgumentParser::processReg(const char* appName)
 		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
-		("active,a", po::value<bool>()->default_value(true), "application active status (start is true, stop is false)")
+		("status,a", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
 		("start_time,t", po::value<std::string>(), "start date time for short running app (e.g., '2018-01-01 09:00:00')")
 		("daily_start,s", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
 		("daily_end,d", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
@@ -186,7 +186,7 @@ void ArgumentParser::processReg(const char* appName)
 	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
-	jsobObj["active"] = web::json::value::number(m_commandLineVariables["active"].as<bool>() ? 1 : 0);
+	jsobObj["status"] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
 	if (m_commandLineVariables.count("timezone") > 0)
 	{
 		jsobObj["posix_timezone"] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
@@ -609,7 +609,7 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	for (auto iter = arr.begin(); iter != arr.end(); iter++)
 	{
 		auto jobj = iter->as_object();
-		apps[GET_JSON_STR_VALUE(jobj, "name")] = GET_JSON_INT_VALUE(jobj, "active") == 1;
+		apps[GET_JSON_STR_VALUE(jobj, "name")] = GET_JSON_INT_VALUE(jobj, "status") == 1;
 	}
 	return apps;
 }
@@ -651,7 +651,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(3) << ("id")
 		<< std::setw(12) << ("name")
 		<< std::setw(6) << ("user")
-		<< std::setw(7) << ("active")
+		<< std::setw(7) << ("status")
 		<< std::setw(7) << ("pid")
 		<< std::setw(7) << ("return")
 		<< std::setw(8) << ("memory")
@@ -669,7 +669,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, "run_as"), 6);
-		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "active") == 1 ? "normal" : "stopped");
+		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "status") == 1 ? "normal" : "stopped");
 		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
 		std::cout << std::setw(8) << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
