@@ -13,13 +13,8 @@
 #include "DailyLimitation.h"
 #include "ResourceLimitation.h"
 #include "TimerHandler.h"
+#include "../common/Utility.h"
 
-enum STATUS
-{
-	STOPPED = 0,
-	NORMAL,
-	DESTROYED
-};
 
 /**
 * @class Application

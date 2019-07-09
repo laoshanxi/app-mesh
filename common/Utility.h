@@ -47,6 +47,15 @@
 #define JWT_ADMIN_KEY "app-mgr-admin-secret-key"
 #define JWT_ADMIN_NAME "admin"
 #define JWT_ISSUER "appmgr-auth0"
+
+enum STATUS
+{
+	STOPPED = 0,
+	ENABLED,
+	DESTROYED
+};
+const char* GET_STATUS_STR(unsigned int status);
+
 //////////////////////////////////////////////////////////////////////////
 // All common functions
 //////////////////////////////////////////////////////////////////////////

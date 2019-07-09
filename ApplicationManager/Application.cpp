@@ -5,7 +5,7 @@
 #include "Configuration.h"
 
 Application::Application()
-	:m_status(NORMAL), m_return(0), m_runOnce(false), m_pid(-1), m_processIndex(0)
+	:m_status(ENABLED), m_return(0), m_runOnce(false), m_pid(-1), m_processIndex(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -27,7 +27,7 @@ std::string Application::getName()
 bool Application::isNormal()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return (m_status == NORMAL);
+	return (m_status == ENABLED);
 }
 
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::object& jobj)
@@ -159,7 +159,7 @@ void Application::start()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_status == STOPPED)
 	{
-		m_status = NORMAL;
+		m_status = ENABLED;
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
 	}

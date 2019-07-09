@@ -27,6 +27,18 @@
 
 #include "../common/Utility.h"
 
+const char* GET_STATUS_STR(unsigned int status)
+{
+	static const char* STATUS_STR[] =
+	{
+		"stopped",
+		"enabled",
+		"destroyed"
+	};
+	assert(status < sizeof(STATUS_STR) / sizeof(STATUS_STR[0]));
+	return STATUS_STR[status];
+};
+
 Utility::Utility()
 {
 }

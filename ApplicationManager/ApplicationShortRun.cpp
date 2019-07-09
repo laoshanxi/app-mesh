@@ -137,7 +137,7 @@ void ApplicationShortRun::start()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_status == STOPPED)
 	{
-		m_status = NORMAL;
+		m_status = ENABLED;
 		initTimer();
 	}
 }
