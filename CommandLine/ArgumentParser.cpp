@@ -651,7 +651,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(3) << ("id")
 		<< std::setw(12) << ("name")
 		<< std::setw(6) << ("user")
-		<< std::setw(7) << ("status")
+		<< std::setw(9) << ("status")
 		<< std::setw(7) << ("pid")
 		<< std::setw(7) << ("return")
 		<< std::setw(8) << ("memory")
@@ -669,7 +669,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, "run_as"), 6);
-		std::cout << std::setw(7) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, "status"));
+		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, "status"));
 		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
 		std::cout << std::setw(8) << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
