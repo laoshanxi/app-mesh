@@ -9,10 +9,11 @@
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
 #define HELP_ARG_CHECK_WITH_RETURN if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
 #define RESPONSE_CHECK_WITH_RETURN if (response.status_code() != status_codes::OK) { std::cout << response.extract_utf8string(true).get() << std::endl; return; }
+#define RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT if (response.status_code() != status_codes::OK) { return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
 
-ArgumentParser::ArgumentParser(int argc, char* argv[], int listenPort, bool sslEnabled)
-	:m_listenPort(listenPort), m_sslEnabled(sslEnabled)
+ArgumentParser::ArgumentParser(int argc, char* argv[], int listenPort, bool sslEnabled, bool printDebug)
+	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_printDebug(printDebug)
 {
 	po::options_description global("Global options");
 	global.add_options()
@@ -261,7 +262,7 @@ void ArgumentParser::processReg(const char* appName)
 	auto response = requestHttp(methods::PUT, restPath, jsobObj);
 	RESPONSE_CHECK_WITH_RETURN;
 	auto appJsonStr = response.extract_utf8string(true).get();
-	std::cout << GET_STD_STRING(appJsonStr) << std::endl;
+	if (m_printDebug) std::cout << GET_STD_STRING(appJsonStr) << std::endl;
 }
 
 void ArgumentParser::processUnReg()
@@ -298,7 +299,7 @@ void ArgumentParser::processUnReg()
 			std::string restPath = std::string("/app/") + appName;
 			auto response = requestHttp(methods::DEL, restPath);
 			RESPONSE_CHECK_WITH_RETURN;
-			std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+			if (m_printDebug) std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 		}
 		else
 		{
@@ -466,7 +467,14 @@ void ArgumentParser::processTest()
 		query.clear();
 		query["process_uuid"] = process_uuid;
 		response = requestHttp(methods::GET, restPath, query);
-		RESPONSE_CHECK_WITH_RETURN;
+		if (m_printDebug)
+		{
+			RESPONSE_CHECK_WITH_RETURN;
+		}
+		else
+		{
+			RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
+		}
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
@@ -474,14 +482,13 @@ void ArgumentParser::processTest()
 
 void ArgumentParser::processShell()
 {
-	OUTPUT_SPLITOR_PRINT;
-
 	po::options_description desc("Shell application:");
 	desc.add_options()
 		("help,h", "help message")
 		OPTION_HOST_NAME
 		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
+		("debug,g", "print debug information")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,x", po::value<int>()->default_value(60), "timeout seconds for the shell command run (default 60).")
 		;
@@ -495,15 +502,18 @@ void ArgumentParser::processShell()
 		std::cout << desc << std::endl;
 		return;
 	}
+	m_printDebug = m_commandLineVariables.count("debug");
 	m_hostname = m_commandLineVariables["host"].as<std::string>();
 	// Use uuid for shell app to avoid overide existing app
 	auto appName = Utility::createUUID();
+
+	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 1. Reg a temp application
 	// PUT /app/sh
 	processReg(appName.c_str());
 
-	OUTPUT_SPLITOR_PRINT;
+	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 2. Call testrun and check output
 	int argc_test = 8;
@@ -527,10 +537,10 @@ void ArgumentParser::processShell()
 		argc_test -= 2;
 	}
 	argv_test[8] = strdup("\0");
-	ArgumentParser testParser(argc_test, argv_test, m_listenPort, m_sslEnabled);
+	ArgumentParser testParser(argc_test, argv_test, m_listenPort, m_sslEnabled, m_printDebug);
 	testParser.parse();
 
-	OUTPUT_SPLITOR_PRINT;
+	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 3. Unregist application
 	int argc_unreg = 7;
@@ -543,10 +553,10 @@ void ArgumentParser::processShell()
 	argv_unreg[5] = strdup(appName.c_str());
 	argv_unreg[6] = strdup("-f");
 	argv_unreg[7] = strdup("\0");
-	ArgumentParser unregParser(argc_unreg, argv_unreg, m_listenPort, m_sslEnabled);
+	ArgumentParser unregParser(argc_unreg, argv_unreg, m_listenPort, m_sslEnabled, m_printDebug);
 	unregParser.parse();
 
-	OUTPUT_SPLITOR_PRINT;
+	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 }
 
 bool ArgumentParser::confirmInput(const char* msg)

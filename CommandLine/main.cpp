@@ -20,7 +20,7 @@ int main(int argc, char * argv[])
 		int port;
 		bool ssl;
 		getListenPort(port, ssl);
-		ArgumentParser parser(argc, argv, port, ssl);
+		ArgumentParser parser(argc, argv, port, ssl, true);
 		parser.parse();
 	}
 	catch (const std::exception& e)
