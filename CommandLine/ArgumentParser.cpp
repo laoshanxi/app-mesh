@@ -148,6 +148,7 @@ void ArgumentParser::processReg(const char* appName)
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", po::value<bool>()->default_value(false), "monitor and keep running for short running app in start interval")
 		("force,f", "force without confirm")
+		("debug,g", "print debug information")
 		("help,h", "help message");
 
 	moveForwardCommandLineVariables(desc);
