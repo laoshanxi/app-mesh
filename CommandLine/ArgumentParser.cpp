@@ -516,44 +516,25 @@ void ArgumentParser::processShell()
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 2. Call testrun and check output
-	int argc_test = 8;
-	char* argv_test[9] = { 0 };
-	argv_test[0] = strdup("appc");
-	argv_test[1] = strdup("test");
-	argv_test[2] = strdup("-b");
-	argv_test[3] = strdup(m_hostname.c_str());
-	argv_test[4] = strdup("-n");
-	argv_test[5] = strdup(appName.c_str());
-
 	if (m_commandLineVariables.count("extra_time"))
 	{
-		argv_test[6] = strdup("-t");	// Timeout will use extra_time option
-		argv_test[7] = strdup(std::to_string(m_commandLineVariables["extra_time"].as<int>()).c_str());
+		char* argv[] = { "appc" , "test", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-t",  
+			strdup(std::to_string(m_commandLineVariables["extra_time"].as<int>()).c_str()), "\0" };
+		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
+		testParser.parse();
 	}
 	else
 	{
-		argv_test[6] = strdup("\0");
-		argv_test[7] = strdup("\0");
-		argc_test -= 2;
+		char* argv[] = { "appc" , "test", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "\0" };
+		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
+		testParser.parse();
 	}
-	argv_test[8] = strdup("\0");
-	ArgumentParser testParser(argc_test, argv_test, m_listenPort, m_sslEnabled, m_printDebug);
-	testParser.parse();
 
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 3. Unregist application
-	int argc_unreg = 7;
-	char* argv_unreg[8] = { 0 };
-	argv_unreg[0] = strdup("appc");
-	argv_unreg[1] = strdup("unreg");
-	argv_unreg[2] = strdup("-b");
-	argv_unreg[3] = strdup(m_hostname.c_str());
-	argv_unreg[4] = strdup("-n");
-	argv_unreg[5] = strdup(appName.c_str());
-	argv_unreg[6] = strdup("-f");
-	argv_unreg[7] = strdup("\0");
-	ArgumentParser unregParser(argc_unreg, argv_unreg, m_listenPort, m_sslEnabled, m_printDebug);
+	char* argv[] = { "appc" , "unreg", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-f", "\0" };
+	ArgumentParser unregParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 	unregParser.parse();
 
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;

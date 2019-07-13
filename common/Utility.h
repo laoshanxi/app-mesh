@@ -16,6 +16,9 @@
 #else
 #define DIRECTORY_SEPARATOR '/'
 #endif
+
+#define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
+
 #define __FILENAME__ (strrchr(__FILE__, DIRECTORY_SEPARATOR) ? strrchr(__FILE__, DIRECTORY_SEPARATOR) + 1 : __FILE__)
 #define LOG_DBG    log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG  // << __FILENAME__ << ":" << __LINE__ << ' '
 #define LOG_INF    log4cpp::Category::getRoot() << log4cpp::Priority::INFO   // << __FILENAME__ << ":" << __LINE__ << ' '
