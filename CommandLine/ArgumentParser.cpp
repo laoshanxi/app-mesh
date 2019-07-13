@@ -502,10 +502,7 @@ void ArgumentParser::processShell()
 		std::cout << desc << std::endl;
 		return;
 	}
-	if (m_commandLineVariables.count("debug"))
-	{
-		m_printDebug = true;
-	}
+	m_printDebug = m_commandLineVariables.count("debug");
 	m_hostname = m_commandLineVariables["host"].as<std::string>();
 	// Use uuid for shell app to avoid overide existing app
 	auto appName = Utility::createUUID();
