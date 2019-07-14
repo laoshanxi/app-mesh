@@ -60,13 +60,13 @@ appc: error while loading shared libraries: libcpprest.so.2.10: cannot open shar
 $ source /opt/appmanager/script/app.bashrc 
 
 $ appc view
-id user  status pid   return memory name        command_line
-1  root  start  4485  0      0.3M   period      /bin/sleep 20
-2  root  start  2048  0      1.9M   ping        ping www.baidu.com
+id name        user  status   pid    return memory  command_line
+1  period      root  enabled  585    0      672 K   /bin/sleep 20
+2  ping        root  enabled  586    0      956 K   ping www.baidu.com
 ```
 **Ubuntu**:
 ```
-$ apt-get install appmanager_1.0_amd64.deb
+$ apt install ./appmanager_1.1_amd64.deb -y
 ```
 
 ## Show all sub command
@@ -86,6 +86,7 @@ Commands:
   sh          Use shell run a command and get output
 
 Run 'appc COMMAND --help' for more information on a command.
+Use '-b hostname' to run remote command.
 
 Usage:  appc [COMMAND] [ARG...] [flags]
 ```
@@ -95,12 +96,12 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 
 ```
 $ appc view
-id user  status pid   return memory name        command_line
-1  root  start  2350  0      0.3M   period      /bin/sleep 20
-2  root  start  1860  0      1.9M   ping        ping www.baidu.com
+id name        user  status   pid    return memory  command_line
+1  period      root  enabled  766    0      20 K    /bin/sleep 20
+2  ping        root  enabled  586    0      956 K   ping www.baidu.com
 $ appc view -n ping
-id user  status pid   return memory name        command_line
-1  root  start  1860  0      1.9M   ping        ping www.baidu.com
+id name        user  status   pid    return memory  command_line
+1  ping        root  enabled  586    0      956 K   ping www.baidu.com
 ```
 
 ## Display host resource usage
@@ -108,22 +109,32 @@ id user  status pid   return memory name        command_line
 ```
 $ appc resource
 {
-   "cpu_cores" : 4,
-   "cpu_processors" : 4,
-   "cpu_sockets" : 1,
-   "host_name" : "myubuntu",
-   "mem_freeSwap_bytes" : 1023406080,
-   "mem_free_bytes" : 3755048960,
-   "mem_totalSwap_bytes" : 1023406080,
-   "mem_total_bytes" : 5189935104,
-   "net_ip" : [
-      {
-         "docker0" : "172.17.0.1"
-      },
-      {
-         "enp0s3" : "10.0.2.15"
-      }
-   ]
+        "cpu_cores" : 4,
+        "cpu_processors" : 4,
+        "cpu_sockets" : 1,
+        "host_name" : "DESKTOP-JMLV.localdomain",
+        "mem_applications" : 10457088,
+        "mem_freeSwap_bytes" : 0,
+        "mem_free_bytes" : 12684464128,
+        "mem_totalSwap_bytes" : 0,
+        "mem_total_bytes" : 17117429760,
+        "net" :
+        [
+                {
+                        "eth0" :
+                        {
+                                "address" : "fe80::60a8:40fb:4169:98f6",
+                                "ipv4" : false
+                        }
+                },
+                {
+                        "eth1" :
+                        {
+                                "address" : "fe80::8179:f2dc:d972:6ac4",
+                                "ipv4" : false
+                        }
+                }
+        ]
 }
 ```
 
@@ -132,47 +143,54 @@ $ appc resource
 ```
 $ appc config
 {
-        "Applications" : 
+        "Applications" :
         [
                 {
-                        "status" : 1,
                         "command_line" : "/bin/sleep 20",
-                        "daily_limitation" : 
+                        "daily_limitation" :
                         {
                                 "daily_end" : "23:00:00",
                                 "daily_start" : "09:00:00"
                         },
-                        "env" : 
+                        "env" :
                         {
                                 "TEST_ENV1" : "value",
                                 "TEST_ENV2" : "value"
                         },
                         "keep_running" : true,
+                        "memory" : 24576,
                         "name" : "period",
+                        "pid" : 911,
                         "posix_timezone" : "CST+8:00:00",
-                        "resource_limit" : 
+                        "resource_limit" :
                         {
                                 "cpu_shares" : 100,
                                 "memory_mb" : 200,
                                 "memory_virt_mb" : 300
                         },
+                        "return" : 0,
                         "run_as" : "root",
                         "run_once" : false,
                         "start_interval_seconds" : 30,
                         "start_interval_timeout" : 0,
-                        "start_time" : "2018-01-01 16:00:00",
+                        "start_time" : "2018-01-02 01:05:16",
+                        "status" : 1,
                         "working_dir" : "/opt"
                 },
                 {
-                        "status" : 1,
                         "command_line" : "ping www.baidu.com",
+                        "memory" : 978944,
                         "name" : "ping",
+                        "pid" : 586,
+                        "return" : 0,
                         "run_as" : "root",
                         "run_once" : false,
+                        "status" : 1,
                         "working_dir" : "/tmp"
                 }
         ],
         "Description" : "myhost",
+        "JWTEnabled" : true,
         "LogLevel" : "DEBUG",
         "RestListenPort" : 6060,
         "SSLCertificateFile" : "server.crt",
@@ -180,7 +198,6 @@ $ appc config
         "SSLEnabled" : true,
         "ScheduleIntervalSeconds" : 2
 }
-
 ```
 
 ## Register a new application
@@ -188,31 +205,32 @@ $ appc config
 ```
 $ appc reg
 Register a new application:
+  -b [ --host ] arg (=localhost) host name or ip address
   -n [ --name ] arg              application name
   -u [ --user ] arg (=root)      application process running user name
   -c [ --cmd ] arg               full command line with arguments
   -w [ --workdir ] arg (=/tmp)   working directory
   -a [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
-  -t [ --start_time ] arg        start date time for short running app (e.g., 
+  -t [ --start_time ] arg        start date time for short running app (e.g.,
                                  '2018-01-01 09:00:00')
   -s [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -d [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
   -v [ --virtual_memory ] arg    virtual memory limit in MByte
   -p [ --cpu_shares ] arg        CPU shares (relative weight)
-  -d [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e
                                  env2=value2)
   -i [ --interval ] arg          start interval seconds for short running app
-  -x [ --extra_time ] arg        extra timeout for short running app,the value 
+  -x [ --extra_time ] arg        extra timeout for short running app,the value
                                  must less than interval  (default 0)
-  -z [ --timezone ] arg          posix timezone for the application, reflect 
-                                 [start_time|daily_start|daily_end] (e.g., 
+  -z [ --timezone ] arg          posix timezone for the application, reflect
+                                 [start_time|daily_start|daily_end] (e.g.,
                                  'WST+08:00' is Australia Standard Time)
   -k [ --keep_running ] arg (=0) monitor and keep running for short running app
                                  in start interval
-  -f [ --force ]                 force without confirm.
+  -f [ --force ]                 force without confirm
+  -g [ --debug ]                 print debug information
   -h [ --help ]                  help message
 
   
@@ -265,28 +283,10 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 ## Run a shell command and get stdout
 ``` sh
 $ appc sh -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view" 
-{
-        "status" : 0,
-        "command_line" : "/bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'",
-        "env" : 
-        {
-                "LD_LIBRARY_PATH" : "/opt/appmanager/lib64"
-        },
-        "memory" : 0,
-        "name" : "58de823f-cecf-4b67-b362-d08db46167f6",
-        "pid" : -1,
-        "return" : 0,
-        "run_as" : "root",
-        "run_once" : true,
-        "working_dir" : "/tmp"
-}
-
-id user  status pid   return memory name        command_line
-1  root  start  2605  0      0.3M   period      /bin/sleep 20
-2  root  start  1860  0      1.9M   ping        ping www.baidu.com
-3  root  stop   0     0      0      58de823f-c* /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
-Process already finished or killed by timeout event
-application <58de823f-cecf-4b67-b362-d08db46167f6> removed.
+id name        user  status   pid    return memory  command_line
+1  period      root  enabled  1044   0      668 K   /bin/sleep 20
+2  ping        root  enabled  586    0      956 K   ping www.baidu.com
+3  869d8991-0* root  stopped  0      0      0       /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
 ```
 
 ![example](https://github.com/laoshanxi/app-manager/blob/master/doc/example.gif?raw=true) 
