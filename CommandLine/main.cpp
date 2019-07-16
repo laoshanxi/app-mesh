@@ -12,7 +12,7 @@
 namespace po = boost::program_options;
 void getListenPort(int& port, bool& sslEnabled);
 
-int main(int argc, char * argv[])
+int main(int argc, const char * argv[])
 {
 	PRINT_VERSION();
 	try
