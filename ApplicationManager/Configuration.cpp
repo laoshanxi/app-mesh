@@ -84,7 +84,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 {
 	// get applications
-	auto apps = getApplicationJson();
+	auto apps = getApplicationJson(false);
 
 	// get global parameters
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -160,14 +160,14 @@ const utility::string_t Configuration::getConfigContentStr()
 	return this->AsJson(false).serialize();
 }
 
-web::json::value Configuration::getApplicationJson()
+web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// Build Json
 	auto result = web::json::value::array(m_apps.size());
 	for (size_t i = 0; i < m_apps.size(); ++i)
 	{
-		result[i] = m_apps[i]->AsJson(true);
+		result[i] = m_apps[i]->AsJson(returnRuntimeInfo);
 	}
 	return result;
 }

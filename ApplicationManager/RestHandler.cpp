@@ -94,7 +94,7 @@ void RestHandler::handle_get(http_request message)
 
 		if (path == std::string("/app-manager/applications"))
 		{
-			message.reply(status_codes::OK, Configuration::instance()->getApplicationJson());
+			message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true));
 		}
 		if (path == std::string("/app-manager/resources"))
 		{
