@@ -12,7 +12,7 @@
 #define RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT if (response.status_code() != status_codes::OK) { return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
 
-ArgumentParser::ArgumentParser(int argc, char* argv[], int listenPort, bool sslEnabled, bool printDebug)
+ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug)
 	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_printDebug(printDebug)
 {
 	po::options_description global("Global options");
@@ -526,7 +526,7 @@ void ArgumentParser::processShell()
 	}
 	else
 	{
-		char* argv[] = { "appc" , "test", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "\0" };
+		const char* argv[] = { "appc" , "test", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "\0" };
 		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 		testParser.parse();
 	}
@@ -534,7 +534,7 @@ void ArgumentParser::processShell()
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 3. Unregist application
-	char* argv[] = { "appc" , "unreg", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-f", "\0" };
+	const char* argv[] = { "appc" , "unreg", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-f", "\0" };
 	ArgumentParser unregParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 	unregParser.parse();
 

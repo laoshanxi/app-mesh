@@ -19,7 +19,7 @@ namespace po = boost::program_options;
 class ArgumentParser
 {
 public:
-	ArgumentParser(int argc, char* argv[], int listenPort, bool sslEnabled, bool printDebug);
+	ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug);
 	virtual ~ArgumentParser();
 
 	void parse();
