@@ -70,7 +70,7 @@ const HostResource& ResourceCollection::getHostResource()
 			inet.address = net.address;
 			inet.ipv4 = net.ipv4;
 			inet.name = net.name;
-			m_resources.m_ipaddress[net.name]  = inet;
+			m_resources.m_ipaddress.push_back(inet);
 		}
 	}
 
@@ -105,7 +105,7 @@ void ResourceCollection::dump()
 	LOG_DBG << fname << "host_name:" << getHostName();
 	for (auto &pair : m_resources.m_ipaddress)
 	{
-		LOG_DBG << fname << "m_ipaddress: " << pair.first << "," << pair.second.ipv4 << "," << pair.second.address;
+		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv4 << "," << pair.address;
 	}
 	LOG_DBG << fname << "m_cores:" << m_resources.m_cores;
 	LOG_DBG << fname << "m_sockets:" << m_resources.m_sockets;
@@ -126,14 +126,14 @@ web::json::value ResourceCollection::AsJson()
 	result[GET_STRING_T("host_name")] = web::json::value::string(GET_STRING_T(getHostName()));
 	auto arr = web::json::value::array(m_resources.m_ipaddress.size());
 	int idx = 0;
-	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const std::pair<std::string, HostNetInterface>& pair)
+	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const  HostNetInterface& pair)
 	{
 		web::json::value net = web::json::value::object();
 		web::json::value net_detail = web::json::value::object();
-		net_detail["ipv4"] = web::json::value::boolean(pair.second.ipv4);
-		net_detail["address"] = web::json::value::string(pair.second.address);
-		net[GET_STRING_T(pair.first)] = net_detail;
-		arr[idx++] = net;
+		net_detail["name"] = web::json::value::string(pair.name);
+		net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
+		net_detail["address"] = web::json::value::string(pair.address);
+		arr[idx++] = net_detail;
 	});
 	result[GET_STRING_T("net")] = arr;
 	result[GET_STRING_T("cpu_cores")] = web::json::value::number(m_resources.m_cores);

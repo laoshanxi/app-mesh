@@ -3,7 +3,7 @@
 #include <mutex>
 #include <memory>
 #include <string>
-#include <map>
+#include <list>
 #include <unistd.h>
 
 #include <cpprest/json.h>
@@ -33,7 +33,7 @@ struct HostResource
 	// TODO: disk
 
 	// NET
-	std::map<std::string, HostNetInterface> m_ipaddress;
+	std::list<HostNetInterface> m_ipaddress;
 };
 
 //////////////////////////////////////////////////////////////////////////
