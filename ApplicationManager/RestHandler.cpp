@@ -41,7 +41,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 			[&](boost::asio::ssl::context & ctx) {
 			boost::system::error_code ec;
 
-			ctx.set_options(boost::asio::ssl::context::default_workarounds, ec);
+			ctx.set_options(boost::asio::ssl::context::default_workarounds |
+				boost::asio::ssl::context::no_sslv2, ec);
 			LOG_INF << "lambda::set_options " << ec.value() << " " << ec.message();
 
 			ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
@@ -49,6 +50,18 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 			ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
 			LOG_INF << "lambda::use_private_key " << ec.value() << " " << ec.message();
+
+			// Enable ECDH cipher
+			if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
+			{
+				LOG_WAR << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
+			}
+			if (!SSL_CTX_set_cipher_list(ctx.native_handle(), 
+				"HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH"))
+			{
+				LOG_WAR << "SSL_CTX_set_cipher_list failed: "<< std::strerror(errno);
+			}
+
 		});
 		m_listener = std::make_shared<http_listener>(uri.to_uri(), *server_config);
 	}
