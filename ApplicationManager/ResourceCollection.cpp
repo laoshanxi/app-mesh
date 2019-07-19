@@ -128,7 +128,6 @@ web::json::value ResourceCollection::AsJson()
 	int idx = 0;
 	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const  HostNetInterface& pair)
 	{
-		web::json::value net = web::json::value::object();
 		web::json::value net_detail = web::json::value::object();
 		net_detail["name"] = web::json::value::string(pair.name);
 		net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
