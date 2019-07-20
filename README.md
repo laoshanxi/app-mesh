@@ -113,26 +113,32 @@ $ appc resource
         "cpu_processors" : 4,
         "cpu_sockets" : 1,
         "host_name" : "DESKTOP-JMLV.localdomain",
-        "mem_applications" : 10457088,
-        "mem_freeSwap_bytes" : 0,
-        "mem_free_bytes" : 12684464128,
-        "mem_totalSwap_bytes" : 0,
-        "mem_total_bytes" : 17117429760,
+        "mem_applications" : 10776576,
+        "mem_freeSwap_bytes" : 18446743661357039616,
+        "mem_free_bytes" : 21730828288,
+        "mem_totalSwap_bytes" : 3307175280640,
+        "mem_total_bytes" : 25665413120,
         "net" :
         [
                 {
-                        "eth0" :
-                        {
-                                "address" : "fe80::60a8:40fb:4169:98f6",
-                                "ipv4" : false
-                        }
+                        "address" : "192.168.2.99",
+                        "ipv4" : true,
+                        "name" : "eth0"
                 },
                 {
-                        "eth1" :
-                        {
-                                "address" : "fe80::8179:f2dc:d972:6ac4",
-                                "ipv4" : false
-                        }
+                        "address" : "fe80::60a8:40fb:4169:98f6",
+                        "ipv4" : false,
+                        "name" : "eth0"
+                },
+                {
+                        "address" : "169.254.106.196",
+                        "ipv4" : true,
+                        "name" : "eth1"
+                },
+                {
+                        "address" : "fe80::8179:f2dc:d972:6ac4",
+                        "ipv4" : false,
+                        "name" : "eth1"
                 }
         ]
 }
