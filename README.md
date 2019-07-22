@@ -49,8 +49,8 @@ DELETE| /app/$app-name | Unregister an application
 ## How to install
 **CentOS**:
 ```
-wget https://github.com/laoshanxi/app-manager/releases/download/v1.0/appmanager-1.0-1.x86_64.rpm
-sudo yum install ./appmanager-1.0-1.x86_64.rpm -y
+wget https://github.com/laoshanxi/app-manager/releases/download/v1.1/appmanager-1.1-1.x86_64.rpm
+sudo yum install ./appmanager-1.1-1.x86_64.rpm -y
 ```
 If you directly run command line from installation console, there will have issue on dependency libraries, you need source /opt/appmanager/script/app.bashrc to get the environment. for the new console will be OK, the source operation was automaticlly add to /etc/bashrc
 ```
