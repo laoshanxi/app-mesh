@@ -273,8 +273,8 @@ void RestHandler::handle_post(http_request message)
 		{
 			if (message.headers().has("username") && message.headers().has("password"))
 			{
-				auto uname = GET_STD_STRING(message.headers().find("username")->second);
-				auto passwd = GET_STD_STRING(message.headers().find("password")->second);
+				auto uname = Utility::decode64(GET_STD_STRING(message.headers().find("username")->second));
+				auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find("password")->second));
 				auto token = createToken(uname, passwd);
 
 				web::json::value result = web::json::value::object();

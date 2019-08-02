@@ -619,8 +619,8 @@ void ArgumentParser::addAuthenToken(http_request & request)
 		http_request requestLogin(web::http::methods::POST);
 		uri_builder builder(GET_STRING_T("/authenticate"));
 		requestLogin.set_request_uri(builder.to_uri());
-		requestLogin.headers().add("username", JWT_ADMIN_NAME);
-		requestLogin.headers().add("password", JWT_ADMIN_KEY);
+		requestLogin.headers().add("username", Utility::encode64(JWT_ADMIN_NAME);
+		requestLogin.headers().add("password", Utility::encode64(JWT_ADMIN_KEY));
 		http_response response = client.request(requestLogin).get();
 		if (response.status_code() != status_codes::OK)
 		{
