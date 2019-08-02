@@ -34,6 +34,8 @@ make
 
 Method | URI | Desc
 ---|---|---
+POST| /login | JWT authenticate login
+POST| /auth/$uname | JWT token authenticate
 GET | /app/$app-name | Get an application infomation
 GET | /app/$app-name/testrun?timeout=5 | Test run an application
 GET | /app/$app-name/testrun/output?process_uuid=uuidabc | Get the stdout and stderr for the test run
@@ -43,7 +45,6 @@ GET | /app-manager/config | Get all the configuration
 PUT | /app/$app-name | Register a new application
 POST| /app/$app-name?action=start | Start an application
 POST| /app/$app-name?action=stop | Stop an application
-POST| /authenticate | JWT authenticate
 DELETE| /app/$app-name | Unregister an application
 
 ## How to install

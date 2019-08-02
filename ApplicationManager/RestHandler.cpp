@@ -269,7 +269,24 @@ void RestHandler::handle_post(http_request message)
 				message.reply(status_codes::ServiceUnavailable, "Require action query flag");
 			}
 		}
-		else if (path == "/authenticate")
+		else if (Utility::startWith(path, "/auth/"))
+		{
+			auto userName = path.substr(strlen("/auth/"), path.length() - strlen("/auth/"));
+			if (userName == "admin")
+			{
+				verifyAdminToken(message, getToken(message));
+			}
+			else if (userName == "user")
+			{
+				verifyUserToken(message, getToken(message));
+			}
+			else
+			{
+				message.reply(status_codes::Unauthorized, "No such user");
+			}
+			message.reply(status_codes::OK, "Success");
+		}
+		else if (path == "/login")
 		{
 			if (message.headers().has("username") && message.headers().has("password"))
 			{
@@ -414,8 +431,8 @@ bool RestHandler::verifyToken(const http_request& message, const std::string& to
 			.with_issuer(JWT_ISSUER)
 			.with_claim("name", std::string(user));
 		verifier.verify(decoded_token);
+		LOG_DBG << fname << "Authentication success for Remote: " << message.remote_address();
 	}
-	LOG_DBG << fname << "Authentication success for Remote: " << message.remote_address();
 	return true;
 }
 

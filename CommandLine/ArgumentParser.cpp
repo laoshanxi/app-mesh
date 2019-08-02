@@ -617,7 +617,7 @@ void ArgumentParser::addAuthenToken(http_request & request)
 		config.set_validate_certificates(false);
 		http_client client(restPath, config);
 		http_request requestLogin(web::http::methods::POST);
-		uri_builder builder(GET_STRING_T("/authenticate"));
+		uri_builder builder(GET_STRING_T("/login"));
 		requestLogin.set_request_uri(builder.to_uri());
 		requestLogin.headers().add("username", Utility::encode64(JWT_ADMIN_NAME));
 		requestLogin.headers().add("password", Utility::encode64(JWT_ADMIN_KEY));
