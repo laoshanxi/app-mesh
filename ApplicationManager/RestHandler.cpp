@@ -275,16 +275,17 @@ void RestHandler::handle_post(http_request message)
 			if (userName == "admin")
 			{
 				verifyAdminToken(message, getToken(message));
+				message.reply(status_codes::OK, "Success");
 			}
 			else if (userName == "user")
 			{
 				verifyUserToken(message, getToken(message));
+				message.reply(status_codes::OK, "Success");
 			}
 			else
 			{
 				message.reply(status_codes::Unauthorized, "No such user");
 			}
-			message.reply(status_codes::OK, "Success");
 		}
 		else if (path == "/login")
 		{
