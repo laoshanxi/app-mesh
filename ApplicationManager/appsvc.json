@@ -34,7 +34,7 @@
       }
     },
     {
-      "command_line": "ping www.baidu.com",
+      "command_line": "/bin/sleep 60",
       "name": "ping",
       "run_as": "root",
       "working_dir": "/tmp"
