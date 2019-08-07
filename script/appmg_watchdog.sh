@@ -29,12 +29,11 @@ while true ; do
 	1)	# all ok
 		sleep 2
 		;;
-	*)	log "Removed double Application Manager: $(date)"
-		# Only kill the process that was not started by this script
+	*)	# Only kill the process that was not started by this script
 		for i in $(pidof -s /opt/appmanager/appsvc | awk '{print $1}')
 		  do
 			if [ $(pstree -Ap $MYID | grep $i | wc -w) -eq 0 ] ; then
-			  echo "Killed $i"
+			  log "Removed double Application Manager $i: $(date)"
 			  kill -9 $i
 			fi
 		done
