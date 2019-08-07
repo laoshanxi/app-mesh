@@ -33,8 +33,7 @@ while true ; do
 		# Only kill the process that was not started by this script
 		for i in $(pidof -s /opt/appmanager/appsvc | awk '{print $1}')
 		  do
-		    echo $i
-			if (( $(pstree -Ap $MYID | grep $i | wc -w) == 0 )); then
+			if [ $(pstree -Ap $MYID | grep $i | wc -w) -eq 0 ] ; then
 			  echo "Killed $i"
 			  kill -9 $i
 			fi
