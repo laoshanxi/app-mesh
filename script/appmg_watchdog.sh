@@ -19,7 +19,7 @@ while true ; do
 			nohup /opt/appmanager/appsvc >/dev/null 2>&1 &
 			log "Starting Application Manager:     $(date)"
 			echo "Run one of bellow commands before use appc:"
-			echo '  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64'
+			echo "  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64"
 			echo "  source /opt/appmanager/script/app.bashrc"
 		else
 			log "Double check Application Manager is alive: $(date)"
