@@ -51,10 +51,10 @@ build_dir:
 	
 deb:
 	rm -f *.deb
-	fpm -s dir -t deb -v ${VERSION} -n ${PACKAGE_NAME} -d sysvinit-tools --vendor ${VENDER} --description ${VENDER} --post-install ${TMP_DIR}/script/install.sh --before-remove ${TMP_DIR}/script/pre_uninstall.sh --after-remove ${TMP_DIR}/script/uninstall.sh -C ${RELEASE_DIR}
+	fpm -s dir -t deb -v ${VERSION} -n ${PACKAGE_NAME} -d 'sysvinit-tools,psmisc' --vendor ${VENDER} --description ${VENDER} --post-install ${TMP_DIR}/script/install.sh --before-remove ${TMP_DIR}/script/pre_uninstall.sh --after-remove ${TMP_DIR}/script/uninstall.sh -C ${RELEASE_DIR}
 rpm:
 	rm -f *.rpm
-	fpm -s dir -t rpm -v ${VERSION} -n ${PACKAGE_NAME} -d sysvinit-tools --vendor ${VENDER} --description ${VENDER} --post-install ${TMP_DIR}/script/install.sh --before-remove ${TMP_DIR}/script/pre_uninstall.sh --after-remove ${TMP_DIR}/script/uninstall.sh -C ${RELEASE_DIR}
+	fpm -s dir -t rpm -v ${VERSION} -n ${PACKAGE_NAME} -d 'sysvinit-tools,psmisc' --vendor ${VENDER} --description ${VENDER} --post-install ${TMP_DIR}/script/install.sh --before-remove ${TMP_DIR}/script/pre_uninstall.sh --after-remove ${TMP_DIR}/script/uninstall.sh -C ${RELEASE_DIR}
 cppcheck:
 	cppcheck --enable=all --quiet --std=c++11 --platform=native .
 install:
