@@ -2,7 +2,7 @@
 apppath=/opt/appmanager
 
 if [ -f "/etc/init.d/appsvc" ];then
-	service appsvc stop
+	systemctl stop appsvc
 	systemctl disable appsvc
 fi
 
