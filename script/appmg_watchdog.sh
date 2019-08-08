@@ -1,12 +1,13 @@
 #! /bin/bash
 
-# give some time while system starting up.
+# give short time while system starting up.
 sleep 1
 
 log(){
 	logger "[`date`]""$1"
 	echo $1
 }
+
 cd /opt/appmanager/
 MYID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
@@ -14,7 +15,7 @@ while true ; do
 	case "$(pidof /opt/appmanager/appsvc | wc -w)" in
 	
 	0)	sleep 0.1
-		result=`pidof -s /opt/appmanager/appsvc`
+		result=$(pidof -s /opt/appmanager/appsvc)
 		if [ -z "$result" ]; then
 			nohup /opt/appmanager/appsvc >/dev/null 2>&1 &
 			log "Starting Application Manager:     $(date)"
@@ -33,7 +34,7 @@ while true ; do
 		for i in $(pidof -s /opt/appmanager/appsvc | awk '{print $1}')
 		  do
 			if [ $(pstree -Ap $MYID | grep $i | wc -w) -eq 0 ] ; then
-			  log "Removed double Application Manager $i: $(date)"
+			  log "Killed duplicate Application Manager $i: $(date)"
 			  kill -9 $i
 			fi
 		done
