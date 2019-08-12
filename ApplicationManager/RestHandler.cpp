@@ -42,7 +42,10 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 			boost::system::error_code ec;
 
 			ctx.set_options(boost::asio::ssl::context::default_workarounds |
-				boost::asio::ssl::context::no_sslv2, ec);
+				boost::asio::ssl::context::no_sslv2 |
+				boost::asio::ssl::context::no_sslv3 |
+				boost::asio::ssl::context::single_dh_use,
+				ec);
 			LOG_INF << "lambda::set_options " << ec.value() << " " << ec.message();
 
 			ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
