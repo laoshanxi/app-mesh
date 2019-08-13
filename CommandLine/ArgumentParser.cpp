@@ -477,7 +477,7 @@ void ArgumentParser::processTest()
 			RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
 		}
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
-		std::this_thread::sleep_for(std::chrono::seconds(1));
+		std::this_thread::sleep_for(std::chrono::microseconds(500));
 	}
 }
 
