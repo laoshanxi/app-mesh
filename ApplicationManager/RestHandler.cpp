@@ -162,6 +162,7 @@ void RestHandler::handle_get(http_request message)
 					// set max timeout to 60s
 					if (requestTimeout > 60 || requestTimeout == 0) requestTimeout = 60;
 					if (requestTimeout < -60) requestTimeout = -60;
+					timeout = requestTimeout;
 					LOG_DBG << fname << "Use timeout :" << timeout;
 					
 				}
