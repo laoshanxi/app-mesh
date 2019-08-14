@@ -165,47 +165,62 @@ void Application::start()
 	}
 }
 
-std::string Application::testRun(int timeoutSeconds)
+std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::string> envMap)
 {
 	const static char fname[] = "Application::testRun() ";
 	LOG_DBG << fname << " Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_testProcess != nullptr && m_testProcess->running())
+	std::shared_ptr<MonitoredProcess> waitProcessWithoutLock;
+	std::string processUUID;
 	{
-		m_testProcess->killgroup();
-	}
-	m_testProcess.reset(new MonitoredProcess());
-
-	if (this->spawnProcess(m_testProcess) > 0)
-	{
-		if (timeoutSeconds > 0)
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		if (m_testProcess != nullptr && m_testProcess->running())
 		{
-			m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
+			m_testProcess->killgroup();
 		}
-		else
+		m_testProcess.reset(new MonitoredProcess());
+		processUUID = m_testProcess->getuuid();
+		auto oriEnvMap = m_envMap;
+		std::for_each(envMap.begin(), envMap.end(), [this](const std::pair<std::string, std::string>& pair)
 		{
-			ACE_Time_Value tv;
-			tv.sec(-timeoutSeconds);
-			if (m_testProcess->wait(tv) > 0)
+			m_envMap[pair.first] = pair.second;
+		});
+		if (this->spawnProcess(m_testProcess) > 0)
+		{
+			m_envMap = oriEnvMap;	// restore env map
+			if (timeoutSeconds > 0)
 			{
-				// Test process exit smoothly
-				LOG_INF << fname << "Application exited " << m_name;
+				m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
 			}
 			else
 			{
-				// Test process timeout, kill
-				m_testProcess->killgroup();
-				LOG_INF << fname << "Application killed by timeout " << m_name;
+				// Wait with out lock
+				waitProcessWithoutLock = m_testProcess;
 			}
 		}
-		
-		return m_testProcess->getuuid();
+		else
+		{
+			m_envMap = oriEnvMap;	// restore env map
+			throw std::invalid_argument("Start process failed");
+		}
 	}
-	else
+	if (waitProcessWithoutLock != nullptr)
 	{
-		throw std::invalid_argument("Start process failed");
+		ACE_Time_Value tv;
+		tv.sec(-timeoutSeconds);
+		if (waitProcessWithoutLock->wait(tv) > 0)
+		{
+			// Test process exit smoothly
+			LOG_INF << fname << "Application exited " << m_name;
+		}
+		else
+		{
+			// Test process timeout, kill
+			waitProcessWithoutLock->killgroup();
+			LOG_INF << fname << "Application killed by timeout " << m_name;
+		}
 	}
+	return processUUID;
 }
 
 std::string Application::getTestOutput(const std::string& processUuid)

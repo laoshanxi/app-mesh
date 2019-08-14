@@ -155,11 +155,11 @@ void RestHandler::handle_get(http_request message)
 			{
 				auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 				int timeout = 5; // default use 5 seconds
-				const int maxTimeout = 100; // set max timeout to 100s
 				if (querymap.find(U("timeout")) != querymap.end())
 				{
 					// Limit range in [-60 ~ 60]
 					auto requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
+					// set max timeout to 60s
 					if (requestTimeout > 60 || requestTimeout == 0) requestTimeout = 60;
 					if (requestTimeout < -60) requestTimeout = -60;
 					LOG_DBG << fname << "Use timeout :" << timeout;
@@ -169,7 +169,19 @@ void RestHandler::handle_get(http_request message)
 				{
 					LOG_DBG << fname << "Use default timeout :" << timeout;
 				}
-				message.reply(status_codes::OK, Configuration::instance()->getApp(app)->testRun(timeout));
+				// Parse env map
+				std::map<std::string, std::string> envMap;
+				auto jsonApp = message.extract_json(true).get();
+				if (!jsonApp.is_null() && HAS_JSON_FIELD(jsonApp.as_object(), "env"))
+				{
+					auto jobj = jsonApp.as_object();
+					auto env = jobj.at(GET_STRING_T("env")).as_object();
+					for (auto it = env.begin(); it != env.end(); it++)
+					{
+						envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
+					}
+				}
+				message.reply(status_codes::OK, Configuration::instance()->getApp(app)->testRun(timeout, envMap));
 			}
 			else
 			{

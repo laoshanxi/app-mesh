@@ -184,7 +184,7 @@ void ArgumentParser::processReg(const char* appName)
 		}
 	}
 	web::json::value jsobObj;
-	jsobObj["name"] = appName == nullptr ? web::json::value::string(m_commandLineVariables["name"].as<std::string>()) : web::json::value::string(appName);
+	jsobObj["name"] = (appName == nullptr ? web::json::value::string(m_commandLineVariables["name"].as<std::string>()) : web::json::value::string(appName));
 	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
@@ -435,6 +435,7 @@ void ArgumentParser::processTest()
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "test run application by name.")
 		("timeout,t", po::value<int>()->default_value(60), "timeout seconds for the test run (default 60).")
+		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		;
 
 	moveForwardCommandLineVariables(desc);
@@ -455,9 +456,27 @@ void ArgumentParser::processTest()
 		query["timeout"] = std::to_string(m_commandLineVariables["timeout"].as<int>());
 	}
 	auto appName = m_commandLineVariables["name"].as<std::string>();
+	web::json::value jsobObj;
+	if (m_commandLineVariables.count("env"))
+	{
+		std::vector<std::string> envs = m_commandLineVariables["env"].as<std::vector<std::string>>();
+		if (envs.size())
+		{
+			web::json::value objEnvs = web::json::value::object();
+			std::for_each(envs.begin(), envs.end(), [&objEnvs](std::string env)
+			{
+				std::vector<std::string> envVec = Utility::splitString(env, "=");
+				if (envVec.size() == 2)
+				{
+					objEnvs[GET_STRING_T(envVec.at(0))] = web::json::value::string(GET_STRING_T(envVec.at(1)));
+				}
+			});
+			jsobObj["env"] = objEnvs;
+		}
+	}
 	// /app/testapp/testrun?timeout=5
 	std::string restPath = std::string("/app/").append(appName).append("/testrun");
-	auto response = requestHttp(methods::GET, restPath, query);
+	auto response = requestHttp(methods::GET, restPath, query, &jsobObj);
 	RESPONSE_CHECK_WITH_RETURN;
 
 	auto process_uuid = GET_STD_STRING(response.extract_utf8string(true).get());
