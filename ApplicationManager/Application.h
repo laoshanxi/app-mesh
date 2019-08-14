@@ -41,7 +41,7 @@ public:
 	
 	virtual void stop();
 	virtual void start();
-	std::string testRun(size_t timeoutSeconds);
+	std::string testRun(int timeoutSeconds);
 	std::string getTestOutput(const std::string& processUuid);
 
 	virtual web::json::value AsJson(bool returnRuntimeInfo);

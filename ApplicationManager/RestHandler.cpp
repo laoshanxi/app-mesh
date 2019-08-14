@@ -158,10 +158,12 @@ void RestHandler::handle_get(http_request message)
 				const int maxTimeout = 100; // set max timeout to 100s
 				if (querymap.find(U("timeout")) != querymap.end())
 				{
-					// max than 1 and less than 100
-					auto requestTimeout = std::max(std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second)), 1);
-					timeout = std::min(requestTimeout, maxTimeout);
+					// Limit range in [-60 ~ 60]
+					auto requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
+					if (requestTimeout > 60 || requestTimeout == 0) requestTimeout = 60;
+					if (requestTimeout < -60) requestTimeout = -60;
 					LOG_DBG << fname << "Use timeout :" << timeout;
+					
 				}
 				else
 				{

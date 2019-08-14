@@ -165,7 +165,7 @@ void Application::start()
 	}
 }
 
-std::string Application::testRun(size_t timeoutSeconds)
+std::string Application::testRun(int timeoutSeconds)
 {
 	const static char fname[] = "Application::testRun() ";
 	LOG_DBG << fname << " Entered.";
@@ -179,7 +179,27 @@ std::string Application::testRun(size_t timeoutSeconds)
 
 	if (this->spawnProcess(m_testProcess) > 0)
 	{
-		m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
+		if (timeoutSeconds > 0)
+		{
+			m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
+		}
+		else
+		{
+			ACE_Time_Value tv;
+			tv.sec(-timeoutSeconds);
+			if (m_testProcess->wait(tv) > 0)
+			{
+				// Test process exit smoothly
+				LOG_INF << fname << "Application exited " << m_name;
+			}
+			else
+			{
+				// Test process timeout, kill
+				m_testProcess->killgroup();
+				LOG_INF << fname << "Application killed by timeout " << m_name;
+			}
+		}
+		
 		return m_testProcess->getuuid();
 	}
 	else
