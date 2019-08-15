@@ -37,8 +37,8 @@ Method | URI | Body | Desc
 POST| /login | | JWT authenticate login
 POST| /auth/$uname | | JWT token authenticate
 GET | /app/$app-name | | Get an application infomation
-GET | /app/$app-name/run?timeout=5 | Optional: <br> <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Test run an application (timeout < 0 means wait in REST server side for -timeout seconds to response)
-GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the test run
+GET | /app/$app-name/run?timeout=5 | Optional: <br> <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application (timeout < 0 means wait in REST server side for -timeout seconds to response)
+GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
 GET | /app-manager/config | | Get all the configuration
@@ -277,7 +277,7 @@ $ appc start -n ping
 $ appc stop -n ping
 ```
 
-## Test run an application and get stdout
+## Run remote application and get stdout
 ``` sh
 $ appc run -n ping -t 5
 PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
