@@ -37,7 +37,7 @@ Method | URI | Body | Desc
 POST| /login | | JWT authenticate login
 POST| /auth/$uname | | JWT token authenticate
 GET | /app/$app-name | | Get an application infomation
-GET | /app/$app-name/run?timeout=5 | optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Test run an application (timeout < 0 means wait in REST server side for -timeout seconds to response)
+GET | /app/$app-name/run?timeout=5 | Optional: <br> <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Test run an application (timeout < 0 means wait in REST server side for -timeout seconds to response)
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the test run
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
