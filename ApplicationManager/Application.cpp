@@ -187,7 +187,7 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 		});
 		if (this->spawnProcess(m_testProcess) > 0)
 		{
-			m_envMap = oriEnvMap;	// restore env map
+			if (envMap.size()) m_envMap = oriEnvMap;	// restore env map
 			if (timeoutSeconds > 0)
 			{
 				m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
@@ -200,7 +200,7 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 		}
 		else
 		{
-			m_envMap = oriEnvMap;	// restore env map
+			if (envMap.size()) m_envMap = oriEnvMap;	// restore env map
 			throw std::invalid_argument("Start process failed");
 		}
 	}
