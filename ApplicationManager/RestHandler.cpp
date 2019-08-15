@@ -170,16 +170,19 @@ void RestHandler::handle_get(http_request message)
 				{
 					LOG_DBG << fname << "Use default timeout :" << timeout;
 				}
-				// Parse env map
+				// Parse env map  (optional)
 				std::map<std::string, std::string> envMap;
-				auto jsonApp = message.extract_json(true).get();
-				if (!jsonApp.is_null() && HAS_JSON_FIELD(jsonApp.as_object(), "env"))
+				auto body = message.extract_utf8string(true).get();
+				if (body.length())
 				{
-					auto jobj = jsonApp.as_object();
-					auto env = jobj.at(GET_STRING_T("env")).as_object();
-					for (auto it = env.begin(); it != env.end(); it++)
+					auto jsonEnv = web::json::value::parse(body).as_object();
+					if (HAS_JSON_FIELD(jsonEnv, "env"))
 					{
-						envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
+						auto env = jsonEnv.at(GET_STRING_T("env")).as_object();
+						for (auto it = env.begin(); it != env.end(); it++)
+						{
+							envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
+						}
 					}
 				}
 				message.reply(status_codes::OK, Configuration::instance()->getApp(app)->testRun(timeout, envMap));
