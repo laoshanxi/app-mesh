@@ -128,10 +128,10 @@ void RestHandler::handle_get(http_request message)
 			if (pathVec.size() >= 2) app = pathVec[1];
 			// /app/someapp
 			std::string getPath = std::string("/app/").append(app);
-			// /app/someapp/testrun
-			std::string testRunPath = getPath + "/testrun";
-			// /app/someapp/testrun/output
-			std::string testRunOutputPath = getPath + "/testrun/output";
+			// /app/someapp/run
+			std::string testRunPath = getPath + "/run";
+			// /app/someapp/run/output
+			std::string testRunOutputPath = getPath + "/run/output";
 			if (path == getPath)
 			{
 				message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
@@ -147,8 +147,8 @@ void RestHandler::handle_get(http_request message)
 				}
 				else
 				{
-					LOG_DBG << fname << "process_uuid is required for get testrun output";
-					throw std::invalid_argument("process_uuid is required for get testrun output");
+					LOG_DBG << fname << "process_uuid is required for get run output";
+					throw std::invalid_argument("process_uuid is required for get run output");
 				}
 			}
 			else if (path == testRunPath)

@@ -474,16 +474,16 @@ void ArgumentParser::processTest()
 			jsobObj["env"] = objEnvs;
 		}
 	}
-	// /app/testapp/testrun?timeout=5
-	std::string restPath = std::string("/app/").append(appName).append("/testrun");
+	// /app/testapp/run?timeout=5
+	std::string restPath = std::string("/app/").append(appName).append("/run");
 	auto response = requestHttp(methods::GET, restPath, query, &jsobObj);
 	RESPONSE_CHECK_WITH_RETURN;
 
 	auto process_uuid = GET_STD_STRING(response.extract_utf8string(true).get());
 	while (process_uuid.length())
 	{
-		// /app/testapp/testrun/output?process_uuid=ABDJDD-DJKSJDKF
-		restPath = std::string("/app/").append(appName).append("/testrun/output");
+		// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
+		restPath = std::string("/app/").append(appName).append("/run/output");
 		query.clear();
 		query["process_uuid"] = process_uuid;
 		response = requestHttp(methods::GET, restPath, query);
@@ -535,7 +535,7 @@ void ArgumentParser::processShell()
 
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
-	// 2. Call testrun and check output
+	// 2. Call run and check output
 	if (m_commandLineVariables.count("extra_time"))
 	{
 		const char* argv[] = { "appc" , "test", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-t",  
