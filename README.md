@@ -84,7 +84,7 @@ Commands:
   restart     Restart a application
   reg         Add a new application
   unreg       Remove an application
-  test        Test run an application and get output
+  run         Run an application and get output for one time
   sh          Use shell run a command and get output
 
 Run 'appc COMMAND --help' for more information on a command.
@@ -279,7 +279,7 @@ $ appc stop -n ping
 
 ## Test run an application and get stdout
 ``` sh
-$ appc test -n ping -t 5
+$ appc run -n ping -t 5
 PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 64 bytes from 220.181.112.244: icmp_seq=1 ttl=55 time=20.0 ms
 64 bytes from 220.181.112.244: icmp_seq=2 ttl=55 time=20.1 ms

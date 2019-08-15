@@ -89,7 +89,7 @@ void ArgumentParser::parse()
 		m_pasrsedOptions = tmpOpts;
 		processStartStop(true);
 	}
-	else if (cmd == "test")
+	else if (cmd == "run")
 	{
 		// GET /app/$app-name/output
 		processTest();
@@ -115,7 +115,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  restart     Restart a application" << std::endl;
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
-	std::cout << "  test        Test run an application and get output" << std::endl;
+	std::cout << "  run         Run application and get output" << std::endl;
 	std::cout << "  sh          Use shell run a command and get output" << std::endl;
 
 	std::cout << std::endl;
@@ -434,8 +434,8 @@ void ArgumentParser::processTest()
 	desc.add_options()
 		("help,h", "help message")
 		OPTION_HOST_NAME
-		("name,n", po::value<std::string>(), "test run application by name.")
-		("timeout,t", po::value<int>()->default_value(60), "timeout seconds for the test run (default 60).")
+		("name,n", po::value<std::string>(), "run application by name.")
+		("timeout,t", po::value<int>()->default_value(60), "timeout seconds for the remote app run (default 60).")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		;
 
@@ -539,14 +539,14 @@ void ArgumentParser::processShell()
 	// 2. Call run and check output
 	if (m_commandLineVariables.count("extra_time"))
 	{
-		const char* argv[] = { "appc" , "test", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-t",  
+		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-t",  
 			strdup(std::to_string(m_commandLineVariables["extra_time"].as<int>()).c_str()), "\0" };
 		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 		testParser.parse();
 	}
 	else
 	{
-		const char* argv[] = { "appc" , "test", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "\0" };
+		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "\0" };
 		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 		testParser.parse();
 	}
