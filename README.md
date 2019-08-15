@@ -35,7 +35,7 @@ make
 Method | URI | Body | Desc
 ---|---|---|---
 POST| /login |  echo -n "$uname/$passwd" | base64 <br> Headers:username,password | JWT authenticate login
-POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NjU4NzU1NjgsImlhdCI6MTU2NTg3MTk2OCwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.VZwsaI6QkFbcipkE0dG6yHS_UxbnhX0MWkutZWrrpKI" https://127.0.0.1:6060/auth/admin | JWT token authenticate
+POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/auth/admin | JWT token authenticate
 GET | /app/$app-name | | Get an application infomation
 GET | /app/$app-name/run?timeout=5 | Optional: <br> <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application (timeout < 0 means wait in REST server side for -timeout seconds to response)
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
