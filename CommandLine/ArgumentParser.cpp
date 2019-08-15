@@ -126,6 +126,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "Usage:  appc [COMMAND] [ARG...] [flags]" << std::endl;
 }
 
+// appName is null means this is a normal application (not a shell application)
 void ArgumentParser::processReg(const char* appName)
 {
 	po::options_description desc("Register a new application");

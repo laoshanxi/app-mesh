@@ -43,6 +43,7 @@ GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
 GET | /app-manager/config | | Get all the configuration
 PUT | /app/$app-name | {"command_line": "/bin/sleep 60", "name": "ping", "run_as": "root", "working_dir": "/tmp" } | Register a new application
+PUT | /app/sh | same with /app/$app-name | Register a shell application
 POST| /app/$app-name?action=start | | Start an application
 POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
