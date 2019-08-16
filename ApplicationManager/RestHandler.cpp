@@ -61,10 +61,11 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 			{
 				LOG_WAR << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
 			}
-			if (!SSL_CTX_set_cipher_list(ctx.native_handle(), 
-				"HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH"))
+			auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
+			// auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
+			if (!SSL_CTX_set_cipher_list(ctx.native_handle(), ciphers))
 			{
-				LOG_WAR << "SSL_CTX_set_cipher_list failed: "<< std::strerror(errno);
+				LOG_WAR << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
 			}
 
 		});
