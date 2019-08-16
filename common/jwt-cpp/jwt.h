@@ -98,8 +98,8 @@ namespace jwt {
 		std::shared_ptr<EVP_PKEY> load_public_key_from_string(const std::string& key, const std::string& password = "") {
 			std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
 			if(key.substr(0, 27) == "-----BEGIN CERTIFICATE-----") {
-				auto pkey = helper::extract_pubkey_from_cert(key, password);
-				if ((size_t)BIO_write(pubkey_bio.get(), pkey.data(), pkey.size()) != pkey.size())
+				auto epkey = helper::extract_pubkey_from_cert(key, password);
+				if ((size_t)BIO_write(pubkey_bio.get(), epkey.data(), epkey.size()) != epkey.size())
 					throw rsa_exception("failed to load public key: bio_write failed");
 			} else {
 				if ((size_t)BIO_write(pubkey_bio.get(), key.data(), key.size()) != key.size())
@@ -108,7 +108,7 @@ namespace jwt {
 			
 			std::shared_ptr<EVP_PKEY> pkey(PEM_read_bio_PUBKEY(pubkey_bio.get(), nullptr, nullptr, (void*)password.c_str()), EVP_PKEY_free);
 			if (!pkey)
-				throw rsa_exception("failed to load public key: PEM_read_bio_PUBKEY failed");
+				throw rsa_exception("failed to load public key: PEM_read_bio_PUBKEY failed:" + std::string(ERR_error_string(ERR_get_error(), NULL)));
 			return pkey;
 		}
 
@@ -280,8 +280,9 @@ namespace jwt {
 					throw signature_verification_exception("failed to verify signature: VerifyInit failed");
 				if (!EVP_VerifyUpdate(ctx.get(), data.data(), data.size()))
 					throw signature_verification_exception("failed to verify signature: VerifyUpdate failed");
-				if (!EVP_VerifyFinal(ctx.get(), (const unsigned char*)signature.data(), signature.size(), pkey.get()))
-					throw signature_verification_exception();
+				auto res = EVP_VerifyFinal(ctx.get(), (const unsigned char*)signature.data(), signature.size(), pkey.get());
+				if (res != 1)
+					throw signature_verification_exception("evp verify final failed: " + std::to_string(res) + " " + ERR_error_string(ERR_get_error(), NULL));
 			}
 			/**
 			 * Returns the algorithm name provided to the constructor
@@ -317,8 +318,8 @@ namespace jwt {
 				if (!public_key.empty()) {
 					std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
 					if(public_key.substr(0, 27) == "-----BEGIN CERTIFICATE-----") {
-						auto pkey = helper::extract_pubkey_from_cert(public_key, public_key_password);
-						if ((size_t)BIO_write(pubkey_bio.get(), pkey.data(), pkey.size()) != pkey.size())
+						auto epkey = helper::extract_pubkey_from_cert(public_key, public_key_password);
+						if ((size_t)BIO_write(pubkey_bio.get(), epkey.data(), epkey.size()) != epkey.size())
 							throw ecdsa_exception("failed to load public key: bio_write failed");
 					} else  {
 						if ((size_t)BIO_write(pubkey_bio.get(), public_key.data(), public_key.size()) != public_key.size())
@@ -327,7 +328,7 @@ namespace jwt {
 
 					pkey.reset(PEM_read_bio_EC_PUBKEY(pubkey_bio.get(), nullptr, nullptr, (void*)public_key_password.c_str()), EC_KEY_free);
 					if (!pkey)
-						throw ecdsa_exception("failed to load public key: PEM_read_bio_EC_PUBKEY failed");
+						throw ecdsa_exception("failed to load public key: PEM_read_bio_EC_PUBKEY failed:" + std::string(ERR_error_string(ERR_get_error(), NULL)));
 				}
 
 				if (!private_key.empty()) {
@@ -790,6 +791,16 @@ namespace jwt {
 		{}
 #endif
 
+		template<typename Iterator>
+		claim(Iterator start, Iterator end)
+			: val(picojson::array())
+		{
+			auto& arr = val.get<picojson::array>();
+			for(; start != end; start++) {
+				arr.push_back(picojson::value(*start));
+			}
+		}
+
 		/**
 		 * Get wrapped json object
 		 * \return Wrapped json object
@@ -1179,37 +1190,37 @@ namespace jwt {
 		 * Get token string, as passed to constructor
 		 * \return token as passed to constructor
 		 */
-		const std::string& get_token() const { return token; }
+		const std::string& get_token() const noexcept { return token; }
 		/**
 		 * Get header part as json string
 		 * \return header part after base64 decoding
 		 */
-		const std::string& get_header() const { return header; }
+		const std::string& get_header() const noexcept { return header; }
 		/**
 		 * Get payload part as json string
 		 * \return payload part after base64 decoding
 		 */
-		const std::string& get_payload() const { return payload; }
+		const std::string& get_payload() const noexcept { return payload; }
 		/**
 		 * Get signature part as json string
 		 * \return signature part after base64 decoding
 		 */
-		const std::string& get_signature() const { return signature; }
+		const std::string& get_signature() const noexcept { return signature; }
 		/**
 		 * Get header part as base64 string
 		 * \return header part before base64 decoding
 		 */
-		const std::string& get_header_base64() const { return header_base64; }
+		const std::string& get_header_base64() const noexcept { return header_base64; }
 		/**
 		 * Get payload part as base64 string
 		 * \return payload part before base64 decoding
 		 */
-		const std::string& get_payload_base64() const { return payload_base64; }
+		const std::string& get_payload_base64() const noexcept { return payload_base64; }
 		/**
 		 * Get signature part as base64 string
 		 * \return signature part before base64 decoding
 		 */
-		const std::string& get_signature_base64() const { return signature_base64; }
+		const std::string& get_signature_base64() const noexcept { return signature_base64; }
 
 	};
 
@@ -1318,12 +1329,11 @@ namespace jwt {
 		 * \return Final token as a string
 		 */
 		template<typename T>
-		std::string sign(const T& algo) {
-			this->set_algorithm(algo.name());
-
+		std::string sign(const T& algo) const {
 			picojson::object obj_header;
+			obj_header["alg"] = picojson::value(algo.name());
 			for (auto& e : header_claims) {
-				obj_header.insert({ e.first, e.second.to_json() });
+				obj_header[e.first] = e.second.to_json();
 			}
 			picojson::object obj_payload;
 			for (auto& e : payload_claims) {
