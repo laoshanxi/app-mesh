@@ -1,4 +1,5 @@
 #include <chrono>
+#include <boost/algorithm/string_regex.hpp>
 #include "RestHandler.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
@@ -82,6 +83,31 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	m_listener->support(methods::POST, std::bind(&RestHandler::handle_post, this, std::placeholders::_1));
 	m_listener->support(methods::DEL, std::bind(&RestHandler::handle_delete, this, std::placeholders::_1));
 
+	// http://127.0.0.1:6060/login
+	bindRest(web::http::methods::POST, "/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/auth/admin
+	bindRest(web::http::methods::POST, R"(/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/run?timeout=5
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app-manager/applications
+	bindRest(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app-manager/resources
+	bindRest(web::http::methods::GET, "/app-manager/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app-manager/config
+	bindRest(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetConfig, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name
+	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/sh
+	bindRest(web::http::methods::PUT, "/app/sh", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/appname?action=start
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiControlApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/appname
+	bindRest(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
+
 	this->open();
 
 	LOG_INF << fname << "Listening for requests at:" << uri.to_string();
@@ -104,296 +130,106 @@ void RestHandler::close()
 
 void RestHandler::handle_get(http_request message)
 {
-	const static char fname[] = "RestHandler::handle_get() ";
-	try
-	{
-		REST_INFO_PRINT;
-		verifyUserToken(message, getToken(message));
-		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	REST_INFO_PRINT;
+	verifyUserToken(message, getToken(message));
 
-		if (path == std::string("/app-manager/applications"))
-		{
-			message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true));
-		}
-		if (path == std::string("/app-manager/resources"))
-		{
-			message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
-		}
-		else if (path == "/app-manager/config")
-		{
-			message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(Configuration::instance()->AsJson(false).serialize())));
-		}
-		else if (Utility::startWith(path, "/app/"))
-		{
-			// Get app name from path
-			std::string app;
-			std::vector<std::string> pathVec = Utility::splitString(path, "/");
-			if (pathVec.size() >= 2) app = pathVec[1];
-			// /app/someapp
-			std::string getPath = std::string("/app/").append(app);
-			// /app/someapp/run
-			std::string testRunPath = getPath + "/run";
-			// /app/someapp/run/output
-			std::string testRunOutputPath = getPath + "/run/output";
-			if (path == getPath)
-			{
-				message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
-			}
-			else if (path == testRunOutputPath)
-			{
-				auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-				if (querymap.find(U("process_uuid")) != querymap.end())
-				{
-					auto uuid = GET_STD_STRING(querymap.find(U("process_uuid"))->second);
-					LOG_DBG << fname << "Use process uuid :" << uuid;
-					message.reply(status_codes::OK, Configuration::instance()->getApp(app)->getTestOutput(uuid));
-				}
-				else
-				{
-					LOG_DBG << fname << "process_uuid is required for get run output";
-					throw std::invalid_argument("process_uuid is required for get run output");
-				}
-			}
-			else if (path == testRunPath)
-			{
-				auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-				int timeout = 5; // default use 5 seconds
-				if (querymap.find(U("timeout")) != querymap.end())
-				{
-					// Limit range in [-60 ~ 60]
-					auto requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
-					// set max timeout to 60s
-					if (requestTimeout > 60 || requestTimeout == 0) requestTimeout = 60;
-					if (requestTimeout < -60) requestTimeout = -60;
-					timeout = requestTimeout;
-					LOG_DBG << fname << "Use timeout :" << timeout;
-					
-				}
-				else
-				{
-					LOG_DBG << fname << "Use default timeout :" << timeout;
-				}
-				// Parse env map  (optional)
-				std::map<std::string, std::string> envMap;
-				auto body = message.extract_utf8string(true).get();
-				if (body.length())
-				{
-					auto jsonEnv = web::json::value::parse(body).as_object();
-					if (HAS_JSON_FIELD(jsonEnv, "env"))
-					{
-						auto env = jsonEnv.at(GET_STRING_T("env")).as_object();
-						for (auto it = env.begin(); it != env.end(); it++)
-						{
-							envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
-						}
-					}
-				}
-				message.reply(status_codes::OK, Configuration::instance()->getApp(app)->testRun(timeout, envMap));
-			}
-			else
-			{
-				throw std::invalid_argument("No such path");
-			}
-		}
-		else
-		{
-			throw std::invalid_argument("No such path");
-		}
-	}
-	catch (const std::exception& e)
-	{
-		LOG_WAR << fname << e.what();
-		message.reply(web::http::status_codes::InternalError, e.what());
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "unknown exception";
-		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
-	}
+	handleRest(message, m_restGetFunctions);
 }
 
 void RestHandler::handle_put(http_request message)
 {
-	const static char fname[] = "RestHandler::handle_put() ";
-	try
-	{
-		REST_INFO_PRINT;
-		verifyAdminToken(message, getToken(message));
+	REST_INFO_PRINT;
+	verifyAdminToken(message, getToken(message));
 
-		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-		if (path == "/app/sh")
-		{
-			this->registerShellApp(message);
-		}
-		else if (Utility::startWith(path, "/app/"))
-		{
-			auto jsonApp = message.extract_json(true).get();
-			if (jsonApp.is_null())
-			{
-				throw std::invalid_argument("invalid json format");
-			}
-			auto app = Configuration::instance()->addApp(jsonApp.as_object());
-			message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
-		}
-		else
-		{
-			message.reply(status_codes::ServiceUnavailable, "No such path");
-		}
-	}
-	catch (const std::exception& e)
-	{
-		LOG_WAR << fname << e.what();
-		message.reply(web::http::status_codes::InternalError, e.what());
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "unknown exception";
-		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
-	}
-	return;
+	handleRest(message, m_restPutFunctions);
 }
 
 void RestHandler::handle_post(http_request message)
 {
-	const static char fname[] = "RestHandler::handle_post() ";
+	REST_INFO_PRINT;
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	try
+	// login and auth does not need check token here.
+	if (path != "/login" && !Utility::startWith(path, "/auth/"))
 	{
-		REST_INFO_PRINT;
-
-		auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-		auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-		if (Utility::startWith(path, "/app/"))
-		{
-			verifyAdminToken(message, getToken(message));
-
-			auto appName = path.substr(strlen("/app/"), path.length() - strlen("/app/"));
-
-			if (querymap.find(U("action")) != querymap.end())
-			{
-				auto action = GET_STD_STRING(querymap.find(U("action"))->second);
-				auto msg = action + " <" + appName + "> success.";
-				if (action == "start")
-				{
-					Configuration::instance()->startApp(appName);
-					message.reply(status_codes::OK, msg);
-				}
-				else if (action == "stop")
-				{
-					Configuration::instance()->stopApp(appName);
-					message.reply(status_codes::OK, msg);
-				}
-				else
-				{
-					message.reply(status_codes::ServiceUnavailable, "No such action query flag");
-				}
-			}
-			else
-			{
-				message.reply(status_codes::ServiceUnavailable, "Require action query flag");
-			}
-		}
-		else if (Utility::startWith(path, "/auth/"))
-		{
-			auto userName = path.substr(strlen("/auth/"), path.length() - strlen("/auth/"));
-			if (userName == "admin")
-			{
-				verifyAdminToken(message, getToken(message));
-				message.reply(status_codes::OK, "Success");
-			}
-			else if (userName == "user")
-			{
-				verifyUserToken(message, getToken(message));
-				message.reply(status_codes::OK, "Success");
-			}
-			else
-			{
-				message.reply(status_codes::Unauthorized, "No such user");
-			}
-		}
-		else if (path == "/login")
-		{
-			if (message.headers().has("username") && message.headers().has("password"))
-			{
-				auto uname = Utility::decode64(GET_STD_STRING(message.headers().find("username")->second));
-				auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find("password")->second));
-				auto token = createToken(uname, passwd);
-
-				web::json::value result = web::json::value::object();
-				web::json::value profile = web::json::value::object();
-				profile[GET_STRING_T("name")] = web::json::value::string(uname);
-				profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count());
-				result[GET_STRING_T("profile")] = profile;
-				result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
-				result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
-
-				if (verifyUserToken(message, token))
-				{
-					message.reply(status_codes::OK, result);
-					LOG_DBG << fname << "User <" << uname << "> login success";
-				}
-				else
-				{
-					message.reply(status_codes::Unauthorized, "Incorrect authentication info");
-				}
-			}
-			else
-			{
-				message.reply(status_codes::NetworkAuthenticationRequired, "username or password missing");
-			}
-		}
-		else
-		{
-			message.reply(status_codes::ServiceUnavailable, "No such path");
-		}
+		verifyAdminToken(message, getToken(message));
 	}
-	catch (const std::exception& e)
-	{
-		LOG_WAR << fname << e.what();
-		message.reply(web::http::status_codes::InternalError, e.what());
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "unknown exception";
-		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
-	}
+
+	handleRest(message, m_restPstFunctions);
 }
 
 void RestHandler::handle_delete(http_request message)
 {
-	const static char fname[] = "RestHandler::handle_delete() ";
+	REST_INFO_PRINT;
+	verifyAdminToken(message, getToken(message));
+
+	handleRest(message, m_restDelFunctions);
+}
+
+void RestHandler::handleRest(http_request& message, std::map<utility::string_t, std::function<void(http_request&)>>& restFunctions)
+{
+	static char fname[] = "RestHandler::handle_rest() ";
+
+	std::function<void(http_request&)> stdFunction;
+	auto path = GET_STD_STRING(message.relative_uri().path());
+	while (path.find("//") != std::string::npos) boost::algorithm::replace_all(path, "//", "/");
+
+	if (path == "/" || path.empty())
+	{
+		message.reply(status_codes::OK, "REST service");
+		return;
+	}
+
+	bool findRest = false;
+	for (const auto& kvp : restFunctions)
+	{
+		if (path == GET_STD_STRING(kvp.first) || boost::regex_match(path, boost::regex(GET_STD_STRING(kvp.first))))
+		{
+			findRest = true;
+			stdFunction = kvp.second;
+			break;
+		}
+	}
+	if (!findRest)
+	{
+		message.reply(status_codes::NotFound, "Path not found");
+		return;
+	}
 
 	try
 	{
-		REST_INFO_PRINT;
-
-		verifyAdminToken(message, getToken(message));
-		auto path = GET_STD_STRING(message.relative_uri().path());
-		
-		if (Utility::startWith(path, "/app/"))
-		{
-			auto appName = path.substr(strlen("/app/"), path.length() - strlen("/app/"));
-
-			Configuration::instance()->removeApp(appName);
-			auto msg = std::string("application <") + appName + "> removed.";
-			message.reply(status_codes::OK, msg);
-		}
-		else
-		{
-			message.reply(status_codes::ServiceUnavailable, "No such path");
-		}
+		LOG_DBG << fname << "rest " << path;
+		stdFunction(message);
 	}
 	catch (const std::exception& e)
 	{
-		LOG_WAR << fname << e.what();
-		message.reply(web::http::status_codes::InternalError, e.what());
+		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
+		message.reply(web::http::status_codes::BadRequest, e.what());
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << "unknown exception";
-		message.reply(web::http::status_codes::InternalError, U("unknown exception"));
+		LOG_WAR << fname << "rest " << path << " failed";
+		message.reply(web::http::status_codes::BadRequest, "unknow exception");
 	}
-	return;
+}
+
+void RestHandler::bindRest(web::http::method method, std::string path, std::function< void(http_request&)> func)
+{
+	static char fname[] = "RestHandler::bindRest()";
+
+	LOG_DBG << fname << "bind " << GET_STD_STRING(method).c_str() << " " << path;
+
+	// bind to map
+	if (method == web::http::methods::GET)
+		m_restGetFunctions[path] = func;
+	else if (method == web::http::methods::PUT)
+		m_restPutFunctions[path] = func;
+	else if (method == web::http::methods::POST)
+		m_restPstFunctions[path] = func;
+	else if (method == web::http::methods::DEL)
+		m_restDelFunctions[path] = func;
+	else
+		LOG_ERR << fname << GET_STD_STRING(method).c_str() << " not supported.";
 }
 
 void RestHandler::handle_error(pplx::task<void>& t)
@@ -466,7 +302,7 @@ std::string RestHandler::getToken(const http_request& message)
 	std::string token;
 	if (message.headers().has("Authorization"))
 	{
-		token = GET_STD_STRING(message.headers().find("Authorization")->second);
+		token = Utility::stdStringTrim(GET_STD_STRING(message.headers().find("Authorization")->second));
 		std::string bearerFlag = "Bearer ";
 		if (Utility::startWith(token, bearerFlag))
 		{
@@ -499,7 +335,7 @@ std::string RestHandler::createToken(const std::string uname, const std::string 
 	return std::move(token);
 }
 
-void RestHandler::registerShellApp(const http_request& message)
+void RestHandler::apiRegShellApp(const http_request& message)
 {
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
@@ -527,5 +363,200 @@ void RestHandler::registerShellApp(const http_request& message)
 	jobj[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(shellCommandLine));
 
 	auto app = Configuration::instance()->addApp(jobj);
+	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
+}
+
+void RestHandler::apiControlApp(const http_request & message)
+{
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	auto appName = path.substr(strlen("/app/"));
+
+	if (querymap.find(U("action")) != querymap.end())
+	{
+		auto action = GET_STD_STRING(querymap.find(U("action"))->second);
+		auto msg = action + " <" + appName + "> success.";
+		if (action == "start")
+		{
+			Configuration::instance()->startApp(appName);
+			message.reply(status_codes::OK, msg);
+		}
+		else if (action == "stop")
+		{
+			Configuration::instance()->stopApp(appName);
+			message.reply(status_codes::OK, msg);
+		}
+		else
+		{
+			message.reply(status_codes::ServiceUnavailable, "No such action query flag");
+		}
+	}
+	else
+	{
+		message.reply(status_codes::ServiceUnavailable, "Require action query flag");
+	}
+}
+
+void RestHandler::apiDeleteApp(const http_request & message)
+{
+	auto path = GET_STD_STRING(message.relative_uri().path());
+
+	std::string appName = path.substr(strlen("/app/"));
+	Configuration::instance()->removeApp(appName);
+	auto msg = std::string("application <") + appName + "> removed.";
+	message.reply(status_codes::OK, msg);
+}
+
+void RestHandler::apiLogin(const http_request& message)
+{
+	const static char fname[] = "RestHandler::apiLogin() ";
+
+	if (message.headers().has("username") && message.headers().has("password"))
+	{
+		auto uname = Utility::decode64(GET_STD_STRING(message.headers().find("username")->second));
+		auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find("password")->second));
+		auto token = createToken(uname, passwd);
+
+		web::json::value result = web::json::value::object();
+		web::json::value profile = web::json::value::object();
+		profile[GET_STRING_T("name")] = web::json::value::string(uname);
+		profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count());
+		result[GET_STRING_T("profile")] = profile;
+		result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
+		result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
+
+		if (verifyUserToken(message, token))
+		{
+			message.reply(status_codes::OK, result);
+			LOG_DBG << fname << "User <" << uname << "> login success";
+		}
+		else
+		{
+			message.reply(status_codes::Unauthorized, "Incorrect authentication info");
+		}
+	}
+	else
+	{
+		message.reply(status_codes::NetworkAuthenticationRequired, "username or password missing");
+	}
+}
+
+void RestHandler::apiAuth(const http_request& message)
+{
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto userName = path.substr(strlen("/auth/"));
+	if (userName == "admin")
+	{
+		verifyAdminToken(message, getToken(message));
+		message.reply(status_codes::OK, "Success");
+	}
+	else if (userName == "user")
+	{
+		verifyUserToken(message, getToken(message));
+		message.reply(status_codes::OK, "Success");
+	}
+	else
+	{
+		message.reply(status_codes::Unauthorized, "No such user");
+	}
+}
+
+void RestHandler::apiGetApp(const http_request& message)
+{
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	std::string app = path.substr(strlen("/app/"));
+	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
+}
+
+void RestHandler::apiRunApp(const http_request& message)
+{
+	const static char fname[] = "RestHandler::apiGetApp() ";
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+
+	// /app/$app-name/run?timeout=5
+	std::string app = path.substr(strlen("/app/"));
+	app = app.substr(0, app.find_first_of('/'));
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	int timeout = 5; // default use 5 seconds
+	if (querymap.find(U("timeout")) != querymap.end())
+	{
+		// Limit range in [-60 ~ 60]
+		auto requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
+		// set max timeout to 60s
+		if (requestTimeout > 60 || requestTimeout == 0) requestTimeout = 60;
+		if (requestTimeout < -60) requestTimeout = -60;
+		timeout = requestTimeout;
+		LOG_DBG << fname << "Use timeout :" << timeout;
+
+	}
+	else
+	{
+		LOG_DBG << fname << "Use default timeout :" << timeout;
+	}
+	// Parse env map  (optional)
+	std::map<std::string, std::string> envMap;
+	auto body = const_cast<http_request*>(&message)->extract_utf8string(true).get();
+	if (body.length() && body != "null")
+	{
+		auto jsonEnv = web::json::value::parse(body).as_object();
+		if (HAS_JSON_FIELD(jsonEnv, "env"))
+		{
+			auto env = jsonEnv.at(GET_STRING_T("env")).as_object();
+			for (auto it = env.begin(); it != env.end(); it++)
+			{
+				envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
+			}
+		}
+	}
+	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->testRun(timeout, envMap));
+}
+
+void RestHandler::apiRunOutput(const http_request& message)
+{
+	const static char fname[] = "RestHandler::apiGetApp() ";
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+
+	// /app/$app-name/run?timeout=5
+	std::string app = path.substr(strlen("/app/"));
+	app = app.substr(0, app.find_first_of('/'));
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	if (querymap.find(U("process_uuid")) != querymap.end())
+	{
+		auto uuid = GET_STD_STRING(querymap.find(U("process_uuid"))->second);
+		LOG_DBG << fname << "Use process uuid :" << uuid;
+		message.reply(status_codes::OK, Configuration::instance()->getApp(app)->getTestOutput(uuid));
+	}
+	else
+	{
+		LOG_DBG << fname << "process_uuid is required for get run output";
+		throw std::invalid_argument("process_uuid is required for get run output");
+	}
+}
+
+void RestHandler::apiGetApps(const http_request& message)
+{
+	message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true));
+}
+
+void RestHandler::apiGetResources(const http_request& message)
+{
+	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
+}
+
+void RestHandler::apiGetConfig(const http_request& message)
+{
+	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(Configuration::instance()->AsJson(false).serialize())));
+}
+
+void RestHandler::apiRegApp(const http_request& message)
+{
+	auto jsonApp = message.extract_json(true).get();
+	if (jsonApp.is_null())
+	{
+		throw std::invalid_argument("invalid json format");
+	}
+	auto app = Configuration::instance()->addApp(jsonApp.as_object());
 	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
 }
