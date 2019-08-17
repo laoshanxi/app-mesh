@@ -34,7 +34,7 @@ make
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /login | username=base64(uname),password=base64(passwd) | JWT authenticate login
+POST| /login | username=base64(uname) <br> password=base64(passwd) | JWT authenticate login
 POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/auth/admin | JWT token authenticate
 GET | /app/$app-name | | Get an application infomation
 GET | /app/$app-name/run?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application (timeout < 0 means wait in REST server side for -timeout seconds to response)
