@@ -72,6 +72,8 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 	}
 	app->m_runOnce = GET_JSON_BOOL_VALUE(jobj, "run_once");
 	if (app->m_runOnce) app->m_status = STOPPED;	// Just set to stopped for shell app
+
+	app->dump();
 }
 
 void Application::refreshPid()
