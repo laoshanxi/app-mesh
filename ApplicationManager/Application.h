@@ -49,9 +49,6 @@ public:
 
 	int spawnProcess(std::shared_ptr<Process> process);
 	bool isInDailyTimeRange();
-	// Run Once Flag
-	bool isRunOnce() { return m_runOnce; }
-	void setRunOnce() { m_runOnce = true; }
 
 	virtual bool avialable();
 	void destroy();
@@ -66,7 +63,6 @@ protected:
 	//the exit code of last instance
 	int m_return;
 	std::string m_posixTimeZone;
-	bool m_runOnce;
 	
 	std::shared_ptr<Process> m_process;
 	std::shared_ptr<MonitoredProcess> m_testProcess;

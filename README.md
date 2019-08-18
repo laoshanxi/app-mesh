@@ -177,7 +177,6 @@ $ appc config
                         },
                         "return" : 0,
                         "run_as" : "root",
-                        "run_once" : false,
                         "start_interval_seconds" : 30,
                         "start_interval_timeout" : 0,
                         "start_time" : "2018-01-02 01:05:16",
@@ -191,7 +190,6 @@ $ appc config
                         "pid" : 586,
                         "return" : 0,
                         "run_as" : "root",
-                        "run_once" : false,
                         "status" : 1,
                         "working_dir" : "/tmp"
                 }

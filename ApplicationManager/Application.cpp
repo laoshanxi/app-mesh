@@ -5,7 +5,7 @@
 #include "Configuration.h"
 
 Application::Application()
-	:m_status(ENABLED), m_return(0), m_runOnce(false), m_pid(-1), m_processIndex(0)
+	:m_status(ENABLED), m_return(0), m_pid(-1), m_processIndex(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -70,8 +70,6 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 		app->m_dailyLimit->m_startTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_startTime, app->m_posixTimeZone);
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
-	app->m_runOnce = GET_JSON_BOOL_VALUE(jobj, "run_once");
-	if (app->m_runOnce) app->m_status = STOPPED;	// Just set to stopped for shell app
 
 	app->dump();
 }
@@ -287,7 +285,6 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[GET_STRING_T("env")] = envs;
 	}
 	if (m_posixTimeZone.length()) result[GET_STRING_T("posix_timezone")] = web::json::value::string(m_posixTimeZone);
-	result[GET_STRING_T("run_once")] = web::json::value::boolean(m_runOnce);
 	return result;
 }
 
@@ -304,7 +301,6 @@ void Application::dump()
 	LOG_DBG << fname << "m_status:" << m_status;
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
-	LOG_DBG << fname << "m_runOnce:" << m_runOnce;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
