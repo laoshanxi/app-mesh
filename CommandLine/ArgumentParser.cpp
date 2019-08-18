@@ -497,6 +497,10 @@ void ArgumentParser::processTest()
 			RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
 		}
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
+
+		// timeout < 0 means do not need fetch again.
+		if (m_commandLineVariables["timeout"].as<int>() < 0) break;
+
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 }
