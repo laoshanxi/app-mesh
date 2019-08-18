@@ -21,7 +21,7 @@ public:
 		auto apps = Configuration::instance()->getApps();
 		for (const auto& app : apps)
 		{
-			app->invoke();
+			if (app->avialable()) app->invoke();
 		}
 	}
 };
