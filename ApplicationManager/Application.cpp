@@ -302,6 +302,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_status:" << m_status;
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
+	LOG_DBG << fname << "m_runOnce:" << m_runOnce;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
