@@ -337,6 +337,8 @@ std::string RestHandler::createToken(const std::string uname, const std::string 
 
 void RestHandler::apiRegShellApp(const http_request& message)
 {
+	const static char fname[] = "RestHandler::apiRegShellApp() ";
+
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
 	{
@@ -361,6 +363,7 @@ void RestHandler::apiRegShellApp(const http_request& message)
 	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command_line")));
 	shellCommandLine.append("'");
 	jobj[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(shellCommandLine));
+	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
 
 	auto app = Configuration::instance()->addApp(jobj);
 	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
