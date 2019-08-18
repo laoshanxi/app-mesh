@@ -259,7 +259,7 @@ void ArgumentParser::processReg(const char* appName)
 	else
 	{
 		// Shell app
-		restPath = std::string("/app/sh");
+		restPath = std::string("/app/sh/") + appName;
 	}
 	auto response = requestHttp(methods::PUT, restPath, jsobObj);
 	RESPONSE_CHECK_WITH_RETURN;

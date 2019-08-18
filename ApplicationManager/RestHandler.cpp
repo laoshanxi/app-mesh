@@ -101,8 +101,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetConfig, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name
 	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/sh
-	bindRest(web::http::methods::PUT, "/app/sh", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/sh/shell-app-id
+	bindRest(web::http::methods::PUT, "/app/sh/([^/\*]+))", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname?action=start
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiControlApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname
