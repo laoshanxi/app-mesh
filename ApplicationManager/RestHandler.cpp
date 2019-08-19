@@ -90,7 +90,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/app/app-name
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run?timeout=5
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/applications
