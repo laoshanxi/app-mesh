@@ -68,7 +68,8 @@ std::string MonitoredProcess::fecthPipeMessages()
 
 pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
 {
-	if (m_thread != nullptr)
+	// Only need wait when process already exit.
+	if (m_thread != nullptr && !this->running())
 	{
 		auto thread = m_thread;
 		m_thread = nullptr;
