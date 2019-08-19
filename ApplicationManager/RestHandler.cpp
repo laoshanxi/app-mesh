@@ -350,16 +350,6 @@ void RestHandler::apiRegShellApp(const http_request& message)
 	jobj[GET_STRING_T("status")] = web::json::value::number(0);
 	// /bin/sh -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine = "/bin/sh -c '";
-	if (HAS_JSON_FIELD(jobj, "env"))
-	{
-		auto env = jobj.at(GET_STRING_T("env")).as_object();
-		for (auto it = env.begin(); it != env.end(); it++)
-		{
-			std::string envCmd = std::string("export ") + GET_STD_STRING((*it).first) + "=" + GET_STD_STRING((*it).second.as_string()) + ";";
-			shellCommandLine.append(envCmd);
-		}
-	}
-	//ERASE_JSON_FIELD(jobj, "env");
 	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command_line")));
 	shellCommandLine.append("'");
 	jobj[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(shellCommandLine));
