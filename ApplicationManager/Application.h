@@ -42,7 +42,7 @@ public:
 	virtual void stop();
 	virtual void start();
 	std::string testRun(int timeoutSeconds, std::map<std::string, std::string> envMap);
-	std::string getTestOutput(const std::string& processUuid);
+	std::string getTestOutput(const std::string& processUuid, int& exitCode);
 
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();

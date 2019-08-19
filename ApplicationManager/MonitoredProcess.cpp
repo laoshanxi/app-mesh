@@ -66,6 +66,17 @@ std::string MonitoredProcess::fecthPipeMessages()
 	return std::move(stdoutMsg.str());
 }
 
+pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
+{
+	if (m_thread != nullptr)
+	{
+		auto thread = m_thread;
+		m_thread = nullptr;
+		thread->join();
+	}
+	return ACE_Process::wait(tv, status);
+}
+
 void MonitoredProcess::monitorThread()
 {
 	const static char fname[] = "MonitoredProcess::monitorThread() ";

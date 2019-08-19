@@ -211,7 +211,7 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 		if (waitProcessWithoutLock->wait(tv) > 0)
 		{
 			// Test process exit smoothly
-			LOG_INF << fname << "Application exited " << m_name;
+			LOG_INF << fname << "Application exited " << m_name << " with code:" << waitProcessWithoutLock->return_value();
 		}
 		else
 		{
@@ -223,7 +223,7 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 	return processUUID;
 }
 
-std::string Application::getTestOutput(const std::string& processUuid)
+std::string Application::getTestOutput(const std::string& processUuid, int& exitCode)
 {
 	const static char fname[] = "Application::getTestOutput() ";
 
@@ -242,6 +242,7 @@ std::string Application::getTestOutput(const std::string& processUuid)
 		{
 			LOG_WAR << fname << "Application exited " << m_name;
 		}
+		exitCode = m_testProcess->return_value();
 		return std::move(output);
 	}
 	else

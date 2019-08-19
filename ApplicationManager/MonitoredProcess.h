@@ -21,6 +21,9 @@ public:
 
 	std::string fecthPipeMessages();
 
+	// Wait monitor thread
+	virtual pid_t wait(const ACE_Time_Value& tv, ACE_exitcode* status = 0);
+
 private:
 	void monitorThread();
 

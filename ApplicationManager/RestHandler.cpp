@@ -518,8 +518,15 @@ void RestHandler::apiRunOutput(const http_request& message)
 	if (querymap.find(U("process_uuid")) != querymap.end())
 	{
 		auto uuid = GET_STD_STRING(querymap.find(U("process_uuid"))->second);
-		LOG_DBG << fname << "Use process uuid :" << uuid;
-		message.reply(status_codes::OK, Configuration::instance()->getApp(app)->getTestOutput(uuid));
+		
+		web::http::http_response resp(status_codes::OK);
+		int exitCode = 0;
+		std::string body = Configuration::instance()->getApp(app)->getTestOutput(uuid, exitCode);
+		resp.set_body(body);
+		resp.headers().add("exit_code", exitCode);
+
+		LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
+		message.reply(resp);
 	}
 	else
 	{
