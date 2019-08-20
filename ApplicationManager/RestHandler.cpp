@@ -552,7 +552,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 	int exitCode = 0;
 	auto uuid = Configuration::instance()->getApp(app)->testRun(timeout, envMap);
 	web::http::http_response resp(status_codes::OK);
-	std::string body = Configuration::instance()->getApp(app)->getTestOutput(uuid, exitCode);
+	body = Configuration::instance()->getApp(app)->getTestOutput(uuid, exitCode);
 	resp.set_body(body);
 	resp.headers().add("exit_code", exitCode);
 
