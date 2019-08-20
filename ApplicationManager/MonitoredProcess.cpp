@@ -54,6 +54,8 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 
 std::string MonitoredProcess::fecthPipeMessages()
 {
+	const static char fname[] = "MonitoredProcess::fecthPipeMessages() ";
+
 	std::stringstream stdoutMsg;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
@@ -62,6 +64,7 @@ std::string MonitoredProcess::fecthPipeMessages()
 			stdoutMsg << m_msgQueue.front();
 			m_msgQueue.pop();
 		}
+		LOG_DBG << fname;
 	}
 	return std::move(stdoutMsg.str());
 }
@@ -104,5 +107,6 @@ void MonitoredProcess::monitorThread()
 		// Do not store too much in memory
 		if (m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
+	LOG_DBG << fname << "monitor thread exit";
 	m_monitorComplete = true;
 }
