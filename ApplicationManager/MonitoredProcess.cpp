@@ -3,7 +3,7 @@
 #include "../common/Utility.h"
 
 MonitoredProcess::MonitoredProcess()
-	:m_readPipeFile(0)
+	:m_readPipeFile(0), m_monitorComplete(false)
 {
 }
 
@@ -78,10 +78,15 @@ pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
 	return ACE_Process::wait(tv, status);
 }
 
+bool MonitoredProcess::monitorComplete() const
+{
+	return m_monitorComplete;
+}
+
 void MonitoredProcess::monitorThread()
 {
 	const static char fname[] = "MonitoredProcess::monitorThread() ";
-
+	m_monitorComplete = false;
 	while (true)
 	{
 		char buffer[1024] = { 0 };
@@ -99,4 +104,5 @@ void MonitoredProcess::monitorThread()
 		// Do not store too much in memory
 		if (m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
+	m_monitorComplete = true;
 }

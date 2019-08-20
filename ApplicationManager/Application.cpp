@@ -230,7 +230,7 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 	if (m_testProcess != nullptr && m_testProcess->getuuid() == processUuid)
 	{
 		auto output = m_testProcess->fecthPipeMessages();
-		if (output.length() == 0 && !m_testProcess->running())
+		if (output.length() == 0 && !m_testProcess->running() && m_testProcess->monitorComplete())
 		{
 			throw std::invalid_argument("Process already finished or killed by timeout event");
 		}

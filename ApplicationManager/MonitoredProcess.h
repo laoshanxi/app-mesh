@@ -23,6 +23,7 @@ public:
 
 	// Wait monitor thread
 	virtual pid_t wait(const ACE_Time_Value& tv, ACE_exitcode* status = 0);
+	bool monitorComplete() const;
 
 private:
 	void monitorThread();
@@ -34,6 +35,7 @@ private:
 	std::shared_ptr<std::thread> m_thread;
 	std::queue<std::string> m_msgQueue;
 	std::recursive_mutex m_queueMutex;
+	bool m_monitorComplete;
 };
 
 #endif 
