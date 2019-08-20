@@ -91,6 +91,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run?timeout=5
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/waitrun?timeout=5
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/applications
@@ -463,7 +465,7 @@ void RestHandler::apiGetApp(const http_request& message)
 
 void RestHandler::apiRunApp(const http_request& message)
 {
-	const static char fname[] = "RestHandler::apiGetApp() ";
+	const static char fname[] = "RestHandler::apiRunApp() ";
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5
@@ -505,9 +507,62 @@ void RestHandler::apiRunApp(const http_request& message)
 	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->testRun(timeout, envMap));
 }
 
+void RestHandler::apiWaitRunApp(const http_request& message)
+{
+	const static char fname[] = "RestHandler::apiWaitRunApp() ";
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+
+	// /app/$app-name/run?timeout=5
+	std::string app = path.substr(strlen("/app/"));
+	app = app.substr(0, app.find_first_of('/'));
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	int timeout = 5; // default use 5 seconds
+	if (querymap.find(U("timeout")) != querymap.end())
+	{
+		// Limit range in [-60 ~ 60]
+		auto requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
+		// set max timeout to 60s
+		if (requestTimeout > 60 || requestTimeout == 0) requestTimeout = 60;
+		if (requestTimeout < -60) requestTimeout = -60;
+		timeout = requestTimeout;
+		timeout = std::min(timeout, -timeout);
+		LOG_DBG << fname << "Use timeout :" << timeout;
+
+	}
+	else
+	{
+		LOG_DBG << fname << "Use default timeout :" << timeout;
+	}
+	// Parse env map  (optional)
+	std::map<std::string, std::string> envMap;
+	auto body = const_cast<http_request*>(&message)->extract_utf8string(true).get();
+	if (body.length() && body != "null")
+	{
+		auto jsonEnv = web::json::value::parse(body).as_object();
+		if (HAS_JSON_FIELD(jsonEnv, "env"))
+		{
+			auto env = jsonEnv.at(GET_STRING_T("env")).as_object();
+			for (auto it = env.begin(); it != env.end(); it++)
+			{
+				envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
+			}
+		}
+	}
+	int exitCode = 0;
+	auto uuid = Configuration::instance()->getApp(app)->testRun(timeout, envMap);
+	web::http::http_response resp(status_codes::OK);
+	std::string body = Configuration::instance()->getApp(app)->getTestOutput(uuid, exitCode);
+	resp.set_body(body);
+	resp.headers().add("exit_code", exitCode);
+
+	LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
+	message.reply(resp);
+}
+
 void RestHandler::apiRunOutput(const http_request& message)
 {
-	const static char fname[] = "RestHandler::apiGetApp() ";
+	const static char fname[] = "RestHandler::apiRunOutput() ";
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5

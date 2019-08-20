@@ -452,9 +452,11 @@ void ArgumentParser::processTest()
 	}
 
 	std::map<std::string, std::string> query;
+	int timeout = 0;
 	if (m_commandLineVariables.count("timeout") > 0)
 	{
-		query["timeout"] = std::to_string(m_commandLineVariables["timeout"].as<int>());
+		timeout = m_commandLineVariables["timeout"].as<int>();
+		query["timeout"] = std::to_string(-timeout);
 	}
 	auto appName = m_commandLineVariables["name"].as<std::string>();
 	web::json::value jsobObj;
@@ -475,33 +477,48 @@ void ArgumentParser::processTest()
 			jsobObj["env"] = objEnvs;
 		}
 	}
-	// /app/testapp/run?timeout=5
-	std::string restPath = std::string("/app/").append(appName).append("/run");
-	auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
-	RESPONSE_CHECK_WITH_RETURN;
-
-	auto process_uuid = GET_STD_STRING(response.extract_utf8string(true).get());
-	while (process_uuid.length())
+	
+	if (timeout < 0)
 	{
-		// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
-		restPath = std::string("/app/").append(appName).append("/run/output");
-		query.clear();
-		query["process_uuid"] = process_uuid;
-		response = requestHttp(methods::GET, restPath, query);
-		if (m_printDebug)
-		{
-			RESPONSE_CHECK_WITH_RETURN;
-		}
-		else
-		{
-			RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
-		}
+		// Use waitrun directly
+		// /app/testapp/waitrun?timeout=5
+		std::string restPath = std::string("/app/").append(appName).append("/waitrun");
+		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
+		RESPONSE_CHECK_WITH_RETURN;
+
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
+	}
+	else
+	{
+		// Use run and output
+		// /app/testapp/run?timeout=5
+		std::string restPath = std::string("/app/").append(appName).append("/run");
+		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
+		RESPONSE_CHECK_WITH_RETURN;
 
-		// timeout < 0 means do not need fetch again.
-		if (m_commandLineVariables["timeout"].as<int>() < 0) break;
+		auto process_uuid = GET_STD_STRING(response.extract_utf8string(true).get());
+		while (process_uuid.length())
+		{
+			// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
+			restPath = std::string("/app/").append(appName).append("/run/output");
+			query.clear();
+			query["process_uuid"] = process_uuid;
+			response = requestHttp(methods::GET, restPath, query);
+			if (m_printDebug)
+			{
+				RESPONSE_CHECK_WITH_RETURN;
+			}
+			else
+			{
+				RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
+			}
+			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 
-		std::this_thread::sleep_for(std::chrono::seconds(1));
+			// timeout < 0 means do not need fetch again.
+			if (m_commandLineVariables["timeout"].as<int>() < 0) break;
+
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
 	}
 }
 
