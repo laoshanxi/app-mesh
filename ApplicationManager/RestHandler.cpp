@@ -476,10 +476,11 @@ void RestHandler::apiRunApp(const http_request& message)
 	int timeout = 5; // default use 5 seconds
 	if (querymap.find(U("timeout")) != querymap.end())
 	{
-		// Limit range in [0 ~ 60]
-		int requestTimeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second)));
+		// Limit range in [-60 ~ 60]
+		int requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
 		// set max timeout to 60s
-		requestTimeout = std::min(requestTimeout, 60);
+		if (requestTimeout > 60) requestTimeout = 60;
+		if (requestTimeout < -60) requestTimeout = -60;
 		timeout = requestTimeout;
 		LOG_DBG << fname << "Use timeout :" << timeout;
 
