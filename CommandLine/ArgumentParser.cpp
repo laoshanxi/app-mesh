@@ -435,7 +435,7 @@ void ArgumentParser::processTest()
 		("help,h", "help message")
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "run application by name.")
-		("timeout,t", po::value<int>()->default_value(60), "timeout seconds for the remote app run (default 60).")
+		("timeout,t", po::value<int>()->default_value(10), "timeout seconds for the remote app run (default 10, max 60).")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		;
 
@@ -455,8 +455,7 @@ void ArgumentParser::processTest()
 	int timeout = 0;
 	if (m_commandLineVariables.count("timeout") > 0)
 	{
-		timeout = m_commandLineVariables["timeout"].as<int>();
-		query["timeout"] = std::to_string(-timeout);
+		query["timeout"] = std::to_string(m_commandLineVariables["timeout"].as<int>());
 	}
 	auto appName = m_commandLineVariables["name"].as<std::string>();
 	web::json::value jsobObj;
@@ -608,6 +607,7 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 	// Create http_client to send the request.
 	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
 	http_client_config config;
+	config.set_timeout(std::chrono::seconds(65));
 	config.set_validate_certificates(false);
 	http_client client(restPath, config);
 	// Build request URI and start the request.
