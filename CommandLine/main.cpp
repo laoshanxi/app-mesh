@@ -3,6 +3,7 @@
 #include <string>
 #include <iostream>
 #include <iomanip>
+#include <pplx/threadpool.h>
 #include <cpprest/json.h>
 #include <cpprest/http_client.h>
 #include <boost/program_options.hpp>
@@ -19,6 +20,7 @@ int main(int argc, const char * argv[])
 	{
 		int port;
 		bool ssl;
+		crossplat::threadpool::initialize_with_threads(2);
 		getListenPort(port, ssl);
 		ArgumentParser parser(argc, argv, port, ssl, true);
 		parser.parse();

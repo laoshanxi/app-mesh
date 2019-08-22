@@ -5,7 +5,7 @@
 #include <thread>
 #include <fstream>
 #include <ace/Init_ACE.h>
-
+#include <pplx/threadpool.h>
 #include "RestHandler.h"
 #include "../common/Utility.h"
 #include "Application.h"
@@ -39,12 +39,14 @@ int main(int argc, char * argv[])
 	{
 		ACE::init();
 		Utility::initLogging();
+		
 		LOG_DBG << fname << "Entered.";
 
 		auto config = readConfiguration();
 		Utility::setLogLevel(config->getLogLevel());
 		if (config->getRestEnabled())
 		{
+			crossplat::threadpool::initialize_with_threads(6);
 			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenIp(), config->getRestListenPort());
 		}
 

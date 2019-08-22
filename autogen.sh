@@ -50,7 +50,7 @@ fi
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
-git clone https://github.com/laoshanxi/cpprestsdk.git cpprestsdk
+git clone https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
