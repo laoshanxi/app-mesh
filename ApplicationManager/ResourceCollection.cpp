@@ -119,6 +119,9 @@ void ResourceCollection::dump()
 
 web::json::value ResourceCollection::AsJson()
 {
+	const static char fname[] = "ResourceCollection::AsJson() ";
+	LOG_DBG << fname << "Entered";
+
 	this->getHostResource();
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
@@ -170,5 +173,7 @@ web::json::value ResourceCollection::AsJson()
 		fs_all["/"] = fs;
 	}
 	result[GET_STRING_T("fs")] = fs_all;
+
+	LOG_DBG << fname << "Exit";
 	return result;
 }
