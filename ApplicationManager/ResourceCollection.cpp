@@ -159,12 +159,16 @@ web::json::value ResourceCollection::AsJson()
 	}
 	// FS
 	web::json::value fs_all = web::json::value::object();
-	web::json::value fs = web::json::value::object();
+	
 	auto usage = os::df("/");
-	fs["size"] = web::json::value::number(usage->size);
-	fs["used"] = web::json::value::number(usage->used);
-	fs["usage"] = web::json::value::number(usage->usage);
-	fs_all["/"] = fs;
+	if (usage != nullptr)
+	{
+		web::json::value fs = web::json::value::object();
+		fs["size"] = web::json::value::number(usage->size);
+		fs["used"] = web::json::value::number(usage->used);
+		fs["usage"] = web::json::value::number(usage->usage);
+		fs_all["/"] = fs;
+	}
 	result[GET_STRING_T("fs")] = fs_all;
 	return result;
 }
