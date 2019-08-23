@@ -20,7 +20,7 @@ int main(int argc, const char * argv[])
 	{
 		int port;
 		bool ssl;
-		crossplat::threadpool::initialize_with_threads(2);
+		crossplat::threadpool::initialize_with_threads(1);
 		getListenPort(port, ssl);
 		ArgumentParser parser(argc, argv, port, ssl, true);
 		parser.parse();

@@ -473,15 +473,11 @@ void RestHandler::apiRunApp(const http_request& message)
 	app = app.substr(0, app.find_first_of('/'));
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	int timeout = 5; // default use 5 seconds
+	int timeout = 10; // default use 10 seconds
 	if (querymap.find(U("timeout")) != querymap.end())
 	{
-		// Limit range in [-60 ~ 60]
-		int requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
-		// set max timeout to 60s
-		if (requestTimeout > 60) requestTimeout = 60;
-		if (requestTimeout < -60) requestTimeout = -60;
-		timeout = requestTimeout;
+		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second)));
+		if (timeout == 0) timeout = 10;
 		LOG_DBG << fname << "Use timeout :" << timeout;
 
 	}
@@ -517,16 +513,11 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 	app = app.substr(0, app.find_first_of('/'));
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	int timeout = 5; // default use 5 seconds
+	int timeout = 10; // default use 10 seconds
 	if (querymap.find(U("timeout")) != querymap.end())
 	{
-		// Limit range in [-60 ~ 60]
-		auto requestTimeout = std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second));
-		// set max timeout to 60s
-		if (requestTimeout > 60 || requestTimeout == 0) requestTimeout = 60;
-		if (requestTimeout < -60) requestTimeout = -60;
-		timeout = requestTimeout;
-		timeout = std::min(timeout, -timeout);
+		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second)));
+		if (timeout == 0) timeout = 10;
 		LOG_DBG << fname << "Use timeout :" << timeout;
 
 	}
@@ -534,6 +525,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 	{
 		LOG_DBG << fname << "Use default timeout :" << timeout;
 	}
+	timeout = -timeout;
 	// Parse env map  (optional)
 	std::map<std::string, std::string> envMap;
 	auto body = const_cast<http_request*>(&message)->extract_utf8string(true).get();
