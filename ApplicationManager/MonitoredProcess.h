@@ -24,6 +24,7 @@ public:
 	// Wait monitor thread
 	virtual pid_t wait(const ACE_Time_Value& tv, ACE_exitcode* status = 0);
 	bool monitorComplete() const;
+	void setAsyncHttpRequest(void* httpRequest) { m_httpRequest = httpRequest; }
 
 private:
 	void monitorThread();
@@ -36,6 +37,7 @@ private:
 	std::queue<std::string> m_msgQueue;
 	std::recursive_mutex m_queueMutex;
 	bool m_monitorComplete;
+	void* m_httpRequest;
 };
 
 #endif 

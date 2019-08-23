@@ -452,10 +452,10 @@ void ArgumentParser::processTest()
 	}
 
 	std::map<std::string, std::string> query;
-	int timeout = 0;
+	int timeout = m_commandLineVariables["timeout"].as<int>();
 	if (m_commandLineVariables.count("timeout") > 0)
 	{
-		query["timeout"] = std::to_string(m_commandLineVariables["timeout"].as<int>());
+		query["timeout"] = std::to_string(timeout);
 	}
 	auto appName = m_commandLineVariables["name"].as<std::string>();
 	web::json::value jsobObj;

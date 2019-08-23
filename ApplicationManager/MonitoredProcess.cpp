@@ -1,9 +1,10 @@
 #include <thread>
+#include <cpprest/http_client.h>
 #include "MonitoredProcess.h"
 #include "../common/Utility.h"
 
 MonitoredProcess::MonitoredProcess()
-	:m_readPipeFile(0), m_monitorComplete(false)
+	:m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL)
 {
 }
 
@@ -108,6 +109,28 @@ void MonitoredProcess::monitorThread()
 		// Do not store too much in memory
 		if (m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
+
+	///////////////////////////////////////////////////////////////////////
+	if (m_httpRequest)
+	{
+		web::http::http_request* message = (web::http::http_request*)m_httpRequest;
+		try
+		{
+			web::http::http_response resp(web::http::status_codes::OK);
+			resp.set_body(this->fecthPipeMessages());
+			resp.headers().add("exit_code", this->return_value());
+			message->reply(resp).get();
+			delete message;
+			m_httpRequest = NULL;
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "message reply failed, maybe the http connection broken with error" << std::strerror(errno);
+		}
+	}
+	///////////////////////////////////////////////////////////////////////
+
+
 	LOG_DBG << fname << "monitor thread exit";
 	m_monitorComplete = true;
 }

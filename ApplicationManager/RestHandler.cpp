@@ -525,7 +525,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 	{
 		LOG_DBG << fname << "Use default timeout :" << timeout;
 	}
-	timeout = -timeout;
+
 	// Parse env map  (optional)
 	std::map<std::string, std::string> envMap;
 	auto body = const_cast<http_request*>(&message)->extract_utf8string(true).get();
@@ -541,15 +541,10 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 			}
 		}
 	}
-	int exitCode = 0;
-	auto uuid = Configuration::instance()->getApp(app)->testRun(timeout, envMap);
-	web::http::http_response resp(status_codes::OK);
-	body = Configuration::instance()->getApp(app)->getTestOutput(uuid, exitCode);
-	resp.set_body(body);
-	resp.headers().add("exit_code", exitCode);
 
-	LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
-	message.reply(resp);
+	// Use async reply here
+	http_request* asyncRequest = new http_request(message);
+	Configuration::instance()->getApp(app)->testRun(timeout, envMap, asyncRequest);
 }
 
 void RestHandler::apiRunOutput(const http_request& message)
