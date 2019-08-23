@@ -147,5 +147,24 @@ web::json::value ResourceCollection::AsJson()
 	{
 		result[GET_STRING_T("mem_applications")] = web::json::value::number(allAppMem->totalRSS());
 	}
+	// Load
+	auto load = os::loadavg();
+	if (load != nullptr)
+	{
+		web::json::value sysLoad = web::json::value::object();
+		sysLoad["1min"] = web::json::value::number(load->one);
+		sysLoad["5min"] = web::json::value::number(load->five);
+		sysLoad["15min"] = web::json::value::number(load->fifteen);
+		result[GET_STRING_T("load")] = sysLoad;
+	}
+	// FS
+	web::json::value fs_all = web::json::value::object();
+	web::json::value fs = web::json::value::object();
+	auto usage = os::df("/");
+	fs["size"] = web::json::value::number(usage->size);
+	fs["used"] = web::json::value::number(usage->used);
+	fs["usage"] = web::json::value::number(usage->usage);
+	fs_all["/"] = fs;
+	result[GET_STRING_T("fs")] = fs_all;
 	return result;
 }
