@@ -9,7 +9,7 @@
 #include <sys/types.h> // For pid_t.
 #include <sys/sysinfo.h>
 #include <unistd.h> // For sysconf
-
+#include <sys/statvfs.h>
 #include <dirent.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -499,7 +499,6 @@ namespace os {
 	// Reads from /proc/cpuinfo and returns a list of CPUs.
 	inline std::list<CPU> cpus()
 	{
-
 		const static char fname[] = "proc::cpus() ";
 
 		std::list<CPU> results;
@@ -583,6 +582,56 @@ namespace os {
 		return results;
 	}
 	//************************CPU****************************************
+
+	// Structure returned by loadavg(). Encodes system load average
+	// for the last 1, 5 and 15 minutes.
+	struct Load {
+		double one;
+		double five;
+		double fifteen;
+	};
+	// Returns load struct with average system loads for the last
+	// 1, 5 and 15 minutes respectively.
+	// Load values should be interpreted as usual average loads from
+	// uptime(1).
+	inline std::shared_ptr<Load> loadavg()
+	{
+		const static char fname[] = "loadavg() ";
+
+		double loadArray[3];
+		if (getloadavg(loadArray, 3) == -1) {
+			LOG_ERR << fname << "Failed to determine system load averages";
+			return nullptr;
+		}
+
+		auto load = std::make_shared<Load>();
+		load->one = loadArray[0];
+		load->five = loadArray[1];
+		load->fifteen = loadArray[2];
+		return load;
+	}
+
+	struct FSusage {
+		unsigned long size;
+		unsigned long used;
+		double usage;
+	};
+
+	inline std::shared_ptr<FSusage> df(const std::string& path = "/")
+	{
+		const static char fname[] = "df() ";
+
+		struct statvfs buf;
+		if (::statvfs(path.c_str(), &buf) < 0) {
+			LOG_ERR << fname << "Failed to call statvfs";
+			return nullptr;
+		}
+		auto df = std::make_shared<FSusage>();
+		df->size = (buf.f_frsize) * buf.f_blocks;
+		df->used = (buf.f_frsize) * (buf.f_blocks - buf.f_bfree);
+		df->usage = (double)(buf.f_blocks - buf.f_bfree) / buf.f_blocks;
+	}
+
 } // namespace os {
 
 #endif // __STOUT_OS_LINUX_HPP__
