@@ -630,6 +630,7 @@ namespace os {
 		df->size = (buf.f_frsize) * buf.f_blocks;
 		df->used = (buf.f_frsize) * (buf.f_blocks - buf.f_bfree);
 		df->usage = (double)(buf.f_blocks - buf.f_bfree) / buf.f_blocks;
+		return df;
 	}
 
 } // namespace os {
