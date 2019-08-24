@@ -199,7 +199,7 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 	return processUUID;
 }
 
-std::string Application::getTestOutput(const std::string& processUuid, int& exitCode)
+std::string Application::getTestOutput(const std::string& processUuid, int& exitCode, bool& finished)
 {
 	const static char fname[] = "Application::getTestOutput() ";
 
@@ -208,7 +208,9 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 		auto output = m_testProcess->fecthPipeMessages();
 		if (output.length() == 0 && !m_testProcess->running() && m_testProcess->monitorComplete())
 		{
-			throw std::invalid_argument("Process already finished or killed by timeout event");
+			exitCode = m_testProcess->return_value();
+			finished = true;
+			return ("Process already finished or killed by timeout event");
 		}
 
 		// m_testProcess is not refreshed by main thread. so just wait here.
@@ -218,7 +220,6 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 		{
 			LOG_WAR << fname << "Application exited " << m_name;
 		}
-		exitCode = m_testProcess->return_value();
 		return std::move(output);
 	}
 	else
