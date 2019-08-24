@@ -435,7 +435,7 @@ void ArgumentParser::processTest()
 		("help,h", "help message")
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "run application by name.")
-		("timeout,t", po::value<int>()->default_value(10), "timeout seconds for the remote app run (default 10, max 60).")
+		("timeout,t", po::value<int>()->default_value(10), "timeout seconds for the remote app run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		;
 
@@ -531,7 +531,7 @@ void ArgumentParser::processShell()
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("debug,g", "print debug information")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("timeout,x", po::value<int>()->default_value(60), "timeout seconds for the shell command run (default 60).")
+		("timeout,x", po::value<int>()->default_value(10), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
 		;
 	m_commandLineVariables.clear();
 	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
