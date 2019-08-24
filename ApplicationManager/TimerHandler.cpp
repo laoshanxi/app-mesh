@@ -81,6 +81,7 @@ bool TimerHandler::cancleTimer(int timerId)
 		{
 			m_timers.erase(v.first);
 			LOG_DBG << fname << "Timer removed <" << timerId << ">.";
+			break;
 		}
 	}
 	

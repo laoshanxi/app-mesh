@@ -356,6 +356,10 @@ void Application::destroy()
 	this->stop();
 	this->m_status = DESTROYED;
 	// clean test run process
-	if (m_testProcess != nullptr) m_testProcess->killgroup();
+	if (m_testProcess != nullptr)
+	{
+		m_testProcess->killgroup();
+		m_testProcess = nullptr;
+	}
 }
 
