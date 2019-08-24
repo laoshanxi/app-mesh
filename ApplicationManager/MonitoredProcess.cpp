@@ -110,6 +110,7 @@ void MonitoredProcess::monitorThread()
 		if (m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
 
+	ACE_Process::wait();
 	///////////////////////////////////////////////////////////////////////
 	if (m_httpRequest)
 	{
