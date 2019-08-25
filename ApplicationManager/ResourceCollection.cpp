@@ -155,9 +155,9 @@ web::json::value ResourceCollection::AsJson()
 	if (load != nullptr)
 	{
 		web::json::value sysLoad = web::json::value::object();
-		sysLoad["1min"] = web::json::value::number(load->one);
-		sysLoad["5min"] = web::json::value::number(load->five);
-		sysLoad["15min"] = web::json::value::number(load->fifteen);
+		sysLoad["1min"] = web::json::value::number(Utility::Precision(load->one, 2));
+		sysLoad["5min"] = web::json::value::number(Utility::Precision(load->five, 2));
+		sysLoad["15min"] = web::json::value::number(Utility::Precision(load->fifteen, 2));
 		result[GET_STRING_T("load")] = sysLoad;
 	}
 	// FS
@@ -169,7 +169,7 @@ web::json::value ResourceCollection::AsJson()
 		web::json::value fs = web::json::value::object();
 		fs["size"] = web::json::value::number(usage->size);
 		fs["used"] = web::json::value::number(usage->used);
-		fs["usage"] = web::json::value::number(usage->usage);
+		fs["usage"] = web::json::value::number(Utility::Precision(usage->usage, 2));
 		fs_all["/"] = fs;
 	}
 	result[GET_STRING_T("fs")] = fs_all;

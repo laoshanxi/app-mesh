@@ -426,6 +426,12 @@ std::string Utility::readFileCpp(const std::string & path)
 	return std::move(str);
 }
 
+double Utility::Precision(const double & val, unsigned int precisions)
+{
+	long long d = static_cast<long long> (val * 10 * precisions);
+	return static_cast<double>(d) / (val * 10);
+}
+
 std::string Utility::createUUID()
 {
 	static boost::uuids::random_generator generator;

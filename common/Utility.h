@@ -110,6 +110,9 @@ public:
 	static std::string readFile(const std::string &path);
 	static std::string readFileCpp(const std::string &path);
 
+	// Unsafe precision
+	static double Precision(const double& val, unsigned int precisions);
+
 	static std::string createUUID();
 };
 
