@@ -676,6 +676,7 @@ namespace os {
 			ignoreMap.insert("tmpfs");
 			ignoreMap.insert("romfs");
 			ignoreMap.insert("ramfs");
+			ignoreMap.insert("devtmpfs");
 			if (ignoreMap.count(device) == 0)
 			{
 				points[mountPoint] = device;
