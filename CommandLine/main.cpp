@@ -38,7 +38,7 @@ void getListenPort(int& port, bool& sslEnabled)
 	port = DEFAULT_REST_LISTEN_PORT;
 	web::json::value jsonValue;
 	auto configPath = Utility::getSelfFullPath();
-	configPath[configPath.length()] = '\0';
+	configPath[configPath.length() - 1] = '\0';
 	auto pos = configPath.rfind("/");
 	if (pos != std::string::npos)
 	{

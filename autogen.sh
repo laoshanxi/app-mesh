@@ -16,11 +16,11 @@ if [ -f "/usr/bin/yum" ]; then
 fi
 
 #Ubuntu
-if [ -f "/usr/bin/apt-get" ]; then
-	apt-get install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
-	apt-get install -y libboost-all-dev libace-dev 
-	#apt-get install -y libcpprest-dev libjsoncpp-dev liblog4cpp5-dev
-	apt-get install -y ruby ruby-dev rubygems
+if [ -f "/usr/bin/apt" ]; then
+	apt install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
+	apt install -y libboost-all-dev libace-dev 
+	#apt install -y libcpprest-dev libjsoncpp-dev liblog4cpp5-dev
+	apt install -y ruby ruby-dev rubygems
 fi
 
 #install fpm
