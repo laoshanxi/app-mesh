@@ -303,7 +303,7 @@ id name        user  status   pid    return memory  command_line
 ## Usage scenarios
 1. Integrate with package installation script and register startup command to app manager automaticlly
 2. Install on remote host to execute command remotly and get output (can build-up web ssh)
-3. Get resource usage (cpu/memory) for each application and host resource status
+3. Get resource usage (cpu/memory/disk) for each application and host resource status
 
 ## 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
