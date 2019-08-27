@@ -13,6 +13,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <mntent.h>
 #endif // __linux__
 
 #ifdef __linux__
@@ -622,7 +623,8 @@ namespace os {
 		const static char fname[] = "df() ";
 
 		struct statvfs buf;
-		if (::statvfs(path.c_str(), &buf) < 0) {
+		if (::statvfs(path.c_str(), &buf) < 0 && buf.f_blocks <= 0)
+		{
 			LOG_ERR << fname << "Failed to call statvfs";
 			return nullptr;
 		}
@@ -631,6 +633,55 @@ namespace os {
 		df->used = (buf.f_frsize) * (buf.f_blocks - buf.f_bfree);
 		df->usage = (double)(buf.f_blocks - buf.f_bfree) / buf.f_blocks;
 		return df;
+	}
+
+	inline std::map<std::string, std::string> getMoundPoints()
+	{
+		const static char fname[] = "getMoundPoints() ";
+
+		std::map<std::string, std::string> points;
+		struct mntent* mountEntryPtr;
+		struct mntent mountEntry;
+		char buffer[4094] = { 0 };
+		FILE* mountTable = setmntent("/etc/mtab", "r");
+		while (true)
+		{
+			const char* device;
+			const char* mountPoint;
+			if (mountTable)
+			{
+				if (nullptr == (mountEntryPtr = getmntent_r(mountTable, &mountEntry, buffer, sizeof(buffer))))
+				{
+					endmntent(mountTable);
+					break;
+				}
+			}
+			else
+			{
+				continue;
+			}
+			device = mountEntryPtr->mnt_fsname;
+			mountPoint = mountEntryPtr->mnt_dir;
+
+			struct statvfs buf;
+			if (::statvfs(mountPoint, &buf) != 0 || buf.f_blocks <= 0)
+			{
+				continue;
+			}
+
+			LOG_DBG << fname << "device:" << device << " mountPoint:" << mountPoint;
+
+			std::set<std::string> ignoreMap;
+			ignoreMap.insert("rootfs");
+			ignoreMap.insert("tmpfs");
+			ignoreMap.insert("romfs");
+			ignoreMap.insert("ramfs");
+			if (ignoreMap.count(device) == 0)
+			{
+				points[mountPoint] = device;
+			}
+		}
+		return std::move(points);
 	}
 
 } // namespace os {

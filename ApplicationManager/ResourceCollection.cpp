@@ -163,15 +163,21 @@ web::json::value ResourceCollection::AsJson()
 	// FS
 	web::json::value fs_all = web::json::value::object();
 	
-	auto usage = os::df("/");
-	if (usage != nullptr)
+	auto mountPoints = os::getMoundPoints();
+	for (auto& mnt : mountPoints)
 	{
-		web::json::value fs = web::json::value::object();
-		fs["size"] = web::json::value::number(usage->size);
-		fs["used"] = web::json::value::number(usage->used);
-		fs["usage"] = web::json::value::number(usage->usage);
-		fs_all["/"] = fs;
+		auto usage = os::df(mnt.first);
+		if (usage != nullptr)
+		{
+			web::json::value fs = web::json::value::object();
+			fs["size"] = web::json::value::number(usage->size);
+			fs["used"] = web::json::value::number(usage->used);
+			fs["usage"] = web::json::value::number(usage->usage);
+			fs["device"] = web::json::value::string(mnt.second);
+			fs_all[mnt.first] = fs;
+		}
 	}
+	
 	result[GET_STRING_T("fs")] = fs_all;
 
 	LOG_DBG << fname << "Exit";
