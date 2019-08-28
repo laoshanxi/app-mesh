@@ -503,14 +503,7 @@ void ArgumentParser::processTest()
 			query.clear();
 			query["process_uuid"] = process_uuid;
 			response = requestHttp(methods::GET, restPath, query);
-			if (m_printDebug)
-			{
-				RESPONSE_CHECK_WITH_RETURN;
-			}
-			else
-			{
-				RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
-			}
+			RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 
 			// timeout < 0 means do not need fetch again.

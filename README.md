@@ -52,7 +52,7 @@ DELETE| /app/$app-name | | Unregister an application
 ## How to install
 **CentOS**:
 ```
-sudo yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.2/appmanager-1.2-1.x86_64.rpm
+sudo yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.3/appmanager-1.2-1.x86_64.rpm
 ```
 If you directly run command line from installation console, there will have issue on dependency libraries, you need source /opt/appmanager/script/app.bashrc to get the environment. for the new console will be OK, the source operation was automaticlly add to /etc/bashrc
 ```
@@ -84,7 +84,7 @@ Commands:
   restart     Restart a application
   reg         Add a new application
   unreg       Remove an application
-  run         Run an application and get output for one time
+  run         Run application and get output
   sh          Use shell run a command and get output
 
 Run 'appc COMMAND --help' for more information on a command.
@@ -111,36 +111,68 @@ id name        user  status   pid    return memory  command_line
 ```
 $ appc resource
 {
-        "cpu_cores" : 4,
-        "cpu_processors" : 4,
+        "cpu_cores" : 2,
+        "cpu_processors" : 2,
         "cpu_sockets" : 1,
-        "host_name" : "DESKTOP-JMLV.localdomain",
-        "mem_applications" : 10776576,
-        "mem_freeSwap_bytes" : 18446743661357039616,
-        "mem_free_bytes" : 21730828288,
-        "mem_totalSwap_bytes" : 3307175280640,
-        "mem_total_bytes" : 25665413120,
-        "net" :
+        "fs" : 
+        {
+                "/" : 
+                {
+                        "device" : "/dev/mapper/centos-root",
+                        "size" : 10504634368,
+                        "usage" : 0.34606185428728287,
+                        "used" : 3635253248
+                },
+                "/boot" : 
+                {
+                        "device" : "/dev/sda1",
+                        "size" : 1063256064,
+                        "usage" : 0.13290110330374755,
+                        "used" : 141307904
+                },
+                "/var/lib/docker/containers" : 
+                {
+                        "device" : "/dev/mapper/centos-root",
+                        "size" : 10504634368,
+                        "usage" : 0.34606185428728287,
+                        "used" : 3635253248
+                },
+                "/var/lib/docker/overlay2" : 
+                {
+                        "device" : "/dev/mapper/centos-root",
+                        "size" : 10504634368,
+                        "usage" : 0.34606185428728287,
+                        "used" : 3635253248
+                }
+        },
+        "host_name" : "centos1",
+        "load" : 
+        {
+                "15min" : 0.01,
+                "1min" : 0,
+                "5min" : 0.01
+        },
+        "mem_applications" : 9760768,
+        "mem_freeSwap_bytes" : 1287647232,
+        "mem_free_bytes" : 3721338880,
+        "mem_totalSwap_bytes" : 1287647232,
+        "mem_total_bytes" : 4142419968,
+        "net" : 
         [
                 {
-                        "address" : "192.168.2.99",
+                        "address" : "192.168.2.6",
                         "ipv4" : true,
-                        "name" : "eth0"
+                        "name" : "enp0s3"
                 },
                 {
-                        "address" : "fe80::60a8:40fb:4169:98f6",
-                        "ipv4" : false,
-                        "name" : "eth0"
-                },
-                {
-                        "address" : "169.254.106.196",
+                        "address" : "172.17.0.1",
                         "ipv4" : true,
-                        "name" : "eth1"
+                        "name" : "docker0"
                 },
                 {
-                        "address" : "fe80::8179:f2dc:d972:6ac4",
+                        "address" : "fe80::982a:da64:68ec:a6e0",
                         "ipv4" : false,
-                        "name" : "eth1"
+                        "name" : "enp0s3"
                 }
         ]
 }
@@ -218,7 +250,7 @@ Register a new application:
   -w [ --workdir ] arg (=/tmp)   working directory
   -a [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
-  -t [ --start_time ] arg        start date time for short running app (e.g.,
+  -t [ --start_time ] arg        start date time for short running app (e.g., 
                                  '2018-01-01 09:00:00')
   -s [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -d [ --daily_end ] arg         daily end time (e.g., '20:00:00')
@@ -228,10 +260,10 @@ Register a new application:
   -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e
                                  env2=value2)
   -i [ --interval ] arg          start interval seconds for short running app
-  -x [ --extra_time ] arg        extra timeout for short running app,the value
+  -x [ --extra_time ] arg        extra timeout for short running app,the value 
                                  must less than interval  (default 0)
-  -z [ --timezone ] arg          posix timezone for the application, reflect
-                                 [start_time|daily_start|daily_end] (e.g.,
+  -z [ --timezone ] arg          posix timezone for the application, reflect 
+                                 [start_time|daily_start|daily_end] (e.g., 
                                  'WST+08:00' is Australia Standard Time)
   -k [ --keep_running ] arg (=0) monitor and keep running for short running app
                                  in start interval
@@ -302,8 +334,9 @@ id name        user  status   pid    return memory  command_line
 
 ## Usage scenarios
 1. Integrate with package installation script and register startup command to app manager automaticlly
-2. Install on remote host to execute command remotly and get output (can build-up web ssh)
-3. Get resource usage (cpu/memory) for each application and host resource status
+2. Remote async shell execute (can build-up web ssh)
+3. Host/app resource monitor
+4. Can be a standalone JWT server
 
 ## 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
