@@ -111,6 +111,7 @@ id name        user  status   pid    return memory  command_line
 <details>
 <summary>appc resource</summary>
 
+```
 $ appc resource
 {
         "cpu_cores" : 2,
@@ -178,6 +179,7 @@ $ appc resource
                 }
         ]
 }
+```
 </details>
 
 ## Display configurations
@@ -185,6 +187,7 @@ $ appc resource
 <details>
 <summary>appc config</summary>
 
+```
 $ appc config
 {
         "Applications" :
@@ -240,6 +243,7 @@ $ appc config
         "SSLEnabled" : true,
         "ScheduleIntervalSeconds" : 2
 }
+```
 </details>
 
 ## Register a new application
