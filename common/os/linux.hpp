@@ -672,7 +672,6 @@ namespace os {
 			LOG_DBG << fname << "device:" << device << " mountPoint:" << mountPoint;
 
 			std::set<std::string> ignoreMap;
-			ignoreMap.insert("rootfs");
 			ignoreMap.insert("tmpfs");
 			ignoreMap.insert("romfs");
 			ignoreMap.insert("ramfs");
