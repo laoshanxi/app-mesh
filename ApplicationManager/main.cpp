@@ -46,6 +46,7 @@ int main(int argc, char * argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		if (config->getRestEnabled())
 		{
+			// 1. Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(6);
 			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenIp(), config->getRestListenPort());
 		}
@@ -58,8 +59,10 @@ int main(int argc, char * argv[])
 		ResourceCollection::instance()->getHostResource();
 		ResourceCollection::instance()->dump();
 
+		// 2. Thread for Timer
 		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runEventLoop));
 		
+		// 3. Thread for main
 		// Should leave AppMonitor::monitorAllApps in main thread that share thread with timer
 		// because monitorAllApps will hold much Reactor lock for long time.
 		// 'Timer lock visit App' and App register timer visit timer lock cause dead lock
