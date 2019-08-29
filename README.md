@@ -108,7 +108,9 @@ id name        user  status   pid    return memory  command_line
 
 ## Display host resource usage
 
-```
+<details>
+<summary>appc resource</summary>
+
 $ appc resource
 {
         "cpu_cores" : 2,
@@ -176,11 +178,13 @@ $ appc resource
                 }
         ]
 }
-```
+</details>
 
 ## Display configurations
 
-```
+<details>
+<summary>appc config</summary>
+
 $ appc config
 {
         "Applications" :
@@ -236,7 +240,7 @@ $ appc config
         "SSLEnabled" : true,
         "ScheduleIntervalSeconds" : 2
 }
-```
+</details>
 
 ## Register a new application
 
