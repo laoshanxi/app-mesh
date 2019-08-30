@@ -49,6 +49,7 @@ private:
 	void apiRegShellApp(const http_request& message);
 	void apiControlApp(const http_request& message);
 	void apiDeleteApp(const http_request& message);
+	void apiDownloadFile(const http_request& message);
 
 private:
 	std::shared_ptr<http_listener> m_listener;

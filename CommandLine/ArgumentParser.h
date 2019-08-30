@@ -34,11 +34,12 @@ private:
 	void processStartStop(bool start);
 	void processTest();
 	void processShell();
+	void processDownload();
 
 	bool confirmInput(const char* msg);
 	http_response requestHttp(const method & mtd, const std::string& path);
 	http_response requestHttp(const method & mtd, const std::string& path, web::json::value& body);
-	http_response requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body = nullptr);
+	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value* body = nullptr, std::map<std::string, std::string>* header = nullptr);
 	
 	void addAuthenToken(http_request& request);
 

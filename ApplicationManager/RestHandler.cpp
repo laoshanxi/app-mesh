@@ -1,5 +1,6 @@
 #include <chrono>
 #include <boost/algorithm/string_regex.hpp>
+#include <cpprest/filestream.h>
 #include "RestHandler.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
@@ -109,6 +110,9 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiControlApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname
 	bindRest(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
+
+	// http://127.0.0.1:6060/download
+	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiDownloadFile, this, std::placeholders::_1));
 
 	this->open();
 
@@ -400,6 +404,39 @@ void RestHandler::apiDeleteApp(const http_request & message)
 	Configuration::instance()->removeApp(appName);
 	auto msg = std::string("application <") + appName + "> removed.";
 	message.reply(status_codes::OK, msg);
+}
+
+void RestHandler::apiDownloadFile(const http_request& message)
+{
+	const static char fname[] = "RestHandler::apiDownloadFile() ";
+
+	if (message.headers().find(U("file_path")) == message.headers().end())
+	{
+		message.reply(status_codes::BadRequest, "file_path header not found");
+		return;
+	}
+	auto file = GET_STD_STRING(message.headers().find(U("file_path"))->second);
+	if (!Utility::isFileExist(file))
+	{
+		message.reply(status_codes::NotAcceptable, "file not found");
+		return;
+	}
+	concurrency::streams::fstream::open_istream(file, std::ios::in)
+		.then([=](concurrency::streams::istream is) {
+		message.reply(status_codes::OK, is).then([this](pplx::task<void> t) { this->handle_error(t); });
+			})
+		.then([=](pplx::task<void> t) {
+				try
+				{
+					t.get();
+				}
+				catch (...)
+				{
+					// opening the file (open_istream) failed.
+					// Reply with an error.
+					message.reply(status_codes::InternalError).then([this](pplx::task<void> t) { this->handle_error(t); });
+				}
+			});
 }
 
 void RestHandler::apiLogin(const http_request& message)

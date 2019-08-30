@@ -2,6 +2,7 @@
 #include <thread>
 #include <functional>
 #include <boost/program_options.hpp>
+#include <cpprest/filestream.h>
 #include <cpprest/json.h>
 #include "ArgumentParser.h"
 #include "../common/Utility.h"
@@ -98,6 +99,10 @@ void ArgumentParser::parse()
 	{
 		processShell();
 	}
+	else if (cmd == "cp")
+	{
+		processDownload();
+	}
 	else
 	{
 		printMainHelp();
@@ -117,6 +122,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  run         Run application and get output" << std::endl;
 	std::cout << "  sh          Use shell run a command and get output" << std::endl;
+	std::cout << "  cp          Copy remote file to local" << std::endl;
 
 	std::cout << std::endl;
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
@@ -503,7 +509,7 @@ void ArgumentParser::processTest()
 			query.clear();
 			query["process_uuid"] = process_uuid;
 			response = requestHttp(methods::GET, restPath, query);
-			RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT;
+			RESPONSE_CHECK_WITH_RETURN;
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 
 			// timeout < 0 means do not need fetch again.
@@ -574,6 +580,38 @@ void ArgumentParser::processShell()
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 }
 
+void ArgumentParser::processDownload()
+{
+	po::options_description desc("View configuration:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("file,f", po::value<std::string>(), "remote file path")
+		("save,s", po::value<std::string>(), "save to local file path")
+		("help,h", "help message")
+		;
+	moveForwardCommandLineVariables(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	if (m_commandLineVariables.count("file") == 0 || m_commandLineVariables.count("save"))
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
+
+	std::string restPath = "/download";
+	auto file = m_commandLineVariables["file"].as<std::string>();
+	auto local = m_commandLineVariables["save"].as<std::string>();
+	std::map<std::string, std::string> query, headers;
+	headers["file_path"] = file;
+	auto response = requestHttp(methods::GET, restPath, query, nullptr, &headers);
+	RESPONSE_CHECK_WITH_RETURN;
+
+	auto stream = concurrency::streams::file_stream<uint8_t>::open_ostream(local, std::ios_base::trunc | std::ios_base::binary).get();
+	response.body().read_to_end(stream.streambuf()).wait();
+
+	std::cout << "Saved to " << local << std::endl;
+}
+
 bool ArgumentParser::confirmInput(const char* msg)
 {
 	std::cout << msg << ":";
@@ -594,7 +632,7 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 	return std::move(requestHttp(mtd, path, query, &body));
 }
 
-http_response ArgumentParser::requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body)
+http_response ArgumentParser::requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body, std::map<std::string, std::string>* header)
 {
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
 	// Create http_client to send the request.
@@ -611,6 +649,13 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 	});
 	
 	http_request request(mtd);
+	if (header)
+	{
+		for (auto h : *header)
+		{
+			request.headers().add(h.first, h.second);
+		}
+	}
 	addAuthenToken(request);
 	request.set_request_uri(builder.to_uri());
 	if (body != nullptr)

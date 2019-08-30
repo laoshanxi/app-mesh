@@ -210,7 +210,7 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 		{
 			exitCode = m_testProcess->return_value();
 			finished = true;
-			return ("Process already finished or killed by timeout event");
+			return "";
 		}
 
 		// m_testProcess is not refreshed by main thread. so just wait here.
