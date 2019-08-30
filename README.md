@@ -48,6 +48,7 @@ PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell applicatio
 POST| /app/$app-name?action=start | | Start an application
 POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
+GET| /download | file_path=/opt/filename | Download a file from REST server host
 
 ## How to install
 **CentOS**:
