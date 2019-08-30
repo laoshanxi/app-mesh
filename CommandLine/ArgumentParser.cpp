@@ -609,7 +609,7 @@ void ArgumentParser::processDownload()
 	auto stream = concurrency::streams::file_stream<uint8_t>::open_ostream(local, std::ios_base::trunc | std::ios_base::binary).get();
 	response.body().read_to_end(stream.streambuf()).wait();
 
-	std::cout << "Saved to " << local << std::endl;
+	std::cout << "Saved to " << local << ", size " << Utility::humanReadableSize(stream.streambuf().size()) << std::endl;
 }
 
 bool ArgumentParser::confirmInput(const char* msg)
