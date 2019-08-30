@@ -421,6 +421,9 @@ void RestHandler::apiDownloadFile(const http_request& message)
 		message.reply(status_codes::NotAcceptable, "file not found");
 		return;
 	}
+
+	LOG_DBG << fname << "Downloading file <" << file << ">";
+
 	concurrency::streams::fstream::open_istream(file, std::ios::in)
 		.then([=](concurrency::streams::istream is) {
 		message.reply(status_codes::OK, is).then([this](pplx::task<void> t) { this->handle_error(t); });
