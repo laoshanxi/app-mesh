@@ -336,6 +336,12 @@ id name        user  status   pid    return memory  command_line
 3  869d8991-0* root  stopped  0      0      0       /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
 ```
 
+## Download a file from server
+``` sh
+$ # appc cp -f /opt/appmanager/log/appsvc.log -s ./1.log
+file <./1.log> size <10.4 M>
+```
+
 ![example](https://github.com/laoshanxi/app-manager/blob/master/doc/example.gif?raw=true) 
 
 ## Remote run a shell command
