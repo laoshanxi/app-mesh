@@ -53,7 +53,7 @@ GET| /download | file_path=/opt/filename | Download a file from REST server host
 ## How to install
 **CentOS**:
 ```
-sudo yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.3/appmanager-1.2-1.x86_64.rpm
+sudo yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.3/appmanager-1.3-1.x86_64.rpm
 ```
 If you directly run command line from installation console, there will have issue on dependency libraries, you need source /opt/appmanager/script/app.bashrc to get the environment. for the new console will be OK, the source operation was automaticlly add to /etc/bashrc
 ```
