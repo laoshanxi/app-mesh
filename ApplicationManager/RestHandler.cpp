@@ -424,7 +424,7 @@ void RestHandler::apiDownloadFile(const http_request& message)
 
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
-	concurrency::streams::fstream::open_istream(file, std::ios::in)
+	concurrency::streams::fstream::open_istream(file, std::ios::in | std::ios::binary)
 		.then([=](concurrency::streams::istream is) {
 		message.reply(status_codes::OK, is).then([this](pplx::task<void> t) { this->handle_error(t); });
 			})

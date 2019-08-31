@@ -592,7 +592,7 @@ void ArgumentParser::processDownload()
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (m_commandLineVariables.count("file") == 0 && m_commandLineVariables.count("save") == 0)
+	if (m_commandLineVariables.count("file") == 0 || m_commandLineVariables.count("save") == 0)
 	{
 		std::cout << desc << std::endl;
 		return;
