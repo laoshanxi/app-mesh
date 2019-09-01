@@ -99,9 +99,13 @@ void ArgumentParser::parse()
 	{
 		processShell();
 	}
-	else if (cmd == "cp")
+	else if (cmd == "get")
 	{
 		processDownload();
+	}
+	else if (cmd == "put")
+	{
+		processUpload();
 	}
 	else
 	{
@@ -122,7 +126,8 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  run         Run application and get output" << std::endl;
 	std::cout << "  sh          Use shell run a command and get output" << std::endl;
-	std::cout << "  cp          Copy remote file to local" << std::endl;
+	std::cout << "  get         Copy remote file to local" << std::endl;
+	std::cout << "  put         Upload file to server" << std::endl;
 
 	std::cout << std::endl;
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
@@ -441,7 +446,7 @@ void ArgumentParser::processTest()
 		("help,h", "help message")
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "run application by name.")
-		("timeout,t", po::value<int>()->default_value(10), "timeout seconds for the remote app run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
+		("timeout,x", po::value<int>()->default_value(10), "timeout seconds for the remote app run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		;
 
@@ -585,22 +590,22 @@ void ArgumentParser::processDownload()
 	po::options_description desc("View configuration:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("file,f", po::value<std::string>(), "remote file path")
-		("save,s", po::value<std::string>(), "save to local file path")
+		("remote,r", po::value<std::string>(), "remote file path")
+		("local,l", po::value<std::string>(), "save to local file path")
 		("help,h", "help message")
 		;
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (m_commandLineVariables.count("file") == 0 || m_commandLineVariables.count("save") == 0)
+	if (m_commandLineVariables.count("remote") == 0 || m_commandLineVariables.count("local") == 0)
 	{
 		std::cout << desc << std::endl;
 		return;
 	}
 
 	std::string restPath = "/download";
-	auto file = m_commandLineVariables["file"].as<std::string>();
-	auto local = m_commandLineVariables["save"].as<std::string>();
+	auto file = m_commandLineVariables["remote"].as<std::string>();
+	auto local = m_commandLineVariables["local"].as<std::string>();
 	std::map<std::string, std::string> query, headers;
 	headers["file_path"] = file;
 	auto response = requestHttp(methods::GET, restPath, query, nullptr, &headers);
@@ -609,7 +614,62 @@ void ArgumentParser::processDownload()
 	auto stream = concurrency::streams::file_stream<uint8_t>::open_ostream(local, std::ios_base::trunc | std::ios_base::binary).get();
 	response.body().read_to_end(stream.streambuf()).wait();
 
-	std::cout << "file <" << local << "> size <" << Utility::humanReadableSize(stream.streambuf().size()) << ">" << std::endl;
+	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.streambuf().size()) << ">" << std::endl;
+}
+
+void ArgumentParser::processUpload()
+{
+	po::options_description desc("View configuration:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("remote,r", po::value<std::string>(), "save to remote file path")
+		("local,l", po::value<std::string>(), "local file path")
+		("help,h", "help message")
+		;
+	moveForwardCommandLineVariables(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	if (m_commandLineVariables.count("remote") == 0 || m_commandLineVariables.count("local") == 0)
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
+
+	auto file = m_commandLineVariables["remote"].as<std::string>();
+	auto local = m_commandLineVariables["local"].as<std::string>();
+
+	if (!Utility::isFileExist(local))
+	{
+		std::cout << "local file not exist" << std::endl;
+		return;
+	}
+	// https://msdn.microsoft.com/en-us/magazine/dn342869.aspx
+
+	auto fileStream = concurrency::streams::file_stream<uint8_t>::open_istream(local, std::ios_base::binary).get();
+	// Get the content length, which is used to set the
+	// Content-Length property
+	fileStream.seek(0, std::ios::end);
+	auto length = static_cast<size_t>(fileStream.tell());
+	fileStream.seek(0, std::ios::beg);
+	
+	auto protocol = m_sslEnabled ? U("https://") : U("http://");
+	// Create http_client to send the request.
+	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	http_client_config config;
+	config.set_timeout(std::chrono::seconds(65));
+	config.set_validate_certificates(false);
+	http_client client(restPath, config);
+	// Build request URI and start the request.
+	uri_builder builder(GET_STRING_T("/upload"));
+
+	http_request request(methods::PUT);
+	request.headers().add("file_path", file);
+	addAuthenToken(request);
+	request.set_request_uri(builder.to_uri());
+	request.set_body(fileStream, length);
+	http_response response = client.request(request).get();
+	fileStream.close();
+	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
 bool ArgumentParser::confirmInput(const char* msg)

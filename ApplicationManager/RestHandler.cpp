@@ -16,7 +16,7 @@
 RestHandler::RestHandler(std::string ipaddress, int port)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
-	
+
 	// Construct URI
 	web::uri_builder uri;
 	if (ipaddress.empty())
@@ -41,36 +41,36 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 		auto server_config = new http_listener_config();
 		server_config->set_ssl_context_callback(
 			[&](boost::asio::ssl::context & ctx) {
-			boost::system::error_code ec;
+				boost::system::error_code ec;
 
-			ctx.set_options(boost::asio::ssl::context::default_workarounds |
-				boost::asio::ssl::context::no_sslv2 |
-				boost::asio::ssl::context::no_sslv3 |
-				boost::asio::ssl::context::no_tlsv1 |
-				boost::asio::ssl::context::no_tlsv1_1 |
-				boost::asio::ssl::context::single_dh_use,
-				ec);
-			LOG_INF << "lambda::set_options " << ec.value() << " " << ec.message();
+				ctx.set_options(boost::asio::ssl::context::default_workarounds |
+					boost::asio::ssl::context::no_sslv2 |
+					boost::asio::ssl::context::no_sslv3 |
+					boost::asio::ssl::context::no_tlsv1 |
+					boost::asio::ssl::context::no_tlsv1_1 |
+					boost::asio::ssl::context::single_dh_use,
+					ec);
+				LOG_INF << "lambda::set_options " << ec.value() << " " << ec.message();
 
-			ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
-			LOG_INF << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
+				ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
+				LOG_INF << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
 
-			ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
-			LOG_INF << "lambda::use_private_key " << ec.value() << " " << ec.message();
+				ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
+				LOG_INF << "lambda::use_private_key " << ec.value() << " " << ec.message();
 
-			// Enable ECDH cipher
-			if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
-			{
-				LOG_WAR << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
-			}
-			auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
-			// auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
-			if (!SSL_CTX_set_cipher_list(ctx.native_handle(), ciphers))
-			{
-				LOG_WAR << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
-			}
+				// Enable ECDH cipher
+				if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
+				{
+					LOG_WAR << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
+				}
+				auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
+				// auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
+				if (!SSL_CTX_set_cipher_list(ctx.native_handle(), ciphers))
+				{
+					LOG_WAR << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
+				}
 
-		});
+			});
 		m_listener = std::make_shared<http_listener>(uri.to_uri(), *server_config);
 	}
 	else
@@ -78,7 +78,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 		uri.set_scheme("http");
 		m_listener = std::make_shared<http_listener>(uri.to_uri());
 	}
-	
+
 	m_listener->support(methods::GET, std::bind(&RestHandler::handle_get, this, std::placeholders::_1));
 	m_listener->support(methods::PUT, std::bind(&RestHandler::handle_put, this, std::placeholders::_1));
 	m_listener->support(methods::POST, std::bind(&RestHandler::handle_post, this, std::placeholders::_1));
@@ -113,6 +113,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// http://127.0.0.1:6060/download
 	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiDownloadFile, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/upload
+	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiUploadFile, this, std::placeholders::_1));
 
 	this->open();
 
@@ -424,22 +426,69 @@ void RestHandler::apiDownloadFile(const http_request& message)
 
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
-	concurrency::streams::fstream::open_istream(file, std::ios::in | std::ios::binary)
-		.then([=](concurrency::streams::istream is) {
-		message.reply(status_codes::OK, is).then([this](pplx::task<void> t) { this->handle_error(t); });
-			})
-		.then([=](pplx::task<void> t) {
-				try
-				{
-					t.get();
-				}
-				catch (...)
-				{
-					// opening the file (open_istream) failed.
-					// Reply with an error.
-					message.reply(status_codes::InternalError).then([this](pplx::task<void> t) { this->handle_error(t); });
-				}
+	concurrency::streams::fstream::open_istream(file, std::ios::in | std::ios::binary).then([=](concurrency::streams::istream fileStream)
+	{
+		// Get the content length, which is used to set the
+		// Content-Length property
+		fileStream.seek(0, std::ios::end);
+		auto length = static_cast<size_t>(fileStream.tell());
+		fileStream.seek(0, std::ios::beg);
+
+		message.reply(status_codes::OK, fileStream, length).then([this](pplx::task<void> t) { this->handle_error(t); });
+	}).then([=](pplx::task<void> t)
+	{
+		try
+		{
+			t.get();
+		}
+		catch (...)
+		{
+			// opening the file (open_istream) failed.
+			// Reply with an error.
+			message.reply(status_codes::InternalError).then([this](pplx::task<void> t) { this->handle_error(t); });
+		}
+	});
+}
+
+void RestHandler::apiUploadFile(const http_request & message)
+{
+	const static char fname[] = "RestHandler::apiUploadFile() ";
+
+	if (message.headers().find(U("file_path")) == message.headers().end())
+	{
+		message.reply(status_codes::BadRequest, "file_path header not found");
+		return;
+	}
+	auto file = GET_STD_STRING(message.headers().find(U("file_path"))->second);
+	if (Utility::isFileExist(file))
+	{
+		message.reply(status_codes::Forbidden, "file already exist");
+		return;
+	}
+
+	LOG_DBG << fname << "Uploading file <" << file << ">";
+
+	concurrency::streams::file_stream<uint8_t>::open_ostream(file, std::ios::out | std::ios::binary | std::ios::trunc)
+		.then([=](concurrency::streams::ostream os)
+		{
+			message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
+			{
+				os.close();
+				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t);	});
 			});
+		}).then([=](pplx::task<void> t)
+		{
+			try
+			{
+				t.get();
+			}
+			catch (...)
+			{
+				// opening the file (open_istream) failed.
+				// Reply with an error.
+				message.reply(status_codes::InternalError, "Failed to write file in server").then([this](pplx::task<void> t) { this->handle_error(t); });
+			}
+		});
 }
 
 void RestHandler::apiLogin(const http_request& message)
@@ -600,8 +649,8 @@ void RestHandler::apiRunOutput(const http_request& message)
 	if (querymap.find(U("process_uuid")) != querymap.end())
 	{
 		auto uuid = GET_STD_STRING(querymap.find(U("process_uuid"))->second);
-		
-		
+
+
 		int exitCode = 0;
 		bool finished = false;
 		std::string body = Configuration::instance()->getApp(app)->getTestOutput(uuid, exitCode, finished);

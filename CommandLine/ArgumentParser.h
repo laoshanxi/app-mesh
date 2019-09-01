@@ -35,6 +35,7 @@ private:
 	void processTest();
 	void processShell();
 	void processDownload();
+	void processUpload();
 
 	bool confirmInput(const char* msg);
 	http_response requestHttp(const method & mtd, const std::string& path);
