@@ -41,6 +41,7 @@ private:
 	http_response requestHttp(const method & mtd, const std::string& path);
 	http_response requestHttp(const method & mtd, const std::string& path, web::json::value& body);
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value* body = nullptr, std::map<std::string, std::string>* header = nullptr);
+	http_request createRequest(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, std::map<std::string, std::string>* header);
 	
 	void addAuthenToken(http_request& request);
 

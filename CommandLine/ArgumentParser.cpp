@@ -652,20 +652,19 @@ void ArgumentParser::processUpload()
 	auto length = static_cast<size_t>(fileStream.tell());
 	fileStream.seek(0, std::ios::beg);
 	
+
+	std::map<std::string, std::string> query, header;
+	header["file_path"] = file;
+
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
-	// Create http_client to send the request.
 	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	// Create http_client to send the request.
 	http_client_config config;
-	config.set_timeout(std::chrono::seconds(65));
+	config.set_timeout(std::chrono::seconds(200));
 	config.set_validate_certificates(false);
 	http_client client(restPath, config);
-	// Build request URI and start the request.
-	uri_builder builder(GET_STRING_T("/upload"));
+	http_request request = createRequest(methods::PUT, "/upload", query, &header);
 
-	http_request request(methods::PUT);
-	request.headers().add("file_path", file);
-	addAuthenToken(request);
-	request.set_request_uri(builder.to_uri());
 	request.set_body(fileStream, length);
 	http_response response = client.request(request).get();
 	fileStream.close();
@@ -695,19 +694,30 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 http_response ArgumentParser::requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body, std::map<std::string, std::string>* header)
 {
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
-	// Create http_client to send the request.
 	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	// Create http_client to send the request.
 	http_client_config config;
 	config.set_timeout(std::chrono::seconds(65));
 	config.set_validate_certificates(false);
 	http_client client(restPath, config);
+	http_request request = createRequest(mtd, path, query, header);
+	if (body != nullptr)
+	{
+		request.set_body(*body);
+	}
+	http_response response = client.request(request).get();
+	return std::move(response);
+}
+
+http_request ArgumentParser::createRequest(const method & mtd, const std::string & path, std::map<std::string, std::string>& query, std::map<std::string, std::string>* header)
+{
 	// Build request URI and start the request.
 	uri_builder builder(GET_STRING_T(path));
 	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
 	{
 		builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
 	});
-	
+
 	http_request request(mtd);
 	if (header)
 	{
@@ -718,12 +728,7 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 	}
 	addAuthenToken(request);
 	request.set_request_uri(builder.to_uri());
-	if (body != nullptr)
-	{
-		request.set_body(*body);
-	}
-	http_response response = client.request(request).get();
-	return std::move(response);
+	return std::move(request);
 }
 
 bool ArgumentParser::isAppExist(const std::string& appName)

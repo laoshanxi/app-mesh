@@ -474,7 +474,7 @@ void RestHandler::apiUploadFile(const http_request & message)
 			message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
 			{
 				os.close();
-				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t);	});
+				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t); });
 			});
 		}).then([=](pplx::task<void> t)
 		{
