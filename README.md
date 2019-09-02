@@ -88,6 +88,8 @@ Commands:
   unreg       Remove an application
   run         Run application and get output
   sh          Use shell run a command and get output
+  get         Copy remote file to local
+  put         Upload file to server
 
 Run 'appc COMMAND --help' for more information on a command.
 Use '-b hostname' to run remote command.
@@ -339,8 +341,14 @@ id name        user  status   pid    return memory  command_line
 
 ## Download a file from server
 ``` sh
-$ # appc cp -f /opt/appmanager/log/appsvc.log -s ./1.log
+$ # appc get -r /opt/appmanager/log/appsvc.log -l ./1.log
 file <./1.log> size <10.4 M>
+```
+
+## Upload a local file to server
+``` sh
+$ # appc put -r /opt/appmanager/log/appsvc.log -l ./1.log
+Success
 ```
 
 ![example](https://github.com/laoshanxi/app-manager/blob/master/doc/example.gif?raw=true) 
