@@ -49,7 +49,7 @@ POST| /app/$app-name?action=start | | Start an application
 POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
 GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server host
-PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Header: <br> file steam | Upload a file to REST server
+PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server
 
 ## How to install
 **CentOS**:
