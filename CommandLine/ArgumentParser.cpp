@@ -374,7 +374,7 @@ void ArgumentParser::processStartStop(bool start)
 	
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
-	if (m_commandLineVariables.empty()) 
+	if (m_commandLineVariables.empty() || (!m_commandLineVariables.count("all") && !m_commandLineVariables.count("name")))
 	{
 		std::cout << desc << std::endl;
 		return;
