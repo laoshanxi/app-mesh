@@ -29,7 +29,6 @@ private:
 	void processReg(const char* appName = 0);
 	void processUnReg();
 	void processView();
-	void processConfig();
 	void processResource();
 	void processStartStop(bool start);
 	void processTest();

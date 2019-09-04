@@ -100,8 +100,6 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/resources
 	bindRest(web::http::methods::GET, "/app-manager/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app-manager/config
-	bindRest(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetConfig, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name
 	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/sh/shell-app-id
@@ -680,11 +678,6 @@ void RestHandler::apiGetApps(const http_request& message)
 void RestHandler::apiGetResources(const http_request& message)
 {
 	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
-}
-
-void RestHandler::apiGetConfig(const http_request& message)
-{
-	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(Configuration::instance()->AsJson(false).serialize())));
 }
 
 void RestHandler::apiRegApp(const http_request& message)

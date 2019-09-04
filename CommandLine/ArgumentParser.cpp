@@ -68,11 +68,6 @@ void ArgumentParser::parse()
 		// GET /app-manager/resources
 		processResource();
 	}
-	else if (cmd == "config")
-	{
-		// GET /app-manager/config
-		processConfig();
-	}
 	else if (cmd == "start")
 	{
 		// POST /app/$app-name?action=start
@@ -117,7 +112,6 @@ void ArgumentParser::printMainHelp()
 {
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  view        List application[s]" << std::endl;
-	std::cout << "  config      Display configurations" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
 	std::cout << "  start       Start a application" << std::endl;
 	std::cout << "  stop        Stop a application" << std::endl;
@@ -368,21 +362,6 @@ void ArgumentParser::processResource()
 	std::cout << GET_STD_STRING(bodyStr) << std::endl;
 }
 
-void ArgumentParser::processConfig()
-{
-	po::options_description desc("View configuration:");
-	desc.add_options()
-		OPTION_HOST_NAME
-		("help,h", "help message")
-		;
-	moveForwardCommandLineVariables(desc);
-	HELP_ARG_CHECK_WITH_RETURN;
-
-	std::string restPath = "/app-manager/config";
-	auto bodyStr = requestHttp(methods::GET, restPath).extract_utf8string(true).get();
-	std::cout << GET_STD_STRING(bodyStr) << std::endl;
-}
-
 void ArgumentParser::processStartStop(bool start)
 {
 	po::options_description desc("Start application:");
@@ -587,7 +566,7 @@ void ArgumentParser::processShell()
 
 void ArgumentParser::processDownload()
 {
-	po::options_description desc("View configuration:");
+	po::options_description desc("Download file:");
 	desc.add_options()
 		OPTION_HOST_NAME
 		("remote,r", po::value<std::string>(), "remote file path")
@@ -619,7 +598,7 @@ void ArgumentParser::processDownload()
 
 void ArgumentParser::processUpload()
 {
-	po::options_description desc("View configuration:");
+	po::options_description desc("Upload file:");
 	desc.add_options()
 		OPTION_HOST_NAME
 		("remote,r", po::value<std::string>(), "save to remote file path")

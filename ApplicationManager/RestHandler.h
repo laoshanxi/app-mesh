@@ -44,7 +44,6 @@ private:
 	void apiRunOutput(const http_request& message);
 	void apiGetApps(const http_request& message);
 	void apiGetResources(const http_request& message);
-	void apiGetConfig(const http_request& message);
 	void apiRegApp(const http_request& message);
 	void apiRegShellApp(const http_request& message);
 	void apiControlApp(const http_request& message);

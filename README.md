@@ -42,7 +42,6 @@ POST | /app/$app-name/waitrun?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": 
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
-GET | /app-manager/config | | Get all the configuration
 PUT | /app/$app-name | {"command_line": "/bin/sleep 60", "name": "ping", "run_as": "root", "working_dir": "/tmp" } | Register a new application
 PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell application
 POST| /app/$app-name?action=start | | Start an application
@@ -79,7 +78,6 @@ $ apt install ./appmanager_1.2_amd64.deb -y
 $ appc
 Commands:
   view        List application[s]
-  config      Display configurations
   resource    Display host resource usage
   start       Start a application
   stop        Stop a application
@@ -186,69 +184,6 @@ $ appc resource
 ```
 </details>
 
-## Display configurations
-
-<details>
-<summary>appc config</summary>
-
-```
-$ appc config
-{
-        "Applications" :
-        [
-                {
-                        "command_line" : "/bin/sleep 20",
-                        "daily_limitation" :
-                        {
-                                "daily_end" : "23:00:00",
-                                "daily_start" : "09:00:00"
-                        },
-                        "env" :
-                        {
-                                "TEST_ENV1" : "value",
-                                "TEST_ENV2" : "value"
-                        },
-                        "keep_running" : true,
-                        "memory" : 24576,
-                        "name" : "period",
-                        "pid" : 911,
-                        "posix_timezone" : "CST+8:00:00",
-                        "resource_limit" :
-                        {
-                                "cpu_shares" : 100,
-                                "memory_mb" : 200,
-                                "memory_virt_mb" : 300
-                        },
-                        "return" : 0,
-                        "run_as" : "root",
-                        "start_interval_seconds" : 30,
-                        "start_interval_timeout" : 0,
-                        "start_time" : "2018-01-02 01:05:16",
-                        "status" : 1,
-                        "working_dir" : "/opt"
-                },
-                {
-                        "command_line" : "ping www.baidu.com",
-                        "memory" : 978944,
-                        "name" : "ping",
-                        "pid" : 586,
-                        "return" : 0,
-                        "run_as" : "root",
-                        "status" : 1,
-                        "working_dir" : "/tmp"
-                }
-        ],
-        "Description" : "myhost",
-        "JWTEnabled" : true,
-        "LogLevel" : "DEBUG",
-        "RestListenPort" : 6060,
-        "SSLCertificateFile" : "server.crt",
-        "SSLCertificateKeyFile" : "server.key",
-        "SSLEnabled" : true,
-        "ScheduleIntervalSeconds" : 2
-}
-```
-</details>
 
 ## Register a new application
 
