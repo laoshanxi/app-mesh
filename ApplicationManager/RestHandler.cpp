@@ -352,7 +352,6 @@ void RestHandler::apiRegShellApp(const http_request& message)
 	}
 	auto jobj = jsonApp.as_object();
 
-	ERASE_JSON_FIELD(jobj, "run_once");
 	jobj[GET_STRING_T("status")] = web::json::value::number(0);
 	// /bin/sh -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine = "/bin/sh -c '";
