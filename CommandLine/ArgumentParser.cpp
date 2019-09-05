@@ -159,8 +159,9 @@ void ArgumentParser::processReg(const char* appName)
 
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
+	bool shellApp = (appName != nullptr);
 	if (
-		(nullptr == appName && m_commandLineVariables.count("name") == 0)
+		(!shellApp && m_commandLineVariables.count("name") == 0)
 		|| m_commandLineVariables.count("user") == 0
 		|| m_commandLineVariables.count("cmd") == 0
 		|| m_commandLineVariables.count("workdir") == 0
@@ -179,7 +180,7 @@ void ArgumentParser::processReg(const char* appName)
 		}
 	}
 	// Shell app does not need check app existance
-	if (nullptr == appName && isAppExist(m_commandLineVariables["name"].as<std::string>()))
+	if (!shellApp && isAppExist(m_commandLineVariables["name"].as<std::string>()))
 	{
 		if (m_commandLineVariables.count("force") == 0)
 		{
@@ -190,7 +191,7 @@ void ArgumentParser::processReg(const char* appName)
 		}
 	}
 	web::json::value jsobObj;
-	jsobObj["name"] = (appName == nullptr ? web::json::value::string(m_commandLineVariables["name"].as<std::string>()) : web::json::value::string(appName));
+	jsobObj["name"] = (shellApp ? web::json::value::string(appName) : web::json::value::string(m_commandLineVariables["name"].as<std::string>()));
 	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
@@ -256,7 +257,7 @@ void ArgumentParser::processReg(const char* appName)
 	}
 
 	std::string restPath;
-	if (nullptr	== appName)
+	if (!shellApp)
 	{
 		// Normal app
 		restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();

@@ -179,7 +179,7 @@ web::json::value ResourceCollection::AsJson()
 	}
 	
 	result[GET_STRING_T("fs")] = fs_all;
-
+	result[GET_STRING_T("systime")] = web::json::value::string(Utility::convertTime2Str(std::chrono::system_clock::now()));
 	LOG_DBG << fname << "Exit";
 	return result;
 }
