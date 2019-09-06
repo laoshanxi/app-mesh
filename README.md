@@ -34,7 +34,7 @@ make
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /login | username=base64(uname) <br> password=base64(passwd) | JWT authenticate login
+POST| /login | username=base64(uname) <br> password=base64(passwd) <br> Optional: <br> expire_seconds=600 | JWT authenticate login
 POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/auth/admin | JWT token authenticate
 GET | /app/$app-name | | Get an application infomation
 POST | /app/$app-name/run?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application, return process_uuid in body.

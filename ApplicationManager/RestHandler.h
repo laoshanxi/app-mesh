@@ -34,7 +34,7 @@ private:
 	bool verifyUserToken(const http_request& message, const std::string& token);
 	bool verifyToken(const http_request& message, const std::string& token, const std::string& user, const std::string& key);
 	std::string getToken(const http_request& message);
-	std::string createToken(const std::string uname, const std::string passwd);
+	std::string createToken(const std::string uname, const std::string passwd, int timeoutSeconds);
 
 	void apiLogin(const http_request& message);
 	void apiAuth(const http_request& message);

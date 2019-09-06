@@ -318,7 +318,7 @@ std::string RestHandler::getToken(const http_request& message)
 	return std::move(token);
 }
 
-std::string RestHandler::createToken(const std::string uname, const std::string passwd)
+std::string RestHandler::createToken(const std::string uname, const std::string passwd, int timeoutSeconds)
 {
 	if (uname.empty() || passwd.empty())
 	{
@@ -335,7 +335,7 @@ std::string RestHandler::createToken(const std::string uname, const std::string 
 		.set_issuer(JWT_ISSUER)
 		.set_type("JWT")
 		.set_issued_at(jwt::date(std::chrono::system_clock::now()))
-		.set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::minutes{ 60 }))
+		.set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{ timeoutSeconds }))
 		.set_payload_claim("name", std::string(uname))
 		.sign(jwt::algorithm::hs256{ passwd });
 	return std::move(token);
@@ -409,7 +409,7 @@ void RestHandler::apiDownloadFile(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiDownloadFile() ";
 
-	if (message.headers().find(U("file_path")) == message.headers().end())
+	if (!message.headers().has(U("file_path")))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
 		return;
@@ -451,7 +451,7 @@ void RestHandler::apiUploadFile(const http_request & message)
 {
 	const static char fname[] = "RestHandler::apiUploadFile() ";
 
-	if (message.headers().find(U("file_path")) == message.headers().end())
+	if (!message.headers().has(U("file_path")))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
 		return;
@@ -496,7 +496,14 @@ void RestHandler::apiLogin(const http_request& message)
 	{
 		auto uname = Utility::decode64(GET_STD_STRING(message.headers().find("username")->second));
 		auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find("password")->second));
-		auto token = createToken(uname, passwd);
+		int timeoutSeconds = 60 * 10;	// default timeout is 10 minutes
+		if (message.headers().has("expire_seconds"))
+		{
+			auto timeout = message.headers().find("expire_seconds")->second;
+			auto timeoutValue = std::stoi(timeout);
+			if (timeoutValue > 1 && timeoutValue < (24 * 60 * 60)) timeoutSeconds = timeoutValue;
+		}
+		auto token = createToken(uname, passwd, timeoutSeconds);
 
 		web::json::value result = web::json::value::object();
 		web::json::value profile = web::json::value::object();
@@ -505,6 +512,7 @@ void RestHandler::apiLogin(const http_request& message)
 		result[GET_STRING_T("profile")] = profile;
 		result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
 		result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
+		result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count() + timeoutSeconds);
 
 		if (verifyUserToken(message, token))
 		{
