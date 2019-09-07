@@ -7,6 +7,7 @@
 #include "ArgumentParser.h"
 #include "../common/Utility.h"
 #include "../common/os/linux.hpp"
+#include "../common/os/chown.hpp"
 
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
 #define HELP_ARG_CHECK_WITH_RETURN if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
@@ -596,6 +597,11 @@ void ArgumentParser::processDownload()
 	response.body().read_to_end(stream.streambuf()).wait();
 
 	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.streambuf().size()) << ">" << std::endl;
+
+	if (response.headers().has("file_mode"))
+		os::fileChmod(local, std::stoi(response.headers().find("file_mode")->second));
+	if (response.headers().has("file_user"))
+		os::chown(local, response.headers().find("file_user")->second);
 }
 
 void ArgumentParser::processUpload()

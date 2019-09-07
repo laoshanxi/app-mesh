@@ -433,7 +433,11 @@ void RestHandler::apiDownloadFile(const http_request& message)
 		auto length = static_cast<size_t>(fileStream.tell());
 		fileStream.seek(0, std::ios::beg);
 
-		message.reply(status_codes::OK, fileStream, length).then([this](pplx::task<void> t) { this->handle_error(t); });
+		web::http::http_response resp(status_codes::OK);
+		resp.set_body(fileStream, length);
+		resp.headers().add("file_mode", os::fileStat(file));
+		resp.headers().add("file_user", os::fileUser(file));
+		message.reply(resp).then([this](pplx::task<void> t) { this->handle_error(t); });
 	}).then([=](pplx::task<void> t)
 	{
 		try

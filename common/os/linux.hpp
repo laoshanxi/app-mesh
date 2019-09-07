@@ -731,7 +731,7 @@ namespace os {
 	{
 		const static char fname[] = "fileChmod() ";
 
-		if (mode < 0) return false;
+		if (mode <= 0) return false;
 
 		if (::chmod(path.c_str(), mode) >= 0)
 		{
