@@ -16,7 +16,7 @@ Supported applications  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> JWT authentication
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> JWT authentication <br> Download/Upload files
 
 
 ## Setup build environment on CentOS/Ubuntu/Debian
@@ -286,6 +286,7 @@ Success
 2. Remote async shell execute (can build-up web ssh)
 3. Host/app resource monitor
 4. Can be a standalone JWT server
+5. File server
 
 ## 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
