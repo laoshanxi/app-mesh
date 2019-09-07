@@ -6,6 +6,7 @@
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
 #include "../common/jwt-cpp/jwt.h"
+#include "../common/os/linux.hpp"
 
 #define REST_INFO_PRINT \
 	LOG_DBG << "Method: " << message.method(); \
@@ -471,6 +472,10 @@ void RestHandler::apiUploadFile(const http_request & message)
 			message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
 			{
 				os.close();
+				if (message.headers().has("file_mode"))
+				{
+					os::fileChmod(file, std::stoi(message.headers().find("file_mode")->second));
+				}
 				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t); });
 			});
 		}).then([=](pplx::task<void> t)

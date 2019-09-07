@@ -21,6 +21,7 @@
 #include <sys/sysinfo.h>
 #endif // __linux__
 
+#include <sys/stat.h>
 #include <list>
 #include <set>
 #include <string>
@@ -295,7 +296,7 @@ namespace os {
 				LOG_WAR << fname << "process already exit, failed to open:" << path;
 				return "";
 			}
-			LOG_WAR << fname << "Failed to open <" << path << "> with error" << std::strerror(errno);
+			LOG_WAR << fname << "Failed to open <" << path << "> with error: " << std::strerror(errno);
 			return "";
 		}
 
@@ -330,7 +331,7 @@ namespace os {
 
 		std::list<std::string> entries = os::ls("/proc");
 		if (entries.size() == 0) {
-			LOG_ERR << fname << "Failed to list files in /proc with error" << std::strerror(errno);
+			LOG_ERR << fname << "Failed to list files in /proc with error: " << std::strerror(errno);
 			return std::set<pid_t>();
 		}
 
@@ -682,6 +683,37 @@ namespace os {
 			}
 		}
 		return std::move(points);
+	}
+
+	inline int fileStat(const std::string& path)
+	{
+		const static char fname[] = "fileStat() ";
+
+		struct stat status;
+		if (::stat(path.c_str(), &status) >= 0)
+		{
+			return status.st_mode;
+		}
+		else
+		{
+			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << std::strerror(errno);
+			return -1;
+		}
+	}
+
+	inline bool fileChmod(const std::string& path, int mode)
+	{
+		const static char fname[] = "fileChmod() ";
+
+		if (::chmod(path.c_str(), mode) >= 0)
+		{
+			return true;
+		}
+		else
+		{
+			LOG_WAR << fname << "Failed chmod <" << path << "> with error: " << std::strerror(errno);
+			return false;
+		}
 	}
 
 } // namespace os {

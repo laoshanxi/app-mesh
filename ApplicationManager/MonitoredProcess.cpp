@@ -126,7 +126,7 @@ void MonitoredProcess::monitorThread()
 		}
 		catch (...)
 		{
-			LOG_ERR << fname << "message reply failed, maybe the http connection broken with error" << std::strerror(errno);
+			LOG_ERR << fname << "message reply failed, maybe the http connection broken with error: " << std::strerror(errno);
 		}
 	}
 	///////////////////////////////////////////////////////////////////////
