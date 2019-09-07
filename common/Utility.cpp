@@ -163,7 +163,7 @@ bool Utility::createRecursiveDirectory(const std::string & path, mode_t mode)
 		if (str.length() == 0) continue;
 		pstr += str;
 		pstr += "/";
-		if (!createDirectory(pstr))
+		if (!createDirectory(pstr, mode))
 		{
 			return false;
 		}
