@@ -47,8 +47,8 @@ PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell applicatio
 POST| /app/$app-name?action=start | | Start an application
 POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
-GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server host
-PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server
+GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server and grant permission
+PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
 
 ## How to install
 **CentOS**:
@@ -124,63 +124,53 @@ $ appc resource
                 "/" : 
                 {
                         "device" : "/dev/mapper/centos-root",
-                        "size" : 10504634368,
-                        "usage" : 0.34606185428728287,
-                        "used" : 3635253248
+                        "size" : 28947529728,
+                        "usage" : 0.24740564529320241,
+                        "used" : 7161782272
                 },
                 "/boot" : 
                 {
                         "device" : "/dev/sda1",
                         "size" : 1063256064,
-                        "usage" : 0.13290110330374755,
-                        "used" : 141307904
+                        "usage" : 0.13253513313609466,
+                        "used" : 140918784
                 },
                 "/var/lib/docker/containers" : 
                 {
                         "device" : "/dev/mapper/centos-root",
-                        "size" : 10504634368,
-                        "usage" : 0.34606185428728287,
-                        "used" : 3635253248
-                },
-                "/var/lib/docker/overlay2" : 
-                {
-                        "device" : "/dev/mapper/centos-root",
-                        "size" : 10504634368,
-                        "usage" : 0.34606185428728287,
-                        "used" : 3635253248
+                        "size" : 28947529728,
+                        "usage" : 0.24740564529320241,
+                        "used" : 7161782272
                 }
         },
         "host_name" : "centos1",
         "load" : 
         {
-                "15min" : 0.01,
-                "1min" : 0,
-                "5min" : 0.01
+                "15min" : 0.089999999999999997,
+                "1min" : 0.77000000000000002,
+                "5min" : 0.25
         },
-        "mem_applications" : 9760768,
-        "mem_freeSwap_bytes" : 1287647232,
-        "mem_free_bytes" : 3721338880,
-        "mem_totalSwap_bytes" : 1287647232,
-        "mem_total_bytes" : 4142419968,
+        "mem_applications" : 9490432,
+        "mem_freeSwap_bytes" : 3221221376,
+        "mem_free_bytes" : 5836828672,
+        "mem_totalSwap_bytes" : 3221221376,
+        "mem_total_bytes" : 6271037440,
         "net" : 
         [
                 {
-                        "address" : "192.168.2.6",
+                        "address" : "192.168.2.223",
                         "ipv4" : true,
                         "name" : "enp0s3"
-                },
+                }
                 {
-                        "address" : "172.17.0.1",
-                        "ipv4" : true,
-                        "name" : "docker0"
-                },
-                {
-                        "address" : "fe80::982a:da64:68ec:a6e0",
+                        "address" : "fe80::a370:29f:a5e7:883",
                         "ipv4" : false,
                         "name" : "enp0s3"
                 }
-        ]
+        ],
+        "systime" : "2019-09-07 03:20:24"
 }
+
 ```
 </details>
 
