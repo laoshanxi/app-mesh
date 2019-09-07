@@ -22,6 +22,7 @@
 #endif // __linux__
 
 #include <sys/stat.h>
+#include <pwd.h>
 #include <list>
 #include <set>
 #include <string>
@@ -701,9 +702,36 @@ namespace os {
 		}
 	}
 
+	inline std::string fileUser(const std::string& path)
+	{
+		const static char fname[] = "fileStat() ";
+
+		struct stat status;
+		if (::stat(path.c_str(), &status) >= 0)
+		{
+			struct passwd *pw_ptr;
+			if ((pw_ptr = getpwuid(status.st_uid)) == NULL)
+			{
+				LOG_WAR << fname << "Failed getpwuid <" << path << "> with error: " << std::strerror(errno);
+				return std::to_string(status.st_uid);
+			}
+			else
+			{
+				return pw_ptr->pw_name;
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << std::strerror(errno);
+		}
+		return "";
+	}
+
 	inline bool fileChmod(const std::string& path, int mode)
 	{
 		const static char fname[] = "fileChmod() ";
+
+		if (mode < 0) return false;
 
 		if (::chmod(path.c_str(), mode) >= 0)
 		{

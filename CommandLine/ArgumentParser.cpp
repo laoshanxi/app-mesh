@@ -648,6 +648,7 @@ void ArgumentParser::processUpload()
 
 	request.set_body(fileStream, length);
 	request.headers().add("file_mode", os::fileStat(local));
+	request.headers().add("file_user", os::fileUser(local));
 	http_response response = client.request(request).get();
 	fileStream.close();
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;

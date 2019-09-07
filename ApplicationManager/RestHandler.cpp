@@ -7,6 +7,7 @@
 #include "../common/Utility.h"
 #include "../common/jwt-cpp/jwt.h"
 #include "../common/os/linux.hpp"
+#include "../common//os/chown.hpp"
 
 #define REST_INFO_PRINT \
 	LOG_DBG << "Method: " << message.method(); \
@@ -475,6 +476,10 @@ void RestHandler::apiUploadFile(const http_request & message)
 				if (message.headers().has("file_mode"))
 				{
 					os::fileChmod(file, std::stoi(message.headers().find("file_mode")->second));
+				}
+				if (message.headers().has("file_user"))
+				{
+					os::chown(file, message.headers().find("file_user")->second);
 				}
 				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t); });
 			});

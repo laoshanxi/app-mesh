@@ -61,6 +61,9 @@
     <ClInclude Include="..\common\jwt-cpp\picojson.h">
       <Filter>common\jwt-cpp</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\os\chown.hpp">
+      <Filter>common\os</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />
