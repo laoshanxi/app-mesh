@@ -8,7 +8,7 @@ CXX = g++
 CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2
 OEXT = o
 
-INCLUDES =
+INCLUDES = -I/usr/local/ace/include/
 
 all : format $(TARGET) 
 

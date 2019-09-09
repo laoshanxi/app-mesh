@@ -9,7 +9,7 @@ CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2
 OEXT = o
 
 INCLUDES = -I/usr/local/include
-DEP_LIBS = -L/usr/local/lib -L/usr/local/lib64 -lpthread -lssl -lcrypto -lcpprest -lboost_system -lboost_thread -lboost_program_options -Wl,-Bstatic -llog4cpp -Wl,-Bdynamic
+DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -lssl -lcrypto -lcpprest -lboost_system -lboost_thread -lboost_program_options -lACE -Wl,-Bstatic -llog4cpp -Wl,-Bdynamic
 
 all : format $(TARGET) 
 
