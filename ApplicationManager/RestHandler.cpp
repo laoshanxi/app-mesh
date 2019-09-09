@@ -6,6 +6,8 @@
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
 #include "../common/jwt-cpp/jwt.h"
+#include "../common/os/linux.hpp"
+#include "../common//os/chown.hpp"
 
 #define REST_INFO_PRINT \
 	LOG_DBG << "Method: " << message.method(); \
@@ -431,7 +433,11 @@ void RestHandler::apiDownloadFile(const http_request& message)
 		auto length = static_cast<size_t>(fileStream.tell());
 		fileStream.seek(0, std::ios::beg);
 
-		message.reply(status_codes::OK, fileStream, length).then([this](pplx::task<void> t) { this->handle_error(t); });
+		web::http::http_response resp(status_codes::OK);
+		resp.set_body(fileStream, length);
+		resp.headers().add("file_mode", os::fileStat(file));
+		resp.headers().add("file_user", os::fileUser(file));
+		message.reply(resp).then([this](pplx::task<void> t) { this->handle_error(t); });
 	}).then([=](pplx::task<void> t)
 	{
 		try
@@ -471,6 +477,14 @@ void RestHandler::apiUploadFile(const http_request & message)
 			message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
 			{
 				os.close();
+				if (message.headers().has("file_mode"))
+				{
+					os::fileChmod(file, std::stoi(message.headers().find("file_mode")->second));
+				}
+				if (message.headers().has("file_user"))
+				{
+					os::chown(file, message.headers().find("file_user")->second);
+				}
 				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t); });
 			});
 		}).then([=](pplx::task<void> t)

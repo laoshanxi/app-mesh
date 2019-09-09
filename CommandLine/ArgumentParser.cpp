@@ -6,6 +6,8 @@
 #include <cpprest/json.h>
 #include "ArgumentParser.h"
 #include "../common/Utility.h"
+#include "../common/os/linux.hpp"
+#include "../common/os/chown.hpp"
 
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
 #define HELP_ARG_CHECK_WITH_RETURN if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
@@ -595,6 +597,11 @@ void ArgumentParser::processDownload()
 	response.body().read_to_end(stream.streambuf()).wait();
 
 	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.streambuf().size()) << ">" << std::endl;
+
+	if (response.headers().has("file_mode"))
+		os::fileChmod(local, std::stoi(response.headers().find("file_mode")->second));
+	if (response.headers().has("file_user"))
+		os::chown(local, response.headers().find("file_user")->second);
 }
 
 void ArgumentParser::processUpload()
@@ -646,6 +653,8 @@ void ArgumentParser::processUpload()
 	http_request request = createRequest(methods::PUT, "/upload", query, &header);
 
 	request.set_body(fileStream, length);
+	request.headers().add("file_mode", os::fileStat(local));
+	request.headers().add("file_user", os::fileUser(local));
 	http_response response = client.request(request).get();
 	fileStream.close();
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
