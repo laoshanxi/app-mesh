@@ -13,10 +13,6 @@
 #include <boost/archive/iterators/transform_width.hpp>
 #include <boost/algorithm/string.hpp>
 
-#include <boost/uuid/uuid.hpp>            // uuid class
-#include <boost/uuid/uuid_generators.hpp> // generators
-#include <boost/uuid/uuid_io.hpp>         // streaming operators etc.
-
 #include <log4cpp/Category.hh>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/FileAppender.hh>
@@ -24,6 +20,8 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/RollingFileAppender.hh>
 #include <log4cpp/OstreamAppender.hh>
+
+#include <ace/UUID.h>
 
 #include "../common/Utility.h"
 
@@ -428,9 +426,15 @@ std::string Utility::readFileCpp(const std::string & path)
 
 std::string Utility::createUUID()
 {
-	static boost::uuids::random_generator generator;
-	boost::uuids::uuid uuid1 = generator();
-	return boost::uuids::to_string(uuid1);
+	static bool initialized = false;
+	if (!initialized)
+	{
+		ACE_Utils::UUID_GENERATOR::instance()->init();
+		initialized = true;
+	}
+	ACE_Utils::UUID uuid;
+	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
+	return uuid.to_string()->c_str();
 }
 
 std::vector<std::string> Utility::splitString(const std::string & source, const std::string & splitFlag)
