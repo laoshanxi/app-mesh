@@ -434,7 +434,8 @@ std::string Utility::createUUID()
 	}
 	ACE_Utils::UUID uuid;
 	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
-	return uuid.to_string()->c_str();
+	auto str = std::string(uuid.to_string()->c_str());
+	return std::move(str);
 }
 
 std::vector<std::string> Utility::splitString(const std::string & source, const std::string & splitFlag)
