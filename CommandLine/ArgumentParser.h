@@ -35,7 +35,7 @@ private:
 	void processShell();
 	void processDownload();
 	void processUpload();
-	void processViewTags();
+	void processTags();
 
 	bool confirmInput(const char* msg);
 	http_response requestHttp(const method & mtd, const std::string& path);

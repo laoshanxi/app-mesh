@@ -106,7 +106,7 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "tags")
 	{
-		processViewTags();
+		processTags();
 	}
 	else
 	{
@@ -665,20 +665,68 @@ void ArgumentParser::processUpload()
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
-void ArgumentParser::processViewTags()
+void ArgumentParser::processTags()
 {
-	po::options_description desc("View tags:");
+	po::options_description desc("Manage tags:");
 	desc.add_options()
 		OPTION_HOST_NAME
+		("tag,t", po::value<std::vector<std::string>>()->default_value(std::vector<std::string>()), "tags (e.g., -t os=linux -e arch=arm64)")
+		("add,a", "add tags")
+		("remove,r", "remove tags")
 		("help,h", "help message")
 		;
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/app-manager/tags";
-	auto response = requestHttp(methods::GET, restPath);
-	RESPONSE_CHECK_WITH_RETURN;
+	if (m_commandLineVariables.count("add") && m_commandLineVariables.count("remove"))
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
 
+	std::string restPath = "/app-manager/tags";
+	http_response response;
+
+	std::vector<std::string> inputTags = m_commandLineVariables["tag"].as<std::vector<std::string>>();
+	if (m_commandLineVariables.count("add"))
+	{
+		// Process add
+		response = requestHttp(methods::GET, restPath);
+		RESPONSE_CHECK_WITH_RETURN;
+		auto tagVal = response.extract_json().get();
+		auto tagObj = tagVal.as_object();
+		for (auto str : inputTags)
+		{
+			std::vector<std::string> envVec = Utility::splitString(str, "=");
+			if (envVec.size() == 2)
+			{
+				tagObj[GET_STRING_T(envVec.at(0))] = web::json::value::string(GET_STRING_T(envVec.at(1)));
+			}
+		}
+		response = requestHttp(methods::POST, restPath, tagVal);
+		RESPONSE_CHECK_WITH_RETURN;
+	}
+	else if (m_commandLineVariables.count("remove"))
+	{
+		// Process remove
+		response = requestHttp(methods::GET, restPath);
+		RESPONSE_CHECK_WITH_RETURN;
+		auto tagVal = response.extract_json().get();
+		for (auto str : inputTags)
+		{
+			std::vector<std::string> envVec = Utility::splitString(str, "=");
+			if (tagVal.has_field(envVec.at(0))) tagVal.erase(envVec.at(0));
+		}
+		response = requestHttp(methods::POST, restPath, tagVal);
+		RESPONSE_CHECK_WITH_RETURN;
+	}
+	else
+	{
+		response = requestHttp(methods::GET, restPath);
+		RESPONSE_CHECK_WITH_RETURN;
+	}
+
+	// Finally print current
 	auto tags = response.extract_json().get().as_object();
 	for (auto tag : tags)
 	{
