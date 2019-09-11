@@ -26,5 +26,9 @@
       "name": "user",
       "key": "app-mgr-user-secret-key"
     }
+  },
+  "Tags": {
+    "os_version": "centos7.6",
+    "arch": "x86_64"
   }
 }

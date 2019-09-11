@@ -77,6 +77,9 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_jwtAdminKey = GET_STD_STRING(jwt.at(GET_STRING_T("admin")).as_object().at(GET_STRING_T("key")).as_string());
 	config->m_jwtUserName = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("name")).as_string());
 	config->m_jwtUserKey = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("key")).as_string());
+
+	config->parseTags(jobj.at(GET_STRING_T("Tags")));
+
 	m_instance = config;
 	return config;
 }
@@ -115,6 +118,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	}
 	
 	result[GET_STRING_T("Applications")] = apps;
+	result[GET_STRING_T("Tags")] = getTags();
 	return result;
 }
 
@@ -187,6 +191,31 @@ void Configuration::startApp(const std::string& appName)
 const std::string Configuration::getLogLevel() const
 {
 	return m_logLevel;
+}
+
+web::json::value Configuration::getTags()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	auto tags = web::json::value::object();
+	for (auto tag : m_tags)
+	{
+		tags[tag.first] = web::json::value::string(tag.second);
+	}
+	return tags;
+}
+
+void Configuration::parseTags(web::json::value json)
+{
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_tags.clear();
+		auto jobj = json.as_object();
+		for (auto iter = jobj.begin(); iter != jobj.end(); iter++)
+		{
+			m_tags[iter->first] = GET_STD_STRING(iter->second.as_string());
+		}
+	}
+	this->saveConfigToDisk();
 }
 
 bool Configuration::getSslEnabled() const

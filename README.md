@@ -49,6 +49,8 @@ POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
 GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server and grant permission
 PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
+GET| /app-manager/tags | { "os": "linux","arch": "x86_64" } | Get tags
+POST| /app-manager/tags | { "os": "linux","arch": "x86_64" } | Update tags
 
 ## How to install
 **CentOS**:

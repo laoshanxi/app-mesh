@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <map>
 
 #include <cpprest/json.h>
 
@@ -35,6 +36,8 @@ public:
 	void stopApp(const std::string& appName);
 	void startApp(const std::string& appName);
 	const std::string getLogLevel() const;
+	web::json::value getTags();
+	void parseTags(web::json::value json);
 
 	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;
@@ -63,6 +66,7 @@ private:
 
 	std::recursive_mutex m_mutex;
 	std::string m_jsonFilePath;
+	std::map<std::string, std::string> m_tags;
 
 	bool m_sslEnabled;
 	bool m_restEnabled;

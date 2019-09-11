@@ -50,6 +50,8 @@ private:
 	void apiDeleteApp(const http_request& message);
 	void apiDownloadFile(const http_request& message);
 	void apiUploadFile(const http_request& message);
+	void apiGetTags(const http_request& message);
+	void apiSetTags(const http_request& message);
 
 private:
 	std::shared_ptr<http_listener> m_listener;
