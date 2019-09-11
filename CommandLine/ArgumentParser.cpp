@@ -670,7 +670,7 @@ void ArgumentParser::processTags()
 	po::options_description desc("Manage tags:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("tag,t", po::value<std::vector<std::string>>()->default_value(std::vector<std::string>()), "tags (e.g., -t os=linux -e arch=arm64)")
+		("tag,t", po::value<std::vector<std::string>>(), "tags (e.g., -t os=linux -e arch=arm64)")
 		("add,a", "add tags")
 		("remove,r", "remove tags")
 		("help,h", "help message")
@@ -687,7 +687,9 @@ void ArgumentParser::processTags()
 	std::string restPath = "/app-manager/tags";
 	http_response response;
 
-	std::vector<std::string> inputTags = m_commandLineVariables["tag"].as<std::vector<std::string>>();
+	std::vector<std::string> inputTags;
+	if (m_commandLineVariables.count("tag")) inputTags = m_commandLineVariables["tag"].as<std::vector<std::string>>();
+
 	if (m_commandLineVariables.count("add"))
 	{
 		// Process add
