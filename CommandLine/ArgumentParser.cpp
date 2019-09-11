@@ -104,6 +104,10 @@ void ArgumentParser::parse()
 	{
 		processUpload();
 	}
+	else if (cmd == "tags")
+	{
+		processViewTags();
+	}
 	else
 	{
 		printMainHelp();
@@ -115,6 +119,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
+	std::cout << "  tags        Display host tags" << std::endl;
 	std::cout << "  start       Start a application" << std::endl;
 	std::cout << "  stop        Stop a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
@@ -658,6 +663,27 @@ void ArgumentParser::processUpload()
 	http_response response = client.request(request).get();
 	fileStream.close();
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+}
+
+void ArgumentParser::processViewTags()
+{
+	po::options_description desc("View tags:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("help,h", "help message")
+		;
+	moveForwardCommandLineVariables(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	std::string restPath = "/app-manager/tags";
+	auto response = requestHttp(methods::GET, restPath);
+	RESPONSE_CHECK_WITH_RETURN;
+
+	auto tags = response.extract_json().get().as_object();
+	for (auto tag : tags)
+	{
+		std::cout << tag.first << "=" << tag.second.as_string() << std::endl;
+	}
 }
 
 bool ArgumentParser::confirmInput(const char* msg)
