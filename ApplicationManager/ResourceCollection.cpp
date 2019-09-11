@@ -161,24 +161,25 @@ web::json::value ResourceCollection::AsJson()
 		result[GET_STRING_T("load")] = sysLoad;
 	}
 	// FS
-	web::json::value fs_all = web::json::value::object();
-	
 	auto mountPoints = os::getMoundPoints();
-	for (auto& mnt : mountPoints)
+	auto fsArr = web::json::value::array(mountPoints.size());
+	idx = 0;
+	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr, &idx](const std::pair<std::string, std::string>& pair)
 	{
-		auto usage = os::df(mnt.first);
+		auto usage = os::df(pair.first);
 		if (usage != nullptr)
 		{
 			web::json::value fs = web::json::value::object();
 			fs["size"] = web::json::value::number(usage->size);
 			fs["used"] = web::json::value::number(usage->used);
 			fs["usage"] = web::json::value::number(usage->usage);
-			fs["device"] = web::json::value::string(mnt.second);
-			fs_all[mnt.first] = fs;
+			fs["device"] = web::json::value::string(pair.second);
+			fs["mount_point"] = web::json::value::string(pair.first);
+			fsArr[idx++] = fs;
 		}
-	}
+	});
 	
-	result[GET_STRING_T("fs")] = fs_all;
+	result[GET_STRING_T("fs")] = fsArr;
 	result[GET_STRING_T("systime")] = web::json::value::string(Utility::convertTime2Str(std::chrono::system_clock::now()));
 	LOG_DBG << fname << "Exit";
 	return result;
