@@ -685,7 +685,8 @@ void ArgumentParser::processTags()
 	}
 
 	std::string restPath = "/app-manager/tags";
-	http_response response;
+	http_response response = requestHttp(methods::GET, restPath);
+	RESPONSE_CHECK_WITH_RETURN;
 
 	std::vector<std::string> inputTags;
 	if (m_commandLineVariables.count("tag")) inputTags = m_commandLineVariables["tag"].as<std::vector<std::string>>();
@@ -693,8 +694,6 @@ void ArgumentParser::processTags()
 	if (m_commandLineVariables.count("add"))
 	{
 		// Process add
-		response = requestHttp(methods::GET, restPath);
-		RESPONSE_CHECK_WITH_RETURN;
 		auto tagVal = response.extract_json().get();
 		auto tagObj = tagVal.as_object();
 		for (auto str : inputTags)
@@ -711,8 +710,6 @@ void ArgumentParser::processTags()
 	else if (m_commandLineVariables.count("remove"))
 	{
 		// Process remove
-		response = requestHttp(methods::GET, restPath);
-		RESPONSE_CHECK_WITH_RETURN;
 		auto tagVal = response.extract_json().get();
 		for (auto str : inputTags)
 		{
@@ -720,11 +717,6 @@ void ArgumentParser::processTags()
 			if (tagVal.has_field(envVec.at(0))) tagVal.erase(envVec.at(0));
 		}
 		response = requestHttp(methods::POST, restPath, tagVal);
-		RESPONSE_CHECK_WITH_RETURN;
-	}
-	else
-	{
-		response = requestHttp(methods::GET, restPath);
 		RESPONSE_CHECK_WITH_RETURN;
 	}
 
