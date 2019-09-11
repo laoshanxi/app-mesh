@@ -65,7 +65,7 @@ namespace net {
 	{
 		const static char fname[] = "net::getAddressStr() ";
 
-		char hostname[MAXHOSTNAMELEN] = { 0 };
+		char buffer[MAXHOSTNAMELEN] = { 0 };
 		socklen_t length;
 
 		if (storage->sa_family == AF_INET) {
@@ -79,7 +79,7 @@ namespace net {
 			return "";
 		}
 
-		int error = getnameinfo(storage, length, hostname, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+		int error = getnameinfo(storage, length, buffer, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
 
 		if (error != 0) {
 			LOG_ERR << fname << "getnameinfo failed, error :" << std::strerror(errno);
@@ -87,11 +87,11 @@ namespace net {
 		}
 
 		// remove % from ipv6 address (fe80::bacd:a28c:186c:a9cd%enp0s3)
-		if (storage->sa_family == AF_INET6 && strchr(hostname, '%') > 0) {
-			*(strchr(hostname, '%')) = '\0';
+		if (storage->sa_family == AF_INET6 && strchr(buffer, '%') > 0) {
+			*(strchr(buffer, '%')) = '\0';
 		}
 
-		return std::string(hostname);
+		return std::string(buffer);
 	}
 
 	// Returns the names of all the link devices in the system.

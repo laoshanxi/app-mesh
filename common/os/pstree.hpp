@@ -21,9 +21,9 @@ namespace os {
 		const static char fname[] = "os::pstree() ";
 
 		std::list<ProcessTree> children;
-		for (const Process& process : processes) {
-			if (process.parent == pid) {
-				auto tree = pstree(process.pid, processes);
+		for (const Process& proc : processes) {
+			if (proc.parent == pid) {
+				auto tree = pstree(proc.pid, processes);
 				if (tree == nullptr) {
 					return tree;
 				}
@@ -31,9 +31,9 @@ namespace os {
 			}
 		}
 
-		for (const Process& process : processes) {
-			if (process.pid == pid) {
-				return std::make_shared<ProcessTree>(ProcessTree(process, children));
+		for (const Process& proc : processes) {
+			if (proc.pid == pid) {
+				return std::make_shared<ProcessTree>(ProcessTree(proc, children));
 			}
 		}
 
@@ -50,13 +50,13 @@ namespace os {
 			pid = getpid();
 		}
 
-		const std::list<Process> processes = os::processes();
+		const std::list<Process> processList = os::processes();
 
-		if (processes.size() == 0) {
+		if (processList.size() == 0) {
 			return nullptr;
 		}
 
-		return pstree(pid, processes);
+		return pstree(pid, processList);
 	}
 
 

@@ -390,30 +390,30 @@ namespace os {
 			return nullptr;
 		}
 
-		const std::shared_ptr<os::ProcessStatus> status = os::status(pid);
+		const std::shared_ptr<os::ProcessStatus> processStatus = os::status(pid);
 
-		if (nullptr == status) {
+		if (nullptr == processStatus) {
 			return nullptr;
 		}
 
-		auto utime = std::chrono::seconds(status->utime / ticks);
-		auto stime = std::chrono::seconds(status->stime / ticks);
+		auto utime = std::chrono::seconds(processStatus->utime / ticks);
+		auto stime = std::chrono::seconds(processStatus->stime / ticks);
 
 		// The command line from 'status->comm' is only "arg0" from "argv"
 		// (i.e., the canonical executable name). To get the entire command
 		// line we grab '/proc/[pid]/cmdline'.
-		std::string cmdline = os::cmdline(pid);
+		std::string commandLine = os::cmdline(pid);
 
 		return std::make_shared<Process>(
-			status->pid,
-			status->ppid,
-			status->pgrp,
-			status->session,
-			status->rss * pageSize,
+			processStatus->pid,
+			processStatus->ppid,
+			processStatus->pgrp,
+			processStatus->session,
+			processStatus->rss * pageSize,
 			utime,
 			stime,
-			cmdline.length() ? cmdline : status->comm,
-			status->state == 'Z');
+			commandLine.length() ? commandLine : processStatus->comm,
+			processStatus->state == 'Z');
 	}
 
 	// Returns the total size of main and free memory.
@@ -445,15 +445,15 @@ namespace os {
 
 	inline std::list<Process> processes()
 	{
-		const std::set<pid_t> pids = os::pids();
+		const std::set<pid_t> pidList = os::pids();
 
 		std::list<Process> result;
-		for (pid_t pid : pids) {
-			auto process = os::process(pid);
+		for (pid_t pid : pidList) {
+			auto processPtr = os::process(pid);
 
 			// Ignore any processes that disappear between enumeration and now.
-			if (process != nullptr) {
-				result.push_back(*(process.get()));
+			if (processPtr != nullptr) {
+				result.push_back(*(processPtr.get()));
 			}
 		}
 		return result;
@@ -464,9 +464,9 @@ namespace os {
 		pid_t pid,
 		const std::list<Process>& processes)
 	{
-		for (const Process& process : processes) {
-			if (process.pid == pid) {
-				return std::make_shared<Process>(process);
+		for (const Process& processPtr : processes) {
+			if (processPtr.pid == pid) {
+				return std::make_shared<Process>(processPtr);
 			}
 		}
 		return nullptr;
@@ -690,10 +690,10 @@ namespace os {
 	{
 		const static char fname[] = "fileStat() ";
 
-		struct stat status;
-		if (::stat(path.c_str(), &status) >= 0)
+		struct stat fileStat;
+		if (::stat(path.c_str(), &fileStat) >= 0)
 		{
-			return status.st_mode;
+			return fileStat.st_mode;
 		}
 		else
 		{
@@ -704,16 +704,16 @@ namespace os {
 
 	inline std::string fileUser(const std::string& path)
 	{
-		const static char fname[] = "fileStat() ";
+		const static char fname[] = "fileUser() ";
 
-		struct stat status;
-		if (::stat(path.c_str(), &status) >= 0)
+		struct stat fstate;
+		if (::stat(path.c_str(), &fstate) >= 0)
 		{
 			struct passwd *pw_ptr;
-			if ((pw_ptr = getpwuid(status.st_uid)) == NULL)
+			if ((pw_ptr = getpwuid(fstate.st_uid)) == NULL)
 			{
 				LOG_WAR << fname << "Failed getpwuid <" << path << "> with error: " << std::strerror(errno);
-				return std::to_string(status.st_uid);
+				return std::to_string(fstate.st_uid);
 			}
 			else
 			{
