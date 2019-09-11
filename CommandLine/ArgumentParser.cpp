@@ -670,7 +670,7 @@ void ArgumentParser::processTags()
 	po::options_description desc("Manage tags:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("tag,t", po::value<std::vector<std::string>>(), "tags (e.g., -t os=linux -e arch=arm64)")
+		("tag,t", po::value<std::vector<std::string>>(), "tags (e.g., -t os=linux -t arch=arm64)")
 		("add,a", "add tags")
 		("remove,r", "remove tags")
 		("help,h", "help message")
@@ -695,13 +695,12 @@ void ArgumentParser::processTags()
 	{
 		// Process add
 		auto tagVal = response.extract_json().get();
-		auto tagObj = tagVal.as_object();
 		for (auto str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			if (envVec.size() == 2)
 			{
-				tagObj[GET_STRING_T(envVec.at(0))] = web::json::value::string(GET_STRING_T(envVec.at(1)));
+				tagVal[GET_STRING_T(envVec.at(0))] = web::json::value::string(GET_STRING_T(envVec.at(1)));
 			}
 		}
 		response = requestHttp(methods::POST, restPath, tagVal);
