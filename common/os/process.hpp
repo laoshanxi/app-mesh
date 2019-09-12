@@ -3,6 +3,7 @@
 
 #include <sys/types.h> // For pid_t.
 
+#include <numeric>
 #include <list>
 #include <ostream>
 #include <sstream>
@@ -82,11 +83,7 @@ namespace os {
 		// Count the total RES memory usage in the process tree
 		const uint64_t totalRSS() const
 		{
-			uint64_t result = process.rss_bytes;
-			for (auto tree : children)
-			{
-				result += tree.totalRSS();
-			}
+			uint64_t result = std::accumulate(children.begin(), children.end(), process.rss_bytes);
 			return result;
 		}
 
