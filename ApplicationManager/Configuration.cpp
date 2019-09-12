@@ -206,13 +206,17 @@ web::json::value Configuration::getTags()
 
 void Configuration::parseTags(web::json::value json)
 {
+	const static char fname[] = "Configuration::parseTags() ";
 	{
+		LOG_INF << fname << "reset lables";
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		m_tags.clear();
 		auto jobj = json.as_object();
 		for (auto iter = jobj.begin(); iter != jobj.end(); iter++)
 		{
-			m_tags[iter->first] = GET_STD_STRING(iter->second.as_string());
+			std::string lableKey = GET_STD_STRING(iter->first);
+			m_tags[lableKey] = GET_STD_STRING(iter->second.as_string());
+			LOG_INF << fname << "lable: " << lableKey << "=" << m_tags[lableKey];
 		}
 	}
 	this->saveConfigToDisk();
