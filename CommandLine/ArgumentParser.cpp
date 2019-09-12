@@ -680,7 +680,8 @@ void ArgumentParser::processTags()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/app-manager/lables";
-	http_response response;
+	http_response response = requestHttp(methods::GET, restPath);
+	RESPONSE_CHECK_WITH_RETURN;
 	std::vector<std::string> inputTags;
 	if (m_commandLineVariables.count("lable")) inputTags = m_commandLineVariables["lable"].as<std::vector<std::string>>();
 
@@ -727,8 +728,6 @@ void ArgumentParser::processTags()
 		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("add"))
 	{
 		// view
-		response = requestHttp(methods::GET, restPath);
-		RESPONSE_CHECK_WITH_RETURN;
 	}
 	else
 	{
