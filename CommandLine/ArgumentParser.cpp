@@ -670,7 +670,7 @@ void ArgumentParser::processTags()
 	po::options_description desc("Manage lables:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("view,v", "view lables")
+		("list,v", "list lables")
 		("add,a", "add lables")
 		("remove,r", "remove lables")
 		("lable,l", po::value<std::vector<std::string>>(), "lables (e.g., -l os=linux -t arch=arm64)")
@@ -685,7 +685,7 @@ void ArgumentParser::processTags()
 	if (m_commandLineVariables.count("lable")) inputTags = m_commandLineVariables["lable"].as<std::vector<std::string>>();
 
 	if (m_commandLineVariables.count("add") && 
-		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("view"))
+		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("list"))
 	{
 		// Process add
 		if (inputTags.empty())
@@ -706,7 +706,7 @@ void ArgumentParser::processTags()
 		RESPONSE_CHECK_WITH_RETURN;
 	}
 	else if (m_commandLineVariables.count("remove") &&
-		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("view"))
+		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("list"))
 	{
 		// Process remove
 		if (inputTags.empty())
@@ -723,8 +723,8 @@ void ArgumentParser::processTags()
 		response = requestHttp(methods::POST, restPath, tagVal);
 		RESPONSE_CHECK_WITH_RETURN;
 	}
-	else if (m_commandLineVariables.count("view") &&
-		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("view"))
+	else if (m_commandLineVariables.count("list") &&
+		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("add"))
 	{
 		// view
 		response = requestHttp(methods::GET, restPath);
