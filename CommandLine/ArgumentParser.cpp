@@ -670,9 +670,10 @@ void ArgumentParser::processTags()
 	po::options_description desc("Manage lables:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("lable,l", po::value<std::vector<std::string>>(), "lables (e.g., -t os=linux -t arch=arm64)")
+		("view,v", "view lables")
 		("add,a", "add lables")
 		("remove,r", "remove lables")
+		("lable,l", po::value<std::vector<std::string>>(), "lables (e.g., -l os=linux -t arch=arm64)")
 		("help,h", "help message")
 		;
 	moveForwardCommandLineVariables(desc);
@@ -685,13 +686,12 @@ void ArgumentParser::processTags()
 	}
 
 	std::string restPath = "/app-manager/lables";
-	http_response response = requestHttp(methods::GET, restPath);
-	RESPONSE_CHECK_WITH_RETURN;
-
+	http_response response;
 	std::vector<std::string> inputTags;
 	if (m_commandLineVariables.count("lable")) inputTags = m_commandLineVariables["lable"].as<std::vector<std::string>>();
 
-	if (m_commandLineVariables.count("add"))
+	if (m_commandLineVariables.count("add") && 
+		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("view"))
 	{
 		// Process add
 		if (inputTags.empty())
@@ -711,7 +711,8 @@ void ArgumentParser::processTags()
 		response = requestHttp(methods::POST, restPath, tagVal);
 		RESPONSE_CHECK_WITH_RETURN;
 	}
-	else if (m_commandLineVariables.count("remove"))
+	else if (m_commandLineVariables.count("remove") &&
+		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("view"))
 	{
 		// Process remove
 		if (inputTags.empty())
@@ -727,6 +728,18 @@ void ArgumentParser::processTags()
 		}
 		response = requestHttp(methods::POST, restPath, tagVal);
 		RESPONSE_CHECK_WITH_RETURN;
+	}
+	else if (m_commandLineVariables.count("view") &&
+		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("view"))
+	{
+		// view
+		response = requestHttp(methods::GET, restPath);
+		RESPONSE_CHECK_WITH_RETURN;
+	}
+	else
+	{
+		std::cout << desc << std::endl;
+		return;
 	}
 
 	// Finally print current
