@@ -81,6 +81,7 @@ $ appc
 Commands:
   view        List application[s]
   resource    Display host resource usage
+  tags        Manage host tags
   start       Start a application
   stop        Stop a application
   restart     Restart a application
@@ -122,55 +123,77 @@ $ appc resource
         "cpu_processors" : 2,
         "cpu_sockets" : 1,
         "fs" : 
-        {
-                "/" : 
+        [
                 {
                         "device" : "/dev/mapper/centos-root",
-                        "size" : 28947529728,
-                        "usage" : 0.24740564529320241,
-                        "used" : 7161782272
+                        "mount_point" : "/",
+                        "size" : 10504634368,
+                        "usage" : 0.62867853488720304,
+                        "used" : 6604038144
                 },
-                "/boot" : 
                 {
                         "device" : "/dev/sda1",
+                        "mount_point" : "/boot",
                         "size" : 1063256064,
-                        "usage" : 0.13253513313609466,
-                        "used" : 140918784
+                        "usage" : 0.13290110330374755,
+                        "used" : 141307904
                 },
-                "/var/lib/docker/containers" : 
                 {
                         "device" : "/dev/mapper/centos-root",
-                        "size" : 28947529728,
-                        "usage" : 0.24740564529320241,
-                        "used" : 7161782272
+                        "mount_point" : "/var/lib/docker/containers",
+                        "size" : 10504634368,
+                        "usage" : 0.62867853488720304,
+                        "used" : 6604038144
+                },
+                {
+                        "device" : "/dev/mapper/centos-root",
+                        "mount_point" : "/var/lib/docker/overlay2",
+                        "size" : 10504634368,
+                        "usage" : 0.62867853488720304,
+                        "used" : 6604038144
                 }
-        },
+        ],
         "host_name" : "centos1",
         "load" : 
         {
-                "15min" : 0.089999999999999997,
-                "1min" : 0.77000000000000002,
-                "5min" : 0.25
+                "15min" : 0.059999999999999998,
+                "1min" : 0.070000000000000007,
+                "5min" : 0.070000000000000007
         },
-        "mem_applications" : 9490432,
-        "mem_freeSwap_bytes" : 3221221376,
-        "mem_free_bytes" : 5836828672,
-        "mem_totalSwap_bytes" : 3221221376,
-        "mem_total_bytes" : 6271037440,
+        "mem_applications" : 9850880,
+        "mem_freeSwap_bytes" : 1287647232,
+        "mem_free_bytes" : 3260231680,
+        "mem_totalSwap_bytes" : 1287647232,
+        "mem_total_bytes" : 4142419968,
         "net" : 
         [
                 {
-                        "address" : "192.168.2.223",
+                        "address" : "192.168.2.7",
                         "ipv4" : true,
                         "name" : "enp0s3"
-                }
+                },
                 {
-                        "address" : "fe80::a370:29f:a5e7:883",
+                        "address" : "10.0.3.15",
+                        "ipv4" : true,
+                        "name" : "enp0s8"
+                },
+                {
+                        "address" : "172.17.0.1",
+                        "ipv4" : true,
+                        "name" : "docker0"
+                },
+                {
+                        "address" : "fe80::982a:da64:68ec:a6e0",
                         "ipv4" : false,
                         "name" : "enp0s3"
+                },
+                {
+                        "address" : "fe80::a817:69be:f5e9:e667",
+                        "ipv4" : false,
+                        "name" : "enp0s8"
                 }
         ],
-        "systime" : "2019-09-07 03:20:24"
+        "systime" : "2019-09-12 11:41:38"
 }
 
 ```
@@ -276,6 +299,23 @@ file <./1.log> size <10.4 M>
 ``` sh
 $ # appc put -r /opt/appmanager/log/appsvc.log -l ./1.log
 Success
+```
+
+## Manage lables
+``` sh
+# list tags
+$ appc tags
+arch=x86_64
+os_version=centos7.6
+
+# remove tag
+$ appc tags -r -t arch
+os_version=centos7.6
+
+# add tag
+$ appc tags --add --tag mytag=abc
+mytag=abc
+os_version=centos7.6
 ```
 
 ![example](https://github.com/laoshanxi/app-manager/blob/master/doc/example.gif?raw=true) 

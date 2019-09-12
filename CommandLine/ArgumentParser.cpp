@@ -119,7 +119,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
-	std::cout << "  tags        Display host tags" << std::endl;
+	std::cout << "  tags        Manage host lables" << std::endl;
 	std::cout << "  start       Start a application" << std::endl;
 	std::cout << "  stop        Stop a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
