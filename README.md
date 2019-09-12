@@ -81,7 +81,7 @@ $ appc
 Commands:
   view        List application[s]
   resource    Display host resource usage
-  lables      Manage host lables
+  lable       Manage host lables
   start       Start a application
   stop        Stop a application
   restart     Restart a application

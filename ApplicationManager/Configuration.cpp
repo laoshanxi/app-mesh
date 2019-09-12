@@ -78,7 +78,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_jwtUserName = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("name")).as_string());
 	config->m_jwtUserKey = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("key")).as_string());
 
-	config->parseTags(jobj.at(GET_STRING_T("Tags")));
+	config->parseTags(jobj.at(GET_STRING_T("Lables")));
 
 	m_instance = config;
 	return config;
