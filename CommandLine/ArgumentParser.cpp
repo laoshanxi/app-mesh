@@ -696,7 +696,7 @@ void ArgumentParser::processTags()
 		// Process add
 		if (inputTags.empty())
 		{
-			std::cout << "No lable specified";
+			std::cout << "No lable specified" << std::endl;
 			return;
 		}
 		auto tagVal = response.extract_json().get();
@@ -716,7 +716,7 @@ void ArgumentParser::processTags()
 		// Process remove
 		if (inputTags.empty())
 		{
-			std::cout << "No lable specified";
+			std::cout << "No lable specified" << std::endl;
 			return;
 		}
 		auto tagVal = response.extract_json().get();
