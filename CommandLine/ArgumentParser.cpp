@@ -670,7 +670,7 @@ void ArgumentParser::processTags()
 	po::options_description desc("Manage lables:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("list,v", "list lables")
+		("view,v", "list lables")
 		("add,a", "add lables")
 		("remove,r", "remove lables")
 		("lable,l", po::value<std::vector<std::string>>(), "lables (e.g., -l os=linux -t arch=arm64)")
