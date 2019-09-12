@@ -104,7 +104,7 @@ void ArgumentParser::parse()
 	{
 		processUpload();
 	}
-	else if (cmd == "tags")
+	else if (cmd == "lable")
 	{
 		processTags();
 	}
@@ -119,7 +119,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
-	std::cout << "  tags        Manage host lables" << std::endl;
+	std::cout << "  lables      Manage host lables" << std::endl;
 	std::cout << "  start       Start a application" << std::endl;
 	std::cout << "  stop        Stop a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
@@ -667,12 +667,12 @@ void ArgumentParser::processUpload()
 
 void ArgumentParser::processTags()
 {
-	po::options_description desc("Manage tags:");
+	po::options_description desc("Manage lables:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("tag,t", po::value<std::vector<std::string>>(), "tags (e.g., -t os=linux -t arch=arm64)")
-		("add,a", "add tags")
-		("remove,r", "remove tags")
+		("lable,l", po::value<std::vector<std::string>>(), "lables (e.g., -t os=linux -t arch=arm64)")
+		("add,a", "add lables")
+		("remove,r", "remove lables")
 		("help,h", "help message")
 		;
 	moveForwardCommandLineVariables(desc);
@@ -684,16 +684,21 @@ void ArgumentParser::processTags()
 		return;
 	}
 
-	std::string restPath = "/app-manager/tags";
+	std::string restPath = "/app-manager/lables";
 	http_response response = requestHttp(methods::GET, restPath);
 	RESPONSE_CHECK_WITH_RETURN;
 
 	std::vector<std::string> inputTags;
-	if (m_commandLineVariables.count("tag")) inputTags = m_commandLineVariables["tag"].as<std::vector<std::string>>();
+	if (m_commandLineVariables.count("lable")) inputTags = m_commandLineVariables["lable"].as<std::vector<std::string>>();
 
 	if (m_commandLineVariables.count("add"))
 	{
 		// Process add
+		if (inputTags.empty())
+		{
+			std::cout << "No lable specified";
+			return;
+		}
 		auto tagVal = response.extract_json().get();
 		for (auto str : inputTags)
 		{
@@ -709,6 +714,11 @@ void ArgumentParser::processTags()
 	else if (m_commandLineVariables.count("remove"))
 	{
 		// Process remove
+		if (inputTags.empty())
+		{
+			std::cout << "No lable specified";
+			return;
+		}
 		auto tagVal = response.extract_json().get();
 		for (auto str : inputTags)
 		{

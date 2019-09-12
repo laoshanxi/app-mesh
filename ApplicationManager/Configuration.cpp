@@ -118,7 +118,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	}
 	
 	result[GET_STRING_T("Applications")] = apps;
-	result[GET_STRING_T("Tags")] = getTags();
+	result[GET_STRING_T("Lables")] = getTags();
 	return result;
 }
 

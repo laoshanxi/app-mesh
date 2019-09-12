@@ -116,10 +116,10 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/upload
 	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiUploadFile, this, std::placeholders::_1));
 
-	// http://127.0.0.1:6060/app-manager/tags
-	bindRest(web::http::methods::GET, "/app-manager/tags", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app-manager/tags
-	bindRest(web::http::methods::POST, "/app-manager/tags", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app-manager/lables
+	bindRest(web::http::methods::GET, "/app-manager/lables", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app-manager/lables
+	bindRest(web::http::methods::POST, "/app-manager/lables", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
 
 	this->open();
 

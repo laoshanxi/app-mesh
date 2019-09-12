@@ -27,7 +27,7 @@
       "key": "app-mgr-user-secret-key"
     }
   },
-  "Tags": {
+  "Lables": {
     "os_version": "centos7.6",
     "arch": "x86_64"
   }

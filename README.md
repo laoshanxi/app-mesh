@@ -49,8 +49,8 @@ POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
 GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server and grant permission
 PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
-GET| /app-manager/tags | { "os": "linux","arch": "x86_64" } | Get tags
-POST| /app-manager/tags | { "os": "linux","arch": "x86_64" } | Update tags
+GET| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Get lables
+POST| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Update lables
 
 ## How to install
 **CentOS**:
@@ -81,7 +81,7 @@ $ appc
 Commands:
   view        List application[s]
   resource    Display host resource usage
-  tags        Manage host tags
+  lables      Manage host lables
   start       Start a application
   stop        Stop a application
   restart     Restart a application
@@ -303,17 +303,17 @@ Success
 
 ## Manage lables
 ``` sh
-# list tags
-$ appc tags
+# list lable
+$ appc lable
 arch=x86_64
 os_version=centos7.6
 
-# remove tag
-$ appc tags -r -t arch
+# remove lable
+$ appc lable -r -t arch
 os_version=centos7.6
 
-# add tag
-$ appc tags --add --tag mytag=abc
+# add lable
+$ appc lable --add --lable mytag=abc
 mytag=abc
 os_version=centos7.6
 ```
