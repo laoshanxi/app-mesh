@@ -679,12 +679,6 @@ void ArgumentParser::processTags()
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (m_commandLineVariables.count("add") && m_commandLineVariables.count("remove"))
-	{
-		std::cout << desc << std::endl;
-		return;
-	}
-
 	std::string restPath = "/app-manager/lables";
 	http_response response;
 	std::vector<std::string> inputTags;
