@@ -3,8 +3,8 @@
 #include "MonitoredProcess.h"
 #include "../common/Utility.h"
 
-MonitoredProcess::MonitoredProcess()
-	:m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL)
+MonitoredProcess::MonitoredProcess(int cacheOutputLines)
+	:m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL), m_cacheOutputLines(cacheOutputLines)
 {
 }
 
@@ -70,6 +70,26 @@ std::string MonitoredProcess::fecthPipeMessages()
 	return std::move(stdoutMsg.str());
 }
 
+std::string MonitoredProcess::getPipeMessages()
+{
+	const static char fname[] = "MonitoredProcess::getPipeMessages() ";
+
+	std::stringstream stdoutMsg;
+	std::queue<std::string> msgQueue;
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
+		msgQueue = m_msgQueue;
+	}
+	while (msgQueue.size())
+	{
+		stdoutMsg << msgQueue.front();
+		msgQueue.pop();
+	}
+	std::string msgStr = stdoutMsg.str();
+	LOG_DBG << fname;// << msgStr;
+	return std::move(msgStr);
+}
+
 pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
 {
 	auto rt = ACE_Process::wait(tv, status);
@@ -103,7 +123,7 @@ void MonitoredProcess::monitorThread()
 		}
 		LOG_DBG << fname << "Read line : " << buffer;
 
-		const int stdoutQueueMaxLineCount = 1024;
+		const int stdoutQueueMaxLineCount = m_cacheOutputLines;
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 		m_msgQueue.push(buffer);
 		// Do not store too much in memory

@@ -121,6 +121,9 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/app-manager/lables
 	bindRest(web::http::methods::POST, "/app-manager/lables", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
 
+	// http://127.0.0.1:6060/app/app-name/output
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutput, this, std::placeholders::_1));
+
 	this->open();
 
 	LOG_INF << fname << "Listening for requests at:" << uri.to_string();
@@ -705,6 +708,27 @@ void RestHandler::apiRunOutput(const http_request& message)
 		LOG_DBG << fname << "process_uuid is required for get run output";
 		throw std::invalid_argument("process_uuid is required for get run output");
 	}
+}
+
+void RestHandler::apiAppOutput(const http_request & message)
+{
+	const static char fname[] = "RestHandler::apiAppOutput() ";
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+
+	// /app/$app-name/output
+	std::string app = path.substr(strlen("/app/"));
+	app = app.substr(0, app.find_first_of('/'));
+	bool keepHis = true;
+	if (querymap.find("keep_history") != querymap.end())
+	{
+		auto keep = GET_STD_STRING(querymap.find(U("keep_history"))->second);
+		keepHis = std::stoi(keep);
+	}
+	auto output = Configuration::instance()->getApp(app)->getOutput(keepHis);
+	LOG_DBG << fname;// << output;
+	message.reply(status_codes::OK, output);
 }
 
 void RestHandler::apiGetApps(const http_request& message)

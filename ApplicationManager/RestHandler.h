@@ -42,6 +42,7 @@ private:
 	void apiRunApp(const http_request& message);
 	void apiWaitRunApp(const http_request& message);
 	void apiRunOutput(const http_request& message);
+	void apiAppOutput(const http_request& message);
 	void apiGetApps(const http_request& message);
 	void apiGetResources(const http_request& message);
 	void apiRegApp(const http_request& message);

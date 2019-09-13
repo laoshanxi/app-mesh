@@ -51,6 +51,7 @@ GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file f
 PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
 GET| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Get lables
 POST| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Update lables
+GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
 
 ## How to install
 **CentOS**:

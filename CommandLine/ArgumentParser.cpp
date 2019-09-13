@@ -160,6 +160,7 @@ void ArgumentParser::processReg(const char* appName)
 		("extra_time,x", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", po::value<bool>()->default_value(false), "monitor and keep running for short running app in start interval")
+		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side")
 		("force,f", "force without confirm")
 		("debug,g", "print debug information")
 		("help,h", "help message");
@@ -262,6 +263,10 @@ void ArgumentParser::processReg(const char* appName)
 			jsobObj["env"] = objEnvs;
 		}
 	}
+	if (m_commandLineVariables.count("cache_lines"))
+	{
+		jsobObj["cache_lines"] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
+	}
 
 	std::string restPath;
 	if (!shellApp)
@@ -331,6 +336,7 @@ void ArgumentParser::processView()
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "view application by name.")
 		("long,l", "display the complete information without reduce")
+		("output,o", "view the application output")
 		;
 	
 	moveForwardCommandLineVariables(desc);
@@ -339,12 +345,25 @@ void ArgumentParser::processView()
 	bool reduce = !(m_commandLineVariables.count("long"));
 	if (m_commandLineVariables.count("name") > 0)
 	{
-		std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();
-		auto response = requestHttp(methods::GET, restPath);
-		RESPONSE_CHECK_WITH_RETURN;
-		auto arr = web::json::value::array(1);
-		arr[0] = response.extract_json(true).get();
-		printApps(arr, reduce);
+		if (!m_commandLineVariables.count("output"))
+		{
+			// view app info
+			std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();
+			auto response = requestHttp(methods::GET, restPath);
+			RESPONSE_CHECK_WITH_RETURN;
+			auto arr = web::json::value::array(1);
+			arr[0] = response.extract_json(true).get();
+			printApps(arr, reduce);
+		}
+		else
+		{
+			// view app output
+			std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>() + "/output";
+			auto response = requestHttp(methods::GET, restPath);
+			RESPONSE_CHECK_WITH_RETURN;
+			auto bodyStr = response.extract_utf8string(true).get();
+			std::cout << bodyStr << std::endl;
+		}
 	}
 	else
 	{

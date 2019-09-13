@@ -43,11 +43,13 @@ public:
 	virtual void start();
 	std::string testRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest = NULL);
 	std::string getTestOutput(const std::string& processUuid, int& exitCode, bool& finished);
+	std::string getOutput(bool keepHistory);
 
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
 
 	int spawnProcess(std::shared_ptr<Process> process);
+	std::shared_ptr<Process> allocProcess();
 	bool isInDailyTimeRange();
 
 	virtual bool avialable();
@@ -64,6 +66,7 @@ protected:
 	int m_return;
 	std::string m_posixTimeZone;
 	
+	int m_cacheOutputLines;
 	std::shared_ptr<Process> m_process;
 	std::shared_ptr<MonitoredProcess> m_testProcess;
 	int m_pid;

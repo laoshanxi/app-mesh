@@ -111,7 +111,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	if (this->avialable())
 	{
 		// Spawn new process
-		m_process.reset(new Process());
+		m_process = allocProcess();
 		spawnProcess(m_process);
 	}
 }

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "Application.h"
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
@@ -5,7 +6,7 @@
 #include "Configuration.h"
 
 Application::Application()
-	:m_status(ENABLED), m_return(0), m_pid(-1), m_processIndex(0)
+	:m_status(ENABLED), m_return(0), m_cacheOutputLines(0), m_pid(-1), m_processIndex(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -70,6 +71,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 		app->m_dailyLimit->m_startTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_startTime, app->m_posixTimeZone);
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
+	app->m_cacheOutputLines = std::max(GET_JSON_INT_VALUE(jobj, "cache_lines"), 1024);
 
 	app->dump();
 }
@@ -121,6 +123,7 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
+				m_process = allocProcess();
 				m_pid = this->spawnProcess(m_process);
 			}
 		}
@@ -228,6 +231,22 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 	}
 }
 
+std::string Application::getOutput(bool keepHistory)
+{
+	if (m_cacheOutputLines)
+	{
+		auto process = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
+		if (process != nullptr)
+		{
+			if (keepHistory)
+				return process->getPipeMessages();
+			else
+				return process->fecthPipeMessages();
+		}
+	}
+	return std::string();
+}
+
 web::json::value Application::AsJson(bool returnRuntimeInfo)
 {
 	web::json::value result = web::json::value::object();
@@ -263,6 +282,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[GET_STRING_T("env")] = envs;
 	}
 	if (m_posixTimeZone.length()) result[GET_STRING_T("posix_timezone")] = web::json::value::string(m_posixTimeZone);
+	if (m_cacheOutputLines) result[GET_STRING_T("cache_lines")] = web::json::value::number(m_cacheOutputLines);
 	return result;
 }
 
@@ -279,6 +299,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_status:" << m_status;
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
+	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
@@ -322,6 +343,20 @@ int Application::spawnProcess(std::shared_ptr<Process> process)
 		LOG_ERR << fname << "Process:<" << m_commandLine << "> start failed with error : " << std::strerror(errno);
 	}
 	return pid;
+}
+
+std::shared_ptr<Process> Application::allocProcess()
+{
+	std::shared_ptr<Process> process;
+	if (m_cacheOutputLines == 0)
+	{
+		process.reset(new Process());
+	}
+	else
+	{
+		process.reset(new MonitoredProcess(m_cacheOutputLines));
+	}
+	return std::move(process);
 }
 
 bool Application::isInDailyTimeRange()
