@@ -25,7 +25,7 @@ public:
 	const std::string getuuid() const;
 	void regKillTimer(size_t timeout, const std::string from);
 	
-	static void getSymProcessList(std::map<std::string, int>& processList, const void* pt = nullptr);
+	static void getSysProcessList(std::map<std::string, int>& processList, const void* pt = nullptr);
 private:
 	std::shared_ptr<LinuxCgroup> m_cgroup;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;

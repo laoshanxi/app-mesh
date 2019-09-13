@@ -80,9 +80,9 @@ void Process::regKillTimer(size_t timeout, const std::string from)
 }
 
 
-void Process::getSymProcessList(std::map<std::string, int>& processList, const void * pt)
+void Process::getSysProcessList(std::map<std::string, int>& processList, const void * pt)
 {
-	const static char fname[] = "Process::getSymProcessList() ";
+	const static char fname[] = "Process::getSysProcessList() ";
 
 	std::shared_ptr<os::ProcessTree> ptree;
 	const os::ProcessTree* tree;
@@ -104,6 +104,6 @@ void Process::getSymProcessList(std::map<std::string, int>& processList, const v
 
 	for (auto it = tree->children.begin(); it != tree->children.end(); ++it)
 	{
-		getSymProcessList(processList, &(*it));
+		getSysProcessList(processList, &(*it));
 	}
 }

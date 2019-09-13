@@ -53,7 +53,7 @@ int main(int argc, char * argv[])
 
 		auto apps = config->getApps();
 		std::map<std::string, int> process;
-		Process::getSymProcessList(process, nullptr);
+		Process::getSysProcessList(process, nullptr);
 		std::for_each(apps.begin(), apps.end(), [&process](std::vector<std::shared_ptr<Application>>::reference p) { p->attach(process); });
 
 		ResourceCollection::instance()->getHostResource();
