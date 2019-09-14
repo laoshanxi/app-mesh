@@ -458,9 +458,13 @@ std::string Utility::runShellCommand(std::string cmd)
 		pclose(fp);
 	}
 	auto str = std::string(stdoutMsg.str());
-	str = Utility::stdStringTrim(str, '\r');
-	str = Utility::stdStringTrim(str, '\n');
 	return std::move(str);
+}
+
+void Utility::trimLineBreak(std::string str)
+{
+	str = stdStringTrim(str, '\r');
+	str = stdStringTrim(str, '\n');
 }
 
 std::vector<std::string> Utility::splitString(const std::string & source, const std::string & splitFlag)

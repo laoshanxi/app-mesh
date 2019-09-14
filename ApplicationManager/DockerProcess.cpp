@@ -67,6 +67,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	auto containerId = Utility::runShellCommand(dockerCommand);
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
 	auto pidStr = Utility::runShellCommand(dockerCommand);
+	Utility::trimLineBreak(pidStr);
 	if (Utility::isNumber(pidStr))
 	{
 		pid = std::stoi(pidStr);
