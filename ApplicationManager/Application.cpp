@@ -4,6 +4,7 @@
 #include "../common/Utility.h"
 #include "../common/TimeZoneHelper.h"
 #include "Configuration.h"
+#include "DockerProcess.h"
 
 Application::Application()
 	:m_status(ENABLED), m_return(0), m_cacheOutputLines(0), m_pid(-1), m_processIndex(0)
@@ -72,6 +73,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
 	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, "cache_lines"), 128);
+	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, "docker_image");
 
 	app->dump();
 }
@@ -283,6 +285,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	}
 	if (m_posixTimeZone.length()) result[GET_STRING_T("posix_timezone")] = web::json::value::string(m_posixTimeZone);
 	if (m_cacheOutputLines) result[GET_STRING_T("cache_lines")] = web::json::value::number(m_cacheOutputLines);
+	if (m_dockerImage.length()) result[GET_STRING_T("docker_image")] = web::json::value::string(m_dockerImage);
 	return result;
 }
 
@@ -300,6 +303,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
+	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
@@ -309,7 +313,10 @@ std::shared_ptr<Process> Application::allocProcess()
 	std::shared_ptr<Process> process;
 	if (m_cacheOutputLines == 0)
 	{
-		process.reset(new Process());
+		if (m_dockerImage.length())
+			process.reset(new DockerProcess(m_dockerImage));
+		else
+			process.reset(new Process());
 	}
 	else
 	{

@@ -111,6 +111,7 @@ public:
 	static std::string readFileCpp(const std::string &path);
 
 	static std::string createUUID();
+	static std::string runShellCommand(std::string cmd);
 };
 
 #endif

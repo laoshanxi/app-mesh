@@ -127,7 +127,7 @@ void MonitoredProcess::monitorThread()
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 		m_msgQueue.push(buffer);
 		// Do not store too much in memory
-		if (m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
+		if ((int)m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
 
 	ACE_Process::wait();

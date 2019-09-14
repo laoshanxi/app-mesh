@@ -147,6 +147,7 @@ void ArgumentParser::processReg(const char* appName)
 		("name,n", po::value<std::string>(), "application name")
 		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
+		("image,y", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
 		("status,a", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
 		("start_time,t", po::value<std::string>(), "start date time for short running app (e.g., '2018-01-01 09:00:00')")
@@ -201,6 +202,7 @@ void ArgumentParser::processReg(const char* appName)
 	web::json::value jsobObj;
 	jsobObj["name"] = (shellApp ? web::json::value::string(appName) : web::json::value::string(m_commandLineVariables["name"].as<std::string>()));
 	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	jsobObj["docker_image"] = web::json::value::string(m_commandLineVariables["image"].as<std::string>());
 	jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj["status"] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
@@ -362,7 +364,7 @@ void ArgumentParser::processView()
 			auto response = requestHttp(methods::GET, restPath);
 			RESPONSE_CHECK_WITH_RETURN;
 			auto bodyStr = response.extract_utf8string(true).get();
-			std::cout << bodyStr << std::endl;
+			std::cout << bodyStr;
 		}
 	}
 	else

@@ -20,6 +20,7 @@
       <Filter>common</Filter>
     </ClCompile>
     <ClCompile Include="TimerHandler.cpp" />
+    <ClCompile Include="DockerProcess.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h" />
@@ -64,6 +65,7 @@
     <ClInclude Include="..\common\os\chown.hpp">
       <Filter>common\os</Filter>
     </ClInclude>
+    <ClInclude Include="DockerProcess.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />

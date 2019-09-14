@@ -20,12 +20,12 @@ public:
 	virtual ~Process();
 
 	void attach(int pid);
-	void killgroup(int timerId = 0);
-	void setCgroup(std::shared_ptr<ResourceLimitation>& limit);
+	virtual void killgroup(int timerId = 0);
+	virtual void setCgroup(std::shared_ptr<ResourceLimitation>& limit);
 	const std::string getuuid() const;
 	void regKillTimer(size_t timeout, const std::string from);
 	
-	int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
+	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
 	static void getSysProcessList(std::map<std::string, int>& processList, const void* pt = nullptr);
 private:
 	std::shared_ptr<LinuxCgroup> m_cgroup;

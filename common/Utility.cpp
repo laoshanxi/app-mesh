@@ -438,6 +438,31 @@ std::string Utility::createUUID()
 	return std::move(str);
 }
 
+std::string Utility::runShellCommand(std::string cmd)
+{
+	const static char fname[] = "Utility::runShellCommand() ";
+
+	#define LINE_LENGTH 300
+	char line[LINE_LENGTH];
+	std::stringstream stdoutMsg;
+	cmd += " 2>&1"; // include stderr
+	FILE *fp = popen(cmd.c_str(), "r");
+	LOG_DBG << fname << cmd;
+	if (fp)
+	{
+		while (fgets(line, LINE_LENGTH, fp) != NULL)
+		{
+			stdoutMsg << line;
+			LOG_DBG << fname << line;
+		}
+		pclose(fp);
+	}
+	auto str = std::string(stdoutMsg.str());
+	str = Utility::stdStringTrim(str, '\r');
+	str = Utility::stdStringTrim(str, '\n');
+	return std::move(str);
+}
+
 std::vector<std::string> Utility::splitString(const std::string & source, const std::string & splitFlag)
 {
 	std::vector<std::string> result;

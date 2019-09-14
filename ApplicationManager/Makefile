@@ -25,6 +25,7 @@ SRCS = \
 	Configuration.cpp \
 	RestHandler.cpp \
 	Process.cpp \
+	DockerProcess.cpp \
 	MonitoredProcess.cpp \
 	DailyLimitation.cpp \
 	ResourceLimitation.cpp \

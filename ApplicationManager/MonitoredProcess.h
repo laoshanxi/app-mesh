@@ -13,7 +13,7 @@
 class MonitoredProcess :public Process
 {
 public:
-	MonitoredProcess(int cacheOutputLines = 1024);
+	MonitoredProcess(int cacheOutputLines = 256);
 	virtual ~MonitoredProcess();
 
 	// overwrite ACE_Process spawn method
