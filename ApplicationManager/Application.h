@@ -41,7 +41,9 @@ public:
 	
 	virtual void stop();
 	virtual void start();
-	std::string testRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest = NULL);
+	std::string testRun(int timeoutSeconds, std::map<std::string, std::string> envMap);
+	std::string testAsyncRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest);
+	std::string runTest(int timeoutSeconds, const std::map<std::string, std::string>& envMap);
 	std::string getTestOutput(const std::string& processUuid, int& exitCode, bool& finished);
 	std::string getOutput(bool keepHistory);
 

@@ -170,9 +170,23 @@ void Application::start()
 	}
 }
 
-std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest)
+std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::string> envMap)
 {
 	const static char fname[] = "Application::testRun() ";
+	LOG_DBG << fname << " Entered.";
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_testProcess != nullptr && m_testProcess->running())
+	{
+		m_testProcess->killgroup();
+	}
+	m_testProcess.reset(new MonitoredProcess(256));
+	return runTest(timeoutSeconds, envMap);
+}
+
+std::string Application::testAsyncRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest)
+{
+	const static char fname[] = "Application::testAsyncRun() ";
 	LOG_DBG << fname << " Entered.";
 
 	std::string processUUID;
@@ -184,20 +198,27 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 	}
 	m_testProcess.reset(new MonitoredProcess(256));
 	m_testProcess->setAsyncHttpRequest(asyncHttpRequest);
-	processUUID = m_testProcess->getuuid();
-	auto oriEnvMap = m_envMap;
-	std::for_each(envMap.begin(), envMap.end(), [this](const std::pair<std::string, std::string>& pair)
+	return runTest(timeoutSeconds, envMap);
+}
+
+std::string Application::runTest(int timeoutSeconds, const std::map<std::string, std::string>& envMap)
+{
+	const static char fname[] = "Application::runTest() ";
+	LOG_DBG << fname << " Entered.";
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::string processUUID = m_testProcess->getuuid();
+	auto combinedEnvMap = m_envMap;
+	std::for_each(envMap.begin(), envMap.end(), [&combinedEnvMap](const std::pair<std::string, std::string>& pair)
 	{
-		m_envMap[pair.first] = pair.second;
+		combinedEnvMap[pair.first] = pair.second;
 	});
-	if (m_testProcess->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit) > 0)
+	if (m_testProcess->spawnProcess(m_commandLine, m_user, m_workdir, combinedEnvMap, m_resourceLimit) > 0)
 	{
-		if (envMap.size()) m_envMap = oriEnvMap;	// restore env map
 		m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
 	}
 	else
 	{
-		if (envMap.size()) m_envMap = oriEnvMap;	// restore env map
 		throw std::invalid_argument("Start process failed");
 	}
 

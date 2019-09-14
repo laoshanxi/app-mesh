@@ -671,7 +671,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 
 	// Use async reply here
 	http_request* asyncRequest = new http_request(message);
-	Configuration::instance()->getApp(app)->testRun(timeout, envMap, asyncRequest);
+	Configuration::instance()->getApp(app)->testAsyncRun(timeout, envMap, asyncRequest);
 }
 
 void RestHandler::apiRunOutput(const http_request& message)
