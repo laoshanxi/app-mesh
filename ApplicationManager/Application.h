@@ -48,7 +48,7 @@ public:
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
 
-	std::shared_ptr<Process> allocProcess();
+	std::shared_ptr<Process> allocProcess(int cacheOutputLines, std::string dockerImage);
 	bool isInDailyTimeRange();
 
 	virtual bool avialable();

@@ -4,7 +4,7 @@
 #include "../common/Utility.h"
 
 MonitoredProcess::MonitoredProcess(int cacheOutputLines)
-	:m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL), m_cacheOutputLines(cacheOutputLines)
+	:Process(cacheOutputLines), m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL)
 {
 }
 
@@ -53,7 +53,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 	return rt;
 }
 
-std::string MonitoredProcess::fecthPipeMessages()
+std::string MonitoredProcess::fetchOutputMsg()
 {
 	const static char fname[] = "MonitoredProcess::fecthPipeMessages() ";
 
@@ -70,7 +70,7 @@ std::string MonitoredProcess::fecthPipeMessages()
 	return std::move(stdoutMsg.str());
 }
 
-std::string MonitoredProcess::getPipeMessages()
+std::string MonitoredProcess::getOutputMsg()
 {
 	const static char fname[] = "MonitoredProcess::getPipeMessages() ";
 
@@ -138,7 +138,7 @@ void MonitoredProcess::monitorThread()
 		try
 		{
 			web::http::http_response resp(web::http::status_codes::OK);
-			resp.set_body(this->fecthPipeMessages());
+			resp.set_body(this->fetchOutputMsg());
 			resp.headers().add("exit_code", this->return_value());
 			message->reply(resp).get();
 			delete message;

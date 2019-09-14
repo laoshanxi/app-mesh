@@ -16,7 +16,7 @@
 class Process :public ACE_Process, public TimerHandler
 {
 public:
-	Process();
+	Process(int cacheOutputLines = 256);
 	virtual ~Process();
 
 	void attach(int pid);
@@ -27,6 +27,11 @@ public:
 	
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
 	static void getSysProcessList(std::map<std::string, int>& processList, const void* pt = nullptr);
+
+	virtual std::string getOutputMsg();
+	virtual std::string fetchOutputMsg();
+protected:
+	const int m_cacheOutputLines;
 private:
 	std::shared_ptr<LinuxCgroup> m_cgroup;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;

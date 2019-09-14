@@ -13,20 +13,20 @@
 class MonitoredProcess :public Process
 {
 public:
-	MonitoredProcess(int cacheOutputLines = 256);
+	MonitoredProcess(int cacheOutputLines);
 	virtual ~MonitoredProcess();
 
 	// overwrite ACE_Process spawn method
 	virtual pid_t spawn(ACE_Process_Options &options);
-
-	std::string fecthPipeMessages();
-	std::string getPipeMessages();
 
 	// Wait monitor thread
 	virtual pid_t wait(const ACE_Time_Value& tv, ACE_exitcode* status = 0);
 	bool monitorComplete() const;
 	void setAsyncHttpRequest(void* httpRequest) { m_httpRequest = httpRequest; }
 
+	// pipe message
+	virtual std::string getOutputMsg() override;
+	virtual std::string fetchOutputMsg() override;
 private:
 	void monitorThread();
 
@@ -39,7 +39,6 @@ private:
 	std::recursive_mutex m_queueMutex;
 	bool m_monitorComplete;
 	void* m_httpRequest;
-	int m_cacheOutputLines;
 };
 
 #endif 

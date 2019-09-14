@@ -4,8 +4,8 @@
 #include "../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
 
-Process::Process()
-	:m_killTimerId(0)
+Process::Process(int cacheOutputLines)
+	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0)
 {
 	m_uuid = Utility::createUUID();
 }
@@ -152,4 +152,14 @@ void Process::getSysProcessList(std::map<std::string, int>& processList, const v
 	{
 		getSysProcessList(processList, &(*it));
 	}
+}
+
+std::string Process::getOutputMsg()
+{
+	return std::string();
+}
+
+std::string Process::fetchOutputMsg()
+{
+	return std::string();
 }

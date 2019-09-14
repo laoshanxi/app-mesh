@@ -4,8 +4,8 @@
 #include "../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
 
-DockerProcess::DockerProcess(std::string dockerImage)
-	: m_dockerImage(dockerImage)
+DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage)
+	: Process(cacheOutputLines), m_dockerImage(dockerImage), m_lastFetchTime(std::chrono::system_clock::now())
 {
 }
 
@@ -18,6 +18,7 @@ DockerProcess::~DockerProcess()
 void DockerProcess::killgroup(int timerId)
 {
 	const static char fname[] = "DockerProcess::killgroup() ";
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (!m_containerId.empty())
 	{
 		std::string cmd = "docker rm -f " + m_containerId;
@@ -29,10 +30,14 @@ void DockerProcess::killgroup(int timerId)
 
 int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
+	killgroup();
 	int pid = -1;
-
+	// construct container name
+	static int dockerIndex = 0;
+	std::string dockerName = "app-mgr-" + std::to_string(++dockerIndex) + "-" + m_dockerImage;
+	if (limit != nullptr) dockerName += (std::string("-") + limit->n_name);
 	// build docker start command line
-	std::string dockerCommand = "docker run -d";
+	std::string dockerCommand = std::string("docker run -d ") + "--name " + dockerName;
 	for(auto env: envMap)
 	{
 		dockerCommand += " --env ";
@@ -76,4 +81,28 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 		killgroup();
 	}
 	return pid;
+}
+
+std::string DockerProcess::getOutputMsg()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_containerId.length())
+	{
+		std::string dockerCommand = "docker logs --tail " + std::to_string(m_cacheOutputLines) + " " + m_containerId;
+		return Utility::runShellCommand(dockerCommand);
+	}
+	return std::string();
+}
+
+std::string DockerProcess::fetchOutputMsg()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_containerId.length())
+	{
+		std::string dockerCommand = "docker logs --since " + std::to_string(m_lastFetchTime.time_since_epoch().count()) + " " + m_containerId;
+		auto msg = Utility::runShellCommand(dockerCommand);
+		m_lastFetchTime = std::chrono::system_clock::now();
+		return std::move(msg);
+	}
+	return std::string();
 }

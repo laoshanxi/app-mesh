@@ -125,7 +125,7 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
-				m_process = allocProcess();
+				m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 			}
 		}
@@ -182,7 +182,7 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 	{
 		m_testProcess->killgroup();
 	}
-	m_testProcess.reset(new MonitoredProcess());
+	m_testProcess.reset(new MonitoredProcess(256));
 	m_testProcess->setAsyncHttpRequest(asyncHttpRequest);
 	processUUID = m_testProcess->getuuid();
 	auto oriEnvMap = m_envMap;
@@ -210,7 +210,7 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 
 	if (m_testProcess != nullptr && m_testProcess->getuuid() == processUuid)
 	{
-		auto output = m_testProcess->fecthPipeMessages();
+		auto output = m_testProcess->fetchOutputMsg();
 		if (output.length() == 0 && !m_testProcess->running() && m_testProcess->monitorComplete())
 		{
 			exitCode = m_testProcess->return_value();
@@ -235,15 +235,15 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 
 std::string Application::getOutput(bool keepHistory)
 {
-	if (m_cacheOutputLines)
+	if (m_process != nullptr)
 	{
-		auto process = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
-		if (process != nullptr)
+		if (keepHistory)
 		{
-			if (keepHistory)
-				return process->getPipeMessages();
-			else
-				return process->fecthPipeMessages();
+			return m_process->getOutputMsg();
+		}
+		else
+		{
+			return m_process->fetchOutputMsg();
 		}
 	}
 	return std::string();
@@ -308,19 +308,30 @@ void Application::dump()
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
 
-std::shared_ptr<Process> Application::allocProcess()
+std::shared_ptr<Process> Application::allocProcess(int cacheOutputLines, std::string dockerImage)
 {
 	std::shared_ptr<Process> process;
-	if (m_cacheOutputLines == 0)
+	if (dockerImage.length())
 	{
-		if (m_dockerImage.length())
-			process.reset(new DockerProcess(m_dockerImage));
+		if (cacheOutputLines > 0)
+		{
+			process.reset(new DockerProcess(cacheOutputLines, dockerImage));
+		}
 		else
-			process.reset(new Process());
+		{
+			process.reset(new DockerProcess(256, dockerImage));
+		}
 	}
 	else
 	{
-		process.reset(new MonitoredProcess(m_cacheOutputLines));
+		if (cacheOutputLines > 0)
+		{
+			process.reset(new MonitoredProcess(cacheOutputLines));
+		}
+		else
+		{
+			process.reset(new Process(cacheOutputLines));
+		}
 	}
 	return std::move(process);
 }
