@@ -112,7 +112,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	{
 		// Spawn new process
 		m_process = allocProcess();
-		spawnProcess(m_process);
+		m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 	}
 }
 

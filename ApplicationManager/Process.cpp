@@ -59,13 +59,13 @@ void Process::killgroup(int timerId)
 	}
 }
 
-void Process::setCgroup(std::string appName, int index, std::shared_ptr<ResourceLimitation>& limit)
+void Process::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
 {
 	// https://blog.csdn.net/u011547375/article/details/9851455
 	if (limit != nullptr)
 	{
 		m_cgroup = std::make_shared<LinuxCgroup>(limit->m_memoryMb, limit->m_memoryVirtMb - limit->m_memoryMb, limit->m_cpuShares);
-		m_cgroup->setCgroup(appName, getpid(), index);
+		m_cgroup->setCgroup(limit->n_name, getpid(), ++(limit->m_index));
 	}
 }
 
@@ -79,6 +79,52 @@ void Process::regKillTimer(size_t timeout, const std::string from)
 	m_killTimerId = this->registerTimer(timeout, 0, std::bind(&Process::killgroup, this, std::placeholders::_1), from);
 }
 
+
+int Process::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
+{
+	const static char fname[] = "Process::spawnProcess() ";
+
+	int pid;
+	
+	size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
+	int totalEnvSize = 0;
+	int totalEnvArgs = 0;
+	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);
+	ACE_Process_Options option(1, cmdLenth, totalEnvSize, totalEnvArgs);
+	option.command_line(cmd.c_str());
+	//option.avoid_zombies(1);
+	if (user.length())
+	{
+		unsigned int gid, uid;
+		if (Utility::getUid(user, uid, gid))
+		{
+			option.seteuid(uid);
+			option.setruid(uid);
+			option.setegid(gid);
+			option.setrgid(gid);
+		}
+	}
+	option.setgroup(0);
+	option.inherit_environment(true);
+	option.handle_inheritance(0);
+	if (workDir.length()) option.working_directory(workDir.c_str());
+	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string>& pair)
+	{
+		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
+	});
+	if (this->spawn(option) >= 0)
+	{
+		pid = this->getpid();
+		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << pid << ">.";
+		this->setCgroup(limit);
+	}
+	else
+	{
+		pid = -1;
+		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << std::strerror(errno);
+	}
+	return pid;
+}
 
 void Process::getSysProcessList(std::map<std::string, int>& processList, const void * pt)
 {

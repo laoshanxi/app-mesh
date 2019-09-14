@@ -55,7 +55,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 	}
 	if (HAS_JSON_FIELD(jobj, "resource_limit"))
 	{
-		app->m_resourceLimit = ResourceLimitation::FromJson(jobj.at(GET_STRING_T("resource_limit")).as_object());
+		app->m_resourceLimit = ResourceLimitation::FromJson(jobj.at(GET_STRING_T("resource_limit")).as_object(), app->m_name);
 	}
 	if (HAS_JSON_FIELD(jobj, "env"))
 	{
@@ -71,7 +71,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 		app->m_dailyLimit->m_startTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_startTime, app->m_posixTimeZone);
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
-	app->m_cacheOutputLines = std::max(GET_JSON_INT_VALUE(jobj, "cache_lines"), 1024);
+	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, "cache_lines"), 128);
 
 	app->dump();
 }
@@ -124,7 +124,7 @@ void Application::invoke()
 			{
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess();
-				m_pid = this->spawnProcess(m_process);
+				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 			}
 		}
 		else if (m_process->running())
@@ -188,7 +188,7 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 	{
 		m_envMap[pair.first] = pair.second;
 	});
-	if (this->spawnProcess(m_testProcess) > 0)
+	if (m_testProcess->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit) > 0)
 	{
 		if (envMap.size()) m_envMap = oriEnvMap;	// restore env map
 		m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
@@ -302,47 +302,6 @@ void Application::dump()
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
-}
-
-int Application::spawnProcess(std::shared_ptr<Process> process)
-{
-	const static char fname[] = "Application::spawnProcess() ";
-
-	int pid;
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	unsigned int gid, uid;
-	Utility::getUid(m_user, uid, gid);
-	size_t cmdLenth = m_commandLine.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
-	int totalEnvSize = 0;
-	int totalEnvArgs = 0;
-	Utility::getEnvironmentSize(m_envMap, totalEnvSize, totalEnvArgs);
-	ACE_Process_Options option(1, cmdLenth, totalEnvSize, totalEnvArgs);
-	option.command_line(m_commandLine.c_str());
-	//option.avoid_zombies(1);
-	option.seteuid(uid);
-	option.setruid(uid);
-	option.setegid(gid);
-	option.setrgid(gid);
-	option.setgroup(0);
-	option.inherit_environment(true);
-	option.handle_inheritance(0);
-	option.working_directory(m_workdir.c_str());
-	std::for_each(m_envMap.begin(), m_envMap.end(), [&option](const std::pair<std::string, std::string>& pair)
-	{
-		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-	});
-	if (process->spawn(option) >= 0)
-	{
-		pid = process->getpid();
-		LOG_INF << fname << "Process <" << m_commandLine << "> started with pid <" << pid << ">.";
-		process->setCgroup(m_name, ++m_processIndex, m_resourceLimit);
-	}
-	else
-	{
-		pid = -1;
-		LOG_ERR << fname << "Process:<" << m_commandLine << "> start failed with error : " << std::strerror(errno);
-	}
-	return pid;
 }
 
 std::shared_ptr<Process> Application::allocProcess()
