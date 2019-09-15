@@ -461,7 +461,7 @@ std::string Utility::runShellCommand(std::string cmd)
 	return std::move(str);
 }
 
-void Utility::trimLineBreak(std::string str)
+void Utility::trimLineBreak(std::string& str)
 {
 	str = stdStringTrim(str, '\r');
 	str = stdStringTrim(str, '\n');

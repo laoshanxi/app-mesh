@@ -112,7 +112,7 @@ public:
 
 	static std::string createUUID();
 	static std::string runShellCommand(std::string cmd);
-	static void trimLineBreak(std::string str);
+	static void trimLineBreak(std::string& str);
 };
 
 #endif
