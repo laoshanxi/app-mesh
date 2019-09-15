@@ -720,7 +720,7 @@ void RestHandler::apiAppOutput(const http_request & message)
 	// /app/$app-name/output
 	std::string app = path.substr(strlen("/app/"));
 	app = app.substr(0, app.find_first_of('/'));
-	bool keepHis = true;
+	bool keepHis = false;
 	if (querymap.find("keep_history") != querymap.end())
 	{
 		auto keep = GET_STD_STRING(querymap.find(U("keep_history"))->second);
@@ -749,5 +749,5 @@ void RestHandler::apiRegApp(const http_request& message)
 		throw std::invalid_argument("invalid json format");
 	}
 	auto app = Configuration::instance()->addApp(jsonApp.as_object());
-	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
+	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
 }

@@ -202,36 +202,15 @@ void ArgumentParser::processReg(const char* appName)
 	web::json::value jsobObj;
 	jsobObj["name"] = (shellApp ? web::json::value::string(appName) : web::json::value::string(m_commandLineVariables["name"].as<std::string>()));
 	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
+	if (m_commandLineVariables.count("run_as")) jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj["status"] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
-	if (m_commandLineVariables.count("docker_image") > 0)
-	{
-		jsobObj["docker_image"] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
-	}
-	if (m_commandLineVariables.count("timezone") > 0)
-	{
-		jsobObj["posix_timezone"] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
-	}
-	if (m_commandLineVariables.count("start_time") > 0)
-	{
-		jsobObj["start_time"] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
-	}
-	if (m_commandLineVariables.count("interval") > 0)
-	{
-		jsobObj["start_interval_seconds"] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
-	}
-
-	if (m_commandLineVariables.count("extra_time") > 0)
-	{
-		jsobObj["start_interval_timeout"] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
-	}
-
-	if (m_commandLineVariables.count("keep_running"))
-	{
-		jsobObj["keep_running"] = web::json::value::boolean(m_commandLineVariables["keep_running"].as<bool>());
-	}
-
+	if (m_commandLineVariables.count("docker_image")) jsobObj["docker_image"] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
+	if (m_commandLineVariables.count("timezone")) jsobObj["posix_timezone"] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
+	if (m_commandLineVariables.count("start_time")) jsobObj["start_time"] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
+	if (m_commandLineVariables.count("interval")) jsobObj["start_interval_seconds"] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
+	if (m_commandLineVariables.count("extra_time")) jsobObj["start_interval_timeout"] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
+	if (m_commandLineVariables.count("keep_running")) jsobObj["keep_running"] = web::json::value::boolean(m_commandLineVariables["keep_running"].as<bool>());
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
 		web::json::value objDailyLimitation = web::json::value::object();
@@ -268,10 +247,7 @@ void ArgumentParser::processReg(const char* appName)
 			jsobObj["env"] = objEnvs;
 		}
 	}
-	if (m_commandLineVariables.count("cache_lines"))
-	{
-		jsobObj["cache_lines"] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
-	}
+	if (m_commandLineVariables.count("cache_lines")) jsobObj["cache_lines"] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
 
 	std::string restPath;
 	if (!shellApp)

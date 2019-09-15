@@ -450,10 +450,17 @@ std::string Utility::runShellCommand(std::string cmd)
 	LOG_DBG << fname << cmd;
 	if (fp)
 	{
+		int count = 0;
 		while (fgets(line, LINE_LENGTH, fp) != NULL)
 		{
 			stdoutMsg << line;
-			LOG_DBG << fname << line;
+			LOG_DBG << fname << "output: " << line;
+			if ((++count) > 1024)
+			{
+				// TODO: kill child process
+				LOG_ERR << fname << " too many lines, child process may leak";
+				break;
+			}
 		}
 		pclose(fp);
 	}

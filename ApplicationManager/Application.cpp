@@ -276,9 +276,9 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[GET_STRING_T("name")] = web::json::value::string(GET_STRING_T(m_name));
-	result[GET_STRING_T("run_as")] = web::json::value::string(GET_STRING_T(m_user));
+	if (m_user.length()) result[GET_STRING_T("run_as")] = web::json::value::string(GET_STRING_T(m_user));
 	result[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(m_commandLine));
-	result[GET_STRING_T("working_dir")] = web::json::value::string(GET_STRING_T(m_workdir));
+	if (m_workdir.length()) result[GET_STRING_T("working_dir")] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[GET_STRING_T("status")] = web::json::value::number(m_status);
 	if (m_comments.length()) result[GET_STRING_T("commentss")] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)
