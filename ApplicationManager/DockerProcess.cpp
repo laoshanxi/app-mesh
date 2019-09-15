@@ -71,16 +71,17 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	if (Utility::isNumber(pidStr))
 	{
 		pid = std::stoi(pidStr);
-		this->attach(pid);
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_containerId = containerId;
+		if (pid > 1)
+		{
+			this->attach(pid);
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			m_containerId = containerId;
+			return pid;
+		}
 	}
-	else
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_containerId = containerId;
-		killgroup();
-	}
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_containerId = containerId;
+	killgroup();
 	return pid;
 }
 
