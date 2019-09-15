@@ -30,6 +30,8 @@ void DockerProcess::killgroup(int timerId)
 
 int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
+	const static char fname[] = "DockerProcess::spawnProcess() ";
+
 	killgroup();
 	int pid = -1;
 	// construct container name
@@ -62,6 +64,17 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	}
 	dockerCommand += " " + m_dockerImage;
 	dockerCommand += " " + cmd;
+
+	// check docker image
+	dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
+	auto pidStr = Utility::runShellCommand(dockerCommand);
+	Utility::trimLineBreak(pidStr);
+	if (Utility::isNumber(pidStr) && std::stoi(pidStr) > 1)
+	{
+		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
+		return -1;
+	}
+
 
 	// start docker container
 	auto containerId = Utility::runShellCommand(dockerCommand);
