@@ -1,6 +1,7 @@
 #include <string>
 #include <algorithm>
 #include <fstream>
+#include <iomanip>
 #ifdef _WIN32
 #include <process.h>
 #include <Windows.h>
@@ -339,6 +340,24 @@ std::string Utility::getSystemPosixTimeZone()
 		}
 	}
 	return str;
+}
+
+std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point & time)
+{
+	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
+	const auto timeMs = std::chrono::time_point_cast<std::chrono::milliseconds>(time);
+	const auto timeSec = std::chrono::time_point_cast<std::chrono::seconds>(timeMs);
+	const auto millis = timeMs - timeSec;
+
+	// convert
+	char buff[70] = { 0 };
+	auto timet = std::chrono::system_clock::to_time_t(time);
+	std::tm timetm = *std::localtime(&timet);
+	strftime(buff, sizeof(buff), "%FT%T", &timetm);
+
+	std::stringstream ss;
+	ss << buff << '.' << std::setfill('0') << std::setw(3) << millis.count();
+	return ss.str();
 }
 
 std::string Utility::encode64(const std::string & val)

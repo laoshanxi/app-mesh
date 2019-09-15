@@ -101,6 +101,8 @@ public:
 	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point & time);
 	// Timezone
 	static std::string getSystemPosixTimeZone();
+	// rfc3339 time
+	static std::string getRfc3339Time(const std::chrono::system_clock::time_point & time);
 
 	// Base64
 	static std::string encode64(const std::string &val);
