@@ -35,7 +35,7 @@ bool Application::isNormal()
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::object& jobj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "name"));
-	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "run_as"));
+	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "user"));
 	app->m_comments = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "comments"));
 	// Be noticed do not use multiple spaces between command arguments
 	// "ping www.baidu.com    123" equals

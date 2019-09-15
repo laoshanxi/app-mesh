@@ -202,7 +202,7 @@ void ArgumentParser::processReg(const char* appName)
 	web::json::value jsobObj;
 	jsobObj["name"] = (shellApp ? web::json::value::string(appName) : web::json::value::string(m_commandLineVariables["name"].as<std::string>()));
 	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	if (m_commandLineVariables.count("run_as")) jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
+	if (m_commandLineVariables.count("user")) jsobObj["user"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj["status"] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
 	if (m_commandLineVariables.count("docker_image")) jsobObj["docker_image"] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
@@ -876,7 +876,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		else if (name.length() >= 12) name += " ";
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
-		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, "run_as"), 6);
+		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, "user"), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, "status"));
 		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
