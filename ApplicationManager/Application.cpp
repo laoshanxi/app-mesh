@@ -36,6 +36,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "name"));
 	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "user"));
+	if (app->m_user.empty()) app->m_user = "root";
 	app->m_comments = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "comments"));
 	// Be noticed do not use multiple spaces between command arguments
 	// "ping www.baidu.com    123" equals
