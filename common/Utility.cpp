@@ -1,6 +1,7 @@
 #include <string>
 #include <algorithm>
 #include <fstream>
+#include <queue>
 #include <iomanip>
 #ifdef _WIN32
 #include <process.h>
@@ -469,19 +470,18 @@ std::string Utility::runShellCommand(std::string cmd)
 	LOG_DBG << fname << cmd;
 	if (fp)
 	{
-		int count = 0;
+		std::queue<std::string> msgQueue;
 		while (fgets(line, LINE_LENGTH, fp) != NULL)
 		{
-			stdoutMsg << line;
-			LOG_DBG << fname << "output: " << line;
-			if ((++count) > 1024)
-			{
-				// TODO: kill child process
-				LOG_ERR << fname << " too many lines, child process may leak";
-				break;
-			}
+			msgQueue.push(line);
+			if (msgQueue.size() > 512) msgQueue.pop();
 		}
 		pclose(fp);
+		while (msgQueue.size())
+		{
+			stdoutMsg << msgQueue.front();
+			msgQueue.pop();
+		}
 	}
 	auto str = std::string(stdoutMsg.str());
 	return std::move(str);
