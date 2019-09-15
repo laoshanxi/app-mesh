@@ -1,15 +1,10 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="Application.cpp" />
-    <ClCompile Include="ApplicationPeriodRun.cpp" />
-    <ClCompile Include="ApplicationShortRun.cpp" />
     <ClCompile Include="Configuration.cpp" />
     <ClCompile Include="DailyLimitation.cpp" />
     <ClCompile Include="LinuxCgroup.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="MonitoredProcess.cpp" />
-    <ClCompile Include="Process.cpp" />
     <ClCompile Include="ResourceCollection.cpp" />
     <ClCompile Include="ResourceLimitation.cpp" />
     <ClCompile Include="RestHandler.cpp" />
@@ -20,17 +15,29 @@
       <Filter>common</Filter>
     </ClCompile>
     <ClCompile Include="TimerHandler.cpp" />
-    <ClCompile Include="DockerProcess.cpp" />
+    <ClCompile Include="Application.cpp">
+      <Filter>Application</Filter>
+    </ClCompile>
+    <ClCompile Include="ApplicationPeriodRun.cpp">
+      <Filter>Application</Filter>
+    </ClCompile>
+    <ClCompile Include="ApplicationShortRun.cpp">
+      <Filter>Application</Filter>
+    </ClCompile>
+    <ClCompile Include="DockerProcess.cpp">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="MonitoredProcess.cpp">
+      <Filter>Process</Filter>
+    </ClCompile>
+    <ClCompile Include="Process.cpp">
+      <Filter>Process</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Application.h" />
-    <ClInclude Include="ApplicationPeriodRun.h" />
-    <ClInclude Include="ApplicationShortRun.h" />
     <ClInclude Include="Configuration.h" />
     <ClInclude Include="DailyLimitation.h" />
     <ClInclude Include="LinuxCgroup.h" />
-    <ClInclude Include="MonitoredProcess.h" />
-    <ClInclude Include="Process.h" />
     <ClInclude Include="ResourceCollection.h" />
     <ClInclude Include="ResourceLimitation.h" />
     <ClInclude Include="RestHandler.h" />
@@ -65,7 +72,24 @@
     <ClInclude Include="..\common\os\chown.hpp">
       <Filter>common\os</Filter>
     </ClInclude>
-    <ClInclude Include="DockerProcess.h" />
+    <ClInclude Include="Application.h">
+      <Filter>Application</Filter>
+    </ClInclude>
+    <ClInclude Include="ApplicationPeriodRun.h">
+      <Filter>Application</Filter>
+    </ClInclude>
+    <ClInclude Include="ApplicationShortRun.h">
+      <Filter>Application</Filter>
+    </ClInclude>
+    <ClInclude Include="DockerProcess.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="MonitoredProcess.h">
+      <Filter>Process</Filter>
+    </ClInclude>
+    <ClInclude Include="Process.h">
+      <Filter>Process</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />
@@ -80,6 +104,12 @@
     </Filter>
     <Filter Include="common\os">
       <UniqueIdentifier>{22cd69f3-0570-4dd3-9f77-5c02bbd4d736}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Application">
+      <UniqueIdentifier>{2a00d72f-3f11-477e-804f-35a80990a09d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Process">
+      <UniqueIdentifier>{1c95d5db-416a-4375-b8a3-c5f7f8657113}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

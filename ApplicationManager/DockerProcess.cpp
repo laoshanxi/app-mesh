@@ -100,7 +100,8 @@ std::string DockerProcess::fetchOutputMsg()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_containerId.length())
 	{
-		std::string dockerCommand = "docker logs --since " + std::to_string(m_lastFetchTime.time_since_epoch().count()) + " " + m_containerId;
+		auto microsecondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
+		std::string dockerCommand = "docker logs --since " + std::to_string(microsecondsUTC) + " " + m_containerId;
 		auto msg = Utility::runShellCommand(dockerCommand);
 		m_lastFetchTime = std::chrono::system_clock::now();
 		return std::move(msg);
