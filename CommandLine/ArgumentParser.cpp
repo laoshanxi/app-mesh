@@ -863,7 +863,8 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(7) << ("pid")
 		<< std::setw(7) << ("return")
 		<< std::setw(8) << ("memory")
-		<< ("command_line")
+		<< std::setw(15) << ("command_line")
+		<< ("stime")
 		<< std::endl;
 
 	int index = 1;
@@ -881,7 +882,8 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
 		std::cout << std::setw(8) << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
-		std::cout << GET_JSON_STR_VALUE(jobj, "command_line");
+		std::cout << std::setw(15) << GET_JSON_STR_VALUE(jobj, "command_line");
+		std::cout << GET_JSON_STR_VALUE(jobj, "last_start");
 
 		std::cout << std::endl;
 	});

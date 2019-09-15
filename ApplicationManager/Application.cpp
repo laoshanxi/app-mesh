@@ -128,6 +128,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+				m_startTime = std::chrono::system_clock::now();
 			}
 		}
 		else if (m_process->running())
@@ -287,6 +288,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
 		result[GET_STRING_T("return")] = web::json::value::number(m_return);
 		result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
+		result[GET_STRING_T("last_start")] = web::json::value::string(Utility::convertTime2Str(m_startTime));
 	}
 	if (m_dailyLimit != nullptr)
 	{

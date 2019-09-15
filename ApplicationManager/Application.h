@@ -5,7 +5,7 @@
 #include <string>
 #include <map>
 #include <mutex>
-
+#include <chrono>
 #include <cpprest/json.h>
 
 #include "Process.h"
@@ -77,6 +77,7 @@ protected:
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;
 	std::string m_dockerImage;
+	std::chrono::system_clock::time_point m_startTime;
 };
 
 #endif 
