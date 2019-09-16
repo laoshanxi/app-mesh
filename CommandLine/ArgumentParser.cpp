@@ -883,12 +883,13 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
 		std::cout << std::setw(8) << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
+		std::cout << std::setw(20);
 		std::chrono::system_clock::time_point startTime(std::chrono::seconds(GET_JSON_NUMBER_VALUE(jobj, "last_start")));
 		auto startTimeHours = std::chrono::time_point_cast<std::chrono::hours>(startTime);
 		if (startTimeHours.time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			std::cout << std::setw(20) << Utility::convertTime2Str(startTime);
+			std::cout << Utility::convertTime2Str(startTime);
 		else
-			std::cout << std::setw(20) << "-";
+			std::cout << "-";
 		std::cout << GET_JSON_STR_VALUE(jobj, "command_line");
 
 		std::cout << std::endl;
