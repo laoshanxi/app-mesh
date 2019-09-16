@@ -58,10 +58,15 @@ rpm:
 cppcheck:
 	cppcheck --enable=all --quiet --std=c++11 --platform=native .
 install:
-	dpkg -i ./${PACKAGE_NAME}_${VERSION}_amd64.deb
+	#dpkg -i ./${PACKAGE_NAME}_${VERSION}_amd64.deb
+	yum install -y ./${PACKAGE_NAME}*.rpm
 	
 uninstall:
-	dpkg -P ${PACKAGE_NAME}
+	#dpkg -P ${PACKAGE_NAME}
+	yum remove -y ${PACKAGE_NAME}
+
+lines:
+	find . -name "*.cpp" -or -name "*.h" -or -name "*.hpp" -or -name "*.c"  -or -name "*.sh" -or -name "Makefile" -or -name "Dockerfile" |xargs grep -v "^$"|wc -l
 
 clean:
 	cd CommandLine; make clean
