@@ -39,6 +39,7 @@
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? GET_STRING_T("") : jsonObj.at(GET_STRING_T(key)).as_string())
 #define GET_JSON_INT_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? 0 : jsonObj.at(GET_STRING_T(key)).as_integer())
+#define GET_JSON_NUMBER_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? 0L : jsonObj.at(GET_STRING_T(key)).as_number().to_int64())
 #define SET_JSON_INT_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_INT_VALUE(jsonObj, key);
 #define GET_JSON_BOOL_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? false : jsonObj.at(GET_STRING_T(key)).as_bool())
 #define SET_JSON_BOOL_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_BOOL_VALUE(jsonObj, key);

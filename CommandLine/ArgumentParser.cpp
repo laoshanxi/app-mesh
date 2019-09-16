@@ -1,5 +1,6 @@
 #include <iostream>
 #include <thread>
+#include <chrono>
 #include <functional>
 #include <boost/program_options.hpp>
 #include <cpprest/filestream.h>
@@ -882,7 +883,8 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
 		std::cout << std::setw(8) << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
-		std::cout << std::setw(20) << GET_JSON_STR_VALUE(jobj, "last_start");
+		std::chrono::system_clock::time_point startTime(std::chrono::seconds(GET_JSON_NUMBER_VALUE(jobj, "last_start")));
+		std::cout << std::setw(20) << Utility::convertTime2Str(startTime);
 		std::cout << GET_JSON_STR_VALUE(jobj, "command_line");
 
 		std::cout << std::endl;

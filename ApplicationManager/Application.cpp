@@ -288,7 +288,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
 		result[GET_STRING_T("return")] = web::json::value::number(m_return);
 		result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
-		result[GET_STRING_T("last_start")] = web::json::value::string(Utility::convertTime2Str(m_startTime));
+		result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
 	}
 	if (m_dailyLimit != nullptr)
 	{
