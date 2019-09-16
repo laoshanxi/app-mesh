@@ -12,7 +12,7 @@ DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage)
 
 DockerProcess::~DockerProcess()
 {
-	killgroup();
+	DockerProcess::killgroup();
 }
 
 void DockerProcess::killgroup(int timerId)

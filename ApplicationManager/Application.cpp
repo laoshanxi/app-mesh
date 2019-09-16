@@ -128,7 +128,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
-				m_startTime = std::chrono::system_clock::now();
+				m_procStartTime = std::chrono::system_clock::now();
 			}
 		}
 		else if (m_process->running())
@@ -288,8 +288,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		if (m_pid > 0) result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
 		result[GET_STRING_T("return")] = web::json::value::number(m_return);
 		if (m_pid > 0)result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
-		if (std::chrono::time_point_cast<std::chrono::hours>(m_startTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
+		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
+			result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
 	}
 	if (m_dailyLimit != nullptr)
 	{
