@@ -549,7 +549,7 @@ void ArgumentParser::processShell()
 	// 2. Call run and check output
 	if (m_commandLineVariables.count("extra_time"))
 	{
-		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-t",  
+		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-x",  
 			strdup(std::to_string(m_commandLineVariables["extra_time"].as<int>()).c_str()), "\0" };
 		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 		testParser.parse();
