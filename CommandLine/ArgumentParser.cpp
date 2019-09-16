@@ -333,9 +333,7 @@ void ArgumentParser::processView()
 			std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();
 			auto response = requestHttp(methods::GET, restPath);
 			RESPONSE_CHECK_WITH_RETURN;
-			auto arr = web::json::value::array(1);
-			arr[0] = response.extract_json(true).get();
-			printApps(arr, reduce);
+			std::cout << response.extract_utf8string(true).get() << std::endl;
 		}
 		else
 		{
@@ -861,8 +859,8 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(12) << ("name")
 		<< std::setw(6) << ("user")
 		<< std::setw(9) << ("status")
-		<< std::setw(7) << ("pid")
 		<< std::setw(7) << ("return")
+		<< std::setw(7) << ("pid")
 		<< std::setw(8) << ("memory")
 		<< std::setw(20) << ("start_time")
 		<< ("command_line")
@@ -880,18 +878,29 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(12) << name;
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, "user"), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, "status"));
-		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
-		std::cout << std::setw(8) << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
+		std::cout << std::setw(7);
+		{
+			if (HAS_JSON_FIELD(jobj, "pid"))
+				std::cout << GET_JSON_INT_VALUE(jobj, "pid");
+			else
+				std::cout << "-";
+		}
+		std::cout << std::setw(8);
+		{
+			if (HAS_JSON_FIELD(jobj, "memory"))
+				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
+			else
+				std::cout << "-";
+		}
 		std::cout << std::setw(20);
-		std::chrono::system_clock::time_point startTime(std::chrono::seconds(GET_JSON_NUMBER_VALUE(jobj, "last_start")));
-		auto startTimeHours = std::chrono::time_point_cast<std::chrono::hours>(startTime);
-		if (startTimeHours.time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			std::cout << Utility::convertTime2Str(startTime);
-		else
-			std::cout << "-";
+		{
+			if (HAS_JSON_FIELD(jobj, "last_start"))
+				std::cout << Utility::convertTime2Str(std::chrono::system_clock::time_point(std::chrono::seconds(GET_JSON_NUMBER_VALUE(jobj, "last_start"))));
+			else
+				std::cout << "-";
+		}
 		std::cout << GET_JSON_STR_VALUE(jobj, "command_line");
-
 		std::cout << std::endl;
 	});
 }

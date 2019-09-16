@@ -285,10 +285,11 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_comments.length()) result[GET_STRING_T("commentss")] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)
 	{
-		result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
+		if (m_pid > 0) result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
 		result[GET_STRING_T("return")] = web::json::value::number(m_return);
-		result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
-		result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
+		if (m_pid > 0)result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
+		if (std::chrono::time_point_cast<std::chrono::hours>(m_startTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
+			result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
 	}
 	if (m_dailyLimit != nullptr)
 	{
