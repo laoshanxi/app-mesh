@@ -84,7 +84,7 @@ int Process::spawnProcess(std::string cmd, std::string user, std::string workDir
 {
 	const static char fname[] = "Process::spawnProcess() ";
 
-	int pid;
+	int pid = -1;
 	
 	size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
@@ -102,6 +102,10 @@ int Process::spawnProcess(std::string cmd, std::string user, std::string workDir
 			option.setruid(uid);
 			option.setegid(gid);
 			option.setrgid(gid);
+		}
+		else
+		{
+			return -1;
 		}
 	}
 	option.setgroup(0);
