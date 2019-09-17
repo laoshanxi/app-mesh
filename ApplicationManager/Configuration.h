@@ -48,8 +48,8 @@ public:
 	const std::string & getJwtUserName() const;
 	const std::string & getJwtAdminKey() const;
 	const std::string & getJwtUserKey() const;
-
-	static std::string prettyJson(const std::string & jsonStr);
+	const size_t getThreadPoolSize() const { return m_threadPoolSize; }
+	
 	void dump();
 
 private:
@@ -78,6 +78,8 @@ private:
 	std::string m_jwtUserName;
 	std::string m_jwtAdminKey;
 	std::string m_jwtUserKey;
+
+	size_t m_threadPoolSize;
 
 	static std::shared_ptr<Configuration> m_instance;
 };

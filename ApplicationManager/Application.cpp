@@ -4,6 +4,7 @@
 #include "../common/Utility.h"
 #include "../common/TimeZoneHelper.h"
 #include "Configuration.h"
+#include "DockerProcess.h"
 
 Application::Application()
 	:m_status(ENABLED), m_return(0), m_cacheOutputLines(0), m_pid(-1), m_processIndex(0)
@@ -34,7 +35,8 @@ bool Application::isNormal()
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::object& jobj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "name"));
-	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "run_as"));
+	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "user"));
+	if (app->m_user.empty()) app->m_user = "root";
 	app->m_comments = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "comments"));
 	// Be noticed do not use multiple spaces between command arguments
 	// "ping www.baidu.com    123" equals
@@ -72,6 +74,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
 	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, "cache_lines"), 128);
+	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, "docker_image");
 
 	app->dump();
 }
@@ -123,8 +126,9 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
-				m_process = allocProcess();
+				m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+				m_procStartTime = std::chrono::system_clock::now();
 			}
 		}
 		else if (m_process->running())
@@ -168,9 +172,23 @@ void Application::start()
 	}
 }
 
-std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest)
+std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::string> envMap)
 {
 	const static char fname[] = "Application::testRun() ";
+	LOG_DBG << fname << " Entered.";
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_testProcess != nullptr && m_testProcess->running())
+	{
+		m_testProcess->killgroup();
+	}
+	m_testProcess.reset(new MonitoredProcess(256));
+	return runTest(timeoutSeconds, envMap);
+}
+
+std::string Application::testAsyncRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest)
+{
+	const static char fname[] = "Application::testAsyncRun() ";
 	LOG_DBG << fname << " Entered.";
 
 	std::string processUUID;
@@ -180,22 +198,29 @@ std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::
 	{
 		m_testProcess->killgroup();
 	}
-	m_testProcess.reset(new MonitoredProcess());
+	m_testProcess.reset(new MonitoredProcess(256));
 	m_testProcess->setAsyncHttpRequest(asyncHttpRequest);
-	processUUID = m_testProcess->getuuid();
-	auto oriEnvMap = m_envMap;
-	std::for_each(envMap.begin(), envMap.end(), [this](const std::pair<std::string, std::string>& pair)
+	return runTest(timeoutSeconds, envMap);
+}
+
+std::string Application::runTest(int timeoutSeconds, const std::map<std::string, std::string>& envMap)
+{
+	const static char fname[] = "Application::runTest() ";
+	LOG_DBG << fname << " Entered.";
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::string processUUID = m_testProcess->getuuid();
+	auto combinedEnvMap = m_envMap;
+	std::for_each(envMap.begin(), envMap.end(), [&combinedEnvMap](const std::pair<std::string, std::string>& pair)
 	{
-		m_envMap[pair.first] = pair.second;
+		combinedEnvMap[pair.first] = pair.second;
 	});
-	if (m_testProcess->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit) > 0)
+	if (m_testProcess->spawnProcess(m_commandLine, m_user, m_workdir, combinedEnvMap, m_resourceLimit) > 0)
 	{
-		if (envMap.size()) m_envMap = oriEnvMap;	// restore env map
 		m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
 	}
 	else
 	{
-		if (envMap.size()) m_envMap = oriEnvMap;	// restore env map
 		throw std::invalid_argument("Start process failed");
 	}
 
@@ -208,7 +233,7 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 
 	if (m_testProcess != nullptr && m_testProcess->getuuid() == processUuid)
 	{
-		auto output = m_testProcess->fecthPipeMessages();
+		auto output = m_testProcess->fetchOutputMsg();
 		if (output.length() == 0 && !m_testProcess->running() && m_testProcess->monitorComplete())
 		{
 			exitCode = m_testProcess->return_value();
@@ -233,15 +258,15 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 
 std::string Application::getOutput(bool keepHistory)
 {
-	if (m_cacheOutputLines)
+	if (m_process != nullptr)
 	{
-		auto process = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
-		if (process != nullptr)
+		if (keepHistory)
 		{
-			if (keepHistory)
-				return process->getPipeMessages();
-			else
-				return process->fecthPipeMessages();
+			return m_process->getOutputMsg();
+		}
+		else
+		{
+			return m_process->fetchOutputMsg();
 		}
 	}
 	return std::string();
@@ -253,16 +278,18 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[GET_STRING_T("name")] = web::json::value::string(GET_STRING_T(m_name));
-	result[GET_STRING_T("run_as")] = web::json::value::string(GET_STRING_T(m_user));
+	if (m_user.length()) result[GET_STRING_T("user")] = web::json::value::string(GET_STRING_T(m_user));
 	result[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(m_commandLine));
-	result[GET_STRING_T("working_dir")] = web::json::value::string(GET_STRING_T(m_workdir));
+	if (m_workdir.length()) result[GET_STRING_T("working_dir")] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[GET_STRING_T("status")] = web::json::value::number(m_status);
 	if (m_comments.length()) result[GET_STRING_T("commentss")] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)
 	{
-		result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
+		if (m_pid > 0) result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
 		result[GET_STRING_T("return")] = web::json::value::number(m_return);
-		result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
+		if (m_pid > 0)result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
+		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
+			result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
 	}
 	if (m_dailyLimit != nullptr)
 	{
@@ -283,6 +310,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	}
 	if (m_posixTimeZone.length()) result[GET_STRING_T("posix_timezone")] = web::json::value::string(m_posixTimeZone);
 	if (m_cacheOutputLines) result[GET_STRING_T("cache_lines")] = web::json::value::number(m_cacheOutputLines);
+	if (m_dockerImage.length()) result[GET_STRING_T("docker_image")] = web::json::value::string(m_dockerImage);
 	return result;
 }
 
@@ -300,20 +328,35 @@ void Application::dump()
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
+	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
 
-std::shared_ptr<Process> Application::allocProcess()
+std::shared_ptr<Process> Application::allocProcess(int cacheOutputLines, std::string dockerImage)
 {
 	std::shared_ptr<Process> process;
-	if (m_cacheOutputLines == 0)
+	if (dockerImage.length())
 	{
-		process.reset(new Process());
+		if (cacheOutputLines > 0)
+		{
+			process.reset(new DockerProcess(cacheOutputLines, dockerImage));
+		}
+		else
+		{
+			process.reset(new DockerProcess(256, dockerImage));
+		}
 	}
 	else
 	{
-		process.reset(new MonitoredProcess(m_cacheOutputLines));
+		if (cacheOutputLines > 0)
+		{
+			process.reset(new MonitoredProcess(cacheOutputLines));
+		}
+		else
+		{
+			process.reset(new Process(cacheOutputLines));
+		}
 	}
 	return std::move(process);
 }

@@ -1,6 +1,8 @@
 #include <string>
 #include <algorithm>
 #include <fstream>
+#include <queue>
+#include <iomanip>
 #ifdef _WIN32
 #include <process.h>
 #include <Windows.h>
@@ -20,7 +22,7 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/RollingFileAppender.hh>
 #include <log4cpp/OstreamAppender.hh>
-
+#include <json/reader.h>
 #include <ace/UUID.h>
 
 #include "../common/Utility.h"
@@ -341,6 +343,24 @@ std::string Utility::getSystemPosixTimeZone()
 	return str;
 }
 
+std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point & time)
+{
+	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
+	const auto timeMs = std::chrono::time_point_cast<std::chrono::milliseconds>(time);
+	const auto timeSec = std::chrono::time_point_cast<std::chrono::seconds>(timeMs);
+	const auto millis = timeMs - timeSec;
+
+	// convert
+	char buff[70] = { 0 };
+	auto timet = std::chrono::system_clock::to_time_t(time);
+	std::tm timetm = *std::localtime(&timet);
+	strftime(buff, sizeof(buff), "%FT%T", &timetm);
+
+	std::stringstream ss;
+	ss << buff << '.' << std::setfill('0') << std::setw(3) << millis.count();
+	return ss.str();
+}
+
 std::string Utility::encode64(const std::string & val)
 {
 	using namespace boost::archive::iterators;
@@ -436,6 +456,41 @@ std::string Utility::createUUID()
 	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
 	auto str = std::string(uuid.to_string()->c_str());
 	return std::move(str);
+}
+
+std::string Utility::runShellCommand(std::string cmd)
+{
+	const static char fname[] = "Utility::runShellCommand() ";
+
+	#define LINE_LENGTH 300
+	char line[LINE_LENGTH];
+	std::stringstream stdoutMsg;
+	cmd += " 2>&1"; // include stderr
+	FILE *fp = popen(cmd.c_str(), "r");
+	LOG_DBG << fname << cmd;
+	if (fp)
+	{
+		std::queue<std::string> msgQueue;
+		while (fgets(line, LINE_LENGTH, fp) != NULL)
+		{
+			msgQueue.push(line);
+			if (msgQueue.size() > 512) msgQueue.pop();
+		}
+		pclose(fp);
+		while (msgQueue.size())
+		{
+			stdoutMsg << msgQueue.front();
+			msgQueue.pop();
+		}
+	}
+	auto str = std::string(stdoutMsg.str());
+	return std::move(str);
+}
+
+void Utility::trimLineBreak(std::string& str)
+{
+	str = stdStringTrim(str, '\r');
+	str = stdStringTrim(str, '\n');
 }
 
 std::vector<std::string> Utility::splitString(const std::string & source, const std::string & splitFlag)
@@ -550,4 +605,22 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string>& envMa
 
 	totalEnvArgs += numEntriesConst;
 	totalEnvSize += bufferSizeConst;
+}
+
+std::string Utility::prettyJson(const std::string & jsonStr)
+{
+	static Json::CharReaderBuilder builder;
+	static Json::CharReader* reader(builder.newCharReader());
+	Json::Value root;
+	Json::String errs;
+	if (reader->parse(jsonStr.c_str(), jsonStr.c_str() + std::strlen(jsonStr.c_str()), &root, &errs))
+	{
+		return root.toStyledString();
+	}
+	else
+	{
+		std::string msg = "Failed to parse json : " + jsonStr + " with error :" + errs;
+		LOG_ERR << msg;
+		throw std::invalid_argument(msg);
+	}
 }

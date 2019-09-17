@@ -1,5 +1,6 @@
 #include <iostream>
 #include <thread>
+#include <chrono>
 #include <functional>
 #include <boost/program_options.hpp>
 #include <cpprest/filestream.h>
@@ -147,11 +148,12 @@ void ArgumentParser::processReg(const char* appName)
 		("name,n", po::value<std::string>(), "application name")
 		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
+		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
 		("status,a", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
 		("start_time,t", po::value<std::string>(), "start date time for short running app (e.g., '2018-01-01 09:00:00')")
 		("daily_start,s", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
-		("daily_end,d", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
+		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
 		("cpu_shares,p", po::value<int>(), "CPU shares (relative weight)")
@@ -201,32 +203,15 @@ void ArgumentParser::processReg(const char* appName)
 	web::json::value jsobObj;
 	jsobObj["name"] = (shellApp ? web::json::value::string(appName) : web::json::value::string(m_commandLineVariables["name"].as<std::string>()));
 	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	jsobObj["run_as"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
+	if (m_commandLineVariables.count("user")) jsobObj["user"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj["status"] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
-	if (m_commandLineVariables.count("timezone") > 0)
-	{
-		jsobObj["posix_timezone"] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
-	}
-	if (m_commandLineVariables.count("start_time") > 0)
-	{
-		jsobObj["start_time"] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
-	}
-	if (m_commandLineVariables.count("interval") > 0)
-	{
-		jsobObj["start_interval_seconds"] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
-	}
-
-	if (m_commandLineVariables.count("extra_time") > 0)
-	{
-		jsobObj["start_interval_timeout"] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
-	}
-
-	if (m_commandLineVariables.count("keep_running"))
-	{
-		jsobObj["keep_running"] = web::json::value::boolean(m_commandLineVariables["keep_running"].as<bool>());
-	}
-
+	if (m_commandLineVariables.count("docker_image")) jsobObj["docker_image"] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
+	if (m_commandLineVariables.count("timezone")) jsobObj["posix_timezone"] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
+	if (m_commandLineVariables.count("start_time")) jsobObj["start_time"] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
+	if (m_commandLineVariables.count("interval")) jsobObj["start_interval_seconds"] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
+	if (m_commandLineVariables.count("extra_time")) jsobObj["start_interval_timeout"] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
+	if (m_commandLineVariables.count("keep_running")) jsobObj["keep_running"] = web::json::value::boolean(m_commandLineVariables["keep_running"].as<bool>());
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
 		web::json::value objDailyLimitation = web::json::value::object();
@@ -263,10 +248,7 @@ void ArgumentParser::processReg(const char* appName)
 			jsobObj["env"] = objEnvs;
 		}
 	}
-	if (m_commandLineVariables.count("cache_lines"))
-	{
-		jsobObj["cache_lines"] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
-	}
+	if (m_commandLineVariables.count("cache_lines")) jsobObj["cache_lines"] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
 
 	std::string restPath;
 	if (!shellApp)
@@ -351,9 +333,7 @@ void ArgumentParser::processView()
 			std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();
 			auto response = requestHttp(methods::GET, restPath);
 			RESPONSE_CHECK_WITH_RETURN;
-			auto arr = web::json::value::array(1);
-			arr[0] = response.extract_json(true).get();
-			printApps(arr, reduce);
+			std::cout << response.extract_utf8string(true).get() << std::endl;
 		}
 		else
 		{
@@ -362,7 +342,7 @@ void ArgumentParser::processView()
 			auto response = requestHttp(methods::GET, restPath);
 			RESPONSE_CHECK_WITH_RETURN;
 			auto bodyStr = response.extract_utf8string(true).get();
-			std::cout << bodyStr << std::endl;
+			std::cout << bodyStr;
 		}
 	}
 	else
@@ -569,7 +549,7 @@ void ArgumentParser::processShell()
 	// 2. Call run and check output
 	if (m_commandLineVariables.count("extra_time"))
 	{
-		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-t",  
+		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-x",  
 			strdup(std::to_string(m_commandLineVariables["extra_time"].as<int>()).c_str()), "\0" };
 		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 		testParser.parse();
@@ -879,9 +859,10 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(12) << ("name")
 		<< std::setw(6) << ("user")
 		<< std::setw(9) << ("status")
-		<< std::setw(7) << ("pid")
 		<< std::setw(7) << ("return")
+		<< std::setw(7) << ("pid")
 		<< std::setw(8) << ("memory")
+		<< std::setw(20) << ("start_time")
 		<< ("command_line")
 		<< std::endl;
 
@@ -895,13 +876,31 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		else if (name.length() >= 12) name += " ";
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
-		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, "run_as"), 6);
+		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, "user"), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, "status"));
-		std::cout << std::setw(7) << (GET_JSON_INT_VALUE(jobj, "pid") > 0 ? GET_JSON_INT_VALUE(jobj, "pid") : 0);
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, "return");
-		std::cout << std::setw(8) << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
+		std::cout << std::setw(7);
+		{
+			if (HAS_JSON_FIELD(jobj, "pid"))
+				std::cout << GET_JSON_INT_VALUE(jobj, "pid");
+			else
+				std::cout << "-";
+		}
+		std::cout << std::setw(8);
+		{
+			if (HAS_JSON_FIELD(jobj, "memory"))
+				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, "memory"));
+			else
+				std::cout << "-";
+		}
+		std::cout << std::setw(20);
+		{
+			if (HAS_JSON_FIELD(jobj, "last_start"))
+				std::cout << Utility::convertTime2Str(std::chrono::system_clock::time_point(std::chrono::seconds(GET_JSON_NUMBER_VALUE(jobj, "last_start"))));
+			else
+				std::cout << "-";
+		}
 		std::cout << GET_JSON_STR_VALUE(jobj, "command_line");
-
 		std::cout << std::endl;
 	});
 }

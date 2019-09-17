@@ -1,5 +1,4 @@
 #include "Configuration.h"
-#include <json/reader.h>
 #include "../common/Utility.h"
 #include "ApplicationPeriodRun.h"
 
@@ -7,7 +6,7 @@
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
-	:m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true)
+	:m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true), m_threadPoolSize(6)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
@@ -77,7 +76,11 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_jwtAdminKey = GET_STD_STRING(jwt.at(GET_STRING_T("admin")).as_object().at(GET_STRING_T("key")).as_string());
 	config->m_jwtUserName = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("name")).as_string());
 	config->m_jwtUserKey = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("key")).as_string());
-
+	auto threadpool = GET_JSON_INT_VALUE(jobj, "HttpThreadPoolSize");
+	if (threadpool > 0 && threadpool < 40)
+	{
+		config->m_threadPoolSize = threadpool;
+	}
 	config->parseTags(jobj.at(GET_STRING_T("Lables")));
 
 	m_instance = config;
@@ -101,8 +104,8 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[GET_STRING_T("SSLEnabled")] = web::json::value::boolean(m_sslEnabled);
 	result[GET_STRING_T("SSLCertificateFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateFile));
 	result[GET_STRING_T("SSLCertificateKeyFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateKeyFile));
-
 	result[GET_STRING_T("JWTEnabled")] = web::json::value::boolean(m_jwtEnabled);
+	result[GET_STRING_T("HttpThreadPoolSize")] = web::json::value::number(m_threadPoolSize);
 	if (!returnRuntimeInfo)
 	{
 		web::json::value jwt = web::json::value::object();
@@ -354,7 +357,7 @@ void Configuration::saveConfigToDisk()
 		std::ofstream ofs(tmpFile, ios::trunc);
 		if (ofs.is_open())
 		{
-			ofs << prettyJson(content);
+			ofs << Utility::prettyJson(content);
 			ofs.close();
 			if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
 			{
@@ -402,24 +405,6 @@ std::shared_ptr<Application> Configuration::parseApp(web::json::object jsonApp)
 		Application::FromJson(app, jsonApp);
 	}
 	return app;
-}
-
-std::string Configuration::prettyJson(const std::string & jsonStr)
-{
-	static Json::CharReaderBuilder builder;
-	static Json::CharReader* reader(builder.newCharReader());
-	Json::Value root;
-	Json::String errs;
-	if (reader->parse(jsonStr.c_str(), jsonStr.c_str() + std::strlen(jsonStr.c_str()), &root, &errs))
-	{
-		return root.toStyledString();
-	}
-	else
-	{
-		std::string msg = "Failed to parse json : " + jsonStr + " with error :" + errs;
-		LOG_ERR << msg;
-		throw std::invalid_argument(msg);
-	}
 }
 
 std::shared_ptr<Application> Configuration::getApp(const std::string & appName)

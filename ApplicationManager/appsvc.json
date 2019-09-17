@@ -8,12 +8,13 @@
   "SSLEnabled": true,
   "SSLCertificateFile": "server.crt",
   "SSLCertificateKeyFile": "server.key",
+  "HttpThreadPoolSize": 6,
   "JWTEnabled": true,
   "Applications": [
     {
       "command_line": "/bin/sleep 60",
       "name": "ping",
-      "run_as": "root",
+      "user": "root",
       "working_dir": "/tmp"
     }
   ],

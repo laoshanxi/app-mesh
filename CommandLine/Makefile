@@ -1,4 +1,4 @@
-VERSION=1.3
+VERSION=1.4
 PACKAGE_NAME=appmanager
 BUILD_DATE=$(shell date "+%Y%m%d%H%M")
 BUILD_TAG=${PACKAGE_NAME}-${VERSION}-${BUILD_DATE}
@@ -9,7 +9,7 @@ CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2
 OEXT = o
 
 INCLUDES = -I/usr/local/include -I/usr/local/ace/include/
-DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -lssl -lcrypto -lcpprest -lboost_system -lboost_program_options -lACE -Wl,-Bstatic -llog4cpp -Wl,-Bdynamic
+DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -lssl -lcrypto -lcpprest -lboost_system -lboost_program_options -lACE -Wl,-Bstatic -llog4cpp -ljsoncpp -Wl,-Bdynamic
 
 all : format $(TARGET) 
 

@@ -1,4 +1,4 @@
-VERSION=1.3
+VERSION=1.4
 PACKAGE_NAME=appmanager
 BUILD_DATE=$(shell date "+%Y%m%d%H%M")
 BUILD_TAG=${PACKAGE_NAME}-${VERSION}-${BUILD_DATE}
@@ -25,6 +25,7 @@ SRCS = \
 	Configuration.cpp \
 	RestHandler.cpp \
 	Process.cpp \
+	DockerProcess.cpp \
 	MonitoredProcess.cpp \
 	DailyLimitation.cpp \
 	ResourceLimitation.cpp \

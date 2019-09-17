@@ -371,7 +371,7 @@ void RestHandler::apiRegShellApp(const http_request& message)
 	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
 
 	auto app = Configuration::instance()->addApp(jobj);
-	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
+	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
 }
 
 void RestHandler::apiControlApp(const http_request & message)
@@ -587,7 +587,7 @@ void RestHandler::apiGetApp(const http_request& message)
 {
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	std::string app = path.substr(strlen("/app/"));
-	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
+	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
 }
 
 void RestHandler::apiRunApp(const http_request& message)
@@ -671,7 +671,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 
 	// Use async reply here
 	http_request* asyncRequest = new http_request(message);
-	Configuration::instance()->getApp(app)->testRun(timeout, envMap, asyncRequest);
+	Configuration::instance()->getApp(app)->testAsyncRun(timeout, envMap, asyncRequest);
 }
 
 void RestHandler::apiRunOutput(const http_request& message)
@@ -720,7 +720,7 @@ void RestHandler::apiAppOutput(const http_request & message)
 	// /app/$app-name/output
 	std::string app = path.substr(strlen("/app/"));
 	app = app.substr(0, app.find_first_of('/'));
-	bool keepHis = true;
+	bool keepHis = false;
 	if (querymap.find("keep_history") != querymap.end())
 	{
 		auto keep = GET_STD_STRING(querymap.find(U("keep_history"))->second);
@@ -738,7 +738,7 @@ void RestHandler::apiGetApps(const http_request& message)
 
 void RestHandler::apiGetResources(const http_request& message)
 {
-	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
+	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
 }
 
 void RestHandler::apiRegApp(const http_request& message)
@@ -749,5 +749,5 @@ void RestHandler::apiRegApp(const http_request& message)
 		throw std::invalid_argument("invalid json format");
 	}
 	auto app = Configuration::instance()->addApp(jsonApp.as_object());
-	message.reply(status_codes::OK, Configuration::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
+	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
 }

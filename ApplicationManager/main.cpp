@@ -40,15 +40,16 @@ int main(int argc, char * argv[])
 		ACE::init();
 		Utility::initLogging();
 		
-		LOG_DBG << fname << "Entered.";
+		LOG_INF << fname << "Entered.";
 
 		auto config = readConfiguration();
 		Utility::setLogLevel(config->getLogLevel());
 		if (config->getRestEnabled())
 		{
 			// 1. Thread pool: 6 threads
-			crossplat::threadpool::initialize_with_threads(6);
+			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
 			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenIp(), config->getRestListenPort());
+			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
 
 		auto apps = config->getApps();

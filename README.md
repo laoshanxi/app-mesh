@@ -42,7 +42,7 @@ POST | /app/$app-name/waitrun?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": 
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
-PUT | /app/$app-name | {"command_line": "/bin/sleep 60", "name": "ping", "run_as": "root", "working_dir": "/tmp" } | Register a new application
+PUT | /app/$app-name | {"command_line": "/bin/sleep 60", "name": "ping", "user": "root", "working_dir": "/tmp" } | Register a new application
 PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell application
 POST| /app/$app-name?action=start | | Start an application
 POST| /app/$app-name?action=stop | | Stop an application
@@ -244,7 +244,7 @@ y
    "name" : "ping",
    "pid" : -1,
    "return" : 0,
-   "run_as" : "kfc",
+   "user" : "kfc",
    "working_dir" : "/opt"
 }
 ```

@@ -39,6 +39,7 @@
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? GET_STRING_T("") : jsonObj.at(GET_STRING_T(key)).as_string())
 #define GET_JSON_INT_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? 0 : jsonObj.at(GET_STRING_T(key)).as_integer())
+#define GET_JSON_NUMBER_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? 0L : jsonObj.at(GET_STRING_T(key)).as_number().to_int64())
 #define SET_JSON_INT_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_INT_VALUE(jsonObj, key);
 #define GET_JSON_BOOL_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? false : jsonObj.at(GET_STRING_T(key)).as_bool())
 #define SET_JSON_BOOL_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_BOOL_VALUE(jsonObj, key);
@@ -84,6 +85,7 @@ public:
 	static bool startWith(const std::string& str, std::string head);
 	static std::string stringReplace(const std::string &strBase, const std::string& strSrc, const std::string& strDst);
 	static std::string humanReadableSize(long double bytesSize);
+	static std::string prettyJson(const std::string & jsonStr);
 
 	static void initLogging();
 	static void setLogLevel(const std::string & level);
@@ -101,6 +103,8 @@ public:
 	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point & time);
 	// Timezone
 	static std::string getSystemPosixTimeZone();
+	// rfc3339 time
+	static std::string getRfc3339Time(const std::chrono::system_clock::time_point & time);
 
 	// Base64
 	static std::string encode64(const std::string &val);
@@ -111,6 +115,8 @@ public:
 	static std::string readFileCpp(const std::string &path);
 
 	static std::string createUUID();
+	static std::string runShellCommand(std::string cmd);
+	static void trimLineBreak(std::string& str);
 };
 
 #endif
