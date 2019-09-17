@@ -85,6 +85,7 @@ public:
 	static bool startWith(const std::string& str, std::string head);
 	static std::string stringReplace(const std::string &strBase, const std::string& strSrc, const std::string& strDst);
 	static std::string humanReadableSize(long double bytesSize);
+	static std::string prettyJson(const std::string & jsonStr);
 
 	static void initLogging();
 	static void setLogLevel(const std::string & level);

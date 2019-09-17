@@ -8,6 +8,7 @@
   "SSLEnabled": true,
   "SSLCertificateFile": "server.crt",
   "SSLCertificateKeyFile": "server.key",
+  "HttpThreadPoolSize": 6,
   "JWTEnabled": true,
   "Applications": [
     {

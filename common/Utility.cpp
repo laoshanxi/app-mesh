@@ -22,7 +22,7 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/RollingFileAppender.hh>
 #include <log4cpp/OstreamAppender.hh>
-
+#include <json/reader.h>
 #include <ace/UUID.h>
 
 #include "../common/Utility.h"
@@ -605,4 +605,22 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string>& envMa
 
 	totalEnvArgs += numEntriesConst;
 	totalEnvSize += bufferSizeConst;
+}
+
+std::string Utility::prettyJson(const std::string & jsonStr)
+{
+	static Json::CharReaderBuilder builder;
+	static Json::CharReader* reader(builder.newCharReader());
+	Json::Value root;
+	Json::String errs;
+	if (reader->parse(jsonStr.c_str(), jsonStr.c_str() + std::strlen(jsonStr.c_str()), &root, &errs))
+	{
+		return root.toStyledString();
+	}
+	else
+	{
+		std::string msg = "Failed to parse json : " + jsonStr + " with error :" + errs;
+		LOG_ERR << msg;
+		throw std::invalid_argument(msg);
+	}
 }
