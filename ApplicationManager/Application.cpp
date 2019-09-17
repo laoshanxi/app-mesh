@@ -209,6 +209,10 @@ std::string Application::runTest(int timeoutSeconds, const std::map<std::string,
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_dockerImage.length())
+	{
+		throw std::invalid_argument("Docker application does not support this API");
+	}
 	std::string processUUID = m_testProcess->getuuid();
 	auto combinedEnvMap = m_envMap;
 	std::for_each(envMap.begin(), envMap.end(), [&combinedEnvMap](const std::pair<std::string, std::string>& pair)
