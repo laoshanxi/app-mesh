@@ -13,21 +13,7 @@
 #include "ResourceCollection.h"
 #include "TimerHandler.h"
 
-class AppMonitor
-{
-public:
-	void monitorAllApps(int timerId)
-	{
-		auto apps = Configuration::instance()->getApps();
-		for (const auto& app : apps)
-		{
-			app->invoke();
-		}
-	}
-};
-
 static std::shared_ptr<RestHandler>       m_httpHandler;
-static std::shared_ptr<AppMonitor>        m_mainLoopTimer;
 static std::shared_ptr<Configuration>     readConfiguration();
 
 int main(int argc, char * argv[])
@@ -64,15 +50,15 @@ int main(int argc, char * argv[])
 		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runEventLoop));
 		
 		// 3. Thread for main
-		// Should leave AppMonitor::monitorAllApps in main thread that share thread with timer
-		// because monitorAllApps will hold much Reactor lock for long time.
-		// 'Timer lock visit App' and App register timer visit timer lock cause dead lock
-		m_mainLoopTimer.reset(new AppMonitor());
 		auto scheduleInterval = Configuration::instance()->getScheduleInterval();
 		while (true)
 		{
 			std::this_thread::sleep_for(std::chrono::seconds(scheduleInterval));
-			m_mainLoopTimer->monitorAllApps(0);
+			auto apps = Configuration::instance()->getApps();
+			for (const auto& app : apps)
+			{
+				app->invoke();
+			}
 		}
 	}
 	catch (const std::exception& e)
