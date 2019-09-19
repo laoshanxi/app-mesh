@@ -15,7 +15,8 @@ systemctl enable appmanager
 systemctl start appmanager
 
 rm -rf /usr/bin/appc
-ln -s /opt/appmanager/appc /usr/bin/appc
+ln -s /opt/appmanager/script/appc.sh /usr/bin/appc
+chmod +x /opt/appmanager/script/appc.sh
 
 # insert source to bash, remove in case of any lib conflict
 sourcefile=""
@@ -27,8 +28,4 @@ else
 	else
 		sourcefile=/etc/profile
 	fi
-fi
-counter=`cat $sourcefile | grep -v ^# | grep "app.bashrc" | wc -l`
-if [ $counter -eq 0 ]; then
-	echo "if [ -f ""/opt/appmanager/script/app.bashrc"" ]; then source /opt/appmanager/script/app.bashrc; fi" >> $sourcefile
 fi

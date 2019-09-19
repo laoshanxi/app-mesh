@@ -58,13 +58,7 @@ GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define 
 ```
 sudo yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.3/appmanager-1.3-1.x86_64.rpm
 ```
-If you directly run command line from installation console, there will have issue on dependency libraries, you need source /opt/appmanager/script/app.bashrc to get the environment. for the new console will be OK, the source operation was automaticlly add to /etc/bashrc
 ```
-$ appc view
-appc: error while loading shared libraries: libcpprest.so.2.10: cannot open shared object file: No such file or directory
-
-$ source /opt/appmanager/script/app.bashrc 
-
 $ appc view
 id name        user  status   pid    return memory  command_line
 1  period      root  enabled  585    0      672 K   /bin/sleep 20
