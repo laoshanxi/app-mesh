@@ -16,7 +16,7 @@ Supported applications  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> JWT authentication <br> Download/Upload files
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> JWT authentication <br> Download/Upload files <br> Docker container app management
 
 
 ## Setup build environment on CentOS/Ubuntu/Debian
@@ -24,7 +24,7 @@ Extra Features | Application can define avialable time range in a day <br> Appli
 git clone https://github.com/laoshanxi/app-manager.git
 sudo sh app-manager/autogen.sh
 ```
-## Build
+## Build Application Manager
 ```
 cd app-manager
 make
@@ -56,17 +56,16 @@ GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define 
 ## How to install
 **CentOS**:
 ```
-sudo yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.3/appmanager-1.3-1.x86_64.rpm
+# centos
+yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager-1.4-1.x86_64.rpm
+# ubuntu
+apt install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager_1.4_amd64.deb
 ```
 ```
 $ appc view
-id name        user  status   pid    return memory  command_line
-1  period      root  enabled  585    0      672 K   /bin/sleep 20
-2  ping        root  enabled  586    0      956 K   ping www.baidu.com
-```
-**Ubuntu**:
-```
-$ apt install ./appmanager_1.2_amd64.deb -y
+id name        user  status   return pid    memory  start_time          command_line
+1  ping        root  enabled  0      6631   616 K   2019-09-19 19:31:45 /bin/sleep 60
+2  sleep       root  enabled  0      -      -       -                   ping
 ```
 
 ## Show all sub command
@@ -102,8 +101,17 @@ id name        user  status   pid    return memory  command_line
 1  period      root  enabled  766    0      20 K    /bin/sleep 20
 2  ping        root  enabled  586    0      956 K   ping www.baidu.com
 $ appc view -n ping
-id name        user  status   pid    return memory  command_line
-1  ping        root  enabled  586    0      956 K   ping www.baidu.com
+{
+        "command_line" : "/bin/sleep 60",
+        "last_start" : 1568893521,
+        "memory" : 626688,
+        "name" : "ping",
+        "pid" : 8426,
+        "return" : 0,
+        "status" : 1,
+        "user" : "root",
+        "working_dir" : "/tmp"
+}
 ```
 
 ## Display host resource usage

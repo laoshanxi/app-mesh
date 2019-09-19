@@ -13,7 +13,7 @@
   "Applications": [
     {
       "command_line": "/bin/sleep 60",
-      "name": "ping",
+      "name": "sleep",
       "user": "root",
       "working_dir": "/tmp"
     }
