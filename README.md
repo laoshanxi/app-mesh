@@ -202,6 +202,33 @@ $ appc resource
 ```
 </details>
 
+## View application output
+```
+$ appc reg -n ping -c 'ping www.baidu.com' -o 10
+{
+        "cache_lines" : 10,
+        "command_line" : "ping www.baidu.com",
+        "name" : "ping",
+        "status" : 1,
+        "user" : "root",
+        "working_dir" : "/tmp"
+}
+
+$ appc view
+id name        user  status   return pid    memory  start_time          command_line
+1  ping        root  enabled  0      14001  2 M     2019-09-19 20:17:50 ping www.baidu.com
+$ appc view -n ping -o
+PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=1 ttl=54 time=35.5 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=2 ttl=54 time=35.5 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=3 ttl=54 time=37.4 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=4 ttl=54 time=35.7 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=5 ttl=54 time=36.5 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=6 ttl=54 time=42.6 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=7 ttl=54 time=40.6 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=8 ttl=54 time=39.7 ms
+64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=9 ttl=54 time=36.8 ms
+```
 
 ## Register a new application
 
