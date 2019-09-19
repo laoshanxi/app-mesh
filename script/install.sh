@@ -17,15 +17,3 @@ systemctl start appmanager
 rm -rf /usr/bin/appc
 ln -s /opt/appmanager/script/appc.sh /usr/bin/appc
 chmod +x /opt/appmanager/script/appc.sh
-
-# insert source to bash, remove in case of any lib conflict
-sourcefile=""
-if [ -f /etc/bashrc ]; then
-	sourcefile=/etc/bashrc
-else
-	if [ -f /etc/bash.bashrc ]; then
-		sourcefile=/etc/bash.bashrc
-	else
-		sourcefile=/etc/profile
-	fi
-fi
