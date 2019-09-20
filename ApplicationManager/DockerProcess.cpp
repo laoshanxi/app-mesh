@@ -78,6 +78,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 
 	// start docker container
 	auto containerId = Utility::runShellCommand(dockerCommand);
+	Utility::trimLineBreak(containerId);
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
 	auto pidStr = Utility::runShellCommand(dockerCommand);
 	Utility::trimLineBreak(pidStr);
