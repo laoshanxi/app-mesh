@@ -3,7 +3,7 @@
 ![coverage](https://img.shields.io/badge/coverage-90%25-yellowgreen.svg?maxAge=2592000)
 ![version](https://img.shields.io/badge/version-1.2.0-blue.svg?maxAge=2592000)
 
-## Introduction
+### Introduction
 Application Manager is a daemon application to manage different types of sub-applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line to start/stop and register new app easily. Also can be a JWT server.
 
 The internal timer is multi-threaded with high-precision that can be used to replace Linux cron-tab and supervisor.
@@ -19,18 +19,18 @@ Periodic long running application |Long running applicatin but will be restart p
 Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> JWT authentication <br> Download/Upload files <br> Docker container app management
 
 
-## Setup build environment on CentOS/Ubuntu/Debian
+### Setup build environment on CentOS/Ubuntu/Debian
 ```
 git clone https://github.com/laoshanxi/app-manager.git
 sudo sh app-manager/autogen.sh
 ```
-## Build Application Manager
+### Build Application Manager
 ```
 cd app-manager
 make
 ```
 
-## REST APIs
+### REST APIs
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
@@ -53,7 +53,7 @@ GET| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Get lables
 POST| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Update lables
 GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
 
-## How to install
+### How to install
 **CentOS**:
 ```
 # centos
@@ -68,7 +68,7 @@ id name        user  status   return pid    memory  start_time          command_
 2  sleep       root  enabled  0      -      -       -                   ping
 ```
 
-## Show all sub command
+### Show all sub command
 
 ```
 $ appc
@@ -93,7 +93,7 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 ```
 
 
-## List application[s]
+### List application[s]
 
 ```
 $ appc view
@@ -102,9 +102,9 @@ id name        user  status   pid    return memory  command_line
 2  ping        root  enabled  586    0      956 K   ping www.baidu.com
 
 ```
-# Resource Management
+# 1. Resource Management
 
-## Display host resource usage
+### Display host resource usage
 
 <details>
 <summary>appc resource</summary>
@@ -193,7 +193,7 @@ $ appc resource
 </details>
 
 
-## View application resource (application process tree memory usage)
+### View application resource (application process tree memory usage)
 
 ```
 $ appc view -n ping
@@ -210,9 +210,9 @@ $ appc view -n ping
 }
 ```
 
-# Applicaton(process) Management
+# 2. Applicaton(process) Management
 
-## View application output
+### View application output
 ```
 $ appc reg -n ping -c 'ping www.baidu.com' -o 10
 {
@@ -240,7 +240,7 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=9 ttl=54 time=36.8 ms
 ```
 
-## Register a new application
+### Register a new application
 
 ```
 $ appc reg
@@ -308,7 +308,7 @@ CONTAINER ID        IMAGE               COMMAND             CREATED             
 965fcec657b9        ubuntu              "sleep 30"          5 seconds ago       Up 3 seconds                            app-mgr-2-ubuntu
 ```
 
-## Remove an application
+### Remove an application
 ```
 appc unreg -n ping
 Are you sure you want to remove the application (y/n)?
@@ -316,18 +316,18 @@ y
 Success
 ```
 
-## Start an application
+### Start an application
 ```
 $ appc start -n ping
 ```
 
-## Stop an application
+### Stop an application
 ```
 $ appc stop -n ping
 ```
-# Remote command and application output
+# 3. Remote command and application output
 
-## Run remote application and get stdout
+### Run remote application and get stdout
 ``` sh
 $ appc run -n ping -t 5
 PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
@@ -338,7 +338,7 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 64 bytes from 220.181.112.244: icmp_seq=5 ttl=55 time=20.1 ms
 ```
 
-## Run a shell command and get stdout
+### Run a shell command and get stdout
 ``` sh
 $ appc sh -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view" 
 id name        user  status   pid    return memory  command_line
@@ -347,22 +347,22 @@ id name        user  status   pid    return memory  command_line
 3  869d8991-0* root  stopped  0      0      0       /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
 ```
 
-# File Management
+# 4. File Management
 
-## Download a file from server
+### Download a file from server
 ``` sh
 $ # appc get -r /opt/appmanager/log/appsvc.log -l ./1.log
 file <./1.log> size <10.4 M>
 ```
 
-## Upload a local file to server
+### Upload a local file to server
 ``` sh
 $ # appc put -r /opt/appmanager/log/appsvc.log -l ./1.log
 Success
 ```
-# Label Management
+# 5. Label Management
 
-## Manage lables
+### Manage lables
 ``` sh
 # list label
 $ appc label
@@ -381,17 +381,17 @@ os_version=centos7.6
 
 ![example](https://github.com/laoshanxi/app-manager/blob/master/doc/example.gif?raw=true) 
 
-## Remote run a shell command
+### Remote run a shell command
 ![appc_sh](https://github.com/laoshanxi/app-manager/blob/master/doc/appc_sh.gif?raw=true) 
 
-## Usage scenarios
+### Usage scenarios
 1. Integrate with package installation script and register startup command to app manager automaticlly
 2. Remote async shell execute (can build-up web ssh)
 3. Host/app resource monitor
 4. Can be a standalone JWT server
 5. File server
 
-## 3rd party deependencies
+### 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
 - [ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Microsoft cpprestsdk](https://github.com/Microsoft/cpprestsdk)
@@ -400,6 +400,6 @@ os_version=centos7.6
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [jwt_cpp](https://thalhammer.it/projects/jwt_cpp)
 
-## Design
-### Thread model
+### Design
+#### Thread model
 <div align=center><img src="https://github.com/laoshanxi/app-manager/blob/master/doc/threadmodel.jpg?raw=true" align=center /></div>
