@@ -288,6 +288,24 @@ y
 }
 
 # register a docker container app
+$ appc reg -n mydocker -c 'sleep 30' -d ubuntu
+{
+        "command_line" : "sleep 30",
+        "docker_image" : "ubuntu",
+        "name" : "mydocker",
+        "status" : 1,
+        "user" : "root",
+        "working_dir" : "/tmp"
+}
+
+$ appc view
+id name        user  status   return pid    memory  start_time          command_line
+1  sleep       root  enabled  0      4206   356 K   2019-09-20 09:36:08 /bin/sleep 60
+2  mydocker    root  enabled  0      4346   388 K   2019-09-20 09:36:33 sleep 30
+
+$ docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+965fcec657b9        ubuntu              "sleep 30"          5 seconds ago       Up 3 seconds                            app-mgr-2-ubuntu
 ```
 
 ## Remove an application
