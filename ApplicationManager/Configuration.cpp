@@ -219,7 +219,7 @@ void Configuration::parseTags(web::json::value json)
 		{
 			std::string lableKey = GET_STD_STRING(iter->first);
 			m_tags[lableKey] = GET_STD_STRING(iter->second.as_string());
-			LOG_INF << fname << "lable: " << lableKey << "=" << m_tags[lableKey];
+			LOG_INF << fname << "label: " << lableKey << "=" << m_tags[lableKey];
 		}
 	}
 	this->saveConfigToDisk();

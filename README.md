@@ -75,7 +75,7 @@ $ appc
 Commands:
   view        List application[s]
   resource    Display host resource usage
-  lable       Manage host lables
+  label       Manage host lables
   start       Start a application
   stop        Stop a application
   restart     Restart a application
@@ -100,19 +100,9 @@ $ appc view
 id name        user  status   pid    return memory  command_line
 1  period      root  enabled  766    0      20 K    /bin/sleep 20
 2  ping        root  enabled  586    0      956 K   ping www.baidu.com
-$ appc view -n ping
-{
-        "command_line" : "/bin/sleep 60",
-        "last_start" : 1568893521,
-        "memory" : 626688,
-        "name" : "ping",
-        "pid" : 8426,
-        "return" : 0,
-        "status" : 1,
-        "user" : "root",
-        "working_dir" : "/tmp"
-}
+
 ```
+# Resource Management
 
 ## Display host resource usage
 
@@ -202,6 +192,26 @@ $ appc resource
 ```
 </details>
 
+
+## View application resource (application process tree memory usage)
+
+```
+$ appc view -n ping
+{
+        "command_line" : "/bin/sleep 60",
+        "last_start" : 1568893521,
+        "memory" : 626688,
+        "name" : "ping",
+        "pid" : 8426,
+        "return" : 0,
+        "status" : 1,
+        "user" : "root",
+        "working_dir" : "/tmp"
+}
+```
+
+# Applicaton(process) Management
+
 ## View application output
 ```
 $ appc reg -n ping -c 'ping www.baidu.com' -o 10
@@ -263,7 +273,7 @@ Register a new application:
   -g [ --debug ]                 print debug information
   -h [ --help ]                  help message
 
-  
+# register a app with a native command
 $ appc reg -n ping -u kfc -c 'ping www.google.com' -w /opt
 Application already exist, are you sure you want to update the application (y/n)?
 y
@@ -276,10 +286,9 @@ y
    "user" : "kfc",
    "working_dir" : "/opt"
 }
+
+# register a docker container app
 ```
-
-
-
 
 ## Remove an application
 ```
@@ -298,6 +307,7 @@ $ appc start -n ping
 ```
 $ appc stop -n ping
 ```
+# Remote command and application output
 
 ## Run remote application and get stdout
 ``` sh
@@ -319,6 +329,8 @@ id name        user  status   pid    return memory  command_line
 3  869d8991-0* root  stopped  0      0      0       /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
 ```
 
+# File Management
+
 ## Download a file from server
 ``` sh
 $ # appc get -r /opt/appmanager/log/appsvc.log -l ./1.log
@@ -330,20 +342,21 @@ file <./1.log> size <10.4 M>
 $ # appc put -r /opt/appmanager/log/appsvc.log -l ./1.log
 Success
 ```
+# Label Management
 
 ## Manage lables
 ``` sh
-# list lable
-$ appc lable
+# list label
+$ appc label
 arch=x86_64
 os_version=centos7.6
 
-# remove lable
-$ appc lable -r -t arch
+# remove label
+$ appc label -r -t arch
 os_version=centos7.6
 
-# add lable
-$ appc lable --add --lable mytag=abc
+# add label
+$ appc label --add --label mytag=abc
 mytag=abc
 os_version=centos7.6
 ```

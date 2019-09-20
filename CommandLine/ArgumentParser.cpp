@@ -105,7 +105,7 @@ void ArgumentParser::parse()
 	{
 		processUpload();
 	}
-	else if (cmd == "lable")
+	else if (cmd == "label")
 	{
 		processTags();
 	}
@@ -120,7 +120,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
-	std::cout << "  lable       Manage host lables" << std::endl;
+	std::cout << "  label       Manage host lables" << std::endl;
 	std::cout << "  start       Start a application" << std::endl;
 	std::cout << "  stop        Stop a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
@@ -676,7 +676,7 @@ void ArgumentParser::processTags()
 		("view,v", "list lables")
 		("add,a", "add lables")
 		("remove,r", "remove lables")
-		("lable,l", po::value<std::vector<std::string>>(), "lables (e.g., -l os=linux -t arch=arm64)")
+		("label,l", po::value<std::vector<std::string>>(), "lables (e.g., -l os=linux -t arch=arm64)")
 		("help,h", "help message")
 		;
 	moveForwardCommandLineVariables(desc);
@@ -686,7 +686,7 @@ void ArgumentParser::processTags()
 	http_response response = requestHttp(methods::GET, restPath);
 	RESPONSE_CHECK_WITH_RETURN;
 	std::vector<std::string> inputTags;
-	if (m_commandLineVariables.count("lable")) inputTags = m_commandLineVariables["lable"].as<std::vector<std::string>>();
+	if (m_commandLineVariables.count("label")) inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
 
 	if (m_commandLineVariables.count("add") && 
 		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("list"))
@@ -694,7 +694,7 @@ void ArgumentParser::processTags()
 		// Process add
 		if (inputTags.empty())
 		{
-			std::cout << "No lable specified" << std::endl;
+			std::cout << "No label specified" << std::endl;
 			return;
 		}
 		auto tagVal = response.extract_json().get();
@@ -715,7 +715,7 @@ void ArgumentParser::processTags()
 		// Process remove
 		if (inputTags.empty())
 		{
-			std::cout << "No lable specified" << std::endl;
+			std::cout << "No label specified" << std::endl;
 			return;
 		}
 		auto tagVal = response.extract_json().get();

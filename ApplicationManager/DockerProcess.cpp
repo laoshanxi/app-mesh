@@ -69,7 +69,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
 	auto imageSize = Utility::runShellCommand(dockerCommand);
 	Utility::trimLineBreak(imageSize);
-	if (Utility::isNumber(imageSize) && std::stoi(imageSize) > 1)
+	if (!Utility::isNumber(imageSize) || std::stoi(imageSize) < 1)
 	{
 		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
 		return -1;
