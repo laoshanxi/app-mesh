@@ -116,6 +116,13 @@ int Process::spawnProcess(std::string cmd, std::string user, std::string workDir
 	{
 		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
 	});
+	// do not inherit LD_LIBRARY_PATH to child
+	static const std::string ldEnv = ::getenv("LD_LIBRARY_PATH");
+	if (!ldEnv.empty())
+	{
+		auto env = Utility::stringReplace(ldEnv, "/opt/appmanager/lib64:", "");
+		option.setenv("LD_LIBRARY_PATH", "%s", env.c_str());
+	}
 	if (this->spawn(option) >= 0)
 	{
 		pid = this->getpid();

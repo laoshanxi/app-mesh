@@ -239,10 +239,12 @@ void ArgumentParser::processReg(const char* appName)
 			web::json::value objEnvs = web::json::value::object();
 			std::for_each(envs.begin(), envs.end(), [&objEnvs](std::string env)
 			{
-				std::vector<std::string> envVec = Utility::splitString(env, "=");
-				if (envVec.size() == 2)
+				auto find = env.find_first_of('=');
+				if (find != std::string::npos)
 				{
-					objEnvs[GET_STRING_T(envVec.at(0))] = web::json::value::string(GET_STRING_T(envVec.at(1)));
+					auto key = env.substr(0, find - 1);
+					auto val = env.substr(find + 1);
+					objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
 				}
 			});
 			jsobObj["env"] = objEnvs;
@@ -464,10 +466,12 @@ void ArgumentParser::processTest()
 			web::json::value objEnvs = web::json::value::object();
 			std::for_each(envs.begin(), envs.end(), [&objEnvs](std::string env)
 			{
-				std::vector<std::string> envVec = Utility::splitString(env, "=");
-				if (envVec.size() == 2)
+				auto find = env.find_first_of('=');
+				if (find != std::string::npos)
 				{
-					objEnvs[GET_STRING_T(envVec.at(0))] = web::json::value::string(GET_STRING_T(envVec.at(1)));
+					auto key = env.substr(0, find);
+					auto val = env.substr(find + 1);
+					objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
 				}
 			});
 			jsobObj["env"] = objEnvs;
