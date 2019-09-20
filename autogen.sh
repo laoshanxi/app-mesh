@@ -63,7 +63,7 @@ cd $ROOTDIR
 
 # build log4cpp:
 # https://my.oschina.net/u/1983790/blog/1587568
-wget https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
+wget https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20(new)/log4cpp-1.1/log4cpp-1.1.3.tar.gz
 tar zxvf log4cpp-1.1.3.tar.gz
 cd log4cpp/
 ./autogen.sh
