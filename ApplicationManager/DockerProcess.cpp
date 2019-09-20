@@ -38,8 +38,19 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	static int dockerIndex = 0;
 	std::string dockerName = "app-mgr-" + std::to_string(++dockerIndex) + "-" + m_dockerImage;
 	if (limit != nullptr) dockerName += (std::string("-") + limit->n_name);
+
+	// check docker image
+	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
+	auto imageSize = Utility::runShellCommand(dockerCommand);
+	Utility::trimLineBreak(imageSize);
+	if (!Utility::isNumber(imageSize) || std::stoi(imageSize) < 1)
+	{
+		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
+		return -1;
+	}
+
 	// build docker start command line
-	std::string dockerCommand = std::string("docker run -d ") + "--name " + dockerName;
+	dockerCommand = std::string("docker run -d ") + "--name " + dockerName;
 	for(auto env: envMap)
 	{
 		dockerCommand += " --env ";
@@ -64,17 +75,6 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	}
 	dockerCommand += " " + m_dockerImage;
 	dockerCommand += " " + cmd;
-
-	// check docker image
-	dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
-	auto imageSize = Utility::runShellCommand(dockerCommand);
-	Utility::trimLineBreak(imageSize);
-	if (!Utility::isNumber(imageSize) || std::stoi(imageSize) < 1)
-	{
-		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
-		return -1;
-	}
-
 
 	// start docker container
 	auto containerId = Utility::runShellCommand(dockerCommand);
