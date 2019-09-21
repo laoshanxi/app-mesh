@@ -128,7 +128,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  run         Run application and get output" << std::endl;
 	std::cout << "  sh          Use shell run a command and get output" << std::endl;
-	std::cout << "  get         Copy remote file to local" << std::endl;
+	std::cout << "  get         Download remote file to local" << std::endl;
 	std::cout << "  put         Upload file to server" << std::endl;
 
 	std::cout << std::endl;
