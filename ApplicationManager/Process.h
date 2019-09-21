@@ -3,7 +3,7 @@
 #include <map>
 #include <string>
 #include <algorithm>
-
+#include <thread>
 #include <ace/Process.h>
 
 #include "LinuxCgroup.h"
@@ -26,6 +26,7 @@ public:
 	void regKillTimer(size_t timeout, const std::string from);
 	
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
+	virtual int asyncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
 	static void getSysProcessList(std::map<std::string, int>& processList, const void* pt = nullptr);
 
 	virtual std::string getOutputMsg();
@@ -35,6 +36,7 @@ protected:
 private:
 	std::shared_ptr<LinuxCgroup> m_cgroup;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
+	std::shared_ptr<std::thread> m_spawnThread;
 	std::string m_uuid;
 	int m_killTimerId;
 };
