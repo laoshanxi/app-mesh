@@ -28,16 +28,15 @@ void DockerProcess::killgroup(int timerId)
 	}
 }
 
-int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
+int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
-	const static char fname[] = "DockerProcess::spawnProcess() ";
+	const static char fname[] = "DockerProcess::asyncSpawnProcess() ";
 
 	killgroup();
 	int pid = -1;
 	// construct container name
 	static int dockerIndex = 0;
-	std::string dockerName = "app-mgr-" + std::to_string(++dockerIndex) + "-" + m_dockerImage;
-	if (limit != nullptr) dockerName += (std::string("-") + limit->n_name);
+	std::string dockerName = "app-mgr-" + this->getuuid();
 
 	// check docker image
 	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
@@ -99,6 +98,49 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	return pid;
 }
 
+int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
+{
+	const static char fname[] = "DockerProcess::spawnProcess() ";
+	if (m_spawnThread != nullptr)
+	{
+		return -1;
+	}
+	struct SpawnParams
+	{
+		std::string cmd;
+		std::string user;
+		std::string workDir;
+		std::map<std::string, std::string> envMap;
+		std::shared_ptr<ResourceLimitation> limit;
+		std::shared_ptr<DockerProcess> thisProc;
+	};
+	auto param = std::make_shared<SpawnParams>();
+	param->cmd = cmd;
+	param->user = user;
+	param->workDir = workDir;
+	param->envMap = envMap;
+	param->limit = limit;
+	param->thisProc = std::dynamic_pointer_cast<DockerProcess>(this->shared_from_this());
+
+	m_spawnThread = std::make_shared<std::thread>(
+		[param, this]()
+		{
+			const static char fname[] = "DockerProcess::m_spawnThread() ";
+			LOG_DBG << fname << "Entered";
+			param->thisProc->asyncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
+			param->thisProc->wait();
+			param->thisProc->m_spawnThread = nullptr;
+			param->thisProc = nullptr;
+			LOG_DBG << fname << "Exited";
+		}
+	);
+	m_spawnThread->detach();
+	const int startTimeoutSeconds = 5;
+	this->registerTimer(startTimeoutSeconds, 0, std::bind(&DockerProcess::checkStartThreadTimer, this, std::placeholders::_1), fname);
+	this->attach(1);
+	return 1;
+}
+
 std::string DockerProcess::getOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -123,4 +165,12 @@ std::string DockerProcess::fetchOutputMsg()
 		return std::move(msg);
 	}
 	return std::string();
+}
+
+void DockerProcess::checkStartThreadTimer(int timerId)
+{
+	if (this->getpid() == 1)
+	{
+		killgroup();
+	}
 }

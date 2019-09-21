@@ -141,42 +141,6 @@ int Process::spawnProcess(std::string cmd, std::string user, std::string workDir
 	return pid;
 }
 
-int Process::asyncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
-{
-	if (m_spawnThread != nullptr)
-	{
-		return -1;
-	}
-	struct SpawnParams
-	{
-		std::string cmd;
-		std::string user;
-		std::string workDir;
-		std::map<std::string, std::string> envMap;
-		std::shared_ptr<ResourceLimitation> limit;
-		std::shared_ptr<Process> thisProc;
-	};
-	auto param = std::make_shared<SpawnParams>();
-	param->cmd = cmd;
-	param->user = user;
-	param->workDir = workDir;
-	param->envMap = envMap;
-	param->limit = limit;
-	param->thisProc = std::dynamic_pointer_cast<Process>(this->shared_from_this());
-	
-	m_spawnThread = std::make_shared<std::thread>(
-		[param, this]()
-		{
-			param->thisProc->spawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
-			param->thisProc->wait();
-			param->thisProc->m_spawnThread = nullptr;
-			param->thisProc = nullptr;
-		}
-	);
-	m_spawnThread->detach();
-	return 0;
-}
-
 void Process::getSysProcessList(std::map<std::string, int>& processList, const void * pt)
 {
 	const static char fname[] = "Process::getSysProcessList() ";
