@@ -1,8 +1,4 @@
-VERSION=1.4
-PACKAGE_NAME=appmanager
-BUILD_DATE=$(shell date "+%Y%m%d%H%M")
-BUILD_TAG=${PACKAGE_NAME}-${VERSION}-${BUILD_DATE}
-
+include ../make.def
 TARGET = appsvc
 CXX = g++
 CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2

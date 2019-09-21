@@ -1,0 +1,5 @@
+VERSION=1.4.1
+PACKAGE_NAME=appmanager
+BUILD_DATE=$(shell date "+%Y%m%d%H%M")
+BUILD_TAG=${PACKAGE_NAME}-${VERSION}-${BUILD_DATE}
+VENDER=github

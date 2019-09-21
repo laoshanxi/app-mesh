@@ -1,9 +1,4 @@
-VERSION=1.4
-PACKAGE_NAME=appmanager
-BUILD_DATE=$(shell date "+%Y%m%d%H%M")
-BUILD_TAG=${PACKAGE_NAME}-${VERSION}-${BUILD_DATE}
-VENDER=github
-
+include make.def
 RELEASE_DIR=./release
 INSTALL_DIR=/opt/${PACKAGE_NAME}
 TMP_DIR=${RELEASE_DIR}${INSTALL_DIR}
