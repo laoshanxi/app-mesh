@@ -128,7 +128,6 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_containerId = containerId;
 	killgroup();
-	m_spawnProcess = nullptr;
 	return pid;
 }
 
@@ -203,9 +202,8 @@ std::string DockerProcess::fetchOutputMsg()
 
 void DockerProcess::checkStartThreadTimer(int timerId)
 {
-	if (m_spawnProcess->running())
+	if (m_spawnProcess!= nullptr && m_spawnProcess->running())
 	{
 		m_spawnProcess->killgroup();
-		m_spawnProcess = nullptr;
 	}
 }
