@@ -3,6 +3,7 @@
 #include "../common/Utility.h"
 #include "../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
+#include "MonitoredProcess.h"
 
 DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage)
 	: Process(cacheOutputLines), m_dockerImage(dockerImage), m_lastFetchTime(std::chrono::system_clock::now())
@@ -34,13 +35,20 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 
 	killgroup();
 	int pid = -1;
-	// construct container name
-	static int dockerIndex = 0;
-	std::string dockerName = "app-mgr-" + this->getuuid();
+	ACE_Time_Value tv(5);
 
-	// check docker image
+	// 1. check docker image
+	std::string dockerName = "app-mgr-" + this->getuuid();
 	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
-	auto imageSize = Utility::runShellCommand(dockerCommand);
+	MonitoredProcess imageProc(32);
+	pid = imageProc.spawnProcess(dockerCommand, "root", "", {}, nullptr);
+	this->attach(pid);
+	if (imageProc.wait(tv) <= 0)
+	{
+		imageProc.killgroup();
+		return -1;
+	}
+	auto imageSize = imageProc.fetchOutputMsg();
 	Utility::trimLineBreak(imageSize);
 	if (!Utility::isNumber(imageSize) || std::stoi(imageSize) < 1)
 	{
@@ -48,7 +56,7 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 		return -1;
 	}
 
-	// build docker start command line
+	// 2. build docker start command line
 	dockerCommand = std::string("docker run -d ") + "--name " + dockerName;
 	for(auto env: envMap)
 	{
@@ -75,11 +83,29 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 	dockerCommand += " " + m_dockerImage;
 	dockerCommand += " " + cmd;
 
-	// start docker container
-	auto containerId = Utility::runShellCommand(dockerCommand);
+	// 3. start docker container
+	MonitoredProcess containerProc(32);
+	pid = containerProc.spawnProcess(dockerCommand, "root", "", {}, nullptr);
+	this->attach(pid);
+	if (containerProc.wait(tv) <= 0)
+	{
+		containerProc.killgroup();
+		return -1;
+	}
+	auto containerId = containerProc.fetchOutputMsg();
 	Utility::trimLineBreak(containerId);
+
+	// 4. get docker root pid
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
-	auto pidStr = Utility::runShellCommand(dockerCommand);
+	MonitoredProcess pidProc(32);
+	pid = pidProc.spawnProcess(dockerCommand, "root", "", {}, nullptr);
+	this->attach(pid);
+	if (pidProc.wait(tv) <= 0)
+	{
+		pidProc.killgroup();
+		return -1;
+	}
+	auto pidStr = pidProc.fetchOutputMsg();
 	Utility::trimLineBreak(pidStr);
 	if (Utility::isNumber(pidStr))
 	{
