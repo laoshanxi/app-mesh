@@ -40,15 +40,17 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 	// 1. check docker image
 	std::string dockerName = "app-mgr-" + this->getuuid();
 	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
-	MonitoredProcess imageProc(32);
-	pid = imageProc.spawnProcess(dockerCommand, "root", "", {}, nullptr);
-	this->attach(pid);
-	if (imageProc.wait(tv) <= 0)
+	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
+	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		imageProc.killgroup();
-		return -1;
+		if (m_spawnProcess->wait(tv) <= 0 && m_spawnProcess->running())
+		{
+			this->attach(-1);
+			m_spawnProcess->killgroup();
+			return -1;
+		}
 	}
-	auto imageSize = imageProc.fetchOutputMsg();
+	auto imageSize = m_spawnProcess->fetchOutputMsg();
 	Utility::trimLineBreak(imageSize);
 	if (!Utility::isNumber(imageSize) || std::stoi(imageSize) < 1)
 	{
@@ -84,28 +86,32 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
-	MonitoredProcess containerProc(32);
-	pid = containerProc.spawnProcess(dockerCommand, "root", "", {}, nullptr);
-	this->attach(pid);
-	if (containerProc.wait(tv) <= 0)
+	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
+	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		containerProc.killgroup();
-		return -1;
+		if (m_spawnProcess->wait(tv) <= 0 && m_spawnProcess->running())
+		{
+			this->attach(-1);
+			m_spawnProcess->killgroup();
+			return -1;
+		}
 	}
-	auto containerId = containerProc.fetchOutputMsg();
+	auto containerId = m_spawnProcess->fetchOutputMsg();
 	Utility::trimLineBreak(containerId);
 
 	// 4. get docker root pid
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
-	MonitoredProcess pidProc(32);
-	pid = pidProc.spawnProcess(dockerCommand, "root", "", {}, nullptr);
-	this->attach(pid);
-	if (pidProc.wait(tv) <= 0)
+	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
+	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		pidProc.killgroup();
-		return -1;
+		if (m_spawnProcess->wait(tv) <= 0 && m_spawnProcess->running())
+		{
+			this->attach(-1);
+			m_spawnProcess->killgroup();
+			return -1;
+		}
 	}
-	auto pidStr = pidProc.fetchOutputMsg();
+	auto pidStr = m_spawnProcess->fetchOutputMsg();
 	Utility::trimLineBreak(pidStr);
 	if (Utility::isNumber(pidStr))
 	{
@@ -115,12 +121,14 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 			this->attach(pid);
 			std::lock_guard<std::recursive_mutex> guard(m_mutex);
 			m_containerId = containerId;
+			LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerId;
 			return pid;
 		}
 	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_containerId = containerId;
 	killgroup();
+	m_spawnProcess = nullptr;
 	return pid;
 }
 
@@ -195,8 +203,9 @@ std::string DockerProcess::fetchOutputMsg()
 
 void DockerProcess::checkStartThreadTimer(int timerId)
 {
-	if (this->getpid() == 1)
+	if (m_spawnProcess->running())
 	{
-		killgroup();
+		m_spawnProcess->killgroup();
+		m_spawnProcess = nullptr;
 	}
 }
