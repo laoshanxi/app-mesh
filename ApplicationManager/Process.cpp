@@ -13,6 +13,10 @@ Process::Process(int cacheOutputLines)
 
 Process::~Process()
 {
+	if (this->running())
+	{
+		killgroup(0);
+	}
 }
 
 void Process::attach(int pid)
