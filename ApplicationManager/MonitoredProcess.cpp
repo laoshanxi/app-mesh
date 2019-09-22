@@ -112,13 +112,15 @@ void MonitoredProcess::monitorThread()
 {
 	const static char fname[] = "MonitoredProcess::monitorThread() ";
 	m_monitorComplete = false;
+	LOG_INF << fname << "Entered";
+
 	while (true)
 	{
 		char buffer[1024] = { 0 };
 		char* result = fgets(buffer, sizeof(buffer), m_readPipeFile);
 		if (result == nullptr)
 		{
-			LOG_ERR << fname << "Get line from pipe failed with error : " << std::strerror(errno);
+			LOG_DBG << fname << "Get line from pipe failed with error : " << std::strerror(errno);
 			break;
 		}
 		LOG_DBG << fname << "Read line : " << buffer;
@@ -134,14 +136,14 @@ void MonitoredProcess::monitorThread()
 	///////////////////////////////////////////////////////////////////////
 	if (m_httpRequest)
 	{
-		web::http::http_request* message = (web::http::http_request*)m_httpRequest;
+		web::http::http_request* respRequest = (web::http::http_request*)m_httpRequest;
 		try
 		{
 			web::http::http_response resp(web::http::status_codes::OK);
 			resp.set_body(this->fetchOutputMsg());
 			resp.headers().add("exit_code", this->return_value());
-			message->reply(resp).get();
-			delete message;
+			respRequest->reply(resp).get();
+			delete respRequest;
 			m_httpRequest = NULL;
 		}
 		catch (...)
@@ -151,7 +153,6 @@ void MonitoredProcess::monitorThread()
 	}
 	///////////////////////////////////////////////////////////////////////
 
-
-	LOG_DBG << fname << "monitor thread exit";
+	LOG_DBG << fname << "Exited";
 	m_monitorComplete = true;
 }

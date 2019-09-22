@@ -467,7 +467,7 @@ std::string Utility::runShellCommand(std::string cmd)
 	std::stringstream stdoutMsg;
 	cmd += " 2>&1"; // include stderr
 	FILE *fp = popen(cmd.c_str(), "r");
-	LOG_DBG << fname << cmd;
+	LOG_INF << fname << cmd;
 	if (fp)
 	{
 		std::queue<std::string> msgQueue;

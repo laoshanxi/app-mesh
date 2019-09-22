@@ -19,19 +19,32 @@ DockerProcess::~DockerProcess()
 void DockerProcess::killgroup(int timerId)
 {
 	const static char fname[] = "DockerProcess::killgroup() ";
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (!m_containerId.empty())
+
+	// get and clean container id
+	std::string containerId;
 	{
-		std::string cmd = "docker rm -f " + m_containerId;
-		LOG_DBG << fname << "system <" << cmd << ">";
-		::system(cmd.c_str());
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		containerId = m_containerId;
 		m_containerId.clear();
+	}
+
+	// clean docker container
+	if (!containerId.empty())
+	{
+		std::string cmd = "docker rm -f " + containerId;
+		Process proc(0);
+		proc.spawnProcess(cmd, "", "", {}, nullptr);
+		if (proc.wait(ACE_Time_Value(3)) <= 0)
+		{
+			LOG_ERR << fname << "cmd <" << cmd << "> killed due to timeout";
+			proc.killgroup();
+		}
 	}
 }
 
-int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
+int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
-	const static char fname[] = "DockerProcess::asyncSpawnProcess() ";
+	const static char fname[] = "DockerProcess::syncSpawnProcess() ";
 
 	killgroup();
 	int pid = -1;
@@ -50,9 +63,9 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 			return -1;
 		}
 	}
-	auto imageSize = m_spawnProcess->fetchOutputMsg();
-	Utility::trimLineBreak(imageSize);
-	if (!Utility::isNumber(imageSize) || std::stoi(imageSize) < 1)
+	auto imageSizeStr = m_spawnProcess->fetchOutputMsg();
+	Utility::trimLineBreak(imageSizeStr);
+	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
 		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
 		return -1;
@@ -134,6 +147,10 @@ int DockerProcess::asyncSpawnProcess(std::string cmd, std::string user, std::str
 int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
 	const static char fname[] = "DockerProcess::spawnProcess() ";
+	// start a set of process in a thread
+	const int startTimeoutSeconds = 5;
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_spawnThread != nullptr)
 	{
 		return -1;
@@ -156,11 +173,11 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	param->thisProc = std::dynamic_pointer_cast<DockerProcess>(this->shared_from_this());
 
 	m_spawnThread = std::make_shared<std::thread>(
-		[param, this]()
+		[param]()
 		{
 			const static char fname[] = "DockerProcess::m_spawnThread() ";
 			LOG_DBG << fname << "Entered";
-			param->thisProc->asyncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
+			param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
 			param->thisProc->wait();
 			param->thisProc->m_spawnThread = nullptr;
 			param->thisProc = nullptr;
@@ -168,8 +185,8 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 		}
 	);
 	m_spawnThread->detach();
-	const int startTimeoutSeconds = 5;
 	this->registerTimer(startTimeoutSeconds, 0, std::bind(&DockerProcess::checkStartThreadTimer, this, std::placeholders::_1), fname);
+	// TBD: Docker app should not support short running here, since short running have kill and bellow attach is not real pid
 	this->attach(1);
 	return 1;
 }
