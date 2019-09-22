@@ -10,10 +10,11 @@
 #include "../common//os/chown.hpp"
 
 #define REST_INFO_PRINT \
-	LOG_DBG << "Method: " << message.method(); \
-	LOG_DBG << "URI: " << http::uri::decode(message.relative_uri().path()); \
-	LOG_DBG << "Query: " << http::uri::decode(message.relative_uri().query()); \
-	LOG_DBG << "Remote: " << message.remote_address(); // for new version of cpprestsdk
+	LOG_DBG \
+	<< "Method: " << message.method() \
+	<< "URI: " << http::uri::decode(message.relative_uri().path()) \
+	<< "Query: " << http::uri::decode(message.relative_uri().query()) \
+	<< "Remote: " << message.remote_address(); // for new version of cpprestsdk
 
 RestHandler::RestHandler(std::string ipaddress, int port)
 {
@@ -52,13 +53,13 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 					boost::asio::ssl::context::no_tlsv1_1 |
 					boost::asio::ssl::context::single_dh_use,
 					ec);
-				LOG_INF << "lambda::set_options " << ec.value() << " " << ec.message();
+				LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
 
 				ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
-				LOG_INF << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
+				LOG_DBG << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
 
 				ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
-				LOG_INF << "lambda::use_private_key " << ec.value() << " " << ec.message();
+				LOG_DBG << "lambda::use_private_key " << ec.value() << " " << ec.message();
 
 				// Enable ECDH cipher
 				if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
@@ -214,7 +215,7 @@ void RestHandler::handleRest(http_request& message, std::map<utility::string_t, 
 
 	try
 	{
-		LOG_DBG << fname << "rest " << path;
+		// LOG_DBG << fname << "rest " << path;
 		stdFunction(message);
 	}
 	catch (const std::exception& e)

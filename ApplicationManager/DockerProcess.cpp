@@ -47,7 +47,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	const static char fname[] = "DockerProcess::syncSpawnProcess() ";
 
 	killgroup();
-	int pid = -1;
+	int pid = ACE_INVALID_PID;
 	ACE_Time_Value tv(5);
 
 	// 1. check docker image
