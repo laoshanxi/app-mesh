@@ -59,9 +59,9 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 		m_spawnProcess->wait(tv);
 		if (m_spawnProcess->running())
 		{
-			this->attach(-1);
+			this->attach(ACE_INVALID_PID);
 			m_spawnProcess->killgroup();
-			return -1;
+			return ACE_INVALID_PID;
 		}
 	}
 	auto imageSizeStr = m_spawnProcess->fetchOutputMsg();
@@ -69,7 +69,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
 		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
-		return -1;
+		return ACE_INVALID_PID;
 	}
 
 	// 2. build docker start command line
@@ -106,9 +106,9 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 		m_spawnProcess->wait(tv);
 		if (m_spawnProcess->running())
 		{
-			this->attach(-1);
+			this->attach(ACE_INVALID_PID);
 			m_spawnProcess->killgroup();
-			return -1;
+			return ACE_INVALID_PID;
 		}
 	}
 	auto containerId = m_spawnProcess->fetchOutputMsg();
@@ -122,9 +122,9 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 		m_spawnProcess->wait(tv);
 		if (m_spawnProcess->running())
 		{
-			this->attach(-1);
+			this->attach(ACE_INVALID_PID);
 			m_spawnProcess->killgroup();
-			return -1;
+			return ACE_INVALID_PID;
 		}
 	}
 	auto pidStr = m_spawnProcess->fetchOutputMsg();
@@ -168,7 +168,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_spawnThread != nullptr)
 	{
-		return -1;
+		return ACE_INVALID_PID;
 	}
 	struct SpawnParams
 	{

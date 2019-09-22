@@ -7,6 +7,7 @@
 #include <thread>
 #include <ace/Process.h>
 #include "Process.h"
+#include "MonitoredProcess.h"
 
 //////////////////////////////////////////////////////////////////////////
 // Docker Process Object
@@ -34,7 +35,7 @@ private:
 	std::string m_dockerImage;
 	std::string m_containerId;
 	std::shared_ptr<std::thread> m_spawnThread;
-	std::shared_ptr<Process> m_spawnProcess;
+	std::shared_ptr<MonitoredProcess> m_spawnProcess;
 	std::recursive_mutex m_mutex;
 
 	std::chrono::system_clock::time_point m_lastFetchTime;

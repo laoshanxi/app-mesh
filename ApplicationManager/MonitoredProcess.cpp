@@ -29,13 +29,13 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 	if (m_pipe->open(m_pipeHandler) < 0)
 	{
 		LOG_ERR << fname << "Create pipe failed with error : " << std::strerror(errno);
-		return -1;
+		return ACE_INVALID_PID;
 	}
 	m_readPipeFile = ACE_OS::fdopen(m_pipe->read_handle(), "r");
 	if (m_readPipeFile == nullptr)
 	{
 		LOG_ERR << fname << "Get file stream failed with error : " << std::strerror(errno);
-		return -1;
+		return ACE_INVALID_PID;
 	}
 	else
 	{
@@ -93,11 +93,11 @@ std::string MonitoredProcess::getOutputMsg()
 pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
 {
 	auto rt = ACE_Process::wait(tv, status);
-	// Only need wait when process already exit.
-	if (m_thread != nullptr && !this->running())
+	if (rt > 0)
 	{
-		auto thread = m_thread;
-		m_thread = nullptr;
+		// Only need wait thread when process already exit.
+		std::shared_ptr<std::thread> thread;
+		m_thread.swap(thread);
 		thread->join();
 	}
 	return rt;
@@ -120,7 +120,7 @@ void MonitoredProcess::monitorThread()
 		char* result = fgets(buffer, sizeof(buffer), m_readPipeFile);
 		if (result == nullptr)
 		{
-			LOG_DBG << fname << "Get line from pipe failed with error : " << std::strerror(errno);
+			LOG_DBG << fname << "Get message from pipe finished";
 			break;
 		}
 		LOG_DBG << fname << "Read line : " << buffer;
@@ -132,7 +132,6 @@ void MonitoredProcess::monitorThread()
 		if ((int)m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
 
-	ACE_Process::wait();
 	///////////////////////////////////////////////////////////////////////
 	if (m_httpRequest)
 	{

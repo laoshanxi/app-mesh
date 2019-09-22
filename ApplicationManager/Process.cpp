@@ -109,7 +109,7 @@ int Process::spawnProcess(std::string cmd, std::string user, std::string workDir
 		}
 		else
 		{
-			return -1;
+			return ACE_INVALID_PID;
 		}
 	}
 	option.setgroup(0);
