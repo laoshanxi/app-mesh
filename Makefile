@@ -61,9 +61,10 @@ uninstall:
 	yum remove -y ${PACKAGE_NAME}
 
 dev:
-	git pull
+	-git pull
 	make clean
-	make uninstall
+	make
+	-make uninstall
 	make install
 
 lines:

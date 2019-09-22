@@ -294,6 +294,10 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		if (m_pid > 0)result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
+		if (!m_process->containerId().empty())
+		{
+			result[GET_STRING_T("container_id")] = web::json::value::string(GET_STRING_T(m_process->containerId()));
+		}
 	}
 	if (m_dailyLimit != nullptr)
 	{

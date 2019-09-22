@@ -56,7 +56,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
 	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		if (m_spawnProcess->wait(tv) <= 0 && m_spawnProcess->running())
+		m_spawnProcess->wait(tv);
+		if (m_spawnProcess->running())
 		{
 			this->attach(-1);
 			m_spawnProcess->killgroup();
@@ -102,7 +103,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
 	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		if (m_spawnProcess->wait(tv) <= 0 && m_spawnProcess->running())
+		m_spawnProcess->wait(tv);
+		if (m_spawnProcess->running())
 		{
 			this->attach(-1);
 			m_spawnProcess->killgroup();
@@ -117,7 +119,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
 	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		if (m_spawnProcess->wait(tv) <= 0 && m_spawnProcess->running())
+		m_spawnProcess->wait(tv);
+		if (m_spawnProcess->running())
 		{
 			this->attach(-1);
 			m_spawnProcess->killgroup();
@@ -142,6 +145,18 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	m_containerId = containerId;
 	killgroup();
 	return pid;
+}
+
+std::string DockerProcess::containerId()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_containerId.length() > 12 ? m_containerId.substr(0, 12) : m_containerId;
+}
+
+void DockerProcess::containerId(std::string containerId)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_containerId = containerId;
 }
 
 int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)

@@ -24,7 +24,9 @@ public:
 	virtual void setCgroup(std::shared_ptr<ResourceLimitation>& limit);
 	const std::string getuuid() const;
 	void regKillTimer(size_t timeoutSec, const std::string from);
-	
+	virtual std::string containerId() { return std::string(); };
+	virtual void containerId(std::string containerId) {};
+
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
 	static void getSysProcessList(std::map<std::string, int>& processList, const void* pt = nullptr);
 
