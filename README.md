@@ -63,9 +63,9 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 
 ```
 $ appc view
-id name        user  status   pid    return memory  command_line
-1  period      root  enabled  766    0      20 K    /bin/sleep 20
-2  ping        root  enabled  586    0      956 K   ping www.baidu.com
+id name        user  status   return pid    memory  start_time          command_line
+1  sleep       root  enabled  0      3986   360 K   2019-09-21 23:50:36 /bin/sleep 60
+2  docker      root  enabled  0      4044   1.9 M   2019-09-21 23:50:36 ping www.baidu.com
 
 ```
 - View application output
@@ -372,6 +372,7 @@ os_version=centos7.6
 - [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [jwt_cpp](https://thalhammer.it/projects/jwt_cpp)
+- [HowardHinnant/date ](https://github.com/HowardHinnant/date)
 
 
 ---
