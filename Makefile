@@ -60,6 +60,12 @@ uninstall:
 	#dpkg -P ${PACKAGE_NAME}
 	yum remove -y ${PACKAGE_NAME}
 
+dev:
+	git pull
+	make clean
+	make uninstall
+	make install
+
 lines:
 	find . -name "*.cpp" -or -name "*.h" -or -name "*.hpp" -or -name "*.c"  -or -name "*.sh" -or -name "Makefile" -or -name "Dockerfile" |xargs grep -v "^$$"|wc -l
 
