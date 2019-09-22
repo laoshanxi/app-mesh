@@ -414,4 +414,4 @@ cd app-manager
 make
 ```
 - Thread model
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=700 height=400 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=706 height=401 align=center /></div>
