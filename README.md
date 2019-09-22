@@ -364,17 +364,6 @@ os_version=centos7.6
 4. Can be a standalone JWT server
 5. File server
 
-### 3rd party deependencies
-- [C++11](http://www.cplusplus.com/articles/cpp11)
-- [ACE](https://github.com/DOCGroup/ACE_TAO)
-- [Microsoft cpprestsdk](https://github.com/Microsoft/cpprestsdk)
-- [boost](https://github.com/boostorg/boost)
-- [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
-- [log4cpp](http://log4cpp.sourceforge.net)
-- [jwt_cpp](https://thalhammer.it/projects/jwt_cpp)
-- [HowardHinnant/date ](https://github.com/HowardHinnant/date)
-
-
 ---
 
 ### Development
@@ -402,7 +391,18 @@ GET| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Get lables
 POST| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Update lables
 GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
 
+---
+### 3rd party deependencies
+- [C++11](http://www.cplusplus.com/articles/cpp11)
+- [ACE](https://github.com/DOCGroup/ACE_TAO)
+- [Microsoft cpprestsdk](https://github.com/Microsoft/cpprestsdk)
+- [boost](https://github.com/boostorg/boost)
+- [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
+- [log4cpp](http://log4cpp.sourceforge.net)
+- [jwt_cpp](https://thalhammer.it/projects/jwt_cpp)
+- [HowardHinnant/date ](https://github.com/HowardHinnant/date)
 
+---
 - Setup build environment on CentOS/Ubuntu/Debian
 ```
 git clone https://github.com/laoshanxi/app-manager.git
