@@ -11,10 +11,10 @@
 
 #define REST_INFO_PRINT \
 	LOG_DBG \
-	<< "Method: " << message.method() \
-	<< "URI: " << http::uri::decode(message.relative_uri().path()) \
-	<< "Query: " << http::uri::decode(message.relative_uri().query()) \
-	<< "Remote: " << message.remote_address(); // for new version of cpprestsdk
+	<< " Method: " << message.method() \
+	<< " URI: " << http::uri::decode(message.relative_uri().path()) \
+	<< " Query: " << http::uri::decode(message.relative_uri().query()) \
+	<< " Remote: " << message.remote_address(); // for new version of cpprestsdk
 
 RestHandler::RestHandler(std::string ipaddress, int port)
 {
