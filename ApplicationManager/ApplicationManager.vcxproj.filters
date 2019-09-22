@@ -90,6 +90,9 @@
     <ClInclude Include="Process.h">
       <Filter>Process</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\date.h">
+      <Filter>common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />
