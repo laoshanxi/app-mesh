@@ -169,11 +169,8 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	// start a set of process in a thread
 	const int startTimeoutSeconds = 5;
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_spawnThread != nullptr)
-	{
-		return ACE_INVALID_PID;
-	}
+	if (m_spawnThread != nullptr) return ACE_INVALID_PID;
+
 	struct SpawnParams
 	{
 		std::string cmd;
