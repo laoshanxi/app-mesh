@@ -151,7 +151,7 @@ void MonitoredProcess::monitorThread()
 		}
 	}
 	///////////////////////////////////////////////////////////////////////
-
+	ACE_Process::wait();	// release defunct process here
 	LOG_DBG << fname << "Exited";
 	m_monitorComplete = true;
 }

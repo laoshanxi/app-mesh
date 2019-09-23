@@ -53,18 +53,19 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	// 1. check docker image
 	std::string dockerName = "app-mgr-" + this->getuuid();
 	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
-	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
-	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
+	setDockerCliProcess(std::make_shared<MonitoredProcess>(32));
+	auto dockerProcess = getDockerCliProcess();
+	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		m_spawnProcess->wait(tv);
-		if (m_spawnProcess->running())
+		dockerProcess->wait(tv);
+		if (dockerProcess->running())
 		{
 			this->attach(ACE_INVALID_PID);
-			m_spawnProcess->killgroup();
+			dockerProcess->killgroup();
 			return ACE_INVALID_PID;
 		}
 	}
-	auto imageSizeStr = m_spawnProcess->fetchOutputMsg();
+	auto imageSizeStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(imageSizeStr);
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
@@ -100,34 +101,36 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
-	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
-	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
+	setDockerCliProcess(std::make_shared<MonitoredProcess>(32));
+	dockerProcess = getDockerCliProcess();
+	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		m_spawnProcess->wait(tv);
-		if (m_spawnProcess->running())
+		dockerProcess->wait(tv);
+		if (dockerProcess->running())
 		{
 			this->attach(ACE_INVALID_PID);
-			m_spawnProcess->killgroup();
+			dockerProcess->killgroup();
 			return ACE_INVALID_PID;
 		}
 	}
-	auto containerId = m_spawnProcess->fetchOutputMsg();
+	auto containerId = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(containerId);
 
 	// 4. get docker root pid
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
-	m_spawnProcess = std::make_shared<MonitoredProcess>(32);
-	pid = m_spawnProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
+	setDockerCliProcess(std::make_shared<MonitoredProcess>(32));
+	dockerProcess = getDockerCliProcess();
+	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	{
-		m_spawnProcess->wait(tv);
-		if (m_spawnProcess->running())
+		dockerProcess->wait(tv);
+		if (dockerProcess->running())
 		{
 			this->attach(ACE_INVALID_PID);
-			m_spawnProcess->killgroup();
+			dockerProcess->killgroup();
 			return ACE_INVALID_PID;
 		}
 	}
-	auto pidStr = m_spawnProcess->fetchOutputMsg();
+	auto pidStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(pidStr);
 	if (Utility::isNumber(pidStr))
 	{
@@ -193,8 +196,6 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 			const static char fname[] = "DockerProcess::m_spawnThread() ";
 			LOG_DBG << fname << "Entered";
 			param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
-			param->thisProc->wait();
-			param->thisProc->m_spawnThread = nullptr;
 			param->thisProc = nullptr;
 			LOG_DBG << fname << "Exited";
 		}
@@ -232,10 +233,23 @@ std::string DockerProcess::fetchOutputMsg()
 	return std::string();
 }
 
+std::shared_ptr<MonitoredProcess> DockerProcess::getDockerCliProcess()
+{
+	std::shared_ptr<MonitoredProcess> monitorProc;
+	return m_dockerCliProcess;
+}
+
+void DockerProcess::setDockerCliProcess(std::shared_ptr<MonitoredProcess> proc)
+{
+	std::shared_ptr<MonitoredProcess> monitorProc;
+	m_dockerCliProcess = proc;
+}
+
 void DockerProcess::checkStartThreadTimer(int timerId)
 {
-	if (m_spawnProcess!= nullptr && m_spawnProcess->running())
+	auto monitorProc = getDockerCliProcess();
+	if (monitorProc != nullptr && monitorProc->running())
 	{
-		m_spawnProcess->killgroup();
+		monitorProc->killgroup();
 	}
 }
