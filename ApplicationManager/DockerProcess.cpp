@@ -1,4 +1,5 @@
 #include <thread>
+#include <ace/Barrier.h>
 #include "DockerProcess.h"
 #include "../common/Utility.h"
 #include "../common/os/pstree.hpp"
@@ -181,6 +182,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 		std::map<std::string, std::string> envMap;
 		std::shared_ptr<ResourceLimitation> limit;
 		std::shared_ptr<DockerProcess> thisProc;
+		std::shared_ptr<ACE_Barrier> barrier;
 	};
 	auto param = std::make_shared<SpawnParams>();
 	param->cmd = cmd;
@@ -188,6 +190,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	param->workDir = workDir;
 	param->envMap = envMap;
 	param->limit = limit;
+	param->barrier = std::make_shared<ACE_Barrier>(2);
 	param->thisProc = std::dynamic_pointer_cast<DockerProcess>(this->shared_from_this());
 
 	m_spawnThread = std::make_shared<std::thread>(
@@ -196,11 +199,14 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 			const static char fname[] = "DockerProcess::m_spawnThread() ";
 			LOG_DBG << fname << "Entered";
 			param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
+			param->barrier->wait();	// wait here for m_spawnThread->detach() finished
+			param->thisProc->m_spawnThread = nullptr;
 			param->thisProc = nullptr;
 			LOG_DBG << fname << "Exited";
 		}
 	);
 	m_spawnThread->detach();
+	param->barrier->wait();
 	this->registerTimer(startTimeoutSeconds, 0, std::bind(&DockerProcess::checkStartThreadTimer, this, std::placeholders::_1), fname);
 	// TBD: Docker app should not support short running here, since short running have kill and bellow attach is not real pid
 	this->attach(1);
