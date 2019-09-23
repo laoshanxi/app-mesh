@@ -204,7 +204,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	);
 	m_spawnThread->detach();
 	param->barrier->wait();
-	this->registerTimer(startTimeoutSeconds, 0, std::bind(&DockerProcess::checkStartThreadTimer, this, std::placeholders::_1), fname);
+	this->registerTimer(startTimeoutSeconds, 0, std::bind(&DockerProcess::checkDockerCliProcess, this, std::placeholders::_1), fname);
 	// TBD: Docker app should not support short running here, since short running have kill and bellow attach is not real pid
 	this->attach(1);
 	return 1;
@@ -248,11 +248,15 @@ void DockerProcess::setDockerCliProcess(std::shared_ptr<MonitoredProcess> proc)
 	m_dockerCliProcess = proc;
 }
 
-void DockerProcess::checkStartThreadTimer(int timerId)
+void DockerProcess::checkDockerCliProcess(int timerId)
 {
 	auto monitorProc = getDockerCliProcess();
 	if (monitorProc != nullptr && monitorProc->running())
 	{
 		monitorProc->killgroup();
+	}
+	if (this->getpid() == 1)
+	{
+		this->attach(ACE_INVALID_PID);
 	}
 }
