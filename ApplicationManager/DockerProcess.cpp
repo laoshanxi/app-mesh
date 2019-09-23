@@ -33,13 +33,7 @@ void DockerProcess::killgroup(int timerId)
 	if (!containerId.empty())
 	{
 		std::string cmd = "docker rm -f " + containerId;
-		AppProcess proc(0);
-		proc.spawnProcess(cmd, "", "", {}, nullptr);
-		if (proc.wait(ACE_Time_Value(3)) <= 0)
-		{
-			LOG_ERR << fname << "cmd <" << cmd << "> killed due to timeout";
-			proc.killgroup();
-		}
+		::system(cmd.c_str());
 	}
 }
 
@@ -54,19 +48,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	// 1. check docker image
 	std::string dockerName = "app-mgr-" + this->getuuid();
 	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
-	setDockerCliProcess(std::make_shared<MonitoredProcess>(32));
-	auto dockerProcess = getDockerCliProcess();
-	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
-	{
-		dockerProcess->wait(tv);
-		if (dockerProcess->running())
-		{
-			this->attach(ACE_INVALID_PID);
-			dockerProcess->killgroup();
-			return ACE_INVALID_PID;
-		}
-	}
-	auto imageSizeStr = dockerProcess->fetchOutputMsg();
+	auto imageSizeStr = Utility::runShellCommand(dockerCommand);
 	Utility::trimLineBreak(imageSizeStr);
 	imageSizeStr = getFirstLine(imageSizeStr);
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
@@ -103,19 +85,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
-	setDockerCliProcess(std::make_shared<MonitoredProcess>(32));
-	dockerProcess = getDockerCliProcess();
-	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
-	{
-		dockerProcess->wait(tv);
-		if (dockerProcess->running())
-		{
-			this->attach(ACE_INVALID_PID);
-			dockerProcess->killgroup();
-			return ACE_INVALID_PID;
-		}
-	}
-	auto containerId = dockerProcess->fetchOutputMsg();
+	auto containerId = Utility::runShellCommand(dockerCommand);
 	Utility::trimLineBreak(containerId);
 	containerId = getFirstLine(containerId);
 	{
@@ -126,19 +96,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	// 4. get docker root pid
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
-	setDockerCliProcess(std::make_shared<MonitoredProcess>(32));
-	dockerProcess = getDockerCliProcess();
-	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
-	{
-		dockerProcess->wait(tv);
-		if (dockerProcess->running())
-		{
-			this->attach(ACE_INVALID_PID);
-			dockerProcess->killgroup();
-			return ACE_INVALID_PID;
-		}
-	}
-	auto pidStr = dockerProcess->fetchOutputMsg();
+	auto pidStr = Utility::runShellCommand(dockerCommand);
 	Utility::trimLineBreak(pidStr);
 	pidStr = getFirstLine(pidStr);
 	if (Utility::isNumber(pidStr))
@@ -162,7 +120,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 std::string DockerProcess::containerId()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_containerId.length() > 12 ? m_containerId.substr(0, 12) : m_containerId;
+	return m_containerId;
 }
 
 void DockerProcess::containerId(std::string containerId)
@@ -212,7 +170,6 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	);
 	m_spawnThread->detach();
 	param->barrier->wait();
-	this->registerTimer(startTimeoutSeconds, 0, std::bind(&DockerProcess::checkDockerCliProcess, this, std::placeholders::_1), fname);
 	// TBD: Docker app should not support short running here, since short running have kill and bellow attach is not real pid
 	this->attach(1);
 	return 1;
@@ -242,31 +199,6 @@ std::string DockerProcess::fetchOutputMsg()
 		return std::move(msg);
 	}
 	return std::string();
-}
-
-std::shared_ptr<MonitoredProcess> DockerProcess::getDockerCliProcess()
-{
-	std::shared_ptr<MonitoredProcess> monitorProc;
-	return m_dockerCliProcess;
-}
-
-void DockerProcess::setDockerCliProcess(std::shared_ptr<MonitoredProcess> proc)
-{
-	std::shared_ptr<MonitoredProcess> monitorProc;
-	m_dockerCliProcess = proc;
-}
-
-void DockerProcess::checkDockerCliProcess(int timerId)
-{
-	auto monitorProc = getDockerCliProcess();
-	if (monitorProc != nullptr && monitorProc->running())
-	{
-		monitorProc->killgroup();
-	}
-	if (this->getpid() == 1)
-	{
-		this->attach(ACE_INVALID_PID);
-	}
 }
 
 std::string DockerProcess::getFirstLine(const std::string str)

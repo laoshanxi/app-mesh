@@ -30,11 +30,6 @@ public:
 	virtual std::string getOutputMsg() override;
 	virtual std::string fetchOutputMsg() override;
 
-	std::shared_ptr<MonitoredProcess> getDockerCliProcess();
-	void setDockerCliProcess(std::shared_ptr<MonitoredProcess> proc);
-
-	void checkDockerCliProcess(int timerId);
-
 private:
 	std::string getFirstLine(const std::string str);
 
@@ -42,7 +37,6 @@ private:
 	std::string m_dockerImage;
 	std::string m_containerId;
 	std::shared_ptr<std::thread> m_spawnThread;
-	std::shared_ptr<MonitoredProcess> m_dockerCliProcess;
 	std::recursive_mutex m_mutex;
 
 	std::chrono::system_clock::time_point m_lastFetchTime;
