@@ -68,6 +68,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 	auto imageSizeStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(imageSizeStr);
+	imageSizeStr = getFirstLine(imageSizeStr);
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
 		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
@@ -116,6 +117,12 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 	auto containerId = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(containerId);
+	containerId = getFirstLine(containerId);
+	{
+		// set container id here for future clean
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_containerId = containerId;
+	}
 
 	// 4. get docker root pid
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
@@ -133,6 +140,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 	auto pidStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(pidStr);
+	pidStr = getFirstLine(pidStr);
 	if (Utility::isNumber(pidStr))
 	{
 		pid = std::stoi(pidStr);
@@ -259,4 +267,20 @@ void DockerProcess::checkDockerCliProcess(int timerId)
 	{
 		this->attach(ACE_INVALID_PID);
 	}
+}
+
+std::string DockerProcess::getFirstLine(const std::string str)
+{
+	char* line = const_cast <char*> (str.c_str());
+	// trim the line on the left and on the right
+	size_t len = str.length();
+	size_t start = 0;
+	while ((*line) == '\r' || (*line) == '\n' || (*line) == '\0')
+	{
+		++line;
+		--len;
+		++start;
+		break;
+	}
+	return len >= start ? str.substr(start, len) : str.substr(start);
 }

@@ -34,6 +34,10 @@ public:
 	void setDockerCliProcess(std::shared_ptr<MonitoredProcess> proc);
 
 	void checkDockerCliProcess(int timerId);
+
+private:
+	std::string getFirstLine(const std::string str);
+
 private:
 	std::string m_dockerImage;
 	std::string m_containerId;
