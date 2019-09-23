@@ -5,12 +5,12 @@
 #include <thread>
 #include <queue>
 #include <mutex>
-#include "Process.h"
+#include "AppProcess.h"
 
 //////////////////////////////////////////////////////////////////////////
 // Monitored Process Object
 //////////////////////////////////////////////////////////////////////////
-class MonitoredProcess :public Process
+class MonitoredProcess :public AppProcess
 {
 public:
 	MonitoredProcess(int cacheOutputLines);

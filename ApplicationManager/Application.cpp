@@ -11,7 +11,7 @@ Application::Application()
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
-	m_process.reset(new Process());
+	m_process.reset(new AppProcess());
 }
 
 
@@ -341,9 +341,9 @@ void Application::dump()
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
 
-std::shared_ptr<Process> Application::allocProcess(int cacheOutputLines, std::string dockerImage)
+std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, std::string dockerImage)
 {
-	std::shared_ptr<Process> process;
+	std::shared_ptr<AppProcess> process;
 	if (dockerImage.length())
 	{
 		if (cacheOutputLines > 0)
@@ -363,7 +363,7 @@ std::shared_ptr<Process> Application::allocProcess(int cacheOutputLines, std::st
 		}
 		else
 		{
-			process.reset(new Process(cacheOutputLines));
+			process.reset(new AppProcess(cacheOutputLines));
 		}
 	}
 	return std::move(process);

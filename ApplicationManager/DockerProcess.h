@@ -6,13 +6,13 @@
 #include <chrono>
 #include <thread>
 #include <ace/Process.h>
-#include "Process.h"
+#include "AppProcess.h"
 #include "MonitoredProcess.h"
 
 //////////////////////////////////////////////////////////////////////////
 // Docker Process Object
 //////////////////////////////////////////////////////////////////////////
-class DockerProcess :public Process
+class DockerProcess :public AppProcess
 {
 public:
 	DockerProcess(int cacheOutputLines, std::string dockerImage);

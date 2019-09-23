@@ -30,7 +30,7 @@
     <ClCompile Include="MonitoredProcess.cpp">
       <Filter>Process</Filter>
     </ClCompile>
-    <ClCompile Include="Process.cpp">
+    <ClCompile Include="AppProcess.cpp">
       <Filter>Process</Filter>
     </ClCompile>
   </ItemGroup>
@@ -87,11 +87,11 @@
     <ClInclude Include="MonitoredProcess.h">
       <Filter>Process</Filter>
     </ClInclude>
-    <ClInclude Include="Process.h">
-      <Filter>Process</Filter>
-    </ClInclude>
     <ClInclude Include="..\common\date.h">
       <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="AppProcess.h">
+      <Filter>Process</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -4,7 +4,7 @@
 #include "../common/Utility.h"
 
 MonitoredProcess::MonitoredProcess(int cacheOutputLines)
-	:Process(cacheOutputLines), m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL)
+	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL)
 {
 }
 
@@ -43,7 +43,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 		options.release_handles();
 		options.set_handles(ACE_STDIN, m_pipe->write_handle(), m_pipe->write_handle());
 	}
-	auto rt = Process::spawn(options);
+	auto rt = AppProcess::spawn(options);
 
 	// Start thread to read stdout/stderr stream
 	m_thread = std::make_shared<std::thread>(std::bind(&MonitoredProcess::monitorThread, this));

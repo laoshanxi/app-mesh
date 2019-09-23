@@ -8,7 +8,7 @@
 #include <chrono>
 #include <cpprest/json.h>
 
-#include "Process.h"
+#include "AppProcess.h"
 #include "MonitoredProcess.h"
 #include "DailyLimitation.h"
 #include "ResourceLimitation.h"
@@ -50,7 +50,7 @@ public:
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
 
-	std::shared_ptr<Process> allocProcess(int cacheOutputLines, std::string dockerImage);
+	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage);
 	bool isInDailyTimeRange();
 
 	virtual bool avialable();
@@ -68,7 +68,7 @@ protected:
 	std::string m_posixTimeZone;
 	
 	int m_cacheOutputLines;
-	std::shared_ptr<Process> m_process;
+	std::shared_ptr<AppProcess> m_process;
 	std::shared_ptr<MonitoredProcess> m_testProcess;
 	int m_pid;
 	int m_processIndex;	// used for organize cgroup path dir

@@ -37,7 +37,7 @@ protected:
 	int m_startInterval;
 	int m_bufferTime;
 	int m_timerId;
-	std::shared_ptr<Process> m_bufferProcess;
+	std::shared_ptr<AppProcess> m_bufferProcess;
 };
 
 #endif 

@@ -13,11 +13,11 @@
 //////////////////////////////////////////////////////////////////////////
 // Process Object
 //////////////////////////////////////////////////////////////////////////
-class Process :public ACE_Process, public TimerHandler
+class AppProcess :public ACE_Process, public TimerHandler
 {
 public:
-	Process(int cacheOutputLines = 256);
-	virtual ~Process();
+	AppProcess(int cacheOutputLines = 256);
+	virtual ~AppProcess();
 
 	void attach(int pid);
 	virtual void killgroup(int timerId = 0);

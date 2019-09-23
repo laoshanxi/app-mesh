@@ -20,7 +20,7 @@ SRCS = \
 	ApplicationPeriodRun.cpp \
 	Configuration.cpp \
 	RestHandler.cpp \
-	Process.cpp \
+	AppProcess.cpp \
 	DockerProcess.cpp \
 	MonitoredProcess.cpp \
 	DailyLimitation.cpp \

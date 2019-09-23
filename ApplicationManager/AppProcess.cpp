@@ -1,17 +1,17 @@
 #include <thread>
-#include "Process.h"
+#include "AppProcess.h"
 #include "../common/Utility.h"
 #include "../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
 
-Process::Process(int cacheOutputLines)
+AppProcess::AppProcess(int cacheOutputLines)
 	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0)
 {
 	m_uuid = Utility::createUUID();
 }
 
 
-Process::~Process()
+AppProcess::~AppProcess()
 {
 	if (this->running())
 	{
@@ -19,14 +19,14 @@ Process::~Process()
 	}
 }
 
-void Process::attach(int pid)
+void AppProcess::attach(int pid)
 {
 	this->child_id_ = pid;
 }
 
-void Process::killgroup(int timerId)
+void AppProcess::killgroup(int timerId)
 {
-	const static char fname[] = "Process::killgroup() ";
+	const static char fname[] = "AppProcess::killgroup() ";
 
 	LOG_INF << fname << "kill process <" << getpid() << ">.";
 
@@ -63,7 +63,7 @@ void Process::killgroup(int timerId)
 	}
 }
 
-void Process::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
+void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
 {
 	// https://blog.csdn.net/u011547375/article/details/9851455
 	if (limit != nullptr)
@@ -73,20 +73,20 @@ void Process::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
 	}
 }
 
-const std::string Process::getuuid() const
+const std::string AppProcess::getuuid() const
 {
 	return m_uuid;
 }
 
-void Process::regKillTimer(size_t timeout, const std::string from)
+void AppProcess::regKillTimer(size_t timeout, const std::string from)
 {
-	m_killTimerId = this->registerTimer(timeout, 0, std::bind(&Process::killgroup, this, std::placeholders::_1), from);
+	m_killTimerId = this->registerTimer(timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
 }
 
 
-int Process::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
-	const static char fname[] = "Process::spawnProcess() ";
+	const static char fname[] = "AppProcess::spawnProcess() ";
 
 	int pid = -1;
 	
@@ -141,9 +141,9 @@ int Process::spawnProcess(std::string cmd, std::string user, std::string workDir
 	return pid;
 }
 
-void Process::getSysProcessList(std::map<std::string, int>& processList, const void * pt)
+void AppProcess::getSysProcessList(std::map<std::string, int>& processList, const void * pt)
 {
-	const static char fname[] = "Process::getSysProcessList() ";
+	const static char fname[] = "AppProcess::getSysProcessList() ";
 
 	std::shared_ptr<os::ProcessTree> ptree;
 	const os::ProcessTree* tree;
@@ -169,12 +169,12 @@ void Process::getSysProcessList(std::map<std::string, int>& processList, const v
 	}
 }
 
-std::string Process::getOutputMsg()
+std::string AppProcess::getOutputMsg()
 {
 	return std::string();
 }
 
-std::string Process::fetchOutputMsg()
+std::string AppProcess::fetchOutputMsg()
 {
 	return std::string();
 }

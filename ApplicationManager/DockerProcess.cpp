@@ -6,7 +6,7 @@
 #include "MonitoredProcess.h"
 
 DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage)
-	: Process(cacheOutputLines), m_dockerImage(dockerImage), m_lastFetchTime(std::chrono::system_clock::now())
+	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage), m_lastFetchTime(std::chrono::system_clock::now())
 {
 }
 
@@ -32,7 +32,7 @@ void DockerProcess::killgroup(int timerId)
 	if (!containerId.empty())
 	{
 		std::string cmd = "docker rm -f " + containerId;
-		Process proc(0);
+		AppProcess proc(0);
 		proc.spawnProcess(cmd, "", "", {}, nullptr);
 		if (proc.wait(ACE_Time_Value(3)) <= 0)
 		{
