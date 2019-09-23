@@ -53,13 +53,13 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 					boost::asio::ssl::context::no_tlsv1_1 |
 					boost::asio::ssl::context::single_dh_use,
 					ec);
-				LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
+				// LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
 
 				ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
-				LOG_DBG << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
+				// LOG_DBG << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
 
 				ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
-				LOG_DBG << "lambda::use_private_key " << ec.value() << " " << ec.message();
+				// LOG_DBG << "lambda::use_private_key " << ec.value() << " " << ec.message();
 
 				// Enable ECDH cipher
 				if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
