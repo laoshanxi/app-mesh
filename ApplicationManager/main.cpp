@@ -47,7 +47,7 @@ int main(int argc, char * argv[])
 		ResourceCollection::instance()->dump();
 
 		// 2. Thread for Timer
-		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runEventLoop));
+		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runTimerThread));
 		
 		// 3. Thread for main
 		auto scheduleInterval = Configuration::instance()->getScheduleInterval();

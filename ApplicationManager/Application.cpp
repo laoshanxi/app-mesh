@@ -238,7 +238,7 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 	if (m_testProcess != nullptr && m_testProcess->getuuid() == processUuid)
 	{
 		auto output = m_testProcess->fetchOutputMsg();
-		if (output.length() == 0 && !m_testProcess->running() && m_testProcess->monitorComplete())
+		if (output.length() == 0 && !m_testProcess->running() && m_testProcess->complete())
 		{
 			exitCode = m_testProcess->return_value();
 			finished = true;

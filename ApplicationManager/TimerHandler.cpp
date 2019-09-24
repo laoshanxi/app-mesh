@@ -88,7 +88,7 @@ bool TimerHandler::cancleTimer(int timerId)
 	return cancled;
 }
 
-void TimerHandler::runEventLoop()
+void TimerHandler::runTimerThread()
 {
 	const static char fname[] = "TimerHandler::runEventLoop() ";
 	LOG_INF << fname << "Entered";

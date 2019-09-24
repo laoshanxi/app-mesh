@@ -49,14 +49,15 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	killgroup();
 	int pid = ACE_INVALID_PID;
+	const int dockerCliTimeoutSec = 5;
 
 	// 1. check docker image
 	std::string dockerName = "app-mgr-" + this->getuuid();
 	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
 	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
-	dockerProcess->regKillTimer(5, fname);
-	dockerProcess->monitorThread();
+	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
+	dockerProcess->runPipeReaderThread();
 	auto imageSizeStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(imageSizeStr);
 	imageSizeStr = getFirstLine(imageSizeStr);
@@ -96,8 +97,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	// 3. start docker container
 	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
-	dockerProcess->regKillTimer(5, fname);
-	dockerProcess->monitorThread();
+	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
+	dockerProcess->runPipeReaderThread();
 	auto containerId = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(containerId);
 	containerId = getFirstLine(containerId);
@@ -111,8 +112,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
 	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
-	dockerProcess->regKillTimer(5, fname);
-	dockerProcess->monitorThread();
+	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
+	dockerProcess->runPipeReaderThread();
 	auto pidStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(pidStr);
 	pidStr = getFirstLine(pidStr);

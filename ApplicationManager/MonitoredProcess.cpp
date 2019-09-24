@@ -4,7 +4,7 @@
 #include "../common/Utility.h"
 
 MonitoredProcess::MonitoredProcess(int cacheOutputLines, bool enableBuildinThread)
-	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL), m_buildInThread(enableBuildinThread)
+	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_httpRequest(NULL), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
 {
 }
 
@@ -46,7 +46,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 	auto rt = AppProcess::spawn(options);
 
 	// Start thread to read stdout/stderr stream
-	if (m_buildInThread) m_thread = std::make_shared<std::thread>(std::bind(&MonitoredProcess::monitorThread, this));
+	if (m_enableBuildinThread) m_thread = std::make_shared<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
 
 	// close write in parent side (write handler is used for child process in our case)
 	m_pipe->close_write();
@@ -103,15 +103,15 @@ pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
 	return rt;
 }
 
-bool MonitoredProcess::monitorComplete() const
+bool MonitoredProcess::complete() const
 {
-	return m_monitorComplete;
+	return m_buildinThreadFinished;
 }
 
-void MonitoredProcess::monitorThread()
+void MonitoredProcess::runPipeReaderThread()
 {
 	const static char fname[] = "MonitoredProcess::monitorThread() ";
-	m_monitorComplete = false;
+	m_buildinThreadFinished = false;
 	LOG_INF << fname << "Entered";
 
 	const int stdoutQueueMaxLineCount = m_cacheOutputLines;
@@ -153,5 +153,5 @@ void MonitoredProcess::monitorThread()
 	///////////////////////////////////////////////////////////////////////
 	ACE_Process::wait();	// release defunct process here
 	LOG_DBG << fname << "Exited";
-	m_monitorComplete = true;
+	m_buildinThreadFinished = true;
 }

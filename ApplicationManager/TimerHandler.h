@@ -41,7 +41,7 @@ public:
 	int registerTimer(size_t delaySeconds, size_t intervalSeconds, const std::function<void(int)> &handler, const std::string from);
 	bool cancleTimer(int timerId);
 
-	static void runEventLoop();
+	static void runTimerThread();
 	static int endEventLoop();
 private:
 	// key: timer ID point, must unique, value: function point

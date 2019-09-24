@@ -21,13 +21,13 @@ public:
 
 	// Wait monitor thread
 	virtual pid_t wait(const ACE_Time_Value& tv, ACE_exitcode* status = 0);
-	bool monitorComplete() const;
+	bool complete() const;
 	void setAsyncHttpRequest(void* httpRequest) { m_httpRequest = httpRequest; }
 
 	// pipe message
 	virtual std::string getOutputMsg() override;
 	virtual std::string fetchOutputMsg() override;
-	void monitorThread();
+	void runPipeReaderThread();
 
 private:
 	ACE_HANDLE m_pipeHandler[2]; // 0 for read, 1 for write
@@ -36,11 +36,11 @@ private:
 	
 	std::queue<std::string> m_msgQueue;
 	std::recursive_mutex m_queueMutex;
-	bool m_monitorComplete;
 	void* m_httpRequest;
 
 	std::shared_ptr<std::thread> m_thread;
-	bool m_buildInThread;
+	bool m_buildinThreadFinished;
+	bool m_enableBuildinThread;
 };
 
 #endif 
