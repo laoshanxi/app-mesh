@@ -114,9 +114,10 @@ void MonitoredProcess::monitorThread()
 	m_monitorComplete = false;
 	LOG_INF << fname << "Entered";
 
+	const int stdoutQueueMaxLineCount = m_cacheOutputLines;
+	char buffer[768] = { 0 };
 	while (true)
 	{
-		char buffer[1024] = { 0 };
 		char* result = fgets(buffer, sizeof(buffer), m_readPipeFile);
 		if (result == nullptr)
 		{
@@ -125,7 +126,6 @@ void MonitoredProcess::monitorThread()
 		}
 		LOG_DBG << fname << "Read line : " << buffer;
 
-		const int stdoutQueueMaxLineCount = m_cacheOutputLines;
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 		m_msgQueue.push(buffer);
 		// Do not store too much in memory
