@@ -33,12 +33,14 @@ private:
 	ACE_HANDLE m_pipeHandler[2]; // 0 for read, 1 for write
 	std::shared_ptr<ACE_Pipe> m_pipe;
 	FILE* m_readPipeFile;
-	std::shared_ptr<std::thread> m_thread;
-	bool m_buildInThread;
+	
 	std::queue<std::string> m_msgQueue;
 	std::recursive_mutex m_queueMutex;
 	bool m_monitorComplete;
 	void* m_httpRequest;
+
+	std::shared_ptr<std::thread> m_thread;
+	bool m_buildInThread;
 };
 
 #endif 

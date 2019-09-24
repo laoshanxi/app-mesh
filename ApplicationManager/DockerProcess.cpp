@@ -150,8 +150,7 @@ void DockerProcess::containerId(std::string containerId)
 int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
 	const static char fname[] = "DockerProcess::spawnProcess() ";
-	// start a set of process in a thread
-	const int startTimeoutSeconds = 5;
+	LOG_DBG << fname << "Entered";
 
 	if (m_spawnThread != nullptr) return ACE_INVALID_PID;
 
@@ -222,13 +221,11 @@ std::string DockerProcess::fetchOutputMsg()
 std::string DockerProcess::getFirstLine(const std::string str)
 {
 	char* line = const_cast <char*> (str.c_str());
-	size_t len = str.length();
 	size_t start = 0;
 	while ((*line) != '\r' && (*line) != '\n' && (*line) != '\0')
 	{
 		++line;
-		--len;
 		++start;
 	}
-	return len >= start ? str.substr(start, len) : str.substr(start);
+	return str.substr(0, start);
 }
