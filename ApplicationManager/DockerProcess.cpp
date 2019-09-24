@@ -33,7 +33,13 @@ void DockerProcess::killgroup(int timerId)
 	if (!containerId.empty())
 	{
 		std::string cmd = "docker rm -f " + containerId;
-		::system(cmd.c_str());
+		AppProcess proc(0);
+		proc.spawnProcess(cmd, "", "", {}, nullptr);
+		if (proc.wait(ACE_Time_Value(3)) <= 0)
+		{
+			LOG_ERR << fname << "cmd <" << cmd << "> killed due to timeout";
+			proc.killgroup();
+		}
 	}
 }
 
@@ -43,12 +49,15 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	killgroup();
 	int pid = ACE_INVALID_PID;
-	ACE_Time_Value tv(5);
 
 	// 1. check docker image
 	std::string dockerName = "app-mgr-" + this->getuuid();
 	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
-	auto imageSizeStr = Utility::runShellCommand(dockerCommand);
+	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
+	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
+	dockerProcess->regKillTimer(5, fname);
+	dockerProcess->monitorThread();
+	auto imageSizeStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(imageSizeStr);
 	imageSizeStr = getFirstLine(imageSizeStr);
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
@@ -85,7 +94,11 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
-	auto containerId = Utility::runShellCommand(dockerCommand);
+	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
+	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
+	dockerProcess->regKillTimer(5, fname);
+	dockerProcess->monitorThread();
+	auto containerId = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(containerId);
 	containerId = getFirstLine(containerId);
 	{
@@ -96,7 +109,11 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	// 4. get docker root pid
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
-	auto pidStr = Utility::runShellCommand(dockerCommand);
+	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
+	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
+	dockerProcess->regKillTimer(5, fname);
+	dockerProcess->monitorThread();
+	auto pidStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(pidStr);
 	pidStr = getFirstLine(pidStr);
 	if (Utility::isNumber(pidStr))
@@ -113,6 +130,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_containerId = containerId;
+	this->attach(ACE_INVALID_PID);
 	killgroup();
 	return pid;
 }

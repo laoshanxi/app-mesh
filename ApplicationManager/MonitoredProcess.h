@@ -13,7 +13,7 @@
 class MonitoredProcess :public AppProcess
 {
 public:
-	MonitoredProcess(int cacheOutputLines);
+	MonitoredProcess(int cacheOutputLines, bool enableBuildinThread = true);
 	virtual ~MonitoredProcess();
 
 	// overwrite ACE_Process spawn method
@@ -27,7 +27,6 @@ public:
 	// pipe message
 	virtual std::string getOutputMsg() override;
 	virtual std::string fetchOutputMsg() override;
-private:
 	void monitorThread();
 
 private:
@@ -35,6 +34,7 @@ private:
 	std::shared_ptr<ACE_Pipe> m_pipe;
 	FILE* m_readPipeFile;
 	std::shared_ptr<std::thread> m_thread;
+	bool m_buildInThread;
 	std::queue<std::string> m_msgQueue;
 	std::recursive_mutex m_queueMutex;
 	bool m_monitorComplete;

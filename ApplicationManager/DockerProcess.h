@@ -29,8 +29,6 @@ public:
 	// docker logs
 	virtual std::string getOutputMsg() override;
 	virtual std::string fetchOutputMsg() override;
-
-private:
 	std::string getFirstLine(const std::string str);
 
 private:
@@ -42,4 +40,4 @@ private:
 	std::chrono::system_clock::time_point m_lastFetchTime;
 };
 
-#endif 
+#endif

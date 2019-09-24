@@ -3,8 +3,8 @@
 #include "MonitoredProcess.h"
 #include "../common/Utility.h"
 
-MonitoredProcess::MonitoredProcess(int cacheOutputLines)
-	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL)
+MonitoredProcess::MonitoredProcess(int cacheOutputLines, bool enableBuildinThread)
+	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_monitorComplete(false), m_httpRequest(NULL), m_buildInThread(enableBuildinThread)
 {
 }
 
@@ -46,7 +46,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 	auto rt = AppProcess::spawn(options);
 
 	// Start thread to read stdout/stderr stream
-	m_thread = std::make_shared<std::thread>(std::bind(&MonitoredProcess::monitorThread, this));
+	if (m_buildInThread) m_thread = std::make_shared<std::thread>(std::bind(&MonitoredProcess::monitorThread, this));
 
 	// close write in parent side (write handler is used for child process in our case)
 	m_pipe->close_write();
@@ -97,8 +97,8 @@ pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
 	{
 		// Only need wait thread when process already exit.
 		std::shared_ptr<std::thread> thread;
-		m_thread.swap(thread);
-		thread->join();
+		thread.swap(m_thread);
+		if (thread != nullptr) thread->join();
 	}
 	return rt;
 }
