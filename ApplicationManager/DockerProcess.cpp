@@ -222,15 +222,13 @@ std::string DockerProcess::fetchOutputMsg()
 std::string DockerProcess::getFirstLine(const std::string str)
 {
 	char* line = const_cast <char*> (str.c_str());
-	// trim the line on the left and on the right
 	size_t len = str.length();
 	size_t start = 0;
-	while ((*line) == '\r' || (*line) == '\n' || (*line) == '\0')
+	while ((*line) != '\r' && (*line) != '\n' && (*line) != '\0')
 	{
 		++line;
 		--len;
 		++start;
-		break;
 	}
 	return len >= start ? str.substr(start, len) : str.substr(start);
 }
