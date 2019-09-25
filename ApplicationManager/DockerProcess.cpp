@@ -131,9 +131,17 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_containerId = containerId;
-	this->attach(ACE_INVALID_PID);
+	this->detach();
 	killgroup();
 	return pid;
+}
+
+pid_t DockerProcess::getpid(void) const
+{
+	if (ACE_Process::getpid() == 1)
+		return ACE_INVALID_PID;
+	else
+		return ACE_Process::getpid();
 }
 
 std::string DockerProcess::containerId()

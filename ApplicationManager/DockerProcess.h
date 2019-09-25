@@ -22,7 +22,7 @@ public:
 	virtual void killgroup(int timerId = 0) override;
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit) override;
 	virtual int syncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
-
+	virtual pid_t getpid(void) const override;
 	virtual std::string containerId() override;
 	virtual void containerId(std::string containerId) override;
 

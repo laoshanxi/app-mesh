@@ -24,6 +24,16 @@ void AppProcess::attach(int pid)
 	this->child_id_ = pid;
 }
 
+void AppProcess::detach()
+{
+	attach(ACE_INVALID_PID);
+}
+
+pid_t AppProcess::getpid(void) const
+{
+	return ACE_Process::getpid();
+}
+
 void AppProcess::killgroup(int timerId)
 {
 	const static char fname[] = "AppProcess::killgroup() ";

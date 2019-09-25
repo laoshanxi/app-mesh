@@ -20,6 +20,8 @@ public:
 	virtual ~AppProcess();
 
 	void attach(int pid);
+	void detach();
+	virtual pid_t getpid(void) const;
 	virtual void killgroup(int timerId = 0);
 	virtual void setCgroup(std::shared_ptr<ResourceLimitation>& limit);
 	const std::string getuuid() const;
