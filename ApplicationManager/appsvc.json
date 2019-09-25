@@ -2,7 +2,7 @@
   "Description": "myhost",
   "ScheduleIntervalSeconds": 2,
   "RestListenPort": 6060,
-  "RestListenAddress": "0.0.0.0",
+  "RestListenIP": "0.0.0.0",
   "RestEnabled": true,
   "LogLevel": "DEBUG",
   "SSLEnabled": true,
