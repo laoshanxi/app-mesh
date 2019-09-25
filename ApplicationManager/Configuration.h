@@ -29,7 +29,7 @@ public:
 	void registerApp(std::shared_ptr<Application> app);
 	int getScheduleInterval();
 	int getRestListenPort();
-	std::string getRestListenIp();
+	std::string getRestListenAddress();
 	const utility::string_t getConfigContentStr();
 	web::json::value getApplicationJson(bool returnRuntimeInfo);
 	std::shared_ptr<Application> getApp(const std::string& appName);
@@ -62,7 +62,7 @@ private:
 	std::string m_hostDescription;
 	int m_scheduleInterval;
 	int m_restListenPort;
-	std::string m_restListenIp;
+	std::string m_RestListenAddress;
 	std::string m_logLevel;
 
 	std::recursive_mutex m_mutex;

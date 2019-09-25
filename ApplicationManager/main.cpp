@@ -34,7 +34,7 @@ int main(int argc, char * argv[])
 		{
 			// 1. Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
-			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenIp(), config->getRestListenPort());
+			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
 			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
 

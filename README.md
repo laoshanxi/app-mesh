@@ -395,7 +395,7 @@ GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define 
 ### 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
 - [ACE](https://github.com/DOCGroup/ACE_TAO)
-- [Microsoft cpprestsdk](https://github.com/Microsoft/cpprestsdk)
+- [Microsoft/cpprestsdk](https://github.com/Microsoft/cpprestsdk)
 - [boost](https://github.com/boostorg/boost)
 - [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 - [log4cpp](http://log4cpp.sourceforge.net)
