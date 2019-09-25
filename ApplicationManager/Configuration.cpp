@@ -81,7 +81,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		config->m_threadPoolSize = threadpool;
 	}
-	config->parseTags(jobj.at(GET_STRING_T("Lables")));
+	config->jsonToTag(jobj.at(GET_STRING_T("Lables")));
 
 	m_instance = config;
 	return config;
