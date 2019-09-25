@@ -36,8 +36,9 @@ public:
 	void stopApp(const std::string& appName);
 	void startApp(const std::string& appName);
 	const std::string getLogLevel() const;
-	web::json::value getTags();
-	void parseTags(web::json::value json);
+	web::json::value tagToJson();
+	void jsonToTag(web::json::value json);
+	void saveTags();
 
 	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;

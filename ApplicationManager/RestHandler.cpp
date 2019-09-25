@@ -513,13 +513,14 @@ void RestHandler::apiUploadFile(const http_request & message)
 
 void RestHandler::apiGetTags(const http_request& message)
 {
-	message.reply(status_codes::OK, Configuration::instance()->getTags());
+	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
 void RestHandler::apiSetTags(const http_request& message)
 {
-	Configuration::instance()->parseTags(message.extract_json().get());
-	message.reply(status_codes::OK, Configuration::instance()->getTags());
+	Configuration::instance()->jsonToTag(message.extract_json().get());
+	Configuration::instance()->saveTags();
+	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
 void RestHandler::apiLogin(const http_request& message)

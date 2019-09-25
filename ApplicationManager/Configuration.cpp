@@ -44,7 +44,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_hostDescription = GET_JSON_STR_VALUE(jobj, "Description");
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jobj, "ScheduleIntervalSeconds");
 	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, "RestListenPort");
-	config->m_restListenIp = GET_JSON_STR_VALUE(jobj, "RestListenAddress");
+	config->m_restListenIp = GET_JSON_STR_VALUE(jobj, "RestListenIP");
 	config->m_logLevel = GET_JSON_STR_VALUE(jobj, "LogLevel");
 	SET_JSON_BOOL_VALUE(jobj, "SSLEnabled", config->m_sslEnabled);
 	SET_JSON_BOOL_VALUE(jobj, "RestEnabled", config->m_restEnabled);
@@ -98,6 +98,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 
 	result[GET_STRING_T("Description")] = web::json::value::string(GET_STRING_T(m_hostDescription));
 	result[GET_STRING_T("RestListenPort")] = web::json::value::number(m_restListenPort);
+	result[GET_STRING_T("RestListenIP")] = web::json::value::string(m_restListenIp);
 	result[GET_STRING_T("ScheduleIntervalSeconds")] = web::json::value::number(m_scheduleInterval);
 	result[GET_STRING_T("LogLevel")] = web::json::value::string(GET_STRING_T(m_logLevel));
 
@@ -121,7 +122,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	}
 	
 	result[GET_STRING_T("Applications")] = apps;
-	result[GET_STRING_T("Lables")] = getTags();
+	result[GET_STRING_T("Lables")] = tagToJson();
 	return result;
 }
 
@@ -196,7 +197,7 @@ const std::string Configuration::getLogLevel() const
 	return m_logLevel;
 }
 
-web::json::value Configuration::getTags()
+web::json::value Configuration::tagToJson()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto tags = web::json::value::object();
@@ -207,9 +208,9 @@ web::json::value Configuration::getTags()
 	return tags;
 }
 
-void Configuration::parseTags(web::json::value json)
+void Configuration::jsonToTag(web::json::value json)
 {
-	const static char fname[] = "Configuration::parseTags() ";
+	const static char fname[] = "Configuration::jsonToTag() ";
 	{
 		LOG_INF << fname << "reset lables";
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -222,6 +223,10 @@ void Configuration::parseTags(web::json::value json)
 			LOG_INF << fname << "label: " << lableKey << "=" << m_tags[lableKey];
 		}
 	}
+}
+
+void Configuration::saveTags()
+{
 	this->saveConfigToDisk();
 }
 
