@@ -13,8 +13,7 @@
 #include "ResourceCollection.h"
 #include "TimerHandler.h"
 
-static std::shared_ptr<RestHandler>       m_httpHandler;
-static std::shared_ptr<Configuration>     readConfiguration();
+static std::shared_ptr<RestHandler> m_httpHandler;
 
 int main(int argc, char * argv[])
 {
@@ -28,28 +27,35 @@ int main(int argc, char * argv[])
 		
 		LOG_INF << fname << "Entered.";
 
-		auto config = readConfiguration();
+		// get configuration
+		auto config = Configuration::FromJson(Configuration::readConfiguration());
+
+		// set log level
 		Utility::setLogLevel(config->getLogLevel());
+
+		// init REST
 		if (config->getRestEnabled())
 		{
-			// 1. Thread pool: 6 threads
+			// Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
 			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
 			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
 
+		// HA attach process to App
 		auto apps = config->getApps();
 		std::map<std::string, int> process;
 		AppProcess::getSysProcessList(process, nullptr);
 		std::for_each(apps.begin(), apps.end(), [&process](std::vector<std::shared_ptr<Application>>::reference p) { p->attach(process); });
 
+		// Resource init
 		ResourceCollection::instance()->getHostResource();
 		ResourceCollection::instance()->dump();
 
-		// 2. Thread for Timer
+		// start one thread for timers
 		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runTimerThread));
 		
-		// 3. Thread for main
+		// monitor applications
 		auto scheduleInterval = Configuration::instance()->getScheduleInterval();
 		while (true)
 		{
@@ -74,41 +80,3 @@ int main(int argc, char * argv[])
 	_exit(0);
 	return 0;
 }
-
-std::shared_ptr<Configuration> readConfiguration()
-{
-	const static char fname[] = "readConfiguration() ";
-
-	try
-	{
-		std::shared_ptr<Configuration> config;
-		web::json::value jsonValue;
-		std::string jsonPath = Utility::getSelfFullPath() + ".json";
-		auto fileStr = Utility::readFileCpp(jsonPath);
-		if (fileStr.length() == 0)
-		{
-			LOG_ERR << "can not open configuration file <" << jsonPath << ">";
-			config = std::make_shared<Configuration>();
-			throw std::runtime_error("can not open configuration file");
-		}
-		else
-		{
-			LOG_DBG << fileStr;
-			config = Configuration::FromJson(fileStr);
-			config->dump();
-		}
-
-		return config;
-	}
-	catch (const std::exception& e)
-	{
-		LOG_ERR << fname << e.what();
-		throw;
-	}
-	catch (...)
-	{
-		LOG_ERR << fname << "unknown exception";
-		throw;
-	}
-}
-

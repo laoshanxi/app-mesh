@@ -87,6 +87,14 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	return config;
 }
 
+std::string Configuration::readConfiguration()
+{
+	std::shared_ptr<Configuration> config;
+	web::json::value jsonValue;
+	std::string jsonPath = Utility::getSelfFullPath() + ".json";
+	return Utility::readFileCpp(jsonPath);
+}
+
 web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 {
 	// get applications

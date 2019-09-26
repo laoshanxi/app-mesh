@@ -21,6 +21,7 @@ public:
 
 	static std::shared_ptr<Configuration> instance();
 	static std::shared_ptr<Configuration> FromJson(const std::string& str);
+	static std::string readConfiguration();
 	web::json::value AsJson(bool returnRuntimeInfo);
 	
 	std::vector<std::shared_ptr<Application>> getApps();
