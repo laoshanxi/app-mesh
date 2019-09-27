@@ -13,8 +13,6 @@
 #include "ResourceCollection.h"
 #include "TimerHandler.h"
 
-static std::shared_ptr<RestHandler> m_httpHandler;
-
 int main(int argc, char * argv[])
 {
 	const static char fname[] = "main() ";
@@ -34,11 +32,23 @@ int main(int argc, char * argv[])
 		Utility::setLogLevel(config->getLogLevel());
 
 		// init REST
+		std::shared_ptr<RestHandler> httpHandler1;
+		std::shared_ptr<RestHandler> httpHandler2;
 		if (config->getRestEnabled())
 		{
 			// Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
-			m_httpHandler = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+			if (!config->getRestListenAddress().empty())
+			{
+				// just enable for specified address
+				httpHandler1 = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+			}
+			else
+			{
+				// enable for both ipv6 and ipv4
+				httpHandler1 = std::make_shared<RestHandler>("localhost", config->getRestListenPort());
+				httpHandler2 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
+			}
 			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
 
