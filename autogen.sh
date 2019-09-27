@@ -1,9 +1,9 @@
-mkdir dep
+mkdir -p dep
 cd dep
 export ROOTDIR=`pwd`
 
 if [ "$(id -u)" != "0" ]; then
-    log "This script must be run as root"
+    echo "This script must be run as root"
     exit 1
 fi
 
