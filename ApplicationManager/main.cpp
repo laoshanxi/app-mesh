@@ -46,8 +46,19 @@ int main(int argc, char * argv[])
 			else
 			{
 				// enable for both ipv6 and ipv4
-				httpHandler1 = std::make_shared<RestHandler>("localhost", config->getRestListenPort());
-				httpHandler2 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
+				httpHandler1 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
+				try
+				{
+					httpHandler2 = std::make_shared<RestHandler>("localhost", config->getRestListenPort());
+				}
+				catch (const std::exception& e)
+				{
+					LOG_ERR << fname << e.what();
+				}
+				catch (...)
+				{
+					LOG_ERR << fname << "unknown exception";
+				}
 			}
 			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
