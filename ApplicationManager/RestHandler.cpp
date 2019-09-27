@@ -72,6 +72,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 				{
 					LOG_WAR << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
 				}
+				SSL_CTX_clear_options(ctx.native_handle(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
 			});
 		m_listener = std::make_shared<http_listener>(uri.to_uri(), *server_config);
