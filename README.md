@@ -8,7 +8,7 @@ Application Manager is a daemon service to manage different types of sub-applica
 
 The internal timer is multi-threaded with high-precision that can be used to replace Linux cron-tab and supervisor.
 
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/diagram.png" width=654 height=385 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/diagram.png" width=600 height=350 align=center /></div>
 
 
 Supported applications  | Behavior
