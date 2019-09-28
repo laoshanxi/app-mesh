@@ -12,7 +12,7 @@
   "JWTEnabled": true,
   "Applications": [
     {
-      "command_line": "/bin/sleep 60",
+      "command": "/bin/sleep 60",
       "name": "sleep",
       "user": "root",
       "working_dir": "/tmp"

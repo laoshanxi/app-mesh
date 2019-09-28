@@ -202,7 +202,7 @@ void ArgumentParser::processReg(const char* appName)
 	}
 	web::json::value jsobObj;
 	jsobObj["name"] = (shellApp ? web::json::value::string(appName) : web::json::value::string(m_commandLineVariables["name"].as<std::string>()));
-	jsobObj["command_line"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	jsobObj["command"] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("user")) jsobObj["user"] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj["working_dir"] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj["status"] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
@@ -867,7 +867,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(7) << ("pid")
 		<< std::setw(8) << ("memory")
 		<< std::setw(20) << ("start_time")
-		<< ("command_line")
+		<< ("command")
 		<< std::endl;
 
 	int index = 1;
@@ -904,7 +904,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 			else
 				std::cout << "-";
 		}
-		std::cout << GET_JSON_STR_VALUE(jobj, "command_line");
+		std::cout << GET_JSON_STR_VALUE(jobj, "command");
 		std::cout << std::endl;
 	});
 }

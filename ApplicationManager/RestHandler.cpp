@@ -367,9 +367,9 @@ void RestHandler::apiRegShellApp(const http_request& message)
 	jobj[GET_STRING_T("status")] = web::json::value::number(0);
 	// /bin/sh -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine = "/bin/sh -c '";
-	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command_line")));
+	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command")));
 	shellCommandLine.append("'");
-	jobj[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(shellCommandLine));
+	jobj[GET_STRING_T("command")] = web::json::value::string(GET_STRING_T(shellCommandLine));
 	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
 
 	auto app = Configuration::instance()->addApp(jobj);

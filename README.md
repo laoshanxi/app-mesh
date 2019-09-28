@@ -73,7 +73,7 @@ id name        user  status   return pid    memory  start_time          command_
 $ appc reg -n ping -c 'ping www.baidu.com' -o 10
 {
         "cache_lines" : 10,
-        "command_line" : "ping www.baidu.com",
+        "command" : "ping www.baidu.com",
         "name" : "ping",
         "status" : 1,
         "user" : "root",
@@ -135,7 +135,7 @@ Application already exist, are you sure you want to update the application (y/n)
 y
 {
    "status" : 1,
-   "command_line" : "ping www.google.com",
+   "command" : "ping www.google.com",
    "name" : "ping",
    "pid" : -1,
    "return" : 0,
@@ -146,7 +146,7 @@ y
 # register a docker container app
 $ appc reg -n mydocker -c 'sleep 30' -d ubuntu
 {
-        "command_line" : "sleep 30",
+        "command" : "sleep 30",
         "docker_image" : "ubuntu",
         "name" : "mydocker",
         "status" : 1,
@@ -276,7 +276,7 @@ $ appc resource
 ```
 $ appc view -n ping
 {
-        "command_line" : "/bin/sleep 60",
+        "command" : "/bin/sleep 60",
         "last_start" : 1568893521,
         "memory" : 626688,
         "name" : "ping",
@@ -380,7 +380,7 @@ POST | /app/$app-name/waitrun?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": 
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
-PUT | /app/$app-name | {"command_line": "/bin/sleep 60", "name": "ping", "user": "root", "working_dir": "/tmp" } | Register a new application
+PUT | /app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "user": "root", "working_dir": "/tmp" } | Register a new application
 PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell application
 POST| /app/$app-name?action=start | | Start an application
 POST| /app/$app-name?action=stop | | Stop an application

@@ -41,7 +41,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 	// Be noticed do not use multiple spaces between command arguments
 	// "ping www.baidu.com    123" equals
 	// "ping www.baidu.com 123"
-	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command_line"));
+	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command"));
 	if (app->m_commandLine.find('>') != std::string::npos)
 	{
 		throw std::invalid_argument("char '>' is not supported for command line");
@@ -283,7 +283,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[GET_STRING_T("name")] = web::json::value::string(GET_STRING_T(m_name));
 	if (m_user.length()) result[GET_STRING_T("user")] = web::json::value::string(GET_STRING_T(m_user));
-	result[GET_STRING_T("command_line")] = web::json::value::string(GET_STRING_T(m_commandLine));
+	result[GET_STRING_T("command")] = web::json::value::string(GET_STRING_T(m_commandLine));
 	if (m_workdir.length()) result[GET_STRING_T("working_dir")] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[GET_STRING_T("status")] = web::json::value::number(m_status);
 	if (m_comments.length()) result[GET_STRING_T("commentss")] = web::json::value::string(GET_STRING_T(m_comments));
