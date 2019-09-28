@@ -31,6 +31,10 @@ int main(int argc, char * argv[])
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());
 
+		// Resource init
+		ResourceCollection::instance()->getHostResource();
+		ResourceCollection::instance()->dump();
+
 		// init REST
 		std::shared_ptr<RestHandler> httpHandler1;
 		std::shared_ptr<RestHandler> httpHandler2;
@@ -49,7 +53,7 @@ int main(int argc, char * argv[])
 				httpHandler1 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
 				try
 				{
-					httpHandler2 = std::make_shared<RestHandler>("localhost", config->getRestListenPort());
+					httpHandler2 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
 				}
 				catch (const std::exception& e)
 				{
@@ -68,10 +72,6 @@ int main(int argc, char * argv[])
 		std::map<std::string, int> process;
 		AppProcess::getSysProcessList(process, nullptr);
 		std::for_each(apps.begin(), apps.end(), [&process](std::vector<std::shared_ptr<Application>>::reference p) { p->attach(process); });
-
-		// Resource init
-		ResourceCollection::instance()->getHostResource();
-		ResourceCollection::instance()->dump();
 
 		// start one thread for timers
 		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runTimerThread));
