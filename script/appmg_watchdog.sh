@@ -12,13 +12,14 @@ cd /opt/appmanager/
 MYID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
 while true ; do
-	case "$(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | awk '{print $2}' | wc -w)" in
+	case "$(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | wc -w)" in
 	
 	0)	sleep 0.1
 		result=$(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | awk '{print $2}')
 		if [ -z "$result" ]; then
 			nohup /opt/appmanager/appsvc >/dev/null 2>&1 &
 			log "Starting Application Manager:     $(date)"
+			sleep 0.5
 		else
 			log "Double check Application Manager is alive: $(date)"
 		fi
