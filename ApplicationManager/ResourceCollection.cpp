@@ -22,7 +22,8 @@ ResourceCollection * ResourceCollection::instance()
 
 std::string ResourceCollection::getHostName()
 {
-	return net::hostname();
+	static auto hostname = net::hostname();
+	return hostname;
 }
 
 const HostResource& ResourceCollection::getHostResource()
