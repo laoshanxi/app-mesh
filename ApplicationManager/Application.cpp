@@ -191,8 +191,6 @@ std::string Application::testAsyncRun(int timeoutSeconds, std::map<std::string, 
 	const static char fname[] = "Application::testAsyncRun() ";
 	LOG_DBG << fname << " Entered.";
 
-	std::string processUUID;
-
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_testProcess != nullptr && m_testProcess->running())
 	{

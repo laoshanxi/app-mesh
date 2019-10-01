@@ -13,7 +13,7 @@
 class MonitoredProcess :public AppProcess
 {
 public:
-	MonitoredProcess(int cacheOutputLines, bool enableBuildinThread = true);
+	explicit MonitoredProcess(int cacheOutputLines, bool enableBuildinThread = true);
 	virtual ~MonitoredProcess();
 
 	// overwrite ACE_Process spawn method
