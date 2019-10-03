@@ -40,7 +40,7 @@ $ appc
 Commands:
   view        List application[s]
   resource    Display host resource usage
-  label       Manage host lables
+  label       Manage host labels
   start       Start a application
   stop        Stop a application
   restart     Restart a application
@@ -387,8 +387,8 @@ POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
 GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server and grant permission
 PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
-GET| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Get lables
-POST| /app-manager/lables | { "os": "linux","arch": "x86_64" } | Update lables
+GET| /app-manager/labels | { "os": "linux","arch": "x86_64" } | Get labels
+POST| /app-manager/labels | { "os": "linux","arch": "x86_64" } | Update labels
 GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
 
 ---

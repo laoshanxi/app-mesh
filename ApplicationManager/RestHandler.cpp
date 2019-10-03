@@ -88,22 +88,23 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	m_listener->support(methods::POST, std::bind(&RestHandler::handle_post, this, std::placeholders::_1));
 	m_listener->support(methods::DEL, std::bind(&RestHandler::handle_delete, this, std::placeholders::_1));
 
+	// 1. Authentication
 	// http://127.0.0.1:6060/login
 	bindRest(web::http::methods::POST, "/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/admin
 	bindRest(web::http::methods::POST, R"(/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
+
+	// 2. View Application
 	// http://127.0.0.1:6060/app/app-name
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/run?timeout=5
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/waitrun?timeout=5
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/applications
 	bindRest(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/resources
 	bindRest(web::http::methods::GET, "/app-manager/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/output
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutput, this, std::placeholders::_1));
+
+	// 3. Manage Application
 	// http://127.0.0.1:6060/app/app-name
 	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/sh/shell-app-id
@@ -113,18 +114,27 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/app/appname
 	bindRest(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
+	// 4. Operator Application
+	// http://127.0.0.1:6060/app/app-name/run?timeout=5
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/waitrun?timeout=5
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
+
+	// 5. File Management
 	// http://127.0.0.1:6060/download
 	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiDownloadFile, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/upload
 	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiUploadFile, this, std::placeholders::_1));
 
-	// http://127.0.0.1:6060/app-manager/lables
-	bindRest(web::http::methods::GET, "/app-manager/lables", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app-manager/lables
-	bindRest(web::http::methods::POST, "/app-manager/lables", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
+	// 6. Label Management
+	// http://127.0.0.1:6060/app-manager/labels
+	bindRest(web::http::methods::GET, "/app-manager/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app-manager/labels
+	bindRest(web::http::methods::POST, "/app-manager/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
 
-	// http://127.0.0.1:6060/app/app-name/output
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutput, this, std::placeholders::_1));
+	
 
 	this->open();
 

@@ -120,7 +120,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
-	std::cout << "  label       Manage host lables" << std::endl;
+	std::cout << "  label       Manage host labels" << std::endl;
 	std::cout << "  start       Start a application" << std::endl;
 	std::cout << "  stop        Stop a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
@@ -670,19 +670,19 @@ void ArgumentParser::processUpload()
 
 void ArgumentParser::processTags()
 {
-	po::options_description desc("Manage lables:");
+	po::options_description desc("Manage labels:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("view,v", "list lables")
-		("add,a", "add lables")
-		("remove,r", "remove lables")
-		("label,l", po::value<std::vector<std::string>>(), "lables (e.g., -l os=linux -t arch=arm64)")
+		("view,v", "list labels")
+		("add,a", "add labels")
+		("remove,r", "remove labels")
+		("label,l", po::value<std::vector<std::string>>(), "labels (e.g., -l os=linux -t arch=arm64)")
 		("help,h", "help message")
 		;
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/app-manager/lables";
+	std::string restPath = "/app-manager/labels";
 	http_response response = requestHttp(methods::GET, restPath);
 	RESPONSE_CHECK_WITH_RETURN;
 	std::vector<std::string> inputTags;

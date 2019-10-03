@@ -220,7 +220,7 @@ void Configuration::jsonToTag(web::json::value json)
 {
 	const static char fname[] = "Configuration::jsonToTag() ";
 	{
-		LOG_INF << fname << "reset lables";
+		LOG_INF << fname << "reset labels";
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		m_tags.clear();
 		auto jobj = json.as_object();
