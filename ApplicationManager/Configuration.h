@@ -51,6 +51,7 @@ public:
 	const std::string & getJwtAdminKey() const;
 	const std::string & getJwtUserKey() const;
 	const size_t getThreadPoolSize() const { return m_threadPoolSize; }
+	bool getRestApiEnabled(const std::string api);
 	
 	void dump();
 
@@ -82,6 +83,7 @@ private:
 	std::string m_jwtUserKey;
 
 	size_t m_threadPoolSize;
+	web::json::value m_restPermissions;
 
 	static std::shared_ptr<Configuration> m_instance;
 };

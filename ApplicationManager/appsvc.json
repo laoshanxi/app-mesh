@@ -28,8 +28,27 @@
       "key": "app-mgr-user-secret-key"
     }
   },
-  "Lables": {
+  "Labels": {
     "os_version": "centos7.6",
     "arch": "x86_64"
+  },
+  "RestApiPermissions": {
+    "login": true,
+    "auth": true,
+    "view-app": true,
+    "view-app-output": true,
+    "view-all-app": true,
+    "view-host-resource": true,
+    "app-reg": true,
+    "app-reg-shell": true,
+    "app-control": true,
+    "app-delete": true,
+    "run-app-async": true,
+    "run-app-sync": true,
+    "run-app-async-output": true,
+    "download-file": true,
+    "upload-file": true,
+    "label-view": true,
+    "label-update": true
   }
 }

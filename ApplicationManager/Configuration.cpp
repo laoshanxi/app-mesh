@@ -81,7 +81,8 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		config->m_threadPoolSize = threadpool;
 	}
-	config->jsonToTag(jobj.at(GET_STRING_T("Lables")));
+	config->jsonToTag(jobj.at(GET_STRING_T("Labels")));
+	config->m_restPermissions = jobj.at(GET_STRING_T("RestApiPermissions"));
 
 	m_instance = config;
 	return config;
@@ -130,7 +131,8 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	}
 	
 	result[GET_STRING_T("Applications")] = apps;
-	result[GET_STRING_T("Lables")] = tagToJson();
+	result[GET_STRING_T("Labels")] = tagToJson();
+	result[GET_STRING_T("RestApiPermissions")] = m_restPermissions;
 	return result;
 }
 
@@ -281,6 +283,11 @@ const std::string & Configuration::getJwtAdminKey() const
 const std::string & Configuration::getJwtUserKey() const
 {
 	return m_jwtUserKey;
+}
+
+bool Configuration::getRestApiEnabled(const std::string api)
+{
+	return (HAS_JSON_FIELD(m_restPermissions.as_object(), api) && GET_JSON_BOOL_VALUE(m_restPermissions.as_object(), api));
 }
 
 void Configuration::dump()

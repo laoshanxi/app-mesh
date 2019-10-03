@@ -7,7 +7,7 @@
 #include "../common/Utility.h"
 #include "../common/jwt-cpp/jwt.h"
 #include "../common/os/linux.hpp"
-#include "../common//os/chown.hpp"
+#include "../common/os/chown.hpp"
 
 #define REST_INFO_PRINT \
 	LOG_DBG \
@@ -90,51 +90,66 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 1. Authentication
 	// http://127.0.0.1:6060/login
+	if (Configuration::instance()->getRestApiEnabled("login"))
 	bindRest(web::http::methods::POST, "/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/admin
+	if (Configuration::instance()->getRestApiEnabled("auth"))
 	bindRest(web::http::methods::POST, R"(/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
 
 	// 2. View Application
 	// http://127.0.0.1:6060/app/app-name
+	if (Configuration::instance()->getRestApiEnabled("view-app"))
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/output
+	if (Configuration::instance()->getRestApiEnabled("view-app-output"))
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutput, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/applications
+	if (Configuration::instance()->getRestApiEnabled("view-all-app"))
 	bindRest(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/resources
+	if (Configuration::instance()->getRestApiEnabled("view-host-resource"))
 	bindRest(web::http::methods::GET, "/app-manager/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/output
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutput, this, std::placeholders::_1));
 
 	// 3. Manage Application
 	// http://127.0.0.1:6060/app/app-name
+	if (Configuration::instance()->getRestApiEnabled("app-reg"))
 	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/sh/shell-app-id
+	if (Configuration::instance()->getRestApiEnabled("app-reg-shell"))
 	bindRest(web::http::methods::PUT, R"(/app/sh/([^/\*]+))", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname?action=start
+	if (Configuration::instance()->getRestApiEnabled("app-control"))
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiControlApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname
+	if (Configuration::instance()->getRestApiEnabled("app-delete"))
 	bindRest(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
-	// 4. Operator Application
+	// 4. Operate Application
 	// http://127.0.0.1:6060/app/app-name/run?timeout=5
+	if (Configuration::instance()->getRestApiEnabled("run-app-async"))
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/waitrun?timeout=5
+	if (Configuration::instance()->getRestApiEnabled("run-app-sync"))
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
+	if (Configuration::instance()->getRestApiEnabled("run-app-async-output"))
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
 
 	// 5. File Management
 	// http://127.0.0.1:6060/download
+	if (Configuration::instance()->getRestApiEnabled("download-file"))
 	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiDownloadFile, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/upload
+	if (Configuration::instance()->getRestApiEnabled("upload-file"))
 	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiUploadFile, this, std::placeholders::_1));
 
 	// 6. Label Management
 	// http://127.0.0.1:6060/app-manager/labels
+	if (Configuration::instance()->getRestApiEnabled("label-view"))
 	bindRest(web::http::methods::GET, "/app-manager/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/labels
+	if (Configuration::instance()->getRestApiEnabled("label-update"))
 	bindRest(web::http::methods::POST, "/app-manager/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
-
-	
 
 	this->open();
 
