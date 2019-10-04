@@ -308,7 +308,7 @@ void Configuration::dump()
 		LOG_DBG << fname << "m_jwtUserName:" << m_jwtUserName;
 		LOG_DBG << fname << "m_jwtAdminKey:" << m_jwtAdminKey;
 		LOG_DBG << fname << "m_jwtUserKey:" << m_jwtUserKey;
-		LOG_DBG << fname << "m_restPermissions:" << m_restPermissions.to_string();
+		LOG_DBG << fname << "m_restPermissions:" << m_restPermissions.serialize();
 	}
 	auto apps = getApps();
 	for (auto app : apps)
