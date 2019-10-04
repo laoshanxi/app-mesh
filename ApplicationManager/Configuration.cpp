@@ -287,7 +287,7 @@ const std::string & Configuration::getJwtUserKey() const
 
 bool Configuration::getRestApiEnabled(const std::string api)
 {
-	return (HAS_JSON_FIELD(m_restPermissions.as_object(), api) && GET_JSON_BOOL_VALUE(m_restPermissions.as_object(), api));
+	return GET_JSON_BOOL_VALUE(m_restPermissions.as_object(), api);
 }
 
 void Configuration::dump()
@@ -308,6 +308,7 @@ void Configuration::dump()
 		LOG_DBG << fname << "m_jwtUserName:" << m_jwtUserName;
 		LOG_DBG << fname << "m_jwtAdminKey:" << m_jwtAdminKey;
 		LOG_DBG << fname << "m_jwtUserKey:" << m_jwtUserKey;
+		LOG_DBG << fname << "m_restPermissions:" << m_restPermissions.to_string();
 	}
 	auto apps = getApps();
 	for (auto app : apps)
