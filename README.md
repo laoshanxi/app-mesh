@@ -1,7 +1,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![coverage](https://img.shields.io/badge/coverage-90%25-yellowgreen.svg?maxAge=2592000)
-![version](https://img.shields.io/badge/version-1.4.0-blue.svg?maxAge=2592000)
+![version](https://img.shields.io/badge/version-1.4.4-blue.svg?maxAge=2592000)
 # Application Manager
 ### Introduction
 Application Manager is a daemon service to manage different types of sub-applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line to start/stop and register new app easily.
@@ -23,9 +23,9 @@ Extra Features | Application can define avialable time range in a day <br> Appli
 **CentOS**:
 ```
 # centos
-yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager-1.4-1.x86_64.rpm
+yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager-1.4.4-1.x86_64.rpm
 # ubuntu
-apt install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager_1.4_amd64.deb
+apt install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager_1.4.4_amd64.deb
 # after installation, service will be started automaticlly, check status by bellow command:
 $ appc view
 id name        user  status   return pid    memory  start_time          command_line

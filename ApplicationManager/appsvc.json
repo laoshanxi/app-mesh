@@ -46,8 +46,8 @@
     "run-app-async": true,
     "run-app-sync": true,
     "run-app-async-output": true,
-    "download-file": true,
-    "upload-file": true,
+    "file-download": true,
+    "file-upload": true,
     "label-view": true,
     "label-update": true
   }

@@ -137,10 +137,10 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 5. File Management
 	// http://127.0.0.1:6060/download
-	if (Configuration::instance()->getRestApiEnabled("download-file"))
+	if (Configuration::instance()->getRestApiEnabled("file-download"))
 	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiDownloadFile, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/upload
-	if (Configuration::instance()->getRestApiEnabled("upload-file"))
+	if (Configuration::instance()->getRestApiEnabled("file-upload"))
 	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiUploadFile, this, std::placeholders::_1));
 
 	// 6. Label Management
