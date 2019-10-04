@@ -27,6 +27,7 @@ int main(int argc, char * argv[])
 
 		// get configuration
 		auto config = Configuration::FromJson(Configuration::readConfiguration());
+		Configuration::instance()->dump();
 
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());
