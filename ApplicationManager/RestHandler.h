@@ -30,9 +30,8 @@ private:
 	void handle_post(http_request message);
 	void handle_delete(http_request message);
 	void handle_error(pplx::task<void>& t);
-	bool verifyAdminToken(const http_request& message, const std::string& token);
-	bool verifyUserToken(const http_request& message, const std::string& token);
-	bool verifyToken(const http_request& message, const std::string& token, const std::string& user, const std::string& key);
+
+	bool permissionCheck(const http_request& message, const std::string& permission);
 	std::string getToken(const http_request& message);
 	std::string createToken(const std::string uname, const std::string passwd, int timeoutSeconds);
 

@@ -21,34 +21,36 @@
   "jwt": {
     "admin": {
       "name": "admin",
-      "key": "app-mgr-admin-secret-key"
+      "key": "app-mgr-admin-secret-key",
+      "roles": [ "manage" ]
     },
     "user": {
       "name": "user",
-      "key": "app-mgr-user-secret-key"
+      "key": "app-mgr-user-secret-key",
+      "roles": [ "manage" ]
     }
   },
   "Labels": {
     "os_version": "centos7.6",
     "arch": "x86_64"
   },
-  "RestApiPermissions": {
-    "login": true,
-    "auth": true,
-    "view-app": true,
-    "view-app-output": true,
-    "view-all-app": true,
-    "view-host-resource": true,
-    "app-reg": true,
-    "app-reg-shell": true,
-    "app-control": true,
-    "app-delete": true,
-    "run-app-async": true,
-    "run-app-sync": true,
-    "run-app-async-output": true,
-    "file-download": true,
-    "file-upload": true,
-    "label-view": true,
-    "label-update": true
+  "Roles": {
+    "manage": [
+      "view-app",
+      "view-app-output",
+      "view-all-app",
+      "view-host-resource",
+      "app-reg",
+      "app-reg-shell",
+      "app-control",
+      "app-delete",
+      "run-app-async",
+      "run-app-sync",
+      "run-app-async-output",
+      "file-download",
+      "file-upload",
+      "label-view",
+      "label-update"
+    ]
   }
 }

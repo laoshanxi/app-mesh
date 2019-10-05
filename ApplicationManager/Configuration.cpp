@@ -71,18 +71,14 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		app->dump();
 		config->registerApp(app);
 	}
-	auto& jwt = jobj.at(GET_STRING_T("jwt")).as_object();
-	config->m_jwtAdminName = GET_STD_STRING(jwt.at(GET_STRING_T("admin")).as_object().at(GET_STRING_T("name")).as_string());
-	config->m_jwtAdminKey = GET_STD_STRING(jwt.at(GET_STRING_T("admin")).as_object().at(GET_STRING_T("key")).as_string());
-	config->m_jwtUserName = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("name")).as_string());
-	config->m_jwtUserKey = GET_STD_STRING(jwt.at(GET_STRING_T("user")).as_object().at(GET_STRING_T("key")).as_string());
 	auto threadpool = GET_JSON_INT_VALUE(jobj, "HttpThreadPoolSize");
 	if (threadpool > 0 && threadpool < 40)
 	{
 		config->m_threadPoolSize = threadpool;
 	}
 	config->jsonToTag(jobj.at(GET_STRING_T("Labels")));
-	config->m_restPermissions = jobj.at(GET_STRING_T("RestApiPermissions"));
+	config->m_jwtSection = jobj.at(GET_STRING_T("jwt"));
+	config->m_roleSection = jobj.at(GET_STRING_T("Roles"));
 
 	m_instance = config;
 	return config;
@@ -118,21 +114,13 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[GET_STRING_T("HttpThreadPoolSize")] = web::json::value::number(m_threadPoolSize);
 	if (!returnRuntimeInfo)
 	{
-		web::json::value jwt = web::json::value::object();
-		web::json::value jwtAdmin = web::json::value::object();
-		web::json::value jwtUser = web::json::value::object();
-		jwtAdmin[GET_STRING_T("name")] = web::json::value::string(m_jwtAdminName);
-		jwtAdmin[GET_STRING_T("key")] = web::json::value::string(m_jwtAdminKey);
-		jwtUser[GET_STRING_T("name")] = web::json::value::string(m_jwtUserName);
-		jwtUser[GET_STRING_T("key")] = web::json::value::string(m_jwtUserKey);
-		jwt[GET_STRING_T("admin")] = jwtAdmin;
-		jwt[GET_STRING_T("user")] = jwtUser;
-		result[GET_STRING_T("jwt")] = jwt;
+		result[GET_STRING_T("jwt")] = m_jwtSection;
+		result[GET_STRING_T("Roles")] = m_roleSection;
 	}
 	
 	result[GET_STRING_T("Applications")] = apps;
 	result[GET_STRING_T("Labels")] = tagToJson();
-	result[GET_STRING_T("RestApiPermissions")] = m_restPermissions;
+	
 	return result;
 }
 
@@ -265,29 +253,42 @@ bool Configuration::getJwtEnabled() const
 	return m_jwtEnabled;
 }
 
-const std::string & Configuration::getJwtAdminName() const
+const web::json::value Configuration::getUserInfo(const std::string & userName)
 {
-	return m_jwtAdminName;
+	if (m_jwtSection.has_object_field(userName))
+	{
+		return m_jwtSection.at(userName);
+	}
+	else
+	{
+		throw std::invalid_argument(std::string("No such user: ") + userName);
+	}
 }
 
-const std::string & Configuration::getJwtUserName() const
+bool Configuration::checkUserPermission(const std::string & userName, const std::string & permission)
 {
-	return m_jwtUserName;
-}
+	const static char fname[] = "Configuration::checkUserPermission() ";
 
-const std::string & Configuration::getJwtAdminKey() const
-{
-	return m_jwtAdminKey;
-}
+	auto userJson = getUserInfo(userName);
+	auto roles = userJson.at("roles").as_array();
+	if (permission.empty()) return true;
+	for (auto role : roles)
+	{
+		if (m_roleSection.has_array_field(role.as_string()))
+		{
+			auto permissions = m_roleSection.at(role.as_string()).as_array();
+			for (auto perm : permissions)
+			{
+				if (perm.as_string() == permission)
+				{
+					return true;
+				}
+			}
+		}
+	}
 
-const std::string & Configuration::getJwtUserKey() const
-{
-	return m_jwtUserKey;
-}
-
-bool Configuration::getRestApiEnabled(const std::string api)
-{
-	return GET_JSON_BOOL_VALUE(m_restPermissions.as_object(), api);
+	LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
+	return false;
 }
 
 void Configuration::dump()
@@ -304,11 +305,8 @@ void Configuration::dump()
 		LOG_DBG << fname << "m_restListenPort:" << m_restListenPort;
 		LOG_DBG << fname << "m_configContent:" << GET_STD_STRING(this->getConfigContentStr());
 
-		LOG_DBG << fname << "m_jwtAdminName:" << m_jwtAdminName;
-		LOG_DBG << fname << "m_jwtUserName:" << m_jwtUserName;
-		LOG_DBG << fname << "m_jwtAdminKey:" << m_jwtAdminKey;
-		LOG_DBG << fname << "m_jwtUserKey:" << m_jwtUserKey;
-		LOG_DBG << fname << "m_restPermissions:" << m_restPermissions.serialize();
+		LOG_DBG << fname << "m_jwtSection:" << m_jwtSection.serialize();
+		LOG_DBG << fname << "m_roleSection:" << m_roleSection.serialize();
 	}
 	auto apps = getApps();
 	for (auto app : apps)

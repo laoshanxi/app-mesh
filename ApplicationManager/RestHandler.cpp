@@ -90,65 +90,48 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 1. Authentication
 	// http://127.0.0.1:6060/login
-	if (Configuration::instance()->getRestApiEnabled("login"))
 	bindRest(web::http::methods::POST, "/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/admin
-	if (Configuration::instance()->getRestApiEnabled("auth"))
 	bindRest(web::http::methods::POST, R"(/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
 
 	// 2. View Application
 	// http://127.0.0.1:6060/app/app-name
-	if (Configuration::instance()->getRestApiEnabled("view-app"))
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/output
-	if (Configuration::instance()->getRestApiEnabled("view-app-output"))
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutput, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/applications
-	if (Configuration::instance()->getRestApiEnabled("view-all-app"))
 	bindRest(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/resources
-	if (Configuration::instance()->getRestApiEnabled("view-host-resource"))
 	bindRest(web::http::methods::GET, "/app-manager/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
 
 	// 3. Manage Application
 	// http://127.0.0.1:6060/app/app-name
-	if (Configuration::instance()->getRestApiEnabled("app-reg"))
 	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/sh/shell-app-id
-	if (Configuration::instance()->getRestApiEnabled("app-reg-shell"))
 	bindRest(web::http::methods::PUT, R"(/app/sh/([^/\*]+))", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname?action=start
-	if (Configuration::instance()->getRestApiEnabled("app-control"))
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiControlApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname
-	if (Configuration::instance()->getRestApiEnabled("app-delete"))
 	bindRest(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
 	// 4. Operate Application
 	// http://127.0.0.1:6060/app/app-name/run?timeout=5
-	if (Configuration::instance()->getRestApiEnabled("run-app-async"))
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/waitrun?timeout=5
-	if (Configuration::instance()->getRestApiEnabled("run-app-sync"))
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
-	if (Configuration::instance()->getRestApiEnabled("run-app-async-output"))
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
 
 	// 5. File Management
 	// http://127.0.0.1:6060/download
-	if (Configuration::instance()->getRestApiEnabled("file-download"))
 	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiDownloadFile, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/upload
-	if (Configuration::instance()->getRestApiEnabled("file-upload"))
 	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiUploadFile, this, std::placeholders::_1));
 
 	// 6. Label Management
 	// http://127.0.0.1:6060/app-manager/labels
-	if (Configuration::instance()->getRestApiEnabled("label-view"))
 	bindRest(web::http::methods::GET, "/app-manager/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/labels
-	if (Configuration::instance()->getRestApiEnabled("label-update"))
 	bindRest(web::http::methods::POST, "/app-manager/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
 
 	this->open();
@@ -174,7 +157,6 @@ void RestHandler::close()
 void RestHandler::handle_get(http_request message)
 {
 	REST_INFO_PRINT;
-	verifyUserToken(message, getToken(message));
 
 	handleRest(message, m_restGetFunctions);
 }
@@ -182,7 +164,6 @@ void RestHandler::handle_get(http_request message)
 void RestHandler::handle_put(http_request message)
 {
 	REST_INFO_PRINT;
-	verifyAdminToken(message, getToken(message));
 
 	handleRest(message, m_restPutFunctions);
 }
@@ -192,19 +173,12 @@ void RestHandler::handle_post(http_request message)
 	REST_INFO_PRINT;
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	// login and auth does not need check token here.
-	if (path != "/login" && !Utility::startWith(path, "/auth/"))
-	{
-		verifyAdminToken(message, getToken(message));
-	}
-
 	handleRest(message, m_restPstFunctions);
 }
 
 void RestHandler::handle_delete(http_request message)
 {
 	REST_INFO_PRINT;
-	verifyAdminToken(message, getToken(message));
 
 	handleRest(message, m_restDelFunctions);
 }
@@ -258,7 +232,7 @@ void RestHandler::handleRest(http_request& message, std::map<utility::string_t, 
 
 void RestHandler::bindRest(web::http::method method, std::string path, std::function< void(http_request&)> func)
 {
-	static char fname[] = "RestHandler::bindRest()";
+	static char fname[] = "RestHandler::bindRest() ";
 
 	LOG_DBG << fname << "bind " << GET_STD_STRING(method).c_str() << " " << path;
 
@@ -293,51 +267,42 @@ void RestHandler::handle_error(pplx::task<void>& t)
 	}
 }
 
-
-bool RestHandler::verifyAdminToken(const http_request& message, const std::string& token)
+bool RestHandler::permissionCheck(const http_request & message, const std::string & permission)
 {
-	return verifyToken(message, token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
-}
+	const static char fname[] = "RestHandler::permissionCheck() ";
 
-bool RestHandler::verifyUserToken(const http_request& message, const std::string & token)
-{
+	auto token = getToken(message);
 	auto decoded_token = jwt::decode(token);
-	auto claims = decoded_token.get_payload_claims();
-	auto userIter = claims.find("name");
-	if (userIter != claims.end())
+	if (decoded_token.has_payload_claim("name"))
 	{
-		if (userIter->second.as_string() == "admin")
-		{
-			return verifyToken(message, token, Configuration::instance()->getJwtAdminName(), Configuration::instance()->getJwtAdminKey());
-		}
-		else if (userIter->second.as_string() == "user")
-		{
-			return verifyToken(message, token, Configuration::instance()->getJwtUserName(), Configuration::instance()->getJwtUserKey());
-		}
-	}
-	throw std::invalid_argument("Unsupported jwt claims format");
-}
+		// get user info
+		auto userName = decoded_token.get_payload_claim("name").as_string();
+		auto userJson = Configuration::instance()->getUserInfo(userName);
+		auto userKey = userJson.at("key").as_string();
 
-bool RestHandler::verifyToken(const http_request& message, const std::string& token, const std::string& user, const std::string& key)
-{
-	const static char fname[] = "RestHandler::verifyToken() ";
-
-	if (Configuration::instance()->getJwtEnabled())
-	{
-		if (token.empty())
-		{
-			LOG_WAR << fname << "Authentication failed for Remote: " << message.remote_address();
-			throw std::invalid_argument("Access denied: must have a token.");
-		}
-		auto decoded_token = jwt::decode(token);
+		// check user token
 		auto verifier = jwt::verify()
-			.allow_algorithm(jwt::algorithm::hs256{ key })
+			.allow_algorithm(jwt::algorithm::hs256{ userKey })
 			.with_issuer(JWT_ISSUER)
-			.with_claim("name", std::string(user));
+			.with_claim("name", userName);
 		verifier.verify(decoded_token);
-		LOG_DBG << fname << "Authentication success for Remote: " << message.remote_address();
+		LOG_DBG << fname << "Token authentication success for remote: " << message.remote_address();
+
+		// check user role permission
+		if (Configuration::instance()->checkUserPermission(userName, permission))
+		{
+			LOG_DBG << fname << "Permission authentication success for remote: " << message.remote_address();
+			return true;
+		}
+		else
+		{
+			throw std::invalid_argument("Permission denied");
+		}
 	}
-	return true;
+	else
+	{
+		throw std::invalid_argument("Invalid token");
+	}
 }
 
 std::string RestHandler::getToken(const http_request& message)
@@ -382,6 +347,7 @@ void RestHandler::apiRegShellApp(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiRegShellApp() ";
 
+	permissionCheck(message, "app-reg-shell");
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
 	{
@@ -403,6 +369,7 @@ void RestHandler::apiRegShellApp(const http_request& message)
 
 void RestHandler::apiControlApp(const http_request & message)
 {
+	permissionCheck(message, "app-control");
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 	auto appName = path.substr(strlen("/app/"));
@@ -434,6 +401,7 @@ void RestHandler::apiControlApp(const http_request & message)
 
 void RestHandler::apiDeleteApp(const http_request & message)
 {
+	permissionCheck(message, "app-delete");
 	auto path = GET_STD_STRING(message.relative_uri().path());
 
 	std::string appName = path.substr(strlen("/app/"));
@@ -445,7 +413,7 @@ void RestHandler::apiDeleteApp(const http_request & message)
 void RestHandler::apiDownloadFile(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiDownloadFile() ";
-
+	permissionCheck(message, "file-download");
 	if (!message.headers().has(U("file_path")))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
@@ -491,7 +459,7 @@ void RestHandler::apiDownloadFile(const http_request& message)
 void RestHandler::apiUploadFile(const http_request & message)
 {
 	const static char fname[] = "RestHandler::apiUploadFile() ";
-
+	permissionCheck(message, "file-upload");
 	if (!message.headers().has(U("file_path")))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
@@ -539,11 +507,13 @@ void RestHandler::apiUploadFile(const http_request & message)
 
 void RestHandler::apiGetTags(const http_request& message)
 {
+	permissionCheck(message, "label-view");
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
 void RestHandler::apiSetTags(const http_request& message)
 {
+	permissionCheck(message, "label-update");
 	Configuration::instance()->jsonToTag(message.extract_json().get());
 	Configuration::instance()->saveTags();
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
@@ -575,7 +545,8 @@ void RestHandler::apiLogin(const http_request& message)
 		result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
 		result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count() + timeoutSeconds);
 
-		if (verifyUserToken(message, token))
+		auto userJson = Configuration::instance()->getUserInfo(uname);
+		if (passwd == GET_STD_STRING(userJson.at("key").as_string()))
 		{
 			message.reply(status_codes::OK, result);
 			LOG_DBG << fname << "User <" << uname << "> login success";
@@ -593,26 +564,19 @@ void RestHandler::apiLogin(const http_request& message)
 
 void RestHandler::apiAuth(const http_request& message)
 {
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	auto userName = path.substr(strlen("/auth/"));
-	if (userName == "admin")
+	if (permissionCheck(message, ""))
 	{
-		verifyAdminToken(message, getToken(message));
-		message.reply(status_codes::OK, "Success");
-	}
-	else if (userName == "user")
-	{
-		verifyUserToken(message, getToken(message));
 		message.reply(status_codes::OK, "Success");
 	}
 	else
 	{
-		message.reply(status_codes::Unauthorized, "No such user");
+		message.reply(status_codes::Unauthorized, "Incorrect authentication info");
 	}
 }
 
 void RestHandler::apiGetApp(const http_request& message)
 {
+	permissionCheck(message, "view-app");
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	std::string app = path.substr(strlen("/app/"));
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
@@ -621,6 +585,7 @@ void RestHandler::apiGetApp(const http_request& message)
 void RestHandler::apiRunApp(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiRunApp() ";
+	permissionCheck(message, "run-app-async");
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5
@@ -661,6 +626,7 @@ void RestHandler::apiRunApp(const http_request& message)
 void RestHandler::apiWaitRunApp(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiWaitRunApp() ";
+	permissionCheck(message, "run-app-sync");
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5
@@ -705,6 +671,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 void RestHandler::apiRunOutput(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiRunOutput() ";
+	permissionCheck(message, "run-app-async-output");
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5
@@ -742,6 +709,7 @@ void RestHandler::apiAppOutput(const http_request & message)
 {
 	const static char fname[] = "RestHandler::apiAppOutput() ";
 
+	permissionCheck(message, "view-app-output");
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 
@@ -761,16 +729,19 @@ void RestHandler::apiAppOutput(const http_request & message)
 
 void RestHandler::apiGetApps(const http_request& message)
 {
+	permissionCheck(message, "view-all-app");
 	message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true));
 }
 
 void RestHandler::apiGetResources(const http_request& message)
 {
+	permissionCheck(message, "view-host-resource");
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
 }
 
 void RestHandler::apiRegApp(const http_request& message)
 {
+	permissionCheck(message, "app-reg");
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
 	{

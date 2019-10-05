@@ -46,12 +46,10 @@ public:
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getJwtEnabled() const;
-	const std::string & getJwtAdminName() const;
-	const std::string & getJwtUserName() const;
-	const std::string & getJwtAdminKey() const;
-	const std::string & getJwtUserKey() const;
+
 	const size_t getThreadPoolSize() const { return m_threadPoolSize; }
-	bool getRestApiEnabled(const std::string api);
+	const web::json::value getUserInfo(const std::string& userName);
+	bool checkUserPermission(const std::string& userName, const std::string& permission);
 	
 	void dump();
 
@@ -77,13 +75,9 @@ private:
 	std::string m_sslCertificateFile;
 	std::string m_sslCertificateKeyFile;
 
-	std::string m_jwtAdminName;
-	std::string m_jwtUserName;
-	std::string m_jwtAdminKey;
-	std::string m_jwtUserKey;
-
 	size_t m_threadPoolSize;
-	web::json::value m_restPermissions;
+	web::json::value m_jwtSection;
+	web::json::value m_roleSection;
 
 	static std::shared_ptr<Configuration> m_instance;
 };
