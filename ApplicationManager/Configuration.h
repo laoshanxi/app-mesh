@@ -24,11 +24,13 @@ public:
 
 	static std::shared_ptr<Configuration> FromJson(const std::string& str);
 	web::json::value AsJson(bool returnRuntimeInfo);
+	void saveConfigToDisk();
 	
 	std::vector<std::shared_ptr<Application>> getApps();
 	std::shared_ptr<Application> addApp(const web::json::object& jsonApp);
 	void removeApp(const std::string& appName);
 	void registerApp(std::shared_ptr<Application> app);
+	std::shared_ptr<Application> parseApp(web::json::object jsonApp);
 
 	int getScheduleInterval();
 	int getRestListenPort();
@@ -54,9 +56,6 @@ public:
 	bool checkUserPermission(const std::string& userName, const std::string& permission);
 	
 	void dump();
-
-	void saveConfigToDisk();
-	std::shared_ptr<Application> parseApp(web::json::object jsonApp);
 	
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
