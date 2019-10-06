@@ -20,14 +20,16 @@ public:
 	virtual ~Configuration();
 
 	static std::shared_ptr<Configuration> instance();
-	static std::shared_ptr<Configuration> FromJson(const std::string& str);
 	static std::string readConfiguration();
+
+	static std::shared_ptr<Configuration> FromJson(const std::string& str);
 	web::json::value AsJson(bool returnRuntimeInfo);
 	
 	std::vector<std::shared_ptr<Application>> getApps();
 	std::shared_ptr<Application> addApp(const web::json::object& jsonApp);
 	void removeApp(const std::string& appName);
 	void registerApp(std::shared_ptr<Application> app);
+
 	int getScheduleInterval();
 	int getRestListenPort();
 	std::string getRestListenAddress();
@@ -36,24 +38,23 @@ public:
 	std::shared_ptr<Application> getApp(const std::string& appName);
 	void stopApp(const std::string& appName);
 	void startApp(const std::string& appName);
-	const std::string getLogLevel() const;
+	
 	web::json::value tagToJson();
 	void jsonToTag(web::json::value json);
-	void saveTags();
 
+	const std::string getLogLevel() const;
 	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getJwtEnabled() const;
-
 	const size_t getThreadPoolSize() const { return m_threadPoolSize; }
+
 	const web::json::value getUserInfo(const std::string& userName);
 	bool checkUserPermission(const std::string& userName, const std::string& permission);
 	
 	void dump();
 
-private:
 	void saveConfigToDisk();
 	std::shared_ptr<Application> parseApp(web::json::object jsonApp);
 	

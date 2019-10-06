@@ -111,7 +111,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[GET_STRING_T("SSLCertificateFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateFile));
 	result[GET_STRING_T("SSLCertificateKeyFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateKeyFile));
 	result[GET_STRING_T("JWTEnabled")] = web::json::value::boolean(m_jwtEnabled);
-	result[GET_STRING_T("HttpThreadPoolSize")] = web::json::value::number(m_threadPoolSize);
+	result[GET_STRING_T("HttpThreadPoolSize")] = web::json::value::number((uint32_t)m_threadPoolSize);
 	if (!returnRuntimeInfo)
 	{
 		result[GET_STRING_T("jwt")] = m_jwtSection;
@@ -223,11 +223,6 @@ void Configuration::jsonToTag(web::json::value json)
 	}
 }
 
-void Configuration::saveTags()
-{
-	this->saveConfigToDisk();
-}
-
 bool Configuration::getSslEnabled() const
 {
 	return m_sslEnabled;
@@ -295,19 +290,8 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		LOG_DBG << fname << "m_hostDescription:" << m_hostDescription;
-		LOG_DBG << fname << "m_scheduleInterval:" << m_scheduleInterval;
-		LOG_DBG << fname << "m_sslEnabled:" << m_sslEnabled;
-		LOG_DBG << fname << "m_restEnabled:" << m_restEnabled;
-		LOG_DBG << fname << "m_jwtEnabled:" << m_jwtEnabled;
-		LOG_DBG << fname << "m_restListenPort:" << m_restListenPort;
-		LOG_DBG << fname << "m_configContent:" << GET_STD_STRING(this->getConfigContentStr());
+	LOG_DBG << fname << Utility::prettyJson(this->getConfigContentStr());
 
-		LOG_DBG << fname << "m_jwtSection:" << m_jwtSection.serialize();
-		LOG_DBG << fname << "m_roleSection:" << m_roleSection.serialize();
-	}
 	auto apps = getApps();
 	for (auto app : apps)
 	{

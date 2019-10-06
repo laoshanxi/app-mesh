@@ -515,7 +515,7 @@ void RestHandler::apiSetTags(const http_request& message)
 {
 	permissionCheck(message, "label-update");
 	Configuration::instance()->jsonToTag(message.extract_json().get());
-	Configuration::instance()->saveTags();
+	Configuration::instance()->saveConfigToDisk();
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
