@@ -93,7 +93,7 @@ void Application::refreshPid()
 			int ret = m_process->wait(tv);
 			if (ret > 0)
 			{
-				m_return = std::make_shared<int>(m_process->return_value());
+				*m_return = m_process->return_value();
 			}
 		}
 		else if (m_pid > 0)
