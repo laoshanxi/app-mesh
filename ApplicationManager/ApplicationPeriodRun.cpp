@@ -41,7 +41,7 @@ web::json::value ApplicationPeriodRun::AsJson(bool returnRuntimeInfo)
 	LOG_DBG << fname << "Entered.";
 
 	web::json::value result = ApplicationShortRun::AsJson(returnRuntimeInfo);
-	result[GET_STRING_T("keep_running")] = web::json::value::boolean(true);
+	result[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
 	return result;
 }
 

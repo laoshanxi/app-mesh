@@ -23,10 +23,10 @@ void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, co
 
 	std::shared_ptr<Application> fatherApp = app;
 	Application::FromJson(fatherApp, jobj);
-	app->m_startInterval = GET_JSON_INT_VALUE(jobj, "start_interval_seconds");
-	if (HAS_JSON_FIELD(jobj, "start_time"))
+	app->m_startInterval = GET_JSON_INT_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_seconds);
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time))
 	{
-		auto start_time = GET_JSON_STR_VALUE(jobj, "start_time");
+		auto start_time = GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_time);
 		app->m_startTime = Utility::convertStr2Time(start_time);
 		LOG_DBG << fname << "start_time is set to: " << start_time;
 	}
@@ -37,8 +37,8 @@ void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, co
 		LOG_WAR << fname << "Short running application did not set start_time, set start_time to : " << Utility::convertTime2Str(app->m_startTime);
 	}
 	
-	SET_JSON_INT_VALUE(jobj, "start_interval_timeout", app->m_bufferTime);
-	if (HAS_JSON_FIELD(jobj, "start_time") && app->m_posixTimeZone.length())
+	SET_JSON_INT_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_timeout, app->m_bufferTime);
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time) && app->m_posixTimeZone.length())
 	{
 		app->m_startTime = TimeZoneHelper::convert2tzTime(app->m_startTime, app->m_posixTimeZone);
 		LOG_DBG << fname << "posixTimeZone is set to " << app->m_posixTimeZone << ", convert to current zone start_time : " << Utility::convertTime2Str(app->m_startTime);
@@ -124,9 +124,9 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	web::json::value result = Application::AsJson(returnRuntimeInfo);
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	result[GET_STRING_T("start_time")] = web::json::value::string(GET_STRING_T(Utility::convertTime2Str(m_startTime)));
-	result[GET_STRING_T("start_interval_seconds")] = web::json::value::number(m_startInterval);
-	result[GET_STRING_T("start_interval_timeout")] = web::json::value::number(m_bufferTime);
+	result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(GET_STRING_T(Utility::convertTime2Str(m_startTime)));
+	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_startInterval);
+	result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
 	return result;
 }
 

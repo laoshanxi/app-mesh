@@ -50,7 +50,6 @@
 
 #define JWT_ADMIN_KEY "app-mgr-admin-secret-key"
 #define JWT_ADMIN_NAME "admin"
-#define JWT_ISSUER "appmgr-auth0"
 
 enum STATUS
 {
@@ -118,6 +117,98 @@ public:
 	static std::string runShellCommand(std::string cmd);
 	static void trimLineBreak(std::string& str);
 };
+
+#define JSON_KEY_Description "Description"
+#define JSON_KEY_RestListenPort "RestListenPort"
+#define JSON_KEY_RestListenAddress "RestListenAddress"
+#define JSON_KEY_ScheduleIntervalSeconds "ScheduleIntervalSeconds"
+#define JSON_KEY_LogLevel "LogLevel"
+#define JSON_KEY_SSLEnabled "SSLEnabled"
+#define JSON_KEY_RestEnabled "RestEnabled"
+#define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
+#define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
+#define JSON_KEY_JWTEnabled "JWTEnabled"
+#define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
+#define JSON_KEY_jwt "jwt"
+#define JSON_KEY_Roles "Roles"
+#define JSON_KEY_Applications "Applications"
+#define JSON_KEY_Labels "Labels"
+
+#define JSON_KEY_APP_name "name"
+#define JSON_KEY_APP_user "user"
+#define JSON_KEY_APP_comments "comments"
+#define JSON_KEY_APP_command "command"
+#define JSON_KEY_APP_working_dir "working_dir"
+#define JSON_KEY_APP_status "status"
+#define JSON_KEY_APP_daily_limitation "daily_limitation"
+#define JSON_KEY_APP_resource_limit "resource_limit"
+#define JSON_KEY_APP_env "env"
+#define JSON_KEY_APP_posix_timezone "posix_timezone"
+#define JSON_KEY_APP_cache_lines "cache_lines"
+#define JSON_KEY_APP_docker_image "docker_image"
+// runtime attr
+#define JSON_KEY_APP_pid "pid"
+#define JSON_KEY_APP_return "return"
+#define JSON_KEY_APP_memory "memory"
+#define JSON_KEY_APP_last_start "last_start"
+#define JSON_KEY_APP_container_id "container_id"
+
+#define JSON_KEY_PERIOD_APP_keep_running "keep_running"
+
+#define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
+#define JSON_KEY_SHORT_APP_start_time "start_time"
+#define JSON_KEY_SHORT_APP_start_interval_timeout "start_interval_timeout"
+
+#define JSON_KEY_DAILY_LIMITATION_daily_start "daily_start"
+#define JSON_KEY_DAILY_LIMITATION_daily_end "daily_end"
+
+#define JSON_KEY_RESOURCE_LIMITATION_memory_mb "memory_mb"
+#define JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb "memory_virt_mb"
+#define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
+
+
+#define JSON_KEY_USER_name "name"
+#define JSON_KEY_USER_key "key"
+#define JSON_KEY_USER_roles "roles"
+
+#define HTTP_HEADER_JWT "JWT"
+#define HTTP_HEADER_JWT_ISSUER "appmgr-auth0"
+#define HTTP_HEADER_JWT_name "name"
+#define HTTP_HEADER_JWT_Authorization "Authorization"
+#define HTTP_HEADER_JWT_Bearer "Bearer"
+#define HTTP_HEADER_JWT_BearerSpace "Bearer "
+#define HTTP_HEADER_JWT_access_token "access_token"
+#define HTTP_HEADER_JWT_expire_seconds "expire_seconds"
+#define HTTP_HEADER_JWT_username "username"
+#define HTTP_HEADER_JWT_password "password"
+#define HTTP_HEADER_KEY_exit_code "exit_code"
+#define HTTP_HEADER_KEY_file_path "file_path"
+#define HTTP_HEADER_KEY_file_mode "file_mode"
+#define HTTP_HEADER_KEY_file_user "file_user"
+
+#define HTTP_QUERY_KEY_keep_history "keep_history"
+#define HTTP_QUERY_KEY_process_uuid "process_uuid"
+#define HTTP_QUERY_KEY_timeout "timeout"
+#define HTTP_QUERY_KEY_action "action"
+#define HTTP_QUERY_KEY_action_start "start"
+#define HTTP_QUERY_KEY_action_stop "stop"
+
+
+#define PERMISSION_KEY_view_app					"view-app"
+#define PERMISSION_KEY_view_app_output			"view-app-output"
+#define PERMISSION_KEY_view_all_app				"view-all-app"
+#define PERMISSION_KEY_view_host_resource		"view-host-resource"
+#define PERMISSION_KEY_app_reg					"app-reg"
+#define PERMISSION_KEY_app_reg_shell			"app-reg-shell"
+#define PERMISSION_KEY_app_control				"app-control"
+#define PERMISSION_KEY_app_delete				"app-delete"
+#define PERMISSION_KEY_run_app_async			"run-app-async"
+#define PERMISSION_KEY_run_app_sync				"run-app-sync"
+#define PERMISSION_KEY_run_app_async_output		"run-app-async-output"
+#define PERMISSION_KEY_file_download			"file-download"
+#define PERMISSION_KEY_file_upload				"file-upload"
+#define PERMISSION_KEY_label_view				"label-view"
+#define PERMISSION_KEY_label_update				"label-update"
 
 #endif
 

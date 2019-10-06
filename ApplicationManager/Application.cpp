@@ -34,47 +34,47 @@ bool Application::isNormal()
 
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::object& jobj)
 {
-	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "name"));
-	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "user"));
+	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
+	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
 	if (app->m_user.empty()) app->m_user = "root";
-	app->m_comments = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "comments"));
+	app->m_comments = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_comments));
 	// Be noticed do not use multiple spaces between command arguments
 	// "ping www.baidu.com    123" equals
 	// "ping www.baidu.com 123"
-	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command"));
+	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
 	if (app->m_commandLine.find('>') != std::string::npos)
 	{
 		throw std::invalid_argument("char '>' is not supported for command line");
 	}
-	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "working_dir"));
-	if (HAS_JSON_FIELD(jobj, "status"))
+	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_working_dir));
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_status))
 	{
-		app->m_status = static_cast<STATUS>GET_JSON_INT_VALUE(jobj, "status");
+		app->m_status = static_cast<STATUS>GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status);
 	}
-	if (HAS_JSON_FIELD(jobj, "daily_limitation"))
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_daily_limitation))
 	{
-		app->m_dailyLimit = DailyLimitation::FromJson(jobj.at(GET_STRING_T("daily_limitation")).as_object());
+		app->m_dailyLimit = DailyLimitation::FromJson(jobj.at(JSON_KEY_APP_daily_limitation).as_object());
 	}
-	if (HAS_JSON_FIELD(jobj, "resource_limit"))
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_resource_limit))
 	{
-		app->m_resourceLimit = ResourceLimitation::FromJson(jobj.at(GET_STRING_T("resource_limit")).as_object(), app->m_name);
+		app->m_resourceLimit = ResourceLimitation::FromJson(jobj.at(JSON_KEY_APP_resource_limit).as_object(), app->m_name);
 	}
-	if (HAS_JSON_FIELD(jobj, "env"))
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
 	{
-		auto env = jobj.at(GET_STRING_T("env")).as_object();
+		auto env = jobj.at(JSON_KEY_APP_env).as_object();
 		for (auto it = env.begin(); it != env.end(); it++)
 		{
 			app->m_envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
 		}
 	}
-	app->m_posixTimeZone = GET_JSON_STR_VALUE(jobj, "posix_timezone");
+	app->m_posixTimeZone = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_posix_timezone);
 	if (app->m_posixTimeZone.length() && app->m_dailyLimit != nullptr)
 	{
 		app->m_dailyLimit->m_startTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_startTime, app->m_posixTimeZone);
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
-	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, "cache_lines"), 128);
-	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, "docker_image");
+	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_cache_lines), 128);
+	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
 
 	app->dump();
 }
@@ -279,31 +279,31 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	web::json::value result = web::json::value::object();
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	result[GET_STRING_T("name")] = web::json::value::string(GET_STRING_T(m_name));
-	if (m_user.length()) result[GET_STRING_T("user")] = web::json::value::string(GET_STRING_T(m_user));
-	result[GET_STRING_T("command")] = web::json::value::string(GET_STRING_T(m_commandLine));
-	if (m_workdir.length()) result[GET_STRING_T("working_dir")] = web::json::value::string(GET_STRING_T(m_workdir));
-	result[GET_STRING_T("status")] = web::json::value::number(m_status);
-	if (m_comments.length()) result[GET_STRING_T("commentss")] = web::json::value::string(GET_STRING_T(m_comments));
+	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
+	if (m_user.length()) result[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T(m_user));
+	result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
+	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
+	result[JSON_KEY_APP_status] = web::json::value::number(m_status);
+	if (m_comments.length()) result[JSON_KEY_APP_comments] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)
 	{
-		if (m_pid > 0) result[GET_STRING_T("pid")] = web::json::value::number(m_pid);
-		result[GET_STRING_T("return")] = web::json::value::number(m_return);
-		if (m_pid > 0)result[GET_STRING_T("memory")] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
+		if (m_pid > 0) result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
+		result[JSON_KEY_APP_return] = web::json::value::number(m_return);
+		if (m_pid > 0) result[JSON_KEY_APP_memory] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[GET_STRING_T("last_start")] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
+			result[JSON_KEY_APP_last_start] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
 		if (!m_process->containerId().empty())
 		{
-			result[GET_STRING_T("container_id")] = web::json::value::string(GET_STRING_T(m_process->containerId()));
+			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
 		}
 	}
 	if (m_dailyLimit != nullptr)
 	{
-		result[GET_STRING_T("daily_limitation")] = m_dailyLimit->AsJson();
+		result[JSON_KEY_APP_daily_limitation] = m_dailyLimit->AsJson();
 	}
 	if (m_resourceLimit != nullptr)
 	{
-		result[GET_STRING_T("resource_limit")] = m_resourceLimit->AsJson();
+		result[JSON_KEY_APP_resource_limit] = m_resourceLimit->AsJson();
 	}
 	if (m_envMap.size())
 	{
@@ -312,11 +312,11 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		{
 			envs[GET_STRING_T(pair.first)] = web::json::value::string(GET_STRING_T(pair.second));
 		});
-		result[GET_STRING_T("env")] = envs;
+		result[JSON_KEY_APP_env] = envs;
 	}
-	if (m_posixTimeZone.length()) result[GET_STRING_T("posix_timezone")] = web::json::value::string(m_posixTimeZone);
-	if (m_cacheOutputLines) result[GET_STRING_T("cache_lines")] = web::json::value::number(m_cacheOutputLines);
-	if (m_dockerImage.length()) result[GET_STRING_T("docker_image")] = web::json::value::string(m_dockerImage);
+	if (m_posixTimeZone.length()) result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
+	if (m_cacheOutputLines) result[JSON_KEY_APP_cache_lines] = web::json::value::number(m_cacheOutputLines);
+	if (m_dockerImage.length()) result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
 	return result;
 }
 

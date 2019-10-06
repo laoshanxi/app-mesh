@@ -41,16 +41,16 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	}
 	web::json::object jobj = jval.as_object();
 	auto config = std::make_shared<Configuration>();
-	config->m_hostDescription = GET_JSON_STR_VALUE(jobj, "Description");
-	config->m_scheduleInterval = GET_JSON_INT_VALUE(jobj, "ScheduleIntervalSeconds");
-	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, "RestListenPort");
-	config->m_RestListenAddress = GET_JSON_STR_VALUE(jobj, "RestListenAddress");
-	config->m_logLevel = GET_JSON_STR_VALUE(jobj, "LogLevel");
-	SET_JSON_BOOL_VALUE(jobj, "SSLEnabled", config->m_sslEnabled);
-	SET_JSON_BOOL_VALUE(jobj, "RestEnabled", config->m_restEnabled);
-	SET_JSON_BOOL_VALUE(jobj, "JWTEnabled", config->m_jwtEnabled);
-	config->m_sslCertificateFile = GET_JSON_STR_VALUE(jobj, "SSLCertificateFile");
-	config->m_sslCertificateKeyFile = GET_JSON_STR_VALUE(jobj, "SSLCertificateKeyFile");
+	config->m_hostDescription = GET_JSON_STR_VALUE(jobj, JSON_KEY_Description);
+	config->m_scheduleInterval = GET_JSON_INT_VALUE(jobj, JSON_KEY_ScheduleIntervalSeconds);
+	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, JSON_KEY_RestListenPort);
+	config->m_RestListenAddress = GET_JSON_STR_VALUE(jobj, JSON_KEY_RestListenAddress);
+	config->m_logLevel = GET_JSON_STR_VALUE(jobj, JSON_KEY_LogLevel);
+	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_SSLEnabled, config->m_sslEnabled);
+	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_RestEnabled, config->m_restEnabled);
+	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_JWTEnabled, config->m_jwtEnabled);
+	config->m_sslCertificateFile = GET_JSON_STR_VALUE(jobj, JSON_KEY_SSLCertificateFile);
+	config->m_sslCertificateKeyFile = GET_JSON_STR_VALUE(jobj, JSON_KEY_SSLCertificateKeyFile);
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{
 		// Use default value instead
@@ -63,7 +63,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		LOG_INF << "Default value <" << config->m_restListenPort << "> will by used for RestListenPort";
 	}
 
-	auto& jArr = jobj.at(GET_STRING_T("Applications")).as_array();
+	auto& jArr = jobj.at(JSON_KEY_Applications).as_array();
 	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
 	{
 		auto jsonObj = iterB->as_object();
@@ -71,14 +71,14 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		app->dump();
 		config->registerApp(app);
 	}
-	auto threadpool = GET_JSON_INT_VALUE(jobj, "HttpThreadPoolSize");
+	auto threadpool = GET_JSON_INT_VALUE(jobj, JSON_KEY_HttpThreadPoolSize);
 	if (threadpool > 0 && threadpool < 40)
 	{
 		config->m_threadPoolSize = threadpool;
 	}
-	config->jsonToTag(jobj.at(GET_STRING_T("Labels")));
-	config->m_jwtSection = jobj.at(GET_STRING_T("jwt"));
-	config->m_roleSection = jobj.at(GET_STRING_T("Roles"));
+	config->jsonToTag(jobj.at(JSON_KEY_Labels));
+	config->m_jwtSection = jobj.at(JSON_KEY_jwt);
+	config->m_roleSection = jobj.at(JSON_KEY_Roles);
 
 	m_instance = config;
 	return config;
@@ -101,25 +101,26 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 
-	result[GET_STRING_T("Description")] = web::json::value::string(GET_STRING_T(m_hostDescription));
-	result[GET_STRING_T("RestListenPort")] = web::json::value::number(m_restListenPort);
-	result[GET_STRING_T("RestListenAddress")] = web::json::value::string(m_RestListenAddress);
-	result[GET_STRING_T("ScheduleIntervalSeconds")] = web::json::value::number(m_scheduleInterval);
-	result[GET_STRING_T("LogLevel")] = web::json::value::string(GET_STRING_T(m_logLevel));
+	result[JSON_KEY_Description] = web::json::value::string(GET_STRING_T(m_hostDescription));
+	result[JSON_KEY_RestListenPort] = web::json::value::number(m_restListenPort);
+	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_RestListenAddress);
+	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
+	result[JSON_KEY_LogLevel] = web::json::value::string(GET_STRING_T(m_logLevel));
 
-	result[GET_STRING_T("SSLEnabled")] = web::json::value::boolean(m_sslEnabled);
-	result[GET_STRING_T("SSLCertificateFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateFile));
-	result[GET_STRING_T("SSLCertificateKeyFile")] = web::json::value::string(GET_STRING_T(m_sslCertificateKeyFile));
-	result[GET_STRING_T("JWTEnabled")] = web::json::value::boolean(m_jwtEnabled);
-	result[GET_STRING_T("HttpThreadPoolSize")] = web::json::value::number((uint32_t)m_threadPoolSize);
+	result[JSON_KEY_RestEnabled] = web::json::value::boolean(m_restEnabled);
+	result[JSON_KEY_SSLEnabled] = web::json::value::boolean(m_sslEnabled);
+	result[JSON_KEY_SSLCertificateFile] = web::json::value::string(GET_STRING_T(m_sslCertificateFile));
+	result[JSON_KEY_SSLCertificateKeyFile] = web::json::value::string(GET_STRING_T(m_sslCertificateKeyFile));
+	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
+	result[JSON_KEY_HttpThreadPoolSize] = web::json::value::number((uint32_t)m_threadPoolSize);
 	if (!returnRuntimeInfo)
 	{
-		result[GET_STRING_T("jwt")] = m_jwtSection;
-		result[GET_STRING_T("Roles")] = m_roleSection;
+		result[JSON_KEY_jwt] = m_jwtSection;
+		result[JSON_KEY_Roles] = m_roleSection;
 	}
 	
-	result[GET_STRING_T("Applications")] = apps;
-	result[GET_STRING_T("Labels")] = tagToJson();
+	result[JSON_KEY_Applications] = apps;
+	result[JSON_KEY_Labels] = tagToJson();
 	
 	return result;
 }
@@ -265,7 +266,7 @@ bool Configuration::checkUserPermission(const std::string & userName, const std:
 	const static char fname[] = "Configuration::checkUserPermission() ";
 
 	auto userJson = getUserInfo(userName);
-	auto roles = userJson.at("roles").as_array();
+	auto roles = userJson.at(JSON_KEY_USER_roles).as_array();
 	if (permission.empty()) return true;
 	for (auto role : roles)
 	{
@@ -290,7 +291,7 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	LOG_DBG << fname << Utility::prettyJson(this->getConfigContentStr());
+	LOG_DBG << fname  << '\n' << Utility::prettyJson(this->getConfigContentStr());
 
 	auto apps = getApps();
 	for (auto app : apps)
@@ -382,11 +383,11 @@ std::shared_ptr<Application> Configuration::parseApp(web::json::object jsonApp)
 {
 	std::shared_ptr<Application> app;
 
-	if (GET_JSON_INT_VALUE(jsonApp, "start_interval_seconds") > 0)
+	if (GET_JSON_INT_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds) > 0)
 	{
 		// Consider as short running application
 		std::shared_ptr<ApplicationShortRun> shortApp;
-		if (GET_JSON_BOOL_VALUE(jsonApp, "keep_running") == true)
+		if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_PERIOD_APP_keep_running) == true)
 		{
 			std::shared_ptr<ApplicationPeriodRun> tmpApp(new ApplicationPeriodRun());
 			ApplicationPeriodRun::FromJson(tmpApp, jsonApp);

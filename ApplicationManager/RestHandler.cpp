@@ -273,18 +273,18 @@ bool RestHandler::permissionCheck(const http_request & message, const std::strin
 
 	auto token = getToken(message);
 	auto decoded_token = jwt::decode(token);
-	if (decoded_token.has_payload_claim("name"))
+	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
 	{
 		// get user info
-		auto userName = decoded_token.get_payload_claim("name").as_string();
+		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
 		auto userJson = Configuration::instance()->getUserInfo(userName);
-		auto userKey = userJson.at("key").as_string();
+		auto userKey = userJson.at(JSON_KEY_USER_key).as_string();
 
 		// check user token
 		auto verifier = jwt::verify()
 			.allow_algorithm(jwt::algorithm::hs256{ userKey })
-			.with_issuer(JWT_ISSUER)
-			.with_claim("name", userName);
+			.with_issuer(HTTP_HEADER_JWT_ISSUER)
+			.with_claim(HTTP_HEADER_JWT_name, userName);
 		verifier.verify(decoded_token);
 		LOG_DBG << fname << "Token authentication success for remote: " << message.remote_address();
 
@@ -308,10 +308,10 @@ bool RestHandler::permissionCheck(const http_request & message, const std::strin
 std::string RestHandler::getToken(const http_request& message)
 {
 	std::string token;
-	if (message.headers().has("Authorization"))
+	if (message.headers().has(HTTP_HEADER_JWT_Authorization))
 	{
-		token = Utility::stdStringTrim(GET_STD_STRING(message.headers().find("Authorization")->second));
-		std::string bearerFlag = "Bearer ";
+		token = Utility::stdStringTrim(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_Authorization)->second));
+		std::string bearerFlag = HTTP_HEADER_JWT_BearerSpace;
 		if (Utility::startWith(token, bearerFlag))
 		{
 			token = token.substr(bearerFlag.length());
@@ -334,11 +334,11 @@ std::string RestHandler::createToken(const std::string uname, const std::string 
 	// 3. Signature HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
 	// creating a token that will expire in one hour
 	auto token = jwt::create()
-		.set_issuer(JWT_ISSUER)
-		.set_type("JWT")
+		.set_issuer(HTTP_HEADER_JWT_ISSUER)
+		.set_type(HTTP_HEADER_JWT)
 		.set_issued_at(jwt::date(std::chrono::system_clock::now()))
 		.set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{ timeoutSeconds }))
-		.set_payload_claim("name", std::string(uname))
+		.set_payload_claim(HTTP_HEADER_JWT_name, std::string(uname))
 		.sign(jwt::algorithm::hs256{ passwd });
 	return std::move(token);
 }
@@ -347,7 +347,7 @@ void RestHandler::apiRegShellApp(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiRegShellApp() ";
 
-	permissionCheck(message, "app-reg-shell");
+	permissionCheck(message, PERMISSION_KEY_app_reg_shell);
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
 	{
@@ -355,12 +355,12 @@ void RestHandler::apiRegShellApp(const http_request& message)
 	}
 	auto jobj = jsonApp.as_object();
 
-	jobj[GET_STRING_T("status")] = web::json::value::number(0);
+	jobj[JSON_KEY_APP_status] = web::json::value::number(0);
 	// /bin/sh -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine = "/bin/sh -c '";
-	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, "command")));
+	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command)));
 	shellCommandLine.append("'");
-	jobj[GET_STRING_T("command")] = web::json::value::string(GET_STRING_T(shellCommandLine));
+	jobj[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
 	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
 
 	auto app = Configuration::instance()->addApp(jobj);
@@ -369,21 +369,21 @@ void RestHandler::apiRegShellApp(const http_request& message)
 
 void RestHandler::apiControlApp(const http_request & message)
 {
-	permissionCheck(message, "app-control");
+	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 	auto appName = path.substr(strlen("/app/"));
 
-	if (querymap.find(U("action")) != querymap.end())
+	if (querymap.find(U(HTTP_QUERY_KEY_action)) != querymap.end())
 	{
-		auto action = GET_STD_STRING(querymap.find(U("action"))->second);
+		auto action = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_action))->second);
 		auto msg = action + " <" + appName + "> success.";
-		if (action == "start")
+		if (action == HTTP_QUERY_KEY_action_start)
 		{
 			Configuration::instance()->startApp(appName);
 			message.reply(status_codes::OK, msg);
 		}
-		else if (action == "stop")
+		else if (action == HTTP_QUERY_KEY_action_stop)
 		{
 			Configuration::instance()->stopApp(appName);
 			message.reply(status_codes::OK, msg);
@@ -401,7 +401,7 @@ void RestHandler::apiControlApp(const http_request & message)
 
 void RestHandler::apiDeleteApp(const http_request & message)
 {
-	permissionCheck(message, "app-delete");
+	permissionCheck(message, PERMISSION_KEY_app_delete);
 	auto path = GET_STD_STRING(message.relative_uri().path());
 
 	std::string appName = path.substr(strlen("/app/"));
@@ -413,13 +413,13 @@ void RestHandler::apiDeleteApp(const http_request & message)
 void RestHandler::apiDownloadFile(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiDownloadFile() ";
-	permissionCheck(message, "file-download");
-	if (!message.headers().has(U("file_path")))
+	permissionCheck(message, PERMISSION_KEY_file_download);
+	if (!message.headers().has(U(HTTP_HEADER_KEY_file_path)))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
 		return;
 	}
-	auto file = GET_STD_STRING(message.headers().find(U("file_path"))->second);
+	auto file = GET_STD_STRING(message.headers().find(U(HTTP_HEADER_KEY_file_path))->second);
 	if (!Utility::isFileExist(file))
 	{
 		message.reply(status_codes::NotAcceptable, "file not found");
@@ -438,8 +438,8 @@ void RestHandler::apiDownloadFile(const http_request& message)
 
 		web::http::http_response resp(status_codes::OK);
 		resp.set_body(fileStream, length);
-		resp.headers().add("file_mode", os::fileStat(file));
-		resp.headers().add("file_user", os::fileUser(file));
+		resp.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(file));
+		resp.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(file));
 		message.reply(resp).then([this](pplx::task<void> t) { this->handle_error(t); });
 	}).then([=](pplx::task<void> t)
 	{
@@ -459,13 +459,13 @@ void RestHandler::apiDownloadFile(const http_request& message)
 void RestHandler::apiUploadFile(const http_request & message)
 {
 	const static char fname[] = "RestHandler::apiUploadFile() ";
-	permissionCheck(message, "file-upload");
-	if (!message.headers().has(U("file_path")))
+	permissionCheck(message, PERMISSION_KEY_file_upload);
+	if (!message.headers().has(U(HTTP_HEADER_KEY_file_path)))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
 		return;
 	}
-	auto file = GET_STD_STRING(message.headers().find(U("file_path"))->second);
+	auto file = GET_STD_STRING(message.headers().find(U(HTTP_HEADER_KEY_file_path))->second);
 	if (Utility::isFileExist(file))
 	{
 		message.reply(status_codes::Forbidden, "file already exist");
@@ -480,13 +480,13 @@ void RestHandler::apiUploadFile(const http_request & message)
 			message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
 			{
 				os.close();
-				if (message.headers().has("file_mode"))
+				if (message.headers().has(HTTP_HEADER_KEY_file_mode))
 				{
-					os::fileChmod(file, std::stoi(message.headers().find("file_mode")->second));
+					os::fileChmod(file, std::stoi(message.headers().find(HTTP_HEADER_KEY_file_mode)->second));
 				}
-				if (message.headers().has("file_user"))
+				if (message.headers().has(HTTP_HEADER_KEY_file_user))
 				{
-					os::chown(file, message.headers().find("file_user")->second);
+					os::chown(file, message.headers().find(HTTP_HEADER_KEY_file_user)->second);
 				}
 				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t); });
 			});
@@ -507,13 +507,13 @@ void RestHandler::apiUploadFile(const http_request & message)
 
 void RestHandler::apiGetTags(const http_request& message)
 {
-	permissionCheck(message, "label-view");
+	permissionCheck(message, PERMISSION_KEY_label_view);
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
 void RestHandler::apiSetTags(const http_request& message)
 {
-	permissionCheck(message, "label-update");
+	permissionCheck(message, PERMISSION_KEY_label_update);
 	Configuration::instance()->jsonToTag(message.extract_json().get());
 	Configuration::instance()->saveConfigToDisk();
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
@@ -523,14 +523,14 @@ void RestHandler::apiLogin(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiLogin() ";
 
-	if (message.headers().has("username") && message.headers().has("password"))
+	if (message.headers().has(HTTP_HEADER_JWT_username) && message.headers().has(HTTP_HEADER_JWT_password))
 	{
-		auto uname = Utility::decode64(GET_STD_STRING(message.headers().find("username")->second));
-		auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find("password")->second));
+		auto uname = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_username)->second));
+		auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_password)->second));
 		int timeoutSeconds = 60 * 10;	// default timeout is 10 minutes
-		if (message.headers().has("expire_seconds"))
+		if (message.headers().has(HTTP_HEADER_JWT_expire_seconds))
 		{
-			auto timeout = message.headers().find("expire_seconds")->second;
+			auto timeout = message.headers().find(HTTP_HEADER_JWT_expire_seconds)->second;
 			auto timeoutValue = std::stoi(timeout);
 			if (timeoutValue > 1 && timeoutValue < (24 * 60 * 60)) timeoutSeconds = timeoutValue;
 		}
@@ -541,12 +541,12 @@ void RestHandler::apiLogin(const http_request& message)
 		profile[GET_STRING_T("name")] = web::json::value::string(uname);
 		profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count());
 		result[GET_STRING_T("profile")] = profile;
-		result[GET_STRING_T("token_type")] = web::json::value::string("Bearer");
-		result[GET_STRING_T("access_token")] = web::json::value::string(GET_STRING_T(token));
+		result[GET_STRING_T("token_type")] = web::json::value::string(HTTP_HEADER_JWT_Bearer);
+		result[HTTP_HEADER_JWT_access_token] = web::json::value::string(GET_STRING_T(token));
 		result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count() + timeoutSeconds);
 
 		auto userJson = Configuration::instance()->getUserInfo(uname);
-		if (passwd == GET_STD_STRING(userJson.at("key").as_string()))
+		if (passwd == GET_STD_STRING(userJson.at(JSON_KEY_USER_key).as_string()))
 		{
 			message.reply(status_codes::OK, result);
 			LOG_DBG << fname << "User <" << uname << "> login success";
@@ -576,7 +576,7 @@ void RestHandler::apiAuth(const http_request& message)
 
 void RestHandler::apiGetApp(const http_request& message)
 {
-	permissionCheck(message, "view-app");
+	permissionCheck(message, PERMISSION_KEY_view_app);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	std::string app = path.substr(strlen("/app/"));
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
@@ -585,7 +585,7 @@ void RestHandler::apiGetApp(const http_request& message)
 void RestHandler::apiRunApp(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiRunApp() ";
-	permissionCheck(message, "run-app-async");
+	permissionCheck(message, PERMISSION_KEY_run_app_async);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5
@@ -594,9 +594,9 @@ void RestHandler::apiRunApp(const http_request& message)
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 	int timeout = 10; // default use 10 seconds
-	if (querymap.find(U("timeout")) != querymap.end())
+	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
 	{
-		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second)));
+		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
 		if (timeout == 0) timeout = 10;
 		LOG_DBG << fname << "Use timeout :" << timeout;
 
@@ -611,9 +611,9 @@ void RestHandler::apiRunApp(const http_request& message)
 	if (body.length() && body != "null")
 	{
 		auto jsonEnv = web::json::value::parse(body).as_object();
-		if (HAS_JSON_FIELD(jsonEnv, "env"))
+		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
 		{
-			auto env = jsonEnv.at(GET_STRING_T("env")).as_object();
+			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
 			for (auto it = env.begin(); it != env.end(); it++)
 			{
 				envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
@@ -626,7 +626,7 @@ void RestHandler::apiRunApp(const http_request& message)
 void RestHandler::apiWaitRunApp(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiWaitRunApp() ";
-	permissionCheck(message, "run-app-sync");
+	permissionCheck(message, PERMISSION_KEY_run_app_sync);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5
@@ -635,9 +635,9 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 	int timeout = 10; // default use 10 seconds
-	if (querymap.find(U("timeout")) != querymap.end())
+	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
 	{
-		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U("timeout"))->second)));
+		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
 		if (timeout == 0) timeout = 10;
 		LOG_DBG << fname << "Use timeout :" << timeout;
 
@@ -653,9 +653,9 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 	if (body.length() && body != "null")
 	{
 		auto jsonEnv = web::json::value::parse(body).as_object();
-		if (HAS_JSON_FIELD(jsonEnv, "env"))
+		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
 		{
-			auto env = jsonEnv.at(GET_STRING_T("env")).as_object();
+			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
 			for (auto it = env.begin(); it != env.end(); it++)
 			{
 				envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
@@ -671,7 +671,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 void RestHandler::apiRunOutput(const http_request& message)
 {
 	const static char fname[] = "RestHandler::apiRunOutput() ";
-	permissionCheck(message, "run-app-async-output");
+	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/run?timeout=5
@@ -679,9 +679,9 @@ void RestHandler::apiRunOutput(const http_request& message)
 	app = app.substr(0, app.find_first_of('/'));
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	if (querymap.find(U("process_uuid")) != querymap.end())
+	if (querymap.find(U(HTTP_QUERY_KEY_process_uuid)) != querymap.end())
 	{
-		auto uuid = GET_STD_STRING(querymap.find(U("process_uuid"))->second);
+		auto uuid = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_process_uuid))->second);
 
 
 		int exitCode = 0;
@@ -692,7 +692,7 @@ void RestHandler::apiRunOutput(const http_request& message)
 		if (finished)
 		{
 			resp.set_status_code(status_codes::NotFound);
-			resp.headers().add("exit_code", exitCode);
+			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
 		}
 
 		LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
@@ -709,7 +709,7 @@ void RestHandler::apiAppOutput(const http_request & message)
 {
 	const static char fname[] = "RestHandler::apiAppOutput() ";
 
-	permissionCheck(message, "view-app-output");
+	permissionCheck(message, PERMISSION_KEY_view_app_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 
@@ -717,9 +717,9 @@ void RestHandler::apiAppOutput(const http_request & message)
 	std::string app = path.substr(strlen("/app/"));
 	app = app.substr(0, app.find_first_of('/'));
 	bool keepHis = false;
-	if (querymap.find("keep_history") != querymap.end())
+	if (querymap.find(HTTP_QUERY_KEY_keep_history) != querymap.end())
 	{
-		auto keep = GET_STD_STRING(querymap.find(U("keep_history"))->second);
+		auto keep = GET_STD_STRING(querymap.find(HTTP_QUERY_KEY_keep_history)->second);
 		keepHis = std::stoi(keep);
 	}
 	auto output = Configuration::instance()->getApp(app)->getOutput(keepHis);
@@ -729,19 +729,19 @@ void RestHandler::apiAppOutput(const http_request & message)
 
 void RestHandler::apiGetApps(const http_request& message)
 {
-	permissionCheck(message, "view-all-app");
+	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true));
 }
 
 void RestHandler::apiGetResources(const http_request& message)
 {
-	permissionCheck(message, "view-host-resource");
+	permissionCheck(message, PERMISSION_KEY_view_host_resource);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
 }
 
 void RestHandler::apiRegApp(const http_request& message)
 {
-	permissionCheck(message, "app-reg");
+	permissionCheck(message, PERMISSION_KEY_app_reg);
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
 	{

@@ -140,7 +140,7 @@ void MonitoredProcess::runPipeReaderThread()
 		{
 			web::http::http_response resp(web::http::status_codes::OK);
 			resp.set_body(this->fetchOutputMsg());
-			resp.headers().add("exit_code", this->return_value());
+			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->return_value());
 			respRequest->reply(resp).get();
 			delete respRequest;
 			m_httpRequest = NULL;
