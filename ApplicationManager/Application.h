@@ -64,7 +64,7 @@ protected:
 	std::string m_workdir;
 	std::string m_comments;
 	//the exit code of last instance
-	int m_return;
+	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;
 	
 	int m_cacheOutputLines;

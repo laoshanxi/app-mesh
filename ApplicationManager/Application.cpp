@@ -7,7 +7,7 @@
 #include "DockerProcess.h"
 
 Application::Application()
-	:m_status(ENABLED), m_return(0), m_cacheOutputLines(0), m_pid(-1), m_processIndex(0)
+	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(-1), m_processIndex(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -93,7 +93,7 @@ void Application::refreshPid()
 			int ret = m_process->wait(tv);
 			if (ret > 0)
 			{
-				m_return = m_process->return_value();
+				m_return = std::make_shared<int>(m_process->return_value());
 			}
 		}
 		else if (m_pid > 0)
@@ -154,7 +154,7 @@ void Application::stop()
 	{
 		if (m_process != nullptr) m_process->killgroup();
 		m_status = STOPPED;
-		m_return = -1;
+		m_return = nullptr;
 		LOG_INF << fname << "Application <" << m_name << "> stopped.";
 	}
 }
@@ -288,7 +288,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (returnRuntimeInfo)
 	{
 		if (m_pid > 0) result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
-		result[JSON_KEY_APP_return] = web::json::value::number(m_return);
+		if (m_return != nullptr) result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
 		if (m_pid > 0) result[JSON_KEY_APP_memory] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[JSON_KEY_APP_last_start] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
