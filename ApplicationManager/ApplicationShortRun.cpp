@@ -60,7 +60,7 @@ void ApplicationShortRun::refreshPid()
 		int ret = m_bufferProcess->wait(tv);
 		if (ret > 0)
 		{
-			*m_return = m_bufferProcess->return_value();
+			m_return = std::make_shared<int>(m_bufferProcess->return_value());
 		}
 	}
 }
