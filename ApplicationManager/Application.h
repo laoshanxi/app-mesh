@@ -32,7 +32,8 @@ public:
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::object& obj);
 
 	virtual void refreshPid();
-	void attach(std::map<std::string, int>& process);
+	bool attach(std::map<std::string, int>& process);
+	bool attach(int pid);
 
 	// Invoke immediately
 	virtual void invokeNow(int timerId);

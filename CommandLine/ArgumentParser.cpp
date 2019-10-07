@@ -155,14 +155,15 @@ void ArgumentParser::processReg(const char* appName)
 		("daily_start,s", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
 		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
+		("pid,p", po::value<int>(), "process id used to attach")
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
-		("cpu_shares,p", po::value<int>(), "CPU shares (relative weight)")
+		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("interval,i", po::value<int>(), "start interval seconds for short running app")
 		("extra_time,x", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", po::value<bool>()->default_value(false), "monitor and keep running for short running app in start interval")
-		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side")
+		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side (used for none-container app)")
 		("force,f", "force without confirm")
 		("debug,g", "print debug information")
 		("help,h", "help message");
@@ -251,7 +252,7 @@ void ArgumentParser::processReg(const char* appName)
 		}
 	}
 	if (m_commandLineVariables.count("cache_lines")) jsobObj[JSON_KEY_APP_cache_lines] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
-
+	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath;
 	if (!shellApp)
 	{

@@ -75,6 +75,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 	}
 	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_cache_lines), 128);
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid)) app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
 
 	app->dump();
 }
@@ -103,16 +104,45 @@ void Application::refreshPid()
 	}
 }
 
-void Application::attach(std::map<std::string, int>& process)
+bool Application::attach(std::map<std::string, int>& process)
 {
+	const static char fname[] = "Application::attach() ";
+
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto iter = process.find(m_commandLine);
 	if (iter != process.end())
 	{
 		m_process->attach(iter->second);
 		m_pid = m_process->getpid();
-		LOG_INF << "Process <" << m_commandLine << "> is running with pid <" << m_pid << ">.";
+		LOG_INF << fname << "Process <" << m_commandLine << "> is running with pid <" << m_pid << ">.";
 		process.erase(iter);
+		return true;
+	}
+	return false;
+}
+
+bool Application::attach(int pid)
+{
+	const static char fname[] = "Application::attach() ";
+
+	std::map<std::string, int> process;
+	AppProcess::getSysProcessList(process, nullptr);
+	auto cmd = m_commandLine;
+	auto iter = std::find_if(process.begin(), process.end(), 
+		[pid, &cmd](const std::pair<std::string, int> p) {return p.second == pid && p.first == cmd; }
+	);
+	if (iter != process.end())
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_process->attach(iter->second);
+		m_pid = m_process->getpid();
+		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
+		return true;
+	}
+	else
+	{
+		LOG_WAR << fname << "failed to attached pid <" << pid << "> to application " << m_name;
+		return false;
 	}
 }
 
