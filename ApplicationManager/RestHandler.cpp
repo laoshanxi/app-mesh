@@ -292,7 +292,7 @@ bool RestHandler::permissionCheck(const http_request & message, const std::strin
 		// check user role permission
 		if (Configuration::instance()->checkUserPermission(userName, permission))
 		{
-			LOG_DBG << fname << "Permission authentication success for remote: " << message.remote_address() << " with user : " << userName;
+			LOG_DBG << fname << "authentication success for remote: " << message.remote_address() << " with user : " << userName << " and permission : " << permission;
 			return true;
 		}
 		else
@@ -533,6 +533,7 @@ void RestHandler::apiLogin(const http_request& message)
 		{
 			auto timeout = message.headers().find(HTTP_HEADER_JWT_expire_seconds)->second;
 			auto timeoutValue = std::stoi(timeout);
+			// timeout should less than 24h
 			if (timeoutValue > 1 && timeoutValue < (24 * 60 * 60)) timeoutSeconds = timeoutValue;
 		}
 		auto token = createToken(uname, passwd, timeoutSeconds);
