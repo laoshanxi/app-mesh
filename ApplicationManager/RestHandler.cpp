@@ -270,6 +270,8 @@ void RestHandler::handle_error(pplx::task<void>& t)
 bool RestHandler::permissionCheck(const http_request & message, const std::string & permission)
 {
 	const static char fname[] = "RestHandler::permissionCheck() ";
+	
+	if (!Configuration::instance()->getJwtEnabled()) return true;
 
 	auto token = getToken(message);
 	auto decoded_token = jwt::decode(token);
@@ -286,12 +288,11 @@ bool RestHandler::permissionCheck(const http_request & message, const std::strin
 			.with_issuer(HTTP_HEADER_JWT_ISSUER)
 			.with_claim(HTTP_HEADER_JWT_name, userName);
 		verifier.verify(decoded_token);
-		LOG_DBG << fname << "Token authentication success for remote: " << message.remote_address();
 
 		// check user role permission
 		if (Configuration::instance()->checkUserPermission(userName, permission))
 		{
-			LOG_DBG << fname << "Permission authentication success for remote: " << message.remote_address();
+			LOG_DBG << fname << "Permission authentication success for remote: " << message.remote_address() << " with user : " << userName;
 			return true;
 		}
 		else
@@ -320,7 +321,7 @@ std::string RestHandler::getToken(const http_request& message)
 	return std::move(token);
 }
 
-std::string RestHandler::createToken(const std::string uname, const std::string passwd, int timeoutSeconds)
+std::string RestHandler::createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds)
 {
 	if (uname.empty() || passwd.empty())
 	{

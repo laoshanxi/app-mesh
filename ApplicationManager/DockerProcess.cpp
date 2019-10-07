@@ -227,7 +227,7 @@ std::string DockerProcess::fetchOutputMsg()
 	return std::string();
 }
 
-std::string DockerProcess::getFirstLine(const std::string str)
+std::string DockerProcess::getFirstLine(const std::string& str)
 {
 	char* line = const_cast <char*> (str.c_str());
 	size_t start = 0;

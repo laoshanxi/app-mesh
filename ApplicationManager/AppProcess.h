@@ -16,7 +16,7 @@
 class AppProcess :public ACE_Process, public TimerHandler
 {
 public:
-	AppProcess(int cacheOutputLines = 256);
+	explicit AppProcess(int cacheOutputLines = 256);
 	virtual ~AppProcess();
 
 	void attach(int pid);

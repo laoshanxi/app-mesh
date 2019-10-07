@@ -33,7 +33,7 @@ private:
 
 	bool permissionCheck(const http_request& message, const std::string& permission);
 	std::string getToken(const http_request& message);
-	std::string createToken(const std::string uname, const std::string passwd, int timeoutSeconds);
+	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
 
 	void apiLogin(const http_request& message);
 	void apiAuth(const http_request& message);
