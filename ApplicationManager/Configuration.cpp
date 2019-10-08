@@ -361,11 +361,12 @@ void Configuration::saveConfigToDisk()
 		std::ofstream ofs(tmpFile, ios::trunc);
 		if (ofs.is_open())
 		{
-			ofs << Utility::prettyJson(content);
+			auto formatJson = Utility::prettyJson(content);
+			ofs << formatJson;
 			ofs.close();
 			if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
 			{
-				LOG_INF << fname << content;
+				LOG_DBG << fname << '\n' << formatJson;
 			}
 			else
 			{
