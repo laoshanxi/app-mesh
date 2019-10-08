@@ -18,7 +18,7 @@
       "working_dir": "/tmp"
     }
   ],
-  "jwt": {
+  "JWT": {
     "admin": {
       "name": "admin",
       "key": "app-mgr-admin-secret-key",

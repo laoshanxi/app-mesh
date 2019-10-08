@@ -90,7 +90,7 @@ void Application::refreshPid()
 		{
 			m_pid = m_process->getpid();
 			ACE_Time_Value tv;
-			tv.msec(5);
+			tv.msec(10);
 			int ret = m_process->wait(tv);
 			if (ret > 0)
 			{
