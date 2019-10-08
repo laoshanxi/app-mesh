@@ -1,3 +1,10 @@
+#ifdef WIN32
+#include <windows.h>
+#else
+#include <termios.h>
+#include <unistd.h>
+#endif
+
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -15,13 +22,15 @@
 #define RESPONSE_CHECK_WITH_RETURN if (response.status_code() != status_codes::OK) { std::cout << response.extract_utf8string(true).get() << std::endl; return; }
 #define RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT if (response.status_code() != status_codes::OK) { return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
+#define TOKEN_FILE_PATH "/tmp/._appmgr"
+static std::string m_jwtToken;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug)
-	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_printDebug(printDebug)
+	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0), m_printDebug(printDebug)
 {
 	po::options_description global("Global options");
 	global.add_options()
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		("command", po::value<std::string>(), "command to execute")
 		("subargs", po::value<std::vector<std::string> >(), "arguments for command");
 
@@ -33,6 +42,12 @@ ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, boo
 	m_pasrsedOptions = parsed.options;
 	po::store(parsed, m_commandLineVariables);
 	po::notify(m_commandLineVariables);
+
+	// set default user authen info here
+	m_username = JWT_ADMIN_NAME;
+	m_userpwd = JWT_ADMIN_KEY;
+
+	m_jwtToken = readAuthenToken();
 }
 
 
@@ -42,7 +57,7 @@ ArgumentParser::~ArgumentParser()
 
 void ArgumentParser::parse()
 {
-	if (m_commandLineVariables.count("help") || m_commandLineVariables.size() == 0 || m_commandLineVariables.count("command") == 0)
+	if ((m_commandLineVariables.count("help") && m_commandLineVariables.size() == 1) || m_commandLineVariables.size() == 0)
 	{
 		printMainHelp();
 		return;
@@ -50,7 +65,15 @@ void ArgumentParser::parse()
 	
 	
 	std::string cmd = m_commandLineVariables["command"].as<std::string>();
-	if (cmd == "reg")
+	if (cmd == "logon")
+	{
+		processLogon();
+	}
+	else if (cmd == "logoff")
+	{
+		processLogoff();
+	}
+	else if (cmd == "reg")
 	{
 		// PUT /app/$app-name
 		processReg();
@@ -118,6 +141,9 @@ void ArgumentParser::parse()
 void ArgumentParser::printMainHelp()
 {
 	std::cout << "Commands:" << std::endl;
+	std::cout << "  logon       Log on to AppManager for a specific time period." << std::endl;
+	std::cout << "  logoff      End a AppManager user session" << std::endl;
+
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
 	std::cout << "  label       Manage host labels" << std::endl;
@@ -137,6 +163,68 @@ void ArgumentParser::printMainHelp()
 
 	std::cout << std::endl;
 	std::cout << "Usage:  appc [COMMAND] [ARG...] [flags]" << std::endl;
+}
+
+void ArgumentParser::processLogon()
+{
+	po::options_description desc("Log on to AppManager:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.")
+		("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
+		("timeout,t", po::value<int>()->default_value(60*60), "Specifies the command session duration in minutes.")
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	moveForwardCommandLineVariables(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	m_tokenTimeoutSeconds = m_commandLineVariables["timeout"].as<int>();
+	if (m_commandLineVariables.count("user"))
+	{
+		m_username = m_commandLineVariables["user"].as<std::string>();
+	}
+	else
+	{
+		std::cout << "user name : ";
+		std::cin >> m_username;
+	}
+
+	if (m_commandLineVariables.count("password"))
+	{
+		m_userpwd = m_commandLineVariables["password"].as<std::string>();
+	}
+	else
+	{
+		std::cout << "user password : ";
+		setStdinEcho(false);
+		std::cin >> m_userpwd;
+		setStdinEcho(true);
+		std::cout << std::endl;
+	}
+	m_jwtToken.clear();
+	m_jwtToken = getAuthenToken();
+
+	if (m_jwtToken.length())
+	{
+		std::ofstream ofs(TOKEN_FILE_PATH, std::ios::trunc);
+		ofs << m_jwtToken;
+		ofs.close();
+		std::cout << "Success" << std::endl;
+	}
+}
+
+void ArgumentParser::processLogoff()
+{
+	po::options_description desc("Log off to AppManager:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	moveForwardCommandLineVariables(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	std::ofstream ofs(TOKEN_FILE_PATH, std::ios::trunc);
+	ofs.close();
 }
 
 // appName is null means this is a normal application (not a shell application)
@@ -166,7 +254,7 @@ void ArgumentParser::processReg(const char* appName)
 		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side (used for none-container app)")
 		("force,f", "force without confirm")
 		("debug,g", "print debug information")
-		("help,h", "help message");
+		("help,h", "Prints command usage to stdout and exits");
 
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -274,7 +362,7 @@ void ArgumentParser::processUnReg()
 {
 	po::options_description desc("Unregister and remove an application");
 	desc.add_options()
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
 		("name,n", po::value<std::vector<std::string>>(), "remove application by name")
 		("force,f", "force without confirm.");
@@ -317,7 +405,7 @@ void ArgumentParser::processView()
 {
 	po::options_description desc("List application[s]");
 	desc.add_options()
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "view application by name.")
 		("long,l", "display the complete information without reduce")
@@ -362,7 +450,7 @@ void ArgumentParser::processResource()
 	po::options_description desc("View host resource usage:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		;
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -376,7 +464,7 @@ void ArgumentParser::processStartStop(bool start)
 {
 	po::options_description desc("Start application:");
 	desc.add_options()
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
 		("all,a", "action for all applications")
 		("name,n", po::value<std::vector<std::string>>(), "start/stop application by name.")
@@ -432,7 +520,7 @@ void ArgumentParser::processTest()
 {
 	po::options_description desc("Run application:");
 	desc.add_options()
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "run application by name.")
 		("timeout,x", po::value<int>()->default_value(10), "timeout seconds for the remote app run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
@@ -520,7 +608,7 @@ void ArgumentParser::processShell()
 {
 	po::options_description desc("Shell application:");
 	desc.add_options()
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
 		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
@@ -583,7 +671,7 @@ void ArgumentParser::processDownload()
 		OPTION_HOST_NAME
 		("remote,r", po::value<std::string>(), "remote file path")
 		("local,l", po::value<std::string>(), "save to local file path")
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		;
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -620,7 +708,7 @@ void ArgumentParser::processUpload()
 		OPTION_HOST_NAME
 		("remote,r", po::value<std::string>(), "save to remote file path")
 		("local,l", po::value<std::string>(), "local file path")
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		;
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -678,7 +766,7 @@ void ArgumentParser::processTags()
 		("add,a", "add labels")
 		("remove,r", "remove labels")
 		("label,l", po::value<std::vector<std::string>>(), "labels (e.g., -l os=linux -t arch=arm64)")
-		("help,h", "help message")
+		("help,h", "Prints command usage to stdout and exits")
 		;
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -802,7 +890,8 @@ http_request ArgumentParser::createRequest(const method & mtd, const std::string
 			request.headers().add(h.first, h.second);
 		}
 	}
-	addAuthenToken(request);
+	auto jwtToken = getAuthenToken();
+	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + jwtToken);
 	request.set_request_uri(builder.to_uri());
 	return std::move(request);
 }
@@ -826,10 +915,9 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	return apps;
 }
 
-void ArgumentParser::addAuthenToken(http_request & request)
+std::string ArgumentParser::getAuthenToken()
 {
-	static std::string jwtToken;
-	if (jwtToken.empty())
+	if (m_jwtToken.empty())
 	{
 		auto protocol = m_sslEnabled ? U("https://") : U("http://");
 		auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
@@ -839,20 +927,33 @@ void ArgumentParser::addAuthenToken(http_request & request)
 		http_request requestLogin(web::http::methods::POST);
 		uri_builder builder(GET_STRING_T("/login"));
 		requestLogin.set_request_uri(builder.to_uri());
-		requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(JWT_ADMIN_NAME));
-		requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(JWT_ADMIN_KEY));
+		requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(m_username));
+		requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(m_userpwd));
+		if (m_tokenTimeoutSeconds) requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
 		http_response response = client.request(requestLogin).get();
 		if (response.status_code() != status_codes::OK)
 		{
-			std::cout << "login failed : " << response.extract_utf8string(true).get();
+			std::cout << "login failed : " << response.extract_utf8string(true).get() << std::endl;
 		}
 		else
 		{
 			auto jwtContent = response.extract_json(true).get();
-			jwtToken = GET_JSON_STR_VALUE(jwtContent.as_object(), HTTP_HEADER_JWT_access_token);
+			m_jwtToken = GET_JSON_STR_VALUE(jwtContent.as_object(), HTTP_HEADER_JWT_access_token);
 		}
 	}
-	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + jwtToken);
+	return m_jwtToken;
+}
+
+std::string ArgumentParser::readAuthenToken()
+{
+	std::string jwtToken;
+	if (Utility::isFileExist(TOKEN_FILE_PATH))
+	{
+		std::ifstream ifs(TOKEN_FILE_PATH);
+		ifs >> jwtToken;
+		ifs.close();
+	}
+	return std::move(jwtToken);
 }
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)
@@ -935,5 +1036,32 @@ std::string ArgumentParser::reduceStr(std::string source, int limit)
 	{
 		return source;
 	}
+}
+
+void ArgumentParser::setStdinEcho(bool enable)
+{
+	// https://stackoverflow.com/questions/1413445/reading-a-password-from-stdcin
+#ifdef WIN32
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	DWORD mode;
+	GetConsoleMode(hStdin, &mode);
+
+	if (!enable)
+		mode &= ~ENABLE_ECHO_INPUT;
+	else
+		mode |= ENABLE_ECHO_INPUT;
+
+	SetConsoleMode(hStdin, mode);
+
+#else
+	struct termios tty;
+	tcgetattr(STDIN_FILENO, &tty);
+	if (!enable)
+		tty.c_lflag &= ~ECHO;
+	else
+		tty.c_lflag |= ECHO;
+
+	(void)tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+#endif
 }
 

@@ -26,6 +26,8 @@ public:
 
 private:
 	void printMainHelp();
+	void processLogon();
+	void processLogoff();
 	void processReg(const char* appName = 0);
 	void processUnReg();
 	void processView();
@@ -43,7 +45,8 @@ private:
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value* body = nullptr, std::map<std::string, std::string>* header = nullptr);
 	http_request createRequest(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, std::map<std::string, std::string>* header);
 	
-	void addAuthenToken(http_request& request);
+	std::string getAuthenToken();
+	std::string readAuthenToken();
 
 private:
 	bool isAppExist(const std::string& appName);
@@ -51,6 +54,7 @@ private:
 	void printApps(web::json::value json, bool reduce);
 	void moveForwardCommandLineVariables(po::options_description& desc);
 	std::string reduceStr(std::string source, int limit);
+	void setStdinEcho(bool enable = true);
 
 private:
 	po::variables_map m_commandLineVariables;
@@ -58,6 +62,9 @@ private:
 	int m_listenPort;
 	bool m_sslEnabled;
 	std::string m_hostname;
+	std::string m_username;
+	std::string m_userpwd;
+	int m_tokenTimeoutSeconds;
 	bool m_printDebug;
 };
 #endif

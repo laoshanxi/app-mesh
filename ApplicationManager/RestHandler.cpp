@@ -555,7 +555,7 @@ void RestHandler::apiLogin(const http_request& message)
 		}
 		else
 		{
-			message.reply(status_codes::Unauthorized, "Incorrect authentication info");
+			message.reply(status_codes::Unauthorized, "Incorrect user password");
 		}
 	}
 	else
