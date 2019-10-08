@@ -399,7 +399,7 @@ GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define 
 - [boost](https://github.com/boostorg/boost)
 - [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 - [log4cpp](http://log4cpp.sourceforge.net)
-- [jwt_cpp](https://thalhammer.it/projects/jwt_cpp)
+- [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
 - [HowardHinnant/date ](https://github.com/HowardHinnant/date)
 
 ---
