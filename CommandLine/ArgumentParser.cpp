@@ -22,11 +22,12 @@
 #define RESPONSE_CHECK_WITH_RETURN if (response.status_code() != status_codes::OK) { std::cout << response.extract_utf8string(true).get() << std::endl; return; }
 #define RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT if (response.status_code() != status_codes::OK) { return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
-#define TOKEN_FILE_PATH "/tmp/._appmgr"
+#define TOKEN_FILE_PATH_PREFIX "/tmp/._appmgr_"
 static std::string m_jwtToken;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug)
 	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0), m_printDebug(printDebug)
+	, m_username(JWT_ADMIN_NAME), m_userpwd(JWT_ADMIN_KEY)
 {
 	po::options_description global("Global options");
 	global.add_options()
@@ -42,12 +43,6 @@ ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, boo
 	m_pasrsedOptions = parsed.options;
 	po::store(parsed, m_commandLineVariables);
 	po::notify(m_commandLineVariables);
-
-	// set default user authen info here
-	m_username = JWT_ADMIN_NAME;
-	m_userpwd = JWT_ADMIN_KEY;
-
-	m_jwtToken = readAuthenToken();
 }
 
 
@@ -62,8 +57,8 @@ void ArgumentParser::parse()
 		printMainHelp();
 		return;
 	}
-	
-	
+
+
 	std::string cmd = m_commandLineVariables["command"].as<std::string>();
 	if (cmd == "logon")
 	{
@@ -104,7 +99,7 @@ void ArgumentParser::parse()
 		// POST /app/$app-name?action=stop
 		processStartStop(false);
 	}
-	else if(cmd == "restart")
+	else if (cmd == "restart")
 	{
 		auto tmpOpts = m_pasrsedOptions;
 		processStartStop(false);
@@ -172,7 +167,7 @@ void ArgumentParser::processLogon()
 		OPTION_HOST_NAME
 		("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.")
 		("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
-		("timeout,t", po::value<int>()->default_value(60*60), "Specifies the command session duration in minutes.")
+		("timeout,t", po::value<int>()->default_value(60 * 60), "Specifies the command session duration in minutes.")
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	moveForwardCommandLineVariables(desc);
@@ -185,7 +180,7 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
-		std::cout << " user name : ";
+		std::cout << "Input user name :";
 		std::cin >> m_username;
 	}
 
@@ -195,15 +190,25 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
-		std::cout << " user password : ";
+		std::cout << "Input password :";
 		setStdinEcho(false);
 		std::cin >> m_userpwd;
 		setStdinEcho(true);
 		std::cout << std::endl;
 	}
-	m_jwtToken.clear();
+
+	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
+	// clear token first
+	if (Utility::isFileExist(tokenFile))
+	{
+
+		std::ofstream ofs(tokenFile, std::ios::trunc);
+		ofs.close();
+	}
+	// get token from REST
 	m_jwtToken = getAuthenToken();
-	std::string tokenFile = std::string(TOKEN_FILE_PATH) + m_hostname;
+
+	// write token to disk
 	if (m_jwtToken.length())
 	{
 		std::ofstream ofs(tokenFile, std::ios::trunc);
@@ -211,7 +216,7 @@ void ArgumentParser::processLogon()
 		{
 			ofs << m_jwtToken;
 			ofs.close();
-			std::cout << "Success logon to " << m_hostname << std::endl;
+			std::cout << "User <" << m_username << "> logon to " << m_hostname << " success." << std::endl;
 		}
 		else
 		{
@@ -230,7 +235,7 @@ void ArgumentParser::processLogoff()
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string tokenFile = std::string(TOKEN_FILE_PATH) + m_hostname;
+	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
 	std::ofstream ofs(tokenFile, std::ios::trunc);
 	ofs.close();
 	std::cout << "Success logoff to " << m_hostname << std::endl;
@@ -279,7 +284,7 @@ void ArgumentParser::processReg(const char* appName)
 		return;
 	}
 
-	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("extra_time") >0)
+	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("extra_time") > 0)
 	{
 		if (m_commandLineVariables["interval"].as<int>() <= m_commandLineVariables["extra_time"].as<int>())
 		{
@@ -336,15 +341,15 @@ void ArgumentParser::processReg(const char* appName)
 		{
 			web::json::value objEnvs = web::json::value::object();
 			std::for_each(envs.begin(), envs.end(), [&objEnvs](std::string env)
-			{
-				auto find = env.find_first_of('=');
-				if (find != std::string::npos)
 				{
-					auto key = env.substr(0, find - 1);
-					auto val = env.substr(find + 1);
-					objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
-				}
-			});
+					auto find = env.find_first_of('=');
+					if (find != std::string::npos)
+					{
+						auto key = env.substr(0, find - 1);
+						auto val = env.substr(find + 1);
+						objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
+					}
+				});
 			jsobObj[JSON_KEY_APP_env] = objEnvs;
 		}
 	}
@@ -420,7 +425,7 @@ void ArgumentParser::processView()
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
 		;
-	
+
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -478,7 +483,7 @@ void ArgumentParser::processStartStop(bool start)
 		("all,a", "action for all applications")
 		("name,n", po::value<std::vector<std::string>>(), "start/stop application by name.")
 		;
-	
+
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 	if (m_commandLineVariables.empty() || (!m_commandLineVariables.count("all") && !m_commandLineVariables.count("name")))
@@ -492,12 +497,12 @@ void ArgumentParser::processStartStop(bool start)
 	{
 		auto appMap = this->getAppList();
 		std::for_each(appMap.begin(), appMap.end(), [&appList, &start](const std::pair<std::string, bool>& pair)
-		{
-			if (start != pair.second)
 			{
-				appList.push_back(pair.first);
-			}
-		});
+				if (start != pair.second)
+				{
+					appList.push_back(pair.first);
+				}
+			});
 	}
 	else
 	{
@@ -563,19 +568,19 @@ void ArgumentParser::processTest()
 		{
 			web::json::value objEnvs = web::json::value::object();
 			std::for_each(envs.begin(), envs.end(), [&objEnvs](std::string env)
-			{
-				auto find = env.find_first_of('=');
-				if (find != std::string::npos)
 				{
-					auto key = env.substr(0, find);
-					auto val = env.substr(find + 1);
-					objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
-				}
-			});
+					auto find = env.find_first_of('=');
+					if (find != std::string::npos)
+					{
+						auto key = env.substr(0, find);
+						auto val = env.substr(find + 1);
+						objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
+					}
+				});
 			jsobObj[JSON_KEY_APP_env] = objEnvs;
 		}
 	}
-	
+
 	if (timeout < 0)
 	{
 		// Use waitrun directly
@@ -651,7 +656,7 @@ void ArgumentParser::processShell()
 	// 2. Call run and check output
 	if (m_commandLineVariables.count("extra_time"))
 	{
-		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-x",  
+		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-x",
 			strdup(std::to_string(m_commandLineVariables["extra_time"].as<int>()).c_str()), "\0" };
 		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
 		testParser.parse();
@@ -744,7 +749,7 @@ void ArgumentParser::processUpload()
 	fileStream.seek(0, std::ios::end);
 	auto length = static_cast<size_t>(fileStream.tell());
 	fileStream.seek(0, std::ios::beg);
-	
+
 
 	std::map<std::string, std::string> query, header;
 	header[HTTP_HEADER_KEY_file_path] = file;
@@ -786,7 +791,7 @@ void ArgumentParser::processTags()
 	std::vector<std::string> inputTags;
 	if (m_commandLineVariables.count("label")) inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
 
-	if (m_commandLineVariables.count("add") && 
+	if (m_commandLineVariables.count("add") &&
 		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("list"))
 	{
 		// Process add
@@ -852,19 +857,19 @@ bool ArgumentParser::confirmInput(const char* msg)
 	return result == "y";
 }
 
-http_response ArgumentParser::requestHttp(const method & mtd, const std::string& path)
+http_response ArgumentParser::requestHttp(const method& mtd, const std::string& path)
 {
 	std::map<std::string, std::string> query;
 	return std::move(requestHttp(mtd, path, query));
 }
 
-http_response ArgumentParser::requestHttp(const method & mtd, const std::string& path, web::json::value & body)
+http_response ArgumentParser::requestHttp(const method& mtd, const std::string& path, web::json::value& body)
 {
 	std::map<std::string, std::string> query;
 	return std::move(requestHttp(mtd, path, query, &body));
 }
 
-http_response ArgumentParser::requestHttp(const method & mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value * body, std::map<std::string, std::string>* header)
+http_response ArgumentParser::requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value* body, std::map<std::string, std::string>* header)
 {
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
 	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
@@ -882,14 +887,14 @@ http_response ArgumentParser::requestHttp(const method & mtd, const std::string&
 	return std::move(response);
 }
 
-http_request ArgumentParser::createRequest(const method & mtd, const std::string & path, std::map<std::string, std::string>& query, std::map<std::string, std::string>* header)
+http_request ArgumentParser::createRequest(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, std::map<std::string, std::string>* header)
 {
 	// Build request URI and start the request.
 	uri_builder builder(GET_STRING_T(path));
 	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
-	{
-		builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
-	});
+		{
+			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
+		});
 
 	http_request request(mtd);
 	if (header)
@@ -926,6 +931,10 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 
 std::string ArgumentParser::getAuthenToken()
 {
+	// 1. try to read from token file
+	m_jwtToken = readAuthenToken();
+
+	// 2. try to get from REST
 	if (m_jwtToken.empty())
 	{
 		auto protocol = m_sslEnabled ? U("https://") : U("http://");
@@ -956,11 +965,15 @@ std::string ArgumentParser::getAuthenToken()
 std::string ArgumentParser::readAuthenToken()
 {
 	std::string jwtToken;
-	if (Utility::isFileExist(TOKEN_FILE_PATH))
+	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
+	if (Utility::isFileExist(tokenFile) && m_hostname.length())
 	{
-		std::ifstream ifs(TOKEN_FILE_PATH);
-		ifs >> jwtToken;
-		ifs.close();
+		std::ifstream ifs(tokenFile);
+		if (ifs.is_open())
+		{
+			ifs >> jwtToken;
+			ifs.close();
+		}
 	}
 	return std::move(jwtToken);
 }
@@ -984,7 +997,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	int index = 1;
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
-	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value &x) {
+	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value& x) {
 		auto jobj = x.as_object();
 		auto name = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name);
 		if (reduce) name = reduceFunc(name, 12);
@@ -1023,7 +1036,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		}
 		std::cout << GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command);
 		std::cout << std::endl;
-	});
+		});
 }
 
 void ArgumentParser::moveForwardCommandLineVariables(po::options_description& desc)

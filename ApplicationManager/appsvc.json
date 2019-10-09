@@ -27,7 +27,7 @@
     "user": {
       "name": "user",
       "key": "app-mgr-user-secret-key",
-      "roles": [ "manage" ]
+      "roles": [ "view" ]
     }
   },
   "Labels": {
@@ -51,6 +51,14 @@
       "file-upload",
       "label-view",
       "label-update"
+    ],
+    "view": [
+      "view-app",
+      "view-app-output",
+      "view-all-app",
+      "view-host-resource",
+      "run-app-async-output",
+      "label-view"
     ]
   }
 }

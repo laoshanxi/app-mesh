@@ -40,11 +40,11 @@ private:
 	void processTags();
 
 	bool confirmInput(const char* msg);
-	http_response requestHttp(const method & mtd, const std::string& path);
-	http_response requestHttp(const method & mtd, const std::string& path, web::json::value& body);
+	http_response requestHttp(const method& mtd, const std::string& path);
+	http_response requestHttp(const method& mtd, const std::string& path, web::json::value& body);
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value* body = nullptr, std::map<std::string, std::string>* header = nullptr);
 	http_request createRequest(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, std::map<std::string, std::string>* header);
-	
+
 	std::string getAuthenToken();
 	std::string readAuthenToken();
 
@@ -61,11 +61,12 @@ private:
 	std::vector<po::option> m_pasrsedOptions;
 	int m_listenPort;
 	bool m_sslEnabled;
+	int m_tokenTimeoutSeconds;
+	bool m_printDebug;
 	std::string m_hostname;
 	std::string m_username;
 	std::string m_userpwd;
-	int m_tokenTimeoutSeconds;
-	bool m_printDebug;
+
 };
 #endif
 

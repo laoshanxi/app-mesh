@@ -38,6 +38,8 @@ id name        user  status   return pid    memory  start_time          command_
 ```
 $ appc
 Commands:
+  logon       Log on to AppManager for a specific time period.
+  logoff      End a AppManager user session
   view        List application[s]
   resource    Display host resource usage
   label       Manage host labels
