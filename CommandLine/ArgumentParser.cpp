@@ -185,7 +185,7 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
-		std::cout << "user name : ";
+		std::cout << " user name : ";
 		std::cin >> m_username;
 	}
 
@@ -195,7 +195,7 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
-		std::cout << "user password : ";
+		std::cout << " user password : ";
 		setStdinEcho(false);
 		std::cin >> m_userpwd;
 		setStdinEcho(true);
@@ -203,13 +203,20 @@ void ArgumentParser::processLogon()
 	}
 	m_jwtToken.clear();
 	m_jwtToken = getAuthenToken();
-
+	std::string tokenFile = std::string(TOKEN_FILE_PATH) + m_hostname;
 	if (m_jwtToken.length())
 	{
-		std::ofstream ofs(TOKEN_FILE_PATH, std::ios::trunc);
-		ofs << m_jwtToken;
-		ofs.close();
-		std::cout << "Success" << std::endl;
+		std::ofstream ofs(tokenFile, std::ios::trunc);
+		if (ofs.is_open())
+		{
+			ofs << m_jwtToken;
+			ofs.close();
+			std::cout << "Success logon to " << m_hostname << std::endl;
+		}
+		else
+		{
+			std::cout << "Failed to open token file " << tokenFile << std::endl;
+		}
 	}
 }
 
@@ -223,8 +230,10 @@ void ArgumentParser::processLogoff()
 	moveForwardCommandLineVariables(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::ofstream ofs(TOKEN_FILE_PATH, std::ios::trunc);
+	std::string tokenFile = std::string(TOKEN_FILE_PATH) + m_hostname;
+	std::ofstream ofs(tokenFile, std::ios::trunc);
 	ofs.close();
+	std::cout << "Success logoff to " << m_hostname << std::endl;
 }
 
 // appName is null means this is a normal application (not a shell application)
