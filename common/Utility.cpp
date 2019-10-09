@@ -53,9 +53,9 @@ bool Utility::isNumber(std::string s)
 	return !s.empty() && std::find_if(s.begin(), s.end(), [](char c) { return !std::isdigit(c); }) == s.end();
 }
 
-std::string Utility::stdStringTrim(const std::string & str)
+std::string Utility::stdStringTrim(const std::string& str)
 {
-	char *line = const_cast <char *> (str.c_str());
+	char* line = const_cast <char*> (str.c_str());
 	// trim the line on the left and on the right
 	size_t len = str.length();
 	size_t start = 0;
@@ -72,9 +72,9 @@ std::string Utility::stdStringTrim(const std::string & str)
 	return len >= start ? str.substr(start, len) : str.substr(start);
 }
 
-std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool trimStart, bool trimEnd)
+std::string Utility::stdStringTrim(const std::string& str, char trimChar, bool trimStart, bool trimEnd)
 {
-	char *line = const_cast <char *> (str.c_str());
+	char* line = const_cast <char*> (str.c_str());
 	// trim the line on the left and on the right
 	size_t len = str.length();
 	size_t start = 0;
@@ -107,7 +107,7 @@ std::string Utility::getSelfFullPath()
 		}
 	}
 #else
-	#define MAX_PATH PATH_MAX
+#define MAX_PATH PATH_MAX
 	char buf[MAX_PATH] = { 0 };
 	int count = (int)readlink("/proc/self/exe", buf, MAX_PATH);
 	if (count < 0 || count >= MAX_PATH)
@@ -138,7 +138,7 @@ bool Utility::isFileExist(std::string path)
 	return (::access(path.c_str(), F_OK) == 0);
 }
 
-bool Utility::createDirectory(const std::string & path, mode_t mode)
+bool Utility::createDirectory(const std::string& path, mode_t mode)
 {
 	const static char fname[] = "Utility::createDirectory() ";
 
@@ -153,7 +153,7 @@ bool Utility::createDirectory(const std::string & path, mode_t mode)
 	return true;
 }
 
-bool Utility::createRecursiveDirectory(const std::string & path, mode_t mode)
+bool Utility::createRecursiveDirectory(const std::string& path, mode_t mode)
 {
 	// TODO: on windows, path can both contain '/' and '\'
 	auto dirVec = splitString(path, "/");
@@ -172,7 +172,7 @@ bool Utility::createRecursiveDirectory(const std::string & path, mode_t mode)
 	return true;
 }
 
-bool Utility::removeDir(const std::string & path)
+bool Utility::removeDir(const std::string& path)
 {
 	const static char fname[] = "Utility::removeDir() ";
 
@@ -211,15 +211,15 @@ void Utility::initLogging()
 		5,
 		true,
 		00664);
-	
+
 	auto pLayout = new PatternLayout();
 	pLayout->setConversionPattern("%d [%t] %p %c: %m%n");
 	rollingFileAppender->setLayout(pLayout);
 
-	Category & root = Category::getRoot();
+	Category& root = Category::getRoot();
 	root.addAppender(rollingFileAppender);
 	root.addAppender(consoleAppender);
-	
+
 	// Log level
 	std::string levelEnv = "INFO";
 	auto env = getenv("LOG_LEVEL");
@@ -229,7 +229,7 @@ void Utility::initLogging()
 	LOG_INF << "Logging process ID:" << getpid();
 }
 
-void Utility::setLogLevel(const std::string & level)
+void Utility::setLogLevel(const std::string& level)
 {
 	std::map<std::string, log4cpp::Priority::PriorityLevel> levelMap = {
 		{ "NOTSET", log4cpp::Priority::NOTSET },
@@ -244,7 +244,7 @@ void Utility::setLogLevel(const std::string & level)
 		{ "EMERG", log4cpp::Priority::EMERG }
 	};
 
-	if (level.length()> 0 && levelMap.find(level) != levelMap.end())
+	if (level.length() > 0 && levelMap.find(level) != levelMap.end())
 	{
 		LOG_INF << "Setting log level to " << level;
 		log4cpp::Category::getRoot().setPriority(levelMap[level]);
@@ -259,9 +259,9 @@ unsigned long long Utility::getThreadId()
 	return std::stoull(stid);
 }
 
-std::chrono::system_clock::time_point Utility::convertStr2Time(const std::string & strTime)
+std::chrono::system_clock::time_point Utility::convertStr2Time(const std::string& strTime)
 {
-	char *str = (char*)strTime.data();
+	char* str = (char*)strTime.data();
 	struct tm tm_ = { 0 };
 	int year, month, day, hour, minute, second;
 	// "%Y-%m-%d %H:%M:%S"
@@ -277,7 +277,7 @@ std::chrono::system_clock::time_point Utility::convertStr2Time(const std::string
 	return std::chrono::system_clock::from_time_t(std::mktime(&tm_));
 }
 
-std::string Utility::convertTime2Str(const std::chrono::system_clock::time_point & time)
+std::string Utility::convertTime2Str(const std::chrono::system_clock::time_point& time)
 {
 	char buff[70] = { 0 };
 	// put_time is not ready when gcc version < 5
@@ -287,11 +287,11 @@ std::string Utility::convertTime2Str(const std::chrono::system_clock::time_point
 	return std::string(buff);
 }
 
-std::chrono::system_clock::time_point Utility::convertStr2DayTime(const std::string & strTime)
+std::chrono::system_clock::time_point Utility::convertStr2DayTime(const std::string& strTime)
 {
 	struct tm tm_ = { 0 };
 
-	char *str = (char*)strTime.data();
+	char* str = (char*)strTime.data();
 	int hour, minute, second;
 	// "%H:%M:%S"
 	sscanf(str, "%d:%d:%d", &hour, &minute, &second);
@@ -305,7 +305,7 @@ std::chrono::system_clock::time_point Utility::convertStr2DayTime(const std::str
 	return std::chrono::system_clock::from_time_t(std::mktime(&tm_));
 }
 
-std::string Utility::convertDayTime2Str(const std::chrono::system_clock::time_point & time)
+std::string Utility::convertDayTime2Str(const std::chrono::system_clock::time_point& time)
 {
 	char buff[70] = { 0 };
 	// put_time is not ready when gcc version < 5
@@ -344,13 +344,13 @@ std::string Utility::getSystemPosixTimeZone()
 	return str;
 }
 
-std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point & time)
+std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point& time)
 {
 	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
 	return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(time));
 }
 
-std::string Utility::encode64(const std::string & val)
+std::string Utility::encode64(const std::string& val)
 {
 	using namespace boost::archive::iterators;
 	using It = base64_from_binary<transform_width<std::string::const_iterator, 6, 8>>;
@@ -358,16 +358,16 @@ std::string Utility::encode64(const std::string & val)
 	return tmp.append((3 - val.size() % 3) % 3, '=');
 }
 
-std::string Utility::decode64(const std::string & val)
+std::string Utility::decode64(const std::string& val)
 {
 	using namespace boost::archive::iterators;
 	using It = transform_width<binary_from_base64<std::string::const_iterator>, 8, 6>;
 	return boost::algorithm::trim_right_copy_if(std::string(It(std::begin(val)), It(std::end(val))), [](char c) {
 		return c == '\0';
-	});
+		});
 }
 
-std::string Utility::readFile(const std::string & path)
+std::string Utility::readFile(const std::string& path)
 {
 	const static char fname[] = "Utility::readFile() ";
 
@@ -412,7 +412,7 @@ std::string Utility::readFile(const std::string & path)
 	return result;
 }
 
-std::string Utility::readFileCpp(const std::string & path)
+std::string Utility::readFileCpp(const std::string& path)
 {
 	const static char fname[] = "Utility::readFileCPP() ";
 
@@ -451,11 +451,11 @@ std::string Utility::runShellCommand(std::string cmd)
 {
 	const static char fname[] = "Utility::runShellCommand() ";
 
-	#define LINE_LENGTH 300
+#define LINE_LENGTH 300
 	char line[LINE_LENGTH];
 	std::stringstream stdoutMsg;
 	cmd += " 2>&1"; // include stderr
-	FILE *fp = popen(cmd.c_str(), "r");
+	FILE* fp = popen(cmd.c_str(), "r");
 	LOG_INF << fname << cmd;
 	if (fp)
 	{
@@ -482,7 +482,7 @@ void Utility::trimLineBreak(std::string& str)
 	str = stdStringTrim(str, '\n');
 }
 
-std::vector<std::string> Utility::splitString(const std::string & source, const std::string & splitFlag)
+std::vector<std::string> Utility::splitString(const std::string& source, const std::string& splitFlag)
 {
 	std::vector<std::string> result;
 	std::string::size_type pos1, pos2;
@@ -504,7 +504,7 @@ std::vector<std::string> Utility::splitString(const std::string & source, const 
 	return std::move(result);
 }
 
-bool Utility::startWith(const std::string & str, std::string head)
+bool Utility::startWith(const std::string& str, std::string head)
 {
 	if (str.length() >= head.length())
 	{
@@ -513,7 +513,7 @@ bool Utility::startWith(const std::string & str, std::string head)
 	return false;
 }
 
-std::string Utility::stringReplace(const std::string &strBase, const std::string& strSrc, const std::string& strDst)
+std::string Utility::stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst)
 {
 	std::string str = strBase;
 	std::string::size_type position = 0;
@@ -556,7 +556,7 @@ bool Utility::getUid(std::string userName, unsigned int& uid, unsigned int& grou
 {
 	bool rt = false;
 	struct passwd pwd;
-	struct passwd *result = NULL;
+	struct passwd* result = NULL;
 	static auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
 	if (bufsize == -1) bufsize = 16384;
 	std::shared_ptr<char> buff(new char[bufsize], std::default_delete<char[]>());
@@ -574,7 +574,7 @@ bool Utility::getUid(std::string userName, unsigned int& uid, unsigned int& grou
 	return rt;
 }
 
-void Utility::getEnvironmentSize(const std::map<std::string, std::string>& envMap, int & totalEnvSize, int & totalEnvArgs)
+void Utility::getEnvironmentSize(const std::map<std::string, std::string>& envMap, int& totalEnvSize, int& totalEnvArgs)
 {
 	// get env size
 	if (!envMap.empty())
@@ -596,7 +596,7 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string>& envMa
 	totalEnvSize += bufferSizeConst;
 }
 
-std::string Utility::prettyJson(const std::string & jsonStr)
+std::string Utility::prettyJson(const std::string& jsonStr)
 {
 	static Json::CharReaderBuilder builder;
 	static Json::CharReader* reader(builder.newCharReader());

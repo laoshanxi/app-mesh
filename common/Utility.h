@@ -78,40 +78,40 @@ public:
 
 	// String related
 	static bool isNumber(std::string s);
-	static std::string stdStringTrim(const std::string &str);
-	static std::string stdStringTrim(const std::string &str, char trimChar, bool trimStart = true, bool trimEnd = true);
+	static std::string stdStringTrim(const std::string& str);
+	static std::string stdStringTrim(const std::string& str, char trimChar, bool trimStart = true, bool trimEnd = true);
 	static std::vector<std::string> splitString(const std::string& s, const std::string& c);
 	static bool startWith(const std::string& str, std::string head);
-	static std::string stringReplace(const std::string &strBase, const std::string& strSrc, const std::string& strDst);
+	static std::string stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst);
 	static std::string humanReadableSize(long double bytesSize);
-	static std::string prettyJson(const std::string & jsonStr);
+	static std::string prettyJson(const std::string& jsonStr);
 
 	static void initLogging();
-	static void setLogLevel(const std::string & level);
+	static void setLogLevel(const std::string& level);
 
 	static unsigned long long getThreadId();
 	static bool getUid(std::string userName, unsigned int& uid, unsigned int& groupid);
 
-	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
+	static void getEnvironmentSize(const std::map<std::string, std::string>& envMap, int& totalEnvSize, int& totalEnvArgs);
 
 	// %Y-%m-%d %H:%M:%S
-	static std::chrono::system_clock::time_point convertStr2Time(const std::string & strTime);
-	static std::string convertTime2Str(const std::chrono::system_clock::time_point & time);
+	static std::chrono::system_clock::time_point convertStr2Time(const std::string& strTime);
+	static std::string convertTime2Str(const std::chrono::system_clock::time_point& time);
 	// %H:%M:%S
-	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string & strTime);
-	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point & time);
+	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string& strTime);
+	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point& time);
 	// Timezone
 	static std::string getSystemPosixTimeZone();
 	// rfc3339 time
-	static std::string getRfc3339Time(const std::chrono::system_clock::time_point & time);
+	static std::string getRfc3339Time(const std::chrono::system_clock::time_point& time);
 
 	// Base64
-	static std::string encode64(const std::string &val);
-	static std::string decode64(const std::string &val);
+	static std::string encode64(const std::string& val);
+	static std::string decode64(const std::string& val);
 
 	// Read file to string
-	static std::string readFile(const std::string &path);
-	static std::string readFileCpp(const std::string &path);
+	static std::string readFile(const std::string& path);
+	static std::string readFileCpp(const std::string& path);
 
 	static std::string createUUID();
 	static std::string runShellCommand(std::string cmd);
