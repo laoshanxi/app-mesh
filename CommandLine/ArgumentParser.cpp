@@ -189,7 +189,8 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
-		getchar();
+		std::cin.clear();
+		std::cin.sync();
 		std::cout << "Password: ";
 		char buffer[256] = { 0 };
 		char *str = buffer;
