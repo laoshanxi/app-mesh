@@ -55,7 +55,7 @@ private:
 	void moveForwardCommandLineVariables(po::options_description& desc);
 	std::string reduceStr(std::string source, int limit);
 	void setStdinEcho(bool enable = true);
-
+	ssize_t getPasswd(char **pw, size_t sz, int mask, FILE *fp);
 private:
 	po::variables_map m_commandLineVariables;
 	std::vector<po::option> m_pasrsedOptions;
