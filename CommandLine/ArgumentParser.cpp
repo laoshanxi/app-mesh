@@ -180,7 +180,7 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
-		std::cout << "Input user name :";
+		std::cout << "User: ";
 		std::cin >> m_username;
 	}
 
@@ -190,7 +190,7 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
-		std::cout << "Input password :";
+		std::cout << "Password: ";
 		setStdinEcho(false);
 		std::cin >> m_userpwd;
 		setStdinEcho(true);
