@@ -236,9 +236,12 @@ void ArgumentParser::processLogoff()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
-	std::ofstream ofs(tokenFile, std::ios::trunc);
-	ofs.close();
-	std::cout << "Success logoff to " << m_hostname << std::endl;
+	if (Utility::isFileExist(tokenFile))
+	{
+		std::ofstream ofs(tokenFile, std::ios::trunc);
+		ofs.close();
+	}
+	std::cout << "User <" << m_username << "> logoff from " << m_hostname << " success." << std::endl;
 }
 
 // appName is null means this is a normal application (not a shell application)
