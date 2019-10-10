@@ -993,7 +993,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(7) << ("return")
 		<< std::setw(7) << ("pid")
 		<< std::setw(8) << ("memory")
-		<< std::setw(20) << ("start_time")
+		<< std::setw(20) << ("last_start_time")
 		<< ("command")
 		<< std::endl;
 
