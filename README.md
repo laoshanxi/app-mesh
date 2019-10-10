@@ -1,4 +1,4 @@
-
+﻿
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![coverage](https://img.shields.io/badge/coverage-90%25-yellowgreen.svg?maxAge=2592000)
 ![version](https://img.shields.io/badge/version-1.4.4-blue.svg?maxAge=2592000)
@@ -16,7 +16,7 @@ Supported applications  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> JWT authentication <br> [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) <br> Download/Upload files <br> Docker container app support
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> JWT authentication <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) <br> Download/Upload files <br> Docker container app support
 
 
 ### How to install
