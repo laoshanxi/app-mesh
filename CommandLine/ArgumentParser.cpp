@@ -30,7 +30,6 @@ ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, boo
 {
 	po::options_description global("Global options");
 	global.add_options()
-		("help,h", "Prints command usage to stdout and exits")
 		("command", po::value<std::string>(), "command to execute")
 		("subargs", po::value<std::vector<std::string> >(), "arguments for command");
 
@@ -51,7 +50,7 @@ ArgumentParser::~ArgumentParser()
 
 void ArgumentParser::parse()
 {
-	if ((m_commandLineVariables.count("help") && m_commandLineVariables.size() == 1) || m_commandLineVariables.size() == 0)
+	if (m_commandLineVariables.size() == 0)
 	{
 		printMainHelp();
 		return;
