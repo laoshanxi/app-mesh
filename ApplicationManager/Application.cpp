@@ -7,7 +7,7 @@
 #include "DockerProcess.h"
 
 Application::Application()
-	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(-1), m_processIndex(0)
+	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID), m_processIndex(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -95,11 +95,12 @@ void Application::refreshPid()
 			if (ret > 0)
 			{
 				m_return = std::make_shared<int>(m_process->return_value());
+				m_pid = ACE_INVALID_PID;
 			}
 		}
 		else if (m_pid > 0)
 		{
-			m_pid = -1;
+			m_pid = ACE_INVALID_PID;
 		}		
 	}
 }
