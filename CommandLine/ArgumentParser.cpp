@@ -992,9 +992,9 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(12) << ("name")
 		<< std::setw(6) << ("user")
 		<< std::setw(9) << ("status")
-		<< std::setw(7) << ("return")
 		<< std::setw(7) << ("pid")
 		<< std::setw(8) << ("memory")
+		<< std::setw(7) << ("return")
 		<< std::setw(20) << ("last_start_time")
 		<< ("command")
 		<< std::endl;
@@ -1013,13 +1013,6 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status));
 		std::cout << std::setw(7);
 		{
-			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_return))
-				std::cout << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_return);
-			else
-				std::cout << "-";
-		}
-		std::cout << std::setw(7);
-		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
 				std::cout << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid);
 			else
@@ -1029,6 +1022,13 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_memory))
 				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_memory));
+			else
+				std::cout << "-";
+		}
+		std::cout << std::setw(7);
+		{
+			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_return))
+				std::cout << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_return);
 			else
 				std::cout << "-";
 		}
