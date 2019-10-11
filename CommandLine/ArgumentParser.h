@@ -52,10 +52,10 @@ private:
 	bool isAppExist(const std::string& appName);
 	std::map<std::string, bool> getAppList();
 	void printApps(web::json::value json, bool reduce);
-	void moveForwardCommandLineVariables(po::options_description& desc);
+	void shiftCommandLineArgs(po::options_description& desc);
 	std::string reduceStr(std::string source, int limit);
 	void setStdinEcho(bool enable = true);
-	ssize_t getPasswd(char **pw, size_t sz, int mask, FILE *fp);
+	ssize_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 private:
 	po::variables_map m_commandLineVariables;
 	std::vector<po::option> m_pasrsedOptions;

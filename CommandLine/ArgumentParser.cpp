@@ -36,7 +36,8 @@ ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, boo
 	po::positional_options_description pos;
 	pos.add("command", 1).
 		add("subargs", -1);
-
+	
+	// parse [command] and all other arguments in [subargs]
 	auto parsed = po::command_line_parser(argc, argv).options(global).positional(pos).allow_unregistered().run();
 	m_pasrsedOptions = parsed.options;
 	po::store(parsed, m_commandLineVariables);
@@ -168,7 +169,7 @@ void ArgumentParser::processLogon()
 		("timeout,t", po::value<int>()->default_value(60 * 60), "Specifies the command session duration in minutes.")
 		("help,h", "Prints command usage to stdout and exits")
 		;
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	m_tokenTimeoutSeconds = m_commandLineVariables["timeout"].as<int>();
@@ -194,7 +195,7 @@ void ArgumentParser::processLogon()
 		char buffer[256] = { 0 };
 		char *str = buffer;
 		FILE *fp = stdin;
-		getPasswd(&str, sizeof(buffer), '*', fp);
+		inputSecurePasswd(&str, sizeof(buffer), '*', fp);
 		m_userpwd = buffer;
 		std::cout << std::endl;
 	}
@@ -234,7 +235,7 @@ void ArgumentParser::processLogoff()
 		OPTION_HOST_NAME
 		("help,h", "Prints command usage to stdout and exits")
 		;
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
@@ -275,7 +276,7 @@ void ArgumentParser::processReg(const char* appName)
 		("debug,g", "print debug information")
 		("help,h", "Prints command usage to stdout and exits");
 
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 	bool shellApp = (appName != nullptr);
 	if (
@@ -386,7 +387,7 @@ void ArgumentParser::processUnReg()
 		("name,n", po::value<std::vector<std::string>>(), "remove application by name")
 		("force,f", "force without confirm.");
 
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	if (m_commandLineVariables.count("name") == 0)
@@ -431,7 +432,7 @@ void ArgumentParser::processView()
 		("output,o", "view the application output")
 		;
 
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	bool reduce = !(m_commandLineVariables.count("long"));
@@ -471,7 +472,7 @@ void ArgumentParser::processResource()
 		OPTION_HOST_NAME
 		("help,h", "Prints command usage to stdout and exits")
 		;
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/app-manager/resources";
@@ -489,7 +490,7 @@ void ArgumentParser::processStartStop(bool start)
 		("name,n", po::value<std::vector<std::string>>(), "start/stop application by name.")
 		;
 
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 	if (m_commandLineVariables.empty() || (!m_commandLineVariables.count("all") && !m_commandLineVariables.count("name")))
 	{
@@ -546,7 +547,7 @@ void ArgumentParser::processTest()
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		;
 
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 	if (m_commandLineVariables.count("name") == 0)
 	{
@@ -692,7 +693,7 @@ void ArgumentParser::processDownload()
 		("local,l", po::value<std::string>(), "save to local file path")
 		("help,h", "Prints command usage to stdout and exits")
 		;
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	if (m_commandLineVariables.count("remote") == 0 || m_commandLineVariables.count("local") == 0)
@@ -729,7 +730,7 @@ void ArgumentParser::processUpload()
 		("local,l", po::value<std::string>(), "local file path")
 		("help,h", "Prints command usage to stdout and exits")
 		;
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	if (m_commandLineVariables.count("remote") == 0 || m_commandLineVariables.count("local") == 0)
@@ -787,7 +788,7 @@ void ArgumentParser::processTags()
 		("label,l", po::value<std::vector<std::string>>(), "labels (e.g., -l os=linux -t arch=arm64)")
 		("help,h", "Prints command usage to stdout and exits")
 		;
-	moveForwardCommandLineVariables(desc);
+	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/app-manager/labels";
@@ -1044,11 +1045,12 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		});
 }
 
-void ArgumentParser::moveForwardCommandLineVariables(po::options_description& desc)
+void ArgumentParser::shiftCommandLineArgs(po::options_description& desc)
 {
 	m_commandLineVariables.clear();
 	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
-	opts.erase(opts.begin());
+	// remove [command] option and parse all others in m_commandLineVariables
+	if (opts.size()) opts.erase(opts.begin());
 	po::store(po::command_line_parser(opts).options(desc).run(), m_commandLineVariables);
 	po::notify(m_commandLineVariables);
 }
@@ -1092,7 +1094,7 @@ void ArgumentParser::setStdinEcho(bool enable)
 #endif
 }
 
-ssize_t ArgumentParser::getPasswd(char **pw, size_t sz, int mask, FILE *fp)
+ssize_t ArgumentParser::inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp)
 {
 	if (!pw || !sz || !fp) return -1;       /* validate input   */
 #ifdef MAXPW
