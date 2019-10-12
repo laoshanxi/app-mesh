@@ -7,7 +7,7 @@ elif [ -f "/usr/lib/systemd/system/appmanager.service" ];then
 	sleep 2
 fi
 
-chmod 755 $apppath/script/appmanager.service
+chmod 644 $apppath/script/appmanager.service
 cp -f $apppath/script/appmanager.service /usr/lib/systemd/system/appmanager.service
 
 systemctl daemon-reload
