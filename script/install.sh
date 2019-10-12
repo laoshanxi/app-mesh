@@ -2,15 +2,15 @@
 apppath=/opt/appmanager
 if [ ! -d $apppath ];then
 	mkdir -p $apppath
-elif [ -f "/etc/init.d/appmanager" ];then
+elif [ -f "/usr/lib/systemd/system/appmanager.service" ];then
 	systemctl stop appmanager
 	sleep 2
 fi
 
+chmod 755 $apppath/script/appmanager.service
+cp -f $apppath/script/appmanager.service /usr/lib/systemd/system/appmanager.service
 
-cp -f $apppath/script/appmg_service.sh /etc/init.d/appmanager
-chmod 755 /etc/init.d/appmanager
-
+systemctl daemon-reload
 systemctl enable appmanager
 systemctl start appmanager
 

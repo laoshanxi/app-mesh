@@ -22,6 +22,7 @@ build_dir:
 	cp ./ApplicationManager/appsvc ${TMP_DIR}/
 	cp ./ApplicationManager/appsvc.json ${TMP_DIR}/
 	cp ./script/*.sh ${TMP_DIR}/script
+	cp ./script/appmanager.service ${TMP_DIR}/script
 	cp ./script/appc.sh ${TMP_DIR}/script
 	cp ./script/server.crt ${TMP_DIR}/
 	cp ./script/server.key ${TMP_DIR}/

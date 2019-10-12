@@ -1,0 +1,21 @@
+#/usr/lib/systemd/system/appmanager.service
+
+[Unit]
+Description=Application Manager System Service
+Documentation=https://github.com/laoshanxi/app-manager
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+Environment="LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64"
+#WorkingDirectory=/opt/appmanager
+ExecStart=/opt/appmanager/appsvc
+ExecStop=/bin/killall /opt/appmanager/appsvc
+Restart=on-failure
+RestartSec=2
+ExecReload=/bin/kill -HUP -$MAINPID
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

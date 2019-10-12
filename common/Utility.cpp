@@ -122,6 +122,17 @@ std::string Utility::getSelfFullPath()
 	return buf;
 }
 
+std::string Utility::getSelfDir()
+{
+	auto path = getSelfFullPath();
+	auto index = path.rfind(ACE_DIRECTORY_SEPARATOR_CHAR);
+	if (index != std::string::npos)
+	{
+		path[index] = '\0';
+	}
+	return path;
+}
+
 bool Utility::isDirExist(std::string path)
 {
 #if defined (WIN32)
@@ -604,7 +615,7 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 	Json::String errs;
 	if (reader->parse(jsonStr.c_str(), jsonStr.c_str() + std::strlen(jsonStr.c_str()), &root, &errs))
 	{
-		return root.toStyledString();
+		return std::move(root.toStyledString());
 	}
 	else
 	{

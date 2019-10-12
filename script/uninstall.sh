@@ -1,12 +1,12 @@
 #!/bin/bash
-apppath=/opt/appmanager
 
-if [ -f "/etc/init.d/appmanager" ];then
+if [ -f "/usr/lib/systemd/system/appmanager.service" ];then
 	systemctl stop appmanager
 	systemctl disable appmanager
 fi
 
-#rm -rf $apppath
+#rm -rf /opt/appmanager
 
 rm -f /usr/bin/appc
-rm -f /etc/init.d/appmanager
+rm -f /usr/lib/systemd/system/appmanager.service
+systemctl daemon-reload

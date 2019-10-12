@@ -70,6 +70,7 @@ public:
 
 	// OS related
 	static std::string getSelfFullPath();
+	static std::string getSelfDir();
 	static bool isDirExist(std::string path);
 	static bool isFileExist(std::string path);
 	static bool createDirectory(const std::string& path, mode_t mode = 0775);

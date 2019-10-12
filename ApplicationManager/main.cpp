@@ -21,9 +21,13 @@ int main(int argc, char * argv[])
 	try
 	{
 		ACE::init();
+		// set working dir
+		ACE_OS::chdir(Utility::getSelfDir().c_str());
+
+		// init log
 		Utility::initLogging();
 		
-		LOG_INF << fname << "Entered.";
+		LOG_INF << fname << "entered with working dir: " << getcwd(NULL, 0);
 
 		// get configuration
 		auto config = Configuration::FromJson(Configuration::readConfiguration());
