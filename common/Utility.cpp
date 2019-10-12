@@ -543,7 +543,7 @@ std::string Utility::humanReadableSize(long double bytesSize)
 {
 	const static int base = 1024;
 	//const static char* fmt[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" };
-	const static char* fmt[] = { "B", "K", "M", "G", "T", "P", "E", "Z", "Y" };
+	const static char* fmt[] = { "B", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi", "Yi" };
 
 	if (bytesSize == 0)
 	{
