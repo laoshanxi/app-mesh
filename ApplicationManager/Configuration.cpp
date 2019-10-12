@@ -1,3 +1,4 @@
+#include <ace/Signal.h>
 #include "Configuration.h"
 #include "../common/Utility.h"
 #include "ApplicationPeriodRun.h"
@@ -20,6 +21,11 @@ Configuration::~Configuration()
 std::shared_ptr<Configuration> Configuration::instance()
 {
 	return m_instance;
+}
+
+void Configuration::instance(std::shared_ptr<Configuration> config)
+{
+	m_instance = config;
 }
 
 std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
@@ -80,7 +86,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_jwtSection = jobj.at(JSON_KEY_jwt);
 	config->m_roleSection = jobj.at(JSON_KEY_Roles);
 
-	m_instance = config;
 	return config;
 }
 
@@ -90,6 +95,35 @@ std::string Configuration::readConfiguration()
 	web::json::value jsonValue;
 	std::string jsonPath = Utility::getSelfFullPath() + ".json";
 	return Utility::readFileCpp(jsonPath);
+}
+
+void SigHupHandler(int signo)
+{
+	const static char fname[] = "SigHupHandler() ";
+	LOG_INF << fname << "Singal :" << signo;
+	auto config = Configuration::instance();
+	if (config != nullptr)
+	{
+		try
+		{
+			config->hotUpdate(Configuration::readConfiguration());
+		}
+		catch (...)
+		{
+			LOG_ERR << fname << "unknown exception";
+		}
+	}
+}
+
+void Configuration::handleReloadSignal()
+{
+	static ACE_Sig_Action* sig_action = NULL;
+	if (!sig_action)
+	{
+		sig_action = new ACE_Sig_Action();
+		sig_action->handler(SigHupHandler);
+		sig_action->register_action(SIGHUP);
+	}
 }
 
 web::json::value Configuration::AsJson(bool returnRuntimeInfo)
@@ -378,6 +412,27 @@ void Configuration::saveConfigToDisk()
 	{
 		LOG_ERR << fname << "Configuration content is empty";
 	}
+}
+
+void Configuration::hotUpdate(const std::string& str)
+{
+	// not support update [Application] section
+	auto newConfig = Configuration::FromJson(str);
+	this->m_hostDescription = newConfig->m_hostDescription;
+	this->m_jwtEnabled = newConfig->m_jwtEnabled;
+	this->m_RestListenAddress = newConfig->m_RestListenAddress;
+	this->m_restListenPort = newConfig->m_restListenPort;
+	this->m_threadPoolSize = newConfig->m_threadPoolSize;
+	this->m_jwtSection = newConfig->m_jwtSection;
+	this->m_restEnabled = newConfig->m_restEnabled;
+	this->m_roleSection = newConfig->m_roleSection;
+	this->m_logLevel = newConfig->m_logLevel;
+	this->m_scheduleInterval = newConfig->m_scheduleInterval;
+	this->m_sslCertificateFile = newConfig->m_sslCertificateFile;
+	this->m_sslCertificateKeyFile = newConfig->m_sslCertificateKeyFile;
+	this->m_sslEnabled = newConfig->m_sslEnabled;
+	this->m_tags = newConfig->m_tags;
+	this->dump();
 }
 
 std::shared_ptr<Application> Configuration::parseApp(web::json::object jsonApp)

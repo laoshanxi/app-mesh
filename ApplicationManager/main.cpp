@@ -28,9 +28,11 @@ int main(int argc, char * argv[])
 		Utility::initLogging();
 		
 		LOG_INF << fname << "entered with working dir: " << getcwd(NULL, 0);
+		Configuration::handleReloadSignal();
 
 		// get configuration
 		auto config = Configuration::FromJson(Configuration::readConfiguration());
+		Configuration::instance(config);
 
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());

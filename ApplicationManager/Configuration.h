@@ -20,11 +20,14 @@ public:
 	virtual ~Configuration();
 
 	static std::shared_ptr<Configuration> instance();
+	static void instance(std::shared_ptr<Configuration> config);
 	static std::string readConfiguration();
+	static void handleReloadSignal();
 
 	static std::shared_ptr<Configuration> FromJson(const std::string& str);
 	web::json::value AsJson(bool returnRuntimeInfo);
 	void saveConfigToDisk();
+	void hotUpdate(const std::string& str);
 	
 	std::vector<std::shared_ptr<Application>> getApps();
 	std::shared_ptr<Application> addApp(const web::json::object& jsonApp);

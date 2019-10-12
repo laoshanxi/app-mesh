@@ -14,7 +14,7 @@ ExecStart=/opt/appmanager/appsvc
 ExecStop=/bin/killall /opt/appmanager/appsvc
 Restart=on-failure
 RestartSec=2
-ExecReload=/bin/kill -HUP -$MAINPID
+ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 
 [Install]
