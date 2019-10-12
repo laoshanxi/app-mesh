@@ -84,10 +84,9 @@ int main(int argc, char * argv[])
 		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runTimerThread));
 		
 		// monitor applications
-		auto scheduleInterval = Configuration::instance()->getScheduleInterval();
 		while (true)
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(scheduleInterval));
+			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
 			auto apps = Configuration::instance()->getApps();
 			for (const auto& app : apps)
 			{

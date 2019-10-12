@@ -69,13 +69,16 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		LOG_INF << "Default value <" << config->m_restListenPort << "> will by used for RestListenPort";
 	}
 
-	auto& jArr = jobj.at(JSON_KEY_Applications).as_array();
-	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
+	if (jval.has_field(JSON_KEY_Applications))
 	{
-		auto jsonObj = iterB->as_object();
-		std::shared_ptr<Application> app = config->parseApp(jsonObj);
-		app->dump();
-		config->registerApp(app);
+		auto& jArr = jobj.at(JSON_KEY_Applications).as_array();
+		for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
+		{
+			auto jsonObj = iterB->as_object();
+			std::shared_ptr<Application> app = config->parseApp(jsonObj);
+			app->dump();
+			config->registerApp(app);
+		}
 	}
 	auto threadpool = GET_JSON_INT_VALUE(jobj, JSON_KEY_HttpThreadPoolSize);
 	if (threadpool > 0 && threadpool < 40)
@@ -107,6 +110,10 @@ void SigHupHandler(int signo)
 		try
 		{
 			config->hotUpdate(Configuration::readConfiguration());
+		}
+		catch (const std::exception& e)
+		{
+			LOG_ERR << fname << e.what();
 		}
 		catch (...)
 		{
@@ -152,10 +159,10 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 		result[JSON_KEY_jwt] = m_jwtSection;
 		result[JSON_KEY_Roles] = m_roleSection;
 	}
-	
+
 	result[JSON_KEY_Applications] = apps;
 	result[JSON_KEY_Labels] = tagToJson();
-	
+
 	return result;
 }
 
@@ -283,7 +290,7 @@ bool Configuration::getJwtEnabled() const
 	return m_jwtEnabled;
 }
 
-const web::json::value Configuration::getUserInfo(const std::string & userName)
+const web::json::value Configuration::getUserInfo(const std::string& userName)
 {
 	if (m_jwtSection.has_object_field(userName))
 	{
@@ -295,7 +302,7 @@ const web::json::value Configuration::getUserInfo(const std::string & userName)
 	}
 }
 
-bool Configuration::checkUserPermission(const std::string & userName, const std::string & permission)
+bool Configuration::checkUserPermission(const std::string& userName, const std::string& permission)
 {
 	const static char fname[] = "Configuration::checkUserPermission() ";
 
@@ -325,7 +332,7 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	LOG_DBG << fname  << '\n' << Utility::prettyJson(this->getConfigContentStr());
+	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getConfigContentStr());
 
 	auto apps = getApps();
 	for (auto app : apps)
@@ -341,15 +348,15 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::object& json
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application>& mapApp)
-	{
-		if (mapApp->getName() == app->getName())
-		{	
-			// Stop existing app and replace
-			mapApp->stop();
-			mapApp = app;
-			update = true;
-		}
-	});
+		{
+			if (mapApp->getName() == app->getName())
+			{
+				// Stop existing app and replace
+				mapApp->stop();
+				mapApp = app;
+				update = true;
+			}
+		});
 
 	if (!update)
 	{
@@ -417,7 +424,13 @@ void Configuration::saveConfigToDisk()
 void Configuration::hotUpdate(const std::string& str)
 {
 	// not support update [Application] section
-	auto newConfig = Configuration::FromJson(str);
+	auto jsonNoApp = web::json::value::parse(GET_STRING_T(str));
+	if (jsonNoApp.has_field(JSON_KEY_Applications)) jsonNoApp.erase(GET_STRING_T(JSON_KEY_Applications));
+
+	// parse
+	auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonNoApp.serialize()));
+
+	// update
 	this->m_hostDescription = newConfig->m_hostDescription;
 	this->m_jwtEnabled = newConfig->m_jwtEnabled;
 	this->m_RestListenAddress = newConfig->m_RestListenAddress;
@@ -453,7 +466,7 @@ std::shared_ptr<Application> Configuration::parseApp(web::json::object jsonApp)
 		{
 			shortApp.reset(new ApplicationShortRun());
 			ApplicationShortRun::FromJson(shortApp, jsonApp);
-			
+
 		}
 		shortApp->initTimer();
 		app = shortApp;
@@ -467,7 +480,7 @@ std::shared_ptr<Application> Configuration::parseApp(web::json::object jsonApp)
 	return app;
 }
 
-std::shared_ptr<Application> Configuration::getApp(const std::string & appName)
+std::shared_ptr<Application> Configuration::getApp(const std::string& appName)
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();
 	for (auto app : apps)
@@ -479,4 +492,3 @@ std::shared_ptr<Application> Configuration::getApp(const std::string & appName)
 	}
 	throw std::invalid_argument("No such application found");
 }
-

@@ -10,10 +10,10 @@
 > * Role list is configurable 
 > * Each user can define a password and some roles
 > * All the user/role/permission is defined in json file
+> * user/role configuration support dynamic update by `systemctl reload appmanager`
 
 ### What is **not** supported:
 > * The application managed in App Manager have no user ownership
-> * User list is static pre-defined that can not update dynamiclly
 > * No data base introduced
 
 ### User and Role configure json sample
