@@ -1,4 +1,4 @@
-#/usr/lib/systemd/system/appmanager.service
+#/lib/systemd/system/appmanager.service
 
 [Unit]
 Description=Application Manager System Service
