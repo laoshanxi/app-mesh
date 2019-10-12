@@ -28,7 +28,7 @@ public:
 	web::json::value AsJson(bool returnRuntimeInfo);
 	void saveConfigToDisk();
 	void hotUpdate(const std::string& str);
-	
+
 	std::vector<std::shared_ptr<Application>> getApps();
 	std::shared_ptr<Application> addApp(const web::json::object& jsonApp);
 	void removeApp(const std::string& appName);
@@ -43,7 +43,7 @@ public:
 	std::shared_ptr<Application> getApp(const std::string& appName);
 	void stopApp(const std::string& appName);
 	void startApp(const std::string& appName);
-	
+
 	web::json::value tagToJson();
 	void jsonToTag(web::json::value json);
 
@@ -54,12 +54,13 @@ public:
 	bool getRestEnabled() const;
 	bool getJwtEnabled() const;
 	const size_t getThreadPoolSize() const { return m_threadPoolSize; }
+	const std::string getDescription() const { return m_hostDescription; }
 
 	const web::json::value getUserInfo(const std::string& userName);
 	bool checkUserPermission(const std::string& userName, const std::string& permission);
-	
+
 	void dump();
-	
+
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
 	std::string m_hostDescription;

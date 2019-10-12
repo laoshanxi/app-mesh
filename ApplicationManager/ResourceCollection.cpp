@@ -4,6 +4,7 @@
 #include "../common/Utility.h"
 #include "../common/os/net.hpp"
 #include "../common/os/pstree.hpp"
+#include "Configuration.h"
 
 
 ResourceCollection::ResourceCollection()
@@ -60,7 +61,7 @@ const HostResource& ResourceCollection::getHostResource()
 	{
 		m_resources.m_total_bytes = m_resources.m_totalSwap_bytes = m_resources.m_free_bytes = m_resources.m_freeSwap_bytes = 0;
 	}
-	
+
 	// Net
 	for (auto net : nets)
 	{
@@ -128,16 +129,17 @@ web::json::value ResourceCollection::AsJson()
 
 	web::json::value result = web::json::value::object();
 	result[GET_STRING_T("host_name")] = web::json::value::string(GET_STRING_T(getHostName()));
+	result[GET_STRING_T("host_description")] = web::json::value::string(Configuration::instance()->getDescription());
 	auto arr = web::json::value::array(m_resources.m_ipaddress.size());
 	int idx = 0;
 	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const  HostNetInterface& pair)
-	{
-		web::json::value net_detail = web::json::value::object();
-		net_detail["name"] = web::json::value::string(pair.name);
-		net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
-		net_detail["address"] = web::json::value::string(pair.address);
-		arr[idx++] = net_detail;
-	});
+		{
+			web::json::value net_detail = web::json::value::object();
+			net_detail["name"] = web::json::value::string(pair.name);
+			net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
+			net_detail["address"] = web::json::value::string(pair.address);
+			arr[idx++] = net_detail;
+		});
 	result[GET_STRING_T("net")] = arr;
 	result[GET_STRING_T("cpu_cores")] = web::json::value::number(m_resources.m_cores);
 	result[GET_STRING_T("cpu_sockets")] = web::json::value::number(m_resources.m_sockets);
@@ -166,20 +168,20 @@ web::json::value ResourceCollection::AsJson()
 	auto fsArr = web::json::value::array(mountPoints.size());
 	idx = 0;
 	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr, &idx](const std::pair<std::string, std::string>& pair)
-	{
-		auto usage = os::df(pair.first);
-		if (usage != nullptr)
 		{
-			web::json::value fs = web::json::value::object();
-			fs["size"] = web::json::value::number(usage->size);
-			fs["used"] = web::json::value::number(usage->used);
-			fs["usage"] = web::json::value::number(usage->usage);
-			fs["device"] = web::json::value::string(pair.second);
-			fs["mount_point"] = web::json::value::string(pair.first);
-			fsArr[idx++] = fs;
-		}
-	});
-	
+			auto usage = os::df(pair.first);
+			if (usage != nullptr)
+			{
+				web::json::value fs = web::json::value::object();
+				fs["size"] = web::json::value::number(usage->size);
+				fs["used"] = web::json::value::number(usage->used);
+				fs["usage"] = web::json::value::number(usage->usage);
+				fs["device"] = web::json::value::string(pair.second);
+				fs["mount_point"] = web::json::value::string(pair.first);
+				fsArr[idx++] = fs;
+			}
+		});
+
 	result[GET_STRING_T("fs")] = fsArr;
 	result[GET_STRING_T("systime")] = web::json::value::string(Utility::convertTime2Str(std::chrono::system_clock::now()));
 	LOG_DBG << fname << "Exit";
