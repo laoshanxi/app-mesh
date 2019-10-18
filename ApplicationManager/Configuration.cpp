@@ -2,6 +2,7 @@
 #include "Configuration.h"
 #include "../common/Utility.h"
 #include "ApplicationPeriodRun.h"
+#include "ResourceCollection.h"
 
 #define DEFAULT_SCHEDULE_INTERVAL 3
 
@@ -446,6 +447,9 @@ void Configuration::hotUpdate(const std::string& str)
 	this->m_sslEnabled = newConfig->m_sslEnabled;
 	this->m_tags = newConfig->m_tags;
 	this->dump();
+
+	ResourceCollection::instance()->getHostName(true);
+	ResourceCollection::instance()->dump();
 }
 
 std::shared_ptr<Application> Configuration::parseApp(web::json::object jsonApp)

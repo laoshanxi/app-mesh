@@ -21,9 +21,13 @@ ResourceCollection * ResourceCollection::instance()
 	return singleton;
 }
 
-std::string ResourceCollection::getHostName()
+std::string ResourceCollection::getHostName(bool refresh)
 {
 	static auto hostname = net::hostname();
+	if (refresh)
+	{
+		hostname = net::hostname();
+	}
 	return hostname;
 }
 

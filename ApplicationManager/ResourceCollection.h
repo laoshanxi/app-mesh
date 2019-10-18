@@ -48,7 +48,7 @@ public:
 	// Internal Singleton.
 	static ResourceCollection* instance();
 
-	std::string getHostName();
+	std::string getHostName(bool refresh = false);
 	const HostResource& getHostResource();
 
 	uint64_t getRssMemory(pid_t pid = getpid());
