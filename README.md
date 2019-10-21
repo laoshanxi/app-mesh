@@ -1,7 +1,7 @@
 ﻿
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![coverage](https://img.shields.io/badge/coverage-90%25-yellowgreen.svg?maxAge=2592000)
-![version](https://img.shields.io/badge/version-1.4.4-blue.svg?maxAge=2592000)
+![version](https://img.shields.io/badge/version-1.4.5-blue.svg?maxAge=2592000)
 # Application Manager
 ### Introduction
 Application Manager is a daemon service to manage different types of sub-applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line to start/stop and register new app easily.
@@ -16,16 +16,16 @@ Supported applications  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) 
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) <br> Dynamic update configuration `systemctl reload appmanager`
 
 
 ### How to install
 **CentOS**:
 ```
 # centos
-yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager-1.4.4-1.x86_64.rpm
+yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager-1.4.5-1.x86_64.rpm
 # ubuntu
-apt install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager_1.4.4_amd64.deb
+apt install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager_1.4.5_amd64.deb
 # after installation, service will be started automaticlly, check status by bellow command:
 $ appc view
 id name        user  status   return pid    memory  start_time          command_line

@@ -209,6 +209,24 @@ const utility::string_t Configuration::getConfigContentStr()
 	return this->AsJson(false).serialize();
 }
 
+const utility::string_t Configuration::getSecureConfigContentStr()
+{
+	auto json = this->AsJson(false);
+	if (json.has_field(JSON_KEY_jwt))
+	{
+		auto& jwtObj = json.at(JSON_KEY_jwt).as_object();
+		for (auto& user : jwtObj)
+		{
+			if (user.second.has_field(JSON_KEY_USER_key))
+			{
+				user.second[JSON_KEY_USER_key] = web::json::value::string("*****");
+			}
+		}
+	}
+	
+	return json.serialize();
+}
+
 web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -333,7 +351,7 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getConfigContentStr());
+	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getSecureConfigContentStr());
 
 	auto apps = getApps();
 	for (auto app : apps)

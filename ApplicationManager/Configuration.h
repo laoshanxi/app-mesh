@@ -39,6 +39,7 @@ public:
 	int getRestListenPort();
 	std::string getRestListenAddress();
 	const utility::string_t getConfigContentStr();
+	const utility::string_t getSecureConfigContentStr();
 	web::json::value getApplicationJson(bool returnRuntimeInfo);
 	std::shared_ptr<Application> getApp(const std::string& appName);
 	void stopApp(const std::string& appName);
