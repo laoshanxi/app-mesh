@@ -16,7 +16,7 @@ Supported applications  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) <br> Dynamic update configuration `systemctl reload appmanager`
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
 
 
 ### How to install
@@ -30,7 +30,7 @@ apt install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/a
 $ appc view
 id name        user  status   return pid    memory  start_time          command_line
 1  ping        root  enabled  0      6631   616 K   2019-09-19 19:31:45 /bin/sleep 60
-2  sleep       root  enabled  0      -      -       -                   ping
+2  sleep       root  enabled  0      -      -       -                   ping www.baidu.com
 ```
 
 ### Supported command lines
