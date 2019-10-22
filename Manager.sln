@@ -13,12 +13,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		script\appmanager.service = script\appmanager.service
 		autogen.sh = autogen.sh
 		script\install.sh = script\install.sh
+		doc\JWT_DESC.md = doc\JWT_DESC.md
 		make.def = make.def
 		Makefile = Makefile
 		common\Makefile = common\Makefile
 		script\pre_uninstall.sh = script\pre_uninstall.sh
 		README.md = README.md
 		script\uninstall.sh = script\uninstall.sh
+		doc\USER_ROLE_DESC.md = doc\USER_ROLE_DESC.md
 		script\watchdog.sh = script\watchdog.sh
 	EndProjectSection
 EndProject
