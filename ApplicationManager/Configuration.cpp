@@ -450,19 +450,23 @@ void Configuration::hotUpdate(const std::string& str)
 	auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonNoApp.serialize()));
 
 	// update
-	this->m_hostDescription = newConfig->m_hostDescription;
-	this->m_jwtEnabled = newConfig->m_jwtEnabled;
-	this->m_RestListenAddress = newConfig->m_RestListenAddress;
-	this->m_restListenPort = newConfig->m_restListenPort;
-	this->m_threadPoolSize = newConfig->m_threadPoolSize;
-	this->m_jwtSection = newConfig->m_jwtSection;
-	this->m_restEnabled = newConfig->m_restEnabled;
-	this->m_roleSection = newConfig->m_roleSection;
-	this->m_logLevel = newConfig->m_logLevel;
-	this->m_scheduleInterval = newConfig->m_scheduleInterval;
-	this->m_sslCertificateFile = newConfig->m_sslCertificateFile;
-	this->m_sslCertificateKeyFile = newConfig->m_sslCertificateKeyFile;
-	this->m_sslEnabled = newConfig->m_sslEnabled;
+	SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
+	SET_COMPARE(this->m_jwtEnabled, newConfig->m_jwtEnabled);
+	SET_COMPARE(this->m_RestListenAddress, newConfig->m_RestListenAddress);
+	SET_COMPARE(this->m_restListenPort, newConfig->m_restListenPort);
+	SET_COMPARE(this->m_threadPoolSize, newConfig->m_threadPoolSize);
+	SET_COMPARE(this->m_jwtSection, newConfig->m_jwtSection);
+	SET_COMPARE(this->m_restEnabled, newConfig->m_restEnabled);
+	SET_COMPARE(this->m_roleSection, newConfig->m_roleSection);
+	if (this->m_logLevel != newConfig->m_logLevel)
+	{
+		Utility::setLogLevel(newConfig->m_logLevel);
+	}
+	SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
+	SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
+	SET_COMPARE(this->m_sslCertificateFile, newConfig->m_sslCertificateFile);
+	SET_COMPARE(this->m_sslCertificateKeyFile, newConfig->m_sslCertificateKeyFile);
+	SET_COMPARE(this->m_sslEnabled, newConfig->m_sslEnabled);
 	this->m_tags = newConfig->m_tags;
 	this->dump();
 

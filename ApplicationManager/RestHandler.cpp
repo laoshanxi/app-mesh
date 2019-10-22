@@ -117,8 +117,9 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// 4. Operate Application
 	// http://127.0.0.1:6060/app/app-name/run?timeout=5
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/waitrun?timeout=5
+	// http://127.0.0.1:6060/app/app-name/syncrun?timeout=5
 	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/syncrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
 
@@ -133,6 +134,10 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::GET, "/app-manager/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/labels
 	bindRest(web::http::methods::POST, "/app-manager/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
+
+	// 7. Log level
+	// http://127.0.0.1:6060/app-manager/loglevel?level=DEBUG
+	bindRest(web::http::methods::POST, "/app-manager/loglevel", std::bind(&RestHandler::apiLoglevel, this, std::placeholders::_1));
 
 	this->open();
 
@@ -518,6 +523,28 @@ void RestHandler::apiSetTags(const http_request& message)
 	Configuration::instance()->jsonToTag(message.extract_json().get());
 	Configuration::instance()->saveConfigToDisk();
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
+}
+
+void RestHandler::apiLoglevel(const http_request& message)
+{
+	permissionCheck(message, PERMISSION_KEY_loglevel);
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	if (querymap.find(U(HTTP_QUERY_KEY_loglevel)) != querymap.end())
+	{
+		auto level = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_loglevel))->second);
+		if (Utility::setLogLevel(level))
+		{
+			message.reply(status_codes::OK, std::string("set log level to ") + level);
+		}
+		else
+		{
+			message.reply(status_codes::BadRequest, "log level provide is invalid");
+		}
+	}
+	else
+	{
+		message.reply(status_codes::BadRequest, "query level required");
+	}
 }
 
 void RestHandler::apiLogin(const http_request& message)

@@ -126,6 +126,10 @@ void ArgumentParser::parse()
 	{
 		processTags();
 	}
+	else if (cmd == "log")
+	{
+		processLoglevel();
+	}
 	else
 	{
 		printMainHelp();
@@ -150,6 +154,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  sh          Use shell run a command and get output" << std::endl;
 	std::cout << "  get         Download remote file to local" << std::endl;
 	std::cout << "  put         Upload file to server" << std::endl;
+	std::cout << "  log         Set log level" << std::endl;
 
 	std::cout << std::endl;
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
@@ -589,9 +594,9 @@ void ArgumentParser::processTest()
 
 	if (timeout < 0)
 	{
-		// Use waitrun directly
-		// /app/testapp/waitrun?timeout=5
-		std::string restPath = std::string("/app/").append(appName).append("/waitrun");
+		// Use syncrun directly
+		// /app/testapp/syncrun?timeout=5
+		std::string restPath = std::string("/app/").append(appName).append("/syncrun");
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
 		RESPONSE_CHECK_WITH_RETURN;
 
@@ -853,6 +858,36 @@ void ArgumentParser::processTags()
 	{
 		std::cout << tag.first << "=" << tag.second.as_string() << std::endl;
 	}
+}
+
+void ArgumentParser::processLoglevel()
+{
+	po::options_description desc("Set log level:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("level,l", po::value<std::string>(), "log level")
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	if (m_commandLineVariables.size() == 0 || m_commandLineVariables.count("level") == 0)
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
+
+	auto level = m_commandLineVariables["level"].as<std::string>();
+
+
+	std::map<std::string, std::string> query;
+	query[HTTP_QUERY_KEY_loglevel] = m_commandLineVariables["level"].as<std::string>();
+
+	// /app-manager/loglevel?level=DEBUG
+	auto restPath = std::string("/app-manager/loglevel");
+	auto response = requestHttp(methods::POST, restPath, query);
+	RESPONSE_CHECK_WITH_RETURN;
+	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
 bool ArgumentParser::confirmInput(const char* msg)

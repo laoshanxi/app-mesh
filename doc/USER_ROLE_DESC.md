@@ -47,7 +47,8 @@
       "file-download",
       "file-upload",
       "label-view",
-      "label-update"
+      "label-update",
+      "log-level"
     ],
     "view": [
       "view-app",
@@ -73,12 +74,13 @@
 | POST     | /app/appname?action=start |   `app-control`     |
 | DEL     | /app/appname |   `app-delete`    |
 | POST     | /app/app-name/run?timeout=5 |   `run-app-async`  |
-| POST     | /app/app-name/waitrun?timeout=5 | `run-app-sync`  |
+| POST     | /app/app-name/syncrun?timeout=5 | `run-app-sync`  |
 | GET     | /app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
 | GET     | /download | `file-download`  |
 | PUT     | /upload | `file-upload`  |
 | GET     | /app-manager/labels | `label-view`  |
 | PUT     | /app-manager/labels | `label-update`  |
+| POST    | /app-manager/loglevel | `log-level`  |
 
 
 ### Command line authentication

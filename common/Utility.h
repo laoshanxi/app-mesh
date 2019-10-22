@@ -35,6 +35,8 @@
 #define GET_STRING_T(sstr) utility::conversions::to_string_t(std::string(sstr))
 #define GET_STD_STRING(sstr)  utility::conversions::to_utf8string(sstr)
 
+#define SET_COMPARE(x, y) if ((x) != (y)) (x) = (y)
+
 // Get attribute from json Object
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (jsonObj.find(GET_STRING_T(key)) == jsonObj.end() ? GET_STRING_T("") : jsonObj.at(GET_STRING_T(key)).as_string())
@@ -88,7 +90,7 @@ public:
 	static std::string prettyJson(const std::string& jsonStr);
 
 	static void initLogging();
-	static void setLogLevel(const std::string& level);
+	static bool setLogLevel(const std::string& level);
 
 	static unsigned long long getThreadId();
 	static bool getUid(std::string userName, unsigned int& uid, unsigned int& groupid);
@@ -193,6 +195,7 @@ public:
 #define HTTP_QUERY_KEY_action "action"
 #define HTTP_QUERY_KEY_action_start "start"
 #define HTTP_QUERY_KEY_action_stop "stop"
+#define HTTP_QUERY_KEY_loglevel "level"
 
 
 #define PERMISSION_KEY_view_app					"view-app"
@@ -210,6 +213,7 @@ public:
 #define PERMISSION_KEY_file_upload				"file-upload"
 #define PERMISSION_KEY_label_view				"label-view"
 #define PERMISSION_KEY_label_update				"label-update"
+#define PERMISSION_KEY_loglevel  				"log-level"
 
 #endif
 

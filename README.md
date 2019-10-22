@@ -378,7 +378,7 @@ POST| /login | username=base64(uname) <br> password=base64(passwd) <br> Optional
 POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/auth/admin | JWT token authenticate
 GET | /app/$app-name | | Get an application infomation
 POST | /app/$app-name/run?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application, return process_uuid in body.
-POST | /app/$app-name/waitrun?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application and wait in REST server side, return output in body.
+POST | /app/$app-name/syncrun?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application and wait in REST server side, return output in body.
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
@@ -392,6 +392,7 @@ PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file 
 GET| /app-manager/labels | { "os": "linux","arch": "x86_64" } | Get labels
 POST| /app-manager/labels | { "os": "linux","arch": "x86_64" } | Update labels
 GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
+POST| /app-manager/loglevel?level=DEBUG | level=DEBUG/INFO/NOTICE/WARN/ERROR | Set log level
 
 ---
 ### 3rd party deependencies

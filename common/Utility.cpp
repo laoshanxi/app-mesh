@@ -240,7 +240,7 @@ void Utility::initLogging()
 	LOG_INF << "Logging process ID:" << getpid();
 }
 
-void Utility::setLogLevel(const std::string& level)
+bool Utility::setLogLevel(const std::string& level)
 {
 	std::map<std::string, log4cpp::Priority::PriorityLevel> levelMap = {
 		{ "NOTSET", log4cpp::Priority::NOTSET },
@@ -259,6 +259,12 @@ void Utility::setLogLevel(const std::string& level)
 	{
 		LOG_INF << "Setting log level to " << level;
 		log4cpp::Category::getRoot().setPriority(levelMap[level]);
+		return true;
+	}
+	else
+	{
+		LOG_ERR << "No such log level " << level;
+		return false;
 	}
 }
 
