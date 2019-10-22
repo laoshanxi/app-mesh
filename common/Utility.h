@@ -107,6 +107,7 @@ public:
 	static std::string getSystemPosixTimeZone();
 	// rfc3339 time
 	static std::string getRfc3339Time(const std::chrono::system_clock::time_point& time);
+	static std::string getFmtTimeSeconds(const std::chrono::system_clock::time_point& time, const char* fmt);
 
 	// Base64
 	static std::string encode64(const std::string& val);
@@ -120,6 +121,10 @@ public:
 	static std::string runShellCommand(std::string cmd);
 	static void trimLineBreak(std::string& str);
 };
+
+#define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
+#define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
+#define DATE_TIME_FORMAT_RFC3339 "%FT%TZ"	//= "%Y-%m-%dT%H:%M:%SZ"
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_RestListenPort "RestListenPort"

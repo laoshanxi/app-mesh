@@ -112,8 +112,9 @@ void ApplicationShortRun::invokeNow(int timerId)
 	{
 		// Spawn new process
 		m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
-		m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 		m_procStartTime = std::chrono::system_clock::now();
+		m_envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::getFmtTimeSeconds(m_procStartTime, DATE_TIME_FORMAT);
+		m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 	}
 }
 

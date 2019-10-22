@@ -367,6 +367,11 @@ std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point&
 	return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(time));
 }
 
+std::string Utility::getFmtTimeSeconds(const std::chrono::system_clock::time_point & time, const char * fmt)
+{
+	return date::format(fmt, std::chrono::time_point_cast<std::chrono::seconds>(time));
+}
+
 std::string Utility::encode64(const std::string& val)
 {
 	using namespace boost::archive::iterators;

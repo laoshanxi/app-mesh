@@ -134,7 +134,9 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	static const std::string ldEnv = ::getenv("LD_LIBRARY_PATH");
 	if (!ldEnv.empty())
 	{
-		auto env = Utility::stringReplace(ldEnv, "/opt/appmanager/lib64:", "");
+		std::string env = ldEnv;
+		env = Utility::stringReplace(env, "/opt/appmanager/lib64:", "");
+		env = Utility::stringReplace(env, ":/opt/appmanager/lib64", "");
 		option.setenv("LD_LIBRARY_PATH", "%s", env.c_str());
 	}
 	if (this->spawn(option) >= 0)
