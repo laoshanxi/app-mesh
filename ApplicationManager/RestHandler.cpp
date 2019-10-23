@@ -649,7 +649,7 @@ void RestHandler::apiRunApp(const http_request& message)
 			}
 		}
 	}
-	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->testRun(timeout, envMap));
+	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->runSyncrize(timeout, envMap));
 }
 
 void RestHandler::apiWaitRunApp(const http_request& message)
@@ -694,7 +694,7 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 
 	// Use async reply here
 	http_request* asyncRequest = new http_request(message);
-	Configuration::instance()->getApp(app)->testAsyncRun(timeout, envMap, asyncRequest);
+	Configuration::instance()->getApp(app)->runAsyncrize(timeout, envMap, asyncRequest);
 }
 
 void RestHandler::apiRunOutput(const http_request& message)
@@ -715,7 +715,7 @@ void RestHandler::apiRunOutput(const http_request& message)
 
 		int exitCode = 0;
 		bool finished = false;
-		std::string body = Configuration::instance()->getApp(app)->getTestOutput(uuid, exitCode, finished);
+		std::string body = Configuration::instance()->getApp(app)->getAsyncRunOutput(uuid, exitCode, finished);
 		web::http::http_response resp(status_codes::OK);
 		resp.set_body(body);
 		if (finished)

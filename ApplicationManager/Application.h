@@ -27,8 +27,8 @@ class Application : public TimerHandler
 public:
 	Application();
 	virtual ~Application();
-	std::string getName();
-	bool isNormal();
+	const std::string getName() const;
+	bool isEnabled();
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::object& obj);
 
 	virtual void refreshPid();
@@ -42,10 +42,14 @@ public:
 	
 	virtual void stop();
 	virtual void start();
-	std::string testRun(int timeoutSeconds, std::map<std::string, std::string> envMap);
-	std::string testAsyncRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest);
-	std::string runTest(int timeoutSeconds, const std::map<std::string, std::string>& envMap);
-	std::string getTestOutput(const std::string& processUuid, int& exitCode, bool& finished);
+
+	// run app in a new process object
+	std::string runApp(int timeoutSeconds, const std::map<std::string, std::string>& envMap);
+	std::string runSyncrize(int timeoutSeconds, std::map<std::string, std::string> envMap);
+	std::string runAsyncrize(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest);
+	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished);
+
+	// get normal stdout for running app
 	std::string getOutput(bool keepHistory);
 
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
@@ -53,8 +57,8 @@ public:
 
 	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage);
 	bool isInDailyTimeRange();
-
 	virtual bool avialable();
+
 	void destroy();
 
 protected:
@@ -70,9 +74,8 @@ protected:
 	
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
-	std::shared_ptr<MonitoredProcess> m_testProcess;
+	std::shared_ptr<MonitoredProcess> m_runProcess;
 	int m_pid;
-	int m_processIndex;	// used for organize cgroup path dir
 	std::recursive_mutex m_mutex;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;

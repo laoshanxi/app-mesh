@@ -7,7 +7,7 @@
 #include "DockerProcess.h"
 
 Application::Application()
-	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID), m_processIndex(0)
+	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -21,12 +21,12 @@ Application::~Application()
 	LOG_DBG << fname << "Entered.";
 }
 
-std::string Application::getName()
+const std::string Application::getName() const
 {
 	return m_name;
 }
 
-bool Application::isNormal()
+bool Application::isEnabled()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return (m_status == ENABLED);
@@ -130,7 +130,7 @@ bool Application::attach(int pid)
 	AppProcess::getSysProcessList(process, nullptr);
 	auto cmd = m_commandLine;
 	auto iter = std::find_if(process.begin(), process.end(), 
-		[pid, &cmd](const std::pair<std::string, int> p) {return p.second == pid && p.first == cmd; }
+		[pid, &cmd](const std::pair<std::string, int> p) { return p.second == pid && p.first == cmd; }
 	);
 	if (iter != process.end())
 	{
@@ -158,8 +158,8 @@ void Application::invoke()
 			{
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
-				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 				m_procStartTime = std::chrono::system_clock::now();
+				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 			}
 		}
 		else if (m_process->running())
@@ -203,38 +203,38 @@ void Application::start()
 	}
 }
 
-std::string Application::testRun(int timeoutSeconds, std::map<std::string, std::string> envMap)
+std::string Application::runSyncrize(int timeoutSeconds, std::map<std::string, std::string> envMap)
 {
-	const static char fname[] = "Application::testRun() ";
+	const static char fname[] = "Application::runSyncrize() ";
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_testProcess != nullptr && m_testProcess->running())
+	if (m_runProcess != nullptr && m_runProcess->running())
 	{
-		m_testProcess->killgroup();
+		m_runProcess->killgroup();
 	}
-	m_testProcess.reset(new MonitoredProcess(256));
-	return runTest(timeoutSeconds, envMap);
+	m_runProcess.reset(new MonitoredProcess(256));
+	return runApp(timeoutSeconds, envMap);
 }
 
-std::string Application::testAsyncRun(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest)
+std::string Application::runAsyncrize(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest)
 {
-	const static char fname[] = "Application::testAsyncRun() ";
+	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_testProcess != nullptr && m_testProcess->running())
+	if (m_runProcess != nullptr && m_runProcess->running())
 	{
-		m_testProcess->killgroup();
+		m_runProcess->killgroup();
 	}
-	m_testProcess.reset(new MonitoredProcess(256));
-	m_testProcess->setAsyncHttpRequest(asyncHttpRequest);
-	return runTest(timeoutSeconds, envMap);
+	m_runProcess.reset(new MonitoredProcess(256));
+	m_runProcess->setAsyncHttpRequest(asyncHttpRequest);
+	return runApp(timeoutSeconds, envMap);
 }
 
-std::string Application::runTest(int timeoutSeconds, const std::map<std::string, std::string>& envMap)
+std::string Application::runApp(int timeoutSeconds, const std::map<std::string, std::string>& envMap)
 {
-	const static char fname[] = "Application::runTest() ";
+	const static char fname[] = "Application::runApp() ";
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -242,15 +242,15 @@ std::string Application::runTest(int timeoutSeconds, const std::map<std::string,
 	{
 		throw std::invalid_argument("Docker application does not support this API");
 	}
-	std::string processUUID = m_testProcess->getuuid();
+	std::string processUUID = m_runProcess->getuuid();
 	auto combinedEnvMap = m_envMap;
 	std::for_each(envMap.begin(), envMap.end(), [&combinedEnvMap](const std::pair<std::string, std::string>& pair)
 	{
 		combinedEnvMap[pair.first] = pair.second;
 	});
-	if (m_testProcess->spawnProcess(m_commandLine, m_user, m_workdir, combinedEnvMap, m_resourceLimit) > 0)
+	if (m_runProcess->spawnProcess(m_commandLine, m_user, m_workdir, combinedEnvMap, m_resourceLimit) > 0)
 	{
-		m_testProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
+		m_runProcess->regKillTimer(timeoutSeconds, __FUNCTION__);
 	}
 	else
 	{
@@ -260,16 +260,16 @@ std::string Application::runTest(int timeoutSeconds, const std::map<std::string,
 	return processUUID;
 }
 
-std::string Application::getTestOutput(const std::string& processUuid, int& exitCode, bool& finished)
+std::string Application::getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished)
 {
 	const static char fname[] = "Application::getTestOutput() ";
 
-	if (m_testProcess != nullptr && m_testProcess->getuuid() == processUuid)
+	if (m_runProcess != nullptr && m_runProcess->getuuid() == processUuid)
 	{
-		auto output = m_testProcess->fetchOutputMsg();
-		if (output.length() == 0 && !m_testProcess->running() && m_testProcess->complete())
+		auto output = m_runProcess->fetchOutputMsg();
+		if (output.length() == 0 && !m_runProcess->running() && m_runProcess->complete())
 		{
-			exitCode = m_testProcess->return_value();
+			exitCode = m_runProcess->return_value();
 			finished = true;
 			return "";
 		}
@@ -277,7 +277,7 @@ std::string Application::getTestOutput(const std::string& processUuid, int& exit
 		// m_testProcess is not refreshed by main thread. so just wait here.
 		ACE_Time_Value tv;
 		tv.msec(5);
-		if (m_testProcess->wait(tv) > 0)
+		if (m_runProcess->wait(tv) > 0)
 		{
 			LOG_WAR << fname << "Application exited " << m_name;
 		}
@@ -421,7 +421,7 @@ bool Application::isInDailyTimeRange()
 
 bool Application::avialable()
 {
-	return (this->isNormal() && this->isInDailyTimeRange());
+	return (this->isEnabled() && this->isInDailyTimeRange());
 }
 
 void Application::destroy()
@@ -430,10 +430,10 @@ void Application::destroy()
 	this->stop();
 	this->m_status = DESTROYED;
 	// clean test run process
-	if (m_testProcess != nullptr)
+	if (m_runProcess != nullptr)
 	{
-		m_testProcess->killgroup();
-		m_testProcess = nullptr;
+		m_runProcess->killgroup();
+		m_runProcess = nullptr;
 	}
 }
 

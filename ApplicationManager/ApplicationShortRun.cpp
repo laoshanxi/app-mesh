@@ -85,7 +85,7 @@ void ApplicationShortRun::invoke()
 void ApplicationShortRun::invokeNow(int timerId)
 {
 	// Check app existance
-	if (timerId > 0 && !this->isNormal())
+	if (timerId > 0 && !this->isEnabled())
 	{
 		this->cancleTimer(timerId);
 		return;
