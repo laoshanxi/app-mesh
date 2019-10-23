@@ -52,14 +52,14 @@ public:
 	// get normal stdout for running app
 	std::string getOutput(bool keepHistory);
 
+	void destroy();
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
 
+protected:
 	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage);
 	bool isInDailyTimeRange();
 	virtual bool avialable();
-
-	void destroy();
 
 protected:
 	STATUS m_status;
