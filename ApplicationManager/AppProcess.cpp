@@ -100,6 +100,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 	int pid = -1;
 	
+	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::getFmtTimeSeconds(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
 	size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
 	int totalEnvArgs = 0;
