@@ -291,7 +291,7 @@ $ appc view -n ping
 ```
 
 ---
-## 3. Remote command and application output
+## 3. Remote command and application output (with session login)
 
 - Run remote application and get stdout
 ``` sh
