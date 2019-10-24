@@ -38,9 +38,9 @@ private:
 	void apiLogin(const http_request& message);
 	void apiAuth(const http_request& message);
 	void apiGetApp(const http_request& message);
-	void apiRunApp(const http_request& message);
-	void apiWaitRunApp(const http_request& message);
-	void apiRunOutput(const http_request& message);
+	void apiAsyncRun(const http_request& message);
+	void apiSyncRun(const http_request& message);
+	void apiAsyncRunOut(const http_request& message);
 	void apiAppOutput(const http_request& message);
 	void apiGetApps(const http_request& message);
 	void apiGetResources(const http_request& message);

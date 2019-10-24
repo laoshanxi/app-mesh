@@ -116,12 +116,12 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 4. Operate Application
 	// http://127.0.0.1:6060/app/app-name/run?timeout=5
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiRunApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/syncrun?timeout=5
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/syncrun)", std::bind(&RestHandler::apiWaitRunApp, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiAsyncRun, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunOutput, this, std::placeholders::_1));
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiAsyncRunOut, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/app-name/syncrun?timeout=5
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/waitrun)", std::bind(&RestHandler::apiSyncRun, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/syncrun)", std::bind(&RestHandler::apiSyncRun, this, std::placeholders::_1));
 
 	// 5. File Management
 	// http://127.0.0.1:6060/download
@@ -614,9 +614,9 @@ void RestHandler::apiGetApp(const http_request& message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
 }
 
-void RestHandler::apiRunApp(const http_request& message)
+void RestHandler::apiAsyncRun(const http_request& message)
 {
-	const static char fname[] = "RestHandler::apiRunApp() ";
+	const static char fname[] = "RestHandler::apiAsyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
@@ -655,9 +655,9 @@ void RestHandler::apiRunApp(const http_request& message)
 	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->runSyncrize(timeout, envMap));
 }
 
-void RestHandler::apiWaitRunApp(const http_request& message)
+void RestHandler::apiSyncRun(const http_request& message)
 {
-	const static char fname[] = "RestHandler::apiWaitRunApp() ";
+	const static char fname[] = "RestHandler::apiSyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
@@ -700,9 +700,9 @@ void RestHandler::apiWaitRunApp(const http_request& message)
 	Configuration::instance()->getApp(app)->runAsyncrize(timeout, envMap, asyncRequest);
 }
 
-void RestHandler::apiRunOutput(const http_request& message)
+void RestHandler::apiAsyncRunOut(const http_request& message)
 {
-	const static char fname[] = "RestHandler::apiRunOutput() ";
+	const static char fname[] = "RestHandler::apiAsyncRunOut() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
