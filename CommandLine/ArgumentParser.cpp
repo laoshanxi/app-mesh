@@ -21,7 +21,9 @@
 #define RESPONSE_CHECK_WITH_RETURN if (response.status_code() != status_codes::OK) { std::cout << response.extract_utf8string(true).get() << std::endl; return; }
 #define RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT if (response.status_code() != status_codes::OK) { return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
-#define TOKEN_FILE_PATH_PREFIX "/tmp/._appmgr_"
+
+// Each user should have its own token path
+const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : "." ) + "/._appmgr_";
 static std::string m_jwtToken;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug)
@@ -205,7 +207,7 @@ void ArgumentParser::processLogon()
 		std::cout << std::endl;
 	}
 
-	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
+	std::string tokenFile = std::string(m_tokenFilePrefix) + m_hostname;
 	// clear token first
 	if (Utility::isFileExist(tokenFile))
 	{
@@ -224,6 +226,7 @@ void ArgumentParser::processLogon()
 		{
 			ofs << m_jwtToken;
 			ofs.close();
+			os::fileChmod(tokenFile, 666);
 			std::cout << "User <" << m_username << "> logon to " << m_hostname << " success." << std::endl;
 		}
 		else
@@ -243,7 +246,7 @@ void ArgumentParser::processLogoff()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
+	std::string tokenFile = std::string(m_tokenFilePrefix) + m_hostname;
 	if (Utility::isFileExist(tokenFile))
 	{
 		std::ofstream ofs(tokenFile, std::ios::trunc);
@@ -1006,7 +1009,7 @@ std::string ArgumentParser::getAuthenToken()
 std::string ArgumentParser::readAuthenToken()
 {
 	std::string jwtToken;
-	std::string tokenFile = std::string(TOKEN_FILE_PATH_PREFIX) + m_hostname;
+	std::string tokenFile = std::string(m_tokenFilePrefix) + m_hostname;
 	if (Utility::isFileExist(tokenFile) && m_hostname.length())
 	{
 		std::ifstream ifs(tokenFile);
