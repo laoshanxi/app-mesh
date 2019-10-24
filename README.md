@@ -383,7 +383,7 @@ GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stde
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
 PUT | /app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "user": "root", "working_dir": "/tmp" } | Register a new application
-PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell application
+PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell application (with session login)
 POST| /app/$app-name?action=start | | Start an application
 POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
