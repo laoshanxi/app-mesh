@@ -25,7 +25,13 @@ private:
 		const bool m_callOnce;
 	};
 
-	// Timer expire call back function, override from ACE
+	/**
+	* Timer expire call back function, override from ACE
+	* Called when timer expires.  @a current_time represents the current
+	* time that the Event_Handler was selected for timeout
+	* dispatching and @a act is the asynchronous completion token that
+	* was passed in when <schedule_timer> was invoked.
+	*/
 	virtual int handle_timeout(const ACE_Time_Value &current_time, const void *act = 0) override final;
 public:
 	TimerHandler();
@@ -39,9 +45,20 @@ public:
 	/// <param name="handler">Function point to this object.</param>
 	/// <return>Timer unique ID.</return>
 	int registerTimer(size_t delaySeconds, size_t intervalSeconds, const std::function<void(int)> &handler, const std::string from);
+	/// <summary>
+	/// Cancle a timer
+	/// </summary>
+	/// <param name="timerId">Timer unique ID.</param>
+	/// <return>Cancel success or not.</return>
 	bool cancleTimer(int timerId);
 
+	/// <summary>
+	/// Use ACE_Reactor::instance() to run timer event, block function, should used in a thread
+	/// </summary>
 	static void runTimerThread();
+	/// <summary>
+	/// End thread which watch ACE_Reactor::instance()
+	/// </summary>
 	static int endEventLoop();
 private:
 	// key: timer ID point, must unique, value: function point
