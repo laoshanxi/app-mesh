@@ -127,9 +127,9 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 5. File Management
 	// http://127.0.0.1:6060/download
-	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiDownloadFile, this, std::placeholders::_1));
+	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/upload
-	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiUploadFile, this, std::placeholders::_1));
+	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
 	// 6. Label Management
 	// http://127.0.0.1:6060/app-manager/labels
@@ -452,9 +452,9 @@ void RestHandler::apiDeleteApp(const http_request & message)
 	message.reply(status_codes::OK, msg);
 }
 
-void RestHandler::apiDownloadFile(const http_request& message)
+void RestHandler::apiFileDownload(const http_request& message)
 {
-	const static char fname[] = "RestHandler::apiDownloadFile() ";
+	const static char fname[] = "RestHandler::apiFileDownload() ";
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (!message.headers().has(U(HTTP_HEADER_KEY_file_path)))
 	{
@@ -498,9 +498,9 @@ void RestHandler::apiDownloadFile(const http_request& message)
 			});
 }
 
-void RestHandler::apiUploadFile(const http_request & message)
+void RestHandler::apiFileUpload(const http_request & message)
 {
-	const static char fname[] = "RestHandler::apiUploadFile() ";
+	const static char fname[] = "RestHandler::apiFileUpload() ";
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (!message.headers().has(U(HTTP_HEADER_KEY_file_path)))
 	{
