@@ -354,16 +354,16 @@ void ArgumentParser::processReg(const char* appName)
 		if (envs.size())
 		{
 			web::json::value objEnvs = web::json::value::object();
-			std::for_each(envs.begin(), envs.end(), [&objEnvs](std::string env)
+			for (auto env : envs)
+			{
+				auto find = env.find_first_of('=');
+				if (find != std::string::npos)
 				{
-					auto find = env.find_first_of('=');
-					if (find != std::string::npos)
-					{
-						auto key = env.substr(0, find - 1);
-						auto val = env.substr(find + 1);
-						objEnvs[key] = web::json::value::string(val);
-					}
-				});
+					auto key = env.substr(0, find - 1);
+					auto val = env.substr(find + 1);
+					objEnvs[key] = web::json::value::string(val);
+				}
+			}
 			jsobObj[JSON_KEY_APP_env] = objEnvs;
 		}
 	}
