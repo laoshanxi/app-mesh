@@ -359,7 +359,7 @@ void ArgumentParser::processReg(const char* appName)
 				auto find = env.find_first_of('=');
 				if (find != std::string::npos)
 				{
-					auto key = env.substr(0, find - 1);
+					auto key = env.substr(0, find);
 					auto val = env.substr(find + 1);
 					objEnvs[key] = web::json::value::string(val);
 				}
