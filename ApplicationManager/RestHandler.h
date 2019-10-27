@@ -43,7 +43,7 @@ private:
 	void apiAsyncRun(const http_request& message);
 	void apiSyncRun(const http_request& message);
 	void apiAsyncRunOut(const http_request& message);
-	void apiAppOutput(const http_request& message);
+	void apiGetAppOutput(const http_request& message);
 	void apiGetApps(const http_request& message);
 	void apiGetResources(const http_request& message);
 	void apiRegApp(const http_request& message);

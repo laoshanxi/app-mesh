@@ -101,7 +101,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/app/app-name
 	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/output
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutput, this, std::placeholders::_1));
+	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/applications
 	bindRest(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/resources
@@ -836,9 +836,9 @@ void RestHandler::apiAsyncRunOut(const http_request& message)
 	}
 }
 
-void RestHandler::apiAppOutput(const http_request & message)
+void RestHandler::apiGetAppOutput(const http_request & message)
 {
-	const static char fname[] = "RestHandler::apiAppOutput() ";
+	const static char fname[] = "RestHandler::apiGetAppOutput() ";
 
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));

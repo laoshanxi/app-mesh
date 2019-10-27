@@ -361,7 +361,7 @@ void ArgumentParser::processReg(const char* appName)
 					{
 						auto key = env.substr(0, find - 1);
 						auto val = env.substr(find + 1);
-						objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
+						objEnvs[key] = web::json::value::string(val);
 					}
 				});
 			jsobObj[JSON_KEY_APP_env] = objEnvs;

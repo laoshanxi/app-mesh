@@ -61,10 +61,10 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
 	{
-		auto env = jobj.at(JSON_KEY_APP_env).as_object();
-		for (auto it = env.begin(); it != env.end(); it++)
+		auto envs = jobj.at(JSON_KEY_APP_env).as_object();
+		for (auto env : envs)
 		{
-			app->m_envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
+			app->m_envMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
 		}
 	}
 	app->m_posixTimeZone = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_posix_timezone);
