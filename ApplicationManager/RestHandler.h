@@ -31,6 +31,7 @@ private:
 	void handle_delete(http_request message);
 	void handle_error(pplx::task<void>& t);
 
+	std::string tokenCheck(const http_request& message);
 	bool permissionCheck(const http_request& message, const std::string& permission);
 	std::string getToken(const http_request& message);
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
@@ -53,6 +54,7 @@ private:
 	void apiGetTags(const http_request& message);
 	void apiSetTags(const http_request& message);
 	void apiLoglevel(const http_request& message);
+	void apiGetPermissions(const http_request& message);
 
 private:
 	std::shared_ptr<http_listener> m_listener;

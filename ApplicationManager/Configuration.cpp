@@ -321,13 +321,11 @@ const web::json::value Configuration::getUserInfo(const std::string& userName)
 	}
 }
 
-bool Configuration::checkUserPermission(const std::string& userName, const std::string& permission)
+std::set<std::string> Configuration::getUserPermissions(const std::string & userName)
 {
-	const static char fname[] = "Configuration::checkUserPermission() ";
-
+	std::set<std::string> permissionSet;
 	auto userJson = getUserInfo(userName);
 	auto roles = userJson.at(JSON_KEY_USER_roles).as_array();
-	if (permission.empty()) return true;
 	for (auto role : roles)
 	{
 		if (m_roleSection.has_array_field(role.as_string()))
@@ -335,16 +333,11 @@ bool Configuration::checkUserPermission(const std::string& userName, const std::
 			auto permissions = m_roleSection.at(role.as_string()).as_array();
 			for (auto perm : permissions)
 			{
-				if (perm.as_string() == permission)
-				{
-					return true;
-				}
+				permissionSet.insert(perm.as_string());
 			}
 		}
 	}
-
-	LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-	return false;
+	return std::move(permissionSet);
 }
 
 void Configuration::dump()

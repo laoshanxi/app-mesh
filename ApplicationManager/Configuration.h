@@ -58,7 +58,7 @@ public:
 	const std::string getDescription() const { return m_hostDescription; }
 
 	const web::json::value getUserInfo(const std::string& userName);
-	bool checkUserPermission(const std::string& userName, const std::string& permission);
+	std::set<std::string> getUserPermissions(const std::string& userName);
 
 	void dump();
 

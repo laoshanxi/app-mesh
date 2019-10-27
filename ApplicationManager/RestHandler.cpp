@@ -93,6 +93,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::POST, "/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/admin
 	bindRest(web::http::methods::POST, R"(/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/auth/permissions
+	bindRest(web::http::methods::GET, "/auth/permissions", std::bind(&RestHandler::apiGetPermissions, this, std::placeholders::_1));
 
 	// 2. View Application
 	// http://127.0.0.1:6060/app/app-name
@@ -271,11 +273,9 @@ void RestHandler::handle_error(pplx::task<void>& t)
 	}
 }
 
-bool RestHandler::permissionCheck(const http_request & message, const std::string & permission)
+std::string RestHandler::tokenCheck(const http_request & message)
 {
-	const static char fname[] = "RestHandler::permissionCheck() ";
-	
-	if (!Configuration::instance()->getJwtEnabled()) return true;
+	if (!Configuration::instance()->getJwtEnabled()) return "";
 
 	auto token = getToken(message);
 	auto decoded_token = jwt::decode(token);
@@ -293,20 +293,37 @@ bool RestHandler::permissionCheck(const http_request & message, const std::strin
 			.with_claim(HTTP_HEADER_JWT_name, userName);
 		verifier.verify(decoded_token);
 
+		return userName;
+	}
+	else
+	{
+		throw std::invalid_argument("No user info in token");
+	}
+}
+
+bool RestHandler::permissionCheck(const http_request & message, const std::string & permission)
+{
+	const static char fname[] = "RestHandler::permissionCheck() ";
+	
+	auto userName = tokenCheck(message);
+	if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
+	{
 		// check user role permission
-		if (Configuration::instance()->checkUserPermission(userName, permission))
+		if (Configuration::instance()->getUserPermissions(userName).count(permission))
 		{
 			LOG_DBG << fname << "authentication success for remote: " << message.remote_address() << " with user : " << userName << " and permission : " << permission;
 			return true;
 		}
 		else
 		{
+			LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
 			throw std::invalid_argument("Permission denied");
 		}
 	}
 	else
 	{
-		throw std::invalid_argument("Invalid token");
+		// JWT not enabled
+		return true;
 	}
 }
 
@@ -547,6 +564,20 @@ void RestHandler::apiLoglevel(const http_request& message)
 	{
 		message.reply(status_codes::BadRequest, "query level required");
 	}
+}
+
+void RestHandler::apiGetPermissions(const http_request & message)
+{
+	auto userName = tokenCheck(message);
+
+	auto permissions = Configuration::instance()->getUserPermissions(userName);
+	auto json = web::json::value::array(permissions.size());
+	int index = 0;
+	for (auto perm : permissions)
+	{
+		json[index++] = web::json::value::string(perm);
+	}
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiLogin(const http_request& message)

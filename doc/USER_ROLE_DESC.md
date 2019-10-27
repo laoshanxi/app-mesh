@@ -74,8 +74,8 @@
 | POST     | /app/appname?action=start |   `app-control`     |
 | DEL     | /app/appname |   `app-delete`    |
 | POST     | /app/app-name/run?timeout=5 |   `run-app-async`  |
-| POST     | /app/app-name/syncrun?timeout=5 | `run-app-sync`  |
 | GET     | /app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
+| POST     | /app/app-name/syncrun?timeout=5 | `run-app-sync`  |
 | GET     | /download | `file-download`  |
 | PUT     | /upload | `file-upload`  |
 | GET     | /app-manager/labels | `label-view`  |
