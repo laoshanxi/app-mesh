@@ -50,8 +50,8 @@ private:
 	void apiRegShellApp(const http_request& message);
 	void apiControlApp(const http_request& message);
 	void apiDeleteApp(const http_request& message);
-	void apiDownloadFile(const http_request& message);
-	void apiUploadFile(const http_request& message);
+	void apiFileDownload(const http_request& message);
+	void apiFileUpload(const http_request& message);
 	void apiGetTags(const http_request& message);
 	void apiSetTags(const http_request& message);
 	void apiLoglevel(const http_request& message);
