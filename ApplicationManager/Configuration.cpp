@@ -467,6 +467,7 @@ void Configuration::hotUpdate(const std::string& str)
 	SET_COMPARE(this->m_sslCertificateFile, newConfig->m_sslCertificateFile);
 	SET_COMPARE(this->m_sslCertificateKeyFile, newConfig->m_sslCertificateKeyFile);
 	SET_COMPARE(this->m_sslEnabled, newConfig->m_sslEnabled);
+	SET_COMPARE(this->m_JwtRedirectUrl, newConfig->m_JwtRedirectUrl);
 	this->m_tags = newConfig->m_tags;
 	this->dump();
 
