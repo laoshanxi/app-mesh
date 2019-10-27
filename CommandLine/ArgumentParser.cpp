@@ -806,7 +806,7 @@ void ArgumentParser::processTags()
 	if (m_commandLineVariables.count("label")) inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
 
 	if (m_commandLineVariables.count("add") &&
-		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("list"))
+		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("view"))
 	{
 		// Process add
 		if (inputTags.empty())
@@ -827,7 +827,7 @@ void ArgumentParser::processTags()
 		RESPONSE_CHECK_WITH_RETURN;
 	}
 	else if (m_commandLineVariables.count("remove") &&
-		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("list"))
+		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("view"))
 	{
 		// Process remove
 		if (inputTags.empty())
@@ -844,7 +844,7 @@ void ArgumentParser::processTags()
 		response = requestHttp(methods::POST, restPath, tagVal);
 		RESPONSE_CHECK_WITH_RETURN;
 	}
-	else if (m_commandLineVariables.count("list") &&
+	else if (m_commandLineVariables.count("view") &&
 		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("add"))
 	{
 		// view
