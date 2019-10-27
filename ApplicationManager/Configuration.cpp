@@ -89,6 +89,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->jsonToTag(jobj.at(JSON_KEY_Labels));
 	config->m_jwtSection = jobj.at(JSON_KEY_jwt);
 	config->m_roleSection = jobj.at(JSON_KEY_Roles);
+	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_JWTRedirectUrl);
 
 	return config;
 }
@@ -163,6 +164,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 
 	result[JSON_KEY_Applications] = apps;
 	result[JSON_KEY_Labels] = tagToJson();
+	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(GET_STRING_T(m_JwtRedirectUrl));
 
 	return result;
 }
@@ -338,6 +340,11 @@ std::set<std::string> Configuration::getUserPermissions(const std::string & user
 		}
 	}
 	return std::move(permissionSet);
+}
+
+const std::string & Configuration::getJwtRedirectUrl()
+{
+	return m_JwtRedirectUrl;
 }
 
 void Configuration::dump()

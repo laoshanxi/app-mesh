@@ -141,6 +141,7 @@ public:
 #define JSON_KEY_Roles "Roles"
 #define JSON_KEY_Applications "Applications"
 #define JSON_KEY_Labels "Labels"
+#define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
 
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"
@@ -189,6 +190,7 @@ public:
 #define HTTP_HEADER_JWT_expire_seconds "expire_seconds"
 #define HTTP_HEADER_JWT_username "username"
 #define HTTP_HEADER_JWT_password "password"
+#define HTTP_HEADER_JWT_auth_permission "auth_permission"
 #define HTTP_HEADER_KEY_exit_code "exit_code"
 #define HTTP_HEADER_KEY_file_path "file_path"
 #define HTTP_HEADER_KEY_file_mode "file_mode"

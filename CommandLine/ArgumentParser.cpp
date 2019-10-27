@@ -916,12 +916,12 @@ http_response ArgumentParser::requestHttp(const method& mtd, const std::string& 
 http_response ArgumentParser::requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value* body, std::map<std::string, std::string>* header)
 {
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
-	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
 	// Create http_client to send the request.
-	http_client_config config;
+	web::http::client::http_client_config config;
 	config.set_timeout(std::chrono::seconds(65));
 	config.set_validate_certificates(false);
-	http_client client(restPath, config);
+	web::http::client::http_client client(restURL, config);
 	http_request request = createRequest(mtd, path, query, header);
 	if (body != nullptr)
 	{

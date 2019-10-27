@@ -1,6 +1,7 @@
 #include <chrono>
 #include <boost/algorithm/string_regex.hpp>
 #include <cpprest/filestream.h>
+#include <cpprest/http_client.h>
 #include "RestHandler.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
@@ -301,10 +302,26 @@ std::string RestHandler::tokenCheck(const http_request & message)
 	}
 }
 
+std::string RestHandler::getTokenUser(const http_request & message)
+{
+	auto token = getToken(message);
+	auto decoded_token = jwt::decode(token);
+	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
+	{
+		// get user info
+		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
+		return userName;
+	}
+	else
+	{
+		throw std::invalid_argument("No user info in token");
+	}
+}
+
 bool RestHandler::permissionCheck(const http_request & message, const std::string & permission)
 {
 	const static char fname[] = "RestHandler::permissionCheck() ";
-	
+
 	auto userName = tokenCheck(message);
 	if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
 	{
@@ -454,31 +471,31 @@ void RestHandler::apiDownloadFile(const http_request& message)
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
 	concurrency::streams::fstream::open_istream(file, std::ios::in | std::ios::binary).then([=](concurrency::streams::istream fileStream)
-	{
-		// Get the content length, which is used to set the
-		// Content-Length property
-		fileStream.seek(0, std::ios::end);
-		auto length = static_cast<size_t>(fileStream.tell());
-		fileStream.seek(0, std::ios::beg);
+		{
+			// Get the content length, which is used to set the
+			// Content-Length property
+			fileStream.seek(0, std::ios::end);
+			auto length = static_cast<size_t>(fileStream.tell());
+			fileStream.seek(0, std::ios::beg);
 
-		web::http::http_response resp(status_codes::OK);
-		resp.set_body(fileStream, length);
-		resp.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(file));
-		resp.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(file));
-		message.reply(resp).then([this](pplx::task<void> t) { this->handle_error(t); });
-	}).then([=](pplx::task<void> t)
-	{
-		try
-		{
-			t.get();
-		}
-		catch (...)
-		{
-			// opening the file (open_istream) failed.
-			// Reply with an error.
-			message.reply(status_codes::InternalError).then([this](pplx::task<void> t) { this->handle_error(t); });
-		}
-	});
+			web::http::http_response resp(status_codes::OK);
+			resp.set_body(fileStream, length);
+			resp.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(file));
+			resp.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(file));
+			message.reply(resp).then([this](pplx::task<void> t) { this->handle_error(t); });
+		}).then([=](pplx::task<void> t)
+			{
+				try
+				{
+					t.get();
+				}
+				catch (...)
+				{
+					// opening the file (open_istream) failed.
+					// Reply with an error.
+					message.reply(status_codes::InternalError).then([this](pplx::task<void> t) { this->handle_error(t); });
+				}
+			});
 }
 
 void RestHandler::apiUploadFile(const http_request & message)
@@ -501,33 +518,33 @@ void RestHandler::apiUploadFile(const http_request & message)
 
 	concurrency::streams::file_stream<uint8_t>::open_ostream(file, std::ios::out | std::ios::binary | std::ios::trunc)
 		.then([=](concurrency::streams::ostream os)
-		{
-			message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
 			{
-				os.close();
-				if (message.headers().has(HTTP_HEADER_KEY_file_mode))
+				message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
+					{
+						os.close();
+						if (message.headers().has(HTTP_HEADER_KEY_file_mode))
+						{
+							os::fileChmod(file, std::stoi(message.headers().find(HTTP_HEADER_KEY_file_mode)->second));
+						}
+						if (message.headers().has(HTTP_HEADER_KEY_file_user))
+						{
+							os::chown(file, message.headers().find(HTTP_HEADER_KEY_file_user)->second);
+						}
+						message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t); });
+					});
+			}).then([=](pplx::task<void> t)
 				{
-					os::fileChmod(file, std::stoi(message.headers().find(HTTP_HEADER_KEY_file_mode)->second));
-				}
-				if (message.headers().has(HTTP_HEADER_KEY_file_user))
-				{
-					os::chown(file, message.headers().find(HTTP_HEADER_KEY_file_user)->second);
-				}
-				message.reply(status_codes::OK, "Success").then([=](pplx::task<void> t) { this->handle_error(t); });
-			});
-		}).then([=](pplx::task<void> t)
-		{
-			try
-			{
-				t.get();
-			}
-			catch (...)
-			{
-				// opening the file (open_istream) failed.
-				// Reply with an error.
-				message.reply(status_codes::InternalError, "Failed to write file in server").then([this](pplx::task<void> t) { this->handle_error(t); });
-			}
-		});
+					try
+					{
+						t.get();
+					}
+					catch (...)
+					{
+						// opening the file (open_istream) failed.
+						// Reply with an error.
+						message.reply(status_codes::InternalError, "Failed to write file in server").then([this](pplx::task<void> t) { this->handle_error(t); });
+					}
+				});
 }
 
 void RestHandler::apiGetTags(const http_request& message)
@@ -568,8 +585,19 @@ void RestHandler::apiLoglevel(const http_request& message)
 
 void RestHandler::apiGetPermissions(const http_request & message)
 {
-	auto userName = tokenCheck(message);
+	if (Configuration::instance()->getJwtRedirectUrl().length())
+	{
+		auto resp = requestHttp(
+			web::http::methods::GET,
+			"/auth/permissions",
+			{}, {},
+			NULL,
+			getToken(message));
+		message.reply(resp.status_code(), resp.body());
+		return;
+	}
 
+	auto userName = tokenCheck(message);
 	auto permissions = Configuration::instance()->getUserPermissions(userName);
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
@@ -596,6 +624,24 @@ void RestHandler::apiLogin(const http_request& message)
 			// timeout should less than 24h
 			if (timeoutValue > 1 && timeoutValue < (24 * 60 * 60)) timeoutSeconds = timeoutValue;
 		}
+
+		// redirect auth
+		if (Configuration::instance()->getJwtRedirectUrl().length())
+		{
+			std::map<std::string, std::string> headers;
+			headers[HTTP_HEADER_JWT_username] = message.headers().find(HTTP_HEADER_JWT_username)->second;
+			headers[HTTP_HEADER_JWT_password] = message.headers().find(HTTP_HEADER_JWT_password)->second;
+			headers[HTTP_HEADER_JWT_expire_seconds] = std::to_string(timeoutSeconds);
+			auto resp = requestHttp(
+				web::http::methods::POST,
+				"/login",
+				{}, headers,
+				NULL,
+				getToken(message));
+			message.reply(resp.status_code(), resp.body());
+			return;
+		}
+
 		auto token = createToken(uname, passwd, timeoutSeconds);
 
 		web::json::value result = web::json::value::object();
@@ -626,7 +672,30 @@ void RestHandler::apiLogin(const http_request& message)
 
 void RestHandler::apiAuth(const http_request& message)
 {
-	if (permissionCheck(message, ""))
+	std::string permission;
+	if (message.headers().has(HTTP_HEADER_JWT_auth_permission))
+	{
+		permission = message.headers().find(HTTP_HEADER_JWT_auth_permission)->second;
+	}
+
+	if (Configuration::instance()->getJwtRedirectUrl().length())
+	{
+		std::map<std::string, std::string> headers;
+		if (permission.length()) headers[HTTP_HEADER_JWT_auth_permission] = permission;
+		auto userName = getTokenUser(message);
+		auto resp = requestHttp(
+			web::http::methods::POST,
+			std::string("/auth/") + userName,
+			{}, headers,
+			NULL,
+			getToken(message));
+		message.reply(resp.status_code(), resp.body());
+		return;
+	}
+
+	// permission is empty meas just verify token
+	// with permission means token and permission check both
+	if (permissionCheck(message, permission))
 	{
 		message.reply(status_codes::OK, "Success");
 	}
@@ -811,4 +880,40 @@ void RestHandler::apiRegApp(const http_request& message)
 	}
 	auto app = Configuration::instance()->addApp(jsonApp.as_object());
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
+}
+
+http_response RestHandler::requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token)
+{
+	const static char fname[] = "RestHandler::requestHttp() ";
+
+	auto restURL = Configuration::instance()->getJwtRedirectUrl();
+
+	LOG_INF << fname << "Redirect :" << path << " to:" << restURL;
+
+	// Create http_client to send the request.
+	web::http::client::http_client_config config;
+	//config.set_timeout(std::chrono::seconds(65));
+	config.set_validate_certificates(false);
+	web::http::client::http_client client(restURL, config);
+
+	// Build request URI and start the request.
+	uri_builder builder(GET_STRING_T(path));
+	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
+		{
+			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
+		});
+
+	http_request request(mtd);
+	for (auto h : header)
+	{
+		request.headers().add(h.first, h.second);
+	}
+	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + token);
+	request.set_request_uri(builder.to_uri());
+	if (body != nullptr)
+	{
+		request.set_body(*body);
+	}
+	http_response response = client.request(request).get();
+	return std::move(response);
 }

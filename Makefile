@@ -54,12 +54,12 @@ rpm:
 cppcheck:
 	cppcheck --enable=all --quiet --std=c++11 --platform=native .
 install:
-	#dpkg -i ./${PACKAGE_NAME}_${VERSION}_amd64.deb
-	yum install -y ./${PACKAGE_NAME}*.rpm
+	-dpkg -i ./${PACKAGE_NAME}_${VERSION}_amd64.deb
+	-yum install -y ./${PACKAGE_NAME}*.rpm
 	
 uninstall:
-	#dpkg -P ${PACKAGE_NAME}
-	yum remove -y ${PACKAGE_NAME}
+	-dpkg -P ${PACKAGE_NAME}
+	-yum remove -y ${PACKAGE_NAME}
 
 dev:
 	-git pull

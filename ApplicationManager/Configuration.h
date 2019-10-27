@@ -59,6 +59,7 @@ public:
 
 	const web::json::value getUserInfo(const std::string& userName);
 	std::set<std::string> getUserPermissions(const std::string& userName);
+	const std::string& getJwtRedirectUrl();
 
 	void dump();
 
@@ -69,6 +70,7 @@ private:
 	int m_restListenPort;
 	std::string m_RestListenAddress;
 	std::string m_logLevel;
+	std::string m_JwtRedirectUrl;
 
 	std::recursive_mutex m_mutex;
 	std::string m_jsonFilePath;
