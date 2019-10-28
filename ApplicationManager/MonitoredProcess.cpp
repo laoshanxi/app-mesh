@@ -18,6 +18,8 @@ MonitoredProcess::~MonitoredProcess()
 
 	if (m_thread != nullptr) m_thread->join();
 
+	if (m_httpRequest) delete (web::http::http_request*)m_httpRequest;
+
 	LOG_DBG << fname << "Process <" << this->getpid() << "> released";
 }
 
@@ -96,9 +98,8 @@ pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
 	if (rt > 0)
 	{
 		// Only need wait thread when process already exit.
-		std::shared_ptr<std::thread> thread;
-		thread.swap(m_thread);
-		if (thread != nullptr) thread->join();
+		m_thread->join();
+		m_thread = nullptr;
 	}
 	return rt;
 }
