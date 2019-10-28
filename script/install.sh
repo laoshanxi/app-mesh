@@ -7,7 +7,7 @@ elif [[ -f "/lib/systemd/system/appmanager.service" ]] || [[ -f "/etc/init.d/app
 	sleep 1
 fi
 
-if [ -d "/lib/systemd/system/" ]; then
+if [ -f "/usr/lib/systemd/systemd" ]; then
 	chmod 644 $INSTALL_DIR/script/appmanager.systemd.service
 	cp -f $INSTALL_DIR/script/appmanager.systemd.service /lib/systemd/system/appmanager.service
 else
