@@ -29,6 +29,7 @@ SRCS = \
 	LinuxCgroup.cpp \
 	TimerHandler.cpp \
 	../common/Utility.cpp \
+	../common/HttpRequest.cpp \
 	../common/TimeZoneHelper.cpp
 		
 

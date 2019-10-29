@@ -67,6 +67,7 @@
     <IncludePath>D:\develop\boost_1_67_0\boost_1_67_vs2017\include\boost-1_67;D:\develop\ACE_wrappers;D:\develop\cpprestsdk-2.10.10\Release\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\HttpRequest.cpp" />
     <ClCompile Include="..\common\TimeZoneHelper.cpp" />
     <ClCompile Include="..\common\Utility.cpp" />
     <ClCompile Include="Application.cpp" />
@@ -86,6 +87,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\date.h" />
+    <ClInclude Include="..\common\HttpRequest.h" />
     <ClInclude Include="..\common\jwt-cpp\base.h" />
     <ClInclude Include="..\common\jwt-cpp\jwt.h" />
     <ClInclude Include="..\common\jwt-cpp\picojson.h" />
@@ -111,6 +113,7 @@
     <ClInclude Include="TimerHandler.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\common\Makefile" />
     <None Include="appsvc.json">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
       </DeploymentContent>

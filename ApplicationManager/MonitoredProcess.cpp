@@ -1,7 +1,7 @@
 #include <thread>
-#include <cpprest/http_client.h>
 #include "MonitoredProcess.h"
 #include "../common/Utility.h"
+#include "../common/HttpRequest.h"
 
 MonitoredProcess::MonitoredProcess(int cacheOutputLines, bool enableBuildinThread)
 	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_httpRequest(NULL), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
@@ -18,7 +18,11 @@ MonitoredProcess::~MonitoredProcess()
 
 	if (m_thread != nullptr) m_thread->join();
 
-	if (m_httpRequest) delete (web::http::http_request*)m_httpRequest;
+	if (m_httpRequest)
+	{
+		delete (HttpRequest*)m_httpRequest;
+		m_httpRequest = NULL;
+	}
 
 	LOG_DBG << fname << "Process <" << this->getpid() << "> released";
 }
@@ -136,15 +140,17 @@ void MonitoredProcess::runPipeReaderThread()
 	///////////////////////////////////////////////////////////////////////
 	if (m_httpRequest)
 	{
-		web::http::http_request* respRequest = (web::http::http_request*)m_httpRequest;
 		try
 		{
 			web::http::http_response resp(web::http::status_codes::OK);
 			resp.set_body(this->fetchOutputMsg());
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->return_value());
-			respRequest->reply(resp).get();
-			delete respRequest;
-			m_httpRequest = NULL;
+			if (m_httpRequest)
+			{
+				((HttpRequest*)m_httpRequest)->reply(resp).get();
+				delete (HttpRequest*)m_httpRequest;
+				m_httpRequest = NULL;
+			}
 		}
 		catch (...)
 		{

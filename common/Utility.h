@@ -191,6 +191,7 @@ public:
 #define HTTP_HEADER_JWT_username "username"
 #define HTTP_HEADER_JWT_password "password"
 #define HTTP_HEADER_JWT_auth_permission "auth_permission"
+#define HTTP_HEADER_JWT_redirect_from "redirect_from"
 #define HTTP_HEADER_KEY_exit_code "exit_code"
 #define HTTP_HEADER_KEY_file_path "file_path"
 #define HTTP_HEADER_KEY_file_mode "file_mode"

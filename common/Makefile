@@ -9,7 +9,7 @@ INCLUDES = -I/usr/local/ace/include/
 all : format $(TARGET) 
 
 ## source and object files 
-SRCS = TimeZoneHelper.cpp Utility.cpp
+SRCS = TimeZoneHelper.cpp Utility.cpp HttpRequest.cpp
 
 OBJS = $(SRCS:.cpp=.$(OEXT))
 

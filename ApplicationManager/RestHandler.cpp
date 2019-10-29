@@ -9,6 +9,7 @@
 #include "../common/jwt-cpp/jwt.h"
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
+#include "../common/HttpRequest.h"
 
 #define REST_INFO_PRINT \
 	LOG_DBG \
@@ -161,46 +162,47 @@ void RestHandler::close()
 	m_listener->close();// .wait();
 }
 
-void RestHandler::handle_get(http_request message)
+void RestHandler::handle_get(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
 
 	handleRest(message, m_restGetFunctions);
 }
 
-void RestHandler::handle_put(http_request message)
+void RestHandler::handle_put(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
 
 	handleRest(message, m_restPutFunctions);
 }
 
-void RestHandler::handle_post(http_request message)
+void RestHandler::handle_post(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	handleRest(message, m_restPstFunctions);
 }
 
-void RestHandler::handle_delete(http_request message)
+void RestHandler::handle_delete(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
 
 	handleRest(message, m_restDelFunctions);
 }
 
-void RestHandler::handleRest(http_request& message, std::map<utility::string_t, std::function<void(http_request&)>>& restFunctions)
+void RestHandler::handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions)
 {
 	static char fname[] = "RestHandler::handle_rest() ";
 
-	std::function<void(http_request&)> stdFunction;
+	std::function<void(const HttpRequest&)> stdFunction;
 	auto path = GET_STD_STRING(message.relative_uri().path());
 	while (path.find("//") != std::string::npos) boost::algorithm::replace_all(path, "//", "/");
 
+	const auto request = std::move(HttpRequest(message));
+
 	if (path == "/" || path.empty())
 	{
-		message.reply(status_codes::OK, "REST service");
+		request.reply(status_codes::OK, "REST service");
 		return;
 	}
 
@@ -216,28 +218,28 @@ void RestHandler::handleRest(http_request& message, std::map<utility::string_t, 
 	}
 	if (!findRest)
 	{
-		message.reply(status_codes::NotFound, "Path not found");
+		request.reply(status_codes::NotFound, "Path not found");
 		return;
 	}
 
 	try
 	{
 		// LOG_DBG << fname << "rest " << path;
-		stdFunction(message);
+		stdFunction(request);
 	}
 	catch (const std::exception& e)
 	{
 		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
-		message.reply(web::http::status_codes::BadRequest, e.what());
+		request.reply(web::http::status_codes::BadRequest, e.what());
 	}
 	catch (...)
 	{
 		LOG_WAR << fname << "rest " << path << " failed";
-		message.reply(web::http::status_codes::BadRequest, "unknow exception");
+		request.reply(web::http::status_codes::BadRequest, "unknow exception");
 	}
 }
 
-void RestHandler::bindRest(web::http::method method, std::string path, std::function< void(http_request&)> func)
+void RestHandler::bindRest(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func)
 {
 	static char fname[] = "RestHandler::bindRest() ";
 
@@ -274,7 +276,7 @@ void RestHandler::handle_error(pplx::task<void>& t)
 	}
 }
 
-std::string RestHandler::tokenCheck(const http_request & message)
+std::string RestHandler::tokenCheck(const HttpRequest & message)
 {
 	if (!Configuration::instance()->getJwtEnabled()) return "";
 
@@ -302,7 +304,7 @@ std::string RestHandler::tokenCheck(const http_request & message)
 	}
 }
 
-std::string RestHandler::getTokenUser(const http_request & message)
+std::string RestHandler::getTokenUser(const HttpRequest & message)
 {
 	auto token = getToken(message);
 	auto decoded_token = jwt::decode(token);
@@ -318,7 +320,7 @@ std::string RestHandler::getTokenUser(const http_request & message)
 	}
 }
 
-bool RestHandler::permissionCheck(const http_request & message, const std::string & permission)
+bool RestHandler::permissionCheck(const HttpRequest & message, const std::string & permission)
 {
 	const static char fname[] = "RestHandler::permissionCheck() ";
 
@@ -344,7 +346,7 @@ bool RestHandler::permissionCheck(const http_request & message, const std::strin
 	}
 }
 
-std::string RestHandler::getToken(const http_request& message)
+std::string RestHandler::getToken(const HttpRequest& message)
 {
 	std::string token;
 	if (message.headers().has(HTTP_HEADER_JWT_Authorization))
@@ -382,7 +384,7 @@ std::string RestHandler::createToken(const std::string& uname, const std::string
 	return std::move(token);
 }
 
-void RestHandler::apiRegShellApp(const http_request& message)
+void RestHandler::apiRegShellApp(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiRegShellApp() ";
 
@@ -409,7 +411,7 @@ void RestHandler::apiRegShellApp(const http_request& message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
 }
 
-void RestHandler::apiControlApp(const http_request & message)
+void RestHandler::apiControlApp(const HttpRequest & message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
@@ -441,7 +443,7 @@ void RestHandler::apiControlApp(const http_request & message)
 	}
 }
 
-void RestHandler::apiDeleteApp(const http_request & message)
+void RestHandler::apiDeleteApp(const HttpRequest & message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_delete);
 	auto path = GET_STD_STRING(message.relative_uri().path());
@@ -452,7 +454,7 @@ void RestHandler::apiDeleteApp(const http_request & message)
 	message.reply(status_codes::OK, msg);
 }
 
-void RestHandler::apiFileDownload(const http_request& message)
+void RestHandler::apiFileDownload(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiFileDownload() ";
 	permissionCheck(message, PERMISSION_KEY_file_download);
@@ -498,7 +500,7 @@ void RestHandler::apiFileDownload(const http_request& message)
 			});
 }
 
-void RestHandler::apiFileUpload(const http_request & message)
+void RestHandler::apiFileUpload(const HttpRequest & message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
 	permissionCheck(message, PERMISSION_KEY_file_upload);
@@ -547,13 +549,13 @@ void RestHandler::apiFileUpload(const http_request & message)
 				});
 }
 
-void RestHandler::apiGetTags(const http_request& message)
+void RestHandler::apiGetTags(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_view);
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
-void RestHandler::apiSetTags(const http_request& message)
+void RestHandler::apiSetTags(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_update);
 	Configuration::instance()->jsonToTag(message.extract_json().get());
@@ -561,7 +563,7 @@ void RestHandler::apiSetTags(const http_request& message)
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
-void RestHandler::apiLoglevel(const http_request& message)
+void RestHandler::apiLoglevel(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_loglevel);
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
@@ -583,9 +585,10 @@ void RestHandler::apiLoglevel(const http_request& message)
 	}
 }
 
-void RestHandler::apiGetPermissions(const http_request & message)
+void RestHandler::apiGetPermissions(const HttpRequest & message)
 {
-	if (Configuration::instance()->getJwtRedirectUrl().length())
+	if (Configuration::instance()->getJwtRedirectUrl().length() &&
+		!message.headers().has(HTTP_HEADER_JWT_redirect_from))
 	{
 		auto resp = requestHttp(
 			web::http::methods::GET,
@@ -608,7 +611,7 @@ void RestHandler::apiGetPermissions(const http_request & message)
 	message.reply(status_codes::OK, json);
 }
 
-void RestHandler::apiLogin(const http_request& message)
+void RestHandler::apiLogin(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiLogin() ";
 
@@ -626,7 +629,7 @@ void RestHandler::apiLogin(const http_request& message)
 		}
 
 		// redirect auth
-		if (Configuration::instance()->getJwtRedirectUrl().length())
+		if (Configuration::instance()->getJwtRedirectUrl().length() && !message.headers().has(HTTP_HEADER_JWT_redirect_from))
 		{
 			std::map<std::string, std::string> headers;
 			headers[HTTP_HEADER_JWT_username] = message.headers().find(HTTP_HEADER_JWT_username)->second;
@@ -670,7 +673,7 @@ void RestHandler::apiLogin(const http_request& message)
 	}
 }
 
-void RestHandler::apiAuth(const http_request& message)
+void RestHandler::apiAuth(const HttpRequest& message)
 {
 	std::string permission;
 	if (message.headers().has(HTTP_HEADER_JWT_auth_permission))
@@ -678,7 +681,8 @@ void RestHandler::apiAuth(const http_request& message)
 		permission = message.headers().find(HTTP_HEADER_JWT_auth_permission)->second;
 	}
 
-	if (Configuration::instance()->getJwtRedirectUrl().length())
+	if (Configuration::instance()->getJwtRedirectUrl().length() && 
+		!message.headers().has(HTTP_HEADER_JWT_redirect_from))
 	{
 		std::map<std::string, std::string> headers;
 		if (permission.length()) headers[HTTP_HEADER_JWT_auth_permission] = permission;
@@ -705,7 +709,7 @@ void RestHandler::apiAuth(const http_request& message)
 	}
 }
 
-void RestHandler::apiGetApp(const http_request& message)
+void RestHandler::apiGetApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
@@ -713,7 +717,7 @@ void RestHandler::apiGetApp(const http_request& message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
 }
 
-void RestHandler::apiAsyncRun(const http_request& message)
+void RestHandler::apiAsyncRun(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiAsyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
@@ -738,7 +742,7 @@ void RestHandler::apiAsyncRun(const http_request& message)
 	}
 	// Parse env map  (optional)
 	std::map<std::string, std::string> envMap;
-	auto body = const_cast<http_request*>(&message)->extract_utf8string(true).get();
+	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
 	if (body.length() && body != "null")
 	{
 		auto jsonEnv = web::json::value::parse(body).as_object();
@@ -754,7 +758,7 @@ void RestHandler::apiAsyncRun(const http_request& message)
 	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->runSyncrize(timeout, envMap));
 }
 
-void RestHandler::apiSyncRun(const http_request& message)
+void RestHandler::apiSyncRun(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiSyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
@@ -780,7 +784,7 @@ void RestHandler::apiSyncRun(const http_request& message)
 
 	// Parse env map  (optional)
 	std::map<std::string, std::string> envMap;
-	auto body = const_cast<http_request*>(&message)->extract_utf8string(true).get();
+	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
 	if (body.length() && body != "null")
 	{
 		auto jsonEnv = web::json::value::parse(body).as_object();
@@ -795,11 +799,11 @@ void RestHandler::apiSyncRun(const http_request& message)
 	}
 
 	// Use async reply here
-	http_request* asyncRequest = new http_request(message);
+	HttpRequest* asyncRequest = new HttpRequest(message);
 	Configuration::instance()->getApp(app)->runAsyncrize(timeout, envMap, asyncRequest);
 }
 
-void RestHandler::apiAsyncRunOut(const http_request& message)
+void RestHandler::apiAsyncRunOut(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiAsyncRunOut() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
@@ -836,7 +840,7 @@ void RestHandler::apiAsyncRunOut(const http_request& message)
 	}
 }
 
-void RestHandler::apiGetAppOutput(const http_request & message)
+void RestHandler::apiGetAppOutput(const HttpRequest & message)
 {
 	const static char fname[] = "RestHandler::apiGetAppOutput() ";
 
@@ -858,19 +862,19 @@ void RestHandler::apiGetAppOutput(const http_request & message)
 	message.reply(status_codes::OK, output);
 }
 
-void RestHandler::apiGetApps(const http_request& message)
+void RestHandler::apiGetApps(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true));
 }
 
-void RestHandler::apiGetResources(const http_request& message)
+void RestHandler::apiGetResources(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_host_resource);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
 }
 
-void RestHandler::apiRegApp(const http_request& message)
+void RestHandler::apiRegApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_reg);
 	auto jsonApp = message.extract_json(true).get();
@@ -903,12 +907,13 @@ http_response RestHandler::requestHttp(const method& mtd, const std::string& pat
 			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
 		});
 
-	http_request request(mtd);
+	HttpRequest request(mtd);
 	for (auto h : header)
 	{
 		request.headers().add(h.first, h.second);
 	}
 	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + token);
+	request.headers().add(HTTP_HEADER_JWT_redirect_from, ResourceCollection::instance()->getHostName());
 	request.set_request_uri(builder.to_uri());
 	if (body != nullptr)
 	{
@@ -917,3 +922,5 @@ http_response RestHandler::requestHttp(const method& mtd, const std::string& pat
 	http_response response = client.request(request).get();
 	return std::move(response);
 }
+
+

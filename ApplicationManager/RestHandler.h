@@ -3,6 +3,7 @@
 
 #include <cpprest/http_client.h>
 #include <cpprest/http_listener.h> // HTTP server 
+#include "../common/HttpRequest.h"
 
 using namespace web;
 using namespace http;
@@ -23,49 +24,50 @@ protected:
 	void close();
 
 private:
-	void handleRest(http_request& message, std::map<utility::string_t, std::function<void(http_request&)>>& restFunctions);
-	void bindRest(web::http::method method, std::string path, std::function< void(http_request&)> func);
-	void handle_get(http_request message);
-	void handle_put(http_request message);
-	void handle_post(http_request message);
-	void handle_delete(http_request message);
+	void handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions);
+	void bindRest(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func);
+	void handle_get(const HttpRequest& message);
+	void handle_put(const HttpRequest& message);
+	void handle_post(const HttpRequest& message);
+	void handle_delete(const HttpRequest& message);
 	void handle_error(pplx::task<void>& t);
 
-	std::string tokenCheck(const http_request& message);
-	std::string getTokenUser(const http_request& message);
-	bool permissionCheck(const http_request& message, const std::string& permission);
-	std::string getToken(const http_request& message);
+	std::string tokenCheck(const HttpRequest& message);
+	std::string getTokenUser(const HttpRequest& message);
+	bool permissionCheck(const HttpRequest& message, const std::string& permission);
+	std::string getToken(const HttpRequest& message);
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
 
-	void apiLogin(const http_request& message);
-	void apiAuth(const http_request& message);
-	void apiGetApp(const http_request& message);
-	void apiAsyncRun(const http_request& message);
-	void apiSyncRun(const http_request& message);
-	void apiAsyncRunOut(const http_request& message);
-	void apiGetAppOutput(const http_request& message);
-	void apiGetApps(const http_request& message);
-	void apiGetResources(const http_request& message);
-	void apiRegApp(const http_request& message);
-	void apiRegShellApp(const http_request& message);
-	void apiControlApp(const http_request& message);
-	void apiDeleteApp(const http_request& message);
-	void apiFileDownload(const http_request& message);
-	void apiFileUpload(const http_request& message);
-	void apiGetTags(const http_request& message);
-	void apiSetTags(const http_request& message);
-	void apiLoglevel(const http_request& message);
-	void apiGetPermissions(const http_request& message);
+	void apiLogin(const HttpRequest& message);
+	void apiAuth(const HttpRequest& message);
+	void apiGetApp(const HttpRequest& message);
+	void apiAsyncRun(const HttpRequest& message);
+	void apiSyncRun(const HttpRequest& message);
+	void apiAsyncRunOut(const HttpRequest& message);
+	void apiGetAppOutput(const HttpRequest& message);
+	void apiGetApps(const HttpRequest& message);
+	void apiGetResources(const HttpRequest& message);
+	void apiRegApp(const HttpRequest& message);
+	void apiRegShellApp(const HttpRequest& message);
+	void apiControlApp(const HttpRequest& message);
+	void apiDeleteApp(const HttpRequest& message);
+	void apiFileDownload(const HttpRequest& message);
+	void apiFileUpload(const HttpRequest& message);
+	void apiGetTags(const HttpRequest& message);
+	void apiSetTags(const HttpRequest& message);
+	void apiLoglevel(const HttpRequest& message);
+	void apiGetPermissions(const HttpRequest& message);
 
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
 
 private:
 	std::shared_ptr<http_listener> m_listener;
 	// API functions
-	std::map<utility::string_t, std::function<void(http_request&)>> m_restGetFunctions;
-	std::map<utility::string_t, std::function<void(http_request&)>> m_restPutFunctions;
-	std::map<utility::string_t, std::function<void(http_request&)>> m_restPstFunctions;
-	std::map<utility::string_t, std::function<void(http_request&)>> m_restDelFunctions;
+	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restGetFunctions;
+	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restPutFunctions;
+	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restPstFunctions;
+	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restDelFunctions;
 
 };
+
 #endif

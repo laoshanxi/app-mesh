@@ -33,6 +33,9 @@
     <ClCompile Include="AppProcess.cpp">
       <Filter>Process</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\HttpRequest.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -93,10 +96,16 @@
     <ClInclude Include="AppProcess.h">
       <Filter>Process</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\HttpRequest.h">
+      <Filter>common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />
     <None Include="Makefile" />
+    <None Include="..\common\Makefile">
+      <Filter>common</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="common">
