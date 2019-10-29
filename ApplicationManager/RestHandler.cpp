@@ -89,6 +89,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	m_listener->support(methods::PUT, std::bind(&RestHandler::handle_put, this, std::placeholders::_1));
 	m_listener->support(methods::POST, std::bind(&RestHandler::handle_post, this, std::placeholders::_1));
 	m_listener->support(methods::DEL, std::bind(&RestHandler::handle_delete, this, std::placeholders::_1));
+	m_listener->support(methods::OPTIONS, std::bind(&RestHandler::handle_options, this, std::placeholders::_1));
 
 	// 1. Authentication
 	// http://127.0.0.1:6060/login
@@ -188,6 +189,11 @@ void RestHandler::handle_delete(const HttpRequest& message)
 	REST_INFO_PRINT;
 
 	handleRest(message, m_restDelFunctions);
+}
+
+void RestHandler::handle_options(const HttpRequest& message)
+{
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions)
