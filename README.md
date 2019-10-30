@@ -1,5 +1,5 @@
 ﻿
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-LGPL-green.svg)](LICENSE)
 ![coverage](https://img.shields.io/badge/coverage-90%25-yellowgreen.svg?maxAge=2592000)
 ![version](https://img.shields.io/badge/version-1.4.5-blue.svg?maxAge=2592000)
 # Application Manager
