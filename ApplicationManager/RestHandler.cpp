@@ -673,7 +673,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 	{
 		auto uname = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_username)->second));
 		auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_password)->second));
-		int timeoutSeconds = 60 * 10;	// default timeout is 10 minutes
+		int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS;	// default timeout is 1 hour
 		if (message.headers().has(HTTP_HEADER_JWT_expire_seconds))
 		{
 			auto timeout = message.headers().find(HTTP_HEADER_JWT_expire_seconds)->second;

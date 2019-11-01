@@ -173,7 +173,7 @@ void ArgumentParser::processLogon()
 		OPTION_HOST_NAME
 		("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.")
 		("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
-		("timeout,t", po::value<int>()->default_value(60 * 60), "Specifies the command session duration in minutes.")
+		("timeout,t", po::value<int>()->default_value(DEFAULT_TOKEN_EXPIRE_SECONDS), "Specifies the command session duration in minutes.")
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);
