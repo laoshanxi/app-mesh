@@ -42,8 +42,8 @@ public:
 	const utility::string_t getSecureConfigContentStr();
 	web::json::value getApplicationJson(bool returnRuntimeInfo);
 	std::shared_ptr<Application> getApp(const std::string& appName);
-	void stopApp(const std::string& appName);
-	void startApp(const std::string& appName);
+	void disableApp(const std::string& appName);
+	void enableApp(const std::string& appName);
 
 	web::json::value tagToJson();
 	void jsonToTag(web::json::value json);

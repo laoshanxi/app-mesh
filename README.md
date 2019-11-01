@@ -43,8 +43,8 @@ Commands:
   view        List application[s]
   resource    Display host resource usage
   label       Manage host labels
-  start       Start a application
-  stop        Stop a application
+  enable      Enable a application
+  disable     Disable a application
   restart     Restart a application
   reg         Add a new application
   unreg       Remove an application
@@ -174,10 +174,10 @@ y
 Success
 ```
 
-- Start/Stop an application
+- Enable/Disable an application
 ```
-$ appc start -n ping
-$ appc stop -n ping
+$ appc enable -n ping
+$ appc disable -n ping
 $ appc restart -n ping
 ```
 
@@ -310,7 +310,7 @@ $ appc sh -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view"
 id name        user  status   pid    return memory  command_line
 1  period      root  enabled  1044   0      668 K   /bin/sleep 20
 2  ping        root  enabled  586    0      956 K   ping www.baidu.com
-3  869d8991-0* root  stopped  0      0      0       /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
+3  869d8991-0* root  disabled 0      0      0       /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
 ```
 
 
@@ -386,8 +386,8 @@ GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
 PUT | /app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "user": "root", "working_dir": "/tmp" } | Register a new application
 PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell application (with session login)
-POST| /app/$app-name?action=start | | Start an application
-POST| /app/$app-name?action=stop | | Stop an application
+POST| /app/$app-name/enable | | Enable an application
+POST| /app/$app-name/disable | | Disable an application
 DELETE| /app/$app-name | | Unregister an application
 GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server and grant permission
 PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission

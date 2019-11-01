@@ -50,7 +50,8 @@ private:
 	void apiGetResources(const HttpRequest& message);
 	void apiRegApp(const HttpRequest& message);
 	void apiRegShellApp(const HttpRequest& message);
-	void apiControlApp(const HttpRequest& message);
+	void apiEnableApp(const HttpRequest& message);
+	void apiDisableApp(const HttpRequest& message);
 	void apiDeleteApp(const HttpRequest& message);
 	void apiFileDownload(const HttpRequest& message);
 	void apiFileUpload(const HttpRequest& message);

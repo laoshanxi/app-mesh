@@ -176,7 +176,7 @@ void Application::invokeNow(int timerId)
 	Application::invoke();
 }
 
-void Application::stop()
+void Application::disable()
 {
 	const static char fname[] = "Application::stop() ";
 
@@ -190,7 +190,7 @@ void Application::stop()
 	}
 }
 
-void Application::start()
+void Application::enable()
 {
 	const static char fname[] = "Application::start() ";
 
@@ -431,7 +431,7 @@ bool Application::avialable()
 void Application::destroy()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	this->stop();
+	this->disable();
 	this->m_status = DESTROYED;
 	// clean test run process
 	if (m_runProcess != nullptr)

@@ -114,8 +114,10 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/sh/shell-app-id
 	bindRest(web::http::methods::PUT, R"(/app/sh/([^/\*]+))", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/appname?action=start
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiControlApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/appname/enable
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/appname/disable
+	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiDisableApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname
 	bindRest(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
@@ -295,8 +297,8 @@ std::string RestHandler::tokenCheck(const HttpRequest & message)
 	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
 	{
 		// get user info
-		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
-		auto userJson = Configuration::instance()->getUserInfo(userName);
+		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name);
+		auto userJson = Configuration::instance()->getUserInfo(userName.as_string());
 		auto userKey = userJson.at(JSON_KEY_USER_key).as_string();
 
 		// check user token
@@ -306,7 +308,7 @@ std::string RestHandler::tokenCheck(const HttpRequest & message)
 			.with_claim(HTTP_HEADER_JWT_name, userName);
 		verifier.verify(decoded_token);
 
-		return userName;
+		return userName.as_string();
 	}
 	else
 	{
@@ -389,7 +391,7 @@ std::string RestHandler::createToken(const std::string& uname, const std::string
 		.set_type(HTTP_HEADER_JWT)
 		.set_issued_at(jwt::date(std::chrono::system_clock::now()))
 		.set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{ timeoutSeconds }))
-		.set_payload_claim(HTTP_HEADER_JWT_name, std::string(uname))
+		.set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
 		.sign(jwt::algorithm::hs256{ passwd });
 	return std::move(token);
 }
@@ -421,36 +423,30 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
 }
 
-void RestHandler::apiControlApp(const HttpRequest & message)
+void RestHandler::apiEnableApp(const HttpRequest & message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	auto appName = path.substr(strlen("/app/"));
 
-	if (querymap.find(U(HTTP_QUERY_KEY_action)) != querymap.end())
-	{
-		auto action = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_action))->second);
-		auto msg = action + " <" + appName + "> success.";
-		if (action == HTTP_QUERY_KEY_action_start)
-		{
-			Configuration::instance()->startApp(appName);
-			message.reply(status_codes::OK, msg);
-		}
-		else if (action == HTTP_QUERY_KEY_action_stop)
-		{
-			Configuration::instance()->stopApp(appName);
-			message.reply(status_codes::OK, msg);
-		}
-		else
-		{
-			message.reply(status_codes::ServiceUnavailable, "No such action query flag");
-		}
-	}
-	else
-	{
-		message.reply(status_codes::ServiceUnavailable, "Require action query flag");
-	}
+	// /app/$app-name/enable
+	std::string appName = path.substr(strlen("/app/"));
+	appName = appName.substr(0, appName.find_last_of('/'));
+
+	Configuration::instance()->enableApp(appName);
+	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
+}
+
+void RestHandler::apiDisableApp(const HttpRequest & message)
+{
+	permissionCheck(message, PERMISSION_KEY_app_control);
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+
+	// /app/$app-name/disable
+	std::string appName = path.substr(strlen("/app/"));
+	appName = appName.substr(0, appName.find_last_of('/'));
+
+	Configuration::instance()->disableApp(appName);
+	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
 }
 
 void RestHandler::apiDeleteApp(const HttpRequest & message)
@@ -679,7 +675,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 			auto timeout = message.headers().find(HTTP_HEADER_JWT_expire_seconds)->second;
 			auto timeoutValue = std::stoi(timeout);
 			// timeout should less than 24h
-			if (timeoutValue > 1 && timeoutValue < (24 * 60 * 60)) timeoutSeconds = timeoutValue;
+			if (timeoutValue > 1 && timeoutValue < MAX_TOKEN_EXPIRE_SECONDS) timeoutSeconds = timeoutValue;
 		}
 
 		// redirect auth

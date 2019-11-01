@@ -32,7 +32,7 @@ private:
 	void processUnReg();
 	void processView();
 	void processResource();
-	void processStartStop(bool start);
+	void processEnableDisable(bool start);
 	void processTest();
 	void processShell();
 	void processDownload();

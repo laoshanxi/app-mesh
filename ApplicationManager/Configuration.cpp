@@ -241,15 +241,15 @@ web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
 	return result;
 }
 
-void Configuration::stopApp(const std::string& appName)
+void Configuration::disableApp(const std::string& appName)
 {
-	getApp(appName)->stop();
+	getApp(appName)->disable();
 	saveConfigToDisk();
 }
-void Configuration::startApp(const std::string& appName)
+void Configuration::enableApp(const std::string& appName)
 {
 	auto app = getApp(appName);
-	app->start();
+	app->enable();
 	saveConfigToDisk();
 }
 
@@ -371,7 +371,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::object& json
 			if (mapApp->getName() == app->getName())
 			{
 				// Stop existing app and replace
-				mapApp->stop();
+				mapApp->disable();
 				mapApp = app;
 				update = true;
 			}

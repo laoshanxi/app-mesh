@@ -40,8 +40,8 @@ public:
 	// Invoke by scheduler
 	virtual void invoke();
 	
-	virtual void stop();
-	virtual void start();
+	virtual void disable();
+	virtual void enable();
 
 	// run app in a new process object
 	std::string runApp(int timeoutSeconds, const std::map<std::string, std::string>& envMap);

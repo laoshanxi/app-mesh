@@ -130,9 +130,9 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	return result;
 }
 
-void ApplicationShortRun::start()
+void ApplicationShortRun::enable()
 {
-	const static char fname[] = "ApplicationShortRun::start() ";
+	const static char fname[] = "ApplicationShortRun::enable() ";
 	LOG_DBG << fname << "Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -143,9 +143,9 @@ void ApplicationShortRun::start()
 	}
 }
 
-void ApplicationShortRun::stop()
+void ApplicationShortRun::disable()
 {
-	Application::stop();
+	Application::disable();
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// clean old timer
 	if (m_timerId)

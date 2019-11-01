@@ -23,8 +23,8 @@ public:
 
 	virtual void invoke() override;
 	virtual void invokeNow(int timerId) override;
-	virtual void start() override;
-	virtual void stop() override;
+	virtual void enable() override;
+	virtual void disable() override;
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	void initTimer();
 	virtual void refreshPid() override;

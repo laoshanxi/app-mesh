@@ -126,6 +126,7 @@ public:
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define DATE_TIME_FORMAT_RFC3339 "%FT%TZ"	//= "%Y-%m-%dT%H:%M:%SZ"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS (60 * 60) // default 1 hour
+#define MAX_TOKEN_EXPIRE_SECONDS (60 * 60 * 24) // max 24 hour
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_RestListenPort "RestListenPort"
@@ -201,9 +202,8 @@ public:
 #define HTTP_QUERY_KEY_keep_history "keep_history"
 #define HTTP_QUERY_KEY_process_uuid "process_uuid"
 #define HTTP_QUERY_KEY_timeout "timeout"
-#define HTTP_QUERY_KEY_action "action"
-#define HTTP_QUERY_KEY_action_start "start"
-#define HTTP_QUERY_KEY_action_stop "stop"
+#define HTTP_QUERY_KEY_action_start "enable"
+#define HTTP_QUERY_KEY_action_stop "disable"
 #define HTTP_QUERY_KEY_loglevel "level"
 #define HTTP_QUERY_KEY_label_value "value"
 

@@ -32,7 +32,7 @@ const char* GET_STATUS_STR(unsigned int status)
 {
 	static const char* STATUS_STR[] =
 	{
-		"stopped",
+		"disabled",
 		"enabled",
 		"destroyed"
 	};

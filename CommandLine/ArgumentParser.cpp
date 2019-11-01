@@ -90,22 +90,22 @@ void ArgumentParser::parse()
 		// GET /app-manager/resources
 		processResource();
 	}
-	else if (cmd == "start")
+	else if (cmd == "enable")
 	{
-		// POST /app/$app-name?action=start
-		processStartStop(true);
+		// POST /app/$app-name/enable
+		processEnableDisable(true);
 	}
-	else if (cmd == "stop")
+	else if (cmd == "disable")
 	{
-		// POST /app/$app-name?action=stop
-		processStartStop(false);
+		// POST /app/$app-name/disable
+		processEnableDisable(false);
 	}
 	else if (cmd == "restart")
 	{
 		auto tmpOpts = m_pasrsedOptions;
-		processStartStop(false);
+		processEnableDisable(false);
 		m_pasrsedOptions = tmpOpts;
-		processStartStop(true);
+		processEnableDisable(true);
 	}
 	else if (cmd == "run")
 	{
@@ -147,8 +147,8 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
 	std::cout << "  label       Manage host labels" << std::endl;
-	std::cout << "  start       Start a application" << std::endl;
-	std::cout << "  stop        Stop a application" << std::endl;
+	std::cout << "  enable      Enable a application" << std::endl;
+	std::cout << "  disable     Disable a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
@@ -488,14 +488,14 @@ void ArgumentParser::processResource()
 	std::cout << GET_STD_STRING(bodyStr) << std::endl;
 }
 
-void ArgumentParser::processStartStop(bool start)
+void ArgumentParser::processEnableDisable(bool start)
 {
 	po::options_description desc("Start application:");
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
 		("all,a", "action for all applications")
-		("name,n", po::value<std::vector<std::string>>(), "start/stop application by name.")
+		("name,n", po::value<std::vector<std::string>>(), "enable/disable application by name.")
 		;
 
 	shiftCommandLineArgs(desc);
@@ -532,10 +532,8 @@ void ArgumentParser::processStartStop(bool start)
 	}
 	for (auto app : appList)
 	{
-		std::map<std::string, std::string> query;
-		query[HTTP_QUERY_KEY_action] = start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop;
-		std::string restPath = std::string("/app/") + app;
-		auto response = requestHttp(methods::POST, restPath, query);
+		std::string restPath = std::string("/app/") + app +  + "/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
+		auto response = requestHttp(methods::POST, restPath);
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 	}
 	if (appList.size() == 0)
