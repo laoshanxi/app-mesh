@@ -7,7 +7,8 @@ OEXT = o
 # https://blog.csdn.net/humadivinity/article/details/78890754
 # boost_thread is not needed, linked here is used to packed for cpprest 
 INCLUDES = -I/usr/local/ace/include/ -I/usr/local/include
-DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -lcrypto -lssl -lACE -lcpprest -lboost_thread -lboost_system -lboost_regex -Wl,-Bstatic -llog4cpp -ljsoncpp -Wl,-Bdynamic
+DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -lcrypto -lssl -lACE -lcpprest -lboost_thread -lboost_system -lboost_regex -Wl,-Bstatic -llog4cpp -ljsoncpp -Wl,-Bdynamic \
+           -L../common -lcommon
 
 
 all : format $(TARGET) 
@@ -27,10 +28,7 @@ SRCS = \
 	ResourceLimitation.cpp \
 	ResourceCollection.cpp \
 	LinuxCgroup.cpp \
-	TimerHandler.cpp \
-	../common/Utility.cpp \
-	../common/HttpRequest.cpp \
-	../common/TimeZoneHelper.cpp
+	TimerHandler.cpp
 		
 
 OBJS = $(SRCS:.cpp=.$(OEXT))

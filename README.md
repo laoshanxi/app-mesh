@@ -23,9 +23,9 @@ Extra Features | Application can define avialable time range in a day <br> Appli
 **CentOS**:
 ```
 # centos
-yum install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager-1.4.5-1.x86_64.rpm
+yum install -y appmanager-1.4.6-1.x86_64.rpm
 # ubuntu
-apt install -y https://github.com/laoshanxi/app-manager/releases/download/v1.4/appmanager_1.4.5_amd64.deb
+apt install -y appmanager_1.4.6_amd64.deb
 # after installation, service will be started automaticlly, check status by bellow command:
 $ appc view
 id name        user  status   return pid    memory  start_time          command_line
