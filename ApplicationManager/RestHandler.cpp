@@ -139,9 +139,9 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/labels
 	bindRest(web::http::methods::POST, "/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc?value=123
-	bindRest(web::http::methods::PUT, "/label/([^/\*]+)", std::bind(&RestHandler::apiTagSet, this, std::placeholders::_1));
+	bindRest(web::http::methods::PUT, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagSet, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc
-	bindRest(web::http::methods::DEL, "/label/([^/\*]+)", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
+	bindRest(web::http::methods::DEL, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
 
 	// 7. Log level
 	// http://127.0.0.1:6060/app-manager/loglevel?level=DEBUG
