@@ -48,6 +48,8 @@
       "file-upload",
       "label-view",
       "label-update",
+	  "label-set",
+	  "label-delete",
       "log-level"
     ],
     "view": [
@@ -78,8 +80,10 @@
 | POST     | /app/app-name/syncrun?timeout=5 | `run-app-sync`  |
 | GET     | /download | `file-download`  |
 | PUT     | /upload | `file-upload`  |
-| GET     | /app-manager/labels | `label-view`  |
-| PUT     | /app-manager/labels | `label-update`  |
+| GET     | /labels | `label-view`  |
+| POST     | /labels | `label-update`  |
+| PUT     | /label/abc?value=123  | `label-set`  |
+| DEL     | /label/abc | `label-delete`  |
 | POST    | /app-manager/loglevel | `log-level`  |
 
 

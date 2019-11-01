@@ -391,8 +391,10 @@ POST| /app/$app-name?action=stop | | Stop an application
 DELETE| /app/$app-name | | Unregister an application
 GET| /download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server and grant permission
 PUT| /upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
-GET| /app-manager/labels | { "os": "linux","arch": "x86_64" } | Get labels
-POST| /app-manager/labels | { "os": "linux","arch": "x86_64" } | Update labels
+GET| /labels | { "os": "linux","arch": "x86_64" } | Get labels
+POST| /labels | { "os": "linux","arch": "x86_64" } | Update labels
+PUT| /label/abc?value=123 |  | Set a label
+DELETE| /label/abc |  | Delete a label
 POST| /app-manager/loglevel?level=DEBUG | level=DEBUG/INFO/NOTICE/WARN/ERROR | Set log level
 
 ---

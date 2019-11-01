@@ -51,6 +51,8 @@
       "file-upload",
       "label-view",
       "label-update",
+      "label-set",
+      "label-delete",
       "log-level"
     ],
     "view": [

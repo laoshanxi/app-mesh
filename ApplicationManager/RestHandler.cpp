@@ -134,10 +134,14 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
 	// 6. Label Management
-	// http://127.0.0.1:6060/app-manager/labels
-	bindRest(web::http::methods::GET, "/app-manager/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app-manager/labels
-	bindRest(web::http::methods::POST, "/app-manager/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/labels
+	bindRest(web::http::methods::GET, "/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/labels
+	bindRest(web::http::methods::POST, "/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/label/abc?value=123
+	bindRest(web::http::methods::PUT, "/label/([^/\*]+)", std::bind(&RestHandler::apiTagSet, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/label/abc
+	bindRest(web::http::methods::DEL, "/label/([^/\*]+)", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
 
 	// 7. Log level
 	// http://127.0.0.1:6060/app-manager/loglevel?level=DEBUG
@@ -567,6 +571,50 @@ void RestHandler::apiSetTags(const HttpRequest& message)
 	Configuration::instance()->jsonToTag(message.extract_json().get());
 	Configuration::instance()->saveConfigToDisk();
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
+}
+
+void RestHandler::apiTagSet(const HttpRequest & message)
+{
+	permissionCheck(message, PERMISSION_KEY_label_set);
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto vec = Utility::splitString(path, "/");
+	auto labelKey = vec[vec.size() - 1];
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	if (querymap.find(U(HTTP_QUERY_KEY_label_value)) != querymap.end())
+	{
+		auto value = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_label_value))->second);
+
+		auto tagJson = Configuration::instance()->tagToJson();
+		tagJson[labelKey] = web::json::value::string(value);
+		Configuration::instance()->jsonToTag(tagJson);
+		Configuration::instance()->saveConfigToDisk();
+
+		message.reply(status_codes::OK);
+	}
+	else
+	{
+		message.reply(status_codes::BadRequest, "query value required");
+	}
+}
+
+void RestHandler::apiTagDel(const HttpRequest & message)
+{
+	permissionCheck(message, PERMISSION_KEY_label_delete);
+	
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto vec = Utility::splitString(path, "/");
+	auto labelKey = vec[vec.size() - 1];
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	auto value = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_label_value))->second);
+
+	auto tagJson = Configuration::instance()->tagToJson();
+	if (tagJson.has_field(labelKey)) tagJson[labelKey] = web::json::value::string(value);
+	Configuration::instance()->jsonToTag(tagJson);
+	Configuration::instance()->saveConfigToDisk();
+
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiLoglevel(const HttpRequest& message)

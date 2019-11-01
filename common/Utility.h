@@ -204,6 +204,7 @@ public:
 #define HTTP_QUERY_KEY_action_start "start"
 #define HTTP_QUERY_KEY_action_stop "stop"
 #define HTTP_QUERY_KEY_loglevel "level"
+#define HTTP_QUERY_KEY_label_value "value"
 
 
 #define PERMISSION_KEY_view_app					"view-app"
@@ -221,6 +222,8 @@ public:
 #define PERMISSION_KEY_file_upload				"file-upload"
 #define PERMISSION_KEY_label_view				"label-view"
 #define PERMISSION_KEY_label_update				"label-update"
+#define PERMISSION_KEY_label_set				"label-set"
+#define PERMISSION_KEY_label_delete				"label-delete"
 #define PERMISSION_KEY_loglevel  				"log-level"
 
 #endif

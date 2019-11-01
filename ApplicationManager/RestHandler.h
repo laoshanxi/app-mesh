@@ -56,6 +56,8 @@ private:
 	void apiFileUpload(const HttpRequest& message);
 	void apiGetTags(const HttpRequest& message);
 	void apiSetTags(const HttpRequest& message);
+	void apiTagSet(const HttpRequest& message);
+	void apiTagDel(const HttpRequest& message);
 	void apiLoglevel(const HttpRequest& message);
 	void apiGetPermissions(const HttpRequest& message);
 
