@@ -799,7 +799,7 @@ void ArgumentParser::processTags()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/app-manager/labels";
+	std::string restPath = "/labels";
 	http_response response = requestHttp(methods::GET, restPath);
 	RESPONSE_CHECK_WITH_RETURN;
 	std::vector<std::string> inputTags;
