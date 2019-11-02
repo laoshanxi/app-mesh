@@ -1,7 +1,7 @@
 ﻿
 [![License](https://img.shields.io/badge/license-LGPL-green.svg)](LICENSE)
-![coverage](https://img.shields.io/badge/coverage-90%25-yellowgreen.svg?maxAge=2592000)
-![version](https://img.shields.io/badge/version-1.4.5-blue.svg?maxAge=2592000)
+![coverage](https://img.shields.io/badge/coverage-95%25-yellowgreen.svg?maxAge=2592000)
+![version](https://img.shields.io/badge/version-1.5.1-blue.svg?maxAge=2592000)
 # Application Manager
 ### Introduction
 Application Manager is a daemon service to manage different types of sub-applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line to start/stop and register new app easily.
@@ -16,7 +16,7 @@ Supported applications  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> REST service support IPv6 <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
 
 
 ### How to install
