@@ -279,7 +279,7 @@ $ appc resource
 $ appc view -n ping
 {
         "command" : "/bin/sleep 60",
-        "last_start" : 1568893521,
+        "last_start_time" : 1568893521,
         "memory" : 626688,
         "name" : "ping",
         "pid" : 8426,
