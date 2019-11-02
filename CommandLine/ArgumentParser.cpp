@@ -1026,14 +1026,14 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	std::cout << std::left;
 	std::cout
 		<< std::setw(3) << ("id")
-		<< std::setw(12) << ("name")
-		<< std::setw(6) << ("user")
-		<< std::setw(9) << ("status")
-		<< std::setw(7) << ("pid")
-		<< std::setw(8) << ("memory")
-		<< std::setw(7) << ("return")
-		<< std::setw(20) << ("last_start_time")
-		<< ("command")
+		<< std::setw(12) << (JSON_KEY_APP_name)
+		<< std::setw(6) << (JSON_KEY_APP_user)
+		<< std::setw(9) << (JSON_KEY_APP_status)
+		<< std::setw(7) << (JSON_KEY_APP_pid)
+		<< std::setw(8) << (JSON_KEY_APP_memory)
+		<< std::setw(7) << (JSON_KEY_APP_return)
+		<< std::setw(20) << (JSON_KEY_APP_last_start)
+		<< (JSON_KEY_APP_command)
 		<< std::endl;
 
 	int index = 1;
