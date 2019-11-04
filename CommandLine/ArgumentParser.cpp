@@ -110,7 +110,7 @@ void ArgumentParser::parse()
 	else if (cmd == "run")
 	{
 		// GET /app/$app-name/output
-		processTest();
+		processRun();
 	}
 	else if (cmd == "sh")
 	{
@@ -542,7 +542,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	}
 }
 
-void ArgumentParser::processTest()
+void ArgumentParser::processRun()
 {
 	po::options_description desc("Run application:");
 	desc.add_options()

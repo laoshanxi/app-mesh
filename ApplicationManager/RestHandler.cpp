@@ -412,9 +412,9 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	// /bin/su - ubuntu -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine = "/bin/su - ";
 	shellCommandLine.append(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
-	shellCommandLine.append(" -c '");
+	shellCommandLine.append(" -c \"");
 	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command)));
-	shellCommandLine.append("'");
+	shellCommandLine.append("\"");
 	jobj[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
 	jobj[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
 	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
@@ -876,7 +876,7 @@ void RestHandler::apiAsyncRunOut(const HttpRequest& message)
 		resp.set_body(body);
 		if (finished)
 		{
-			resp.set_status_code(status_codes::Found);
+			resp.set_status_code(status_codes::Created);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
 		}
 

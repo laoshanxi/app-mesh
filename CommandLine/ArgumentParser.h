@@ -33,7 +33,7 @@ private:
 	void processView();
 	void processResource();
 	void processEnableDisable(bool start);
-	void processTest();
+	void processRun();
 	void processShell();
 	void processDownload();
 	void processUpload();
