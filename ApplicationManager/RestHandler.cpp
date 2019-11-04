@@ -401,36 +401,52 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	const static char fname[] = "RestHandler::apiRegShellApp() ";
 
 	permissionCheck(message, PERMISSION_KEY_app_reg_shell);
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
 	{
 		throw std::invalid_argument("invalid json format");
 	}
+	bool sessionLogin = (querymap.count("HTTP_QUERY_KEY_session_login")) && (querymap[HTTP_QUERY_KEY_session_login] == "true");
 	auto jobj = jsonApp.as_object();
-
 	jobj[JSON_KEY_APP_status] = web::json::value::number(0);
 	// /bin/su - ubuntu -c "export A=b;export B=c;env | grep B"
-	std::string shellCommandLine = "/bin/su - ";
-	shellCommandLine.append(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
-	shellCommandLine.append(" -c \"");
-	// inject environment variable, su does not transfer env to session
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
+	std::string shellCommandLine;
+	if (sessionLogin)
 	{
-		auto envs = jobj.at(JSON_KEY_APP_env).as_object();
-		for (auto env : envs)
-		{
-			shellCommandLine.append(" export ");
-			shellCommandLine.append(env.first);
-			shellCommandLine.append("=");
-			shellCommandLine.append(env.second.as_string());
-			shellCommandLine.append(";");
-		}
-		jobj.erase(JSON_KEY_APP_env);
+		shellCommandLine = "/bin/su --login ";
+		shellCommandLine.append(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
+		jobj[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
 	}
+	else
+	{
+		shellCommandLine = "/bin/sh";
+	}
+
+	shellCommandLine.append(" -c \"");
+
+	if (sessionLogin)
+	{
+		// inject environment variable, /bin/su does not transfer env to session
+		if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
+		{
+			auto envs = jobj.at(JSON_KEY_APP_env).as_object();
+			for (auto env : envs)
+			{
+				shellCommandLine.append(" export ");
+				shellCommandLine.append(env.first);
+				shellCommandLine.append("=");
+				shellCommandLine.append(env.second.as_string());
+				shellCommandLine.append(";");
+			}
+			jobj.erase(JSON_KEY_APP_env);
+		}
+	}
+
 	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command)));
 	shellCommandLine.append("\"");
 	jobj[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
-	jobj[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
+
 	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
 
 	auto app = Configuration::instance()->addApp(jobj);
@@ -792,11 +808,11 @@ void RestHandler::apiAsyncRun(const HttpRequest& message)
 	app = app.substr(0, app.find_first_of('/'));
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	int timeout = 10; // default use 10 seconds
+	int timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS; // default use 10 seconds
 	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
 	{
 		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
-		if (timeout == 0) timeout = 10;
+		if (timeout == 0) timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS;
 		LOG_DBG << fname << "Use timeout :" << timeout;
 
 	}
@@ -833,11 +849,11 @@ void RestHandler::apiSyncRun(const HttpRequest& message)
 	app = app.substr(0, app.find_first_of('/'));
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	int timeout = 10; // default use 10 seconds
+	int timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS; // default use 10 seconds
 	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
 	{
 		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
-		if (timeout == 0) timeout = 10;
+		if (timeout == 0) timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS;
 		LOG_DBG << fname << "Use timeout :" << timeout;
 
 	}

@@ -124,9 +124,10 @@ public:
 
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
-#define DATE_TIME_FORMAT_RFC3339 "%FT%TZ"	//= "%Y-%m-%dT%H:%M:%SZ"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS (60 * 60) // default 1 hour
+#define DATE_TIME_FORMAT_RFC3339 "%FT%TZ"		//= "%Y-%m-%dT%H:%M:%SZ"
+#define DEFAULT_TOKEN_EXPIRE_SECONDS (60 * 60)	// default 1 hour
 #define MAX_TOKEN_EXPIRE_SECONDS (60 * 60 * 24) // max 24 hour
+#define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10		// run app default timeout
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_RestListenPort "RestListenPort"
@@ -206,6 +207,7 @@ public:
 #define HTTP_QUERY_KEY_action_stop "disable"
 #define HTTP_QUERY_KEY_loglevel "level"
 #define HTTP_QUERY_KEY_label_value "value"
+#define HTTP_QUERY_KEY_session_login "session_login"
 
 
 #define PERMISSION_KEY_view_app					"view-app"

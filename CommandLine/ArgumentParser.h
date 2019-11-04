@@ -64,6 +64,7 @@ private:
 	bool m_sslEnabled;
 	int m_tokenTimeoutSeconds;
 	bool m_printDebug;
+	bool m_sessionLogin;	// whether use session login for register shell app
 	std::string m_hostname;
 	std::string m_username;
 	std::string m_userpwd;

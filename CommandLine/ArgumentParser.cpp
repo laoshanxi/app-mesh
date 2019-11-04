@@ -23,11 +23,11 @@
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
 
 // Each user should have its own token path
-const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : "." ) + "/._appmgr_";
+const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmgr_";
 static std::string m_jwtToken;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug)
-	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0), m_printDebug(printDebug)
+	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0), m_printDebug(printDebug), m_sessionLogin(true)
 	, m_username(JWT_ADMIN_NAME), m_userpwd(JWT_ADMIN_KEY)
 {
 	po::options_description global("Global options");
@@ -38,7 +38,7 @@ ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, boo
 	po::positional_options_description pos;
 	pos.add("command", 1).
 		add("subargs", -1);
-	
+
 	// parse [command] and all other arguments in [subargs]
 	auto parsed = po::command_line_parser(argc, argv).options(global).positional(pos).allow_unregistered().run();
 	m_pasrsedOptions = parsed.options;
@@ -200,8 +200,8 @@ void ArgumentParser::processLogon()
 		std::cin.ignore(1024, '\n');
 		std::cout << "Password: ";
 		char buffer[256] = { 0 };
-		char *str = buffer;
-		FILE *fp = stdin;
+		char* str = buffer;
+		FILE* fp = stdin;
 		inputSecurePasswd(&str, sizeof(buffer), '*', fp);
 		m_userpwd = buffer;
 		std::cout << std::endl;
@@ -532,7 +532,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	}
 	for (auto app : appList)
 	{
-		std::string restPath = std::string("/app/") + app +  + "/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
+		std::string restPath = std::string("/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(methods::POST, restPath);
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 	}
@@ -549,8 +549,8 @@ void ArgumentParser::processRun()
 		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
 		("name,n", po::value<std::string>(), "run application by name.")
-		("timeout,x", po::value<int>()->default_value(10), "timeout seconds for the remote app run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
-		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
+		("timeout,x", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the remote app run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
+		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2), only take effect without session login.")
 		;
 
 	shiftCommandLineArgs(desc);
@@ -567,10 +567,9 @@ void ArgumentParser::processRun()
 
 	std::map<std::string, std::string> query;
 	int timeout = m_commandLineVariables["timeout"].as<int>();
-	if (m_commandLineVariables.count("timeout") > 0)
-	{
+	if (m_commandLineVariables.count("timeout"))
 		query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
-	}
+	query[HTTP_QUERY_KEY_session_login] = m_sessionLogin ? "true" : "false";
 	auto appName = m_commandLineVariables["name"].as<std::string>();
 	web::json::value jsobObj;
 	if (m_commandLineVariables.count("env"))
@@ -640,7 +639,8 @@ void ArgumentParser::processShell()
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("debug,g", "print debug information")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("timeout,x", po::value<int>()->default_value(10), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
+		("timeout,x", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
+		("login,l", "starts the shell as login shell with an environment similar to a real login")
 		;
 	m_commandLineVariables.clear();
 	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
@@ -654,6 +654,17 @@ void ArgumentParser::processShell()
 	}
 	m_printDebug = m_commandLineVariables.count("debug");
 	m_hostname = m_commandLineVariables["host"].as<std::string>();
+	bool sessionLogin = m_commandLineVariables.count("login");
+	int timeout = m_commandLineVariables["timeout"].as<int>();
+	for (auto iter = m_pasrsedOptions.begin(); iter != m_pasrsedOptions.end(); ++iter)
+	{
+		if ((*iter).string_key == "-l" || (*iter).string_key == "--login")
+		{
+			m_pasrsedOptions.erase(iter);
+			break;
+		}
+	}
+
 	// Use uuid for shell app to avoid overide existing app
 	auto appName = Utility::createUUID();
 
@@ -666,25 +677,18 @@ void ArgumentParser::processShell()
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 2. Call run and check output
-	if (m_commandLineVariables.count("extra_time"))
-	{
-		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-x",
-			strdup(std::to_string(m_commandLineVariables["extra_time"].as<int>()).c_str()), "\0" };
-		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
-		testParser.parse();
-	}
-	else
-	{
-		const char* argv[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "\0" };
-		ArgumentParser testParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
-		testParser.parse();
-	}
+	const char* argvRun[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()),
+		"-x", strdup(std::to_string(timeout).c_str()),
+		"\0" };
+	ArgumentParser runParser(ARRAY_LEN(argvRun), argvRun, m_listenPort, m_sslEnabled, m_printDebug);
+	runParser.m_sessionLogin = sessionLogin;
+	runParser.parse();
 
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 
 	// 3. Unregist application
-	const char* argv[] = { "appc" , "unreg", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-f", "\0" };
-	ArgumentParser unregParser(ARRAY_LEN(argv), argv, m_listenPort, m_sslEnabled, m_printDebug);
+	const char* argvUnreg[] = { "appc" , "unreg", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-f", "\0" };
+	ArgumentParser unregParser(ARRAY_LEN(argvUnreg), argvUnreg, m_listenPort, m_sslEnabled, m_printDebug);
 	unregParser.parse();
 
 	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
@@ -1130,7 +1134,7 @@ void ArgumentParser::setStdinEcho(bool enable)
 #endif
 }
 
-ssize_t ArgumentParser::inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp)
+ssize_t ArgumentParser::inputSecurePasswd(char** pw, size_t sz, int mask, FILE* fp)
 {
 	if (!pw || !sz || !fp) return -1;       /* validate input   */
 #ifdef MAXPW
@@ -1138,7 +1142,7 @@ ssize_t ArgumentParser::inputSecurePasswd(char **pw, size_t sz, int mask, FILE *
 #endif
 
 	if (*pw == NULL) {              /* reallocate if no address */
-		void *tmp = realloc(*pw, sz * sizeof **pw);
+		void* tmp = realloc(*pw, sz * sizeof * *pw);
 		if (!tmp)
 			return -1;
 		memset(tmp, 0, sz);    /* initialize memory to 0   */
@@ -1196,4 +1200,4 @@ ssize_t ArgumentParser::inputSecurePasswd(char **pw, size_t sz, int mask, FILE *
 			__func__, sz - 1);
 
 	return idx; /* number of chars in passwd    */
-}
+	}
