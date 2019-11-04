@@ -876,7 +876,7 @@ void RestHandler::apiAsyncRunOut(const HttpRequest& message)
 		resp.set_body(body);
 		if (finished)
 		{
-			resp.set_status_code(status_codes::NotFound);
+			resp.set_status_code(status_codes::Found);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
 		}
 
