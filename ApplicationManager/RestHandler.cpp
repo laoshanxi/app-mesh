@@ -413,6 +413,20 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	std::string shellCommandLine = "/bin/su - ";
 	shellCommandLine.append(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
 	shellCommandLine.append(" -c \"");
+	// inject environment variable, su does not transfer env to session
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
+	{
+		auto envs = jobj.at(JSON_KEY_APP_env).as_object();
+		for (auto env : envs)
+		{
+			shellCommandLine.append(" export ");
+			shellCommandLine.append(env.first);
+			shellCommandLine.append("=");
+			shellCommandLine.append(env.second.as_string());
+			shellCommandLine.append(";");
+		}
+		jobj.erase(JSON_KEY_APP_env);
+	}
 	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command)));
 	shellCommandLine.append("\"");
 	jobj[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
