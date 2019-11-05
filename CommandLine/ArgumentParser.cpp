@@ -656,12 +656,15 @@ void ArgumentParser::processShell()
 	m_hostname = m_commandLineVariables["host"].as<std::string>();
 	bool sessionLogin = m_commandLineVariables.count("login");
 	int timeout = m_commandLineVariables["timeout"].as<int>();
-	for (auto iter = m_pasrsedOptions.begin(); iter != m_pasrsedOptions.end(); ++iter)
+	for (auto iter = m_pasrsedOptions.begin(); iter != m_pasrsedOptions.end();)
 	{
 		if ((*iter).string_key == "-l" || (*iter).string_key == "--login")
 		{
-			m_pasrsedOptions.erase(iter);
-			break;
+			iter = m_pasrsedOptions.erase(iter);
+		}
+		else
+		{
+			++iter;
 		}
 	}
 
