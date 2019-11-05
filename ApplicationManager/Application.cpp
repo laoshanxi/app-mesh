@@ -181,12 +181,16 @@ void Application::disable()
 	const static char fname[] = "Application::stop() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_status != STOPPED)
+	if (m_status == ENABLED)
 	{
 		if (m_process != nullptr) m_process->killgroup();
-		m_status = STOPPED;
+		m_status = DISABLED;
 		m_return = nullptr;
 		LOG_INF << fname << "Application <" << m_name << "> stopped.";
+	}
+	else
+	{
+		LOG_WAR << fname << "Failed to disable <" << m_name << "> status is " << m_status;
 	}
 }
 
@@ -195,11 +199,15 @@ void Application::enable()
 	const static char fname[] = "Application::start() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_status == STOPPED)
+	if (m_status == DISABLED)
 	{
 		m_status = ENABLED;
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
+	}
+	else if (m_status == UNUSEABLE)
+	{
+		LOG_WAR << fname << "Application <" << m_name << "> is UNAVIALABLE status, enable is forbidden.";
 	}
 }
 
@@ -242,7 +250,7 @@ std::string Application::runApp(int timeoutSeconds, const std::map<std::string, 
 	{
 		throw std::invalid_argument("Docker application does not support this API");
 	}
-	if (m_status != STATUS::ENABLED && m_status != STATUS::STOPPED)
+	if (m_status != STATUS::ENABLED && m_status != STATUS::DISABLED)
 	{
 		throw std::runtime_error("Incorrect application status");
 	}
@@ -432,7 +440,7 @@ void Application::destroy()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	this->disable();
-	this->m_status = DESTROYED;
+	this->m_status = UNUSEABLE;
 	// clean test run process
 	if (m_runProcess != nullptr)
 	{

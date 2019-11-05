@@ -409,7 +409,7 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	}
 	bool sessionLogin = (querymap.count("HTTP_QUERY_KEY_session_login")) && (querymap[HTTP_QUERY_KEY_session_login] == "true");
 	auto jobj = jsonApp.as_object();
-	jobj[JSON_KEY_APP_status] = web::json::value::number(0);
+	jobj[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
 	// /bin/su - ubuntu -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine;
 	if (sessionLogin)

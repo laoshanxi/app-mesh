@@ -34,7 +34,7 @@ const char* GET_STATUS_STR(unsigned int status)
 	{
 		"disabled",
 		"enabled",
-		"destroyed"
+		"unusable"
 	};
 	assert(status < ARRAY_LEN(STATUS_STR));
 	return STATUS_STR[status];
