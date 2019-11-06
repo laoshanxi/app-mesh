@@ -80,7 +80,7 @@
 | GET     | /app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
 | POST     | /app/app-name/syncrun?timeout=5 | `run-app-sync`  |
 | GET     | /download | `file-download`  |
-| PUT     | /upload | `file-upload`  |
+| POST     | /upload | `file-upload`  |
 | GET     | /labels | `label-view`  |
 | POST     | /labels | `label-update`  |
 | PUT     | /label/abc?value=123  | `label-set`  |

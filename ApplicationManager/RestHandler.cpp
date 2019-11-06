@@ -133,7 +133,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/download
 	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/upload
-	bindRest(web::http::methods::PUT, "/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, "/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
 	// 6. Label Management
 	// http://127.0.0.1:6060/labels

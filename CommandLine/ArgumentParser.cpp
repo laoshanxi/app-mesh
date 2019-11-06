@@ -780,7 +780,7 @@ void ArgumentParser::processUpload()
 	config.set_timeout(std::chrono::seconds(200));
 	config.set_validate_certificates(false);
 	http_client client(restPath, config);
-	http_request request = createRequest(methods::PUT, "/upload", query, &header);
+	http_request request = createRequest(methods::POST, "/upload", query, &header);
 
 	request.set_body(fileStream, length);
 	request.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(local));
