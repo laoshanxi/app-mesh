@@ -250,10 +250,6 @@ std::string Application::runApp(int timeoutSeconds, const std::map<std::string, 
 	{
 		throw std::invalid_argument("Docker application does not support this API");
 	}
-	if (m_status != STATUS::ENABLED && m_status != STATUS::DISABLED)
-	{
-		throw std::runtime_error("Incorrect application status");
-	}
 	std::string processUUID = m_runProcess->getuuid();
 	auto combinedEnvMap = m_envMap;
 	std::for_each(envMap.begin(), envMap.end(), [&combinedEnvMap](const std::pair<std::string, std::string>& pair)
