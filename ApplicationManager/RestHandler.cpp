@@ -339,16 +339,43 @@ bool RestHandler::permissionCheck(const HttpRequest & message, const std::string
 	auto userName = tokenCheck(message);
 	if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
 	{
-		// check user role permission
-		if (Configuration::instance()->getUserPermissions(userName).count(permission))
+		// 1. redirect to remote permission check
+		if (Configuration::instance()->getJwtRedirectUrl().length() &&
+			!message.headers().has(HTTP_HEADER_JWT_redirect_from))
 		{
-			LOG_DBG << fname << "authentication success for remote: " << message.remote_address() << " with user : " << userName << " and permission : " << permission;
-			return true;
+			std::map<std::string, std::string> headers;
+			if (permission.length()) headers[HTTP_HEADER_JWT_auth_permission] = permission;
+			auto userName = getTokenUser(message);
+			auto resp = requestHttp(
+				web::http::methods::POST,
+				std::string("/auth/") + userName,
+				{}, headers,
+				NULL,
+				getToken(message));
+			if (resp.status_code() == status_codes::OK)
+			{
+				return true;
+			}
+			else
+			{
+				LOG_WAR << fname << "Remote " << Configuration::instance()->getJwtRedirectUrl() <<" permission <" 
+					<< permission << "> for user: " << userName << " return code: " << resp.status_code();
+				throw std::invalid_argument(resp.extract_utf8string().get());
+			}
 		}
 		else
 		{
-			LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-			throw std::invalid_argument("Permission denied");
+			// 2. check user role permission
+			if (Configuration::instance()->getUserPermissions(userName).count(permission))
+			{
+				LOG_DBG << fname << "authentication success for remote: " << message.remote_address() << " with user : " << userName << " and permission : " << permission;
+				return true;
+			}
+			else
+			{
+				LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
+				throw std::invalid_argument("Permission denied");
+			}
 		}
 	}
 	else
@@ -760,22 +787,6 @@ void RestHandler::apiAuth(const HttpRequest& message)
 	if (message.headers().has(HTTP_HEADER_JWT_auth_permission))
 	{
 		permission = message.headers().find(HTTP_HEADER_JWT_auth_permission)->second;
-	}
-
-	if (Configuration::instance()->getJwtRedirectUrl().length() && 
-		!message.headers().has(HTTP_HEADER_JWT_redirect_from))
-	{
-		std::map<std::string, std::string> headers;
-		if (permission.length()) headers[HTTP_HEADER_JWT_auth_permission] = permission;
-		auto userName = getTokenUser(message);
-		auto resp = requestHttp(
-			web::http::methods::POST,
-			std::string("/auth/") + userName,
-			{}, headers,
-			NULL,
-			getToken(message));
-		message.reply(resp.status_code(), resp.body());
-		return;
 	}
 
 	// permission is empty meas just verify token
