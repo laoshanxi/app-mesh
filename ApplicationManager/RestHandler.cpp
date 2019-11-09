@@ -653,6 +653,7 @@ void RestHandler::apiLoglevel(const HttpRequest& message)
 		if (Utility::setLogLevel(level))
 		{
 			message.reply(status_codes::OK, std::string("set log level to ") + level);
+			Configuration::instance()->dump();
 		}
 		else
 		{
