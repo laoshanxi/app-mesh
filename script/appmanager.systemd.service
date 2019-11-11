@@ -1,7 +1,7 @@
 #/lib/systemd/system/appmanager.service
 
 [Unit]
-Description=Application Manager System Service
+Description=Application Manager Systemd Service
 Documentation=https://github.com/laoshanxi/app-manager
 After=network.target
 Wants=network.target

@@ -198,6 +198,27 @@ int Configuration::getScheduleInterval()
 
 int Configuration::getRestListenPort()
 {
+	const static char fname[] = "Configuration::getRestListenPort() ";
+
+	static const char* envStr = ::getenv(ENV_APP_MANAGER_LISTEN_PORT);
+	if (envStr)
+	{
+		static int overrideListenPortValue = 0;
+		if (!overrideListenPortValue)
+		{
+			if (Utility::isNumber(envStr))
+			{
+				overrideListenPortValue = std::atoi(envStr);
+				LOG_INF << fname << ENV_APP_MANAGER_LISTEN_PORT << "=" << overrideListenPortValue;
+			}
+			else
+			{
+				overrideListenPortValue = m_restListenPort;
+				LOG_WAR << fname << ENV_APP_MANAGER_LISTEN_PORT << " is not a number: " << envStr << ", config value will be used: " << m_restListenPort;
+			}
+		}
+		return overrideListenPortValue;
+	}
 	return m_restListenPort;
 }
 

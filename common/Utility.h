@@ -121,7 +121,7 @@ public:
 	static std::string runShellCommand(std::string cmd);
 	static void trimLineBreak(std::string& str);
 };
-
+#define ENV_APP_MANAGER_LISTEN_PORT "APPMGR_OVERRIDE_LISTEN_PORT"
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define DATE_TIME_FORMAT_RFC3339 "%FT%TZ"		//= "%Y-%m-%dT%H:%M:%SZ"

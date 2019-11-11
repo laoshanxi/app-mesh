@@ -14,8 +14,20 @@ log(){
 }
 
 cd /opt/appmanager/
-MYID="$$"
+
+SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
+
+# support override default listen port from argv[1] and env
+if [[ $# -gt 0 ]]; then
+	if [ -z $APPMGR_OVERRIDE_LISTEN_PORT ]
+		log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
+	else
+		export APPMGR_OVERRIDE_LISTEN_PORT=$1
+		log "APPMGR_OVERRIDE_LISTEN_PORT from argv:${APPMGR_OVERRIDE_LISTEN_PORT}"
+	fi
+fi
+
 while true ; do
 	case "$(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | grep -v appsvc.json | wc -w)" in
 	
@@ -36,7 +48,7 @@ while true ; do
 	*)	# Only kill the process that was not started by this script
 		for i in $(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | grep -v appsvc.json | awk '{print $2}')
 		  do
-			if [ $(pstree -Ap $MYID | grep $i | wc -w) -eq 0 ] ; then
+			if [ $(pstree -Ap $SCRIPT_PID | grep $i | wc -w) -eq 0 ] ; then
 			  log "Killed duplicate Application Manager $i: $(date)"
 			  kill -9 $i
 			fi
