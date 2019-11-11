@@ -10,7 +10,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{7A1F9871-FD69-430B-A5B5-7D58A84720DA}"
 	ProjectSection(SolutionItems) = preProject
 		script\appc.sh = script\appc.sh
-		script\appmanager.service = script\appmanager.service
+		script\appmanager.initd.sh = script\appmanager.initd.sh
+		script\appmanager.systemd.service = script\appmanager.systemd.service
 		autogen.sh = autogen.sh
 		script\install.sh = script\install.sh
 		doc\JWT_DESC.md = doc\JWT_DESC.md
