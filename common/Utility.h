@@ -50,8 +50,8 @@
 
 #define DEFAULT_REST_LISTEN_PORT 6060
 
-#define JWT_ADMIN_KEY "app-mgr-admin-secret-key"
-#define JWT_ADMIN_NAME "admin"
+#define JWT_USER_KEY "app-mgr-user-secret-key"
+#define JWT_USER_NAME "user"
 
 enum STATUS
 {
@@ -182,6 +182,7 @@ public:
 #define JSON_KEY_USER_name "name"
 #define JSON_KEY_USER_key "key"
 #define JSON_KEY_USER_roles "roles"
+#define JSON_KEY_USER_locked "locked"
 
 #define HTTP_HEADER_JWT "JWT"
 #define HTTP_HEADER_JWT_ISSUER "appmgr-auth0"

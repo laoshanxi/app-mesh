@@ -10,6 +10,7 @@
   "SSLCertificateKeyFile": "server.key",
   "HttpThreadPoolSize": 6,
   "JWTEnabled": true,
+  "JWTRedirectUrl": "",
   "Applications": [
     {
       "command": "/bin/sleep 60",
@@ -22,12 +23,14 @@
     "admin": {
       "name": "admin",
       "key": "app-mgr-admin-secret-key",
-      "roles": [ "manage" ]
+      "roles": [ "manage" ],
+      "locked": false
     },
     "user": {
       "name": "user",
       "key": "app-mgr-user-secret-key",
-      "roles": [ "view" ]
+      "roles": [ "view" ],
+      "locked": false
     }
   },
   "Labels": {

@@ -336,7 +336,17 @@ const web::json::value Configuration::getUserInfo(const std::string& userName)
 {
 	if (m_jwtSection.has_object_field(userName))
 	{
-		return m_jwtSection.at(userName);
+		auto useJson = m_jwtSection.at(userName).as_object();
+		auto locked = GET_JSON_BOOL_VALUE(useJson, JSON_KEY_USER_locked);
+		if (!locked)
+		{
+			return m_jwtSection.at(userName);
+		}
+		else
+		{
+			auto msg = std::string("User <") + userName + "> was locked";
+			throw std::invalid_argument(msg);
+		}
 	}
 	else
 	{
