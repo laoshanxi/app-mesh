@@ -200,15 +200,15 @@ int Configuration::getRestListenPort()
 {
 	const static char fname[] = "Configuration::getRestListenPort() ";
 
-	static const char* envStr = ::getenv(ENV_APP_MANAGER_LISTEN_PORT);
-	if (envStr)
+	static const std::string envStr = ::getenv(ENV_APP_MANAGER_LISTEN_PORT) ? ::getenv(ENV_APP_MANAGER_LISTEN_PORT) : "";
+	if (envStr.length())
 	{
 		static int overrideListenPortValue = 0;
 		if (!overrideListenPortValue)
 		{
 			if (Utility::isNumber(envStr))
 			{
-				overrideListenPortValue = std::atoi(envStr);
+				overrideListenPortValue = std::stoi(envStr);
 				LOG_INF << fname << ENV_APP_MANAGER_LISTEN_PORT << "=" << overrideListenPortValue;
 			}
 			else
