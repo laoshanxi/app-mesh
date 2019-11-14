@@ -1,8 +1,8 @@
-FROM centos
+FROM ubuntu:xenial
 
-ADD ./appmanager-1.2-1.x86_64.rpm /opt
+ADD ./appmanager*.deb /opt
 
-RUN yum install /opt/appmanager-1.2-1.x86_64.rpm -y
+RUN apt install /opt/appmanager*.deb -y
 
 EXPOSE 6060
 
