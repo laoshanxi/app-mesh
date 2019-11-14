@@ -18,15 +18,17 @@ cd /opt/appmanager/
 SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
 
-# support override default listen port from argv[1] and env
-if [[ $# -gt 0 ]]; then
-	if [ -z $APPMGR_OVERRIDE_LISTEN_PORT ]
-		log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
-	else
-		export APPMGR_OVERRIDE_LISTEN_PORT=$1
-		log "APPMGR_OVERRIDE_LISTEN_PORT from argv:${APPMGR_OVERRIDE_LISTEN_PORT}"
-	fi
+# support override default listen port frmo env
+if [ -z $APPMGR_OVERRIDE_LISTEN_PORT ]
+	log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
 fi
+
+pre_reg_app() {
+	if [[ $# -gt 0 ]]; then
+		/opt/appmanager/appc unreg -n sleep -f
+		/opt/appmanager/appc reg -n start_app -c "$*" -f
+	fi
+}
 
 while true ; do
 	case "$(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | grep -v appsvc.json | wc -w)" in
@@ -35,8 +37,9 @@ while true ; do
 		result=$(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | grep -v appsvc.json | awk '{print $2}')
 		if [ -z "$result" ]; then
 			nohup /opt/appmanager/appsvc &
+			sleep 1
+			pre_reg_app $*
 			log "Starting Application Manager:     $(date)"
-			sleep 0.5
 		else
 			log "Double check Application Manager is alive: $(date)"
 		fi
