@@ -34,7 +34,7 @@ while true ; do
 	0)	sleep 0.1
 		result=$(ps aux | grep -w /opt/appmanager/appsvc | grep -v grep | grep -v appsvc.json | awk '{print $2}')
 		if [ -z "$result" ]; then
-			nohup /opt/appmanager/appsvc >/dev/null 2>&1 &
+			nohup /opt/appmanager/appsvc &
 			log "Starting Application Manager:     $(date)"
 			sleep 0.5
 		else
