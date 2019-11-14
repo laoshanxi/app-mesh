@@ -1,4 +1,4 @@
-#! /bin/bash
+#!/bin/bash
 
 #####################################################################
 # This script is used for init.d service startup appsvc process
