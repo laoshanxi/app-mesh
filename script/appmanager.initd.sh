@@ -13,7 +13,7 @@
 
 ## Fill in name of program here.
 PROG="appsvc"
-PROG_WATCHDOG="appmgr-watchdog.sh"
+PROG_WATCHDOG="appmg-entrypoint.sh"
 PROGC="appc"
 PROG_PATH="/opt/appmanager" ## Not need, but sometimes helpful (if $PROG resides in /opt for example).
 PROG_ARGS="" 
