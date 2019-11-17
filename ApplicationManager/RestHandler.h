@@ -61,6 +61,8 @@ private:
 	void apiTagDel(const HttpRequest& message);
 	void apiLoglevel(const HttpRequest& message);
 	void apiGetPermissions(const HttpRequest& message);
+	void apiGetBasicConfig(const HttpRequest& message);
+	void apiSetBasicConfig(const HttpRequest& message);
 
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
 

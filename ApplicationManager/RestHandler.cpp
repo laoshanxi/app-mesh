@@ -148,6 +148,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// 7. Log level
 	// http://127.0.0.1:6060/app-manager/loglevel?level=DEBUG
 	bindRest(web::http::methods::POST, "/app-manager/loglevel", std::bind(&RestHandler::apiLoglevel, this, std::placeholders::_1));
+	bindRest(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
 
 	this->open();
 
@@ -718,6 +719,32 @@ void RestHandler::apiGetPermissions(const HttpRequest & message)
 		json[index++] = web::json::value::string(perm);
 	}
 	message.reply(status_codes::OK, json);
+}
+
+void RestHandler::apiGetBasicConfig(const HttpRequest & message)
+{
+	permissionCheck(message, PERMISSION_KEY_config_view);
+
+	auto config = Configuration::instance()->AsJson(false);
+
+	// only return basic configuration [the first level]
+	auto jsonObj = config.as_object();
+	for (auto json : jsonObj)
+	{
+		if (json.second.is_object() || json.second.is_array()) config.erase(json.first);
+	}
+	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(config.serialize())));
+}
+
+void RestHandler::apiSetBasicConfig(const HttpRequest & message)
+{
+	permissionCheck(message, PERMISSION_KEY_config_set);
+
+	Configuration::instance()->hotUpdate(message.extract_json().get(), true);
+
+	Configuration::instance()->saveConfigToDisk();
+
+	apiGetBasicConfig(message);
 }
 
 void RestHandler::apiLogin(const HttpRequest& message)

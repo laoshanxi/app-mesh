@@ -29,7 +29,7 @@ public:
 	static std::shared_ptr<Configuration> FromJson(const std::string& str);
 	web::json::value AsJson(bool returnRuntimeInfo);
 	void saveConfigToDisk();
-	void hotUpdate(const std::string& str);
+	void hotUpdate(const web::json::value& config, bool updateBasicConfig = false);
 
 	std::vector<std::shared_ptr<Application>> getApps();
 	std::shared_ptr<Application> addApp(const web::json::object& jsonApp);
@@ -76,7 +76,7 @@ private:
 
 	std::recursive_mutex m_mutex;
 	std::string m_jsonFilePath;
-	std::map<std::string, std::string> m_tags;
+	std::map<std::string, std::string> m_labels;
 
 	bool m_sslEnabled;
 	bool m_restEnabled;
@@ -86,7 +86,7 @@ private:
 
 	size_t m_threadPoolSize;
 	std::shared_ptr<Roles> m_roles;
-	std::shared_ptr<Users> m_users;
+	std::shared_ptr<Users> m_jwtUsers;
 
 	static std::shared_ptr<Configuration> m_instance;
 };

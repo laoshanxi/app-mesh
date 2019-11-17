@@ -39,6 +39,7 @@ private:
 	void processUpload();
 	void processTags();
 	void processLoglevel();
+	void processConfigView();
 
 	bool confirmInput(const char* msg);
 	http_response requestHttp(const method& mtd, const std::string& path);

@@ -22,7 +22,9 @@ std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
 	PERMISSION_KEY_label_update,
 	PERMISSION_KEY_label_set,
 	PERMISSION_KEY_label_delete,
-	PERMISSION_KEY_loglevel
+	PERMISSION_KEY_loglevel,
+	PERMISSION_KEY_config_view,
+	PERMISSION_KEY_config_set
 };
 
 //////////////////////////////////////////////////////////////////////

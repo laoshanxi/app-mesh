@@ -141,7 +141,7 @@ public:
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
 #define JSON_KEY_JWTEnabled "JWTEnabled"
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
-#define JSON_KEY_jwt "JWT"
+#define JSON_KEY_JWT "JWT"
 #define JSON_KEY_Roles "Roles"
 #define JSON_KEY_Applications "Applications"
 #define JSON_KEY_Labels "Labels"
@@ -229,6 +229,8 @@ public:
 #define PERMISSION_KEY_label_set				"label-set"
 #define PERMISSION_KEY_label_delete				"label-delete"
 #define PERMISSION_KEY_loglevel  				"log-level"
+#define PERMISSION_KEY_config_view  			"config-view"
+#define PERMISSION_KEY_config_set	  			"config-set"
 
 #endif
 

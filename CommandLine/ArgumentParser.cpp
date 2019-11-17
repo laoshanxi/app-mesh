@@ -132,6 +132,10 @@ void ArgumentParser::parse()
 	{
 		processLoglevel();
 	}
+	else if (cmd == "config")
+	{
+		processConfigView();
+	}
 	else
 	{
 		printMainHelp();
@@ -156,6 +160,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  sh          Use shell run a command and get output" << std::endl;
 	std::cout << "  get         Download remote file to local" << std::endl;
 	std::cout << "  put         Upload file to server" << std::endl;
+	std::cout << "  config      Manage basic configurations" << std::endl;
 	std::cout << "  log         Set log level" << std::endl;
 
 	std::cout << std::endl;
@@ -896,6 +901,23 @@ void ArgumentParser::processLoglevel()
 	// /app-manager/loglevel?level=DEBUG
 	auto restPath = std::string("/app-manager/loglevel");
 	auto response = requestHttp(methods::POST, restPath, query);
+	RESPONSE_CHECK_WITH_RETURN;
+	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+}
+
+void ArgumentParser::processConfigView()
+{
+	po::options_description desc("Manage labels:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("view,v", "view basic configurations")
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	std::string restPath = "/app-manager/config";
+	http_response response = requestHttp(methods::GET, restPath);
 	RESPONSE_CHECK_WITH_RETURN;
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
