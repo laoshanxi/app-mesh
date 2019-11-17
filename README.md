@@ -398,6 +398,8 @@ POST| /labels | { "os": "linux","arch": "x86_64" } | Update labels
 PUT| /label/abc?value=123 |  | Set a label
 DELETE| /label/abc |  | Delete a label
 POST| /app-manager/loglevel?level=DEBUG | level=DEBUG/INFO/NOTICE/WARN/ERROR | Set log level
+GET| /app-manager/config |  | Get basic configurations
+POST| /app-manager/config |  | Set basic configurations
 
 ---
 ### 3rd party deependencies

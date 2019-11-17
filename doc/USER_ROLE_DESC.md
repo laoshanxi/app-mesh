@@ -86,6 +86,8 @@
 | PUT     | /label/abc?value=123  | `label-set`  |
 | DEL     | /label/abc | `label-delete`  |
 | POST    | /app-manager/loglevel | `log-level`  |
+| POST    | /app-manager/config | `config-view`  |
+| GET    | /app-manager/config | `config-set`  |
 
 
 ### Command line authentication

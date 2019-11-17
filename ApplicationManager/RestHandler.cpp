@@ -149,6 +149,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// http://127.0.0.1:6060/app-manager/loglevel?level=DEBUG
 	bindRest(web::http::methods::POST, "/app-manager/loglevel", std::bind(&RestHandler::apiLoglevel, this, std::placeholders::_1));
 	bindRest(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, "/app-manager/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
 	this->open();
 
