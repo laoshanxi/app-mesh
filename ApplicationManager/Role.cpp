@@ -4,7 +4,7 @@
 //////////////////////////////////////////////////////////////////////
 /// pre-defined permissions
 //////////////////////////////////////////////////////////////////////
-std::set<std::string> Role::m_allPermissions = {
+std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
 	PERMISSION_KEY_view_app ,
 	PERMISSION_KEY_view_app_output,
 	PERMISSION_KEY_view_all_app,
@@ -118,7 +118,7 @@ std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value & ob
 	auto permissions = obj.as_array();
 	for (auto permmisionJson : permissions)
 	{
-		if (m_allPermissions.count(permmisionJson.as_string()))
+		if (APP_MANAGER_PERMISSIONS.count(permmisionJson.as_string()))
 		{
 			role->m_permissions.insert(permmisionJson.as_string());
 		}
