@@ -128,6 +128,11 @@ void User::updateRoles(std::set<std::shared_ptr<Role>> roles)
 	this->m_roles = roles;
 }
 
+void User::updateKey(std::string passswd)
+{
+	m_key = passswd;
+}
+
 bool User::locked() const
 {
 	return m_locked;

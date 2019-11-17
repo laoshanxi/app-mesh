@@ -151,6 +151,9 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
 	bindRest(web::http::methods::POST, "/app-manager/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
+	// 8. Security
+	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/changepwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
+
 	this->open();
 
 	LOG_INF << fname << "Listening for requests at:" << uri.to_string();
@@ -726,13 +729,19 @@ void RestHandler::apiGetBasicConfig(const HttpRequest & message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
-	auto config = Configuration::instance()->AsJson(false);
+	// admin can get whole configure info include user & role
+	bool isAdmin = (getTokenUser(message) == JWT_ADMIN_NAME);
 
-	// only return basic configuration [the first level]
-	auto jsonObj = config.as_object();
-	for (auto json : jsonObj)
+	auto config = web::json::value::parse(Configuration::instance()->getSecureConfigContentStr());
+
+	if (!isAdmin)
 	{
-		if (json.second.is_object() || json.second.is_array()) config.erase(json.first);
+		// only return basic configuration [the first level]
+		auto jsonObj = config.as_object();
+		for (auto json : jsonObj)
+		{
+			if (json.second.is_object() || json.second.is_array()) config.erase(json.first);
+		}
 	}
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(config.serialize())));
 }
@@ -746,6 +755,32 @@ void RestHandler::apiSetBasicConfig(const HttpRequest & message)
 	Configuration::instance()->saveConfigToDisk();
 
 	apiGetBasicConfig(message);
+}
+
+void RestHandler::apiChangePassword(const HttpRequest & message)
+{
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	permissionCheck(message, PERMISSION_KEY_change_passwd);
+
+	auto vec = Utility::splitString(path, "/");
+	if (vec.size() != 3)
+	{
+		throw std::invalid_argument("invalid path");
+	}
+	auto pathUserName = vec[1];
+	auto tokenUserName = getTokenUser(message);
+
+	if (pathUserName != tokenUserName)
+	{
+		throw std::invalid_argument("User can only change its own password");
+	}
+
+	auto newPasswd = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_new_password)->second));
+	auto user = Configuration::instance()->getUserInfo(tokenUserName);
+	user->updateKey(newPasswd);
+
+	Configuration::instance()->saveConfigToDisk();
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiLogin(const HttpRequest& message)

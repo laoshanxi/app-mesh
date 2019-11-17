@@ -20,6 +20,7 @@ public:
 	void lock();
 	void unlock();
 	void updateRoles(std::set<std::shared_ptr<Role>> roles);
+	void updateKey(std::string passswd);
 
 	// get user info
 	bool locked() const;

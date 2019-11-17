@@ -53,6 +53,7 @@
 
 #define JWT_USER_KEY "password"
 #define JWT_USER_NAME "user"
+#define JWT_ADMIN_NAME "admin"
 
 enum STATUS
 {
@@ -194,6 +195,7 @@ public:
 #define HTTP_HEADER_JWT_expire_seconds "expire_seconds"
 #define HTTP_HEADER_JWT_username "username"
 #define HTTP_HEADER_JWT_password "password"
+#define HTTP_HEADER_JWT_new_password "new_password"
 #define HTTP_HEADER_JWT_auth_permission "auth_permission"
 #define HTTP_HEADER_JWT_redirect_from "redirect_from"
 #define HTTP_HEADER_KEY_exit_code "exit_code"
@@ -231,6 +233,7 @@ public:
 #define PERMISSION_KEY_loglevel  				"log-level"
 #define PERMISSION_KEY_config_view  			"config-view"
 #define PERMISSION_KEY_config_set	  			"config-set"
+#define PERMISSION_KEY_change_passwd  			"change-passwd"
 
 #endif
 

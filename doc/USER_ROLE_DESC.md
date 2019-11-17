@@ -50,7 +50,8 @@
       "label-update",
 	  "label-set",
 	  "label-delete",
-      "log-level"
+      "log-level",
+	  "change-passwd"
     ],
     "view": [
       "view-app",
