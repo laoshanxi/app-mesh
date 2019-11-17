@@ -84,9 +84,9 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		config->m_threadPoolSize = threadpool;
 	}
-	config->jsonToTag(jobj.at(JSON_KEY_Labels));
-	config->m_roles = Roles::FromJson(jobj.at(JSON_KEY_Roles).as_object());
-	config->m_jwtUsers = Users::FromJson(jobj.at(JSON_KEY_JWT).as_object(), config->m_roles);
+	if (jval.has_field(JSON_KEY_Labels)) config->jsonToTag(jobj.at(JSON_KEY_Labels));
+	if (jval.has_field(JSON_KEY_Roles))	config->m_roles = Roles::FromJson(jobj.at(JSON_KEY_Roles).as_object());
+	if (jval.has_field(JSON_KEY_JWT)) config->m_jwtUsers = Users::FromJson(jobj.at(JSON_KEY_JWT).as_object(), config->m_roles);
 
 	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_JWTRedirectUrl);
 

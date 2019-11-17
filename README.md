@@ -400,7 +400,7 @@ DELETE| /label/abc |  | Delete a label
 POST| /app-manager/loglevel?level=DEBUG | level=DEBUG/INFO/NOTICE/WARN/ERROR | Set log level
 GET| /app-manager/config |  | Get basic configurations
 POST| /app-manager/config |  | Set basic configurations
-POST| /user/admin/changepwd | new_password=base64(passwd) | Change user password
+POST| /user/admin/passwd | new_password=base64(passwd) | Change user password
 
 ---
 ### 3rd party deependencies

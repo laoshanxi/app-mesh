@@ -152,7 +152,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRest(web::http::methods::POST, "/app-manager/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
 	// 8. Security
-	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/changepwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
 
 	this->open();
 

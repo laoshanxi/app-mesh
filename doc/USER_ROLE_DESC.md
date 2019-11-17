@@ -89,6 +89,7 @@
 | POST    | /app-manager/loglevel | `log-level`  |
 | POST    | /app-manager/config | `config-view`  |
 | GET    | /app-manager/config | `config-set`  |
+| POST    | /user/admin/passwd | `change-passwd`  |
 
 
 ### Command line authentication
