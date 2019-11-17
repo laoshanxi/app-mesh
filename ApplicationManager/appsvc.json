@@ -13,10 +13,10 @@
   "JWTRedirectUrl": "",
   "Applications": [
     {
-      "command": "/bin/sleep 60",
-      "name": "sleep",
+      "command": "ping www.baidu.com -w 10",
+      "name": "ping",
       "user": "root",
-      "working_dir": "/tmp"
+      "cache_lines": 20
     }
   ],
   "JWT": {
