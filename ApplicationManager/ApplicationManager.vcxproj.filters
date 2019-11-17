@@ -16,22 +16,22 @@
     </ClCompile>
     <ClCompile Include="TimerHandler.cpp" />
     <ClCompile Include="Application.cpp">
-      <Filter>Application</Filter>
+      <Filter>application</Filter>
     </ClCompile>
     <ClCompile Include="ApplicationPeriodRun.cpp">
-      <Filter>Application</Filter>
+      <Filter>application</Filter>
     </ClCompile>
     <ClCompile Include="ApplicationShortRun.cpp">
-      <Filter>Application</Filter>
+      <Filter>application</Filter>
     </ClCompile>
     <ClCompile Include="DockerProcess.cpp">
-      <Filter>Process</Filter>
+      <Filter>process</Filter>
     </ClCompile>
     <ClCompile Include="MonitoredProcess.cpp">
-      <Filter>Process</Filter>
+      <Filter>process</Filter>
     </ClCompile>
     <ClCompile Include="AppProcess.cpp">
-      <Filter>Process</Filter>
+      <Filter>process</Filter>
     </ClCompile>
     <ClCompile Include="..\common\HttpRequest.cpp">
       <Filter>common</Filter>
@@ -82,25 +82,25 @@
       <Filter>common\os</Filter>
     </ClInclude>
     <ClInclude Include="Application.h">
-      <Filter>Application</Filter>
+      <Filter>application</Filter>
     </ClInclude>
     <ClInclude Include="ApplicationPeriodRun.h">
-      <Filter>Application</Filter>
+      <Filter>application</Filter>
     </ClInclude>
     <ClInclude Include="ApplicationShortRun.h">
-      <Filter>Application</Filter>
+      <Filter>application</Filter>
     </ClInclude>
     <ClInclude Include="DockerProcess.h">
-      <Filter>Process</Filter>
+      <Filter>process</Filter>
     </ClInclude>
     <ClInclude Include="MonitoredProcess.h">
-      <Filter>Process</Filter>
+      <Filter>process</Filter>
     </ClInclude>
     <ClInclude Include="..\common\date.h">
       <Filter>common</Filter>
     </ClInclude>
     <ClInclude Include="AppProcess.h">
-      <Filter>Process</Filter>
+      <Filter>process</Filter>
     </ClInclude>
     <ClInclude Include="..\common\HttpRequest.h">
       <Filter>common</Filter>
@@ -129,14 +129,14 @@
     <Filter Include="common\os">
       <UniqueIdentifier>{22cd69f3-0570-4dd3-9f77-5c02bbd4d736}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Application">
-      <UniqueIdentifier>{2a00d72f-3f11-477e-804f-35a80990a09d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Process">
-      <UniqueIdentifier>{1c95d5db-416a-4375-b8a3-c5f7f8657113}</UniqueIdentifier>
-    </Filter>
     <Filter Include="security">
       <UniqueIdentifier>{ef7fd838-04b6-44ba-8996-92b700893aac}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="process">
+      <UniqueIdentifier>{1c95d5db-416a-4375-b8a3-c5f7f8657113}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="application">
+      <UniqueIdentifier>{2a00d72f-3f11-477e-804f-35a80990a09d}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
