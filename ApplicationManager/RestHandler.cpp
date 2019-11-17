@@ -759,6 +759,8 @@ void RestHandler::apiSetBasicConfig(const HttpRequest & message)
 
 void RestHandler::apiChangePassword(const HttpRequest & message)
 {
+	const static char fname[] = "RestHandler::apiChangePassword() ";
+
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	permissionCheck(message, PERMISSION_KEY_change_passwd);
 
@@ -780,6 +782,8 @@ void RestHandler::apiChangePassword(const HttpRequest & message)
 	user->updateKey(newPasswd);
 
 	Configuration::instance()->saveConfigToDisk();
+
+	LOG_INF << fname << "User <" << uname << "> changed password";
 	message.reply(status_codes::OK);
 }
 
