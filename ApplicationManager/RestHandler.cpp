@@ -298,8 +298,9 @@ std::string RestHandler::tokenCheck(const HttpRequest & message)
 	{
 		// get user info
 		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name);
-		auto userJson = Configuration::instance()->getUserInfo(userName.as_string());
-		auto userKey = userJson.at(JSON_KEY_USER_key).as_string();
+		auto user = Configuration::instance()->getUserInfo(userName.as_string());
+		auto userKey = user->getKey();
+		if (user->locked()) throw std::invalid_argument("User was locked");
 
 		// check user token
 		auto verifier = jwt::verify()
@@ -765,7 +766,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 		result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count() + timeoutSeconds);
 
 		auto userJson = Configuration::instance()->getUserInfo(uname);
-		if (passwd == GET_STD_STRING(userJson.at(JSON_KEY_USER_key).as_string()))
+		if (passwd == userJson->getKey())
 		{
 			message.reply(status_codes::OK, result);
 			LOG_DBG << fname << "User <" << uname << "> login success";

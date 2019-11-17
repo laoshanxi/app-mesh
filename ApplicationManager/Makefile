@@ -26,6 +26,8 @@ SRCS = \
 	ResourceLimitation.cpp \
 	ResourceCollection.cpp \
 	LinuxCgroup.cpp \
+	User.cpp \
+	Role.cpp \
 	TimerHandler.cpp
 		
 

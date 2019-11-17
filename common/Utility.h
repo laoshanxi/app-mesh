@@ -49,8 +49,9 @@
 #define ERASE_JSON_FIELD(jsonObj, key) if (jsonObj.find(GET_STRING_T(key)) != jsonObj.end()) jsonObj.erase(GET_STRING_T(key));
 
 #define DEFAULT_REST_LISTEN_PORT 6060
+#define DEFAULT_SCHEDULE_INTERVAL 2
 
-#define JWT_USER_KEY "app-mgr-user-secret-key"
+#define JWT_USER_KEY "password"
 #define JWT_USER_NAME "user"
 
 enum STATUS
@@ -179,7 +180,6 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
 
 
-#define JSON_KEY_USER_name "name"
 #define JSON_KEY_USER_key "key"
 #define JSON_KEY_USER_roles "roles"
 #define JSON_KEY_USER_locked "locked"

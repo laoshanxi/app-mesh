@@ -4,8 +4,6 @@
 #include "ApplicationPeriodRun.h"
 #include "ResourceCollection.h"
 
-#define DEFAULT_SCHEDULE_INTERVAL 3
-
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
 	:m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true), m_threadPoolSize(6)
@@ -87,8 +85,9 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		config->m_threadPoolSize = threadpool;
 	}
 	config->jsonToTag(jobj.at(JSON_KEY_Labels));
-	config->m_jwtSection = jobj.at(JSON_KEY_jwt);
-	config->m_roleSection = jobj.at(JSON_KEY_Roles);
+	config->m_roles = Roles::FromJson(jobj.at(JSON_KEY_Roles).as_object());
+	config->m_users = Users::FromJson(jobj.at(JSON_KEY_jwt).as_object(), config->m_roles);
+
 	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_JWTRedirectUrl);
 
 	return config;
@@ -158,8 +157,8 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_HttpThreadPoolSize] = web::json::value::number((uint32_t)m_threadPoolSize);
 	if (!returnRuntimeInfo)
 	{
-		result[JSON_KEY_jwt] = m_jwtSection;
-		result[JSON_KEY_Roles] = m_roleSection;
+		result[JSON_KEY_jwt] = m_users->AsJson();
+		result[JSON_KEY_Roles] = m_roles->AsJson();
 	}
 
 	result[JSON_KEY_Applications] = apps;
@@ -332,43 +331,18 @@ bool Configuration::getJwtEnabled() const
 	return m_jwtEnabled;
 }
 
-const web::json::value Configuration::getUserInfo(const std::string& userName)
+const std::shared_ptr<User> Configuration::getUserInfo(const std::string & userName)
 {
-	if (m_jwtSection.has_object_field(userName))
-	{
-		auto useJson = m_jwtSection.at(userName).as_object();
-		auto locked = GET_JSON_BOOL_VALUE(useJson, JSON_KEY_USER_locked);
-		if (!locked)
-		{
-			return m_jwtSection.at(userName);
-		}
-		else
-		{
-			auto msg = std::string("User <") + userName + "> was locked";
-			throw std::invalid_argument(msg);
-		}
-	}
-	else
-	{
-		throw std::invalid_argument(std::string("No such user: ") + userName);
-	}
+	return m_users->getUser(userName);
 }
 
 std::set<std::string> Configuration::getUserPermissions(const std::string & userName)
 {
 	std::set<std::string> permissionSet;
-	auto userJson = getUserInfo(userName);
-	auto roles = userJson.at(JSON_KEY_USER_roles).as_array();
-	for (auto role : roles)
+	auto user = getUserInfo(userName);
+	for (auto role : user->getRoles())
 	{
-		if (m_roleSection.has_array_field(role.as_string()))
-		{
-			auto permissions = m_roleSection.at(role.as_string()).as_array();
-			for (auto perm : permissions)
-			{
-				permissionSet.insert(perm.as_string());
-			}
-		}
+		for (auto perm : role->getPermissions()) permissionSet.insert(perm);
 	}
 	return std::move(permissionSet);
 }
@@ -486,9 +460,9 @@ void Configuration::hotUpdate(const std::string& str)
 	SET_COMPARE(this->m_RestListenAddress, newConfig->m_RestListenAddress);
 	SET_COMPARE(this->m_restListenPort, newConfig->m_restListenPort);
 	SET_COMPARE(this->m_threadPoolSize, newConfig->m_threadPoolSize);
-	SET_COMPARE(this->m_jwtSection, newConfig->m_jwtSection);
+	SET_COMPARE(this->m_roles, newConfig->m_roles);
+	SET_COMPARE(this->m_users, newConfig->m_users);
 	SET_COMPARE(this->m_restEnabled, newConfig->m_restEnabled);
-	SET_COMPARE(this->m_roleSection, newConfig->m_roleSection);
 	if (this->m_logLevel != newConfig->m_logLevel)
 	{
 		Utility::setLogLevel(newConfig->m_logLevel);

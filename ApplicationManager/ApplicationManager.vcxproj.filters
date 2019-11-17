@@ -36,6 +36,12 @@
     <ClCompile Include="..\common\HttpRequest.cpp">
       <Filter>common</Filter>
     </ClCompile>
+    <ClCompile Include="User.cpp">
+      <Filter>security</Filter>
+    </ClCompile>
+    <ClCompile Include="Role.cpp">
+      <Filter>security</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -99,6 +105,12 @@
     <ClInclude Include="..\common\HttpRequest.h">
       <Filter>common</Filter>
     </ClInclude>
+    <ClInclude Include="User.h">
+      <Filter>security</Filter>
+    </ClInclude>
+    <ClInclude Include="Role.h">
+      <Filter>security</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />
@@ -122,6 +134,9 @@
     </Filter>
     <Filter Include="Process">
       <UniqueIdentifier>{1c95d5db-416a-4375-b8a3-c5f7f8657113}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="security">
+      <UniqueIdentifier>{ef7fd838-04b6-44ba-8996-92b700893aac}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

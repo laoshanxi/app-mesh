@@ -21,16 +21,19 @@
   ],
   "JWT": {
     "admin": {
-      "name": "admin",
-      "key": "app-mgr-admin-secret-key",
+      "key": "Admin123",
       "roles": [ "manage" ],
       "locked": false
     },
     "user": {
-      "name": "user",
-      "key": "app-mgr-user-secret-key",
+      "key": "password",
       "roles": [ "view" ],
       "locked": false
+    },
+    "test": {
+      "key": "test",
+      "roles": [ ],
+      "locked": true
     }
   },
   "Labels": {

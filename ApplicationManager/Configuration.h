@@ -9,6 +9,8 @@
 #include <cpprest/json.h>
 
 #include "Application.h"
+#include "Role.h"
+#include "User.h"
 
 //////////////////////////////////////////////////////////////////////////
 // All the operation functions to access appmg.json
@@ -57,7 +59,7 @@ public:
 	const size_t getThreadPoolSize() const { return m_threadPoolSize; }
 	const std::string getDescription() const { return m_hostDescription; }
 
-	const web::json::value getUserInfo(const std::string& userName);
+	const std::shared_ptr<User> getUserInfo(const std::string& userName);
 	std::set<std::string> getUserPermissions(const std::string& userName);
 	const std::string& getJwtRedirectUrl();
 
@@ -83,8 +85,8 @@ private:
 	std::string m_sslCertificateKeyFile;
 
 	size_t m_threadPoolSize;
-	web::json::value m_jwtSection;
-	web::json::value m_roleSection;
+	std::shared_ptr<Roles> m_roles;
+	std::shared_ptr<Users> m_users;
 
 	static std::shared_ptr<Configuration> m_instance;
 };
