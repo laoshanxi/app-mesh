@@ -401,6 +401,8 @@ POST| /app-manager/loglevel?level=DEBUG | level=DEBUG/INFO/NOTICE/WARN/ERROR | S
 GET| /app-manager/config |  | Get basic configurations
 POST| /app-manager/config |  | Set basic configurations
 POST| /user/admin/passwd | new_password=base64(passwd) | Change user password
+POST| /user/user/lock | | admin user to lock a user
+POST| /user/user/unlock | | admin user to unlock a user
 
 ---
 ### 3rd party deependencies

@@ -31,27 +31,25 @@
       "roles": [ "view" ]
     }
   },
-  "Roles": {
+ "Roles": {
     "manage": [
-      "view-app",
-      "view-app-output",
-      "view-all-app",
-      "view-host-resource",
       "app-reg",
       "app-reg-shell",
       "app-control",
       "app-delete",
       "run-app-async",
       "run-app-sync",
-      "run-app-async-output",
       "file-download",
       "file-upload",
       "label-view",
       "label-update",
-	  "label-set",
-	  "label-delete",
+      "label-set",
+      "label-delete",
       "log-level",
-	  "change-passwd"
+      "config-set",
+      "change-passwd",
+      "lock-user",
+      "unlock-user"
     ],
     "view": [
       "view-app",
@@ -59,7 +57,8 @@
       "view-all-app",
       "view-host-resource",
       "run-app-async-output",
-      "label-view"
+      "label-view",
+      "config-view"
     ]
   }
 ```

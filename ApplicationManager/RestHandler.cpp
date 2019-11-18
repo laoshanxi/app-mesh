@@ -812,7 +812,16 @@ void RestHandler::apiLockUser(const HttpRequest& message)
 	auto pathUserName = vec[1];
 	auto tokenUserName = getTokenUser(message);
 
-	 Configuration::instance()->getUserInfo(pathUserName)->lock();
+	if (pathUserName == JWT_ADMIN_NAME)
+	{
+		throw std::invalid_argument("admin user can not be locked");
+	}
+	if (tokenUserName != JWT_ADMIN_NAME)
+	{
+		throw std::invalid_argument("only admin can lock/unlock users");
+	}
+
+	Configuration::instance()->getUserInfo(pathUserName)->lock();
 
 	Configuration::instance()->saveConfigToDisk();
 
@@ -834,6 +843,11 @@ void RestHandler::apiUnLockUser(const HttpRequest& message)
 	}
 	auto pathUserName = vec[1];
 	auto tokenUserName = getTokenUser(message);
+
+	if (tokenUserName != JWT_ADMIN_NAME)
+	{
+		throw std::invalid_argument("only admin can lock/unlock users");
+	}
 
 	Configuration::instance()->getUserInfo(pathUserName)->unlock();
 
