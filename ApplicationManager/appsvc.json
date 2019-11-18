@@ -13,7 +13,7 @@
   "JWTRedirectUrl": "",
   "Applications": [
     {
-      "command": "ping www.baidu.com -w 10",
+      "command": "ping www.baidu.com -w 60",
       "name": "ping",
       "user": "root",
       "cache_lines": 20
