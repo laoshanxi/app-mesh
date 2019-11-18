@@ -24,7 +24,10 @@ std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
 	PERMISSION_KEY_label_delete,
 	PERMISSION_KEY_loglevel,
 	PERMISSION_KEY_config_view,
-	PERMISSION_KEY_config_set
+	PERMISSION_KEY_config_set,
+	PERMISSION_KEY_change_passwd,
+	PERMISSION_KEY_lock_user,
+	PERMISSION_KEY_unlock_user
 };
 
 //////////////////////////////////////////////////////////////////////

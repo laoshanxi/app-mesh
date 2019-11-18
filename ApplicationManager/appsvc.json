@@ -55,7 +55,10 @@
       "label-set",
       "label-delete",
       "log-level",
-      "config-set"
+      "config-set",
+      "change-passwd",
+      "lock-user",
+      "unlock-user"
     ],
     "view": [
       "view-app",

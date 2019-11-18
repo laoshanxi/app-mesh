@@ -71,7 +71,7 @@ std::string MonitoredProcess::fetchOutputMsg()
 			stdoutMsg << m_msgQueue.front();
 			m_msgQueue.pop();
 		}
-		LOG_DBG << fname;
+		LOG_NST << fname;
 	}
 	return std::move(stdoutMsg.str());
 }
@@ -92,7 +92,7 @@ std::string MonitoredProcess::getOutputMsg()
 		msgQueue.pop();
 	}
 	std::string msgStr = stdoutMsg.str();
-	LOG_DBG << fname;// << msgStr;
+	LOG_NST << fname;// << msgStr;
 	return std::move(msgStr);
 }
 
@@ -117,7 +117,7 @@ void MonitoredProcess::runPipeReaderThread()
 {
 	const static char fname[] = "MonitoredProcess::monitorThread() ";
 	m_buildinThreadFinished = false;
-	LOG_INF << fname << "Entered";
+	LOG_NST << fname << "Entered";
 
 	const int stdoutQueueMaxLineCount = m_cacheOutputLines;
 	char buffer[768] = { 0 };
@@ -129,7 +129,7 @@ void MonitoredProcess::runPipeReaderThread()
 			LOG_DBG << fname << "Get message from pipe finished";
 			break;
 		}
-		LOG_DBG << fname << "Read line : " << buffer;
+		LOG_NST << fname << "Read line : " << buffer;
 
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 		m_msgQueue.push(buffer);
@@ -159,6 +159,6 @@ void MonitoredProcess::runPipeReaderThread()
 	}
 	///////////////////////////////////////////////////////////////////////
 	ACE_Process::wait();	// release defunct process here
-	LOG_DBG << fname << "Exited";
+	LOG_NST << fname << "Exited";
 	m_buildinThreadFinished = true;
 }

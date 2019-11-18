@@ -40,6 +40,8 @@ private:
 	void processTags();
 	void processLoglevel();
 	void processConfigView();
+	void processChangePwd();
+	void processLockUser();
 
 	bool confirmInput(const char* msg);
 	http_response requestHttp(const method& mtd, const std::string& path);

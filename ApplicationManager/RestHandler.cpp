@@ -153,6 +153,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 8. Security
 	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiLockUser, this, std::placeholders::_1));
+	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
 
 	this->open();
 
@@ -767,23 +769,77 @@ void RestHandler::apiChangePassword(const HttpRequest & message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 3)
 	{
-		throw std::invalid_argument("invalid path");
+		throw std::invalid_argument("failed to get user name from path");
 	}
 	auto pathUserName = vec[1];
 	auto tokenUserName = getTokenUser(message);
+	if (!message.headers().has(HTTP_HEADER_JWT_new_password))
+	{
+		throw std::invalid_argument("can not find new password from header");
+	}
+	auto newPasswd = Utility::stdStringTrim(Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_new_password)->second)));
 
 	if (pathUserName != tokenUserName)
 	{
-		throw std::invalid_argument("User can only change its own password");
+		throw std::invalid_argument("user can only change its own password");
 	}
-
-	auto newPasswd = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_new_password)->second));
+	if (newPasswd.length() < APPMGR_PASSWD_MIN_LENGTH)
+	{
+		throw std::invalid_argument("password length should be greater than 3");
+	}
+	
 	auto user = Configuration::instance()->getUserInfo(tokenUserName);
 	user->updateKey(newPasswd);
 
 	Configuration::instance()->saveConfigToDisk();
 
 	LOG_INF << fname << "User <" << uname << "> changed password";
+	message.reply(status_codes::OK, "password changed success");
+}
+
+void RestHandler::apiLockUser(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiLockUser() ";
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	permissionCheck(message, PERMISSION_KEY_lock_user);
+
+	auto vec = Utility::splitString(path, "/");
+	if (vec.size() != 3)
+	{
+		throw std::invalid_argument("failed to get user name from path");
+	}
+	auto pathUserName = vec[1];
+	auto tokenUserName = getTokenUser(message);
+
+	 Configuration::instance()->getUserInfo(pathUserName)->lock();
+
+	Configuration::instance()->saveConfigToDisk();
+
+	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
+	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiUnLockUser(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiUnLockUser() ";
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	permissionCheck(message, PERMISSION_KEY_lock_user);
+
+	auto vec = Utility::splitString(path, "/");
+	if (vec.size() != 3)
+	{
+		throw std::invalid_argument("failed to get user name from path");
+	}
+	auto pathUserName = vec[1];
+	auto tokenUserName = getTokenUser(message);
+
+	Configuration::instance()->getUserInfo(pathUserName)->unlock();
+
+	Configuration::instance()->saveConfigToDisk();
+
+	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
 	message.reply(status_codes::OK);
 }
 

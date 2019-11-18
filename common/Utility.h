@@ -20,6 +20,7 @@
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
 #define __FILENAME__ (strrchr(__FILE__, DIRECTORY_SEPARATOR) ? strrchr(__FILE__, DIRECTORY_SEPARATOR) + 1 : __FILE__)
+#define LOG_NST    log4cpp::Category::getRoot() << log4cpp::Priority::NOTSET  // << __FILENAME__ << ":" << __LINE__ << ' '
 #define LOG_DBG    log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG  // << __FILENAME__ << ":" << __LINE__ << ' '
 #define LOG_INF    log4cpp::Category::getRoot() << log4cpp::Priority::INFO   // << __FILENAME__ << ":" << __LINE__ << ' '
 #define LOG_WAR    log4cpp::Category::getRoot() << log4cpp::Priority::WARN   // << __FILENAME__ << ":" << __LINE__ << ' '
@@ -54,6 +55,7 @@
 #define JWT_USER_KEY "password"
 #define JWT_USER_NAME "user"
 #define JWT_ADMIN_NAME "admin"
+#define APPMGR_PASSWD_MIN_LENGTH 3
 
 enum STATUS
 {
@@ -212,7 +214,6 @@ public:
 #define HTTP_QUERY_KEY_label_value "value"
 #define HTTP_QUERY_KEY_session_login "session_login"
 
-
 #define PERMISSION_KEY_view_app					"view-app"
 #define PERMISSION_KEY_view_app_output			"view-app-output"
 #define PERMISSION_KEY_view_all_app				"view-all-app"
@@ -234,6 +235,8 @@ public:
 #define PERMISSION_KEY_config_view  			"config-view"
 #define PERMISSION_KEY_config_set	  			"config-set"
 #define PERMISSION_KEY_change_passwd  			"change-passwd"
+#define PERMISSION_KEY_lock_user  				"lock-user"
+#define PERMISSION_KEY_unlock_user  			"unlock-user"
 
 #endif
 

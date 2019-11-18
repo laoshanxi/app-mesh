@@ -136,6 +136,14 @@ void ArgumentParser::parse()
 	{
 		processConfigView();
 	}
+	else if (cmd == "passwd")
+	{
+		processChangePwd();
+	}
+	else if (cmd == "lock")
+	{
+		processLockUser();
+	}
 	else
 	{
 		printMainHelp();
@@ -161,6 +169,8 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  get         Download remote file to local" << std::endl;
 	std::cout << "  put         Upload file to server" << std::endl;
 	std::cout << "  config      Manage basic configurations" << std::endl;
+	std::cout << "  passwd      Change user password" << std::endl;
+	std::cout << "  lock        Lock unlock a user" << std::endl;
 	std::cout << "  log         Set log level" << std::endl;
 
 	std::cout << std::endl;
@@ -918,6 +928,62 @@ void ArgumentParser::processConfigView()
 
 	std::string restPath = "/app-manager/config";
 	http_response response = requestHttp(methods::GET, restPath);
+	RESPONSE_CHECK_WITH_RETURN;
+	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+}
+
+void ArgumentParser::processChangePwd()
+{
+	po::options_description desc("Manage labels:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("user,u", po::value<std::string>(), "new password")
+		("passwd,p", po::value<std::string>(), "new password")
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	if (!m_commandLineVariables.count("user") || !m_commandLineVariables.count("passwd"))
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
+
+	auto user = m_commandLineVariables["user"].as<std::string>();
+	auto passwd = m_commandLineVariables["passwd"].as<std::string>();
+
+	std::string restPath = std::string("/user/") + user + "/passwd";
+	std::map<std::string, std::string> query, headers;
+	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
+	http_response response = requestHttp(methods::POST, restPath, query, nullptr, &headers);
+	RESPONSE_CHECK_WITH_RETURN;
+	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+}
+
+void ArgumentParser::processLockUser()
+{
+	po::options_description desc("Manage labels:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("user,u", po::value<std::string>(), "new password")
+		("unlock,k", po::value<bool>(), "lock or unlock user")
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	if (!m_commandLineVariables.count("user") || !m_commandLineVariables.count("unlock"))
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
+
+	auto user = m_commandLineVariables["user"].as<std::string>();
+	auto lock = !m_commandLineVariables["lock"].as<bool>();
+
+	std::string restPath = std::string("/user/") + user + (lock ? "/lock" : "/unlock");
+	http_response response = requestHttp(methods::POST, restPath);
 	RESPONSE_CHECK_WITH_RETURN;
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }

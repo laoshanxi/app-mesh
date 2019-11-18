@@ -191,7 +191,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 			param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
 			param->thisProc->m_spawnThread = nullptr;
 			param->thisProc = nullptr;
-			LOG_DBG << fname << "Exited";
+			LOG_NST << fname << "Exited";
 		}
 	);
 	m_spawnThread->detach();
