@@ -33,10 +33,10 @@ private:
 	void handle_options(const HttpRequest& message);
 	void handle_error(pplx::task<void>& t);
 
-	std::string tokenCheck(const HttpRequest& message);
+	std::string verifyToken(const HttpRequest& message);
 	std::string getTokenUser(const HttpRequest& message);
 	bool permissionCheck(const HttpRequest& message, const std::string& permission);
-	std::string getToken(const HttpRequest& message);
+	std::string getTokenStr(const HttpRequest& message);
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
 
 	void apiLogin(const HttpRequest& message);

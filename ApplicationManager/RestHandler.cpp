@@ -45,7 +45,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 		uri.set_scheme("https");
 		auto server_config = new http_listener_config();
 		server_config->set_ssl_context_callback(
-			[&](boost::asio::ssl::context & ctx) {
+			[&](boost::asio::ssl::context& ctx) {
 				boost::system::error_code ec;
 
 				ctx.set_options(boost::asio::ssl::context::default_workarounds |
@@ -295,19 +295,21 @@ void RestHandler::handle_error(pplx::task<void>& t)
 	}
 }
 
-std::string RestHandler::tokenCheck(const HttpRequest & message)
+std::string RestHandler::verifyToken(const HttpRequest& message)
 {
 	if (!Configuration::instance()->getJwtEnabled()) return "";
 
-	auto token = getToken(message);
+	auto token = getTokenStr(message);
 	auto decoded_token = jwt::decode(token);
 	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
 	{
 		// get user info
 		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name);
-		auto user = Configuration::instance()->getUserInfo(userName.as_string());
-		auto userKey = user->getKey();
-		if (user->locked()) throw std::invalid_argument("User was locked");
+		auto userObj = Configuration::instance()->getUserInfo(userName.as_string());
+		auto userKey = userObj->getKey();
+
+		// check locked
+		if (userObj->locked()) throw std::invalid_argument("User was locked");
 
 		// check user token
 		auto verifier = jwt::verify()
@@ -316,7 +318,7 @@ std::string RestHandler::tokenCheck(const HttpRequest & message)
 			.with_claim(HTTP_HEADER_JWT_name, userName);
 		verifier.verify(decoded_token);
 
-		return userName.as_string();
+		return std::move(userName.as_string());
 	}
 	else
 	{
@@ -324,15 +326,15 @@ std::string RestHandler::tokenCheck(const HttpRequest & message)
 	}
 }
 
-std::string RestHandler::getTokenUser(const HttpRequest & message)
+std::string RestHandler::getTokenUser(const HttpRequest& message)
 {
-	auto token = getToken(message);
+	auto token = getTokenStr(message);
 	auto decoded_token = jwt::decode(token);
 	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
 	{
 		// get user info
 		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
-		return userName;
+		return std::move(userName);
 	}
 	else
 	{
@@ -340,11 +342,11 @@ std::string RestHandler::getTokenUser(const HttpRequest & message)
 	}
 }
 
-bool RestHandler::permissionCheck(const HttpRequest & message, const std::string & permission)
+bool RestHandler::permissionCheck(const HttpRequest& message, const std::string& permission)
 {
 	const static char fname[] = "RestHandler::permissionCheck() ";
 
-	auto userName = tokenCheck(message);
+	auto userName = verifyToken(message);
 	if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
 	{
 		// 1. redirect to remote permission check
@@ -359,14 +361,14 @@ bool RestHandler::permissionCheck(const HttpRequest & message, const std::string
 				std::string("/auth/") + userName,
 				{}, headers,
 				NULL,
-				getToken(message));
+				getTokenStr(message));
 			if (resp.status_code() == status_codes::OK)
 			{
 				return true;
 			}
 			else
 			{
-				LOG_WAR << fname << "Remote " << Configuration::instance()->getJwtRedirectUrl() <<" permission <" 
+				LOG_WAR << fname << "Remote " << Configuration::instance()->getJwtRedirectUrl() << " permission <"
 					<< permission << "> for user: " << userName << " return code: " << resp.status_code();
 				throw std::invalid_argument(resp.extract_utf8string().get());
 			}
@@ -393,7 +395,7 @@ bool RestHandler::permissionCheck(const HttpRequest & message, const std::string
 	}
 }
 
-std::string RestHandler::getToken(const HttpRequest& message)
+std::string RestHandler::getTokenStr(const HttpRequest& message)
 {
 	std::string token;
 	if (message.headers().has(HTTP_HEADER_JWT_Authorization))
@@ -488,7 +490,7 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
 }
 
-void RestHandler::apiEnableApp(const HttpRequest & message)
+void RestHandler::apiEnableApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
@@ -501,7 +503,7 @@ void RestHandler::apiEnableApp(const HttpRequest & message)
 	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
 }
 
-void RestHandler::apiDisableApp(const HttpRequest & message)
+void RestHandler::apiDisableApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
@@ -514,7 +516,7 @@ void RestHandler::apiDisableApp(const HttpRequest & message)
 	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
 }
 
-void RestHandler::apiDeleteApp(const HttpRequest & message)
+void RestHandler::apiDeleteApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_delete);
 	auto path = GET_STD_STRING(message.relative_uri().path());
@@ -571,7 +573,7 @@ void RestHandler::apiFileDownload(const HttpRequest& message)
 			});
 }
 
-void RestHandler::apiFileUpload(const HttpRequest & message)
+void RestHandler::apiFileUpload(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
 	permissionCheck(message, PERMISSION_KEY_file_upload);
@@ -634,7 +636,7 @@ void RestHandler::apiSetTags(const HttpRequest& message)
 	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
 }
 
-void RestHandler::apiTagSet(const HttpRequest & message)
+void RestHandler::apiTagSet(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_set);
 
@@ -659,10 +661,10 @@ void RestHandler::apiTagSet(const HttpRequest & message)
 	}
 }
 
-void RestHandler::apiTagDel(const HttpRequest & message)
+void RestHandler::apiTagDel(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_delete);
-	
+
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	auto vec = Utility::splitString(path, "/");
 	auto labelKey = vec[vec.size() - 1];
@@ -701,7 +703,7 @@ void RestHandler::apiLoglevel(const HttpRequest& message)
 	}
 }
 
-void RestHandler::apiGetPermissions(const HttpRequest & message)
+void RestHandler::apiGetPermissions(const HttpRequest& message)
 {
 	if (Configuration::instance()->getJwtRedirectUrl().length() &&
 		!message.headers().has(HTTP_HEADER_JWT_redirect_from))
@@ -711,12 +713,12 @@ void RestHandler::apiGetPermissions(const HttpRequest & message)
 			"/auth/permissions",
 			{}, {},
 			NULL,
-			getToken(message));
+			getTokenStr(message));
 		message.reply(resp.status_code(), resp.body());
 		return;
 	}
 
-	auto userName = tokenCheck(message);
+	auto userName = verifyToken(message);
 	auto permissions = Configuration::instance()->getUserPermissions(userName);
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
@@ -727,7 +729,7 @@ void RestHandler::apiGetPermissions(const HttpRequest & message)
 	message.reply(status_codes::OK, json);
 }
 
-void RestHandler::apiGetBasicConfig(const HttpRequest & message)
+void RestHandler::apiGetBasicConfig(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
@@ -748,7 +750,7 @@ void RestHandler::apiGetBasicConfig(const HttpRequest & message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(config.serialize())));
 }
 
-void RestHandler::apiSetBasicConfig(const HttpRequest & message)
+void RestHandler::apiSetBasicConfig(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_set);
 
@@ -759,7 +761,7 @@ void RestHandler::apiSetBasicConfig(const HttpRequest & message)
 	apiGetBasicConfig(message);
 }
 
-void RestHandler::apiChangePassword(const HttpRequest & message)
+void RestHandler::apiChangePassword(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiChangePassword() ";
 
@@ -787,7 +789,7 @@ void RestHandler::apiChangePassword(const HttpRequest & message)
 	{
 		throw std::invalid_argument("password length should be greater than 3");
 	}
-	
+
 	auto user = Configuration::instance()->getUserInfo(tokenUserName);
 	user->updateKey(newPasswd);
 
@@ -886,7 +888,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 				"/login",
 				{}, headers,
 				NULL,
-				getToken(message));
+				getTokenStr(message));
 			message.reply(resp.status_code(), resp.body());
 			return;
 		}
@@ -1070,7 +1072,7 @@ void RestHandler::apiAsyncRunOut(const HttpRequest& message)
 	}
 }
 
-void RestHandler::apiGetAppOutput(const HttpRequest & message)
+void RestHandler::apiGetAppOutput(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiGetAppOutput() ";
 
