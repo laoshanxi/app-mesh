@@ -30,10 +30,10 @@ web::json::value ResourceLimitation::AsJson()
 	return result;
 }
 
-std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json::object& jobj, std::string appName)
+std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json::value& jobj, std::string appName)
 {
 	std::shared_ptr<ResourceLimitation> result;
-	if (!jobj.empty())
+	if (!jobj.is_null())
 	{
 		result = std::make_shared<ResourceLimitation>();
 		result->m_memoryMb = GET_JSON_INT_VALUE(jobj, JSON_KEY_RESOURCE_LIMITATION_memory_mb);

@@ -64,10 +64,11 @@ web::json::value Roles::AsJson()
 	return result;
 }
 
-const std::shared_ptr<Roles> Roles::FromJson(const web::json::object & obj)
+const std::shared_ptr<Roles> Roles::FromJson(const web::json::value& obj)
 {
 	std::shared_ptr<Roles> roles = std::make_shared<Roles>();
-	for (auto roleJson : obj)
+	auto rolesJson = obj.as_object();
+	for (auto roleJson : rolesJson)
 	{
 		auto roleName = GET_STD_STRING(roleJson.first);
 		auto role = Role::FromJson(roleName, roleJson.second);
@@ -76,7 +77,7 @@ const std::shared_ptr<Roles> Roles::FromJson(const web::json::object & obj)
 	return roles;
 }
 
-void Roles::addRole(const web::json::object & obj)
+void Roles::addRole(const web::json::value& obj)
 {
 	auto roles = Roles::FromJson(obj);
 	for (auto role : roles->m_roles)
@@ -117,7 +118,7 @@ web::json::value Role::AsJson()
 	return result;
 }
 
-std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value & obj)
+std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value& obj)
 {
 	auto role = std::make_shared<Role>(roleName);
 	auto permissions = obj.as_array();

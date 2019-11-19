@@ -17,7 +17,7 @@ public:
 	void dump();
 
 	virtual web::json::value AsJson();
-	static std::shared_ptr<DailyLimitation> FromJson(const web::json::object& obj);
+	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value& obj);
 
 	std::chrono::system_clock::time_point m_startTime;
 	std::chrono::system_clock::time_point m_endTime;

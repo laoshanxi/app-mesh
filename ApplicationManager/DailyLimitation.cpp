@@ -27,10 +27,10 @@ web::json::value DailyLimitation::AsJson()
 	return result;
 }
 
-std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::object & jobj)
+std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::value& jobj)
 {
 	std::shared_ptr<DailyLimitation> result;
-	if (!jobj.empty())
+	if (!jobj.is_null())
 	{
 		if (!(HAS_JSON_FIELD(jobj, JSON_KEY_DAILY_LIMITATION_daily_start) && HAS_JSON_FIELD(jobj, JSON_KEY_DAILY_LIMITATION_daily_end)))
 		{

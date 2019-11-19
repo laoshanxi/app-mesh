@@ -17,7 +17,7 @@ ApplicationShortRun::~ApplicationShortRun()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, const web::json::object& jobj)
+void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, const web::json::value& jobj)
 {
 	const static char fname[] = "ApplicationShortRun::ApplicationShortRun() ";
 

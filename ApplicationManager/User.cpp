@@ -23,13 +23,14 @@ web::json::value Users::AsJson()
 	return result;
 }
 
-std::shared_ptr<Users> Users::FromJson(const web::json::object & obj, std::shared_ptr<Roles> roles)
+std::shared_ptr<Users> Users::FromJson(const web::json::value& obj, std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<Users> users = std::make_shared<Users>();
-	for (auto user : obj)
+	auto jsonOj = obj.as_object();
+	for (auto user : jsonOj)
 	{
 		auto name = GET_STD_STRING(user.first);
-		users->m_users[name] = User::FromJson(name, user.second.as_object(), roles);
+		users->m_users[name] = User::FromJson(name, user.second, roles);
 	}
 	return users;
 }
@@ -52,11 +53,22 @@ std::shared_ptr<User> Users::getUser(std::string name)
 	}
 }
 
-void Users::addUser(const web::json::object & obj, std::shared_ptr<Roles> roles)
+void Users::addUser(const web::json::value& obj, std::shared_ptr<Roles> roles)
 {
-	auto userName = GET_STD_STRING(obj.begin()->first);
-	auto user = User::FromJson(userName, obj.begin()->second.as_object(), roles);
-	m_users[userName] = user;
+	if (!obj.is_null() && obj.is_object())
+	{
+		auto users = obj.as_object();
+		for (auto userJson : users)
+		{
+			auto userName = GET_STD_STRING(userJson.first);
+			auto user = User::FromJson(userName, userJson.second, roles);
+			m_users[userName] = user;
+		}
+	}
+	else
+	{
+		throw std::invalid_argument("incorrect user json section");
+	}
 }
 
 void Users::delUser(std::string name)
@@ -92,10 +104,10 @@ web::json::value User::AsJson()
 	return result;
 }
 
-std::shared_ptr<User> User::FromJson(std::string userName, const web::json::object & obj, std::shared_ptr<Roles> roles)
+std::shared_ptr<User> User::FromJson(std::string userName, const web::json::value& obj, std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<User> result;
-	if (!obj.empty())
+	if (!obj.is_null())
 	{
 		if (!HAS_JSON_FIELD(obj, JSON_KEY_USER_key))
 		{
@@ -138,7 +150,7 @@ bool User::locked() const
 	return m_locked;
 }
 
-const std::string & User::getKey() const
+const std::string& User::getKey() const
 {
 	return m_key;
 }

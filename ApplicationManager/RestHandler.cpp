@@ -445,15 +445,14 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 		throw std::invalid_argument("invalid json format");
 	}
 	bool sessionLogin = (querymap.count("HTTP_QUERY_KEY_session_login")) && (querymap[HTTP_QUERY_KEY_session_login] == "true");
-	auto jobj = jsonApp.as_object();
-	jobj[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
+	jsonApp[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
 	// /bin/su - ubuntu -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine;
 	if (sessionLogin)
 	{
 		shellCommandLine = "/bin/su --login ";
-		shellCommandLine.append(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
-		jobj[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
+		shellCommandLine.append(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_user));
+		jsonApp[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
 	}
 	else
 	{
@@ -465,9 +464,9 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	if (sessionLogin)
 	{
 		// inject environment variable, /bin/su does not transfer env to session
-		if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
+		if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_env))
 		{
-			auto envs = jobj.at(JSON_KEY_APP_env).as_object();
+			auto envs = jsonApp.at(JSON_KEY_APP_env).as_object();
 			for (auto env : envs)
 			{
 				shellCommandLine.append(" export ");
@@ -476,17 +475,17 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 				shellCommandLine.append(env.second.as_string());
 				shellCommandLine.append(";");
 			}
-			jobj.erase(JSON_KEY_APP_env);
+			jsonApp.erase(JSON_KEY_APP_env);
 		}
 	}
 
-	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command)));
+	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_command)));
 	shellCommandLine.append("\"");
-	jobj[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
+	jsonApp[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
 
 	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
 
-	auto app = Configuration::instance()->addApp(jobj);
+	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
 }
 
@@ -977,7 +976,7 @@ void RestHandler::apiAsyncRun(const HttpRequest& message)
 	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
 	if (body.length() && body != "null")
 	{
-		auto jsonEnv = web::json::value::parse(body).as_object();
+		auto jsonEnv = web::json::value::parse(body);
 		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
 		{
 			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
@@ -1019,7 +1018,7 @@ void RestHandler::apiSyncRun(const HttpRequest& message)
 	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
 	if (body.length() && body != "null")
 	{
-		auto jsonEnv = web::json::value::parse(body).as_object();
+		auto jsonEnv = web::json::value::parse(body);
 		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
 		{
 			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
@@ -1114,7 +1113,7 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	{
 		throw std::invalid_argument("invalid json format");
 	}
-	auto app = Configuration::instance()->addApp(jsonApp.as_object());
+	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
 }
 

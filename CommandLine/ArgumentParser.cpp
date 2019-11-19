@@ -1062,7 +1062,7 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	auto arr = jsonValue.as_array();
 	for (auto iter = arr.begin(); iter != arr.end(); iter++)
 	{
-		auto jobj = iter->as_object();
+		auto jobj = *iter;
 		apps[GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name)] = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status) == 1;
 	}
 	return apps;
@@ -1095,7 +1095,7 @@ std::string ArgumentParser::getAuthenToken()
 		else
 		{
 			auto jwtContent = response.extract_json(true).get();
-			m_jwtToken = GET_JSON_STR_VALUE(jwtContent.as_object(), HTTP_HEADER_JWT_access_token);
+			m_jwtToken = GET_JSON_STR_VALUE(jwtContent, HTTP_HEADER_JWT_access_token);
 		}
 	}
 	return m_jwtToken;
@@ -1136,8 +1136,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	int index = 1;
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
-	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value& x) {
-		auto jobj = x.as_object();
+	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value& jobj) {
 		auto name = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name);
 		if (reduce) name = reduceFunc(name, 12);
 		else if (name.length() >= 12) name += " ";

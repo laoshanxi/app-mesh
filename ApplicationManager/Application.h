@@ -29,7 +29,7 @@ public:
 	virtual ~Application();
 	const std::string getName() const;
 	bool isEnabled();
-	static void FromJson(std::shared_ptr<Application>& app, const web::json::object& obj);
+	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj);
 
 	virtual void refreshPid();
 	bool attach(std::map<std::string, int>& process);
