@@ -10,21 +10,13 @@
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
 
-// Remove path name
-#if	defined(WIN32)
-#define DIRECTORY_SEPARATOR '\\'
-#else
-#define DIRECTORY_SEPARATOR '/'
-#endif
-
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
-#define __FILENAME__ (strrchr(__FILE__, DIRECTORY_SEPARATOR) ? strrchr(__FILE__, DIRECTORY_SEPARATOR) + 1 : __FILE__)
-#define LOG_NST    log4cpp::Category::getRoot() << log4cpp::Priority::NOTSET  // << __FILENAME__ << ":" << __LINE__ << ' '
-#define LOG_DBG    log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG  // << __FILENAME__ << ":" << __LINE__ << ' '
-#define LOG_INF    log4cpp::Category::getRoot() << log4cpp::Priority::INFO   // << __FILENAME__ << ":" << __LINE__ << ' '
-#define LOG_WAR    log4cpp::Category::getRoot() << log4cpp::Priority::WARN   // << __FILENAME__ << ":" << __LINE__ << ' '
-#define LOG_ERR    log4cpp::Category::getRoot() << log4cpp::Priority::ERROR  // << __FILENAME__ << ":" << __LINE__ << ' '
+#define LOG_NST    log4cpp::Category::getRoot() << log4cpp::Priority::NOTSET
+#define LOG_DBG    log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG 
+#define LOG_INF    log4cpp::Category::getRoot() << log4cpp::Priority::INFO
+#define LOG_WAR    log4cpp::Category::getRoot() << log4cpp::Priority::WARN
+#define LOG_ERR    log4cpp::Category::getRoot() << log4cpp::Priority::ERROR
 
 // Expand micro viriable (microkey=microvalue)
 #define __MICRO_KEY__(str) #str                // No expand micro
