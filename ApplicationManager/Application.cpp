@@ -32,7 +32,7 @@ bool Application::isEnabled()
 	return (m_status == ENABLED);
 }
 
-void Application::FromJson(std::shared_ptr<Application>& app, const web::json::object& jobj)
+void Application::FromJson(std::shared_ptr<Application>& app, const web::json::value& jobj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
 	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
@@ -53,11 +53,11 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::o
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_daily_limitation))
 	{
-		app->m_dailyLimit = DailyLimitation::FromJson(jobj.at(JSON_KEY_APP_daily_limitation).as_object());
+		app->m_dailyLimit = DailyLimitation::FromJson(jobj.at(JSON_KEY_APP_daily_limitation));
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_resource_limit))
 	{
-		app->m_resourceLimit = ResourceLimitation::FromJson(jobj.at(JSON_KEY_APP_resource_limit).as_object(), app->m_name);
+		app->m_resourceLimit = ResourceLimitation::FromJson(jobj.at(JSON_KEY_APP_resource_limit), app->m_name);
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
 	{

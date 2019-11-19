@@ -29,7 +29,7 @@ void ApplicationPeriodRun::refreshPid()
 	}
 }
 
-void ApplicationPeriodRun::FromJson(std::shared_ptr<ApplicationPeriodRun>& app, const web::json::object & jobj)
+void ApplicationPeriodRun::FromJson(std::shared_ptr<ApplicationPeriodRun>& app, const web::json::value& jobj)
 {
 	std::shared_ptr<ApplicationShortRun> fatherApp = app;
 	ApplicationShortRun::FromJson(fatherApp, jobj);

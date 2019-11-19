@@ -29,10 +29,10 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 
 std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 {
-	web::json::value jval;
+	web::json::value jsonValue;
 	try
 	{
-		jval = web::json::value::parse(GET_STRING_T(str));
+		jsonValue = web::json::value::parse(GET_STRING_T(str));
 	}
 	catch (const std::exception& e)
 	{
@@ -44,18 +44,17 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		LOG_ERR << "Failed to parse configuration file with error <unknown exception>";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
 	}
-	web::json::object jobj = jval.as_object();
 	auto config = std::make_shared<Configuration>();
-	config->m_hostDescription = GET_JSON_STR_VALUE(jobj, JSON_KEY_Description);
-	config->m_scheduleInterval = GET_JSON_INT_VALUE(jobj, JSON_KEY_ScheduleIntervalSeconds);
-	config->m_restListenPort = GET_JSON_INT_VALUE(jobj, JSON_KEY_RestListenPort);
-	config->m_RestListenAddress = GET_JSON_STR_VALUE(jobj, JSON_KEY_RestListenAddress);
-	config->m_logLevel = GET_JSON_STR_VALUE(jobj, JSON_KEY_LogLevel);
-	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_SSLEnabled, config->m_sslEnabled);
-	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_RestEnabled, config->m_restEnabled);
-	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_JWTEnabled, config->m_jwtEnabled);
-	config->m_sslCertificateFile = GET_JSON_STR_VALUE(jobj, JSON_KEY_SSLCertificateFile);
-	config->m_sslCertificateKeyFile = GET_JSON_STR_VALUE(jobj, JSON_KEY_SSLCertificateKeyFile);
+	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
+	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
+	config->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
+	config->m_RestListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
+	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, config->m_sslEnabled);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, config->m_restEnabled);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, config->m_jwtEnabled);
+	config->m_sslCertificateFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
+	config->m_sslCertificateKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{
 		// Use default value instead
@@ -68,27 +67,27 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		LOG_INF << "Default value <" << config->m_restListenPort << "> will by used for RestListenPort";
 	}
 
-	if (jval.has_field(JSON_KEY_Applications))
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications))
 	{
-		auto& jArr = jobj.at(JSON_KEY_Applications).as_array();
+		auto& jArr = jsonValue.at(JSON_KEY_Applications).as_array();
 		for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
 		{
-			auto jsonObj = iterB->as_object();
-			std::shared_ptr<Application> app = config->parseApp(jsonObj);
+			auto jsonApp = *(iterB);
+			auto app = config->parseApp(jsonApp);
 			app->dump();
 			config->registerApp(app);
 		}
 	}
-	auto threadpool = GET_JSON_INT_VALUE(jobj, JSON_KEY_HttpThreadPoolSize);
+	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
 	if (threadpool > 0 && threadpool < 40)
 	{
 		config->m_threadPoolSize = threadpool;
 	}
-	if (jval.has_field(JSON_KEY_Labels)) config->jsonToTag(jobj.at(JSON_KEY_Labels));
-	if (jval.has_field(JSON_KEY_Roles))	config->m_roles = Roles::FromJson(jobj.at(JSON_KEY_Roles).as_object());
-	if (jval.has_field(JSON_KEY_JWT)) config->m_jwtUsers = Users::FromJson(jobj.at(JSON_KEY_JWT).as_object(), config->m_roles);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) config->jsonToTag(jsonValue.at(JSON_KEY_Labels));
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))	config->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) config->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT), config->m_roles);
 
-	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_JWTRedirectUrl);
+	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
 
 	return config;
 }
@@ -297,10 +296,10 @@ void Configuration::jsonToTag(web::json::value json)
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		m_labels.clear();
 		auto jobj = json.as_object();
-		for (auto iter = jobj.begin(); iter != jobj.end(); iter++)
+		for (auto lblJson : jobj)
 		{
-			std::string lableKey = GET_STD_STRING(iter->first);
-			m_labels[lableKey] = GET_STD_STRING(iter->second.as_string());
+			std::string lableKey = GET_STD_STRING(lblJson.first);
+			m_labels[lableKey] = GET_STD_STRING(lblJson.second.as_string());
 			LOG_INF << fname << "label: " << lableKey << "=" << m_labels[lableKey];
 		}
 	}
@@ -365,7 +364,7 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const web::json::object& jsonApp)
+std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonApp)
 {
 	std::shared_ptr<Application> app = parseApp(jsonApp);
 	bool update = false;
@@ -449,27 +448,26 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 {
 	// not support update [Application] section
 	auto jsonValue = config;
-	auto jsonObj = jsonValue.as_object();
 	if (jsonValue.has_field(JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
 
 	// parse
 	auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));
 
 	// update
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_Description)) SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_restListenPort, newConfig->m_restListenPort);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_RestListenAddress, newConfig->m_RestListenAddress);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_jwtEnabled, newConfig->m_jwtEnabled); 
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_threadPoolSize, newConfig->m_threadPoolSize);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description)) SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_restListenPort, newConfig->m_restListenPort);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_RestListenAddress, newConfig->m_RestListenAddress);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_jwtEnabled, newConfig->m_jwtEnabled); 
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_threadPoolSize, newConfig->m_threadPoolSize);
 	if (!updateBasicConfig)
 	{
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_Roles)) SET_COMPARE(this->m_roles, newConfig->m_roles);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_JWT)) SET_COMPARE(this->m_jwtUsers, newConfig->m_jwtUsers);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_Labels)) SET_COMPARE(this->m_labels, newConfig->m_labels);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) SET_COMPARE(this->m_roles, newConfig->m_roles);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) SET_COMPARE(this->m_jwtUsers, newConfig->m_jwtUsers);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_labels, newConfig->m_labels);
 		ResourceCollection::instance()->getHostName(true);
 	}
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_restEnabled, newConfig->m_restEnabled);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_LogLevel))
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_restEnabled, newConfig->m_restEnabled);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_LogLevel))
 	{
 		if (this->m_logLevel != newConfig->m_logLevel)
 		{
@@ -477,18 +475,22 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 		}
 		SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
 	}
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_sslCertificateFile, newConfig->m_sslCertificateFile);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_sslCertificateKeyFile, newConfig->m_sslCertificateKeyFile);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_sslEnabled, newConfig->m_sslEnabled);
-	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_JWTRedirectUrl)) SET_COMPARE(this->m_JwtRedirectUrl, newConfig->m_JwtRedirectUrl);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_sslCertificateFile, newConfig->m_sslCertificateFile);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_sslCertificateKeyFile, newConfig->m_sslCertificateKeyFile);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_sslEnabled, newConfig->m_sslEnabled);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWTRedirectUrl)) SET_COMPARE(this->m_JwtRedirectUrl, newConfig->m_JwtRedirectUrl);
 	
 	this->dump();
 	ResourceCollection::instance()->dump();
 }
 
-std::shared_ptr<Application> Configuration::parseApp(web::json::object jsonApp)
+std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jsonApp)
 {
+	const static char fname[] = "Configuration::parseApp() ";
+
+	LOG_NST << fname << "Json Object:\n" << jsonApp.serialize();
+
 	std::shared_ptr<Application> app;
 
 	if (GET_JSON_INT_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds) > 0)

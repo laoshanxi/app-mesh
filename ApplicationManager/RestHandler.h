@@ -25,7 +25,7 @@ protected:
 
 private:
 	void handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions);
-	void bindRest(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func);
+	void bindRestMethod(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func);
 	void handle_get(const HttpRequest& message);
 	void handle_put(const HttpRequest& message);
 	void handle_post(const HttpRequest& message);

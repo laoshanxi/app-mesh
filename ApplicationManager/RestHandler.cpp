@@ -93,68 +93,68 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 1. Authentication
 	// http://127.0.0.1:6060/login
-	bindRest(web::http::methods::POST, "/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/admin
-	bindRest(web::http::methods::POST, R"(/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/permissions
-	bindRest(web::http::methods::GET, "/auth/permissions", std::bind(&RestHandler::apiGetPermissions, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/auth/permissions", std::bind(&RestHandler::apiGetPermissions, this, std::placeholders::_1));
 
 	// 2. View Application
 	// http://127.0.0.1:6060/app/app-name
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/output
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/applications
-	bindRest(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/app-manager/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app-manager/resources
-	bindRest(web::http::methods::GET, "/app-manager/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/app-manager/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
 
 	// 3. Manage Application
 	// http://127.0.0.1:6060/app/app-name
-	bindRest(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/sh/shell-app-id
-	bindRest(web::http::methods::PUT, R"(/app/sh/([^/\*]+))", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/app/sh/([^/\*]+))", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname/enable
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname/disable
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiDisableApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiDisableApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname
-	bindRest(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
 	// 4. Operate Application
 	// http://127.0.0.1:6060/app/app-name/run?timeout=5
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiAsyncRun, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiAsyncRun, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
-	bindRest(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiAsyncRunOut, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiAsyncRunOut, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/syncrun?timeout=5
-	bindRest(web::http::methods::POST, R"(/app/([^/\*]+)/syncrun)", std::bind(&RestHandler::apiSyncRun, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/app/([^/\*]+)/syncrun)", std::bind(&RestHandler::apiSyncRun, this, std::placeholders::_1));
 
 	// 5. File Management
 	// http://127.0.0.1:6060/download
-	bindRest(web::http::methods::GET, "/download", std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/download", std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/upload
-	bindRest(web::http::methods::POST, "/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
 	// 6. Label Management
 	// http://127.0.0.1:6060/labels
-	bindRest(web::http::methods::GET, "/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/labels
-	bindRest(web::http::methods::POST, "/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc?value=123
-	bindRest(web::http::methods::PUT, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagSet, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagSet, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc
-	bindRest(web::http::methods::DEL, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
 
 	// 7. Log level
 	// http://127.0.0.1:6060/app-manager/loglevel?level=DEBUG
-	bindRest(web::http::methods::POST, "/app-manager/loglevel", std::bind(&RestHandler::apiLoglevel, this, std::placeholders::_1));
-	bindRest(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
-	bindRest(web::http::methods::POST, "/app-manager/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/app-manager/loglevel", std::bind(&RestHandler::apiLoglevel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/app-manager/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
 	// 8. Security
-	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
-	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiLockUser, this, std::placeholders::_1));
-	bindRest(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiLockUser, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
 
 	this->open();
 
@@ -258,7 +258,7 @@ void RestHandler::handleRest(const http_request& message, std::map<utility::stri
 	}
 }
 
-void RestHandler::bindRest(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func)
+void RestHandler::bindRestMethod(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func)
 {
 	static char fname[] = "RestHandler::bindRest() ";
 
@@ -445,15 +445,14 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 		throw std::invalid_argument("invalid json format");
 	}
 	bool sessionLogin = (querymap.count("HTTP_QUERY_KEY_session_login")) && (querymap[HTTP_QUERY_KEY_session_login] == "true");
-	auto jobj = jsonApp.as_object();
-	jobj[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
+	jsonApp[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
 	// /bin/su - ubuntu -c "export A=b;export B=c;env | grep B"
 	std::string shellCommandLine;
 	if (sessionLogin)
 	{
 		shellCommandLine = "/bin/su --login ";
-		shellCommandLine.append(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
-		jobj[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
+		shellCommandLine.append(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_user));
+		jsonApp[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
 	}
 	else
 	{
@@ -465,9 +464,9 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 	if (sessionLogin)
 	{
 		// inject environment variable, /bin/su does not transfer env to session
-		if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
+		if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_env))
 		{
-			auto envs = jobj.at(JSON_KEY_APP_env).as_object();
+			auto envs = jsonApp.at(JSON_KEY_APP_env).as_object();
 			for (auto env : envs)
 			{
 				shellCommandLine.append(" export ");
@@ -476,17 +475,17 @@ void RestHandler::apiRegShellApp(const HttpRequest& message)
 				shellCommandLine.append(env.second.as_string());
 				shellCommandLine.append(";");
 			}
-			jobj.erase(JSON_KEY_APP_env);
+			jsonApp.erase(JSON_KEY_APP_env);
 		}
 	}
 
-	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command)));
+	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_command)));
 	shellCommandLine.append("\"");
-	jobj[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
+	jsonApp[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
 
 	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
 
-	auto app = Configuration::instance()->addApp(jobj);
+	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
 }
 
@@ -977,7 +976,7 @@ void RestHandler::apiAsyncRun(const HttpRequest& message)
 	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
 	if (body.length() && body != "null")
 	{
-		auto jsonEnv = web::json::value::parse(body).as_object();
+		auto jsonEnv = web::json::value::parse(body);
 		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
 		{
 			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
@@ -1019,7 +1018,7 @@ void RestHandler::apiSyncRun(const HttpRequest& message)
 	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
 	if (body.length() && body != "null")
 	{
-		auto jsonEnv = web::json::value::parse(body).as_object();
+		auto jsonEnv = web::json::value::parse(body);
 		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
 		{
 			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
@@ -1114,7 +1113,7 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	{
 		throw std::invalid_argument("invalid json format");
 	}
-	auto app = Configuration::instance()->addApp(jsonApp.as_object());
+	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
 }
 

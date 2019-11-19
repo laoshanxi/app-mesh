@@ -14,7 +14,7 @@ public:
 
 	// seriarize
 	virtual web::json::value AsJson();
-	static std::shared_ptr<User> FromJson(std::string userName, const web::json::object& obj, std::shared_ptr<Roles> roles);
+	static std::shared_ptr<User> FromJson(std::string userName, const web::json::value& obj, std::shared_ptr<Roles> roles);
 
 	// user update
 	void lock();
@@ -42,14 +42,14 @@ public:
 	virtual ~Users();
 
 	virtual web::json::value AsJson();
-	static std::shared_ptr<Users> FromJson(const web::json::object& obj, std::shared_ptr<Roles> roles);
+	static std::shared_ptr<Users> FromJson(const web::json::value& obj, std::shared_ptr<Roles> roles);
 
 	// find user
 	std::map<std::string, std::shared_ptr<User>> getUsers();
 	std::shared_ptr<User> getUser(std::string name);
 
 	// manage users
-	void addUser(const web::json::object& obj, std::shared_ptr<Roles> roles);
+	void addUser(const web::json::value& obj, std::shared_ptr<Roles> roles);
 	void delUser(std::string name);
 private:
 	std::map<std::string, std::shared_ptr<User>> m_users;

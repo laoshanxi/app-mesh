@@ -52,11 +52,11 @@ void getListenPort(int& port, bool& sslEnabled)
 	if (file.length() > 0)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(file));
-		auto p = GET_JSON_INT_VALUE(jsonValue.as_object(), "RestListenPort");
+		auto p = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 		if (p > 1000 && p < 65534)
 		{
 			port = p;
 		}
-		sslEnabled = GET_JSON_BOOL_VALUE(jsonValue.as_object(), "SSLEnabled");
+		sslEnabled = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled);
 	}
 }
