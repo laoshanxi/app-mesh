@@ -104,7 +104,6 @@ Role::~Role()
 
 web::json::value Role::AsJson()
 {
-	web::json::value result = web::json::value::object();
 	auto rolePermissions = web::json::value::array(m_permissions.size());
 	int i = 0;
 	for (auto perm : m_permissions)
@@ -112,9 +111,7 @@ web::json::value Role::AsJson()
 		// fill role permission
 		rolePermissions[i++] = web::json::value::string(perm);
 	}
-
-	result[m_name] = rolePermissions;
-	return result;
+	return rolePermissions;
 }
 
 std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value & obj)
