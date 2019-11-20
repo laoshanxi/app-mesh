@@ -69,12 +69,21 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	// 2. build docker start command line
 	dockerCommand = std::string("docker run -d ") + "--name " + dockerName;
-	for(auto env: envMap)
+	for (auto env : envMap)
 	{
-		dockerCommand += " --env ";
-		dockerCommand += env.first;
-		dockerCommand += "=";
-		dockerCommand += env.second;
+		if (env.first == ENV_APP_MANAGER_DOCKER_PARAMS)
+		{
+			// used for -p -v parameter
+			dockerCommand.append(" ");
+			dockerCommand.append(env.second);
+		}
+		else
+		{
+			dockerCommand += " --env ";
+			dockerCommand += env.first;
+			dockerCommand += "=";
+			dockerCommand += env.second;
+		}
 	}
 	if (limit != nullptr)
 	{
