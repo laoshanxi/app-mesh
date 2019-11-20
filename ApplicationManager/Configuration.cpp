@@ -355,7 +355,7 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getSecureConfigContentStr());
+	LOG_NST << fname << '\n' << Utility::prettyJson(this->getSecureConfigContentStr());
 
 	auto apps = getApps();
 	for (auto app : apps)
@@ -448,6 +448,8 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
+	LOG_DBG << fname << "Entered";
+
 	// not support update [Application] section
 	auto jsonValue = config;
 	if (jsonValue.has_field(JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
@@ -474,8 +476,8 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 		if (this->m_logLevel != newConfig->m_logLevel)
 		{
 			Utility::setLogLevel(newConfig->m_logLevel);
+			SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
 		}
-		SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
 	}
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_sslCertificateFile, newConfig->m_sslCertificateFile)
