@@ -28,7 +28,11 @@
 #define GET_STRING_T(sstr) utility::conversions::to_string_t(std::string(sstr))
 #define GET_STD_STRING(sstr)  utility::conversions::to_utf8string(sstr)
 
-#define SET_COMPARE(x, y) if ((x) != (y)) (x) = (y)
+#define SET_COMPARE(x, y) if ((x) != (y)) \
+	{ \
+		(x) = (y); \
+		LOG_INF << fname << "Configuration value updated : " << #x ; \
+	}
 
 // Get attribute from json Object
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))

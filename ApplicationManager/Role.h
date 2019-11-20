@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <memory>
+#include <mutex>
 #include <cpprest/json.h>
 
 class Role
@@ -18,13 +19,14 @@ public:
 
 	// get infomation
 	bool hasPermission(std::string permission);
-	const std::set<std::string>& getPermissions();
+	const std::set<std::string> getPermissions();
 	const std::string getName() const;
 
 private:
 	static std::set<std::string> APP_MANAGER_PERMISSIONS;
 	std::set<std::string> m_permissions;
 	std::string m_name;
+	std::recursive_mutex m_mutex;
 };
 
 
@@ -44,6 +46,7 @@ public:
 
 private:
 	std::map<std::string, std::shared_ptr<Role>> m_roles;
+	std::recursive_mutex m_mutex;
 
 };
 

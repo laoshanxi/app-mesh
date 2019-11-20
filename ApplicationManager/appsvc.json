@@ -54,7 +54,6 @@
       "label-update",
       "label-set",
       "label-delete",
-      "log-level",
       "config-set",
       "change-passwd",
       "lock-user",

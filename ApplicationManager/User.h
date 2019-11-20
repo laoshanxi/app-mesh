@@ -3,6 +3,7 @@
 #include <string>
 #include <set>
 #include <map>
+#include <mutex>
 #include <cpprest/json.h>
 #include "Role.h"
 
@@ -24,14 +25,15 @@ public:
 
 	// get user info
 	bool locked() const;
-	const std::string& getKey() const;
-	const std::set<std::shared_ptr<Role>>& getRoles();
-	bool hasPermission(std::string permission) const;
+	const std::string getKey();
+	const std::set<std::shared_ptr<Role>> getRoles();
+	bool hasPermission(std::string permission);
 
 private:
 	std::string m_key;
 	bool m_locked;
 	std::string m_name;
+	std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
 };
 
@@ -53,6 +55,7 @@ public:
 	void delUser(std::string name);
 private:
 	std::map<std::string, std::shared_ptr<User>> m_users;
+	std::recursive_mutex m_mutex;
 };
 
 #endif

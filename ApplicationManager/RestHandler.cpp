@@ -146,8 +146,6 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::DEL, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
 
 	// 7. Log level
-	// http://127.0.0.1:6060/app-manager/loglevel?level=DEBUG
-	bindRestMethod(web::http::methods::POST, "/app-manager/loglevel", std::bind(&RestHandler::apiLoglevel, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, "/app-manager/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
@@ -677,29 +675,6 @@ void RestHandler::apiTagDel(const HttpRequest& message)
 	Configuration::instance()->saveConfigToDisk();
 
 	message.reply(status_codes::OK);
-}
-
-void RestHandler::apiLoglevel(const HttpRequest& message)
-{
-	permissionCheck(message, PERMISSION_KEY_loglevel);
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	if (querymap.find(U(HTTP_QUERY_KEY_loglevel)) != querymap.end())
-	{
-		auto level = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_loglevel))->second);
-		if (Utility::setLogLevel(level))
-		{
-			message.reply(status_codes::OK, std::string("set log level to ") + level);
-			Configuration::instance()->dump();
-		}
-		else
-		{
-			message.reply(status_codes::BadRequest, "log level provide is invalid");
-		}
-	}
-	else
-	{
-		message.reply(status_codes::BadRequest, "query level required");
-	}
 }
 
 void RestHandler::apiGetPermissions(const HttpRequest& message)

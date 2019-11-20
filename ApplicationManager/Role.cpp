@@ -43,6 +43,7 @@ Roles::~Roles()
 
 std::shared_ptr<Role> Roles::getRole(std::string roleName)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto role = m_roles.find(roleName);
 	if (role != m_roles.end())
 	{
@@ -56,6 +57,7 @@ std::shared_ptr<Role> Roles::getRole(std::string roleName)
 
 web::json::value Roles::AsJson()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 	for (auto role : m_roles)
 	{
@@ -80,6 +82,7 @@ const std::shared_ptr<Roles> Roles::FromJson(const web::json::value& obj)
 void Roles::addRole(const web::json::value& obj)
 {
 	auto roles = Roles::FromJson(obj);
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	for (auto role : roles->m_roles)
 	{
 		m_roles[role.first] = role.second;
@@ -89,6 +92,7 @@ void Roles::addRole(const web::json::value& obj)
 void Roles::delRole(std::string name)
 {
 	getRole(name);
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_roles.erase(name);
 }
 
@@ -105,6 +109,7 @@ Role::~Role()
 
 web::json::value Role::AsJson()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto rolePermissions = web::json::value::array(m_permissions.size());
 	int i = 0;
 	for (auto perm : m_permissions)
@@ -135,11 +140,13 @@ std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value& obj
 
 bool Role::hasPermission(std::string permission)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_permissions.count(permission);
 }
 
-const std::set<std::string>& Role::getPermissions()
+const std::set<std::string> Role::getPermissions()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_permissions;
 }
 

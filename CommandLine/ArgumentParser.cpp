@@ -904,15 +904,13 @@ void ArgumentParser::processLoglevel()
 
 	auto level = m_commandLineVariables["level"].as<std::string>();
 
-
-	std::map<std::string, std::string> query;
-	query[HTTP_QUERY_KEY_loglevel] = m_commandLineVariables["level"].as<std::string>();
-
-	// /app-manager/loglevel?level=DEBUG
-	auto restPath = std::string("/app-manager/loglevel");
-	auto response = requestHttp(methods::POST, restPath, query);
+	web::json::value jsobObj;
+	jsobObj[JSON_KEY_LogLevel] = web::json::value::string(level);
+	// /app-manager/config
+	auto restPath = std::string("/app-manager/config");
+	auto response = requestHttp(methods::POST, restPath, jsobObj);
 	RESPONSE_CHECK_WITH_RETURN;
-	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+	std::cout << "Log level set to : " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
 }
 
 void ArgumentParser::processConfigView()

@@ -15,6 +15,7 @@ Users::~Users()
 
 web::json::value Users::AsJson()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 	for (auto user : m_users)
 	{
@@ -37,11 +38,13 @@ std::shared_ptr<Users> Users::FromJson(const web::json::value& obj, std::shared_
 
 std::map<std::string, std::shared_ptr<User>> Users::getUsers()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_users;
 }
 
 std::shared_ptr<User> Users::getUser(std::string name)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = m_users.find(name);
 	if (user != m_users.end())
 	{
@@ -55,6 +58,7 @@ std::shared_ptr<User> Users::getUser(std::string name)
 
 void Users::addUser(const web::json::value& obj, std::shared_ptr<Roles> roles)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (!obj.is_null() && obj.is_object())
 	{
 		auto users = obj.as_object();
@@ -73,6 +77,7 @@ void Users::addUser(const web::json::value& obj, std::shared_ptr<Roles> roles)
 
 void Users::delUser(std::string name)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	getUser(name);
 	m_users.erase(name);
 }
@@ -90,6 +95,7 @@ User::~User()
 
 web::json::value User::AsJson()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 
 	result[JSON_KEY_USER_key] = web::json::value::string(m_key);
@@ -142,6 +148,7 @@ void User::updateRoles(std::set<std::shared_ptr<Role>> roles)
 
 void User::updateKey(std::string passswd)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_key = passswd;
 }
 
@@ -150,18 +157,21 @@ bool User::locked() const
 	return m_locked;
 }
 
-const std::string& User::getKey() const
+const std::string User::getKey()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_key;
 }
 
-const std::set<std::shared_ptr<Role>>& User::getRoles()
+const std::set<std::shared_ptr<Role>> User::getRoles()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_roles;
 }
 
-bool User::hasPermission(std::string permission) const
+bool User::hasPermission(std::string permission)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	for (auto role : m_roles)
 	{
 		if (role->hasPermission(permission)) return true;
