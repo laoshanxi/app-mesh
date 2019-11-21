@@ -493,7 +493,7 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 {
 	const static char fname[] = "Configuration::parseApp() ";
 
-	LOG_DBG << fname << "Json Object:\n" << jsonApp.serialize();
+	LOG_DBG << fname << "Json Object:\n" << Utility::prettyJson(jsonApp.serialize());
 
 	std::shared_ptr<Application> app;
 

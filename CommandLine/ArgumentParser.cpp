@@ -1056,7 +1056,12 @@ bool ArgumentParser::isAppExist(const std::string& appName)
 std::map<std::string, bool> ArgumentParser::getAppList()
 {
 	std::map<std::string, bool> apps;
-	auto jsonValue = requestHttp(methods::GET, "/app-manager/applications").extract_json(true).get();
+	auto response = requestHttp(methods::GET, "/app-manager/applications");
+	if (response.status_code() != status_codes::OK)
+	{
+		throw std::invalid_argument(response.extract_utf8string(true).get());
+	}
+	auto jsonValue = response.extract_json(true).get();
 	auto arr = jsonValue.as_array();
 	for (auto iter = arr.begin(); iter != arr.end(); iter++)
 	{
