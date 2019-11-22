@@ -367,7 +367,7 @@ std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point&
 	return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(time));
 }
 
-std::string Utility::getFmtTimeSeconds(const std::chrono::system_clock::time_point & time, const char * fmt)
+std::string Utility::getFmtTimeSeconds(const std::chrono::system_clock::time_point& time, const char* fmt)
 {
 	return date::format(fmt, std::chrono::time_point_cast<std::chrono::seconds>(time));
 }
@@ -563,7 +563,7 @@ std::string Utility::humanReadableSize(long double bytesSize)
 
 	size_t units = 0;
 	long double n = bytesSize;
-	while (n > base && units + 1 < sizeof(fmt) / sizeof(*fmt))
+	while (n > base&& units + 1 < sizeof(fmt) / sizeof(*fmt))
 	{
 		units++;
 		n /= base;

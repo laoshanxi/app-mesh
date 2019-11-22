@@ -13,7 +13,7 @@
 #include "ResourceCollection.h"
 #include "TimerHandler.h"
 
-int main(int argc, char * argv[])
+int main(int argc, char* argv[])
 {
 	const static char fname[] = "main() ";
 	PRINT_VERSION();
@@ -26,7 +26,7 @@ int main(int argc, char * argv[])
 
 		// init log
 		Utility::initLogging();
-		
+
 		LOG_INF << fname << "entered with working dir: " << getcwd(NULL, 0);
 		Configuration::handleReloadSignal();
 
@@ -62,7 +62,7 @@ int main(int argc, char * argv[])
 				{
 					httpHandler2 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
 				}
-				catch (const std::exception& e)
+				catch (const std::exception & e)
 				{
 					LOG_ERR << fname << e.what();
 				}
@@ -82,7 +82,7 @@ int main(int argc, char * argv[])
 
 		// start one thread for timers
 		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runTimerThread));
-		
+
 		// monitor applications
 		while (true)
 		{
@@ -94,7 +94,7 @@ int main(int argc, char * argv[])
 			}
 		}
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		LOG_ERR << fname << e.what();
 	}

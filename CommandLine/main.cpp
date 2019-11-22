@@ -25,7 +25,7 @@ int main(int argc, const char* argv[])
 		ArgumentParser parser(argc, argv, port, ssl, true);
 		parser.parse();
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		std::cout << e.what() << std::endl;
 	}

@@ -76,7 +76,7 @@ void LinuxCgroup::setCgroup(const std::string& appName, int pid, int index)
 	{
 		this->setSwapMemory(cgroupMemoryPath, m_memSwapMb * 1024 * 1024);
 	}
-	
+
 	if (m_cpuShares > 0 && Utility::createRecursiveDirectory(cgroupCpuPath, 0711))
 	{
 		this->setCpuShares(cgroupCpuPath, m_cpuShares);
@@ -95,7 +95,7 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 		return;
 	}
 
-	struct mntent *entPtr = nullptr;
+	struct mntent* entPtr = nullptr;
 	struct mntent entObj;
 	char buffer[4094] = { 0 };
 	while (nullptr != (entPtr = getmntent_r(fp, &entObj, buffer, sizeof(buffer))))
@@ -158,7 +158,7 @@ void LinuxCgroup::setCpuShares(const std::string& cgroupPath, long long cpuShare
 	writeFile(tasksHeirarchy, m_pid);
 }
 
-void LinuxCgroup::writeFile(const std::string & cgroupPath, long long value)
+void LinuxCgroup::writeFile(const std::string& cgroupPath, long long value)
 {
 	const static char fname[] = "LinuxCgroup::writeFile() ";
 

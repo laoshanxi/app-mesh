@@ -15,7 +15,7 @@ ResourceCollection::~ResourceCollection()
 {
 }
 
-ResourceCollection * ResourceCollection::instance()
+ResourceCollection* ResourceCollection::instance()
 {
 	static ResourceCollection* singleton = new ResourceCollection();
 	return singleton;
@@ -109,7 +109,7 @@ void ResourceCollection::dump()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	LOG_DBG << fname << "host_name:" << getHostName();
-	for (auto &pair : m_resources.m_ipaddress)
+	for (auto& pair : m_resources.m_ipaddress)
 	{
 		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv4 << "," << pair.address;
 	}

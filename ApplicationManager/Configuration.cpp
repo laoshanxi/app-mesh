@@ -34,7 +34,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(str));
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		LOG_ERR << "Failed to parse configuration file with error <" << e.what() << ">";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
@@ -111,7 +111,7 @@ void SigHupHandler(int signo)
 		{
 			config->hotUpdate(web::json::value::parse(Configuration::readConfiguration()));
 		}
-		catch (const std::exception& e)
+		catch (const std::exception & e)
 		{
 			LOG_ERR << fname << e.what();
 		}
@@ -244,7 +244,7 @@ const utility::string_t Configuration::getSecureConfigContentStr()
 			}
 		}
 	}
-	
+
 	return json.serialize();
 }
 
@@ -330,12 +330,12 @@ bool Configuration::getJwtEnabled() const
 	return m_jwtEnabled;
 }
 
-const std::shared_ptr<User> Configuration::getUserInfo(const std::string & userName)
+const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName)
 {
 	return m_jwtUsers->getUser(userName);
 }
 
-std::set<std::string> Configuration::getUserPermissions(const std::string & userName)
+std::set<std::string> Configuration::getUserPermissions(const std::string& userName)
 {
 	std::set<std::string> permissionSet;
 	auto user = getUserInfo(userName);
@@ -346,7 +346,7 @@ std::set<std::string> Configuration::getUserPermissions(const std::string & user
 	return std::move(permissionSet);
 }
 
-const std::string & Configuration::getJwtRedirectUrl()
+const std::string& Configuration::getJwtRedirectUrl()
 {
 	return m_JwtRedirectUrl;
 }
@@ -484,7 +484,7 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_sslCertificateKeyFile, newConfig->m_sslCertificateKeyFile)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_sslEnabled, newConfig->m_sslEnabled)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWTRedirectUrl)) SET_COMPARE(this->m_JwtRedirectUrl, newConfig->m_JwtRedirectUrl)
-	
+
 	this->dump();
 	ResourceCollection::instance()->dump();
 }

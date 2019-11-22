@@ -1281,4 +1281,4 @@ ssize_t ArgumentParser::inputSecurePasswd(char** pw, size_t sz, int mask, FILE* 
 			__func__, sz - 1);
 
 	return idx; /* number of chars in passwd    */
-	}
+}
