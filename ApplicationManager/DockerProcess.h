@@ -32,9 +32,9 @@ public:
 	std::string getFirstLine(const std::string& str);
 
 private:
-	std::string m_appName;
 	std::string m_dockerImage;
 	std::string m_containerId;
+	std::string m_appName;
 	std::shared_ptr<std::thread> m_spawnThread;
 	std::recursive_mutex m_mutex;
 
