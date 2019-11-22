@@ -18,8 +18,6 @@
 
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
 #define HELP_ARG_CHECK_WITH_RETURN if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
-#define RESPONSE_CHECK_WITH_RETURN if (response.status_code() != status_codes::OK) { std::cout << response.extract_utf8string(true).get() << std::endl; return; }
-#define RESPONSE_CHECK_WITH_RETURN_NO_DEBUGPRINT if (response.status_code() != status_codes::OK) { return; }
 #define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
 
 // Each user should have its own token path
@@ -398,7 +396,6 @@ void ArgumentParser::processReg(const char* appName)
 		restPath = std::string("/app/sh/") + appName;
 	}
 	auto response = requestHttp(methods::PUT, restPath, jsobObj);
-	RESPONSE_CHECK_WITH_RETURN;
 	auto appJsonStr = response.extract_utf8string(true).get();
 	if (m_printDebug) std::cout << GET_STD_STRING(appJsonStr) << std::endl;
 }
@@ -436,7 +433,6 @@ void ArgumentParser::processUnReg()
 			}
 			std::string restPath = std::string("/app/") + appName;
 			auto response = requestHttp(methods::DEL, restPath);
-			RESPONSE_CHECK_WITH_RETURN;
 			if (m_printDebug) std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 		}
 		else
@@ -468,7 +464,6 @@ void ArgumentParser::processView()
 			// view app info
 			std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();
 			auto response = requestHttp(methods::GET, restPath);
-			RESPONSE_CHECK_WITH_RETURN;
 			std::cout << response.extract_utf8string(true).get() << std::endl;
 		}
 		else
@@ -476,7 +471,6 @@ void ArgumentParser::processView()
 			// view app output
 			std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>() + "/output";
 			auto response = requestHttp(methods::GET, restPath);
-			RESPONSE_CHECK_WITH_RETURN;
 			auto bodyStr = response.extract_utf8string(true).get();
 			std::cout << bodyStr;
 		}
@@ -485,7 +479,6 @@ void ArgumentParser::processView()
 	{
 		std::string restPath = "/app-manager/applications";
 		auto response = requestHttp(methods::GET, restPath);
-		RESPONSE_CHECK_WITH_RETURN;
 		printApps(response.extract_json(true).get(), reduce);
 	}
 }
@@ -615,7 +608,6 @@ void ArgumentParser::processRun()
 		// /app/testapp/syncrun?timeout=5
 		std::string restPath = std::string("/app/").append(appName).append("/syncrun");
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
-		RESPONSE_CHECK_WITH_RETURN;
 
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 	}
@@ -625,7 +617,6 @@ void ArgumentParser::processRun()
 		// /app/testapp/run?timeout=5
 		std::string restPath = std::string("/app/").append(appName).append("/run");
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
-		RESPONSE_CHECK_WITH_RETURN;
 
 		auto process_uuid = GET_STD_STRING(response.extract_utf8string(true).get());
 		while (process_uuid.length())
@@ -635,7 +626,6 @@ void ArgumentParser::processRun()
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			response = requestHttp(methods::GET, restPath, query);
-			RESPONSE_CHECK_WITH_RETURN;
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 
 			// timeout < 0 means do not need fetch again.
@@ -738,7 +728,6 @@ void ArgumentParser::processDownload()
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_KEY_file_path] = file;
 	auto response = requestHttp(methods::GET, restPath, query, nullptr, &headers);
-	RESPONSE_CHECK_WITH_RETURN;
 
 	auto stream = concurrency::streams::file_stream<uint8_t>::open_ostream(local, std::ios_base::trunc | std::ios_base::binary).get();
 	response.body().read_to_end(stream.streambuf()).wait();
@@ -823,7 +812,6 @@ void ArgumentParser::processTags()
 
 	std::string restPath = "/labels";
 	http_response response = requestHttp(methods::GET, restPath);
-	RESPONSE_CHECK_WITH_RETURN;
 	std::vector<std::string> inputTags;
 	if (m_commandLineVariables.count("label")) inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
 
@@ -846,7 +834,6 @@ void ArgumentParser::processTags()
 			}
 		}
 		response = requestHttp(methods::POST, restPath, tagVal);
-		RESPONSE_CHECK_WITH_RETURN;
 	}
 	else if (m_commandLineVariables.count("remove") &&
 		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("view"))
@@ -864,7 +851,6 @@ void ArgumentParser::processTags()
 			if (tagVal.has_field(envVec.at(0))) tagVal.erase(envVec.at(0));
 		}
 		response = requestHttp(methods::POST, restPath, tagVal);
-		RESPONSE_CHECK_WITH_RETURN;
 	}
 	else if (m_commandLineVariables.count("view") &&
 		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("add"))
@@ -909,7 +895,6 @@ void ArgumentParser::processLoglevel()
 	// /app-manager/config
 	auto restPath = std::string("/app-manager/config");
 	auto response = requestHttp(methods::POST, restPath, jsobObj);
-	RESPONSE_CHECK_WITH_RETURN;
 	std::cout << "Log level set to : " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
 }
 
@@ -926,7 +911,6 @@ void ArgumentParser::processConfigView()
 
 	std::string restPath = "/app-manager/config";
 	http_response response = requestHttp(methods::GET, restPath);
-	RESPONSE_CHECK_WITH_RETURN;
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -955,7 +939,6 @@ void ArgumentParser::processChangePwd()
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
 	http_response response = requestHttp(methods::POST, restPath, query, nullptr, &headers);
-	RESPONSE_CHECK_WITH_RETURN;
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -982,7 +965,6 @@ void ArgumentParser::processLockUser()
 
 	std::string restPath = std::string("/user/") + user + (lock ? "/lock" : "/unlock");
 	http_response response = requestHttp(methods::POST, restPath);
-	RESPONSE_CHECK_WITH_RETURN;
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -1021,6 +1003,10 @@ http_response ArgumentParser::requestHttp(const method& mtd, const std::string& 
 		request.set_body(*body);
 	}
 	http_response response = client.request(request).get();
+	if (response.status_code() != status_codes::OK)
+	{
+		throw std::invalid_argument(response.extract_utf8string(true).get());
+	}
 	return std::move(response);
 }
 
