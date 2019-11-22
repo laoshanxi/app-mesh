@@ -6,8 +6,9 @@
 #include "LinuxCgroup.h"
 #include "MonitoredProcess.h"
 
-DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage)
-	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage), m_lastFetchTime(std::chrono::system_clock::now())
+DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage, std::string appName)
+	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage), m_lastFetchTime(std::chrono::system_clock::now()),
+	m_appName(appName)
 {
 }
 
@@ -50,10 +51,17 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	killgroup();
 	int pid = ACE_INVALID_PID;
 	const int dockerCliTimeoutSec = 5;
+	std::string containerName = "appmgr-" + m_appName;
+
+	// 0. clean old docker contianer (docker container will left when host restart)
+	std::string dockerCommand = "docker rm -f " + containerName;
+	AppProcess proc(0);
+	proc.spawnProcess(dockerCommand, "", "", {}, nullptr);
+	proc.wait();
 
 	// 1. check docker image
-	std::string dockerName = "app-mgr-" + this->getuuid();
-	std::string dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
+	
+	dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
 	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
@@ -68,7 +76,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 
 	// 2. build docker start command line
-	dockerCommand = std::string("docker run -d ") + "--name " + dockerName;
+	dockerCommand = std::string("docker run -d ") + "--name " + containerName;
 	for (auto env : envMap)
 	{
 		if (env.first == ENV_APP_MANAGER_DOCKER_PARAMS)

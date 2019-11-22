@@ -157,7 +157,7 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
-				m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
+				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 			}
@@ -378,18 +378,18 @@ void Application::dump()
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
 
-std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, std::string dockerImage)
+std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, std::string dockerImage, std::string appName)
 {
 	std::shared_ptr<AppProcess> process;
 	if (dockerImage.length())
 	{
 		if (cacheOutputLines > 0)
 		{
-			process.reset(new DockerProcess(cacheOutputLines, dockerImage));
+			process.reset(new DockerProcess(cacheOutputLines, dockerImage, appName));
 		}
 		else
 		{
-			process.reset(new DockerProcess(256, dockerImage));
+			process.reset(new DockerProcess(256, dockerImage, appName));
 		}
 	}
 	else

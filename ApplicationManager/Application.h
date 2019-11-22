@@ -57,7 +57,7 @@ public:
 	virtual void dump();
 
 protected:
-	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage);
+	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage, std::string appName);
 	bool isInDailyTimeRange();
 	virtual bool avialable();
 

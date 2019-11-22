@@ -15,7 +15,7 @@
 class DockerProcess :public AppProcess
 {
 public:
-	DockerProcess(int cacheOutputLines, std::string dockerImage);
+	DockerProcess(int cacheOutputLines, std::string dockerImage, std::string appName);
 	virtual ~DockerProcess();
 
 	// override with docker behavior
@@ -32,6 +32,7 @@ public:
 	std::string getFirstLine(const std::string& str);
 
 private:
+	std::string m_appName;
 	std::string m_dockerImage;
 	std::string m_containerId;
 	std::shared_ptr<std::thread> m_spawnThread;

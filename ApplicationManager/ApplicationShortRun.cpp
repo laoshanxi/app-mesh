@@ -111,7 +111,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	if (this->avialable())
 	{
 		// Spawn new process
-		m_process = allocProcess(m_cacheOutputLines, m_dockerImage);
+		m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
 		m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 	}
