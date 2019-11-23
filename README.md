@@ -4,7 +4,7 @@
 ![version](https://img.shields.io/badge/version-1.5.2-blue.svg?maxAge=2592000)
 
 
-[Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
+:fa-star [Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
 
 # Application Manager
 ### Introduction
