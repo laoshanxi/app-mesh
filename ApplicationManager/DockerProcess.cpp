@@ -7,8 +7,8 @@
 #include "MonitoredProcess.h"
 
 DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage, std::string appName)
-	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage), m_lastFetchTime(std::chrono::system_clock::now()),
-	m_appName(appName)
+	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage),
+	m_appName(appName), m_lastFetchTime(std::chrono::system_clock::now())
 {
 }
 
