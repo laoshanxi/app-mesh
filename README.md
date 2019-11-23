@@ -31,10 +31,21 @@ yum install -y appmanager-1.5.2-1.x86_64.rpm
 # ubuntu
 apt install -y appmanager_1.5.2_amd64.deb
 # after installation, service will be started automaticlly, check status by bellow command:
+$ systemctl status appmanager
+● appmanager.service - Application Manager Systemd Service
+   Loaded: loaded (/usr/lib/systemd/system/appmanager.service; enabled; vendor preset: disabled)
+   Active: active (running) since Sat 2019-11-23 07:56:37 EST; 5s ago
+     Docs: https://github.com/laoshanxi/app-manager
+ Main PID: 1202 (appsvc)
+   CGroup: /system.slice/appmanager.service
+           ├─1202 /opt/appmanager/appsvc
+           └─1465 ping www.baidu.com -w 300
 $ appc view
 id name        user  status   return pid    memory  start_time          command_line
 1  ping        root  enabled  0      6631   616 K   2019-09-19 19:31:45 /bin/sleep 60
 2  sleep       root  enabled  0      -      -       -                   ping www.baidu.com
+
+# Note that on windows WSL ubuntu, you must use `service appmanager start` to force service start, WSL VM does not have full init.d
 ```
 
 ### Supported command lines
