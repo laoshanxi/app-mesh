@@ -1,7 +1,7 @@
 ﻿
 [![License](https://img.shields.io/badge/license-LGPL-green.svg)](LICENSE)
 ![coverage](https://img.shields.io/badge/coverage-95%25-yellowgreen.svg?maxAge=2592000)
-![version](https://img.shields.io/badge/version-1.5.2-blue.svg?maxAge=2592000)
+![version](https://img.shields.io/badge/version-1.6.1-blue.svg?maxAge=2592000)
 
 
 [Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
