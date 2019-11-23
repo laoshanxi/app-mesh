@@ -123,7 +123,8 @@ public:
 };
 #define ENV_APP_MANAGER_LISTEN_PORT "APPMGR_OVERRIDE_LISTEN_PORT"
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
-#define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"	// used to pass docker extra parameters to docker startup cmd
+#define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"							// used to pass docker extra parameters to docker startup cmd
+#define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT"	// app manager pull docker image timeout seconds
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define DATE_TIME_FORMAT_RFC3339 "%FT%TZ"		//= "%Y-%m-%dT%H:%M:%SZ"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS (60 * 60 * 8)	// default 8 hour
