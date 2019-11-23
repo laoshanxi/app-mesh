@@ -42,6 +42,11 @@ void DockerProcess::killgroup(int timerId)
 			proc.killgroup();
 		}
 	}
+
+	if (m_imagePullProc != nullptr && m_imagePullProc->running())
+	{
+		m_imagePullProc->killgroup();
+	}
 }
 
 int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
@@ -60,7 +65,6 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	proc.wait();
 
 	// 1. check docker image
-	
 	dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
 	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
@@ -71,8 +75,14 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	imageSizeStr = getFirstLine(imageSizeStr);
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
-		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist";
-		return ACE_INVALID_PID;
+		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
+
+		// pull docker image
+		m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
+		m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr);
+		m_imagePullProc->regKillTimer(60 * 15, fname);	// TBD: set timeout of docker image pull to 15 minutes for now
+		this->attach(m_imagePullProc->getpid());
+		return m_imagePullProc->getpid();
 	}
 
 	// 2. build docker start command line
