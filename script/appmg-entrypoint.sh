@@ -19,7 +19,7 @@ SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
 
 # support override default listen port frmo env
-if [ -z $APPMGR_OVERRIDE_LISTEN_PORT ]
+if [ -z $APPMGR_OVERRIDE_LISTEN_PORT ]; then
 	log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
 fi
 
