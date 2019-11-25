@@ -1,4 +1,4 @@
-include ../make.def
+include ../../make.def
 TARGET = appc
 CXX = g++
 CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2

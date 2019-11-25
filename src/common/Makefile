@@ -1,4 +1,4 @@
-include ../make.def
+include ../../make.def
 TARGET = libcommon.a
 CXX = g++
 CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2

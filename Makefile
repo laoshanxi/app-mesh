@@ -7,9 +7,7 @@ LDPATH=$(LD_LIBRARY_PATH):/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/
 
 all:
 	echo ${BUILD_TAG}
-	cd common; make
-	cd ApplicationManager; make
-	cd CommandLine; make
+	cd src; make
 	make build_dir
 	make deb
 	make rpm
@@ -18,9 +16,9 @@ build_dir:
 	rm -rf ${RELEASE_DIR}
 	mkdir -p ${TMP_DIR}/script
 	mkdir -p ${TMP_LIB_DIR}
-	cp ./CommandLine/appc ${TMP_DIR}/
-	cp ./ApplicationManager/appsvc ${TMP_DIR}/
-	cp ./ApplicationManager/appsvc.json ${TMP_DIR}/
+	cp ./src/cli/appc ${TMP_DIR}/
+	cp ./src/daemon/appsvc ${TMP_DIR}/
+	cp ./src/daemon/appsvc.json ${TMP_DIR}/
 	cp ./script/*.sh ${TMP_DIR}/script
 	cp ./script/*.service ${TMP_DIR}/script
 	cp ./script/server.crt ${TMP_DIR}/
@@ -28,21 +26,21 @@ build_dir:
 	chmod +x ${TMP_DIR}/script/*.sh
 	dos2unix ${TMP_DIR}/script/*.sh
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./ApplicationManager/appsvc | grep boost | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/daemon/appsvc | grep boost | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./CommandLine/appc | grep boost | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/cli/appc | grep boost | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./ApplicationManager/appsvc | grep jsoncpp | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/daemon/appsvc | grep jsoncpp | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./ApplicationManager/appsvc | grep ACE | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/daemon/appsvc | grep ACE | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./ApplicationManager/appsvc | grep cpprest | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/daemon/appsvc | grep cpprest | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./ApplicationManager/appsvc | grep ssl | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/daemon/appsvc | grep ssl | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./ApplicationManager/appsvc | grep crypto | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/daemon/appsvc | grep crypto | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./ApplicationManager/appsvc | grep log4cpp | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
+	ldd ./src/daemon/appsvc | grep log4cpp | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	
 deb:
 	rm -f *.deb
@@ -71,9 +69,7 @@ lines:
 	find . -name "*.cpp" -or -name "*.h" -or -name "*.hpp" -or -name "*.c"  -or -name "*.sh" -or -name "Makefile" -or -name "Dockerfile" |xargs grep -v "^$$"|wc -l
 
 clean:
-	cd CommandLine; make clean
-	cd common; make clean
-	cd ApplicationManager; make clean
+	cd src; make clean
 	rm -rf release
 	rm -f *.deb
 	rm -f *.rpm
