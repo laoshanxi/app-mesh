@@ -1,3 +1,9 @@
+#!/bin/bash
+
+#####################################################################
+# This script is used to install all 3rd-party dependency libraries
+#####################################################################
+
 mkdir -p dep
 cd dep
 export ROOTDIR=`pwd`
