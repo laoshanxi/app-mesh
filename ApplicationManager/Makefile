@@ -9,7 +9,7 @@ OEXT = o
 INCLUDES = -I/usr/local/ace/include/ -I/usr/local/include
 DEP_LIBS = -L../common -lcommon -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -lcrypto -lssl -lACE -lcpprest -lboost_thread -lboost_system -lboost_regex -Wl,-Bstatic -llog4cpp -ljsoncpp -Wl,-Bdynamic
 
-all : format $(TARGET) 
+all : $(TARGET) 
 
 ## source and object files
 SRCS = \

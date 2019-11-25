@@ -7,7 +7,7 @@ OEXT = o
 INCLUDES = -I/usr/local/include -I/usr/local/ace/include/
 DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -lssl -lcrypto -lcpprest -lboost_system -lboost_program_options -lACE -Wl,-Bstatic -llog4cpp -ljsoncpp -Wl,-Bdynamic
 
-all : format $(TARGET) 
+all : $(TARGET) 
 
 # ====================
 # source and object files
