@@ -9,21 +9,23 @@ DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib -L/usr/local/lib64 -lpthread -
 
 all : format $(TARGET) 
 
-## source and object files 
+# ====================
+# source and object files
+# ====================
 SRCS = main.cpp \
 	ArgumentParser.cpp \
 	../common/Utility.cpp
 
 OBJS = $(SRCS:.cpp=.$(OEXT))
 
-# =============
+# ====================
 # File suffixes
-# =============
+# ====================
 .SUFFIXES: .cpp .$(OEXT)
 
 # ====================
 #compile all cpp files
-# ===================
+# ====================
 %.${OEXT}: %.cpp
 	${CXX} ${CXXFLAGS} ${INCLUDES} -DBUILD_TAG=${BUILD_TAG} -c $<;
 	# cleanup.py ${CXX} ${CXXFLAGS} ${INCLUDES} -DBUILD_TAG=${BUILD_TAG} -c $<;
@@ -32,8 +34,6 @@ OBJS = $(SRCS:.cpp=.$(OEXT))
 $(TARGET): $(OBJS) 
 	$(CXX) ${CXXFLAGS} -o $@ $^ $(DEP_LIBS)
 
-format:
-	#dos2unix *.cpp
 
 .PHONY: clean
 clean:
