@@ -78,13 +78,19 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
 
 		// pull docker image
-		int pullTimeout = 60 * 15;
-		if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT)) pullTimeout = std::stoi(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]);
-		m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
-		m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr);
-		m_imagePullProc->regKillTimer(pullTimeout, fname);	// TBD: set timeout of docker image pull to 15 minutes for now
-		this->attach(m_imagePullProc->getpid());
-		return m_imagePullProc->getpid();
+		if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT))
+		{
+			int pullTimeout = std::stoi(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]);
+			m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
+			m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr);
+			m_imagePullProc->regKillTimer(pullTimeout, fname);	// TBD: set timeout of docker image pull to 15 minutes for now
+			this->attach(m_imagePullProc->getpid());
+			return m_imagePullProc->getpid();
+		}
+		else
+		{
+			throw std::invalid_argument("Docker image does not exits");
+		}
 	}
 
 	// 2. build docker start command line
