@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.27703.2026
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ApplicationManager", "ApplicationManager\ApplicationManager.vcxproj", "{637D26F0-BA40-4158-9F4E-661D2D423129}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "daemon", "src\daemon\daemon.vcxproj", "{637D26F0-BA40-4158-9F4E-661D2D423129}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CommandLine", "CommandLine\CommandLine.vcxproj", "{86C8203A-B830-4C5D-B496-96DC6E81FC86}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cli", "src\cli\cli.vcxproj", "{86C8203A-B830-4C5D-B496-96DC6E81FC86}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{7A1F9871-FD69-430B-A5B5-7D58A84720DA}"
 	ProjectSection(SolutionItems) = preProject
@@ -19,7 +19,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		doc\JWT_DESC.md = doc\JWT_DESC.md
 		make.def = make.def
 		Makefile = Makefile
-		common\Makefile = common\Makefile
+		src\common\Makefile = src\common\Makefile
 		script\pre_uninstall.sh = script\pre_uninstall.sh
 		README.md = README.md
 		script\uninstall.sh = script\uninstall.sh
