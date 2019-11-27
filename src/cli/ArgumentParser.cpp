@@ -920,7 +920,7 @@ void ArgumentParser::processChangePwd()
 	desc.add_options()
 		OPTION_HOST_NAME
 		("user,u", po::value<std::string>(), "new password")
-		("passwd,p", po::value<std::string>(), "new password")
+		("passwd,x", po::value<std::string>(), "new password")
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);
