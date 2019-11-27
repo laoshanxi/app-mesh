@@ -130,6 +130,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string>& pair)
 	{
 		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
+		LOG_DBG << "spawnProcess env: " << pair.first.c_str() << "=" << pair.second.c_str();
 	});
 	// do not inherit LD_LIBRARY_PATH to child
 	static const std::string ldEnv = ::getenv("LD_LIBRARY_PATH");
