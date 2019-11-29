@@ -16,6 +16,11 @@ else
 	cp -f $INSTALL_DIR/script/appmanager.initd.sh /etc/init.d/appmanager
 fi
 
+# restore previous configuration file
+if [ -f "/opt/appmanager/.appsvc.json" ]; then
+	mv /opt/appmanager/.appsvc.json /opt/appmanager/appsvc.json
+fi
+
 rm -rf /usr/bin/appc
 ln -s /opt/appmanager/script/appc.sh /usr/bin/appc
 chmod +x /opt/appmanager/script/appc.sh

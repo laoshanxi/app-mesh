@@ -1,6 +1,6 @@
 #ifndef REST_HTTP_REQUEST_H
 #define REST_HTTP_REQUEST_H
-
+#include <functional>
 #include <cpprest/http_client.h>
 
 using namespace web;
@@ -110,4 +110,14 @@ public:
 		const utility::string_t& content_type = _XPLATSTR("application/octet-stream")) const;
 };
 
+class HttpRequestWithCallback : public HttpRequest
+{
+public:
+	HttpRequestWithCallback(const web::http::http_request& message, std::string appName, std::function<void(std::string)> callBackHandler);
+	virtual ~HttpRequestWithCallback();
+
+private:
+	std::string m_appName;
+	std::function<void(std::string)> m_callBackHandler;
+};
 #endif

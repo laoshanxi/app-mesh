@@ -12,7 +12,6 @@
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
-#define LOG_NST    log4cpp::Category::getRoot() << log4cpp::Priority::NOTSET
 #define LOG_DBG    log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG 
 #define LOG_INF    log4cpp::Category::getRoot() << log4cpp::Priority::INFO
 #define LOG_WAR    log4cpp::Category::getRoot() << log4cpp::Priority::WARN
@@ -52,6 +51,7 @@
 #define JWT_USER_NAME "user"
 #define JWT_ADMIN_NAME "admin"
 #define APPMGR_PASSWD_MIN_LENGTH 3
+#define APP_MGR_APP_RUN_CLEANUP_BUFFER_SECONDS 5
 
 enum STATUS
 {
@@ -130,6 +130,7 @@ public:
 #define DEFAULT_TOKEN_EXPIRE_SECONDS (60 * 60 * 8)	// default 8 hour
 #define MAX_TOKEN_EXPIRE_SECONDS (60 * 60 * 24) // max 24 hour
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10		// run app default timeout
+#define MAX_APP_CACHED_LINES 1024
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_RestListenPort "RestListenPort"
@@ -210,7 +211,6 @@ public:
 #define HTTP_QUERY_KEY_action_stop "disable"
 #define HTTP_QUERY_KEY_loglevel "level"
 #define HTTP_QUERY_KEY_label_value "value"
-#define HTTP_QUERY_KEY_session_login "session_login"
 
 #define PERMISSION_KEY_view_app					"view-app"
 #define PERMISSION_KEY_view_app_output			"view-app-output"

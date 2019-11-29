@@ -112,8 +112,6 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// 3. Manage Application
 	// http://127.0.0.1:6060/app/app-name
 	bindRestMethod(web::http::methods::PUT, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/sh/shell-app-id
-	bindRestMethod(web::http::methods::PUT, R"(/app/sh/([^/\*]+))", std::bind(&RestHandler::apiRegShellApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname/enable
 	bindRestMethod(web::http::methods::POST, R"(/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/appname/disable
@@ -122,12 +120,12 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::DEL, R"(/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
 	// 4. Operate Application
-	// http://127.0.0.1:6060/app/app-name/run?timeout=5
-	bindRestMethod(web::http::methods::POST, R"(/app/([^/\*]+)/run)", std::bind(&RestHandler::apiAsyncRun, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/run?timeout=5
+	bindRestMethod(web::http::methods::POST, "/app/run", std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
-	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiAsyncRunOut, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/syncrun?timeout=5
-	bindRestMethod(web::http::methods::POST, R"(/app/([^/\*]+)/syncrun)", std::bind(&RestHandler::apiSyncRun, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunAsyncOut, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/app/syncrun?timeout=5
+	bindRestMethod(web::http::methods::POST, "/app/syncrun", std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
 
 	// 5. File Management
 	// http://127.0.0.1:6060/download
@@ -431,60 +429,28 @@ std::string RestHandler::createToken(const std::string& uname, const std::string
 	return std::move(token);
 }
 
-void RestHandler::apiRegShellApp(const HttpRequest& message)
+void RestHandler::cleanTempApp(int timerId)
 {
-	const static char fname[] = "RestHandler::apiRegShellApp() ";
+	const static char fname[] = "RestHandler::cleanTempApp() ";
 
-	permissionCheck(message, PERMISSION_KEY_app_reg_shell);
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	auto jsonApp = message.extract_json(true).get();
-	if (jsonApp.is_null())
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_tempAppsForClean.count(timerId))
 	{
-		throw std::invalid_argument("invalid json format");
+		auto app = m_tempAppsForClean[timerId];
+		Configuration::instance()->removeApp(app);
 	}
-	bool sessionLogin = (querymap.count("HTTP_QUERY_KEY_session_login")) && (querymap[HTTP_QUERY_KEY_session_login] == "true");
-	jsonApp[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
-	// /bin/su - ubuntu -c "export A=b;export B=c;env | grep B"
-	std::string shellCommandLine;
-	if (sessionLogin)
-	{
-		shellCommandLine = "/bin/su --login ";
-		shellCommandLine.append(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_user));
-		jsonApp[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T("root"));
-	}
-	else
-	{
-		shellCommandLine = "/bin/sh";
-	}
+	m_tempAppsForClean.erase(timerId);
 
-	shellCommandLine.append(" -c \"");
+	LOG_DBG << fname << "timer id: " << timerId << " left map size : " << m_tempAppsForClean.size();
+}
 
-	if (sessionLogin)
-	{
-		// inject environment variable, /bin/su does not transfer env to session
-		if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_env))
-		{
-			auto envs = jsonApp.at(JSON_KEY_APP_env).as_object();
-			for (auto env : envs)
-			{
-				shellCommandLine.append(" export ");
-				shellCommandLine.append(env.first);
-				shellCommandLine.append("=");
-				shellCommandLine.append(env.second.as_string());
-				shellCommandLine.append(";");
-			}
-			jsonApp.erase(JSON_KEY_APP_env);
-		}
-	}
+void RestHandler::cleanTempAppByName(std::string appNameStr)
+{
+	const static char fname[] = "RestHandler::cleanTempAppByName() ";
 
-	shellCommandLine.append(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_command)));
-	shellCommandLine.append("\"");
-	jsonApp[JSON_KEY_APP_command] = web::json::value::string(GET_STRING_T(shellCommandLine));
-
-	LOG_DBG << fname << "Shell app json: " << jsonApp.serialize();
-
-	auto app = Configuration::instance()->addApp(jsonApp);
-	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(true).serialize())));
+	// see RestHandler::apiSyncRun
+	LOG_DBG << fname << appNameStr;
+	Configuration::instance()->removeApp(appNameStr);
 }
 
 void RestHandler::apiEnableApp(const HttpRequest& message)
@@ -923,93 +889,66 @@ void RestHandler::apiGetApp(const HttpRequest& message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
 }
 
-void RestHandler::apiAsyncRun(const HttpRequest& message)
+std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& message, int& timeout)
+{
+	const static char fname[] = "RestHandler::apiRunParseApp() ";
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS; // default use 10 seconds
+	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
+	{
+		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
+		if (timeout == 0) timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS;
+		LOG_DBG << fname << "Use timeout :" << timeout;
+	}
+	else
+	{
+		LOG_DBG << fname << "Use default timeout :" << timeout;
+	}
+
+	auto jsonApp = const_cast<HttpRequest*>(&message)->extract_json(true).get();
+	// force specify a UUID app name
+	auto appName = Utility::createUUID();
+	jsonApp[JSON_KEY_APP_name] = web::json::value::string(appName);
+	jsonApp[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
+	jsonApp[JSON_KEY_APP_cache_lines] = web::json::value::number(MAX_APP_CACHED_LINES);
+	return Configuration::instance()->addApp(jsonApp, true);
+}
+
+void RestHandler::apiRunAsync(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiAsyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	// /app/$app-name/run?timeout=5
-	std::string app = path.substr(strlen("/app/"));
-	app = app.substr(0, app.find_first_of('/'));
+	int timeout;
+	auto appObj = apiRunParseApp(message, timeout);
 
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	int timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS; // default use 10 seconds
-	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
-	{
-		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
-		if (timeout == 0) timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS;
-		LOG_DBG << fname << "Use timeout :" << timeout;
-
-	}
-	else
-	{
-		LOG_DBG << fname << "Use default timeout :" << timeout;
-	}
-	// Parse env map  (optional)
-	std::map<std::string, std::string> envMap;
-	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
-	if (body.length() && body != "null")
-	{
-		auto jsonEnv = web::json::value::parse(body);
-		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
-		{
-			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
-			for (auto it = env.begin(); it != env.end(); it++)
-			{
-				envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
-			}
-		}
-	}
-	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->runSyncrize(timeout, envMap));
+	auto processUuid = appObj->runAsyncrize(timeout);
+	auto result = web::json::value::object();
+	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
+	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
+	message.reply(status_codes::OK, result);
+	
+	// Save cleaup footprint
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	auto timerId = this->registerTimer(timeout + APP_MGR_APP_RUN_CLEANUP_BUFFER_SECONDS, 0, 
+		std::bind(&RestHandler::cleanTempApp, this, std::placeholders::_1), fname);
+	m_tempAppsForClean[timerId] = appObj->getName();
 }
 
-void RestHandler::apiSyncRun(const HttpRequest& message)
+void RestHandler::apiRunSync(const HttpRequest& message)
 {
-	const static char fname[] = "RestHandler::apiSyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-
-	// /app/$app-name/run?timeout=5
-	std::string app = path.substr(strlen("/app/"));
-	app = app.substr(0, app.find_first_of('/'));
-
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	int timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS; // default use 10 seconds
-	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
-	{
-		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
-		if (timeout == 0) timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS;
-		LOG_DBG << fname << "Use timeout :" << timeout;
-
-	}
-	else
-	{
-		LOG_DBG << fname << "Use default timeout :" << timeout;
-	}
-
-	// Parse env map  (optional)
-	std::map<std::string, std::string> envMap;
-	auto body = const_cast<HttpRequest*>(&message)->extract_utf8string(true).get();
-	if (body.length() && body != "null")
-	{
-		auto jsonEnv = web::json::value::parse(body);
-		if (HAS_JSON_FIELD(jsonEnv, JSON_KEY_APP_env))
-		{
-			auto env = jsonEnv.at(JSON_KEY_APP_env).as_object();
-			for (auto it = env.begin(); it != env.end(); it++)
-			{
-				envMap[GET_STD_STRING((*it).first)] = GET_STD_STRING((*it).second.as_string());
-			}
-		}
-	}
+	
+	int timeout;
+	auto appObj = apiRunParseApp(message, timeout);
 
 	// Use async reply here
-	HttpRequest* asyncRequest = new HttpRequest(message);
-	Configuration::instance()->getApp(app)->runAsyncrize(timeout, envMap, asyncRequest);
+	HttpRequest* asyncRequest = new HttpRequestWithCallback(message, appObj->getName(), std::bind(&RestHandler::cleanTempAppByName, this, std::placeholders::_1));
+	appObj->runSyncrize(timeout, asyncRequest);
 }
 
-void RestHandler::apiAsyncRunOut(const HttpRequest& message)
+void RestHandler::apiRunAsyncOut(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiAsyncRunOut() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
@@ -1027,13 +966,16 @@ void RestHandler::apiAsyncRunOut(const HttpRequest& message)
 
 		int exitCode = 0;
 		bool finished = false;
-		std::string body = Configuration::instance()->getApp(app)->getAsyncRunOutput(uuid, exitCode, finished);
+		auto appObj = Configuration::instance()->getApp(app);
+		std::string body = appObj->getAsyncRunOutput(uuid, exitCode, finished);
 		web::http::http_response resp(status_codes::OK);
 		resp.set_body(body);
 		if (finished)
 		{
 			resp.set_status_code(status_codes::Created);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
+			// remove temp app immediately
+			if (appObj->isTempApp()) Configuration::instance()->removeApp(app);
 		}
 
 		LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
@@ -1088,7 +1030,7 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	{
 		throw std::invalid_argument("invalid json format");
 	}
-	auto app = Configuration::instance()->addApp(jsonApp);
+	auto app = Configuration::instance()->addApp(jsonApp, false);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
 }
 

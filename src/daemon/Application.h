@@ -29,6 +29,8 @@ public:
 	virtual ~Application();
 	const std::string getName() const;
 	bool isEnabled();
+	bool isTempApp();
+	void setTempApp(bool tempApp);
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj);
 
 	virtual void refreshPid();
@@ -44,9 +46,9 @@ public:
 	virtual void enable();
 
 	// run app in a new process object
-	std::string runApp(int timeoutSeconds, const std::map<std::string, std::string>& envMap);
-	std::string runSyncrize(int timeoutSeconds, std::map<std::string, std::string> envMap);
-	std::string runAsyncrize(int timeoutSeconds, std::map<std::string, std::string> envMap, void* asyncHttpRequest);
+	std::string runApp(int timeoutSeconds);
+	std::string runAsyncrize(int timeoutSeconds);
+	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest);
 	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished);
 
 	// get normal stdout for running app
@@ -74,7 +76,6 @@ protected:
 	
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
-	std::shared_ptr<MonitoredProcess> m_runProcess;
 	int m_pid;
 	std::recursive_mutex m_mutex;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
@@ -82,6 +83,7 @@ protected:
 	std::map<std::string, std::string> m_envMap;
 	std::string m_dockerImage;
 	std::chrono::system_clock::time_point m_procStartTime;
+	bool m_isTempApp;
 };
 
 #endif 

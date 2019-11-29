@@ -34,6 +34,7 @@ public:
 
 	virtual std::string getOutputMsg();
 	virtual std::string fetchOutputMsg();
+	virtual bool complete() { return true; }
 protected:
 	const int m_cacheOutputLines;
 private:

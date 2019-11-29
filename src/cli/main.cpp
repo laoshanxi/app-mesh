@@ -22,7 +22,7 @@ int main(int argc, const char* argv[])
 		bool ssl;
 		crossplat::threadpool::initialize_with_threads(1);
 		getListenPort(port, ssl);
-		ArgumentParser parser(argc, argv, port, ssl, true);
+		ArgumentParser parser(argc, argv, port, ssl);
 		parser.parse();
 	}
 	catch (const std::exception & e)

@@ -91,7 +91,7 @@ bool TimerHandler::cancleTimer(int timerId)
 void TimerHandler::runTimerThread()
 {
 	const static char fname[] = "TimerHandler::runEventLoop() ";
-	LOG_NST << fname << "Entered";
+	LOG_DBG << fname << "Entered";
 
 	while (!ACE_Reactor::instance()->reactor_event_loop_done())
 	{

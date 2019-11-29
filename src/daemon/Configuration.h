@@ -32,7 +32,7 @@ public:
 	void hotUpdate(const web::json::value& config, bool updateBasicConfig = false);
 
 	std::vector<std::shared_ptr<Application>> getApps();
-	std::shared_ptr<Application> addApp(const web::json::value& jsonApp);
+	std::shared_ptr<Application> addApp(const web::json::value& jsonApp, bool tempApp);
 	void removeApp(const std::string& appName);
 	void registerApp(std::shared_ptr<Application> app);
 	std::shared_ptr<Application> parseApp(const web::json::value& jsonApp);

@@ -16,13 +16,14 @@ MonitoredProcess::~MonitoredProcess()
 	if (m_pipe != nullptr) m_pipe->close();
 	if (m_readPipeFile != nullptr) ACE_OS::fclose(m_readPipeFile);
 
-	if (m_thread != nullptr) m_thread->join();
-
 	if (m_httpRequest)
 	{
 		delete (HttpRequest*)m_httpRequest;
 		m_httpRequest = NULL;
 	}
+
+	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
+	if (m_thread != nullptr) m_thread->join();
 
 	LOG_DBG << fname << "Process <" << this->getpid() << "> released";
 }
@@ -71,7 +72,7 @@ std::string MonitoredProcess::fetchOutputMsg()
 			stdoutMsg << m_msgQueue.front();
 			m_msgQueue.pop();
 		}
-		LOG_NST << fname;
+		LOG_DBG << fname;
 	}
 	return std::move(stdoutMsg.str());
 }
@@ -92,35 +93,21 @@ std::string MonitoredProcess::getOutputMsg()
 		msgQueue.pop();
 	}
 	std::string msgStr = stdoutMsg.str();
-	LOG_NST << fname;// << msgStr;
+	LOG_DBG << fname;// << msgStr;
 	return std::move(msgStr);
-}
-
-pid_t MonitoredProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
-{
-	auto rt = ACE_Process::wait(tv, status);
-	if (rt > 0)
-	{
-		// Only need wait thread when process already exit.
-		m_thread->join();
-		m_thread = nullptr;
-	}
-	return rt;
-}
-
-bool MonitoredProcess::complete() const
-{
-	return m_buildinThreadFinished;
 }
 
 void MonitoredProcess::runPipeReaderThread()
 {
 	const static char fname[] = "MonitoredProcess::monitorThread() ";
 	m_buildinThreadFinished = false;
-	LOG_NST << fname << "Entered";
+	LOG_DBG << fname << "Entered";
+
+	// hold self point to avoid release
+	auto self = this->shared_from_this();
 
 	const int stdoutQueueMaxLineCount = m_cacheOutputLines;
-	char buffer[768] = { 0 };
+	char buffer[1024] = { 0 };
 	while (true)
 	{
 		char* result = fgets(buffer, sizeof(buffer), m_readPipeFile);
@@ -129,7 +116,7 @@ void MonitoredProcess::runPipeReaderThread()
 			LOG_DBG << fname << "Get message from pipe finished";
 			break;
 		}
-		LOG_NST << fname << "Read line : " << buffer;
+		// LOG_DBG << fname << "Read line : " << buffer;
 
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 		m_msgQueue.push(buffer);
@@ -158,7 +145,7 @@ void MonitoredProcess::runPipeReaderThread()
 		}
 	}
 	///////////////////////////////////////////////////////////////////////
-	ACE_Process::wait();	// release defunct process here
-	LOG_NST << fname << "Exited";
+	LOG_DBG << fname << "Exited";
 	m_buildinThreadFinished = true;
+	this->registerTimer(0, 0, std::bind(&MonitoredProcess::safeWait, this, std::placeholders::_1), fname);
 }

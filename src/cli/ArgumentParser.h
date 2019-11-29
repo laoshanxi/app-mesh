@@ -19,7 +19,7 @@ namespace po = boost::program_options;
 class ArgumentParser
 {
 public:
-	ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug);
+	ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled);
 	virtual ~ArgumentParser();
 
 	void parse();
@@ -28,13 +28,12 @@ private:
 	void printMainHelp();
 	void processLogon();
 	void processLogoff();
-	void processReg(const char* appName = 0);
+	void processReg();
 	void processUnReg();
 	void processView();
 	void processResource();
 	void processEnableDisable(bool start);
 	void processRun();
-	void processShell();
 	void processDownload();
 	void processUpload();
 	void processTags();
@@ -66,7 +65,6 @@ private:
 	int m_listenPort;
 	bool m_sslEnabled;
 	int m_tokenTimeoutSeconds;
-	bool m_printDebug;
 	bool m_sessionLogin;	// whether use session login for register shell app
 	std::string m_hostname;
 	std::string m_username;

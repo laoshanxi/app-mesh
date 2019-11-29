@@ -18,14 +18,13 @@
 
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
 #define HELP_ARG_CHECK_WITH_RETURN if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
-#define OUTPUT_SPLITOR_PRINT std::cout << "--------------------------------------------------------" << std::endl;
 
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmgr_";
 static std::string m_jwtToken;
 
-ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled, bool printDebug)
-	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0), m_printDebug(printDebug), m_sessionLogin(true)
+ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled)
+	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0), m_sessionLogin(true)
 	, m_username(JWT_USER_NAME), m_userpwd(JWT_USER_KEY)
 {
 	po::options_description global("Global options");
@@ -107,12 +106,7 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "run")
 	{
-		// GET /app/$app-name/output
 		processRun();
-	}
-	else if (cmd == "sh")
-	{
-		processShell();
 	}
 	else if (cmd == "get")
 	{
@@ -163,7 +157,6 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  run         Run application and get output" << std::endl;
-	std::cout << "  sh          Use shell run a command and get output" << std::endl;
 	std::cout << "  get         Download remote file to local" << std::endl;
 	std::cout << "  put         Upload file to server" << std::endl;
 	std::cout << "  config      Manage basic configurations" << std::endl;
@@ -269,7 +262,7 @@ void ArgumentParser::processLogoff()
 }
 
 // appName is null means this is a normal application (not a shell application)
-void ArgumentParser::processReg(const char* appName)
+void ArgumentParser::processReg()
 {
 	po::options_description desc("Register a new application");
 	desc.add_options()
@@ -300,13 +293,7 @@ void ArgumentParser::processReg(const char* appName)
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
-	bool shellApp = (appName != nullptr);
-	if (
-		(!shellApp && m_commandLineVariables.count("name") == 0)
-		|| m_commandLineVariables.count("user") == 0
-		|| m_commandLineVariables.count("cmd") == 0
-		|| m_commandLineVariables.count("workdir") == 0
-		)
+	if (m_commandLineVariables.count("name") == 0 || m_commandLineVariables.count("cmd") == 0)
 	{
 		std::cout << desc << std::endl;
 		return;
@@ -321,7 +308,7 @@ void ArgumentParser::processReg(const char* appName)
 		}
 	}
 	// Shell app does not need check app existance
-	if (!shellApp && isAppExist(m_commandLineVariables["name"].as<std::string>()))
+	if (isAppExist(m_commandLineVariables["name"].as<std::string>()))
 	{
 		if (m_commandLineVariables.count("force") == 0)
 		{
@@ -332,7 +319,7 @@ void ArgumentParser::processReg(const char* appName)
 		}
 	}
 	web::json::value jsobObj;
-	jsobObj[JSON_KEY_APP_name] = (shellApp ? web::json::value::string(appName) : web::json::value::string(m_commandLineVariables["name"].as<std::string>()));
+	jsobObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("user")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
@@ -384,20 +371,10 @@ void ArgumentParser::processReg(const char* appName)
 	}
 	if (m_commandLineVariables.count("cache_lines")) jsobObj[JSON_KEY_APP_cache_lines] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
 	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
-	std::string restPath;
-	if (!shellApp)
-	{
-		// Normal app
-		restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();
-	}
-	else
-	{
-		// Shell app
-		restPath = std::string("/app/sh/") + appName;
-	}
+	std::string restPath = std::string("/app/") + m_commandLineVariables["name"].as<std::string>();
 	auto response = requestHttp(methods::PUT, restPath, jsobObj);
 	auto appJsonStr = response.extract_utf8string(true).get();
-	if (m_printDebug) std::cout << GET_STD_STRING(appJsonStr) << std::endl;
+	std::cout << GET_STD_STRING(appJsonStr) << std::endl;
 }
 
 void ArgumentParser::processUnReg()
@@ -433,7 +410,7 @@ void ArgumentParser::processUnReg()
 			}
 			std::string restPath = std::string("/app/") + appName;
 			auto response = requestHttp(methods::DEL, restPath);
-			if (m_printDebug) std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+			std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 		}
 		else
 		{
@@ -554,50 +531,49 @@ void ArgumentParser::processEnableDisable(bool start)
 
 void ArgumentParser::processRun()
 {
-	po::options_description desc("Run application:");
+	po::options_description desc("Shell application:");
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
-		("name,n", po::value<std::string>(), "run application by name.")
-		("timeout,x", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the remote app run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
-		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2), only take effect without session login.")
+		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
+		("cmd,c", po::value<std::string>(), "full command line with arguments")
+		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
+		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
+		("timeout,x", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
 		;
-
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
-	if (m_commandLineVariables.count("name") == 0)
+
+	if (m_commandLineVariables.count("cmd") == 0 || m_commandLineVariables.count("help"))
 	{
 		std::cout << desc << std::endl;
 		return;
 	}
-	if (!isAppExist(m_commandLineVariables["name"].as<std::string>()))
-	{
-		throw std::invalid_argument("no such application");
-	}
 
 	std::map<std::string, std::string> query;
 	int timeout = m_commandLineVariables["timeout"].as<int>();
-	if (m_commandLineVariables.count("timeout"))
-		query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
-	query[HTTP_QUERY_KEY_session_login] = m_sessionLogin ? "true" : "false";
-	auto appName = m_commandLineVariables["name"].as<std::string>();
+	if (m_commandLineVariables.count("timeout")) query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
+
 	web::json::value jsobObj;
+	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	if (m_commandLineVariables.count("user")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
+	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
 	{
 		std::vector<std::string> envs = m_commandLineVariables["env"].as<std::vector<std::string>>();
 		if (envs.size())
 		{
 			web::json::value objEnvs = web::json::value::object();
-			std::for_each(envs.begin(), envs.end(), [&objEnvs](std::string env)
+			for (auto env : envs)
+			{
+				auto find = env.find_first_of('=');
+				if (find != std::string::npos)
 				{
-					auto find = env.find_first_of('=');
-					if (find != std::string::npos)
-					{
-						auto key = env.substr(0, find);
-						auto val = env.substr(find + 1);
-						objEnvs[GET_STRING_T(key)] = web::json::value::string(GET_STRING_T(val));
-					}
-				});
+					auto key = env.substr(0, find);
+					auto val = env.substr(find + 1);
+					objEnvs[key] = web::json::value::string(val);
+				}
+			}
 			jsobObj[JSON_KEY_APP_env] = objEnvs;
 		}
 	}
@@ -605,8 +581,8 @@ void ArgumentParser::processRun()
 	if (timeout < 0)
 	{
 		// Use syncrun directly
-		// /app/testapp/syncrun?timeout=5
-		std::string restPath = std::string("/app/").append(appName).append("/syncrun");
+		// /app/syncrun?timeout=5
+		std::string restPath = "/app/syncrun";
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
 
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
@@ -614,11 +590,12 @@ void ArgumentParser::processRun()
 	else
 	{
 		// Use run and output
-		// /app/testapp/run?timeout=5
-		std::string restPath = std::string("/app/").append(appName).append("/run");
+		// /app/run?timeout=5
+		std::string restPath = "/app/run";
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
-
-		auto process_uuid = GET_STD_STRING(response.extract_utf8string(true).get());
+		auto result = response.extract_json(true).get();
+		auto appName = result[JSON_KEY_APP_name].as_string();
+		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
 		while (process_uuid.length())
 		{
 			// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
@@ -627,81 +604,10 @@ void ArgumentParser::processRun()
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			response = requestHttp(methods::GET, restPath, query);
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
-
-			// timeout < 0 means do not need fetch again.
-			if (m_commandLineVariables["timeout"].as<int>() < 0) break;
-
-			std::this_thread::sleep_for(std::chrono::microseconds(500));
+			if (response.status_code() != http::status_codes::OK) break;
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
 	}
-}
-
-void ArgumentParser::processShell()
-{
-	po::options_description desc("Shell application:");
-	desc.add_options()
-		("help,h", "Prints command usage to stdout and exits")
-		OPTION_HOST_NAME
-		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
-		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("debug,g", "print debug information")
-		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("timeout,x", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
-		("login,l", "starts the shell as login shell with an environment similar to a real login")
-		;
-	m_commandLineVariables.clear();
-	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
-	po::store(po::command_line_parser(opts).options(desc).run(), m_commandLineVariables);
-	po::notify(m_commandLineVariables);
-
-	if (m_commandLineVariables.count("cmd") == 0 || m_commandLineVariables.count("help"))
-	{
-		std::cout << desc << std::endl;
-		return;
-	}
-	m_printDebug = m_commandLineVariables.count("debug");
-	m_hostname = m_commandLineVariables["host"].as<std::string>();
-	bool sessionLogin = m_commandLineVariables.count("login");
-	int timeout = m_commandLineVariables["timeout"].as<int>();
-	for (auto iter = m_pasrsedOptions.begin(); iter != m_pasrsedOptions.end();)
-	{
-		if ((*iter).string_key == "-l" || (*iter).string_key == "--login")
-		{
-			iter = m_pasrsedOptions.erase(iter);
-		}
-		else
-		{
-			++iter;
-		}
-	}
-
-	// Use uuid for shell app to avoid overide existing app
-	auto appName = Utility::createUUID();
-
-	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
-
-	// 1. Reg a temp application
-	// PUT /app/sh
-	processReg(appName.c_str());
-
-	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
-
-	// 2. Call run and check output
-	const char* argvRun[] = { "appc" , "run", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()),
-		"-x", strdup(std::to_string(timeout).c_str()),
-		"\0" };
-	ArgumentParser runParser(ARRAY_LEN(argvRun), argvRun, m_listenPort, m_sslEnabled, m_printDebug);
-	runParser.m_sessionLogin = sessionLogin;
-	runParser.parse();
-
-	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
-
-	// 3. Unregist application
-	const char* argvUnreg[] = { "appc" , "unreg", "-b", strdup(m_hostname.c_str()), "-n", strdup(appName.c_str()), "-f", "\0" };
-	ArgumentParser unregParser(ARRAY_LEN(argvUnreg), argvUnreg, m_listenPort, m_sslEnabled, m_printDebug);
-	unregParser.parse();
-
-	if (m_printDebug) OUTPUT_SPLITOR_PRINT;
 }
 
 void ArgumentParser::processDownload()

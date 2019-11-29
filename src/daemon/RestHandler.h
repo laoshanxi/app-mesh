@@ -3,6 +3,7 @@
 
 #include <cpprest/http_client.h>
 #include <cpprest/http_listener.h> // HTTP server 
+#include "TimerHandler.h"
 #include "../common/HttpRequest.h"
 
 using namespace web;
@@ -10,10 +11,11 @@ using namespace http;
 using namespace utility;
 using namespace http::experimental::listener;
 
+class Application;
 //////////////////////////////////////////////////////////////////////////
 // REST service
 //////////////////////////////////////////////////////////////////////////
-class RestHandler
+class RestHandler : public TimerHandler
 {
 public:
 	explicit RestHandler(std::string ipaddress, int port);
@@ -38,18 +40,20 @@ private:
 	bool permissionCheck(const HttpRequest& message, const std::string& permission);
 	std::string getTokenStr(const HttpRequest& message);
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
+	void cleanTempApp(int timerId = 0);
+	void cleanTempAppByName(std::string appNameStr);
 
 	void apiLogin(const HttpRequest& message);
 	void apiAuth(const HttpRequest& message);
 	void apiGetApp(const HttpRequest& message);
-	void apiAsyncRun(const HttpRequest& message);
-	void apiSyncRun(const HttpRequest& message);
-	void apiAsyncRunOut(const HttpRequest& message);
+	std::shared_ptr<Application> apiRunParseApp(const HttpRequest& message, int& timeout);
+	void apiRunAsync(const HttpRequest& message);
+	void apiRunSync(const HttpRequest& message);
+	void apiRunAsyncOut(const HttpRequest& message);
 	void apiGetAppOutput(const HttpRequest& message);
 	void apiGetApps(const HttpRequest& message);
 	void apiGetResources(const HttpRequest& message);
 	void apiRegApp(const HttpRequest& message);
-	void apiRegShellApp(const HttpRequest& message);
 	void apiEnableApp(const HttpRequest& message);
 	void apiDisableApp(const HttpRequest& message);
 	void apiDeleteApp(const HttpRequest& message);
@@ -76,6 +80,9 @@ private:
 	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restPstFunctions;
 	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restDelFunctions;
 
+	std::recursive_mutex m_mutex;
+	// key: timerId, value: appName
+	std::map<int, std::string> m_tempAppsForClean;
 };
 
 #endif

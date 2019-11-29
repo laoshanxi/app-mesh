@@ -251,11 +251,17 @@ const utility::string_t Configuration::getSecureConfigContentStr()
 web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	// Build Json
-	auto result = web::json::value::array(m_apps.size());
-	for (size_t i = 0; i < m_apps.size(); ++i)
+	std::vector<std::shared_ptr<Application>> apps;
+	for (auto app : m_apps)
 	{
-		result[i] = m_apps[i]->AsJson(returnRuntimeInfo);
+		// do not persist temp application
+		if (returnRuntimeInfo || !app->isTempApp()) apps.push_back(app);
+	}
+	// Build Json
+	auto result = web::json::value::array(apps.size());
+	for (size_t i = 0; i < apps.size(); ++i)
+	{
+		result[i] = apps[i]->AsJson(returnRuntimeInfo);
 	}
 	return result;
 }
@@ -355,7 +361,7 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	LOG_NST << fname << '\n' << Utility::prettyJson(this->getSecureConfigContentStr());
+	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getSecureConfigContentStr());
 
 	auto apps = getApps();
 	for (auto app : apps)
@@ -364,9 +370,10 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonApp)
+std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonApp, bool tempApp)
 {
-	std::shared_ptr<Application> app = parseApp(jsonApp);
+	auto app = parseApp(jsonApp);
+	app->setTempApp(tempApp);
 	bool update = false;
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -387,30 +394,35 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 		registerApp(app);
 	}
 	// Write to disk
-	saveConfigToDisk();
+	if (!tempApp) saveConfigToDisk();
 
 	return app;
 }
 
 void Configuration::removeApp(const std::string& appName)
 {
+	const static char fname[] = "Configuration::removeApp() ";
+
+	LOG_DBG << fname << appName;
+
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// Update in-memory app
 	for (auto iterA = m_apps.begin(); iterA != m_apps.end();)
 	{
 		if ((*iterA)->getName() == appName)
 		{
+			bool tempApp = (*iterA)->isTempApp();
 			(*iterA)->destroy();
 			iterA = m_apps.erase(iterA);
+			// Write to disk
+			if (!tempApp) saveConfigToDisk();
+			LOG_DBG << fname  << "removed " << appName;
 		}
 		else
 		{
 			iterA++;
 		}
 	}
-
-	// Write to disk
-	saveConfigToDisk();
 }
 
 void Configuration::saveConfigToDisk()
