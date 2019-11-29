@@ -157,7 +157,7 @@ bool Application::attach(int pid)
 void Application::invoke()
 {
 	const static char fname[] = "Application::invoke() ";
-	if (m_status != STATUS::NOTAVIALABLE)
+	if (!isUnAvialable())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		if (this->avialable())
@@ -191,15 +191,11 @@ void Application::disable()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_status == ENABLED)
 	{
-		if (m_process != nullptr) m_process->killgroup();
 		m_status = DISABLED;
 		m_return = nullptr;
-		LOG_INF << fname << "Application <" << m_name << "> stopped.";
+		LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	}
-	else
-	{
-		LOG_WAR << fname << "Failed to disable <" << m_name << "> status is " << m_status;
-	}
+	if (m_process != nullptr) m_process->killgroup();
 }
 
 void Application::enable()
@@ -213,7 +209,7 @@ void Application::enable()
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
 	}
-	else if (m_status == NOTAVIALABLE)
+	else if (isUnAvialable())
 	{
 		LOG_WAR << fname << "Application <" << m_name << "> is UNUSEABLE status, enable is forbidden.";
 	}
