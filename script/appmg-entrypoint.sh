@@ -25,7 +25,8 @@ fi
 
 pre_reg_app() {
 	if [[ $# -gt 0 ]]; then
-		/opt/appmanager/appc unreg -n sleep -f
+		/opt/appmanager/appc -u admin -x Admin123
+		/opt/appmanager/appc unreg -n ping -f
 		/opt/appmanager/appc reg -n start_app -c "$*" -f
 	fi
 }
