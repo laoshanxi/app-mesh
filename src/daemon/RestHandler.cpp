@@ -927,7 +927,6 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 	auto result = web::json::value::object();
 	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
-	result[JSON_KEY_APP_status] = web::json::value::number(STATUS::NOTAVIALABLE);
 	message.reply(status_codes::OK, result);
 	
 	// Save cleaup footprint
