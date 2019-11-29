@@ -60,6 +60,24 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 	return rt;
 }
 
+pid_t MonitoredProcess::wait(ACE_exitcode* status, int wait_options)
+{
+	auto rt = ACE_Process::wait(status, wait_options);
+	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
+	if (0 == status && 0 == wait_options && nullptr != m_thread)
+	{
+		// crash will happen if thread join itself
+		m_thread->join();
+		m_thread = nullptr;
+	}
+	return rt;
+}
+
+void MonitoredProcess::safeWait(int timerId)
+{
+	this->wait();
+}
+
 std::string MonitoredProcess::fetchOutputMsg()
 {
 	const static char fname[] = "MonitoredProcess::fecthPipeMessages() ";
