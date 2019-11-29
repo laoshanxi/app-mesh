@@ -291,7 +291,8 @@ std::string Application::getAsyncRunOutput(const std::string& processUuid, int& 
 		{
 			exitCode = m_process->return_value();
 			finished = true;
-			return "";
+			LOG_DBG << fname << "process:" << processUuid << " finished with exit code: " << exitCode;
+			return std::string();
 		}
 
 		return std::move(output);
