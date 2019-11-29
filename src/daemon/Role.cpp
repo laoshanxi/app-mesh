@@ -10,7 +10,6 @@ std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
 	PERMISSION_KEY_view_all_app,
 	PERMISSION_KEY_view_host_resource,
 	PERMISSION_KEY_app_reg,
-	PERMISSION_KEY_app_reg_shell,
 	PERMISSION_KEY_app_control,
 	PERMISSION_KEY_app_delete,
 	PERMISSION_KEY_run_app_async,
