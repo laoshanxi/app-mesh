@@ -29,8 +29,7 @@ public:
 	virtual ~Application();
 	const std::string getName() const;
 	bool isEnabled();
-	bool isTempApp();
-	void setTempApp(bool tempApp);
+	bool isUnAvialable();
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj);
 
 	virtual void refreshPid();
@@ -83,7 +82,6 @@ protected:
 	std::map<std::string, std::string> m_envMap;
 	std::string m_dockerImage;
 	std::chrono::system_clock::time_point m_procStartTime;
-	bool m_isTempApp;
 };
 
 #endif 

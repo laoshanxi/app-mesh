@@ -8,7 +8,7 @@
 #include "DockerProcess.h"
 
 Application::Application()
-	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID), m_isTempApp(false)
+	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -33,14 +33,10 @@ bool Application::isEnabled()
 	return (m_status == ENABLED);
 }
 
-bool Application::isTempApp()
+bool Application::isUnAvialable()
 {
-	return m_isTempApp;
-}
-
-void Application::setTempApp(bool tempApp)
-{
-	m_isTempApp = tempApp;
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return (m_status == NOTAVIALABLE);
 }
 
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::value& jobj)
@@ -161,7 +157,7 @@ bool Application::attach(int pid)
 void Application::invoke()
 {
 	const static char fname[] = "Application::invoke() ";
-	if (m_status != STATUS::UNUSEABLE)
+	if (m_status != STATUS::NOTAVIALABLE)
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		if (this->avialable())
@@ -217,9 +213,9 @@ void Application::enable()
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
 	}
-	else if (m_status == UNUSEABLE)
+	else if (m_status == NOTAVIALABLE)
 	{
-		LOG_WAR << fname << "Application <" << m_name << "> is UNAVIALABLE status, enable is forbidden.";
+		LOG_WAR << fname << "Application <" << m_name << "> is UNUSEABLE status, enable is forbidden.";
 	}
 }
 
@@ -442,6 +438,6 @@ void Application::destroy()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	this->disable();
-	this->m_status = UNUSEABLE;
+	this->m_status = NOTAVIALABLE;
 }
 

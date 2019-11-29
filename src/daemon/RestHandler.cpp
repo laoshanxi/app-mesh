@@ -910,9 +910,9 @@ std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& mess
 	// force specify a UUID app name
 	auto appName = Utility::createUUID();
 	jsonApp[JSON_KEY_APP_name] = web::json::value::string(appName);
-	jsonApp[JSON_KEY_APP_status] = web::json::value::number(STATUS::UNUSEABLE);
+	jsonApp[JSON_KEY_APP_status] = web::json::value::number(STATUS::NOTAVIALABLE);
 	jsonApp[JSON_KEY_APP_cache_lines] = web::json::value::number(MAX_APP_CACHED_LINES);
-	return Configuration::instance()->addApp(jsonApp, true);
+	return Configuration::instance()->addApp(jsonApp);
 }
 
 void RestHandler::apiRunAsync(const HttpRequest& message)
@@ -927,6 +927,7 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 	auto result = web::json::value::object();
 	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
+	result[JSON_KEY_APP_status] = web::json::value::number(STATUS::NOTAVIALABLE);
 	message.reply(status_codes::OK, result);
 	
 	// Save cleaup footprint
@@ -975,7 +976,7 @@ void RestHandler::apiRunAsyncOut(const HttpRequest& message)
 			resp.set_status_code(status_codes::Created);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
 			// remove temp app immediately
-			if (appObj->isTempApp()) Configuration::instance()->removeApp(app);
+			if (appObj->isUnAvialable()) Configuration::instance()->removeApp(app);
 		}
 
 		LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
@@ -1030,7 +1031,7 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	{
 		throw std::invalid_argument("invalid json format");
 	}
-	auto app = Configuration::instance()->addApp(jsonApp, false);
+	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
 }
 

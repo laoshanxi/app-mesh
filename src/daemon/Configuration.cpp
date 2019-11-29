@@ -255,7 +255,7 @@ web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
 	for (auto app : m_apps)
 	{
 		// do not persist temp application
-		if (returnRuntimeInfo || !app->isTempApp()) apps.push_back(app);
+		if (returnRuntimeInfo || !app->isUnAvialable()) apps.push_back(app);
 	}
 	// Build Json
 	auto result = web::json::value::array(apps.size());
@@ -370,10 +370,9 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonApp, bool tempApp)
+std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonApp)
 {
 	auto app = parseApp(jsonApp);
-	app->setTempApp(tempApp);
 	bool update = false;
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -394,7 +393,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 		registerApp(app);
 	}
 	// Write to disk
-	if (!tempApp) saveConfigToDisk();
+	if (!app->isUnAvialable()) saveConfigToDisk();
 
 	return app;
 }
@@ -411,7 +410,7 @@ void Configuration::removeApp(const std::string& appName)
 	{
 		if ((*iterA)->getName() == appName)
 		{
-			bool tempApp = (*iterA)->isTempApp();
+			bool tempApp = (*iterA)->isUnAvialable();
 			(*iterA)->destroy();
 			iterA = m_apps.erase(iterA);
 			// Write to disk

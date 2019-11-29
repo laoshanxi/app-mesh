@@ -57,7 +57,7 @@ enum STATUS
 {
 	DISABLED = 0,
 	ENABLED,
-	UNUSEABLE
+	NOTAVIALABLE
 };
 const char* GET_STATUS_STR(unsigned int status);
 
