@@ -43,7 +43,6 @@
   "Roles": {
     "manage": [
       "app-reg",
-      "app-reg-shell",
       "app-control",
       "app-delete",
       "run-app-async",

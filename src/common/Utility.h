@@ -217,7 +217,6 @@ public:
 #define PERMISSION_KEY_view_all_app				"view-all-app"
 #define PERMISSION_KEY_view_host_resource		"view-host-resource"
 #define PERMISSION_KEY_app_reg					"app-reg"
-#define PERMISSION_KEY_app_reg_shell			"app-reg-shell"
 #define PERMISSION_KEY_app_control				"app-control"
 #define PERMISSION_KEY_app_delete				"app-delete"
 #define PERMISSION_KEY_run_app_async			"run-app-async"

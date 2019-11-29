@@ -394,13 +394,12 @@ POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://1
 GET| /auth/permissions |  | Get user self permissions, user token is required in header
 GET | /app/$app-name | | Get an application infomation
 GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
-POST | /app/$app-name/run?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application, return process_uuid in body.
+POST | /app/run?timeout=5 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
-POST | /app/$app-name/syncrun?timeout=5 | Optional: <br> {"env": { "TEST_ENV1": "value","TEST_ENV2": "value" } } | Remote run application and wait in REST server side, return output in body.
+POST | /app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
 GET | /app-manager/applications | | Get all application infomation
 GET | /app-manager/resources | | Get host resource usage
 PUT | /app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "user": "root", "working_dir": "/tmp" } | Register a new application
-PUT | /app/sh/$app-name | same with /app/$app-name | Register a shell application (with session login)
 POST| /app/$app-name/enable | | Enable an application
 POST| /app/$app-name/disable | | Disable an application
 DELETE| /app/$app-name | | Unregister an application

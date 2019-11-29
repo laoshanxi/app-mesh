@@ -71,13 +71,12 @@
 | GET     | /app-manager/applications |   `view-all-app`     |
 | GET     | /app-manager/resources |   `view-host-resource`     |
 | PUT     | /app/app-name |   `app-reg`     |
-| PUT     | /app/sh/shell-app-id |   `app-reg-shell`     |
 | POST     | /app/appname/enable |   `app-control`     |
 | POST     | /app/appname/disable |   `app-control`     |
 | DEL     | /app/appname |   `app-delete`    |
-| POST     | /app/app-name/run?timeout=5 |   `run-app-async`  |
+| POST     | /app/syncrun?timeout=5 | `run-app-sync`  |
+| POST     | /app/run?timeout=5 |   `run-app-async`  |
 | GET     | /app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
-| POST     | /app/app-name/syncrun?timeout=5 | `run-app-sync`  |
 | GET     | /download | `file-download`  |
 | POST     | /upload | `file-upload`  |
 | GET     | /labels | `label-view`  |
