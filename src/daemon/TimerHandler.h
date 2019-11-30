@@ -32,7 +32,7 @@ private:
 	* dispatching and @a act is the asynchronous completion token that
 	* was passed in when <schedule_timer> was invoked.
 	*/
-	virtual int handle_timeout(const ACE_Time_Value &current_time, const void *act = 0) override final;
+	virtual int handle_timeout(const ACE_Time_Value& current_time, const void* act = 0) override final;
 public:
 	TimerHandler();
 	virtual ~TimerHandler();
@@ -44,7 +44,7 @@ public:
 	/// <param name="intervalSeconds">Interval for the Timer, the value 0 means the timer will only triggered once.</param>
 	/// <param name="handler">Function point to this object.</param>
 	/// <return>Timer unique ID.</return>
-	int registerTimer(size_t delaySeconds, size_t intervalSeconds, const std::function<void(int)> &handler, const std::string from);
+	int registerTimer(size_t delaySeconds, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string from);
 	/// <summary>
 	/// Cancle a timer
 	/// </summary>

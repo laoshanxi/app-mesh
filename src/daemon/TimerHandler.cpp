@@ -13,11 +13,11 @@ TimerHandler::~TimerHandler()
 {
 }
 
-int TimerHandler::handle_timeout(const ACE_Time_Value & current_time, const void * act)
+int TimerHandler::handle_timeout(const ACE_Time_Value& current_time, const void* act)
 {
 	const static char fname[] = "TimerHandler::handle_timeout() ";
 
-	const int *timerIdPtr = static_cast<const int*>(act);
+	const int* timerIdPtr = static_cast<const int*>(act);
 	std::map<const int*, std::shared_ptr<TimerDefinition>> timers;
 	{
 		// Should not hold this lock too long
@@ -59,7 +59,7 @@ int TimerHandler::registerTimer(size_t delaySeconds, size_t intervalSeconds, con
 	}
 
 	int* timerIdPtr = new int(0);
-	(*timerIdPtr) = ACE_Reactor::instance()->schedule_timer(this, (void *)timerIdPtr, delay, interval);
+	(*timerIdPtr) = ACE_Reactor::instance()->schedule_timer(this, (void*)timerIdPtr, delay, interval);
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	assert(m_timers.find(timerIdPtr) == m_timers.end());
 	m_timers[timerIdPtr] = std::make_shared<TimerDefinition>(timerIdPtr, handler, this->shared_from_this(), callOnce);
@@ -75,7 +75,7 @@ bool TimerHandler::cancleTimer(int timerId)
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	for (auto &v : m_timers)
+	for (auto& v : m_timers)
 	{
 		if (timerId == *(v.first))
 		{
@@ -84,7 +84,7 @@ bool TimerHandler::cancleTimer(int timerId)
 			break;
 		}
 	}
-	
+
 	return cancled;
 }
 
@@ -107,7 +107,7 @@ int TimerHandler::endEventLoop()
 	return ACE_Reactor::instance()->end_reactor_event_loop();
 }
 
-TimerHandler::TimerDefinition::TimerDefinition(const int * timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)
+TimerHandler::TimerDefinition::TimerDefinition(const int* timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)
 	:m_timerId(timerId), m_handler(handler), m_timerObject(object), m_callOnce(callOnce)
 {
 }

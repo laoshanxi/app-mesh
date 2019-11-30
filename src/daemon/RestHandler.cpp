@@ -242,7 +242,7 @@ void RestHandler::handleRest(const http_request& message, std::map<utility::stri
 		// LOG_DBG << fname << "rest " << path;
 		stdFunction(request);
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
 		request.reply(web::http::status_codes::BadRequest, e.what());
@@ -281,7 +281,7 @@ void RestHandler::handle_error(pplx::task<void>& t)
 	{
 		t.get();
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		LOG_ERR << fname << e.what();
 	}
@@ -928,10 +928,10 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
 	message.reply(status_codes::OK, result);
-	
+
 	// Save cleaup footprint
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto timerId = this->registerTimer(timeout + APP_MGR_APP_RUN_CLEANUP_BUFFER_SECONDS, 0, 
+	auto timerId = this->registerTimer(timeout + APP_MGR_APP_RUN_CLEANUP_BUFFER_SECONDS, 0,
 		std::bind(&RestHandler::cleanTempApp, this, std::placeholders::_1), fname);
 	m_tempAppsForClean[timerId] = appObj->getName();
 }
@@ -939,7 +939,7 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 void RestHandler::apiRunSync(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
-	
+
 	int timeout;
 	auto appObj = apiRunParseApp(message, timeout);
 
@@ -962,7 +962,6 @@ void RestHandler::apiRunAsyncOut(const HttpRequest& message)
 	if (querymap.find(U(HTTP_QUERY_KEY_process_uuid)) != querymap.end())
 	{
 		auto uuid = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_process_uuid))->second);
-
 
 		int exitCode = 0;
 		bool finished = false;
@@ -1070,5 +1069,3 @@ http_response RestHandler::requestHttp(const method& mtd, const std::string& pat
 	http_response response = client.request(request).get();
 	return std::move(response);
 }
-
-
