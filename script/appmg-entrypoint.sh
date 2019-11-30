@@ -26,8 +26,14 @@ fi
 pre_reg_app() {
 	if [[ $# -gt 0 ]]; then
 		/opt/appmanager/appc -u admin -x Admin123
-		/opt/appmanager/appc unreg -n ping -f
-		/opt/appmanager/appc reg -n start_app -c "$*" -f
+		if [ $1 = "appc" ]; then
+			# if arguments start with appc, then just run this appc command
+			/bin/sh -c "$*"
+		else
+			# if arguments start with command, then reg as long running application
+			!/opt/appmanager/appc unreg -n ping -f
+			/opt/appmanager/appc reg -n start_app -c "$*" -f
+		fi
 	fi
 }
 
