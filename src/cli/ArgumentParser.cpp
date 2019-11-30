@@ -1039,7 +1039,6 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(12) << name;
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status));
-		std::cout << std::setiosflags(std::ios::right);
 		std::cout << std::setw(7);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
@@ -1061,7 +1060,6 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 			else
 				std::cout << "-";
 		}
-		std::cout << std::setiosflags(std::ios::left);
 		std::cout << std::setw(20);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_last_start))
