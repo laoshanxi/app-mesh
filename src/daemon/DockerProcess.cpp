@@ -110,9 +110,9 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 			dockerCommand += " -e ";
 			dockerCommand += env.first;
 			dockerCommand += "=";
-			if (containSpace) dockerCommand.append(" ");
+			if (containSpace) dockerCommand.append("'");
 			dockerCommand += env.second;
-			if (containSpace) dockerCommand.append(" ");
+			if (containSpace) dockerCommand.append("'");
 		}
 	}
 	if (limit != nullptr)
