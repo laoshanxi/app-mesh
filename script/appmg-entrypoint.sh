@@ -25,7 +25,7 @@ fi
 
 pre_reg_app() {
 	if [[ $# -gt 0 ]]; then
-		/opt/appmanager/appc -u admin -x Admin123
+		/opt/appmanager/appc logon -u admin -x Admin123
 		if [ $1 = "appc" ]; then
 			# if arguments start with appc, then just run this appc command
 			/bin/sh -c "$*"
