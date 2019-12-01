@@ -362,8 +362,8 @@ void ArgumentParser::processReg()
 				auto find = env.find_first_of('=');
 				if (find != std::string::npos)
 				{
-					auto key = env.substr(0, find);
-					auto val = env.substr(find + 1);
+					auto key = Utility::stdStringTrim(env.substr(0, find));
+					auto val = Utility::stdStringTrim(env.substr(find + 1));
 					objEnvs[key] = web::json::value::string(val);
 				}
 			}
@@ -570,8 +570,8 @@ void ArgumentParser::processRun()
 				auto find = env.find_first_of('=');
 				if (find != std::string::npos)
 				{
-					auto key = env.substr(0, find);
-					auto val = env.substr(find + 1);
+					auto key = Utility::stdStringTrim(env.substr(0, find));
+					auto val = Utility::stdStringTrim(env.substr(find + 1));
 					objEnvs[key] = web::json::value::string(val);
 				}
 			}
