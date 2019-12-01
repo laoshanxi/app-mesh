@@ -293,7 +293,8 @@ void ArgumentParser::processReg()
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
-	if (m_commandLineVariables.count("name") == 0 || m_commandLineVariables.count("cmd") == 0)
+	if (m_commandLineVariables.count("name") == 0 ||
+	   (m_commandLineVariables.count("docker_image")== 0 && m_commandLineVariables.count("cmd") == 0))
 	{
 		std::cout << desc << std::endl;
 		return;
