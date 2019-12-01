@@ -321,7 +321,7 @@ void ArgumentParser::processReg()
 	}
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
-	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	if (m_commandLineVariables.count("cmd"))jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("user")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
 	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
