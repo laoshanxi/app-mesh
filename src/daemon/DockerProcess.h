@@ -29,7 +29,7 @@ public:
 	// docker logs
 	virtual std::string getOutputMsg() override;
 	virtual std::string fetchOutputMsg() override;
-	std::string getFirstLine(const std::string& str);
+	std::string getLine(const std::string& str, size_t startPos = 0);
 
 private:
 	std::string m_dockerImage;

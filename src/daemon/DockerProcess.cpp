@@ -72,7 +72,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerProcess->runPipeReaderThread();
 	auto imageSizeStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(imageSizeStr);
-	imageSizeStr = getFirstLine(imageSizeStr);
+	imageSizeStr = getLine(imageSizeStr);
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
 		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
@@ -138,13 +138,27 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
-	auto containerId = dockerProcess->fetchOutputMsg();
-	Utility::trimLineBreak(containerId);
-	containerId = getFirstLine(containerId);
+	auto dockerRunOut = dockerProcess->fetchOutputMsg();
+	Utility::trimLineBreak(dockerRunOut);
+
+	size_t startPos = 0;
+	std::string containerId;
+	do
+	{
+		containerId = getLine(dockerRunOut, startPos);
+		startPos += containerId.length() + 1;
+	}
+	while (containerId.length() && containerId.find(" ") != containerId.npos);
+	
+	if (containerId.length())
 	{
 		// set container id here for future clean
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		m_containerId = containerId;
+	}
+	else
+	{
+		throw std::invalid_argument(std::string("Start docker container failed :").append(dockerCommand));
 	}
 
 	// 4. get docker root pid
@@ -155,7 +169,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerProcess->runPipeReaderThread();
 	auto pidStr = dockerProcess->fetchOutputMsg();
 	Utility::trimLineBreak(pidStr);
-	pidStr = getFirstLine(pidStr);
+	pidStr = getLine(pidStr);
 	if (Utility::isNumber(pidStr))
 	{
 		pid = std::stoi(pidStr);
@@ -266,14 +280,15 @@ std::string DockerProcess::fetchOutputMsg()
 	return std::string();
 }
 
-std::string DockerProcess::getFirstLine(const std::string& str)
+std::string DockerProcess::getLine(const std::string& str, size_t startPos)
 {
-	char* line = const_cast <char*> (str.c_str());
+	assert(startPos <= str.length());
+	char* line = const_cast <char*> (str.c_str()) + startPos;
 	size_t start = 0;
 	while ((*line) != '\r' && (*line) != '\n' && (*line) != '\0')
 	{
 		++line;
 		++start;
 	}
-	return str.substr(0, start);
+	return str.substr(startPos, start);
 }

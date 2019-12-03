@@ -7,10 +7,13 @@ LDPATH=$(LD_LIBRARY_PATH):/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/
 
 all:
 	echo ${BUILD_TAG}
-	cd src; make
-	make build_dir
+	make code
 	make deb
 	make rpm
+
+code:
+	cd src; make
+	make build_dir
 
 build_dir:
 	rm -rf ${RELEASE_DIR}

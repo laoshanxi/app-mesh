@@ -19,14 +19,17 @@ SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
 
 # support override default listen port frmo env
-if [ -z $APPMGR_OVERRIDE_LISTEN_PORT ]; then
-	# will use default listen port 6060
-else
-	log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
-fi
+log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
 
+##################################################################################
+# The script accept parameter as with bellow format:
+# 1. appc reg xxx
+# 2. mysqld (automaticly register to appmanager with long running app)
+##################################################################################
 pre_reg_app() {
 	if [[ $# -gt 0 ]]; then
+		# wait for app manager service ready
+		until [ $(curl -sL -k -w "%{http_code}" -o /dev/null https://localhost:6060/) -eq 200 ]; do sleep 0.25; done
 		/opt/appmanager/appc logon -u admin -x Admin123
 		if [ $1 = "appc" ]; then
 			# if arguments start with appc, then just run this appc command

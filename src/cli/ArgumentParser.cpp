@@ -1033,6 +1033,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
 	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value& jobj) {
+		const char* slash = " -";
 		auto name = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name);
 		if (reduce) name = reduceFunc(name, 12);
 		else if (name.length() >= 12) name += " ";
@@ -1045,28 +1046,28 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
 				std::cout << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid);
 			else
-				std::cout << "-";
+				std::cout << slash;
 		}
 		std::cout << std::setw(8);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_memory))
 				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_memory));
 			else
-				std::cout << "-";
+				std::cout << slash;
 		}
 		std::cout << std::setw(7);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_return))
 				std::cout << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_return);
 			else
-				std::cout << "-";
+				std::cout << slash;
 		}
 		std::cout << std::setw(20);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_last_start))
 				std::cout << Utility::convertTime2Str(std::chrono::system_clock::time_point(std::chrono::seconds(GET_JSON_NUMBER_VALUE(jobj, JSON_KEY_APP_last_start))));
 			else
-				std::cout << "-";
+				std::cout << slash;
 		}
 		std::cout << GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command);
 		std::cout << std::endl;
