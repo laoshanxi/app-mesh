@@ -216,4 +216,5 @@ void ApplicationShortRun::dump()
 	LOG_DBG << fname << "m_startTime:" << Utility::convertTime2Str(m_startTime);
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
+	if (m_nextLaunchTime != nullptr) LOG_DBG << fname << "m_nextLaunchTime:" << Utility::convertTime2Str(*m_nextLaunchTime);
 }
