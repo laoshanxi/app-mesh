@@ -84,7 +84,6 @@ void ApplicationShortRun::invoke()
 
 void ApplicationShortRun::invokeNow(int timerId)
 {
-	m_nextLaunchTime = nullptr;
 	// Check app existance
 	if (timerId > 0 && !this->isEnabled())
 	{
@@ -130,7 +129,10 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(GET_STRING_T(Utility::convertTime2Str(m_startTime)));
 	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_startInterval);
 	result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
-	if (m_nextLaunchTime != nullptr) result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(GET_STRING_T(Utility::convertTime2Str(*m_nextLaunchTime)));
+	if (returnRuntimeInfo)
+	{
+		if (m_nextLaunchTime != nullptr) result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(GET_STRING_T(Utility::convertTime2Str(*m_nextLaunchTime)));
+	}
 	return result;
 }
 
