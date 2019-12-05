@@ -173,6 +173,7 @@ public:
 #define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
 #define JSON_KEY_SHORT_APP_start_time "start_time"
 #define JSON_KEY_SHORT_APP_start_interval_timeout "start_interval_timeout"
+#define JSON_KEY_SHORT_APP_next_start_time "next_start_time"
 
 #define JSON_KEY_DAILY_LIMITATION_daily_start "daily_start"
 #define JSON_KEY_DAILY_LIMITATION_daily_end "daily_end"

@@ -84,6 +84,7 @@ void ApplicationShortRun::invoke()
 
 void ApplicationShortRun::invokeNow(int timerId)
 {
+	m_nextLaunchTime = nullptr;
 	// Check app existance
 	if (timerId > 0 && !this->isEnabled())
 	{
@@ -115,6 +116,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 		m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
 		m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+		m_nextLaunchTime = std::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(this->getStartInterval()));
 	}
 }
 
@@ -128,6 +130,7 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(GET_STRING_T(Utility::convertTime2Str(m_startTime)));
 	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_startInterval);
 	result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
+	if (m_nextLaunchTime != nullptr) result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(GET_STRING_T(Utility::convertTime2Str(*m_nextLaunchTime)));
 	return result;
 }
 
@@ -154,6 +157,7 @@ void ApplicationShortRun::disable()
 		this->cancleTimer(m_timerId);
 		m_timerId = 0;
 	}
+	m_nextLaunchTime = nullptr;
 }
 
 void ApplicationShortRun::initTimer()
@@ -181,6 +185,7 @@ void ApplicationShortRun::initTimer()
 		firstSleepSec = totalSec % this->getStartInterval();
 	}
 	m_timerId = this->registerTimer(firstSleepSec, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
+	m_nextLaunchTime = std::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(firstSleepSec));
 }
 
 int ApplicationShortRun::getStartInterval()

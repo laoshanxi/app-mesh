@@ -34,6 +34,7 @@ public:
 	virtual void dump() override;
 protected:
 	std::chrono::system_clock::time_point m_startTime;
+	std::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	int m_startInterval;
 	int m_bufferTime;
 	int m_timerId;
