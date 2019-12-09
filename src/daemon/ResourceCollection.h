@@ -5,7 +5,7 @@
 #include <string>
 #include <list>
 #include <unistd.h>
-
+#include <chrono>
 #include <cpprest/json.h>
 
 struct HostNetInterface
@@ -60,6 +60,7 @@ public:
 private:
 	HostResource m_resources;
 	std::recursive_mutex m_mutex;
+	const std::chrono::system_clock::time_point m_appmgrStartTime;
 };
 
 #endif
