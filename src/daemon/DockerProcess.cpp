@@ -75,15 +75,24 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	imageSizeStr = getLine(imageSizeStr);
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
-		LOG_ERR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
+		LOG_WAR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
 
 		// pull docker image
 		if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT))
 		{
-			int pullTimeout = std::stoi(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]);
+			int pullTimeout = 60; //set default image pull timeout to 60s
+			auto pullTimeoutStr = envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT];
+			if (Utility::isNumber(pullTimeoutStr))
+			{
+				pullTimeout = std::stoi(pullTimeoutStr);
+			}
+			else
+			{
+				LOG_WAR << fname << "ENV APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeoutStr << "> is not number, use default value : " << pullTimeout;
+			}
 			m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
 			m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr);
-			m_imagePullProc->regKillTimer(pullTimeout, fname);	// TBD: set timeout of docker image pull to 15 minutes for now
+			m_imagePullProc->regKillTimer(pullTimeout, fname);
 			this->attach(m_imagePullProc->getpid());
 			return m_imagePullProc->getpid();
 		}
@@ -241,7 +250,16 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 			const static char fname[] = "DockerProcess::m_spawnThread() ";
 			LOG_DBG << fname << "Entered";
 			param->barrier->wait();	// wait here for m_spawnThread->detach() finished
-			param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
+
+			// use try catch to avoid throw from syncSpawnProcess crash
+			try
+			{
+				param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit);
+			}
+			catch(...)
+			{
+				LOG_ERR << fname << "failed";
+			}
 			param->thisProc->m_spawnThread = nullptr;
 			param->thisProc = nullptr;
 			LOG_DBG << fname << "Exited";
