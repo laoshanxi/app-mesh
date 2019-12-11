@@ -812,8 +812,15 @@ void RestHandler::apiLogin(const HttpRequest& message)
 		{
 			auto timeout = message.headers().find(HTTP_HEADER_JWT_expire_seconds)->second;
 			auto timeoutValue = std::stoi(timeout);
-			// timeout should less than 24h
-			if (timeoutValue > 1 && timeoutValue < MAX_TOKEN_EXPIRE_SECONDS) timeoutSeconds = timeoutValue;
+			// timeout should less than 24h for none-admin user
+			if (uname != JWT_ADMIN_NAME)
+			{
+				if (timeoutValue > 1 && timeoutValue < MAX_TOKEN_EXPIRE_SECONDS)
+				{
+					timeoutSeconds = timeoutValue;
+					LOG_WAR << fname << "User <" << uname << "> login expire_seconds was set from " << timeout << "to " << timeoutValue;
+				}
+			}
 		}
 
 		// redirect auth
