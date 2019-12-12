@@ -5,7 +5,6 @@
 #include "client_metric.h"
 #include "counter.h"
 #include "detail/builder.h"
-//#include "detail/core_export.h"
 #include "metric_type.h"
 
 namespace prometheus {

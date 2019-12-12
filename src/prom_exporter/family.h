@@ -15,7 +15,6 @@
 #include "check_names.h"
 #include "client_metric.h"
 #include "collectable.h"
-//#include "detail/core_export.h"
 #include "detail/future_std.h"
 #include "detail/utils.h"
 #include "metric_family.h"

@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "detail/ckms_quantiles.h"
-//#include "detail/core_export.h"
 
 namespace prometheus {
 namespace detail {

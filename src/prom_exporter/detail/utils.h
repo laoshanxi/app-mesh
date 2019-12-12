@@ -4,7 +4,6 @@
 #include <map>
 #include <string>
 
-//#include "detail/core_export.h"
 
 namespace prometheus {
 

@@ -5,7 +5,6 @@
 #include <functional>
 #include <vector>
 
-//#include "detail/core_export.h"
 
 namespace prometheus {
 namespace detail {

@@ -8,7 +8,6 @@
 #include "client_metric.h"
 #include "detail/builder.h"
 #include "detail/ckms_quantiles.h"
-//#include "detail/core_export.h"
 #include "detail/time_window_quantiles.h"
 #include "metric_type.h"
 

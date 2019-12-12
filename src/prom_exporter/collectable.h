@@ -2,7 +2,6 @@
 
 #include <vector>
 
-//#include "detail/core_export.h"
 
 namespace prometheus {
 struct MetricFamily;
