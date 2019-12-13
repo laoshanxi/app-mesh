@@ -20,6 +20,7 @@
 	<< " Remote: " << message.remote_address(); // for new version of cpprestsdk
 
 RestHandler::RestHandler(std::string ipaddress, int port)
+	:m_promScrapeCounter(0), m_restGetCounter(0), m_restPutCounter(0), m_restDelCounter(0), m_restPostCounter(0)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
