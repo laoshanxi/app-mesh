@@ -89,7 +89,7 @@ private:
 
 	// prometheus
 	prometheus::Counter m_promScrapeCounter;
-	prometheus::Registry m_promRegistry;
+	std::shared_ptr<prometheus::Registry> m_promRegistry;
 };
 
 #endif
