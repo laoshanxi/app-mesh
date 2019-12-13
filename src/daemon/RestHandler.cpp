@@ -24,7 +24,11 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	const static char fname[] = "RestHandler::RestHandler() ";
 	
 	m_promRegistry = std::make_shared<prometheus::Registry>();
-	auto& family = prometheus::BuildCounter().Name("appmgr_prom_scrape_count").Help("prometheus scrape counter").Register(*m_promRegistry);
+	m_promScrapeCounter = &(prometheus::BuildCounter()
+		.Name("appmgr_prom_scrape_count")
+		.Help("prometheus scrape counter")
+		.Register(*m_promRegistry)
+		.Add({ {} }));
 
 	// Construct URI
 	web::uri_builder uri;
@@ -812,7 +816,7 @@ void RestHandler::apiMetrics(const HttpRequest& message)
 	LOG_DBG << fname << "Entered";
 
 	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
-	m_promScrapeCounter.Increment();
+	m_promScrapeCounter->Increment();
 
 	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry->Collect()));
 }

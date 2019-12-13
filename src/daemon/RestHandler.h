@@ -88,7 +88,7 @@ private:
 	std::map<int, std::string> m_tempAppsForClean;
 
 	// prometheus
-	prometheus::Counter m_promScrapeCounter;
+	prometheus::Counter* m_promScrapeCounter;
 	std::shared_ptr<prometheus::Registry> m_promRegistry;
 };
 
