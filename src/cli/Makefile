@@ -1,7 +1,5 @@
 include ../../make.def
 TARGET = appc
-CXX = g++
-CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2
 OEXT = o
 
 INCLUDES = -I/usr/local/include -I/usr/local/ace/include/

@@ -10,6 +10,7 @@
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
 #include "../common/HttpRequest.h"
+#include "../prom_exporter/text_serializer.h"
 
 #define REST_INFO_PRINT \
 	LOG_DBG \
@@ -19,6 +20,7 @@
 	<< " Remote: " << message.remote_address(); // for new version of cpprestsdk
 
 RestHandler::RestHandler(std::string ipaddress, int port)
+	:m_promScrapeCounter(0), m_restGetCounter(0), m_restPutCounter(0), m_restDelCounter(0), m_restPostCounter(0)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
@@ -152,6 +154,10 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiLockUser, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
 
+	// 9. Prometheus
+	prometheusCounterInit();
+	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
+
 	this->open();
 
 	LOG_INF << fname << "Listening for requests at:" << uri.to_string();
@@ -175,28 +181,28 @@ void RestHandler::close()
 void RestHandler::handle_get(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restGetCounter) m_restGetCounter->Increment();
 	handleRest(message, m_restGetFunctions);
 }
 
 void RestHandler::handle_put(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restPutCounter) m_restPutCounter->Increment();
 	handleRest(message, m_restPutFunctions);
 }
 
 void RestHandler::handle_post(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restDelCounter) m_restDelCounter->Increment();
 	handleRest(message, m_restPstFunctions);
 }
 
 void RestHandler::handle_delete(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restPostCounter) m_restPostCounter->Increment();
 	handleRest(message, m_restDelFunctions);
 }
 
@@ -217,7 +223,7 @@ void RestHandler::handleRest(const http_request& message, std::map<utility::stri
 
 	if (path == "/" || path.empty())
 	{
-		request.reply(status_codes::OK, "REST service");
+		request.reply(status_codes::OK, "Application Manager");
 		return;
 	}
 
@@ -451,6 +457,38 @@ void RestHandler::cleanTempAppByName(std::string appNameStr)
 	// see RestHandler::apiSyncRun
 	LOG_DBG << fname << appNameStr;
 	Configuration::instance()->removeApp(appNameStr);
+}
+
+void RestHandler::prometheusCounterInit()
+{
+	// Prometheus
+	m_promRegistry = std::make_shared<prometheus::Registry>();
+	auto& counterFamily = prometheus::BuildCounter()
+		.Name("appmgr_prom_scrape_count")
+		.Help("prometheus scrape counter")
+		.Register(*m_promRegistry);
+	m_promScrapeCounter = &(counterFamily.Add(
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
+	// Const Gauge counter
+	prometheus::BuildGauge().Name("appmgr_prom_scrape_up")
+		.Help("prometheus scrape alive")
+		.Register(*m_promRegistry)
+		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} })
+		.Set(1);
+	m_restGetCounter = buildPromCounter("GET");
+	m_restPutCounter = buildPromCounter("PUT");
+	m_restPostCounter = buildPromCounter("POST");
+	m_restDelCounter = buildPromCounter("DELETE");
+}
+
+prometheus::Counter* RestHandler::buildPromCounter(std::string method)
+{
+	auto& counter = prometheus::BuildCounter()
+		.Name("appmgr_http_request_count")
+		.Help("application manager http request counter")
+		.Register(*m_promRegistry)
+		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", method} });
+	return &counter;
 }
 
 void RestHandler::apiEnableApp(const HttpRequest& message)
@@ -797,6 +835,17 @@ void RestHandler::apiUnLockUser(const HttpRequest& message)
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiMetrics(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiMetrics() ";
+	LOG_DBG << fname << "Entered";
+
+	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
+	m_promScrapeCounter->Increment();
+
+	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry->Collect()));
 }
 
 void RestHandler::apiLogin(const HttpRequest& message)

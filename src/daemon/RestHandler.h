@@ -5,6 +5,8 @@
 #include <cpprest/http_listener.h> // HTTP server 
 #include "TimerHandler.h"
 #include "../common/HttpRequest.h"
+#include "../prom_exporter/counter.h"
+#include "../prom_exporter/registry.h"
 
 using namespace web;
 using namespace http;
@@ -42,6 +44,8 @@ private:
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
 	void cleanTempApp(int timerId = 0);
 	void cleanTempAppByName(std::string appNameStr);
+	void prometheusCounterInit();
+	prometheus::Counter* buildPromCounter(std::string method);
 
 	void apiLogin(const HttpRequest& message);
 	void apiAuth(const HttpRequest& message);
@@ -69,6 +73,7 @@ private:
 	void apiChangePassword(const HttpRequest& message);
 	void apiLockUser(const HttpRequest& message);
 	void apiUnLockUser(const HttpRequest& message);
+	void apiMetrics(const HttpRequest& message);
 
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
 
@@ -83,6 +88,14 @@ private:
 	std::recursive_mutex m_mutex;
 	// key: timerId, value: appName
 	std::map<int, std::string> m_tempAppsForClean;
+
+	// prometheus
+	prometheus::Counter* m_promScrapeCounter;
+	prometheus::Counter* m_restGetCounter;
+	prometheus::Counter* m_restPutCounter;
+	prometheus::Counter* m_restDelCounter;
+	prometheus::Counter* m_restPostCounter;
+	std::shared_ptr<prometheus::Registry> m_promRegistry;
 };
 
 #endif
