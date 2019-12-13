@@ -23,21 +23,6 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
-	// Prometheus
-	m_promRegistry = std::make_shared<prometheus::Registry>();
-	auto& counterFamily = prometheus::BuildCounter()
-		.Name("appmgr_prom_scrape_count")
-		.Help("prometheus scrape counter")
-		.Register(*m_promRegistry);
-	m_promScrapeCounter = &(counterFamily.Add(
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
-	// Const Gauge counter
-	prometheus::BuildGauge().Name("appmgr_prom_scrape_up")
-		.Help("prometheus scrape alive")
-		.Register(*m_promRegistry)
-		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} })
-		.Set(1);
-
 	// Construct URI
 	web::uri_builder uri;
 	if (ipaddress.empty())
@@ -169,6 +154,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
 
 	// 9. Prometheus
+	prometheusCounterInit();
 	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
 
 	this->open();
@@ -194,28 +180,28 @@ void RestHandler::close()
 void RestHandler::handle_get(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restGetCounter) m_restGetCounter->Increment();
 	handleRest(message, m_restGetFunctions);
 }
 
 void RestHandler::handle_put(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restPutCounter) m_restPutCounter->Increment();
 	handleRest(message, m_restPutFunctions);
 }
 
 void RestHandler::handle_post(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restDelCounter) m_restDelCounter->Increment();
 	handleRest(message, m_restPstFunctions);
 }
 
 void RestHandler::handle_delete(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-
+	if (m_restPostCounter) m_restPostCounter->Increment();
 	handleRest(message, m_restDelFunctions);
 }
 
@@ -470,6 +456,38 @@ void RestHandler::cleanTempAppByName(std::string appNameStr)
 	// see RestHandler::apiSyncRun
 	LOG_DBG << fname << appNameStr;
 	Configuration::instance()->removeApp(appNameStr);
+}
+
+void RestHandler::prometheusCounterInit()
+{
+	// Prometheus
+	m_promRegistry = std::make_shared<prometheus::Registry>();
+	auto& counterFamily = prometheus::BuildCounter()
+		.Name("appmgr_prom_scrape_count")
+		.Help("prometheus scrape counter")
+		.Register(*m_promRegistry);
+	m_promScrapeCounter = &(counterFamily.Add(
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
+	// Const Gauge counter
+	prometheus::BuildGauge().Name("appmgr_prom_scrape_up")
+		.Help("prometheus scrape alive")
+		.Register(*m_promRegistry)
+		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} })
+		.Set(1);
+	m_restGetCounter = buildPromCounter("GET");
+	m_restPutCounter = buildPromCounter("PUT");
+	m_restPostCounter = buildPromCounter("POST");
+	m_restDelCounter = buildPromCounter("DELETE");
+}
+
+prometheus::Counter* RestHandler::buildPromCounter(std::string method)
+{
+	auto& counter = prometheus::BuildCounter()
+		.Name("appmgr_http_request_count")
+		.Help("application manager http request counter")
+		.Register(*m_promRegistry)
+		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", method} });
+	return &counter;
 }
 
 void RestHandler::apiEnableApp(const HttpRequest& message)

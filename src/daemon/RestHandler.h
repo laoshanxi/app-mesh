@@ -44,6 +44,8 @@ private:
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
 	void cleanTempApp(int timerId = 0);
 	void cleanTempAppByName(std::string appNameStr);
+	void prometheusCounterInit();
+	prometheus::Counter* buildPromCounter(std::string method);
 
 	void apiLogin(const HttpRequest& message);
 	void apiAuth(const HttpRequest& message);
@@ -89,6 +91,10 @@ private:
 
 	// prometheus
 	prometheus::Counter* m_promScrapeCounter;
+	prometheus::Counter* m_restGetCounter;
+	prometheus::Counter* m_restPutCounter;
+	prometheus::Counter* m_restDelCounter;
+	prometheus::Counter* m_restPostCounter;
 	std::shared_ptr<prometheus::Registry> m_promRegistry;
 };
 
