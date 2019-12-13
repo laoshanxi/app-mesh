@@ -22,13 +22,21 @@
 RestHandler::RestHandler(std::string ipaddress, int port)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
-	
+
+	// Prometheus
 	m_promRegistry = std::make_shared<prometheus::Registry>();
-	m_promScrapeCounter = &(prometheus::BuildCounter()
+	auto& counterFamily = prometheus::BuildCounter()
 		.Name("appmgr_prom_scrape_count")
 		.Help("prometheus scrape counter")
+		.Register(*m_promRegistry);
+	m_promScrapeCounter = &(counterFamily.Add(
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
+	// Const Gauge counter
+	prometheus::BuildGauge().Name("appmgr_prom_scrape_up")
+		.Help("prometheus scrape alive")
 		.Register(*m_promRegistry)
-		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
+		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} })
+		.Set(1);
 
 	// Construct URI
 	web::uri_builder uri;
