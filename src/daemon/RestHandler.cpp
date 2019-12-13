@@ -10,6 +10,7 @@
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
 #include "../common/HttpRequest.h"
+#include "../prom_exporter/text_serializer.h"
 
 #define REST_INFO_PRINT \
 	LOG_DBG \
@@ -21,6 +22,8 @@
 RestHandler::RestHandler(std::string ipaddress, int port)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
+	
+	prometheus::BuildCounter().Name("appmgr_prom_scrape_count").Help("prometheus scrape counter").Register(m_promRegistry);
 
 	// Construct URI
 	web::uri_builder uri;
@@ -151,6 +154,9 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiLockUser, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
+
+	// 9. Prometheus
+	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
 
 	this->open();
 
@@ -797,6 +803,17 @@ void RestHandler::apiUnLockUser(const HttpRequest& message)
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiMetrics(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiMetrics() ";
+	LOG_DBG << fname << "Entered";
+
+	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
+	m_promScrapeCounter.Increment();
+
+	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry.Collect()));
 }
 
 void RestHandler::apiLogin(const HttpRequest& message)

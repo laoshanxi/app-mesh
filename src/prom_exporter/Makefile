@@ -1,25 +1,26 @@
 include ../../make.def
-TARGET = libcommon.a
+TARGET = libprom_exporter.a
 OEXT = o
 
-INCLUDES = -I/usr/local/ace/include/
+INCLUDES = -I.
 
 all : format $(TARGET) 
 
 ## source and object files 
-SRCS = TimeZoneHelper.cpp Utility.cpp HttpRequest.cpp
+SRCS = check_names.cc counter.cc family.cc gauge.cc histogram.cc registry.cc serializer.cc summary.cc text_serializer.cc \
+       detail/builder.cc detail/ckms_quantiles.cc detail/time_window_quantiles.cc detail/utils.cc
 
-OBJS = $(SRCS:.cpp=.$(OEXT))
+OBJS = $(SRCS:.cc=.$(OEXT))
 
 # =============
 # File suffixes
 # =============
-.SUFFIXES: .cpp .$(OEXT)
+.SUFFIXES: .cc .$(OEXT)
 
 # ====================
-#compile all cpp files
-# ===================
-%.${OEXT}: %.cpp
+#compile all cc files
+# ====================
+%.${OEXT}: %.cc
 	${CXX} ${CXXFLAGS} ${INCLUDES} -DBUILD_TAG=${BUILD_TAG} -c $<;
 	# cleanup.py ${CXX} ${CXXFLAGS} ${INCLUDES} -DBUILD_TAG=${BUILD_TAG} -c $<;
 
@@ -28,7 +29,8 @@ $(TARGET): $(OBJS)
 	ar cru $@ $(OBJS)
 
 format:
-	#dos2unix *.cpp *.h
+	cd detail; make
+	#dos2unix *.cc *.h
 
 .PHONY: clean
 clean:
