@@ -217,7 +217,7 @@ void RestHandler::handleRest(const http_request& message, std::map<utility::stri
 
 	if (path == "/" || path.empty())
 	{
-		request.reply(status_codes::OK, "REST service");
+		request.reply(status_codes::OK, "Application Manager");
 		return;
 	}
 
