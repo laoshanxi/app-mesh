@@ -28,7 +28,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 		.Name("appmgr_prom_scrape_count")
 		.Help("prometheus scrape counter")
 		.Register(*m_promRegistry)
-		.Add({ {} }));
+		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
 
 	// Construct URI
 	web::uri_builder uri;
