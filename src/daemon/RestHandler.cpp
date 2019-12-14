@@ -193,14 +193,14 @@ void RestHandler::handle_put(const HttpRequest& message)
 void RestHandler::handle_post(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-	if (m_restDelCounter) m_restDelCounter->Increment();
+	if (m_restPostCounter) m_restPostCounter->Increment();
 	handleRest(message, m_restPstFunctions);
 }
 
 void RestHandler::handle_delete(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-	if (m_restPostCounter) m_restPostCounter->Increment();
+	if (m_restDelCounter) m_restDelCounter->Increment();
 	handleRest(message, m_restDelFunctions);
 }
 
