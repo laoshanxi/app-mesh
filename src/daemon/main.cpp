@@ -43,8 +43,8 @@ int main(int argc, char* argv[])
 		ResourceCollection::instance()->getHostResource();
 		ResourceCollection::instance()->dump();
 
-		std::shared_ptr<RestHandler> httpServer;
-		std::shared_ptr<RestHandler> httpHandler2;
+		std::shared_ptr<RestHandler> httpServerIp4;
+		std::shared_ptr<RestHandler> httpServerIp6;
 		if (config->getRestEnabled())
 		{
 			// Thread pool: 6 threads
@@ -57,7 +57,28 @@ int main(int argc, char* argv[])
 			}
 
 			// Init REST
-			httpServer = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+			if (!config->getRestListenAddress().empty())
+			{
+				// just enable for specified address
+				httpServerIp4 = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+			}
+			else
+			{
+				// enable for both ipv6 and ipv4
+				httpServerIp4 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
+				try
+				{
+					httpServerIp6 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
+				}
+				catch (const std::exception& e)
+				{
+					LOG_ERR << fname << e.what();
+				}
+				catch (...)
+				{
+					LOG_ERR << fname << "unknown exception";
+				}
+			}
 			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
 
