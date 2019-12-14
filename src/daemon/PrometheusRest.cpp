@@ -121,7 +121,7 @@ void PrometheusRest::handleRest(const http_request& message, std::map<utility::s
 	{
 		stdFunction(request);
 	}
-	catch (const std::exception & e)
+	catch (const std::exception& e)
 	{
 		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
 		request.reply(web::http::status_codes::BadRequest, e.what());
@@ -160,7 +160,7 @@ void PrometheusRest::handle_error(pplx::task<void>& t)
 	{
 		t.get();
 	}
-	catch (const std::exception & e)
+	catch (const std::exception& e)
 	{
 		LOG_ERR << fname << e.what();
 	}
@@ -205,8 +205,7 @@ void PrometheusRest::apiMetrics(const HttpRequest& message)
 	// leave a static text serializer here
 	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
 
-
 	m_promScrapeCounter->Increment();
 
-	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry->Collect()));
+	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry->Collect()), "text/plain; version=0.0.4");
 }
