@@ -417,6 +417,26 @@ POST| /user/user/lock | | admin user to lock a user
 POST| /user/user/unlock | | admin user to unlock a user
 
 ---
+### Prometheus Exporter
+Application Manager use a seperate build-in http service for prometheus exporter:
+
+http://127.0.0.1:6069/metrics
+```
+# HELP appmgr_prom_scrape_count prometheus scrape counter
+# TYPE appmgr_prom_scrape_count counter
+appmgr_prom_scrape_count{id="appmgr",pid="19332"} 3.000000
+# HELP appmgr_http_request_count application manager http request counter
+# TYPE appmgr_http_request_count counter
+appmgr_http_request_count{id="appmgr",method="POST",pid="19332"} 0.000000
+appmgr_http_request_count{id="appmgr",method="PUT",pid="19332"} 0.000000
+appmgr_http_request_count{id="appmgr",method="DELETE",pid="19332"} 2.000000
+appmgr_http_request_count{id="appmgr",method="GET",pid="19332"} 2.000000
+# HELP appmgr_prom_scrape_up prometheus scrape alive
+# TYPE appmgr_prom_scrape_up gauge
+appmgr_prom_scrape_up{id="appmgr",pid="19332"} 1.000000
+```
+
+---
 ### 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
 - [ACE](https://github.com/DOCGroup/ACE_TAO)
@@ -425,7 +445,8 @@ POST| /user/user/unlock | | admin user to unlock a user
 - [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
-- [HowardHinnant/date ](https://github.com/HowardHinnant/date)
+- [HowardHinnant/date](https://github.com/HowardHinnant/date)
+- [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 
 ---
 - Setup build environment on CentOS/Ubuntu/Debian
@@ -439,4 +460,4 @@ cd app-manager
 make
 ```
 - Thread model
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=380 height=215 align=left /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=500 height=255 align=center /></div>
