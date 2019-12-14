@@ -6,7 +6,9 @@
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
-	:m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true), m_threadPoolSize(6)
+	:m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_sslEnabled(false), 
+	m_restEnabled(true), m_jwtEnabled(true), m_threadPoolSize(6),
+	m_promListenPort(DEFAULT_PROM_LISTEN_PORT)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
@@ -66,7 +68,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		config->m_restListenPort = DEFAULT_REST_LISTEN_PORT;
 		LOG_INF << "Default value <" << config->m_restListenPort << "> will by used for RestListenPort";
 	}
-
+	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, config->m_promListenPort);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications))
 	{
 		auto& jArr = jsonValue.at(JSON_KEY_Applications).as_array();
@@ -144,6 +146,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 
 	result[JSON_KEY_Description] = web::json::value::string(GET_STRING_T(m_hostDescription));
 	result[JSON_KEY_RestListenPort] = web::json::value::number(m_restListenPort);
+	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_RestListenAddress);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(GET_STRING_T(m_logLevel));
@@ -471,6 +474,7 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	// update
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description)) SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_restListenPort, newConfig->m_restListenPort)
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_PrometheusExporterListenPort)) SET_COMPARE(this->m_promListenPort, newConfig->m_promListenPort)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_RestListenAddress, newConfig->m_RestListenAddress)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_jwtEnabled, newConfig->m_jwtEnabled);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_threadPoolSize, newConfig->m_threadPoolSize)

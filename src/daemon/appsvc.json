@@ -1,6 +1,7 @@
 {
   "Description": "myhost",
   "ScheduleIntervalSeconds": 2,
+  "PrometheusExporterListenPort": 6069,
   "RestListenPort": 6060,
   "RestListenAddress": "0.0.0.0",
   "RestEnabled": true,
@@ -32,7 +33,7 @@
     },
     "test": {
       "key": "test",
-      "roles": [ ],
+      "roles": [],
       "locked": true
     }
   },

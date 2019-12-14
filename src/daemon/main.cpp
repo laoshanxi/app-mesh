@@ -50,11 +50,8 @@ int main(int argc, char* argv[])
 			// Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
 
-			if (!Configuration::instance()->getSslEnabled())
-			{
-				// Init Prometheus Exporter
-				PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getRestListenPort()));
-			}
+			// Init Prometheus Exporter
+			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
 
 			// Init REST
 			if (!config->getRestListenAddress().empty())

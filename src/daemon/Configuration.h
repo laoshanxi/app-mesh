@@ -39,6 +39,7 @@ public:
 
 	int getScheduleInterval();
 	int getRestListenPort();
+	int getPromListenPort() { return m_promListenPort; }
 	std::string getRestListenAddress();
 	const utility::string_t getConfigContentStr();
 	const utility::string_t getSecureConfigContentStr();
@@ -70,6 +71,7 @@ private:
 	std::string m_hostDescription;
 	int m_scheduleInterval;
 	int m_restListenPort;
+	int m_promListenPort;
 	std::string m_RestListenAddress;
 	std::string m_logLevel;
 	std::string m_JwtRedirectUrl;
