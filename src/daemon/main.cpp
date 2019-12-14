@@ -7,6 +7,7 @@
 #include <ace/Init_ACE.h>
 #include <pplx/threadpool.h>
 #include "RestHandler.h"
+#include "PrometheusRest.h"
 #include "../common/Utility.h"
 #include "Application.h"
 #include "Configuration.h"
@@ -42,35 +43,21 @@ int main(int argc, char* argv[])
 		ResourceCollection::instance()->getHostResource();
 		ResourceCollection::instance()->dump();
 
-		// init REST
-		std::shared_ptr<RestHandler> httpHandler1;
+		std::shared_ptr<RestHandler> httpServer;
 		std::shared_ptr<RestHandler> httpHandler2;
 		if (config->getRestEnabled())
 		{
 			// Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
-			if (!config->getRestListenAddress().empty())
+
+			if (!Configuration::instance()->getSslEnabled())
 			{
-				// just enable for specified address
-				httpHandler1 = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+				// Init Prometheus Exporter
+				PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getRestListenPort()));
 			}
-			else
-			{
-				// enable for both ipv6 and ipv4
-				httpHandler1 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
-				try
-				{
-					httpHandler2 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
-				}
-				catch (const std::exception & e)
-				{
-					LOG_ERR << fname << e.what();
-				}
-				catch (...)
-				{
-					LOG_ERR << fname << "unknown exception";
-				}
-			}
+
+			// Init REST
+			httpServer = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
 			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
 

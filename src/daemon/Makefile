@@ -17,6 +17,7 @@ SRCS = \
 	ApplicationPeriodRun.cpp \
 	Configuration.cpp \
 	RestHandler.cpp \
+	PrometheusRest.cpp \
 	AppProcess.cpp \
 	DockerProcess.cpp \
 	MonitoredProcess.cpp \
