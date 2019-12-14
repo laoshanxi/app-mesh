@@ -33,6 +33,14 @@
 		LOG_INF << fname << "Configuration value updated : " << #x ; \
 	}
 
+#define REST_INFO_PRINT \
+	LOG_DBG \
+	<< " fname: " << __FUNCTION__  \
+	<< " Method: " << message.method() \
+	<< " URI: " << http::uri::decode(message.relative_uri().path()) \
+	<< " Query: " << http::uri::decode(message.relative_uri().query()) \
+	<< " Remote: " << message.remote_address(); // for new version of cpprestsdk
+
 // Get attribute from json Object
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))
