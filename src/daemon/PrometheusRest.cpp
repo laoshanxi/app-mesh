@@ -176,7 +176,7 @@ void PrometheusRest::initPromCounter()
 	m_promRegistry = std::make_shared<prometheus::Registry>();
 	auto& counterFamily = prometheus::BuildCounter()
 		.Name("appmgr_prom_scrape_count")
-		.Help("prometheus scrape counter")
+		.Help("prometheus scrape count")
 		.Register(*m_promRegistry);
 	m_promScrapeCounter = &(counterFamily.Add(
 		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
@@ -192,7 +192,7 @@ prometheus::Counter* PrometheusRest::createPromHttpCounter(std::string method)
 {
 	auto& counter = prometheus::BuildCounter()
 		.Name("appmgr_http_request_count")
-		.Help("application manager http request counter")
+		.Help("application manager http request count")
 		.Register(*m_promRegistry)
 		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", method} });
 	return &counter;
