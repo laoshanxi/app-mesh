@@ -64,7 +64,7 @@
     <TargetName>appsvc</TargetName>
     <TargetExt>
     </TargetExt>
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>/usr/local/include;/usr/include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemGroup>
     <ClCompile Include="..\common\HttpRequest.cpp" />

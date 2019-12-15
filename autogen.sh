@@ -106,7 +106,7 @@ if [ -f "/usr/bin/yum" ]; then
 	make install INSTALL_PREFIX=/usr/local/ace
 	ls -al /usr/local/ace/lib*/libACE.so
 	# create link for visual studio Intellisense
-	ln -s /usr/local/ace/include/ace /usr/include/ace
+	ln -s /usr/local/ace/include/ace /usr/local/include/ace
 	cd $ROOTDIR
 	exit 1
 fi
