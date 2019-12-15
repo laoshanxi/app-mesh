@@ -69,6 +69,7 @@ public:
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
 	std::string m_hostDescription;
+	size_t m_threadPoolSize;
 	int m_scheduleInterval;
 	int m_restListenPort;
 	int m_promListenPort;
@@ -86,7 +87,6 @@ private:
 	std::string m_sslCertificateFile;
 	std::string m_sslCertificateKeyFile;
 
-	size_t m_threadPoolSize;
 	std::shared_ptr<Roles> m_roles;
 	std::shared_ptr<Users> m_jwtUsers;
 
