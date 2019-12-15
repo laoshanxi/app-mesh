@@ -64,7 +64,7 @@
     <TargetName>appsvc</TargetName>
     <TargetExt>
     </TargetExt>
-    <IncludePath>D:\develop\boost_1_67_0\boost_1_67_vs2017\include\boost-1_67;D:\develop\ACE_wrappers;D:\develop\cpprestsdk-2.10.10\Release\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemGroup>
     <ClCompile Include="..\common\HttpRequest.cpp" />
