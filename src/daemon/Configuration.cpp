@@ -3,6 +3,7 @@
 #include "../common/Utility.h"
 #include "ApplicationPeriodRun.h"
 #include "ResourceCollection.h"
+#include "PrometheusRest.h"
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
@@ -474,10 +475,14 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	// update
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description)) SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_restListenPort, newConfig->m_restListenPort)
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_PrometheusExporterListenPort)) SET_COMPARE(this->m_promListenPort, newConfig->m_promListenPort)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_RestListenAddress, newConfig->m_RestListenAddress)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_jwtEnabled, newConfig->m_jwtEnabled);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_threadPoolSize, newConfig->m_threadPoolSize)
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_PrometheusExporterListenPort) && (this->m_promListenPort != newConfig->m_promListenPort))
+	{
+		SET_COMPARE(this->m_promListenPort, newConfig->m_promListenPort);
+		PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
+	}
 	if (!updateBasicConfig)
 	{
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) SET_COMPARE(this->m_roles, newConfig->m_roles)
