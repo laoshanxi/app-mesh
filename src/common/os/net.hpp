@@ -121,34 +121,6 @@ namespace net {
 	}
 
 
-	inline std::string hostname()
-	{
-		const static char fname[] = "net::hostname() ";
-
-		char host[512];
-
-		if (gethostname(host, sizeof(host)) < 0) {
-			LOG_ERR << fname << "gethostname failed, error :" << std::strerror(errno);
-			return "";
-		}
-
-		struct addrinfo hints = createAddrInfo(SOCK_STREAM, AF_UNSPEC, AI_CANONNAME);
-		struct addrinfo* result = nullptr;
-
-		int error = getaddrinfo(host, nullptr, &hints, &result);
-
-		if (error != 0) {
-			LOG_ERR << fname << "getaddrinfo failed, error :" << std::strerror(error);
-			return "";
-		}
-
-		std::string hostname = result->ai_canonname;
-		freeaddrinfo(result);
-
-		return hostname;
-	}
-
-
 } // namespace net {
 
 #endif // __STOUT_POSIX_NET_HPP__
