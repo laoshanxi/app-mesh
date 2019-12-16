@@ -196,6 +196,7 @@ web::json::value ResourceCollection::AsJson()
 	result[GET_STRING_T("fs")] = fsArr;
 	result[GET_STRING_T("systime")] = web::json::value::string(Utility::getRfc3339Time(std::chrono::system_clock::now()));
 	result[GET_STRING_T("appmgr_start_time")] = web::json::value::string(Utility::getRfc3339Time(m_appmgrStartTime));
+	result[GET_STRING_T("pid")] = web::json::value::number(getPid());
 	LOG_DBG << fname << "Exit";
 	return result;
 }
