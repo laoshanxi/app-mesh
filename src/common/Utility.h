@@ -52,7 +52,7 @@
 #define HAS_JSON_FIELD(jsonObj, key) jsonObj.has_field(GET_STRING_T(key))
 #define ERASE_JSON_FIELD(jsonObj, key) if (HAS_JSON_FIELD(jsonObj, key)) { jsonObj.erase(GET_STRING_T(key)); }
 
-#define DEFAULT_PROM_LISTEN_PORT 6069
+#define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_SCHEDULE_INTERVAL 2
 

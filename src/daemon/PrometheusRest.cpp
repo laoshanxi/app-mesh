@@ -11,34 +11,41 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 {
 	const static char fname[] = "PrometheusRest::PrometheusRest() ";
 
-	// Construct URI
-	web::uri_builder uri;
-	if (ipaddress.empty())
+	if (port)
 	{
-		uri.set_host("0.0.0.0");
+		// Construct URI
+		web::uri_builder uri;
+		if (ipaddress.empty())
+		{
+			uri.set_host("0.0.0.0");
+		}
+		else
+		{
+			uri.set_host(ipaddress);
+		}
+		uri.set_port(port);
+		uri.set_path("/");
+		uri.set_scheme("http");
+		m_listener = std::make_shared<http_listener>(uri.to_uri());
+
+		m_listener->support(methods::GET, std::bind(&PrometheusRest::handle_get, this, std::placeholders::_1));
+		m_listener->support(methods::PUT, std::bind(&PrometheusRest::handle_put, this, std::placeholders::_1));
+		m_listener->support(methods::POST, std::bind(&PrometheusRest::handle_post, this, std::placeholders::_1));
+		m_listener->support(methods::DEL, std::bind(&PrometheusRest::handle_delete, this, std::placeholders::_1));
+		m_listener->support(methods::OPTIONS, std::bind(&PrometheusRest::handle_options, this, std::placeholders::_1));
+
+		// Prometheus
+		initPromCounter();
+		bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
+
+		this->open();
+
+		LOG_INF << fname << "Listening for requests at:" << uri.to_string();
 	}
 	else
 	{
-		uri.set_host(ipaddress);
+		LOG_INF << fname << "Listen port not specified, Prometheus exporter will not enabled";
 	}
-	uri.set_port(port);
-	uri.set_path("/");
-	uri.set_scheme("http");
-	m_listener = std::make_shared<http_listener>(uri.to_uri());
-
-	m_listener->support(methods::GET, std::bind(&PrometheusRest::handle_get, this, std::placeholders::_1));
-	m_listener->support(methods::PUT, std::bind(&PrometheusRest::handle_put, this, std::placeholders::_1));
-	m_listener->support(methods::POST, std::bind(&PrometheusRest::handle_post, this, std::placeholders::_1));
-	m_listener->support(methods::DEL, std::bind(&PrometheusRest::handle_delete, this, std::placeholders::_1));
-	m_listener->support(methods::OPTIONS, std::bind(&PrometheusRest::handle_options, this, std::placeholders::_1));
-
-	// Prometheus
-	initPromCounter();
-	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
-
-	this->open();
-
-	LOG_INF << fname << "Listening for requests at:" << uri.to_string();
 }
 
 PrometheusRest::~PrometheusRest()
@@ -53,7 +60,7 @@ void PrometheusRest::open()
 
 void PrometheusRest::close()
 {
-	m_listener->close().wait();
+	if (m_listener != nullptr) m_listener->close().wait();
 }
 
 void PrometheusRest::handle_get(const HttpRequest& message)

@@ -8,7 +8,7 @@
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
 	:m_threadPoolSize(6), m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT),
-	m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true), m_promListenPort(DEFAULT_PROM_LISTEN_PORT)
+	m_promListenPort(DEFAULT_PROM_LISTEN_PORT),	m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
