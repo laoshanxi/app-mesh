@@ -53,7 +53,7 @@ void PrometheusRest::open()
 
 void PrometheusRest::close()
 {
-	m_listener->close();// .wait();
+	m_listener->close().wait();
 }
 
 void PrometheusRest::handle_get(const HttpRequest& message)

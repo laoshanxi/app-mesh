@@ -466,7 +466,7 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 
 	// not support update [Application] section
 	auto jsonValue = config;
-	if (jsonValue.has_field(JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
 
 	// parse
 	auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));

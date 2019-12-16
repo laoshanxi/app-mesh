@@ -55,7 +55,7 @@ private:
 
 public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
-	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
+	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = nullptr;  m_instance = instance; };
 	static std::shared_ptr<PrometheusRest> m_instance;
 };
 
