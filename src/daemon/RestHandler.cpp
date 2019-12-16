@@ -149,13 +149,12 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
 
 	// 9. Prometheus
-	if (PrometheusRest::instance() != nullptr)
-	{
-		m_restGetCounter = PrometheusRest::instance()->createPromHttpCounter("GET");
-		m_restPutCounter = PrometheusRest::instance()->createPromHttpCounter("PUT");
-		m_restDelCounter = PrometheusRest::instance()->createPromHttpCounter("DELETE");
-		m_restPostCounter = PrometheusRest::instance()->createPromHttpCounter("POST");
-	}
+	m_restGetCounter = PrometheusRest::instance()->createPromHttpCounter("GET");
+	m_restPutCounter = PrometheusRest::instance()->createPromHttpCounter("PUT");
+	m_restDelCounter = PrometheusRest::instance()->createPromHttpCounter("DELETE");
+	m_restPostCounter = PrometheusRest::instance()->createPromHttpCounter("POST");
+
+
 	this->open();
 
 	LOG_INF << fname << "Listening for requests at:" << uri.to_string();

@@ -197,12 +197,19 @@ void PrometheusRest::initPromCounter()
 
 prometheus::Counter* PrometheusRest::createPromHttpCounter(std::string method)
 {
-	auto& counter = prometheus::BuildCounter()
-		.Name("appmgr_http_request_count")
-		.Help("application manager http request count")
-		.Register(*m_promRegistry)
-		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", method} });
-	return &counter;
+	if (m_promRegistry != nullptr)
+	{
+		auto& counter = prometheus::BuildCounter()
+			.Name("appmgr_http_request_count")
+			.Help("application manager http request count")
+			.Register(*m_promRegistry)
+			.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", method} });
+		return &counter;
+	}
+	else
+	{
+		return NULL;
+	}
 }
 
 void PrometheusRest::apiMetrics(const HttpRequest& message)
