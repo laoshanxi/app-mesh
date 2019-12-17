@@ -1,7 +1,7 @@
 {
   "Description": "myhost",
   "ScheduleIntervalSeconds": 2,
-  "PrometheusExporterListenPort": 6069,
+  "PrometheusExporterListenPort": 0,
   "RestListenPort": 6060,
   "RestListenAddress": "0.0.0.0",
   "RestEnabled": true,

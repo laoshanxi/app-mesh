@@ -50,6 +50,8 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 
 PrometheusRest::~PrometheusRest()
 {
+	const static char fname[] = "PrometheusRest::~PrometheusRest() ";
+	LOG_INF << fname << "Entered";
 	this->close();
 }
 
