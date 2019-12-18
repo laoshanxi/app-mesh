@@ -60,7 +60,7 @@
 #define JWT_USER_NAME "user"
 #define JWT_ADMIN_NAME "admin"
 #define APPMGR_PASSWD_MIN_LENGTH 3
-#define APP_MGR_APP_RUN_CLEANUP_BUFFER_SECONDS 5
+#define DEFAULT_RUN_APP_RETENTION_DURATION 10
 
 enum STATUS
 {
@@ -222,6 +222,7 @@ public:
 #define HTTP_QUERY_KEY_action_stop "disable"
 #define HTTP_QUERY_KEY_loglevel "level"
 #define HTTP_QUERY_KEY_label_value "value"
+#define HTTP_QUERY_KEY_retention "retention" // for async run, the output hold timeout in sever side
 
 #define PERMISSION_KEY_view_app					"view-app"
 #define PERMISSION_KEY_view_app_output			"view-app-output"

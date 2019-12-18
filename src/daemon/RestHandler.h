@@ -44,11 +44,12 @@ private:
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
 	void cleanTempApp(int timerId = 0);
 	void cleanTempAppByName(std::string appNameStr);
+	int getHttpQueryValue(const HttpRequest& message, const std::string key, int defaultValue, int min, int max) const;
 
 	void apiLogin(const HttpRequest& message);
 	void apiAuth(const HttpRequest& message);
 	void apiGetApp(const HttpRequest& message);
-	std::shared_ptr<Application> apiRunParseApp(const HttpRequest& message, int& timeout);
+	std::shared_ptr<Application> apiRunParseApp(const HttpRequest& message);
 	void apiRunAsync(const HttpRequest& message);
 	void apiRunSync(const HttpRequest& message);
 	void apiRunAsyncOut(const HttpRequest& message);

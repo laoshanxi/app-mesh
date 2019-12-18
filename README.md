@@ -394,7 +394,7 @@ POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://1
 GET| /auth/permissions |  | Get user self permissions, user token is required in header
 GET | /app/$app-name | | Get an application infomation
 GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
-POST | /app/run?timeout=5 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
+POST | /app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 POST | /app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
 GET | /app-manager/applications | | Get all application infomation

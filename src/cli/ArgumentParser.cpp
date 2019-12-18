@@ -541,6 +541,7 @@ void ArgumentParser::processRun()
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,x", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
+		("retention,r", po::value<int>()->default_value(DEFAULT_RUN_APP_RETENTION_DURATION), "retention duration after run finished (default 10s)")
 		;
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -592,6 +593,7 @@ void ArgumentParser::processRun()
 	{
 		// Use run and output
 		// /app/run?timeout=5
+		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention)) query[HTTP_QUERY_KEY_retention] = std::to_string(m_commandLineVariables[HTTP_QUERY_KEY_retention].as<int>());
 		std::string restPath = "/app/run";
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
 		auto result = response.extract_json(true).get();

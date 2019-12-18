@@ -245,7 +245,7 @@ void RestHandler::handleRest(const http_request& message, std::map<utility::stri
 		// LOG_DBG << fname << "rest " << path;
 		stdFunction(request);
 	}
-	catch (const std::exception & e)
+	catch (const std::exception& e)
 	{
 		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
 		request.reply(web::http::status_codes::BadRequest, e.what());
@@ -284,7 +284,7 @@ void RestHandler::handle_error(pplx::task<void>& t)
 	{
 		t.get();
 	}
-	catch (const std::exception & e)
+	catch (const std::exception& e)
 	{
 		LOG_ERR << fname << e.what();
 	}
@@ -454,6 +454,21 @@ void RestHandler::cleanTempAppByName(std::string appNameStr)
 	// see RestHandler::apiSyncRun
 	LOG_DBG << fname << appNameStr;
 	Configuration::instance()->removeApp(appNameStr);
+}
+
+int RestHandler::getHttpQueryValue(const HttpRequest& message, const std::string key, int defaultValue, int min, int max) const
+{
+	const static char fname[] = "RestHandler::getQueryValue() ";
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	int rt = defaultValue;
+	if (querymap.find(U(key)) != querymap.end())
+	{
+		rt = std::stoi(GET_STD_STRING(querymap.find(U(key))->second));
+		if (min < max && (rt < min || rt > max)) rt = DEFAULT_RUN_APP_RETENTION_DURATION;
+	}
+	LOG_DBG << fname << key << "=" << rt;
+	return rt;
 }
 
 void RestHandler::apiEnableApp(const HttpRequest& message)
@@ -899,23 +914,8 @@ void RestHandler::apiGetApp(const HttpRequest& message)
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
 }
 
-std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& message, int& timeout)
+std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& message)
 {
-	const static char fname[] = "RestHandler::apiRunParseApp() ";
-
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS; // default use 10 seconds
-	if (querymap.find(U(HTTP_QUERY_KEY_timeout)) != querymap.end())
-	{
-		timeout = std::abs(std::stoi(GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_timeout))->second)));
-		if (timeout == 0) timeout = DEFAULT_RUN_APP_TIMEOUT_SECONDS;
-		LOG_DBG << fname << "Use timeout :" << timeout;
-	}
-	else
-	{
-		LOG_DBG << fname << "Use default timeout :" << timeout;
-	}
-
 	auto jsonApp = const_cast<HttpRequest*>(&message)->extract_json(true).get();
 	// force specify a UUID app name
 	auto appName = Utility::createUUID();
@@ -930,8 +930,9 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 	const static char fname[] = "RestHandler::apiAsyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
-	int timeout;
-	auto appObj = apiRunParseApp(message, timeout);
+	int retention = getHttpQueryValue(message, HTTP_QUERY_KEY_retention, DEFAULT_RUN_APP_RETENTION_DURATION, 1, 60 * 60 * 24);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, 60 * 60 * 24);
+	auto appObj = apiRunParseApp(message);
 
 	auto processUuid = appObj->runAsyncrize(timeout);
 	auto result = web::json::value::object();
@@ -941,7 +942,7 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 
 	// Save cleaup footprint
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto timerId = this->registerTimer(timeout + APP_MGR_APP_RUN_CLEANUP_BUFFER_SECONDS, 0,
+	auto timerId = this->registerTimer(timeout + retention, 0,
 		std::bind(&RestHandler::cleanTempApp, this, std::placeholders::_1), fname);
 	m_tempAppsForClean[timerId] = appObj->getName();
 }
@@ -950,8 +951,8 @@ void RestHandler::apiRunSync(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
 
-	int timeout;
-	auto appObj = apiRunParseApp(message, timeout);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, 60 * 60 * 24);
+	auto appObj = apiRunParseApp(message);
 
 	// Use async reply here
 	HttpRequest* asyncRequest = new HttpRequestWithCallback(message, appObj->getName(), std::bind(&RestHandler::cleanTempAppByName, this, std::placeholders::_1));
@@ -1003,17 +1004,11 @@ void RestHandler::apiGetAppOutput(const HttpRequest& message)
 
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 
 	// /app/$app-name/output
 	std::string app = path.substr(strlen("/app/"));
 	app = app.substr(0, app.find_first_of('/'));
-	bool keepHis = false;
-	if (querymap.find(HTTP_QUERY_KEY_keep_history) != querymap.end())
-	{
-		auto keep = GET_STD_STRING(querymap.find(HTTP_QUERY_KEY_keep_history)->second);
-		keepHis = std::stoi(keep);
-	}
+	bool keepHis = getHttpQueryValue(message, HTTP_QUERY_KEY_keep_history, false, 0, 0);
 	auto output = Configuration::instance()->getApp(app)->getOutput(keepHis);
 	LOG_DBG << fname;// << output;
 	message.reply(status_codes::OK, output);
