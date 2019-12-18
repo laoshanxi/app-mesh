@@ -15,5 +15,6 @@ if [ -f "/etc/init.d/appmanager" ]; then
 	rm -f /etc/init.d/appmanager
 fi
 
+rm -rf ~/._appmgr_*
 rm -f /usr/bin/appc
 #rm -rf /opt/appmanager
