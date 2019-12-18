@@ -49,7 +49,7 @@
 #define SET_JSON_INT_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_INT_VALUE(jsonObj, key);
 #define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_bool() : false)
 #define SET_JSON_BOOL_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_BOOL_VALUE(jsonObj, key);
-#define HAS_JSON_FIELD(jsonObj, key) jsonObj.has_field(GET_STRING_T(key))
+#define HAS_JSON_FIELD(jsonObj, key) (jsonObj.has_field(GET_STRING_T(key)) && !jsonObj.is_null())
 #define ERASE_JSON_FIELD(jsonObj, key) if (HAS_JSON_FIELD(jsonObj, key)) { jsonObj.erase(GET_STRING_T(key)); }
 
 #define DEFAULT_PROM_LISTEN_PORT 0
