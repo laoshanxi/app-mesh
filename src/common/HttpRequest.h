@@ -13,7 +13,7 @@ using namespace http;
 class HttpRequest : public web::http::http_request
 {
 public:
-	HttpRequest(const web::http::http_request& message);
+	explicit HttpRequest(const web::http::http_request& message);
 	virtual ~HttpRequest();
 
 	/// <summary>
@@ -113,7 +113,7 @@ public:
 class HttpRequestWithCallback : public HttpRequest
 {
 public:
-	HttpRequestWithCallback(const web::http::http_request& message, std::string appName, std::function<void(std::string)> callBackHandler);
+	HttpRequestWithCallback(const web::http::http_request& message, const std::string& appName, std::function<void(std::string)> callBackHandler);
 	virtual ~HttpRequestWithCallback();
 
 private:

@@ -69,7 +69,7 @@ pplx::task<void> HttpRequest::reply(status_code status, const concurrency::strea
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestWithCallback
 ////////////////////////////////////////////////////////////////////////////////
-HttpRequestWithCallback::HttpRequestWithCallback(const web::http::http_request& message, std::string appName, std::function<void(std::string)> callBackHandler)
+HttpRequestWithCallback::HttpRequestWithCallback(const web::http::http_request& message, const std::string& appName, std::function<void(std::string)> callBackHandler)
 	:HttpRequest(message), m_appName(appName), m_callBackHandler(callBackHandler)
 {
 }

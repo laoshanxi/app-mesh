@@ -473,7 +473,7 @@ std::string Utility::runShellCommand(std::string cmd)
 {
 	const static char fname[] = "Utility::runShellCommand() ";
 
-#define LINE_LENGTH 300
+	const int LINE_LENGTH = 300;
 	char line[LINE_LENGTH];
 	std::stringstream stdoutMsg;
 	cmd += " 2>&1"; // include stderr
