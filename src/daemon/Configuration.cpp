@@ -236,12 +236,12 @@ const utility::string_t Configuration::getConfigContentStr()
 const utility::string_t Configuration::getSecureConfigContentStr()
 {
 	auto json = this->AsJson(false);
-	if (json.has_field(JSON_KEY_JWT))
+	if (HAS_JSON_FIELD(json, JSON_KEY_JWT))
 	{
 		auto& jwtObj = json.at(JSON_KEY_JWT).as_object();
 		for (auto& user : jwtObj)
 		{
-			if (user.second.has_field(JSON_KEY_USER_key))
+			if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
 			{
 				user.second[JSON_KEY_USER_key] = web::json::value::string("*****");
 			}

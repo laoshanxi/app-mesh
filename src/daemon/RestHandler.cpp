@@ -654,7 +654,7 @@ void RestHandler::apiTagDel(const HttpRequest& message)
 	auto value = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_label_value))->second);
 
 	auto tagJson = Configuration::instance()->tagToJson();
-	if (tagJson.has_field(labelKey)) tagJson[labelKey] = web::json::value::string(value);
+	if (HAS_JSON_FIELD(tagJson, labelKey)) tagJson[labelKey] = web::json::value::string(value);
 	Configuration::instance()->jsonToTag(tagJson);
 	Configuration::instance()->saveConfigToDisk();
 

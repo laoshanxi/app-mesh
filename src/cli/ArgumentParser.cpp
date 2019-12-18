@@ -757,7 +757,7 @@ void ArgumentParser::processTags()
 		for (auto str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
-			if (tagVal.has_field(envVec.at(0))) tagVal.erase(envVec.at(0));
+			if (HAS_JSON_FIELD(tagVal, envVec.at(0))) tagVal.erase(envVec.at(0));
 		}
 		response = requestHttp(methods::POST, restPath, tagVal);
 	}
