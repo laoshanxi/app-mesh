@@ -13,7 +13,7 @@ using namespace http;
 class HttpRequest : public web::http::http_request
 {
 public:
-	explicit HttpRequest(const web::http::http_request& message);
+	HttpRequest(const web::http::http_request& message);
 	virtual ~HttpRequest();
 
 	/// <summary>
