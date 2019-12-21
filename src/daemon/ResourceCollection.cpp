@@ -1,6 +1,6 @@
 #include <set>
+#include <ace/OS.h>
 #include "ResourceCollection.h"
-#include "boost/asio/ip/host_name.hpp"
 #include "../common/Utility.h"
 #include "../common/os/net.hpp"
 #include "../common/os/pstree.hpp"
@@ -24,10 +24,12 @@ ResourceCollection* ResourceCollection::instance()
 
 std::string ResourceCollection::getHostName(bool refresh)
 {
-	static auto hostname = boost::asio::ip::host_name();
-	if (refresh)
+	static std::string hostname;
+	if (hostname.empty() || refresh)
 	{
-		hostname = boost::asio::ip::host_name();
+		char buffer[1024] = { 0 };
+		ACE_OS::hostname(buffer, sizeof(buffer));
+		hostname = buffer;
 	}
 	return hostname;
 }
