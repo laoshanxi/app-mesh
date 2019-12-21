@@ -77,6 +77,7 @@
     <ClCompile Include="Configuration.cpp" />
     <ClCompile Include="DailyLimitation.cpp" />
     <ClCompile Include="DockerProcess.cpp" />
+    <ClCompile Include="Label.cpp" />
     <ClCompile Include="LinuxCgroup.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MonitoredProcess.cpp" />
@@ -108,6 +109,7 @@
     <ClInclude Include="Configuration.h" />
     <ClInclude Include="DailyLimitation.h" />
     <ClInclude Include="DockerProcess.h" />
+    <ClInclude Include="Label.h" />
     <ClInclude Include="LinuxCgroup.h" />
     <ClInclude Include="MonitoredProcess.h" />
     <ClInclude Include="PrometheusRest.h" />

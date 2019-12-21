@@ -43,6 +43,7 @@
       <Filter>security</Filter>
     </ClCompile>
     <ClCompile Include="PrometheusRest.cpp" />
+    <ClCompile Include="Label.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -113,6 +114,7 @@
       <Filter>security</Filter>
     </ClInclude>
     <ClInclude Include="PrometheusRest.h" />
+    <ClInclude Include="Label.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />

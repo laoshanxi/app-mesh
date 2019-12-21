@@ -719,8 +719,7 @@ void ArgumentParser::processTags()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/labels";
-	http_response response = requestHttp(methods::GET, restPath);
+	
 	std::vector<std::string> inputTags;
 	if (m_commandLineVariables.count("label")) inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
 
@@ -733,16 +732,16 @@ void ArgumentParser::processTags()
 			std::cout << "No label specified" << std::endl;
 			return;
 		}
-		auto tagVal = response.extract_json().get();
 		for (auto str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			if (envVec.size() == 2)
 			{
-				tagVal[GET_STRING_T(envVec.at(0))] = web::json::value::string(GET_STRING_T(envVec.at(1)));
+				std::string restPath = std::string("/label/").append(envVec.at(0));
+				std::map<std::string, std::string> query = { {"value", envVec.at(1)} };
+				requestHttp(methods::PUT, restPath, query, NULL, NULL);
 			}
 		}
-		response = requestHttp(methods::POST, restPath, tagVal);
 	}
 	else if (m_commandLineVariables.count("remove") &&
 		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("view"))
@@ -753,13 +752,12 @@ void ArgumentParser::processTags()
 			std::cout << "No label specified" << std::endl;
 			return;
 		}
-		auto tagVal = response.extract_json().get();
 		for (auto str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
-			if (HAS_JSON_FIELD(tagVal, envVec.at(0))) tagVal.erase(envVec.at(0));
+			std::string restPath = std::string("/label/").append(envVec.at(0));
+			requestHttp(methods::DEL, restPath);
 		}
-		response = requestHttp(methods::POST, restPath, tagVal);
 	}
 	else if (m_commandLineVariables.count("view") &&
 		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("add"))
@@ -771,6 +769,9 @@ void ArgumentParser::processTags()
 		std::cout << desc << std::endl;
 		return;
 	}
+
+	std::string restPath = "/labels";
+	http_response response = requestHttp(methods::GET, restPath);
 
 	// Finally print current
 	auto tags = response.extract_json().get().as_object();

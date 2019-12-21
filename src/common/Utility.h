@@ -237,7 +237,6 @@ public:
 #define PERMISSION_KEY_file_download			"file-download"
 #define PERMISSION_KEY_file_upload				"file-upload"
 #define PERMISSION_KEY_label_view				"label-view"
-#define PERMISSION_KEY_label_update				"label-update"
 #define PERMISSION_KEY_label_set				"label-set"
 #define PERMISSION_KEY_label_delete				"label-delete"
 #define PERMISSION_KEY_loglevel  				"log-level"

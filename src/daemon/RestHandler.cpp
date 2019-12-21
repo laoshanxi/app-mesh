@@ -132,10 +132,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// 6. Label Management
 	// http://127.0.0.1:6060/labels
 	bindRestMethod(web::http::methods::GET, "/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/labels
-	bindRestMethod(web::http::methods::POST, "/labels", std::bind(&RestHandler::apiSetTags, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc?value=123
-	bindRestMethod(web::http::methods::PUT, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagSet, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagAdd, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc
 	bindRestMethod(web::http::methods::DEL, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
 
@@ -606,18 +604,10 @@ void RestHandler::apiFileUpload(const HttpRequest& message)
 void RestHandler::apiGetTags(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_view);
-	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
+	message.reply(status_codes::OK, Configuration::instance()->getLabel()->AsJson());
 }
 
-void RestHandler::apiSetTags(const HttpRequest& message)
-{
-	permissionCheck(message, PERMISSION_KEY_label_update);
-	Configuration::instance()->jsonToTag(message.extract_json().get());
-	Configuration::instance()->saveConfigToDisk();
-	message.reply(status_codes::OK, Configuration::instance()->tagToJson());
-}
-
-void RestHandler::apiTagSet(const HttpRequest& message)
+void RestHandler::apiTagAdd(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_set);
 
@@ -629,9 +619,7 @@ void RestHandler::apiTagSet(const HttpRequest& message)
 	{
 		auto value = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_label_value))->second);
 
-		auto tagJson = Configuration::instance()->tagToJson();
-		tagJson[labelKey] = web::json::value::string(value);
-		Configuration::instance()->jsonToTag(tagJson);
+		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();
 
 		message.reply(status_codes::OK);
@@ -650,12 +638,7 @@ void RestHandler::apiTagDel(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	auto labelKey = vec[vec.size() - 1];
 
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
-	auto value = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_label_value))->second);
-
-	auto tagJson = Configuration::instance()->tagToJson();
-	if (HAS_JSON_FIELD(tagJson, labelKey)) tagJson[labelKey] = web::json::value::string(value);
-	Configuration::instance()->jsonToTag(tagJson);
+	Configuration::instance()->getLabel()->delLabel(labelKey);
 	Configuration::instance()->saveConfigToDisk();
 
 	message.reply(status_codes::OK);

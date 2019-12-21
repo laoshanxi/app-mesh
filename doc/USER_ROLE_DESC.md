@@ -42,7 +42,6 @@
       "file-download",
       "file-upload",
       "label-view",
-      "label-update",
       "label-set",
       "label-delete",
       "config-set",
@@ -80,7 +79,6 @@
 | GET     | /download | `file-download`  |
 | POST     | /upload | `file-upload`  |
 | GET     | /labels | `label-view`  |
-| POST     | /labels | `label-update`  |
 | PUT     | /label/abc?value=123  | `label-set`  |
 | DEL     | /label/abc | `label-delete`  |
 | POST    | /app-manager/config | `config-view`  |

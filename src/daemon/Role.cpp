@@ -18,7 +18,6 @@ std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
 	PERMISSION_KEY_file_download,
 	PERMISSION_KEY_file_upload,
 	PERMISSION_KEY_label_view,
-	PERMISSION_KEY_label_update,
 	PERMISSION_KEY_label_set,
 	PERMISSION_KEY_label_delete,
 	PERMISSION_KEY_loglevel,
@@ -121,17 +120,21 @@ web::json::value Role::AsJson()
 
 std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value& obj)
 {
+	const static char fname[] = "Role::FromJson() ";
+
 	auto role = std::make_shared<Role>(roleName);
 	auto permissions = obj.as_array();
 	for (auto permmisionJson : permissions)
 	{
-		if (APP_MANAGER_PERMISSIONS.count(permmisionJson.as_string()))
+		auto perm = permmisionJson.as_string();
+		if (APP_MANAGER_PERMISSIONS.count(perm))
 		{
-			role->m_permissions.insert(permmisionJson.as_string());
+			role->m_permissions.insert(perm);
 		}
 		else
 		{
-			throw std::invalid_argument("no such permission defined");
+			LOG_WAR << fname << "No such permission " << perm << " defined";
+			//throw std::invalid_argument("no such permission defined");
 		}
 	}
 	return role;

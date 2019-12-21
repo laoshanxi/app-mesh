@@ -11,6 +11,7 @@ Configuration::Configuration()
 	m_promListenPort(DEFAULT_PROM_LISTEN_PORT),	m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
+	m_label = std::make_shared<Label>();
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
 }
 
@@ -85,7 +86,8 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		config->m_threadPoolSize = threadpool;
 	}
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) config->jsonToTag(jsonValue.at(JSON_KEY_Labels));
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
+	
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))	config->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) config->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT), config->m_roles);
 
@@ -164,7 +166,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	}
 
 	result[JSON_KEY_Applications] = apps;
-	result[JSON_KEY_Labels] = tagToJson();
+	result[JSON_KEY_Labels] = getLabel()->AsJson();
 	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(GET_STRING_T(m_JwtRedirectUrl));
 
 	return result;
@@ -284,34 +286,6 @@ void Configuration::enableApp(const std::string& appName)
 const std::string Configuration::getLogLevel() const
 {
 	return m_logLevel;
-}
-
-web::json::value Configuration::tagToJson()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto tags = web::json::value::object();
-	for (auto tag : m_labels)
-	{
-		tags[tag.first] = web::json::value::string(tag.second);
-	}
-	return tags;
-}
-
-void Configuration::jsonToTag(web::json::value json)
-{
-	const static char fname[] = "Configuration::jsonToTag() ";
-	{
-		LOG_INF << fname << "reset labels";
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_labels.clear();
-		auto jobj = json.as_object();
-		for (auto lblJson : jobj)
-		{
-			std::string lableKey = GET_STD_STRING(lblJson.first);
-			m_labels[lableKey] = GET_STD_STRING(lblJson.second.as_string());
-			LOG_INF << fname << "label: " << lableKey << "=" << m_labels[lableKey];
-		}
-	}
 }
 
 bool Configuration::getSslEnabled() const
@@ -487,7 +461,7 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	{
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) SET_COMPARE(this->m_roles, newConfig->m_roles);
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) SET_COMPARE(this->m_jwtUsers, newConfig->m_jwtUsers);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_labels, newConfig->m_labels);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
 		ResourceCollection::instance()->getHostName(true);
 	}
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_restEnabled, newConfig->m_restEnabled);

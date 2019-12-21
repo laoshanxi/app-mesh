@@ -27,6 +27,7 @@ SRCS = \
 	LinuxCgroup.cpp \
 	User.cpp \
 	Role.cpp \
+	Label.cpp \
 	TimerHandler.cpp
 		
 

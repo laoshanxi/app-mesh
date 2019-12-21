@@ -11,6 +11,7 @@
 #include "Application.h"
 #include "Role.h"
 #include "User.h"
+#include "Label.h"
 
 //////////////////////////////////////////////////////////////////////////
 // All the operation functions to access appmg.json
@@ -48,8 +49,7 @@ public:
 	void disableApp(const std::string& appName);
 	void enableApp(const std::string& appName);
 
-	web::json::value tagToJson();
-	void jsonToTag(web::json::value json);
+	std::shared_ptr<Label> getLabel() { return m_label; }
 
 	const std::string getLogLevel() const;
 	bool getSslEnabled() const;
@@ -79,7 +79,6 @@ private:
 
 	std::recursive_mutex m_mutex;
 	std::string m_jsonFilePath;
-	std::map<std::string, std::string> m_labels;
 
 	bool m_sslEnabled;
 	bool m_restEnabled;
@@ -89,6 +88,7 @@ private:
 
 	std::shared_ptr<Roles> m_roles;
 	std::shared_ptr<Users> m_jwtUsers;
+	std::shared_ptr<Label> m_label;
 
 	static std::shared_ptr<Configuration> m_instance;
 };
