@@ -1,5 +1,6 @@
 #include "Label.h"
 #include "../common/Utility.h"
+#include "ResourceCollection.h"
 
 Label::Label()
 {
@@ -17,6 +18,8 @@ web::json::value Label::AsJson()
 	{
 		tags[tag.first] = web::json::value::string(tag.second);
 	}
+	// add default label here
+	tags[DEFAULT_LABLE_HOST_NAME] = web::json::value::string(ResourceCollection::instance()->getHostName());
 	return tags;
 }
 
