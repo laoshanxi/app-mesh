@@ -202,6 +202,11 @@ void ArgumentParser::processLogon()
 	}
 	else
 	{
+		if (!m_commandLineVariables.count("user"))
+		{
+			std::cin.clear();
+			std::cin.ignore(1024, '\n');
+		}
 		std::cout << "Password: ";
 		char buffer[256] = { 0 };
 		char* str = buffer;
