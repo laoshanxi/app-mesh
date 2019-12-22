@@ -41,6 +41,18 @@
 	<< " Query: " << http::uri::decode(message.relative_uri().query()) \
 	<< " Remote: " << message.remote_address(); // for new version of cpprestsdk
 
+// make_unique implementation for C++11, C++14 already support
+#if (__cplusplus <= 201103L)
+namespace std
+{
+	template<typename T, typename... Args>
+	std::unique_ptr<T> make_unique(Args&&... args)
+	{
+		return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+	}
+}
+#endif
+
 // Get attribute from json Object
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))
