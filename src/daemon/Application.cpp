@@ -8,7 +8,7 @@
 #include "DockerProcess.h"
 
 Application::Application()
-	:m_status(ENABLED), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
+	:m_status(ENABLED), m_health(true), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -100,6 +100,7 @@ void Application::refreshPid()
 				m_return = std::make_shared<int>(m_process->return_value());
 				m_pid = ACE_INVALID_PID;
 			}
+			checkAndUpdateHealth();
 		}
 		else if (m_pid > 0)
 		{
@@ -291,6 +292,14 @@ std::string Application::getAsyncRunOutput(const std::string& processUuid, int& 
 	}
 }
 
+void Application::checkAndUpdateHealth()
+{
+	if (m_pid <= 0)
+		setHealth(false);
+	else if (m_healthCheck.empty())
+		setHealth(true);
+}
+
 std::string Application::getOutput(bool keepHistory)
 {
 	if (m_process != nullptr)
@@ -329,6 +338,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
 		}
+		result[JSON_KEY_APP_health] = web::json::value::boolean(m_health);
 	}
 	if (m_dailyLimit != nullptr)
 	{

@@ -13,6 +13,7 @@
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "TimerHandler.h"
+#include "HealthCheckTask.h"
 
 int main(int argc, char* argv[])
 {
@@ -87,6 +88,8 @@ int main(int argc, char* argv[])
 
 		// start one thread for timers
 		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runTimerThread));
+		// start one thread for health check
+		HealthCheckTask::instance()->open();
 
 		// monitor applications
 		while (true)

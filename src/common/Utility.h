@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <vector>
 #include <chrono>
 #include <log4cpp/Category.hh>
@@ -50,6 +51,11 @@ namespace std
 	{
 		return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 	}
+
+	inline const char* const to_string(bool b)
+	{
+		return b ? "true" : "false";
+	}
 }
 #endif
 
@@ -73,6 +79,7 @@ namespace std
 #define JWT_ADMIN_NAME "admin"
 #define APPMGR_PASSWD_MIN_LENGTH 3
 #define DEFAULT_RUN_APP_RETENTION_DURATION 10
+#define DEFAULT_HEALTH_CHECK_SCRIPT_TIMEOUT 5
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
 
@@ -191,6 +198,7 @@ public:
 #define JSON_KEY_APP_memory "memory"
 #define JSON_KEY_APP_last_start "last_start_time"
 #define JSON_KEY_APP_container_id "container_id"
+#define JSON_KEY_APP_health "health"
 
 #define JSON_KEY_PERIOD_APP_keep_running "keep_running"
 

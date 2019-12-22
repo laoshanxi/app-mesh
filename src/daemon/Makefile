@@ -28,6 +28,7 @@ SRCS = \
 	User.cpp \
 	Role.cpp \
 	Label.cpp \
+	HealthCheckTask.cpp \
 	TimerHandler.cpp
 		
 

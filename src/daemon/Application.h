@@ -49,6 +49,11 @@ public:
 	std::string runAsyncrize(int timeoutSeconds);
 	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest);
 	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished);
+	
+	// health
+	void setHealth(bool health) { m_health = health; }
+	const std::string& getHealthCheck() { return m_healthCheck; }
+	void checkAndUpdateHealth();
 
 	// get normal stdout for running app
 	std::string getOutput(bool keepHistory);
@@ -72,6 +77,8 @@ protected:
 	//the exit code of last instance
 	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;
+	bool m_health;
+	std::string m_healthCheck;
 	
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
