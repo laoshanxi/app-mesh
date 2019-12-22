@@ -53,6 +53,7 @@ public:
 	// health
 	void setHealth(bool health) { m_health = health; }
 	const std::string& getHealthCheck() { return m_healthCheck; }
+	bool getHealth() { return m_health; }
 	void checkAndUpdateHealth();
 
 	// get normal stdout for running app

@@ -146,6 +146,8 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiLockUser, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
 
+	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
+
 	// 9. Prometheus
 	m_restGetCounter = PrometheusRest::instance()->createPromHttpCounter("GET");
 	m_restPutCounter = PrometheusRest::instance()->createPromHttpCounter("PUT");
@@ -798,6 +800,15 @@ void RestHandler::apiUnLockUser(const HttpRequest& message)
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiHealth(const HttpRequest& message)
+{
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	// /app/$app-name/health
+	std::string appName = path.substr(strlen("/app/"));
+	appName = appName.substr(0, appName.find_last_of('/'));
+	message.reply(status_codes::OK, std::to_string(Configuration::instance()->getApp(appName)->getHealth()));
 }
 
 void RestHandler::apiLogin(const HttpRequest& message)
