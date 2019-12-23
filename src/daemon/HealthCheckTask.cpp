@@ -26,7 +26,7 @@ int HealthCheckTask::svc(void)
 	{
 		try
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(3));
+			std::this_thread::sleep_for(std::chrono::seconds(5));
 			auto apps = Configuration::instance()->getApps();
 			for (auto app : apps)
 			{
