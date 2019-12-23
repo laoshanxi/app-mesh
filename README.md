@@ -393,7 +393,7 @@ POST| /login | username=base64(uname) <br> password=base64(passwd) <br> Optional
 POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/auth/admin | JWT token authenticate
 GET| /auth/permissions |  | Get user self permissions, user token is required in header
 GET | /app/$app-name | | Get an application infomation
-GET | /app/$app-name/health | | Get application health status, no authentication required
+GET | /app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealth
 GET| /app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
 POST | /app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
 GET | /app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
