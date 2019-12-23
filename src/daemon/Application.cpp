@@ -340,7 +340,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
 		}
-		result[JSON_KEY_APP_health] = web::json::value::number(m_health);
+		result[JSON_KEY_APP_health] = web::json::value::number(this->getHealth());
 	}
 	if (m_dailyLimit != nullptr)
 	{
