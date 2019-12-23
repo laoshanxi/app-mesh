@@ -40,7 +40,7 @@ int HealthCheckTask::svc(void)
 						ACE_exitcode exitCode;
 						proc->wait(&exitCode);
 						app->setHealth(exitCode != 0);
-						LOG_WAR << fname << app->getName() << " health check :" << app->getHealthCheck() << " return " << exitCode;
+						LOG_DBG << fname << app->getName() << " health check :" << app->getHealthCheck() << " return " << exitCode;
 					}
 					catch (const std::exception& ex)
 					{
