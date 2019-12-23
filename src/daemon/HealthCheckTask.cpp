@@ -34,11 +34,11 @@ int HealthCheckTask::svc(void)
 				{
 					try
 					{
-						AppProcess proc(0);
-						proc.spawnProcess(app->getHealthCheck(), "", "", {}, nullptr);
-						proc.regKillTimer(DEFAULT_HEALTH_CHECK_SCRIPT_TIMEOUT, fname);
+						auto proc = std::make_shared<AppProcess>(0);
+						proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr);
+						proc->regKillTimer(DEFAULT_HEALTH_CHECK_SCRIPT_TIMEOUT, fname);
 						ACE_exitcode exitCode;
-						proc.wait(&exitCode);
+						proc->wait(&exitCode);
 						app->setHealth(exitCode > 0);
 					}
 					catch (const std::exception& ex)
