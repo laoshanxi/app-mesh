@@ -51,11 +51,6 @@ namespace std
 	{
 		return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 	}
-
-	inline const char* const to_string(bool b)
-	{
-		return b ? "true" : "false";
-	}
 }
 #endif
 
