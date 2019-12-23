@@ -49,7 +49,9 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	// "ping www.baidu.com    123" equals
 	// "ping www.baidu.com 123"
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
+	if (app->m_commandLine.length() > MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 1024");
 	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_health_check_cmd));
+	if (app->m_healthCheckCmd.length() > MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("health check lengh should less than 1024");
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_working_dir));
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_status))
 	{
