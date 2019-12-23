@@ -50,10 +50,10 @@ public:
 	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest);
 	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished);
 	
-	// health
+	// health: 0-health, 1-unhealth
 	void setHealth(bool health) { m_health = health; }
 	const std::string& getHealthCheck() { return m_healthCheckCmd; }
-	bool getHealth() { return m_health; }
+	int getHealth() { return 1- m_health; }
 	void checkAndUpdateHealth();
 
 	// get normal stdout for running app
