@@ -26,7 +26,7 @@ int HealthCheckTask::svc(void)
 	{
 		try
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(5));
+			std::this_thread::sleep_for(std::chrono::seconds(DEFAULT_HEALTH_CHECK_INTERVAL));
 			auto apps = Configuration::instance()->getApps();
 			for (auto app : apps)
 			{
@@ -36,7 +36,7 @@ int HealthCheckTask::svc(void)
 					{
 						auto proc = std::make_shared<AppProcess>(0);
 						proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr);
-						proc->regKillTimer(DEFAULT_HEALTH_CHECK_SCRIPT_TIMEOUT, fname);
+						proc->regKillTimer(DEFAULT_HEALTH_CHECK_INTERVAL, fname);
 						ACE_exitcode exitCode;
 						proc->wait(&exitCode);
 						app->setHealth(0 == exitCode);
