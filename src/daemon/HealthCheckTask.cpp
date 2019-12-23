@@ -39,7 +39,8 @@ int HealthCheckTask::svc(void)
 						proc->regKillTimer(DEFAULT_HEALTH_CHECK_SCRIPT_TIMEOUT, fname);
 						ACE_exitcode exitCode;
 						proc->wait(&exitCode);
-						app->setHealth(exitCode > 0);
+						app->setHealth(exitCode != 0);
+						LOG_WAR << fname << app->getName() << " health check :" << app->getHealthCheck() << " return " << exitCode;
 					}
 					catch (const std::exception& ex)
 					{
