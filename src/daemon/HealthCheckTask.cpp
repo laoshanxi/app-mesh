@@ -41,7 +41,7 @@ int HealthCheckTask::svc(void)
 						proc.wait(&exitCode);
 						app->setHealth(exitCode > 0);
 					}
-					catch (std::exception ex)
+					catch (const std::exception& ex)
 					{
 						LOG_WAR << fname << app->getName() << "check got exception: " << ex.what();
 					}

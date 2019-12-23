@@ -49,6 +49,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	// "ping www.baidu.com    123" equals
 	// "ping www.baidu.com 123"
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
+	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_health_check_cmd));
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_working_dir));
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_status))
 	{
@@ -296,7 +297,7 @@ void Application::checkAndUpdateHealth()
 {
 	if (m_pid <= 0)
 		setHealth(false);
-	else if (m_healthCheck.empty())
+	else if (m_healthCheckCmd.empty())
 		setHealth(true);
 }
 
@@ -323,7 +324,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
 	if (m_user.length()) result[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T(m_user));
-	result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
+	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
+	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[JSON_KEY_APP_status] = web::json::value::number(m_status);
 	if (m_comments.length()) result[JSON_KEY_APP_comments] = web::json::value::string(GET_STRING_T(m_comments));

@@ -52,7 +52,7 @@ public:
 	
 	// health
 	void setHealth(bool health) { m_health = health; }
-	const std::string& getHealthCheck() { return m_healthCheck; }
+	const std::string& getHealthCheck() { return m_healthCheckCmd; }
 	bool getHealth() { return m_health; }
 	void checkAndUpdateHealth();
 
@@ -79,7 +79,7 @@ protected:
 	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;
 	bool m_health;
-	std::string m_healthCheck;
+	std::string m_healthCheckCmd;
 	
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;

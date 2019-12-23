@@ -184,6 +184,7 @@ public:
 #define JSON_KEY_APP_user "user"
 #define JSON_KEY_APP_comments "comments"
 #define JSON_KEY_APP_command "command"
+#define JSON_KEY_APP_health_check_cmd "health_check_cmd"
 #define JSON_KEY_APP_working_dir "working_dir"
 #define JSON_KEY_APP_status "status"
 #define JSON_KEY_APP_daily_limitation "daily_limitation"
