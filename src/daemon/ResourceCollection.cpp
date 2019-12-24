@@ -16,9 +16,9 @@ ResourceCollection::~ResourceCollection()
 {
 }
 
-ResourceCollection* ResourceCollection::instance()
+std::unique_ptr<ResourceCollection>& ResourceCollection::instance()
 {
-	static ResourceCollection* singleton = new ResourceCollection();
+	static auto singleton = std::make_unique<ResourceCollection>();
 	return singleton;
 }
 

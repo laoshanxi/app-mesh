@@ -60,7 +60,7 @@ void ApplicationShortRun::refreshPid()
 		int ret = m_bufferProcess->wait(tv);
 		if (ret > 0)
 		{
-			m_return = std::make_shared<int>(m_bufferProcess->return_value());
+			m_return = std::make_unique<int>(m_bufferProcess->return_value());
 		}
 	}
 }
@@ -115,7 +115,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 		m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
 		m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
-		m_nextLaunchTime = std::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(this->getStartInterval()));
+		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(this->getStartInterval()));
 	}
 }
 
@@ -187,7 +187,7 @@ void ApplicationShortRun::initTimer()
 		firstSleepSec = totalSec % this->getStartInterval();
 	}
 	m_timerId = this->registerTimer(firstSleepSec, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
-	m_nextLaunchTime = std::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(firstSleepSec));
+	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(firstSleepSec));
 }
 
 int ApplicationShortRun::getStartInterval()

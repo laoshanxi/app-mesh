@@ -76,7 +76,7 @@ protected:
 	std::string m_workdir;
 	std::string m_comments;
 	//the exit code of last instance
-	std::shared_ptr<int> m_return;
+	std::unique_ptr<int> m_return;
 	std::string m_posixTimeZone;
 	bool m_health;
 	std::string m_healthCheckCmd;

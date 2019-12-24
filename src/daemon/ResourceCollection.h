@@ -41,12 +41,11 @@ struct HostResource
 //////////////////////////////////////////////////////////////////////////
 class ResourceCollection
 {
-private:
-	ResourceCollection();
 public:
+	ResourceCollection();
 	virtual ~ResourceCollection();
 	// Internal Singleton.
-	static ResourceCollection* instance();
+	static std::unique_ptr<ResourceCollection>& instance();
 
 	std::string getHostName(bool refresh = false);
 	const HostResource& getHostResource();

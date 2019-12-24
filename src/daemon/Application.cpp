@@ -100,7 +100,7 @@ void Application::refreshPid()
 			int ret = m_process->wait(tv);
 			if (ret > 0)
 			{
-				m_return = std::make_shared<int>(m_process->return_value());
+				m_return = std::make_unique<int>(m_process->return_value());
 				m_pid = ACE_INVALID_PID;
 			}
 			checkAndUpdateHealth();

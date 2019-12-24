@@ -11,7 +11,7 @@ Configuration::Configuration()
 	m_promListenPort(DEFAULT_PROM_LISTEN_PORT),	m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
-	m_label = std::make_shared<Label>();
+	m_label = std::make_unique<Label>();
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
 }
 
@@ -98,8 +98,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 
 std::string Configuration::readConfiguration()
 {
-	std::shared_ptr<Configuration> config;
-	web::json::value jsonValue;
 	std::string jsonPath = Utility::getSelfFullPath() + ".json";
 	return Utility::readFileCpp(jsonPath);
 }
