@@ -76,7 +76,7 @@ private:
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
 
 private:
-	std::shared_ptr<http_listener> m_listener;
+	std::unique_ptr<http_listener> m_listener;
 	// API functions
 	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restGetFunctions;
 	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restPutFunctions;

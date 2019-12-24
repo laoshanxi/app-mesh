@@ -32,7 +32,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 {
 	const static char fname[] = "MonitoredProcess::spawn() ";
 
-	m_pipe = std::make_shared<ACE_Pipe>();
+	m_pipe = std::make_unique<ACE_Pipe>();
 	if (m_pipe->open(m_pipeHandler) < 0)
 	{
 		LOG_ERR << fname << "Create pipe failed with error : " << std::strerror(errno);
@@ -53,7 +53,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 	auto rt = AppProcess::spawn(options);
 
 	// Start thread to read stdout/stderr stream
-	if (m_enableBuildinThread) m_thread = std::make_shared<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
+	if (m_enableBuildinThread) m_thread = std::make_unique<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
 
 	// close write in parent side (write handler is used for child process in our case)
 	m_pipe->close_write();

@@ -73,12 +73,12 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 				SSL_CTX_clear_options(ctx.native_handle(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
 			});
-		m_listener = std::make_shared<http_listener>(uri.to_uri(), *server_config);
+		m_listener = std::make_unique<http_listener>(uri.to_uri(), *server_config);
 	}
 	else
 	{
 		uri.set_scheme("http");
-		m_listener = std::make_shared<http_listener>(uri.to_uri());
+		m_listener = std::make_unique<http_listener>(uri.to_uri());
 	}
 
 	m_listener->support(methods::GET, std::bind(&RestHandler::handle_get, this, std::placeholders::_1));

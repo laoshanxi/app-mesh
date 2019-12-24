@@ -40,7 +40,7 @@ private:
 	void apiMetrics(const HttpRequest& message);
 
 private:
-	std::shared_ptr<http_listener> m_listener;
+	std::unique_ptr<http_listener> m_listener;
 	// API functions
 	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restGetFunctions;
 	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restPutFunctions;
@@ -51,7 +51,7 @@ private:
 
 	// prometheus
 	prometheus::Counter* m_promScrapeCounter;
-	std::shared_ptr<prometheus::Registry> m_promRegistry;
+	std::unique_ptr<prometheus::Registry> m_promRegistry;
 
 public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }

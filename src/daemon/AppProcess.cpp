@@ -78,7 +78,7 @@ void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
 	// https://blog.csdn.net/u011547375/article/details/9851455
 	if (limit != nullptr)
 	{
-		m_cgroup = std::make_shared<LinuxCgroup>(limit->m_memoryMb, limit->m_memoryVirtMb - limit->m_memoryMb, limit->m_cpuShares);
+		m_cgroup = std::make_unique<LinuxCgroup>(limit->m_memoryMb, limit->m_memoryVirtMb - limit->m_memoryMb, limit->m_cpuShares);
 		m_cgroup->setCgroup(limit->n_name, getpid(), ++(limit->m_index));
 	}
 }

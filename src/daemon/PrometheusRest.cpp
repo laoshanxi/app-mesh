@@ -26,7 +26,7 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 		uri.set_port(port);
 		uri.set_path("/");
 		uri.set_scheme("http");
-		m_listener = std::make_shared<http_listener>(uri.to_uri());
+		m_listener = std::make_unique<http_listener>(uri.to_uri());
 
 		m_listener->support(methods::GET, std::bind(&PrometheusRest::handle_get, this, std::placeholders::_1));
 		m_listener->support(methods::PUT, std::bind(&PrometheusRest::handle_put, this, std::placeholders::_1));
@@ -182,7 +182,7 @@ void PrometheusRest::handle_error(pplx::task<void>& t)
 void PrometheusRest::initPromCounter()
 {
 	// Prometheus
-	m_promRegistry = std::make_shared<prometheus::Registry>();
+	m_promRegistry = std::make_unique<prometheus::Registry>();
 	auto& counterFamily = prometheus::BuildCounter()
 		.Name("appmgr_prom_scrape_count")
 		.Help("prometheus scrape count")

@@ -44,8 +44,8 @@ int main(int argc, char* argv[])
 		ResourceCollection::instance()->getHostResource();
 		ResourceCollection::instance()->dump();
 
-		std::shared_ptr<RestHandler> httpServerIp4;
-		std::shared_ptr<RestHandler> httpServerIp6;
+		std::unique_ptr<RestHandler> httpServerIp4;
+		std::unique_ptr<RestHandler> httpServerIp6;
 		if (config->getRestEnabled())
 		{
 			// Thread pool: 6 threads
@@ -58,15 +58,15 @@ int main(int argc, char* argv[])
 			if (!config->getRestListenAddress().empty())
 			{
 				// just enable for specified address
-				httpServerIp4 = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+				httpServerIp4 = std::make_unique<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
 			}
 			else
 			{
 				// enable for both ipv6 and ipv4
-				httpServerIp4 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
+				httpServerIp4 = std::make_unique<RestHandler>("0.0.0.0", config->getRestListenPort());
 				try
 				{
-					httpServerIp6 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
+					httpServerIp6 = std::make_unique<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
 				}
 				catch (const std::exception& e)
 				{
@@ -87,7 +87,7 @@ int main(int argc, char* argv[])
 		std::for_each(apps.begin(), apps.end(), [&process](std::vector<std::shared_ptr<Application>>::reference p) { p->attach(process); });
 
 		// start one thread for timers
-		auto timerThread = std::make_shared<std::thread>(std::bind(&TimerHandler::runTimerThread));
+		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runTimerThread));
 		// start one thread for health check
 		HealthCheckTask::instance()->open();
 

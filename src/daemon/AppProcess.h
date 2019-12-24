@@ -38,8 +38,7 @@ public:
 protected:
 	const int m_cacheOutputLines;
 private:
-	std::shared_ptr<LinuxCgroup> m_cgroup;
-	std::shared_ptr<ResourceLimitation> m_resourceLimit;
+	std::unique_ptr<LinuxCgroup> m_cgroup;
 	std::string m_uuid;
 	int m_killTimerId;
 };
