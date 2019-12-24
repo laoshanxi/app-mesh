@@ -66,7 +66,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	// 1. check docker image
 	dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
-	auto dockerProcess = std::make_unique<MonitoredProcess>(32, false);
+	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
@@ -90,7 +90,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 			{
 				LOG_WAR << fname << "ENV APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeoutStr << "> is not number, use default value : " << pullTimeout;
 			}
-			m_imagePullProc = std::make_unique<MonitoredProcess>(m_cacheOutputLines);
+			m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
 			m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr);
 			m_imagePullProc->regKillTimer(pullTimeout, fname);
 			this->attach(m_imagePullProc->getpid());
@@ -143,7 +143,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
-	dockerProcess = std::make_unique<MonitoredProcess>(32, false);
+	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
@@ -172,7 +172,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	// 4. get docker root pid
 	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
-	dockerProcess = std::make_unique<MonitoredProcess>(32, false);
+	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();

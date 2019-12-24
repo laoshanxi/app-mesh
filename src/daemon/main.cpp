@@ -44,8 +44,8 @@ int main(int argc, char* argv[])
 		ResourceCollection::instance()->getHostResource();
 		ResourceCollection::instance()->dump();
 
-		std::unique_ptr<RestHandler> httpServerIp4;
-		std::unique_ptr<RestHandler> httpServerIp6;
+		std::shared_ptr<RestHandler> httpServerIp4;
+		std::shared_ptr<RestHandler> httpServerIp6;
 		if (config->getRestEnabled())
 		{
 			// Thread pool: 6 threads
@@ -58,15 +58,15 @@ int main(int argc, char* argv[])
 			if (!config->getRestListenAddress().empty())
 			{
 				// just enable for specified address
-				httpServerIp4 = std::make_unique<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+				httpServerIp4 = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
 			}
 			else
 			{
 				// enable for both ipv6 and ipv4
-				httpServerIp4 = std::make_unique<RestHandler>("0.0.0.0", config->getRestListenPort());
+				httpServerIp4 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
 				try
 				{
-					httpServerIp6 = std::make_unique<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
+					httpServerIp6 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
 				}
 				catch (const std::exception& e)
 				{
