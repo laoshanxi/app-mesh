@@ -184,7 +184,7 @@ void ApplicationShortRun::initTimer()
 	else
 	{
 		auto totalSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - this->getStartTime()).count();
-		firstSleepSec = totalSec % this->getStartInterval();
+		firstSleepSec = this->getStartInterval() - (totalSec % this->getStartInterval());
 	}
 	m_timerId = this->registerTimer(firstSleepSec, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
 	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(firstSleepSec));
