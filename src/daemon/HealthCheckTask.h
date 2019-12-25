@@ -11,6 +11,8 @@ public:
 	virtual int open(void* args = 0) override;
 	virtual int close(u_long flags = 0) override;
 
+	virtual void healthCheckAllApp() const;
+
 private:
 	bool m_exit;
 };

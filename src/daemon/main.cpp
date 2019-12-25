@@ -88,18 +88,23 @@ int main(int argc, char* argv[])
 
 		// start one thread for timers
 		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runTimerThread));
-		// start one thread for health check
-		HealthCheckTask::instance()->open();
+
+		// health check share main thread for now
+		// // start one thread for health check
+		// HealthCheckTask::instance()->open();
 
 		// monitor applications
 		while (true)
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
 			auto apps = Configuration::instance()->getApps();
 			for (const auto& app : apps)
 			{
 				app->invoke();
 			}
+
+			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
+
+			HealthCheckTask::instance()->healthCheckAllApp();
 		}
 	}
 	catch (const std::exception & e)
