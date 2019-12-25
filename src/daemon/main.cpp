@@ -92,19 +92,26 @@ int main(int argc, char* argv[])
 		// health check share main thread for now
 		// // start one thread for health check
 		// HealthCheckTask::instance()->open();
+		auto healthCheckTime = std::chrono::system_clock::now();
 
 		// monitor applications
 		while (true)
 		{
+			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
+
+			// monitor application
 			auto apps = Configuration::instance()->getApps();
 			for (const auto& app : apps)
 			{
 				app->invoke();
 			}
-
-			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
-
-			HealthCheckTask::instance()->healthCheckAllApp();
+			
+			// health check
+			if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - healthCheckTime).count() >= DEFAULT_HEALTH_CHECK_INTERVAL)
+			{
+				HealthCheckTask::instance()->healthCheckAllApp();
+				healthCheckTime = std::chrono::system_clock::now();
+			}
 		}
 	}
 	catch (const std::exception & e)
