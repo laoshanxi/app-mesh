@@ -30,6 +30,7 @@ public:
 	const std::string getName() const;
 	bool isEnabled();
 	bool isUnAvialable();
+	virtual bool avialable();
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj);
 
 	virtual void refreshPid();
@@ -66,7 +67,6 @@ public:
 protected:
 	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage, std::string appName);
 	bool isInDailyTimeRange();
-	virtual bool avialable();
 
 protected:
 	STATUS m_status;

@@ -33,11 +33,7 @@ int HealthCheckTask::svc(void)
 				if (app->getHealthCheck().empty()) continue;
 				try
 				{
-					if (app->isUnAvialable())
-					{
-						app->setHealth(false);
-					}
-					else
+					if (app->avialable())
 					{
 						auto proc = std::make_shared<AppProcess>(0);
 						proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr);
@@ -46,6 +42,10 @@ int HealthCheckTask::svc(void)
 						proc->wait(&exitCode);
 						app->setHealth(0 == exitCode);
 						LOG_DBG << fname << app->getName() << " health check :" << app->getHealthCheck() << " return " << exitCode;
+					}
+					else
+					{
+						app->setHealth(false);
 					}
 				}
 				catch (const std::exception& ex)
