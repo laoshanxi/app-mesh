@@ -131,7 +131,7 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
 	if (returnRuntimeInfo)
 	{
-		if (m_nextLaunchTime != nullptr) result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(Utility::getRfc3339Time(*m_nextLaunchTime));
+		if (m_nextLaunchTime != nullptr) result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(Utility::convertTime2Str(*m_nextLaunchTime));
 	}
 	return result;
 }
@@ -214,8 +214,8 @@ void ApplicationShortRun::dump()
 
 	Application::dump();
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	LOG_DBG << fname << "m_startTime:" << Utility::getRfc3339Time(m_startTime);
+	LOG_DBG << fname << "m_startTime:" << Utility::convertTime2Str(m_startTime);
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
-	if (m_nextLaunchTime != nullptr) LOG_DBG << fname << "m_nextLaunchTime:" << Utility::getRfc3339Time(*m_nextLaunchTime);
+	if (m_nextLaunchTime != nullptr) LOG_DBG << fname << "m_nextLaunchTime:" << Utility::convertTime2Str(*m_nextLaunchTime);
 }
