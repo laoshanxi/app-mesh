@@ -278,13 +278,19 @@ unsigned long long Utility::getThreadId()
 
 std::chrono::system_clock::time_point Utility::convertStr2Time(const std::string& strTime)
 {
-	char* str = (char*)strTime.data();
+	// compatibility with rfc3339 date format
+	std::string time = strTime;
+	for (size_t i = 0; i < time.length(); i++)
+	{
+		if ('T' == time[i]) time[i] = ' ';
+	}
+
 	struct tm tm_ = { 0 };
 	int year, month, day, hour, minute, second;
 	month = day = 1;
 	hour = minute = second = 0;
 	// "%Y-%m-%d %H:%M:%S"
-	sscanf(str, "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second);
+	sscanf(time.c_str(), "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second);
 	tm_.tm_year = year - 1900;
 	tm_.tm_mon = month - 1;
 	tm_.tm_mday = day;
