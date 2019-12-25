@@ -364,7 +364,7 @@ std::string Utility::getSystemPosixTimeZone()
 std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point& time)
 {
 	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
-	return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(time));
+	return date::format("%FT%T", std::chrono::time_point_cast<std::chrono::milliseconds>(time));
 }
 
 std::string Utility::getFmtTimeSeconds(const std::chrono::system_clock::time_point& time, const char* fmt)

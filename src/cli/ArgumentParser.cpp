@@ -1075,7 +1075,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(20);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_last_start))
-				std::cout << Utility::convertTime2Str(std::chrono::system_clock::time_point(std::chrono::seconds(GET_JSON_NUMBER_VALUE(jobj, JSON_KEY_APP_last_start))));
+				std::cout << GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_last_start);
 			else
 				std::cout << slash;
 		}
