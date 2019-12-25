@@ -188,6 +188,7 @@ void ApplicationShortRun::initTimer()
 	}
 	m_timerId = this->registerTimer(firstSleepSec, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
 	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(firstSleepSec));
+	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::convertTime2Str(*m_nextLaunchTime);
 }
 
 int ApplicationShortRun::getStartInterval()

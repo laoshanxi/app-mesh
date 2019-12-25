@@ -30,7 +30,7 @@ int HealthCheckTask::svc(void)
 			auto apps = Configuration::instance()->getApps();
 			for (auto app : apps)
 			{
-				if (app->getHealthCheck().length() == 0) continue;
+				if (app->getHealthCheck().empty()) continue;
 				try
 				{
 					if (app->isUnAvialable())
