@@ -30,9 +30,14 @@ int HealthCheckTask::svc(void)
 			auto apps = Configuration::instance()->getApps();
 			for (auto app : apps)
 			{
-				if (app->getHealthCheck().length())
+				if (app->getHealthCheck().length() == 0) continue;
+				try
 				{
-					try
+					if (app->isUnAvialable())
+					{
+						app->setHealth(false);
+					}
+					else
 					{
 						auto proc = std::make_shared<AppProcess>(0);
 						proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr);
@@ -42,14 +47,14 @@ int HealthCheckTask::svc(void)
 						app->setHealth(0 == exitCode);
 						LOG_DBG << fname << app->getName() << " health check :" << app->getHealthCheck() << " return " << exitCode;
 					}
-					catch (const std::exception& ex)
-					{
-						LOG_WAR << fname << app->getName() << "check got exception: " << ex.what();
-					}
-					catch (...)
-					{
-						LOG_WAR << fname << app->getName() << " exception";
-					}
+				}
+				catch (const std::exception& ex)
+				{
+					LOG_WAR << fname << app->getName() << "check got exception: " << ex.what();
+				}
+				catch (...)
+				{
+					LOG_WAR << fname << app->getName() << " exception";
 				}
 			}
 		}
