@@ -936,7 +936,7 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 
 	// Save cleaup footprint
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto timerId = this->registerTimer(timeout + retention, 0,
+	auto timerId = this->registerTimer(1000L * (timeout + retention), 0,
 		std::bind(&RestHandler::cleanTempApp, this, std::placeholders::_1), fname);
 	m_tempAppsForClean[timerId] = appObj->getName();
 }

@@ -45,12 +45,13 @@ int TimerHandler::handle_timeout(const ACE_Time_Value& current_time, const void*
 	return 0;
 }
 
-int TimerHandler::registerTimer(size_t delaySeconds, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string from)
+int TimerHandler::registerTimer(long int delayMillisecond, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string from)
 {
 	const static char fname[] = "TimerHandler::registerTimer() ";
 
 	bool callOnce = false;
-	ACE_Time_Value delay(delaySeconds);
+	ACE_Time_Value delay;
+	delay.msec(delayMillisecond);
 	ACE_Time_Value interval(intervalSeconds);
 	if (intervalSeconds == 0)
 	{
@@ -63,7 +64,7 @@ int TimerHandler::registerTimer(size_t delaySeconds, size_t intervalSeconds, con
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	assert(m_timers.find(timerIdPtr) == m_timers.end());
 	m_timers[timerIdPtr] = std::make_shared<TimerDefinition>(timerIdPtr, handler, this->shared_from_this(), callOnce);
-	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delaySeconds <" << delaySeconds << "> intervalSeconds <" << intervalSeconds << ">.";
+	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delayMillisecond <" << delayMillisecond << "> intervalSeconds <" << intervalSeconds << ">.";
 	return *timerIdPtr;
 }
 

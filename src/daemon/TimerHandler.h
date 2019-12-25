@@ -40,11 +40,11 @@ public:
 	/// <summary>
 	/// Register a timer to this object
 	/// </summary>
-	/// <param name="delaySeconds">Timer will start after delay seconds.</param>
+	/// <param name="delaySeconds">Timer will start after delay micro seconds.</param>
 	/// <param name="intervalSeconds">Interval for the Timer, the value 0 means the timer will only triggered once.</param>
 	/// <param name="handler">Function point to this object.</param>
 	/// <return>Timer unique ID.</return>
-	int registerTimer(size_t delaySeconds, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string from);
+	int registerTimer(long int delayMicroSeconds, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string from);
 	/// <summary>
 	/// Cancle a timer
 	/// </summary>

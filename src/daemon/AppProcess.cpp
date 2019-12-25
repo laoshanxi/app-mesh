@@ -90,7 +90,7 @@ const std::string AppProcess::getuuid() const
 
 void AppProcess::regKillTimer(size_t timeout, const std::string from)
 {
-	m_killTimerId = this->registerTimer(timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
+	m_killTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
 }
 
 

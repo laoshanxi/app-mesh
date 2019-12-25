@@ -176,19 +176,22 @@ void ApplicationShortRun::initTimer()
 	}
 
 	// 2. reg new timer
-	long long firstSleepSec = 0;
-	if (this->getStartTime() > std::chrono::system_clock::now())
+	auto now = std::chrono::system_clock::now();
+	int64_t firstSleepMilliseconds = 0;
+	if (this->getStartTime() > now)
 	{
-		firstSleepSec = std::chrono::duration_cast<std::chrono::seconds>(this->getStartTime() - std::chrono::system_clock::now()).count();
+		firstSleepMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(this->getStartTime() - now).count();
 	}
 	else
 	{
-		auto totalSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - this->getStartTime()).count();
-		firstSleepSec = this->getStartInterval() - (totalSec % this->getStartInterval());
+		int64_t startIntervalMiliseconds = 1000L * this->getStartInterval();
+		auto totalSec = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->getStartTime()).count();
+		firstSleepMilliseconds = startIntervalMiliseconds - (totalSec % startIntervalMiliseconds);
 	}
-	m_timerId = this->registerTimer(firstSleepSec, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
-	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(firstSleepSec));
-	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::convertTime2Str(*m_nextLaunchTime);
+	firstSleepMilliseconds += 2;	// add 2 miliseconds buffer to avoid 59:59
+	m_timerId = this->registerTimer(firstSleepMilliseconds, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
+	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(now + std::chrono::milliseconds(firstSleepMilliseconds));
+	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::convertTime2Str(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds/1000 << " seconds";
 }
 
 int ApplicationShortRun::getStartInterval()

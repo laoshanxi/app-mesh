@@ -281,6 +281,8 @@ std::chrono::system_clock::time_point Utility::convertStr2Time(const std::string
 	char* str = (char*)strTime.data();
 	struct tm tm_ = { 0 };
 	int year, month, day, hour, minute, second;
+	month = day = 1;
+	hour = minute = second = 0;
 	// "%Y-%m-%d %H:%M:%S"
 	sscanf(str, "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second);
 	tm_.tm_year = year - 1900;
