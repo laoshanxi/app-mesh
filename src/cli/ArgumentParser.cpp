@@ -235,7 +235,6 @@ void ArgumentParser::processLogon()
 		{
 			ofs << m_jwtToken;
 			ofs.close();
-			os::fileChmod(tokenFile, 666);
 			std::cout << "User <" << m_username << "> logon to " << m_hostname << " success." << std::endl;
 		}
 		else

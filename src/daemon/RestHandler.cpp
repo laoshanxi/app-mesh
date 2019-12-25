@@ -383,7 +383,7 @@ bool RestHandler::permissionCheck(const HttpRequest& message, const std::string&
 			else
 			{
 				LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-				throw std::invalid_argument(std::string("No such permission <") + permission + "> for user " + userName);
+				throw std::invalid_argument(std::string("No such permission <") + permission + "> for user <" + userName + ">");
 			}
 		}
 	}
