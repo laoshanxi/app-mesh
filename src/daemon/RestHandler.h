@@ -62,9 +62,9 @@ private:
 	void apiDeleteApp(const HttpRequest& message);
 	void apiFileDownload(const HttpRequest& message);
 	void apiFileUpload(const HttpRequest& message);
-	void apiGetTags(const HttpRequest& message);
-	void apiTagAdd(const HttpRequest& message);
-	void apiTagDel(const HttpRequest& message);
+	void apiGetLabels(const HttpRequest& message);
+	void apiAddLabel(const HttpRequest& message);
+	void apiDeleteLabel(const HttpRequest& message);
 	void apiGetPermissions(const HttpRequest& message);
 	void apiGetBasicConfig(const HttpRequest& message);
 	void apiSetBasicConfig(const HttpRequest& message);

@@ -131,11 +131,11 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	// 6. Label Management
 	// http://127.0.0.1:6060/labels
-	bindRestMethod(web::http::methods::GET, "/labels", std::bind(&RestHandler::apiGetTags, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/labels", std::bind(&RestHandler::apiGetLabels, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc?value=123
-	bindRestMethod(web::http::methods::PUT, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiAddLabel, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/label/abc
-	bindRestMethod(web::http::methods::DEL, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiTagDel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/label/([^/\*]+))", std::bind(&RestHandler::apiDeleteLabel, this, std::placeholders::_1));
 
 	// 7. Log level
 	bindRestMethod(web::http::methods::GET, "/app-manager/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
@@ -603,13 +603,13 @@ void RestHandler::apiFileUpload(const HttpRequest& message)
 				});
 }
 
-void RestHandler::apiGetTags(const HttpRequest& message)
+void RestHandler::apiGetLabels(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_view);
 	message.reply(status_codes::OK, Configuration::instance()->getLabel()->AsJson());
 }
 
-void RestHandler::apiTagAdd(const HttpRequest& message)
+void RestHandler::apiAddLabel(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_set);
 
@@ -632,7 +632,7 @@ void RestHandler::apiTagAdd(const HttpRequest& message)
 	}
 }
 
-void RestHandler::apiTagDel(const HttpRequest& message)
+void RestHandler::apiDeleteLabel(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_delete);
 
