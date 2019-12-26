@@ -19,8 +19,11 @@ class PrometheusRest
 public:
 	explicit PrometheusRest(std::string ipaddress, int port);
 	virtual ~PrometheusRest();
-	
-	prometheus::Counter* createAppmgrHttpCounter(std::string method);
+
+	prometheus::Counter* createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels);
+	prometheus::Gauge* createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels);
+	void removeAppCounter(const std::string& metricName, prometheus::Counter* counter);
+	void removeAppGauge(const std::string& metricName, prometheus::Gauge* gauge);
 
 protected:
 	void open();
@@ -58,5 +61,20 @@ public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
 };
+// Prometheus scrap counter
+#define PROM_METRIC_NAME_appmgr_prom_scrape_count "appmgr_prom_scrape_count"
+#define PROM_METRIC_HELP_appmgr_prom_scrape_count "prometheus scrape count"
+// Appmanager alive
+#define PROM_METRIC_NAME_appmgr_prom_scrape_up "appmgr_prom_scrape_up"
+#define PROM_METRIC_HELP_appmgr_prom_scrape_up "prometheus scrape alive"
+// Appmanager HTTP request count
+#define PROM_METRIC_NAME_appmgr_http_request_count "appmgr_http_request_count"
+#define PROM_METRIC_HELP_appmgr_http_request_count "application manager http request count"
+// Application process start count
+#define PROM_METRIC_NAME_appmgr_prom_process_start_count "appmgr_prom_process_start_count"
+#define PROM_METRIC_HELP_appmgr_prom_process_start_count "application process spawn count"
+// Application process memory usage
+#define PROM_METRIC_NAME_appmgr_prom_process_memory_gauge "appmgr_prom_process_memory_gauge"
+#define PROM_METRIC_HELP_appmgr_prom_process_memory_gauge "application process memory bytes"
 
 #endif

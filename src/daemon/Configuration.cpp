@@ -1,4 +1,5 @@
 #include <ace/Signal.h>
+#include <pplx/threadpool.h>
 #include "Configuration.h"
 #include "../common/Utility.h"
 #include "ApplicationPeriodRun.h"
@@ -70,6 +71,29 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		LOG_INF << "Default value <" << config->m_restListenPort << "> will by used for RestListenPort";
 	}
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, config->m_promListenPort);
+	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
+	if (threadpool > 0 && threadpool < 40)
+	{
+		config->m_threadPoolSize = threadpool;
+	}
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
+
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))	config->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) config->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT), config->m_roles);
+
+	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
+
+	static bool initialized = false;
+	if (!initialized)
+	{
+		initialized = true;
+		// Thread pool: 6 threads
+		crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
+		// Init Prometheus Exporter
+		PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
+	}
+
+	// Leave application init at last, application init depend on Prometheus
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications))
 	{
 		auto& jArr = jsonValue.at(JSON_KEY_Applications).as_array();
@@ -81,17 +105,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 			config->registerApp(app);
 		}
 	}
-	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
-	if (threadpool > 0 && threadpool < 40)
-	{
-		config->m_threadPoolSize = threadpool;
-	}
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
-	
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))	config->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) config->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT), config->m_roles);
-
-	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
 
 	return config;
 }

@@ -130,7 +130,7 @@ void PrometheusRest::handleRest(const http_request& message, std::map<utility::s
 	{
 		stdFunction(request);
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
 		request.reply(web::http::status_codes::BadRequest, e.what());
@@ -169,7 +169,7 @@ void PrometheusRest::handle_error(pplx::task<void>& t)
 	{
 		t.get();
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		LOG_ERR << fname << e.what();
 	}
@@ -183,35 +183,63 @@ void PrometheusRest::initPromCounter()
 {
 	// Prometheus
 	m_promRegistry = std::make_unique<prometheus::Registry>();
-	auto& counterFamily = prometheus::BuildCounter()
-		.Name("appmgr_prom_scrape_count")
-		.Help("prometheus scrape count")
-		.Register(*m_promRegistry);
-	m_promScrapeCounter = &(counterFamily.Add(
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }));
+	m_promScrapeCounter = createPromCounter(
+		PROM_METRIC_NAME_appmgr_prom_scrape_count,
+		PROM_METRIC_HELP_appmgr_prom_scrape_count,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
+	);
 	// Const Gauge counter
-	prometheus::BuildGauge().Name("appmgr_prom_scrape_up")
-		.Help("prometheus scrape alive")
-		.Register(*m_promRegistry)
-		.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} })
-		.Set(1);
+	createPromGauge(
+		PROM_METRIC_NAME_appmgr_prom_scrape_up,
+		PROM_METRIC_HELP_appmgr_prom_scrape_up,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
+	)->Set(1);
 }
 
-prometheus::Counter* PrometheusRest::createAppmgrHttpCounter(std::string method)
+
+
+prometheus::Counter* PrometheusRest::createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
 	if (m_promRegistry != nullptr)
 	{
 		auto& counter = prometheus::BuildCounter()
-			.Name("appmgr_http_request_count")
-			.Help("application manager http request count")
+			.Name(metricName)
+			.Help(metricHelp)
 			.Register(*m_promRegistry)
-			.Add({ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", method} });
+			.Add(labels);
 		return &counter;
 	}
 	else
 	{
-		return NULL;
+		return nullptr;
 	}
+}
+
+prometheus::Gauge* PrometheusRest::createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
+{
+	if (m_promRegistry != nullptr)
+	{
+		auto& gauge = prometheus::BuildGauge()
+			.Name(metricName)
+			.Help(metricHelp)
+			.Register(*m_promRegistry)
+			.Add(labels);
+		return &gauge;
+	}
+	else
+	{
+		return nullptr;
+	}
+}
+
+void PrometheusRest::removeAppCounter(const std::string& metricName, prometheus::Counter* counter)
+{
+	if (m_promRegistry && counter) prometheus::BuildCounter().Name(metricName).Register(*m_promRegistry).Remove(counter);
+}
+
+void PrometheusRest::removeAppGauge(const std::string& metricName, prometheus::Gauge* gauge)
+{
+	if (m_promRegistry) prometheus::BuildGauge().Name(metricName).Register(*m_promRegistry).Remove(gauge);
 }
 
 void PrometheusRest::apiMetrics(const HttpRequest& message)

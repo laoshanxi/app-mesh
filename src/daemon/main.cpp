@@ -5,7 +5,6 @@
 #include <thread>
 #include <fstream>
 #include <ace/Init_ACE.h>
-#include <pplx/threadpool.h>
 #include "RestHandler.h"
 #include "PrometheusRest.h"
 #include "../common/Utility.h"
@@ -32,6 +31,10 @@ int main(int argc, char* argv[])
 		LOG_INF << fname << "entered with working dir: " << getcwd(NULL, 0);
 		Configuration::handleReloadSignal();
 
+		// Resource init
+		ResourceCollection::instance()->getHostResource();
+		ResourceCollection::instance()->dump();
+
 		// get configuration
 		auto config = Configuration::FromJson(Configuration::readConfiguration());
 		Configuration::instance(config);
@@ -40,20 +43,10 @@ int main(int argc, char* argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		Configuration::instance()->dump();
 
-		// Resource init
-		ResourceCollection::instance()->getHostResource();
-		ResourceCollection::instance()->dump();
-
 		std::shared_ptr<RestHandler> httpServerIp4;
 		std::shared_ptr<RestHandler> httpServerIp6;
 		if (config->getRestEnabled())
 		{
-			// Thread pool: 6 threads
-			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
-
-			// Init Prometheus Exporter
-			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
-
 			// Init REST
 			if (!config->getRestListenAddress().empty())
 			{

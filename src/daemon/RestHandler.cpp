@@ -149,10 +149,22 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
 	// 9. Prometheus
-	m_restGetCounter = PrometheusRest::instance()->createAppmgrHttpCounter("GET");
-	m_restPutCounter = PrometheusRest::instance()->createAppmgrHttpCounter("PUT");
-	m_restDelCounter = PrometheusRest::instance()->createAppmgrHttpCounter("DELETE");
-	m_restPostCounter = PrometheusRest::instance()->createAppmgrHttpCounter("POST");
+	m_restGetCounter = PrometheusRest::instance()->createPromCounter(
+		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "GET"} }
+		);
+	m_restPutCounter = PrometheusRest::instance()->createPromCounter(
+		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "PUT"} }
+	);
+	m_restDelCounter = PrometheusRest::instance()->createPromCounter(
+		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "DELETE"} }
+	);
+	m_restPostCounter = PrometheusRest::instance()->createPromCounter(
+		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "POST"} }
+	);
 
 
 	this->open();

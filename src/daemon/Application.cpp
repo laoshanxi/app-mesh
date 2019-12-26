@@ -6,9 +6,11 @@
 #include "../common/TimeZoneHelper.h"
 #include "Configuration.h"
 #include "DockerProcess.h"
+#include "PrometheusRest.h"
 
 Application::Application()
 	:m_status(ENABLED), m_health(true), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
+	, m_appProcStartCounter(nullptr), m_appMemory(nullptr)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -20,6 +22,8 @@ Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
 	LOG_DBG << fname << "Entered.";
+	PrometheusRest::instance()->removeAppCounter(PROM_METRIC_NAME_appmgr_prom_process_start_count, m_appProcStartCounter);
+	PrometheusRest::instance()->removeAppGauge(PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, m_appMemory);
 }
 
 const std::string Application::getName() const
@@ -83,6 +87,15 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid)) app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
 
+	app->m_appProcStartCounter = PrometheusRest::instance()->createPromCounter(
+		PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", app->getName()} }
+	);
+	app->m_appMemory = PrometheusRest::instance()->createPromGauge(
+		PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
+		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", app->getName()} }
+	);
+
 	app->dump();
 }
 
@@ -90,7 +103,7 @@ void Application::refreshPid()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// Try to get return code.
-	if (m_process!= nullptr)
+	if (m_process != nullptr)
 	{
 		if (m_process->running())
 		{
@@ -108,8 +121,9 @@ void Application::refreshPid()
 		else if (m_pid > 0)
 		{
 			m_pid = ACE_INVALID_PID;
-		}		
+		}
 	}
+	if (m_appMemory) m_appMemory->Set(ResourceCollection::instance()->getRssMemory(m_pid));
 }
 
 bool Application::attach(std::map<std::string, int>& process)
@@ -136,7 +150,7 @@ bool Application::attach(int pid)
 	std::map<std::string, int> process;
 	AppProcess::getSysProcessList(process, nullptr);
 	auto cmd = m_commandLine;
-	auto iter = std::find_if(process.begin(), process.end(), 
+	auto iter = std::find_if(process.begin(), process.end(),
 		[pid, &cmd](const std::pair<std::string, int> p) { return p.second == pid && p.first == cmd; }
 	);
 	if (iter != process.end())
@@ -168,6 +182,7 @@ void Application::invoke()
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+				if (m_appProcStartCounter) m_appProcStartCounter->Increment();
 			}
 		}
 		else if (m_process->running())
@@ -239,7 +254,7 @@ std::string Application::runSyncrize(int timeoutSeconds, void* asyncHttpRequest)
 	auto monitProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
 	assert(monitProc != nullptr);
 	monitProc->setAsyncHttpRequest(asyncHttpRequest);
-	
+
 	return runApp(timeoutSeconds);
 }
 
@@ -259,6 +274,8 @@ std::string Application::runApp(int timeoutSeconds)
 
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+
+	if (m_appProcStartCounter) m_appProcStartCounter->Increment();
 
 	if (m_pid > 0)
 	{
@@ -356,9 +373,9 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	{
 		web::json::value envs = web::json::value::object();
 		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string>& pair)
-		{
-			envs[GET_STRING_T(pair.first)] = web::json::value::string(GET_STRING_T(pair.second));
-		});
+			{
+				envs[GET_STRING_T(pair.first)] = web::json::value::string(GET_STRING_T(pair.second));
+			});
 		result[JSON_KEY_APP_env] = envs;
 	}
 	if (m_posixTimeZone.length()) result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
