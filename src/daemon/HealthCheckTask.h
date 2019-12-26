@@ -1,6 +1,16 @@
 #pragma once
 #include <ace/Task.h>
-class HealthCheckTask :	public ACE_Task_Base
+
+class InfiniteQueue : public ACE_Message_Queue<ACE_MT_SYNCH>
+{
+public:
+	InfiniteQueue() {}
+	virtual ~InfiniteQueue() {}
+
+	virtual bool is_full(void) override { return false; }
+};
+
+class HealthCheckTask : public ACE_Task<ACE_MT_SYNCH>
 {
 public:
 	HealthCheckTask();

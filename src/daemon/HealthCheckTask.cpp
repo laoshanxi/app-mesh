@@ -5,6 +5,9 @@
 HealthCheckTask::HealthCheckTask()
 	:m_exit(false)
 {
+	// Create an infinite queue and let ACE_Task to delete
+	msg_queue(new InfiniteQueue());
+	delete_msg_queue_ = 1;
 }
 
 HealthCheckTask::~HealthCheckTask()
@@ -75,7 +78,7 @@ void HealthCheckTask::healthCheckAllApp() const
 				app->setHealth(false);
 			}
 		}
-		catch (const std::exception& ex)
+		catch (const std::exception & ex)
 		{
 			LOG_WAR << fname << app->getName() << "check got exception: " << ex.what();
 		}
