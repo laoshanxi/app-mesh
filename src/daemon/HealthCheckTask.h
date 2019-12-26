@@ -19,9 +19,9 @@ public:
 
 	virtual int svc(void) override;
 	virtual int open(void* args = 0) override;
-	virtual int close(u_long flags = 0) override;
-
-	virtual void healthCheckAllApp() const;
+	
+	void shutdown();
+	void healthCheckAllApp() const;
 
 private:
 	bool m_exit;

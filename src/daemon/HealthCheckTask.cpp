@@ -47,10 +47,10 @@ int HealthCheckTask::open(void* args)
 	return activate(THR_NEW_LWP | THR_JOINABLE | THR_CANCEL_ENABLE | THR_CANCEL_ASYNCHRONOUS, 1);
 }
 
-int HealthCheckTask::close(u_long flags)
+void HealthCheckTask::shutdown()
 {
 	m_exit = true;
-	return ACE_Task_Base::close(flags);
+	this->wait();
 }
 
 void HealthCheckTask::healthCheckAllApp() const
