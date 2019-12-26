@@ -20,7 +20,7 @@ public:
 	explicit PrometheusRest(std::string ipaddress, int port);
 	virtual ~PrometheusRest();
 	
-	prometheus::Counter* createPromHttpCounter(std::string method);
+	prometheus::Counter* createAppmgrHttpCounter(std::string method);
 
 protected:
 	void open();
@@ -52,11 +52,11 @@ private:
 	// prometheus
 	prometheus::Counter* m_promScrapeCounter;
 	std::unique_ptr<prometheus::Registry> m_promRegistry;
+	static std::shared_ptr<PrometheusRest> m_instance;
 
 public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
-	static std::shared_ptr<PrometheusRest> m_instance;
 };
 
 #endif

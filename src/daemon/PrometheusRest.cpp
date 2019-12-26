@@ -197,7 +197,7 @@ void PrometheusRest::initPromCounter()
 		.Set(1);
 }
 
-prometheus::Counter* PrometheusRest::createPromHttpCounter(std::string method)
+prometheus::Counter* PrometheusRest::createAppmgrHttpCounter(std::string method)
 {
 	if (m_promRegistry != nullptr)
 	{

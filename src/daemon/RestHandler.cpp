@@ -149,10 +149,10 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
 	// 9. Prometheus
-	m_restGetCounter = PrometheusRest::instance()->createPromHttpCounter("GET");
-	m_restPutCounter = PrometheusRest::instance()->createPromHttpCounter("PUT");
-	m_restDelCounter = PrometheusRest::instance()->createPromHttpCounter("DELETE");
-	m_restPostCounter = PrometheusRest::instance()->createPromHttpCounter("POST");
+	m_restGetCounter = PrometheusRest::instance()->createAppmgrHttpCounter("GET");
+	m_restPutCounter = PrometheusRest::instance()->createAppmgrHttpCounter("PUT");
+	m_restDelCounter = PrometheusRest::instance()->createAppmgrHttpCounter("DELETE");
+	m_restPostCounter = PrometheusRest::instance()->createAppmgrHttpCounter("POST");
 
 
 	this->open();
