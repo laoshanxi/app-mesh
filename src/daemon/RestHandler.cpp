@@ -151,19 +151,19 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	// 9. Prometheus
 	m_restGetCounter = PrometheusRest::instance()->createPromCounter(
 		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "GET"} }
+		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "GET"} }
 		);
 	m_restPutCounter = PrometheusRest::instance()->createPromCounter(
 		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "PUT"} }
+		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "PUT"} }
 	);
 	m_restDelCounter = PrometheusRest::instance()->createPromCounter(
 		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "DELETE"} }
+		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "DELETE"} }
 	);
 	m_restPostCounter = PrometheusRest::instance()->createPromCounter(
 		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "POST"} }
+		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "POST"} }
 	);
 
 

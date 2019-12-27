@@ -22,13 +22,13 @@ public:
 
 	prometheus::Counter* createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels);
 	prometheus::Gauge* createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels);
-	void removeAppCounter(const std::string& metricName, prometheus::Counter* counter);
-	void removeAppGauge(const std::string& metricName, prometheus::Gauge* gauge);
+	void removeCounter(prometheus::Counter* counter);
+	void removeGauge(prometheus::Gauge* gauge);
 
 protected:
 	void open();
 	void close();
-	void initPromCounter();
+	void initPromMetric();
 
 private:
 	void handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions);
@@ -53,11 +53,13 @@ private:
 	std::recursive_mutex m_mutex;
 
 	// prometheus
-	prometheus::Counter* m_promScrapeCounter;
 	std::unique_ptr<prometheus::Registry> m_promRegistry;
-	static std::shared_ptr<PrometheusRest> m_instance;
+	prometheus::Counter* m_scrapeCounter;
+	std::map<prometheus::Counter*, std::string> m_metricCounters;
+	std::map<prometheus::Gauge*, std::string> m_metricGauge;
 
 public:
+	static std::shared_ptr<PrometheusRest> m_instance;
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
 };

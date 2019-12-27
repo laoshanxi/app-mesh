@@ -1,5 +1,4 @@
 #include <ace/Signal.h>
-#include <pplx/threadpool.h>
 #include "Configuration.h"
 #include "../common/Utility.h"
 #include "ApplicationPeriodRun.h"
@@ -83,17 +82,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 
 	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
 
-	static bool initialized = false;
-	if (!initialized)
-	{
-		initialized = true;
-		// Thread pool: 6 threads
-		crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
-		// Init Prometheus Exporter
-		PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
-	}
-
-	// Leave application init at last, application init depend on Prometheus
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications))
 	{
 		auto& jArr = jsonValue.at(JSON_KEY_Applications).as_array();
@@ -203,6 +191,7 @@ void Configuration::registerApp(std::shared_ptr<Application> app)
 		}
 	}
 	m_apps.push_back(app);
+	app->initMetrics(PrometheusRest::instance());
 }
 
 int Configuration::getScheduleInterval()
@@ -465,8 +454,8 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_PrometheusExporterListenPort) && (this->m_promListenPort != newConfig->m_promListenPort))
 	{
 		SET_COMPARE(this->m_promListenPort, newConfig->m_promListenPort);
-		PrometheusRest::instance(nullptr);
 		PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
+		registerAppToPrometheus();
 	}
 	if (!updateBasicConfig)
 	{
@@ -492,6 +481,15 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 
 	this->dump();
 	ResourceCollection::instance()->dump();
+}
+
+void Configuration::registerAppToPrometheus()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p)
+		{
+			p->initMetrics(PrometheusRest::instance());
+		});
 }
 
 std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jsonApp)

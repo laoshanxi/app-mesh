@@ -5,6 +5,7 @@
 #include <thread>
 #include <fstream>
 #include <ace/Init_ACE.h>
+#include <pplx/threadpool.h>
 #include "RestHandler.h"
 #include "PrometheusRest.h"
 #include "../common/Utility.h"
@@ -47,6 +48,13 @@ int main(int argc, char* argv[])
 		std::shared_ptr<RestHandler> httpServerIp6;
 		if (config->getRestEnabled())
 		{
+			// Thread pool: 6 threads
+			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
+
+			// Init Prometheus Exporter
+			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
+			config->registerAppToPrometheus();
+
 			// Init REST
 			if (!config->getRestListenAddress().empty())
 			{

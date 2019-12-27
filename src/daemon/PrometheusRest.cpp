@@ -7,10 +7,10 @@
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest(std::string ipaddress, int port)
-	:m_promScrapeCounter(0)
+	:m_scrapeCounter(0)
 {
 	const static char fname[] = "PrometheusRest::PrometheusRest() ";
-
+	m_promRegistry = std::make_unique<prometheus::Registry>();
 	if (port)
 	{
 		// Construct URI
@@ -35,7 +35,7 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 		m_listener->support(methods::OPTIONS, std::bind(&PrometheusRest::handle_options, this, std::placeholders::_1));
 
 		// Prometheus
-		initPromCounter();
+		initPromMetric();
 		bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
 
 		this->open();
@@ -63,6 +63,10 @@ void PrometheusRest::open()
 void PrometheusRest::close()
 {
 	if (m_listener != nullptr) m_listener->close().wait();
+	auto counters = m_metricCounters;
+	for (auto ct : counters) removeCounter(ct.first);
+	auto gauges = m_metricGauge;
+	for (auto ga : gauges) removeGauge(ga.first);
 }
 
 void PrometheusRest::handle_get(const HttpRequest& message)
@@ -179,20 +183,19 @@ void PrometheusRest::handle_error(pplx::task<void>& t)
 	}
 }
 
-void PrometheusRest::initPromCounter()
+void PrometheusRest::initPromMetric()
 {
 	// Prometheus
-	m_promRegistry = std::make_unique<prometheus::Registry>();
-	m_promScrapeCounter = createPromCounter(
+	m_scrapeCounter = createPromCounter(
 		PROM_METRIC_NAME_appmgr_prom_scrape_count,
 		PROM_METRIC_HELP_appmgr_prom_scrape_count,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
+		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
 	);
 	// Const Gauge counter
 	createPromGauge(
 		PROM_METRIC_NAME_appmgr_prom_scrape_up,
 		PROM_METRIC_HELP_appmgr_prom_scrape_up,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
+		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
 	)->Set(1);
 }
 
@@ -200,46 +203,54 @@ void PrometheusRest::initPromCounter()
 
 prometheus::Counter* PrometheusRest::createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
-	if (m_promRegistry != nullptr)
-	{
-		auto& counter = prometheus::BuildCounter()
-			.Name(metricName)
-			.Help(metricHelp)
-			.Register(*m_promRegistry)
-			.Add(labels);
-		return &counter;
-	}
-	else
-	{
-		return nullptr;
-	}
+	auto& counter = prometheus::BuildCounter()
+		.Name(metricName)
+		.Help(metricHelp)
+		.Register(*m_promRegistry)
+		.Add(labels);
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_metricCounters.count(&counter)) throw std::invalid_argument("metric already exist");
+	m_metricCounters[&counter] = metricName;
+	return &counter;
 }
 
 prometheus::Gauge* PrometheusRest::createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
-	if (m_promRegistry != nullptr)
+	auto& gauge = prometheus::BuildGauge()
+		.Name(metricName)
+		.Help(metricHelp)
+		.Register(*m_promRegistry)
+		.Add(labels);
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_metricGauge.count(&gauge)) throw std::invalid_argument("metric already exist");
+	m_metricGauge[&gauge] = metricName;
+	return &gauge;
+}
+
+void PrometheusRest::removeCounter(prometheus::Counter* counter)
+{
+	const static char fname[] = "PrometheusRest::removeCounter() ";
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_metricCounters.count(counter))
 	{
-		auto& gauge = prometheus::BuildGauge()
-			.Name(metricName)
-			.Help(metricHelp)
-			.Register(*m_promRegistry)
-			.Add(labels);
-		return &gauge;
-	}
-	else
-	{
-		return nullptr;
+		LOG_DBG << fname << "removing " << m_metricCounters[counter];
+		prometheus::BuildCounter().Name(m_metricCounters[counter]).Register(*m_promRegistry).Remove(counter);
+		m_metricCounters.erase(counter);
 	}
 }
 
-void PrometheusRest::removeAppCounter(const std::string& metricName, prometheus::Counter* counter)
+void PrometheusRest::removeGauge(prometheus::Gauge* gauge)
 {
-	if (m_promRegistry && counter) prometheus::BuildCounter().Name(metricName).Register(*m_promRegistry).Remove(counter);
-}
+	const static char fname[] = "PrometheusRest::removeGauge() ";
 
-void PrometheusRest::removeAppGauge(const std::string& metricName, prometheus::Gauge* gauge)
-{
-	if (m_promRegistry) prometheus::BuildGauge().Name(metricName).Register(*m_promRegistry).Remove(gauge);
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_metricGauge.count(gauge))
+	{
+		LOG_DBG << fname << "removing " << m_metricGauge[gauge];
+		prometheus::BuildGauge().Name(m_metricGauge[gauge]).Register(*m_promRegistry).Remove(gauge);
+		m_metricGauge.erase(gauge);
+	}
 }
 
 void PrometheusRest::apiMetrics(const HttpRequest& message)
@@ -249,7 +260,7 @@ void PrometheusRest::apiMetrics(const HttpRequest& message)
 	// leave a static text serializer here
 	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
 
-	m_promScrapeCounter->Increment();
+	m_scrapeCounter->Increment();
 
 	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry->Collect()), "text/plain; version=0.0.4");
 }

@@ -17,13 +17,12 @@ Application::Application()
 	m_process.reset(new AppProcess());
 }
 
-
 Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
 	LOG_DBG << fname << "Entered.";
-	PrometheusRest::instance()->removeAppCounter(PROM_METRIC_NAME_appmgr_prom_process_start_count, m_appProcStartCounter);
-	PrometheusRest::instance()->removeAppGauge(PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, m_appMemory);
+	PrometheusRest::instance()->removeCounter(m_appProcStartCounter);
+	PrometheusRest::instance()->removeGauge(m_appMemory);
 }
 
 const std::string Application::getName() const
@@ -86,15 +85,6 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_cache_lines), MAX_APP_CACHED_LINES);
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid)) app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
-
-	app->m_appProcStartCounter = PrometheusRest::instance()->createPromCounter(
-		PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", app->getName()} }
-	);
-	app->m_appMemory = PrometheusRest::instance()->createPromGauge(
-		PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
-		{ {"id", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", app->getName()} }
-	);
 
 	app->dump();
 }
@@ -334,6 +324,27 @@ std::string Application::getOutput(bool keepHistory)
 		}
 	}
 	return std::string();
+}
+
+void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (prom)
+	{
+		m_appProcStartCounter = prom->createPromCounter(
+			PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
+			{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", getName()} }
+		);
+		m_appMemory = prom->createPromGauge(
+			PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
+			{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", getName()} }
+		);
+	}
+	else
+	{
+		m_appProcStartCounter = nullptr;
+		m_appMemory = nullptr;
+	}
 }
 
 web::json::value Application::AsJson(bool returnRuntimeInfo)

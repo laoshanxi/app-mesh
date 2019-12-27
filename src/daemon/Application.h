@@ -20,6 +20,7 @@ namespace prometheus
 	class Counter;
 	class Gauge;
 };
+class PrometheusRest;
 /**
 * @class Application
 *
@@ -63,6 +64,8 @@ public:
 
 	// get normal stdout for running app
 	std::string getOutput(bool keepHistory);
+
+	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 
 	void destroy();
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
