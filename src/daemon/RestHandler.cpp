@@ -14,8 +14,7 @@
 #include "../prom_exporter/text_serializer.h"
 
 RestHandler::RestHandler(std::string ipaddress, int port)
-	:m_promScrapeCounter(0), m_restGetCounter(0), m_restPutCounter(0), m_restDelCounter(0), m_restPostCounter(0)
-	, m_listenAddress(ipaddress)
+	:m_listenAddress(ipaddress), m_promScrapeCounter(0), m_restGetCounter(0), m_restPutCounter(0), m_restDelCounter(0), m_restPostCounter(0)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
