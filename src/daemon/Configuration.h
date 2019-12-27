@@ -5,14 +5,13 @@
 #include <vector>
 #include <mutex>
 #include <map>
-
 #include <cpprest/json.h>
-
 #include "Application.h"
 #include "Role.h"
 #include "User.h"
 #include "Label.h"
 
+class RestHandler;
 //////////////////////////////////////////////////////////////////////////
 // All the operation functions to access appmg.json
 //////////////////////////////////////////////////////////////////////////
@@ -64,7 +63,6 @@ public:
 	const std::shared_ptr<User> getUserInfo(const std::string& userName);
 	std::set<std::string> getUserPermissions(const std::string& userName);
 	const std::string& getJwtRedirectUrl();
-
 	void dump();
 
 private:

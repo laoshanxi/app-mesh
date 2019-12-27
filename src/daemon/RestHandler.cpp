@@ -15,19 +15,14 @@
 
 RestHandler::RestHandler(std::string ipaddress, int port)
 	:m_promScrapeCounter(0), m_restGetCounter(0), m_restPutCounter(0), m_restDelCounter(0), m_restPostCounter(0)
+	, m_listenAddress(ipaddress)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
 	// Construct URI
 	web::uri_builder uri;
-	if (ipaddress.empty())
-	{
-		uri.set_host("0.0.0.0");
-	}
-	else
-	{
-		uri.set_host(ipaddress);
-	}
+	if (m_listenAddress.empty()) m_listenAddress = "0.0.0.0";
+	uri.set_host(m_listenAddress);
 	uri.set_port(port);
 	uri.set_path("/");
 	if (Configuration::instance()->getSslEnabled())
@@ -1071,19 +1066,19 @@ void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	{
 		m_restGetCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-			{ {"method", "GET"} }
+			{ {"method", "GET"}, {"listen", m_listenAddress} }
 		);
 		m_restPutCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-			{ {"method", "PUT"} }
+			{ {"method", "PUT"}, { "listen", m_listenAddress } }
 		);
 		m_restDelCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-			{ {"method", "DELETE"} }
+			{ {"method", "DELETE"}, { "listen", m_listenAddress } }
 		);
 		m_restPostCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-			{ {"method", "POST"} }
+			{ {"method", "POST"}, { "listen", m_listenAddress } }
 		);
 	}
 	else

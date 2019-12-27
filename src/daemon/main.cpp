@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <set>
 #include <fstream>
 #include <ace/Init_ACE.h>
 #include <pplx/threadpool.h>
@@ -14,6 +15,8 @@
 #include "ResourceCollection.h"
 #include "TimerHandler.h"
 #include "HealthCheckTask.h"
+
+std::set< std::shared_ptr<RestHandler>> m_restList;
 
 int main(int argc, char* argv[])
 {
@@ -60,14 +63,17 @@ int main(int argc, char* argv[])
 			{
 				// just enable for specified address
 				httpServerIp4 = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+				m_restList.insert(httpServerIp4);
 			}
 			else
 			{
 				// enable for both ipv6 and ipv4
 				httpServerIp4 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
+				m_restList.insert(httpServerIp4);
 				try
 				{
 					httpServerIp6 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
+					m_restList.insert(httpServerIp6);
 				}
 				catch (const std::exception& e)
 				{

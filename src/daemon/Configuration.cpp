@@ -1,14 +1,19 @@
+#include <set>
 #include <ace/Signal.h>
 #include "Configuration.h"
 #include "../common/Utility.h"
 #include "ApplicationPeriodRun.h"
 #include "ResourceCollection.h"
 #include "PrometheusRest.h"
+#include "RestHandler.h"
+
+// from main.cpp
+extern std::set<std::shared_ptr<RestHandler>> m_restList;
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
 	:m_threadPoolSize(6), m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT),
-	m_promListenPort(DEFAULT_PROM_LISTEN_PORT),	m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true)
+	m_promListenPort(DEFAULT_PROM_LISTEN_PORT), m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
 	m_label = std::make_unique<Label>();
@@ -37,7 +42,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(str));
 	}
-	catch (const std::exception & e)
+	catch (const std::exception& e)
 	{
 		LOG_ERR << "Failed to parse configuration file with error <" << e.what() << ">";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
@@ -114,7 +119,7 @@ void SigHupHandler(int signo)
 		{
 			config->hotUpdate(web::json::value::parse(Configuration::readConfiguration()));
 		}
-		catch (const std::exception & e)
+		catch (const std::exception& e)
 		{
 			LOG_ERR << fname << e.what();
 		}
@@ -490,6 +495,10 @@ void Configuration::registerAppToPrometheus()
 		{
 			p->initMetrics(PrometheusRest::instance());
 		});
+	for (auto rest : m_restList)
+	{
+		rest->initMetrics(PrometheusRest::instance());
+	}
 }
 
 std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jsonApp)

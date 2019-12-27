@@ -24,6 +24,8 @@ public:
 	explicit RestHandler(std::string ipaddress, int port);
 	virtual ~RestHandler();
 
+	void initMetrics(std::shared_ptr<PrometheusRest> prom);
+
 protected:
 	void open();
 	void close();
@@ -75,8 +77,9 @@ private:
 	void apiHealth(const HttpRequest& message);
 
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
-	void initMetrics(std::shared_ptr<PrometheusRest> prom);
+	
 private:
+	std::string m_listenAddress;
 	std::unique_ptr<http_listener> m_listener;
 	// API functions
 	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restGetFunctions;
