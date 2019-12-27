@@ -196,7 +196,6 @@ void Configuration::registerApp(std::shared_ptr<Application> app)
 		}
 	}
 	m_apps.push_back(app);
-	app->initMetrics(PrometheusRest::instance());
 }
 
 int Configuration::getScheduleInterval()
@@ -460,7 +459,7 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	{
 		SET_COMPARE(this->m_promListenPort, newConfig->m_promListenPort);
 		PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
-		registerAppToPrometheus();
+		registerPrometheus();
 	}
 	if (!updateBasicConfig)
 	{
@@ -488,7 +487,7 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	ResourceCollection::instance()->dump();
 }
 
-void Configuration::registerAppToPrometheus()
+void Configuration::registerPrometheus()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p)

@@ -10,7 +10,7 @@
 
 Application::Application()
 	:m_status(ENABLED), m_health(true), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
-	, m_appProcStartCounter(nullptr), m_appMemory(nullptr)
+	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -21,8 +21,8 @@ Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
 	LOG_DBG << fname << "Entered.";
-	PrometheusRest::instance()->removeCounter(m_appProcStartCounter);
-	PrometheusRest::instance()->removeGauge(m_appMemory);
+	PrometheusRest::instance()->removeCounter(m_metricStartCount);
+	PrometheusRest::instance()->removeGauge(m_metricMemory);
 }
 
 const std::string Application::getName() const
@@ -113,7 +113,7 @@ void Application::refreshPid()
 			m_pid = ACE_INVALID_PID;
 		}
 	}
-	if (m_appMemory) m_appMemory->Set(ResourceCollection::instance()->getRssMemory(m_pid));
+	if (m_metricMemory) m_metricMemory->Set(ResourceCollection::instance()->getRssMemory(m_pid));
 }
 
 bool Application::attach(std::map<std::string, int>& process)
@@ -172,7 +172,7 @@ void Application::invoke()
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
-				if (m_appProcStartCounter) m_appProcStartCounter->Increment();
+				if (m_metricStartCount) m_metricStartCount->Increment();
 			}
 		}
 		else if (m_process->running())
@@ -265,7 +265,7 @@ std::string Application::runApp(int timeoutSeconds)
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 
-	if (m_appProcStartCounter) m_appProcStartCounter->Increment();
+	if (m_metricStartCount) m_metricStartCount->Increment();
 
 	if (m_pid > 0)
 	{
@@ -331,19 +331,19 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (prom)
 	{
-		m_appProcStartCounter = prom->createPromCounter(
+		m_metricStartCount = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
 			{ {"application", getName()} }
 		);
-		m_appMemory = prom->createPromGauge(
+		m_metricMemory = prom->createPromGauge(
 			PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
 			{ {"application", getName()} }
 		);
 	}
 	else
 	{
-		m_appProcStartCounter = nullptr;
-		m_appMemory = nullptr;
+		m_metricStartCount = nullptr;
+		m_metricMemory = nullptr;
 	}
 }
 

@@ -142,9 +142,6 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 
 	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
-	// 9. Prometheus
-	initMetrics(PrometheusRest::instance());
-
 	this->open();
 
 	LOG_INF << fname << "Listening for requests at:" << uri.to_string();

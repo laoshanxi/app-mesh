@@ -7,7 +7,7 @@
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest(std::string ipaddress, int port)
-	:m_scrapeCounter(0)
+	:m_scrapeCounter(0), m_enabled(false)
 {
 	const static char fname[] = "PrometheusRest::PrometheusRest() ";
 	m_promRegistry = std::make_unique<prometheus::Registry>();
@@ -39,7 +39,7 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 		bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
 
 		this->open();
-
+		m_enabled = true;
 		LOG_INF << fname << "Listening for requests at:" << uri.to_string();
 	}
 	else
@@ -203,6 +203,7 @@ void PrometheusRest::initPromMetric()
 
 prometheus::Counter* PrometheusRest::createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
+	if (!m_enabled) return nullptr;
 	std::map<std::string, std::string> commonLabels = { {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
 	commonLabels.insert(labels.begin(), labels.end());
 	auto& counter = prometheus::BuildCounter()
@@ -218,6 +219,7 @@ prometheus::Counter* PrometheusRest::createPromCounter(const std::string& metric
 
 prometheus::Gauge* PrometheusRest::createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
+	if (!m_enabled) return nullptr;
 	std::map<std::string, std::string> commonLabels = { {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
 	commonLabels.insert(labels.begin(), labels.end());
 	auto& gauge = prometheus::BuildGauge()
@@ -236,7 +238,7 @@ void PrometheusRest::removeCounter(prometheus::Counter* counter)
 	const static char fname[] = "PrometheusRest::removeCounter() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_metricCounters.count(counter))
+	if (counter && m_metricCounters.count(counter))
 	{
 		LOG_DBG << fname << "removing " << m_metricCounters[counter];
 		prometheus::BuildCounter().Name(m_metricCounters[counter]).Register(*m_promRegistry).Remove(counter);
@@ -249,7 +251,7 @@ void PrometheusRest::removeGauge(prometheus::Gauge* gauge)
 	const static char fname[] = "PrometheusRest::removeGauge() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_metricGauge.count(gauge))
+	if (gauge && m_metricGauge.count(gauge))
 	{
 		LOG_DBG << fname << "removing " << m_metricGauge[gauge];
 		prometheus::BuildGauge().Name(m_metricGauge[gauge]).Register(*m_promRegistry).Remove(gauge);

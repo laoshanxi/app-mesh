@@ -30,7 +30,7 @@ public:
 	web::json::value AsJson(bool returnRuntimeInfo);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value& config, bool updateBasicConfig = false);
-	void registerAppToPrometheus();
+	void registerPrometheus();
 
 	std::vector<std::shared_ptr<Application>> getApps();
 	std::shared_ptr<Application> addApp(const web::json::value& jsonApp);

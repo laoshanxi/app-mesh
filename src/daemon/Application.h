@@ -99,8 +99,8 @@ protected:
 	std::chrono::system_clock::time_point m_procStartTime;
 
 	// Prometheus
-	prometheus::Counter* m_appProcStartCounter;
-	prometheus::Gauge* m_appMemory;
+	prometheus::Counter* m_metricStartCount;
+	prometheus::Gauge* m_metricMemory;
 };
 
 #endif 

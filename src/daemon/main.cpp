@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
 
 			// Init Prometheus Exporter
 			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
-			config->registerAppToPrometheus();
+			config->registerPrometheus();
 
 			// Init REST
 			if (!config->getRestListenAddress().empty())
@@ -92,6 +92,8 @@ int main(int argc, char* argv[])
 		std::map<std::string, int> process;
 		AppProcess::getSysProcessList(process, nullptr);
 		std::for_each(apps.begin(), apps.end(), [&process](std::vector<std::shared_ptr<Application>>::reference p) { p->attach(process); });
+
+		config->registerPrometheus();
 
 		// start one thread for timers
 		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runTimerThread));

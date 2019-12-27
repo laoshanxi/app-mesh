@@ -57,9 +57,9 @@ private:
 	prometheus::Counter* m_scrapeCounter;
 	std::map<prometheus::Counter*, std::string> m_metricCounters;
 	std::map<prometheus::Gauge*, std::string> m_metricGauge;
-
-public:
 	static std::shared_ptr<PrometheusRest> m_instance;
+	bool m_enabled;
+public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
 };
