@@ -333,11 +333,11 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	{
 		m_appProcStartCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
-			{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", getName()} }
+			{ {"application", getName()} }
 		);
 		m_appMemory = prom->createPromGauge(
 			PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
-			{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"application", getName()} }
+			{ {"application", getName()} }
 		);
 	}
 	else

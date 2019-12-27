@@ -149,23 +149,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
 	// 9. Prometheus
-	m_restGetCounter = PrometheusRest::instance()->createPromCounter(
-		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "GET"} }
-		);
-	m_restPutCounter = PrometheusRest::instance()->createPromCounter(
-		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "PUT"} }
-	);
-	m_restDelCounter = PrometheusRest::instance()->createPromCounter(
-		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "DELETE"} }
-	);
-	m_restPostCounter = PrometheusRest::instance()->createPromCounter(
-		PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
-		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}, {"method", "POST"} }
-	);
-
+	initMetrics(PrometheusRest::instance());
 
 	this->open();
 
@@ -1079,4 +1063,34 @@ http_response RestHandler::requestHttp(const method& mtd, const std::string& pat
 	}
 	http_response response = client.request(request).get();
 	return std::move(response);
+}
+
+void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
+{
+	if (prom)
+	{
+		m_restGetCounter = prom->createPromCounter(
+			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			{ {"method", "GET"} }
+		);
+		m_restPutCounter = prom->createPromCounter(
+			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			{ {"method", "PUT"} }
+		);
+		m_restDelCounter = prom->createPromCounter(
+			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			{ {"method", "DELETE"} }
+		);
+		m_restPostCounter = prom->createPromCounter(
+			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			{ {"method", "POST"} }
+		);
+	}
+	else
+	{
+		m_restGetCounter = nullptr;
+		m_restPutCounter = nullptr;
+		m_restDelCounter = nullptr;
+		m_restPostCounter = nullptr;
+	}
 }

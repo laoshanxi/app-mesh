@@ -14,6 +14,7 @@ using namespace utility;
 using namespace http::experimental::listener;
 
 class Application;
+class PrometheusRest;
 //////////////////////////////////////////////////////////////////////////
 // REST service
 //////////////////////////////////////////////////////////////////////////
@@ -74,7 +75,7 @@ private:
 	void apiHealth(const HttpRequest& message);
 
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
-
+	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 private:
 	std::unique_ptr<http_listener> m_listener;
 	// API functions

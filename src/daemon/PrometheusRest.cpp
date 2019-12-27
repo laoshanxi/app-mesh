@@ -189,7 +189,7 @@ void PrometheusRest::initPromMetric()
 	m_scrapeCounter = createPromCounter(
 		PROM_METRIC_NAME_appmgr_prom_scrape_count,
 		PROM_METRIC_HELP_appmgr_prom_scrape_count,
-		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
+		{}
 	);
 	// Const Gauge counter
 	createPromGauge(
@@ -203,11 +203,13 @@ void PrometheusRest::initPromMetric()
 
 prometheus::Counter* PrometheusRest::createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
+	std::map<std::string, std::string> commonLabels = { {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
+	commonLabels.insert(labels.begin(), labels.end());
 	auto& counter = prometheus::BuildCounter()
 		.Name(metricName)
 		.Help(metricHelp)
 		.Register(*m_promRegistry)
-		.Add(labels);
+		.Add(commonLabels);
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_metricCounters.count(&counter)) throw std::invalid_argument("metric already exist");
 	m_metricCounters[&counter] = metricName;
@@ -216,11 +218,13 @@ prometheus::Counter* PrometheusRest::createPromCounter(const std::string& metric
 
 prometheus::Gauge* PrometheusRest::createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
+	std::map<std::string, std::string> commonLabels = { {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
+	commonLabels.insert(labels.begin(), labels.end());
 	auto& gauge = prometheus::BuildGauge()
 		.Name(metricName)
 		.Help(metricHelp)
 		.Register(*m_promRegistry)
-		.Add(labels);
+		.Add(commonLabels);
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_metricGauge.count(&gauge)) throw std::invalid_argument("metric already exist");
 	m_metricGauge[&gauge] = metricName;
