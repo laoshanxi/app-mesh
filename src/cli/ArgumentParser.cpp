@@ -743,7 +743,7 @@ void ArgumentParser::processTags()
 			{
 				std::string restPath = std::string("/label/").append(envVec.at(0));
 				std::map<std::string, std::string> query = { {"value", envVec.at(1)} };
-				requestHttp(methods::PUT, restPath, query, NULL, NULL);
+				requestHttp(methods::PUT, restPath, query, nullptr, nullptr);
 			}
 		}
 	}

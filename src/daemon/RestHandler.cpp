@@ -346,7 +346,7 @@ bool RestHandler::permissionCheck(const HttpRequest& message, const std::string&
 				web::http::methods::POST,
 				std::string("/auth/") + userName,
 				{}, headers,
-				NULL,
+				nullptr,
 				getTokenStr(message));
 			if (resp.status_code() == status_codes::OK)
 			{
@@ -642,7 +642,7 @@ void RestHandler::apiGetPermissions(const HttpRequest& message)
 			web::http::methods::GET,
 			"/auth/permissions",
 			{}, {},
-			NULL,
+			nullptr,
 			getTokenStr(message));
 		message.reply(resp.status_code(), resp.body());
 		return;
@@ -833,7 +833,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 				web::http::methods::POST,
 				"/login",
 				{}, headers,
-				NULL,
+				nullptr,
 				getTokenStr(message));
 			message.reply(resp.status_code(), resp.body());
 			return;

@@ -132,7 +132,7 @@ void SigHupHandler(int signo)
 
 void Configuration::handleReloadSignal()
 {
-	static ACE_Sig_Action* sig_action = NULL;
+	static ACE_Sig_Action* sig_action = nullptr;
 	if (!sig_action)
 	{
 		sig_action = new ACE_Sig_Action();

@@ -4,7 +4,7 @@
 #include "../common/HttpRequest.h"
 
 MonitoredProcess::MonitoredProcess(int cacheOutputLines, bool enableBuildinThread)
-	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_httpRequest(NULL), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
+	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
 {
 }
 
@@ -19,7 +19,7 @@ MonitoredProcess::~MonitoredProcess()
 	if (m_httpRequest)
 	{
 		delete (HttpRequest*)m_httpRequest;
-		m_httpRequest = NULL;
+		m_httpRequest = nullptr;
 	}
 
 	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
@@ -154,7 +154,7 @@ void MonitoredProcess::runPipeReaderThread()
 			{
 				((HttpRequest*)m_httpRequest)->reply(resp).get();
 				delete (HttpRequest*)m_httpRequest;
-				m_httpRequest = NULL;
+				m_httpRequest = nullptr;
 			}
 		}
 		catch (...)

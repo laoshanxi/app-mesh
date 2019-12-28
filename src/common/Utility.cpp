@@ -490,7 +490,7 @@ std::string Utility::runShellCommand(std::string cmd)
 	if (fp)
 	{
 		std::queue<std::string> msgQueue;
-		while (fgets(line, LINE_LENGTH, fp) != NULL)
+		while (fgets(line, LINE_LENGTH, fp) != nullptr)
 		{
 			msgQueue.push(line);
 			if (msgQueue.size() > 512) msgQueue.pop();
