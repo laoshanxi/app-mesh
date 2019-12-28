@@ -459,6 +459,7 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_PrometheusExporterListenPort) && (this->m_promListenPort != newConfig->m_promListenPort))
 	{
 		SET_COMPARE(this->m_promListenPort, newConfig->m_promListenPort);
+		PrometheusRest::instance(nullptr);
 		PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
 		registerPrometheus();
 	}

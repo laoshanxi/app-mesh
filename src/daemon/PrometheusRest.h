@@ -28,7 +28,7 @@ public:
 protected:
 	void open();
 	void close();
-	void initPromMetric();
+	void initMetrics();
 
 private:
 	void handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions);

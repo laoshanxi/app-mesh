@@ -35,7 +35,7 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 		m_listener->support(methods::OPTIONS, std::bind(&PrometheusRest::handle_options, this, std::placeholders::_1));
 
 		// Prometheus
-		initPromMetric();
+		initMetrics();
 		bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
 
 		this->open();
@@ -183,7 +183,7 @@ void PrometheusRest::handle_error(pplx::task<void>& t)
 	}
 }
 
-void PrometheusRest::initPromMetric()
+void PrometheusRest::initMetrics()
 {
 	// Prometheus
 	m_scrapeCounter = createPromCounter(
