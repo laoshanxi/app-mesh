@@ -9,7 +9,7 @@
 #include "PrometheusRest.h"
 
 Application::Application()
-	:m_status(ENABLED), m_health(true), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
+	:m_status(STATUS::ENABLED), m_health(true), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
 	const static char fname[] = "Application::Application() ";
@@ -33,13 +33,13 @@ const std::string Application::getName() const
 bool Application::isEnabled()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return (m_status == ENABLED);
+	return (m_status == STATUS::ENABLED);
 }
 
 bool Application::isUnAvialable()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return (m_status == NOTAVIALABLE);
+	return (m_status == STATUS::NOTAVIALABLE);
 }
 
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::value& jobj)
@@ -52,9 +52,9 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	// "ping www.baidu.com    123" equals
 	// "ping www.baidu.com 123"
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
-	if (app->m_commandLine.length() > MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
+	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
 	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_health_check_cmd));
-	if (app->m_healthCheckCmd.length() > MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("health check lengh should less than 2048");
+	if (app->m_healthCheckCmd.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("health check lengh should less than 2048");
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_working_dir));
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_status))
 	{
@@ -194,9 +194,9 @@ void Application::disable()
 	const static char fname[] = "Application::stop() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_status == ENABLED)
+	if (m_status == STATUS::ENABLED)
 	{
-		m_status = DISABLED;
+		m_status = STATUS::DISABLED;
 		m_return = nullptr;
 		LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	}
@@ -208,9 +208,9 @@ void Application::enable()
 	const static char fname[] = "Application::start() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_status == DISABLED)
+	if (m_status == STATUS::DISABLED)
 	{
-		m_status = ENABLED;
+		m_status = STATUS::ENABLED;
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
 	}
@@ -357,7 +357,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
 	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
-	result[JSON_KEY_APP_status] = web::json::value::number(m_status);
+	result[JSON_KEY_APP_status] = web::json::value::number((int)m_status);
 	if (m_comments.length()) result[JSON_KEY_APP_comments] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)
 	{
@@ -405,7 +405,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	LOG_DBG << fname << "m_user:" << m_user;
-	LOG_DBG << fname << "m_status:" << m_status;
+	LOG_DBG << fname << "m_status:" << (int)m_status;
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
@@ -472,6 +472,6 @@ void Application::destroy()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	this->disable();
-	this->m_status = NOTAVIALABLE;
+	this->m_status = STATUS::NOTAVIALABLE;
 }
 

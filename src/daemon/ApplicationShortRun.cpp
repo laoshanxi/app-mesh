@@ -142,9 +142,9 @@ void ApplicationShortRun::enable()
 	LOG_DBG << fname << "Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_status == DISABLED)
+	if (m_status == STATUS::DISABLED)
 	{
-		m_status = ENABLED;
+		m_status = STATUS::ENABLED;
 		initTimer();
 	}
 }

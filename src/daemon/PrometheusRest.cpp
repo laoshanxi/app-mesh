@@ -192,11 +192,12 @@ void PrometheusRest::initPromMetric()
 		{}
 	);
 	// Const Gauge counter
-	createPromGauge(
+	auto gauge = createPromGauge(
 		PROM_METRIC_NAME_appmgr_prom_scrape_up,
 		PROM_METRIC_HELP_appmgr_prom_scrape_up,
 		{ {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} }
-	)->Set(1);
+	);
+	if (gauge) gauge->Set(1);
 }
 
 

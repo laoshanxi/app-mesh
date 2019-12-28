@@ -79,9 +79,9 @@ namespace std
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
 
-enum STATUS
+enum class STATUS : int
 {
-	DISABLED = 0,
+	DISABLED,
 	ENABLED,
 	NOTAVIALABLE
 };
