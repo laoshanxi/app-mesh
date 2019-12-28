@@ -87,6 +87,7 @@ protected:
 	std::string m_posixTimeZone;
 	bool m_health;
 	std::string m_healthCheckCmd;
+	std::string m_id;
 
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;

@@ -9,7 +9,8 @@
 #include "PrometheusRest.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_health(true), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
+	:m_status(STATUS::ENABLED), m_health(true), m_id(Utility::createUUID())
+	, m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
 	const static char fname[] = "Application::Application() ";
@@ -331,13 +332,14 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (prom)
 	{
+		// use uuid in label here to avoid same name app use the same metric cause issue
 		m_metricStartCount = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
-			{ {"application", getName()} }
+			{ {"application", getName()}, {"id", m_id} }
 		);
 		m_metricMemory = prom->createPromGauge(
 			PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
-			{ {"application", getName()} }
+			{ {"application", getName()}, {"id", m_id} }
 		);
 	}
 	else
