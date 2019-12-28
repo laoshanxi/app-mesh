@@ -3,54 +3,11 @@
 #include "Configuration.h"
 
 HealthCheckTask::HealthCheckTask()
-	:m_exit(false)
 {
-	// Create an infinite queue and let ACE_Task to delete
-	msg_queue(new InfiniteQueue());
-	delete_msg_queue_ = 1;
 }
 
 HealthCheckTask::~HealthCheckTask()
 {
-}
-
-std::unique_ptr<HealthCheckTask>& HealthCheckTask::instance()
-{
-	static std::unique_ptr<HealthCheckTask> singleton = std::make_unique<HealthCheckTask>();
-	return singleton;
-}
-
-int HealthCheckTask::svc(void)
-{
-	const static char fname[] = "HealthCheckTask::svc() ";
-	LOG_INF << fname << "Entered";
-
-	while (!m_exit)
-	{
-		try
-		{
-			std::this_thread::sleep_for(std::chrono::seconds(DEFAULT_HEALTH_CHECK_INTERVAL));
-			healthCheckAllApp();
-		}
-		catch (...)
-		{
-			LOG_WAR << fname << " exception";
-		}
-	}
-
-	LOG_WAR << fname << " thread exit";
-	return 0;
-}
-
-int HealthCheckTask::open(void* args)
-{
-	return activate(THR_NEW_LWP | THR_JOINABLE | THR_CANCEL_ENABLE | THR_CANCEL_ASYNCHRONOUS, 1);
-}
-
-void HealthCheckTask::shutdown()
-{
-	m_exit = true;
-	this->wait();
 }
 
 void HealthCheckTask::healthCheckAllApp() const
@@ -87,4 +44,10 @@ void HealthCheckTask::healthCheckAllApp() const
 			LOG_WAR << fname << app->getName() << " exception";
 		}
 	}
+}
+
+std::unique_ptr<HealthCheckTask>& HealthCheckTask::instance()
+{
+	static auto singleton = std::make_unique<HealthCheckTask>();
+	return singleton;
 }
