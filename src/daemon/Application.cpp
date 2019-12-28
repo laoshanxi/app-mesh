@@ -359,7 +359,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
 	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
-	result[JSON_KEY_APP_status] = web::json::value::number((int)m_status);
+	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
 	if (m_comments.length()) result[JSON_KEY_APP_comments] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)
 	{
@@ -407,7 +407,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	LOG_DBG << fname << "m_user:" << m_user;
-	LOG_DBG << fname << "m_status:" << (int)m_status;
+	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
