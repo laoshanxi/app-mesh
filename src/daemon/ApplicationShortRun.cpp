@@ -176,7 +176,7 @@ void ApplicationShortRun::initTimer()
 	}
 
 	// 2. reg new timer
-	auto now = std::chrono::system_clock::now();
+	const auto now = std::chrono::system_clock::now();
 	int64_t firstSleepMilliseconds = 0;
 	if (this->getStartTime() > now)
 	{
@@ -184,8 +184,8 @@ void ApplicationShortRun::initTimer()
 	}
 	else
 	{
-		int64_t startIntervalMiliseconds = 1000L * this->getStartInterval();
-		auto totalSec = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->getStartTime()).count();
+		const int64_t startIntervalMiliseconds = 1000L * this->getStartInterval();
+		const auto totalSec = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->getStartTime()).count();
 		firstSleepMilliseconds = startIntervalMiliseconds - (totalSec % startIntervalMiliseconds);
 	}
 	firstSleepMilliseconds += 2;	// add 2 miliseconds buffer to avoid 59:59

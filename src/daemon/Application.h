@@ -36,7 +36,7 @@ public:
 	bool isEnabled();
 	bool isUnAvialable();
 	virtual bool avialable();
-	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj);
+	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);
 
 	virtual void refreshPid();
 	bool attach(std::map<std::string, int>& process);
@@ -51,10 +51,10 @@ public:
 	virtual void enable();
 
 	// run app in a new process object
-	std::string runApp(int timeoutSeconds);
-	std::string runAsyncrize(int timeoutSeconds);
-	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest);
-	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished);
+	std::string runApp(int timeoutSeconds) noexcept(false);
+	std::string runAsyncrize(int timeoutSeconds)noexcept(false);
+	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest) noexcept(false);
+	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished) noexcept(false);
 
 	// health: 0-health, 1-unhealth
 	void setHealth(bool health) { m_health = health; }

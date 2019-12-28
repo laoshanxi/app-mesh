@@ -19,7 +19,7 @@ public:
 	ApplicationShortRun();
 	virtual ~ApplicationShortRun();
 
-	static void FromJson(std::shared_ptr<ApplicationShortRun>& app, const web::json::value& jobj);
+	static void FromJson(std::shared_ptr<ApplicationShortRun>& app, const web::json::value& jobj) noexcept(false);
 
 	virtual void invoke() override;
 	virtual void invokeNow(int timerId) override;

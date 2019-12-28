@@ -26,7 +26,7 @@ public:
 	static std::string readConfiguration();
 	static void handleReloadSignal();
 
-	static std::shared_ptr<Configuration> FromJson(const std::string& str);
+	static std::shared_ptr<Configuration> FromJson(const std::string& str) noexcept(false);
 	web::json::value AsJson(bool returnRuntimeInfo);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value& config, bool updateBasicConfig = false);
@@ -45,7 +45,7 @@ public:
 	const utility::string_t getConfigContentStr();
 	const utility::string_t getSecureConfigContentStr();
 	web::json::value getApplicationJson(bool returnRuntimeInfo);
-	std::shared_ptr<Application> getApp(const std::string& appName);
+	std::shared_ptr<Application> getApp(const std::string& appName) noexcept(false);
 	void disableApp(const std::string& appName);
 	void enableApp(const std::string& appName);
 

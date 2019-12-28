@@ -15,7 +15,7 @@ public:
 
 	// seriarize
 	virtual web::json::value AsJson();
-	static std::shared_ptr<Role> FromJson(std::string roleName, web::json::value& obj);
+	static std::shared_ptr<Role> FromJson(std::string roleName, web::json::value& obj) noexcept(false);
 
 	// get infomation
 	bool hasPermission(std::string permission);
@@ -39,7 +39,7 @@ public:
 	std::shared_ptr<Role> getRole(std::string roleName);
 
 	virtual web::json::value AsJson();
-	static const std::shared_ptr<Roles> FromJson(const web::json::value& obj);
+	static const std::shared_ptr<Roles> FromJson(const web::json::value& obj) noexcept(false);
 
 	void addRole(const web::json::value& obj);
 	void delRole(std::string name);

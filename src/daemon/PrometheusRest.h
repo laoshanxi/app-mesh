@@ -20,8 +20,8 @@ public:
 	explicit PrometheusRest(std::string ipaddress, int port);
 	virtual ~PrometheusRest();
 
-	prometheus::Counter* createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels);
-	prometheus::Gauge* createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels);
+	prometheus::Counter* createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
+	prometheus::Gauge* createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
 	void removeCounter(prometheus::Counter* counter);
 	void removeGauge(prometheus::Gauge* gauge);
 

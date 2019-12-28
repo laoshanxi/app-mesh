@@ -13,7 +13,7 @@ public:
 	virtual ~Label();
 
 	virtual web::json::value AsJson();
-	static const std::shared_ptr<Label> FromJson(const web::json::value& obj);
+	static const std::shared_ptr<Label> FromJson(const web::json::value& obj) noexcept(false);
 
 	void addLabel(const std::string& name, const std::string& value);
 	void delLabel(const std::string& name);
