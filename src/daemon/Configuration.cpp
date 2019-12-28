@@ -373,6 +373,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 		// Register app
 		registerApp(app);
 	}
+	app->initMetrics(PrometheusRest::instance());
 	// Write to disk
 	if (!app->isUnAvialable()) saveConfigToDisk();
 

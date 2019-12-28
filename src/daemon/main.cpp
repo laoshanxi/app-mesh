@@ -56,7 +56,6 @@ int main(int argc, char* argv[])
 
 			// Init Prometheus Exporter
 			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
-			config->registerPrometheus();
 
 			// Init REST
 			if (!config->getRestListenAddress().empty())
