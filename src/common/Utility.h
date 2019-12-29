@@ -186,6 +186,7 @@ public:
 // runtime attr
 #define JSON_KEY_APP_pid "pid"
 #define JSON_KEY_APP_return "return"
+#define JSON_KEY_APP_id "id"
 #define JSON_KEY_APP_memory "memory"
 #define JSON_KEY_APP_last_start "last_start_time"
 #define JSON_KEY_APP_container_id "container_id"

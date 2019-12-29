@@ -1,9 +1,11 @@
 #ifndef PROMETHEUS_REST_H
 #define PROMETHEUS_REST_H
 #include <memory>
+#include <assert.h>
 #include <functional>
 #include <cpprest/http_listener.h> // HTTP server 
 #include "../common/HttpRequest.h"
+#include "../prom_exporter/family.h"
 
 using namespace web;
 using namespace http;
@@ -15,6 +17,52 @@ namespace prometheus
 	class Gauge;
 	class Registry;
 };
+
+//////////////////////////////////////////////////////////////////////////
+// Metric Wrapper for safe access
+//////////////////////////////////////////////////////////////////////////
+class CounterPtr
+{
+public:
+	explicit CounterPtr(std::shared_ptr<prometheus::Registry> retistry,
+		const std::string& name, const std::string& help,
+		std::map<std::string, std::string> label);
+
+	virtual ~CounterPtr();
+
+	prometheus::Counter& metric();
+
+private:
+	prometheus::Counter* m_metric;
+	const std::string m_name;
+	const std::string m_help;
+	const std::map<std::string, std::string> m_label;
+	prometheus::Family<prometheus::Counter>* m_family;
+	std::shared_ptr<prometheus::Registry> m_promRegistry;
+};
+
+class GaugePtr
+{
+public:
+	explicit GaugePtr(std::shared_ptr<prometheus::Registry> retistry,
+		const std::string& name, const std::string& help,
+		std::map<std::string, std::string> label);
+
+	virtual ~GaugePtr();
+
+	prometheus::Gauge& metric();
+
+private:
+	prometheus::Gauge* m_metric;
+	prometheus::Family<prometheus::Gauge>* m_family;
+	std::shared_ptr<prometheus::Registry> m_promRegistry;
+	const std::string m_name;
+	const std::string m_help;
+	const std::map<std::string, std::string> m_label;
+	
+	
+};
+
 //////////////////////////////////////////////////////////////////////////
 // Prometheus Exporter REST service
 //////////////////////////////////////////////////////////////////////////
@@ -24,10 +72,8 @@ public:
 	explicit PrometheusRest(std::string ipaddress, int port);
 	virtual ~PrometheusRest();
 
-	prometheus::Counter* createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
-	prometheus::Gauge* createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
-	void removeCounter(prometheus::Counter* counter);
-	void removeGauge(prometheus::Gauge* gauge);
+	std::shared_ptr<CounterPtr> createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
+	std::shared_ptr<GaugePtr> createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
 
 protected:
 	void open();
@@ -57,10 +103,9 @@ private:
 	std::recursive_mutex m_mutex;
 
 	// prometheus
-	std::unique_ptr<prometheus::Registry> m_promRegistry;
-	prometheus::Counter* m_scrapeCounter;
-	std::map<prometheus::Counter*, std::string> m_metricCounters;
-	std::map<prometheus::Gauge*, std::string> m_metricGauge;
+	std::shared_ptr<prometheus::Registry> m_promRegistry;
+	std::shared_ptr<CounterPtr> m_scrapeCounter;
+	std::shared_ptr<GaugePtr> m_promGauge;
 	static std::shared_ptr<PrometheusRest> m_instance;
 	bool m_enabled;
 public:

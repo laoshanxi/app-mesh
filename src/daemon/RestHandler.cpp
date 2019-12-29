@@ -17,7 +17,7 @@
 #include "../prom_exporter/text_serializer.h"
 
 RestHandler::RestHandler(std::string ipaddress, int port)
-	:m_listenAddress(ipaddress), m_promScrapeCounter(0), m_restGetCounter(0), m_restPutCounter(0), m_restDelCounter(0), m_restPostCounter(0)
+	:m_listenAddress(ipaddress)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
@@ -168,28 +168,40 @@ void RestHandler::close()
 void RestHandler::handle_get(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-	if (m_restGetCounter) m_restGetCounter->Increment();
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		if (m_restGetCounter) m_restGetCounter->metric().Increment();
+	}
 	handleRest(message, m_restGetFunctions);
 }
 
 void RestHandler::handle_put(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-	if (m_restPutCounter) m_restPutCounter->Increment();
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		if (m_restPutCounter) m_restPutCounter->metric().Increment();
+	}
 	handleRest(message, m_restPutFunctions);
 }
 
 void RestHandler::handle_post(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-	if (m_restPostCounter) m_restPostCounter->Increment();
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		if (m_restPostCounter) m_restPostCounter->metric().Increment();
+	}
 	handleRest(message, m_restPstFunctions);
 }
 
 void RestHandler::handle_delete(const HttpRequest& message)
 {
 	REST_INFO_PRINT;
-	if (m_restDelCounter) m_restDelCounter->Increment();
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		if (m_restDelCounter) m_restDelCounter->metric().Increment();
+	}
 	handleRest(message, m_restDelFunctions);
 }
 
@@ -1060,6 +1072,15 @@ http_response RestHandler::requestHttp(const method& mtd, const std::string& pat
 
 void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+
+	// clean
+	m_restGetCounter = nullptr;
+	m_restPutCounter = nullptr;
+	m_restDelCounter = nullptr;
+	m_restPostCounter = nullptr;
+
+	// update
 	if (prom)
 	{
 		m_restGetCounter = prom->createPromCounter(
@@ -1078,12 +1099,5 @@ void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
 			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
 			{ {"method", "POST"}, { "listen", m_listenAddress } }
 		);
-	}
-	else
-	{
-		m_restGetCounter = nullptr;
-		m_restPutCounter = nullptr;
-		m_restDelCounter = nullptr;
-		m_restPostCounter = nullptr;
 	}
 }

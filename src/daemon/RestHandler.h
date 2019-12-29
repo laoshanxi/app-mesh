@@ -10,10 +10,8 @@ using namespace web;
 using namespace http;
 using namespace utility;
 using namespace http::experimental::listener;
-namespace prometheus
-{
-	class Counter;
-};
+
+class CounterPtr;
 class PrometheusRest;
 class Application;
 class HttpRequest;
@@ -94,11 +92,11 @@ private:
 	std::map<int, std::string> m_tempAppsForClean;
 
 	// prometheus
-	prometheus::Counter* m_promScrapeCounter;
-	prometheus::Counter* m_restGetCounter;
-	prometheus::Counter* m_restPutCounter;
-	prometheus::Counter* m_restDelCounter;
-	prometheus::Counter* m_restPostCounter;
+	std::shared_ptr<CounterPtr> m_promScrapeCounter;
+	std::shared_ptr<CounterPtr> m_restGetCounter;
+	std::shared_ptr<CounterPtr> m_restPutCounter;
+	std::shared_ptr<CounterPtr> m_restDelCounter;
+	std::shared_ptr<CounterPtr> m_restPostCounter;
 };
 
 #endif

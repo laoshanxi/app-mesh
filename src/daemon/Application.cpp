@@ -11,7 +11,7 @@
 #include "PrometheusRest.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_health(true), m_id(Utility::createUUID())
+	:m_status(STATUS::ENABLED), m_health(true), m_appId(Utility::createUUID())
 	, m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
@@ -24,8 +24,6 @@ Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
 	LOG_DBG << fname << "Entered.";
-	PrometheusRest::instance()->removeCounter(m_metricStartCount);
-	PrometheusRest::instance()->removeGauge(m_metricMemory);
 }
 
 const std::string Application::getName() const
@@ -116,7 +114,7 @@ void Application::refreshPid()
 			m_pid = ACE_INVALID_PID;
 		}
 	}
-	if (m_metricMemory) m_metricMemory->Set(ResourceCollection::instance()->getRssMemory(m_pid));
+	if (m_metricMemory) m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
 }
 
 bool Application::attach(std::map<std::string, int>& process)
@@ -175,7 +173,7 @@ void Application::invoke()
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
-				if (m_metricStartCount) m_metricStartCount->Increment();
+				if (m_metricStartCount) m_metricStartCount->metric().Increment();
 			}
 		}
 		else if (m_process->running())
@@ -268,7 +266,7 @@ std::string Application::runApp(int timeoutSeconds)
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 
-	if (m_metricStartCount) m_metricStartCount->Increment();
+	if (m_metricStartCount) m_metricStartCount->metric().Increment();
 
 	if (m_pid > 0)
 	{
@@ -332,22 +330,21 @@ std::string Application::getOutput(bool keepHistory)
 void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	// clean
+	m_metricStartCount = nullptr;
+	m_metricMemory = nullptr;
+	// update
 	if (prom)
 	{
 		// use uuid in label here to avoid same name app use the same metric cause issue
 		m_metricStartCount = prom->createPromCounter(
 			PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
-			{ {"application", getName()}, {"id", m_id} }
+			{ {"application", getName()}, {"id", m_appId} }
 		);
 		m_metricMemory = prom->createPromGauge(
 			PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
-			{ {"application", getName()}, {"id", m_id} }
+			{ {"application", getName()}, {"id", m_appId} }
 		);
-	}
-	else
-	{
-		m_metricStartCount = nullptr;
-		m_metricMemory = nullptr;
 	}
 }
 
@@ -375,6 +372,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
 		}
 		result[JSON_KEY_APP_health] = web::json::value::number(this->getHealth());
+		result[JSON_KEY_APP_id] = web::json::value::string(m_appId);
 	}
 	if (m_dailyLimit != nullptr)
 	{

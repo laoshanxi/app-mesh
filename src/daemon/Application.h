@@ -13,11 +13,8 @@
 #include "ResourceLimitation.h"
 #include "TimerHandler.h"
 
-namespace prometheus
-{
-	class Counter;
-	class Gauge;
-};
+class CounterPtr;
+class GaugePtr;
 class PrometheusRest;
 
 enum class STATUS : int
@@ -93,7 +90,7 @@ protected:
 	std::string m_posixTimeZone;
 	bool m_health;
 	std::string m_healthCheckCmd;
-	std::string m_id;
+	const std::string m_appId;
 
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
@@ -106,8 +103,8 @@ protected:
 	std::chrono::system_clock::time_point m_procStartTime;
 
 	// Prometheus
-	prometheus::Counter* m_metricStartCount;
-	prometheus::Gauge* m_metricMemory;
+	std::shared_ptr<CounterPtr> m_metricStartCount;
+	std::shared_ptr<GaugePtr> m_metricMemory;
 };
 
 #endif 
