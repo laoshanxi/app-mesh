@@ -9,11 +9,9 @@
 #include <cpprest/json.h>
 
 #include "AppProcess.h"
-#include "MonitoredProcess.h"
 #include "DailyLimitation.h"
 #include "ResourceLimitation.h"
 #include "TimerHandler.h"
-#include "../common/Utility.h"
 
 namespace prometheus
 {
@@ -21,6 +19,14 @@ namespace prometheus
 	class Gauge;
 };
 class PrometheusRest;
+
+enum class STATUS : int
+{
+	DISABLED,
+	ENABLED,
+	NOTAVIALABLE
+};
+
 /**
 * @class Application
 *

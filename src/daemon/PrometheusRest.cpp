@@ -1,5 +1,7 @@
 #include <boost/algorithm/string_regex.hpp>
 #include "PrometheusRest.h"
+#include "../prom_exporter/counter.h"
+#include "../prom_exporter/registry.h"
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
 #include "../prom_exporter/text_serializer.h"

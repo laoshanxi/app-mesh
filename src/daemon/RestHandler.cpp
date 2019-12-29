@@ -1,8 +1,11 @@
 #include <chrono>
 #include <boost/algorithm/string_regex.hpp>
 #include <cpprest/filestream.h>
+#include <cpprest/http_listener.h> // HTTP server 
 #include <cpprest/http_client.h>
 #include "RestHandler.h"
+#include "../prom_exporter/counter.h"
+#include "../prom_exporter/gauge.h"
 #include "PrometheusRest.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"

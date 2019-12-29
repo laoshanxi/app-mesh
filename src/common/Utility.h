@@ -79,12 +79,6 @@ namespace std
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
 
-enum class STATUS : int
-{
-	DISABLED,
-	ENABLED,
-	NOTAVIALABLE
-};
 const char* GET_STATUS_STR(unsigned int status);
 
 //////////////////////////////////////////////////////////////////////////

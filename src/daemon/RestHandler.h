@@ -1,20 +1,22 @@
 #ifndef REST_HANDLER_H
 #define REST_HANDLER_H
-
-#include <cpprest/http_client.h>
-#include <cpprest/http_listener.h> // HTTP server 
+#include <memory>
+#include <functional>
 #include "TimerHandler.h"
+#include <cpprest/http_listener.h> // HTTP server 
 #include "../common/HttpRequest.h"
-#include "../prom_exporter/counter.h"
-#include "../prom_exporter/registry.h"
 
 using namespace web;
 using namespace http;
 using namespace utility;
 using namespace http::experimental::listener;
-
-class Application;
+namespace prometheus
+{
+	class Counter;
+};
 class PrometheusRest;
+class Application;
+class HttpRequest;
 //////////////////////////////////////////////////////////////////////////
 // REST service
 //////////////////////////////////////////////////////////////////////////
@@ -77,7 +79,7 @@ private:
 	void apiHealth(const HttpRequest& message);
 
 	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
-	
+
 private:
 	std::string m_listenAddress;
 	std::unique_ptr<http_listener> m_listener;

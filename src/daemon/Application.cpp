@@ -4,6 +4,8 @@
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
 #include "../common/TimeZoneHelper.h"
+#include "../prom_exporter/counter.h"
+#include "../prom_exporter/gauge.h"
 #include "Configuration.h"
 #include "DockerProcess.h"
 #include "PrometheusRest.h"

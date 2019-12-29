@@ -1,16 +1,20 @@
 #ifndef PROMETHEUS_REST_H
 #define PROMETHEUS_REST_H
 #include <memory>
+#include <functional>
 #include <cpprest/http_listener.h> // HTTP server 
 #include "../common/HttpRequest.h"
-#include "../prom_exporter/counter.h"
-#include "../prom_exporter/registry.h"
 
 using namespace web;
 using namespace http;
 using namespace utility;
 using namespace http::experimental::listener;
-
+namespace prometheus
+{
+	class Counter;
+	class Gauge;
+	class Registry;
+};
 //////////////////////////////////////////////////////////////////////////
 // Prometheus Exporter REST service
 //////////////////////////////////////////////////////////////////////////
