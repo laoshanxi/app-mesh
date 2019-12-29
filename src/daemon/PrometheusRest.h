@@ -34,11 +34,12 @@ public:
 
 private:
 	prometheus::Counter* m_metric;
+	prometheus::Family<prometheus::Counter>* m_family;
+	std::shared_ptr<prometheus::Registry> m_promRegistry;
+
 	const std::string m_name;
 	const std::string m_help;
 	const std::map<std::string, std::string> m_label;
-	prometheus::Family<prometheus::Counter>* m_family;
-	std::shared_ptr<prometheus::Registry> m_promRegistry;
 };
 
 class GaugePtr
