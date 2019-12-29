@@ -103,7 +103,6 @@ void PrometheusRest::handleRest(const http_request& message, std::map<std::strin
 	static char fname[] = "PrometheusRest::handle_rest() ";
 
 	std::function<void(const HttpRequest&)> stdFunction;
-	auto path = GET_STD_STRING(message.relative_uri().path());
 	auto path = Utility::stringReplace(GET_STD_STRING(message.relative_uri().path()), "//", "/");
 
 	const auto request = std::move(HttpRequest(message));
