@@ -55,7 +55,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 
 	killgroup();
 	int pid = ACE_INVALID_PID;
-	const int dockerCliTimeoutSec = 5;
+	constexpr int dockerCliTimeoutSec = 5;
 	std::string containerName = m_appName;
 
 	// 0. clean old docker contianer (docker container will left when host restart)

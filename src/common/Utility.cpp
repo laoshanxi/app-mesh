@@ -481,7 +481,7 @@ std::string Utility::runShellCommand(std::string cmd)
 {
 	const static char fname[] = "Utility::runShellCommand() ";
 
-	const int LINE_LENGTH = 300;
+	constexpr int LINE_LENGTH = 300;
 	char line[LINE_LENGTH];
 	std::stringstream stdoutMsg;
 	cmd += " 2>&1"; // include stderr
@@ -619,8 +619,8 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string>& envMa
 	}
 
 	// initialize our environment size estimates
-	const int numEntriesConst = 256;
-	const int bufferSizeConst = 4 * 1024;
+	constexpr int numEntriesConst = 256;
+	constexpr int bufferSizeConst = 4 * 1024;
 
 	totalEnvArgs += numEntriesConst;
 	totalEnvSize += bufferSizeConst;
