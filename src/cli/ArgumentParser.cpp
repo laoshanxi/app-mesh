@@ -993,7 +993,7 @@ std::string ArgumentParser::getAuthenToken()
 		http_response response = client.request(requestLogin).get();
 		if (response.status_code() != status_codes::OK)
 		{
-			throw std::invalid_argument(std::string("Login failed : ") + response.extract_utf8string(true).get());
+			throw std::invalid_argument(std::string("Login failed ") + response.extract_utf8string(true).get());
 		}
 		else
 		{

@@ -98,13 +98,13 @@ void PrometheusRest::handle_options(const HttpRequest& message)
 	message.reply(status_codes::OK);
 }
 
-void PrometheusRest::handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions)
+void PrometheusRest::handleRest(const http_request& message, std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions)
 {
 	static char fname[] = "PrometheusRest::handle_rest() ";
 
 	std::function<void(const HttpRequest&)> stdFunction;
 	auto path = GET_STD_STRING(message.relative_uri().path());
-	while (path.find("//") != std::string::npos) boost::algorithm::replace_all(path, "//", "/");
+	auto path = Utility::stringReplace(GET_STD_STRING(message.relative_uri().path()), "//", "/");
 
 	const auto request = std::move(HttpRequest(message));
 
@@ -117,7 +117,7 @@ void PrometheusRest::handleRest(const http_request& message, std::map<utility::s
 	bool findRest = false;
 	for (const auto& kvp : restFunctions)
 	{
-		if (path == GET_STD_STRING(kvp.first) || boost::regex_match(path, boost::regex(GET_STD_STRING(kvp.first))))
+		if (path == kvp.first || boost::regex_match(path, boost::regex(kvp.first)))
 		{
 			findRest = true;
 			stdFunction = kvp.second;

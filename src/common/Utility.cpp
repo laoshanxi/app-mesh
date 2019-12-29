@@ -555,7 +555,7 @@ std::string Utility::stringReplace(const std::string& strBase, const std::string
 		str.replace(position, srcLen, strDst);
 		position += dstLen;
 	}
-	return str;
+	return std::move(str);
 }
 
 std::string Utility::humanReadableSize(long double bytesSize)

@@ -31,7 +31,7 @@ protected:
 	void close();
 
 private:
-	void handleRest(const http_request& message, std::map<utility::string_t, std::function<void(const HttpRequest&)>>& restFunctions);
+	void handleRest(const http_request& message, std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions);
 	void bindRestMethod(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func);
 	void handle_get(const HttpRequest& message);
 	void handle_put(const HttpRequest& message);
@@ -82,10 +82,10 @@ private:
 	std::string m_listenAddress;
 	std::unique_ptr<http_listener> m_listener;
 	// API functions
-	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restGetFunctions;
-	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restPutFunctions;
-	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restPstFunctions;
-	std::map<utility::string_t, std::function<void(const HttpRequest&)>> m_restDelFunctions;
+	std::map<std::string, std::function<void(const HttpRequest&)>> m_restGetFunctions;
+	std::map<std::string, std::function<void(const HttpRequest&)>> m_restPutFunctions;
+	std::map<std::string, std::function<void(const HttpRequest&)>> m_restPstFunctions;
+	std::map<std::string, std::function<void(const HttpRequest&)>> m_restDelFunctions;
 
 	std::recursive_mutex m_mutex;
 	// key: timerId, value: appName
