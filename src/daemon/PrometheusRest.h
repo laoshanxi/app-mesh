@@ -114,7 +114,6 @@ private:
 	std::shared_ptr<CounterPtr> m_scrapeCounter;
 	std::shared_ptr<GaugePtr> m_promGauge;
 	static std::shared_ptr<PrometheusRest> m_instance;
-	bool m_enabled;
 public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
