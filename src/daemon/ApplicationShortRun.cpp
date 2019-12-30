@@ -182,11 +182,15 @@ void ApplicationShortRun::initTimer()
 	{
 		firstSleepMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(this->getStartTime() - now).count();
 	}
+	else if (this->getStartTime() == now)
+	{
+		firstSleepMilliseconds = 0;
+	}
 	else
 	{
-		const int64_t startIntervalMiliseconds = 1000L * this->getStartInterval();
-		const auto totalSec = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->getStartTime()).count();
-		firstSleepMilliseconds = startIntervalMiliseconds - (totalSec % startIntervalMiliseconds);
+		const auto timeDiffMilliSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->getStartTime()).count();
+		const int64_t startIntervalMiliseconds = 1000L * this->getStartInterval();	// convert to milliseconds
+		firstSleepMilliseconds = (timeDiffMilliSeconds % startIntervalMiliseconds);
 	}
 	firstSleepMilliseconds += 2;	// add 2 miliseconds buffer to avoid 59:59
 	m_timerId = this->registerTimer(firstSleepMilliseconds, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
