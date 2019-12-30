@@ -218,7 +218,7 @@ void PrometheusRest::apiMetrics(const HttpRequest& message)
 	// leave a static text serializer here
 	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
 
-	m_scrapeCounter->metric().Increment();
+	if (m_scrapeCounter) m_scrapeCounter->metric().Increment();
 
 	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry->Collect()), "text/plain; version=0.0.4");
 }
