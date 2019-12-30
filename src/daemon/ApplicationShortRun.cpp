@@ -24,6 +24,7 @@ void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, co
 	std::shared_ptr<Application> fatherApp = app;
 	Application::FromJson(fatherApp, jobj);
 	app->m_startInterval = GET_JSON_INT_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_seconds);
+	assert(app->m_startInterval > 0);
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time))
 	{
 		auto start_time = GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_time);
@@ -190,7 +191,8 @@ void ApplicationShortRun::initTimer()
 	{
 		const auto timeDiffMilliSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->getStartTime()).count();
 		const int64_t startIntervalMiliseconds = 1000L * this->getStartInterval();	// convert to milliseconds
-		firstSleepMilliseconds = (timeDiffMilliSeconds % startIntervalMiliseconds);
+		firstSleepMilliseconds = startIntervalMiliseconds - (timeDiffMilliSeconds % startIntervalMiliseconds);
+		assert(firstSleepMilliseconds > 0);
 	}
 	firstSleepMilliseconds += 2;	// add 2 miliseconds buffer to avoid 59:59
 	m_timerId = this->registerTimer(firstSleepMilliseconds, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
