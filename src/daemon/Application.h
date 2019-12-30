@@ -17,13 +17,6 @@ class CounterPtr;
 class GaugePtr;
 class PrometheusRest;
 
-enum class STATUS : int
-{
-	DISABLED,
-	ENABLED,
-	NOTAVIALABLE
-};
-
 /**
 * @class Application
 *
@@ -33,6 +26,12 @@ enum class STATUS : int
 class Application : public TimerHandler
 {
 public:
+	enum class STATUS : int
+	{
+		DISABLED,
+		ENABLED,
+		NOTAVIALABLE
+	};
 	Application();
 	virtual ~Application();
 	const std::string getName() const;
