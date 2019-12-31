@@ -1,5 +1,5 @@
-#ifndef TIMER_MANAGER_H
-#define TIMER_MANAGER_H
+#pragma once
+
 #include <functional>
 #include <map>
 #include <mutex>
@@ -9,8 +9,8 @@
 #include <ace/Reactor.h>
 
 //////////////////////////////////////////////////////////////////////////
-// Timer Event base class 
-// The class which use timer event should implement from this class.
+/// Timer Event base class 
+/// The class which use timer event should implement from this class.
 //////////////////////////////////////////////////////////////////////////
 class TimerHandler : public ACE_Event_Handler, public std::enable_shared_from_this<TimerHandler>
 {
@@ -65,7 +65,3 @@ private:
 	std::map<const int*, std::shared_ptr<TimerDefinition>> m_timers;
 	std::recursive_mutex m_mutex;
 };
-
-#endif
-
-

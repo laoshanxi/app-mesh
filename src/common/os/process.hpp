@@ -1,5 +1,4 @@
-#ifndef __STOUT_OS_PROCESS_HPP__
-#define __STOUT_OS_PROCESS_HPP__
+#pragma once
 
 #include <sys/types.h> // For pid_t.
 
@@ -178,5 +177,3 @@ namespace os {
 	}
 
 } // namespace os {
-
-#endif // __STOUT_OS_PROCESS_HPP__

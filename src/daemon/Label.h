@@ -1,11 +1,14 @@
-#ifndef APMANAGER_LABEL_H
-#define APMANAGER_LABEL_H
+#pragma once
+
 #include <string>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <cpprest/json.h>
 
+//////////////////////////////////////////////////////////////////////////
+/// Label
+//////////////////////////////////////////////////////////////////////////
 class Label
 {
 public:
@@ -23,5 +26,3 @@ private:
 	std::recursive_mutex m_mutex;
 
 };
-
-#endif

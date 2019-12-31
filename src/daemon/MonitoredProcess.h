@@ -1,5 +1,5 @@
-#ifndef MONITORED_PROCESS_H
-#define MONITORED_PROCESS_H
+#pragma once
+
 #include <ace/Process.h>
 #include <ace/Pipe.h>
 #include <thread>
@@ -9,7 +9,7 @@
 #include "AppProcess.h"
 
 //////////////////////////////////////////////////////////////////////////
-// Monitored Process Object
+/// Monitored Process Object
 //////////////////////////////////////////////////////////////////////////
 class MonitoredProcess :public AppProcess
 {
@@ -42,6 +42,3 @@ private:
 	bool m_buildinThreadFinished;
 	bool m_enableBuildinThread;
 };
-
-#endif 
-

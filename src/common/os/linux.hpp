@@ -1,6 +1,4 @@
-
-#ifndef __STOUT_OS_LINUX_HPP__
-#define __STOUT_OS_LINUX_HPP__
+#pragma once
 
 // This file contains Linux-only OS utilities.
 #ifndef __linux__
@@ -745,5 +743,3 @@ namespace os {
 	}
 
 } // namespace os {
-
-#endif // __STOUT_OS_LINUX_HPP__

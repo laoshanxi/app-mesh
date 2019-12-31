@@ -1,5 +1,4 @@
-#ifndef APPLICATION_DEFINITION_SOHORT_RUN_H
-#define APPLICATION_DEFINITION_SOHORT_RUN_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -7,12 +6,9 @@
 #include <mutex>
 #include "Application.h"
 
-/**
-* @class Application
-*
-* @brief An Short Running Application will start periodly.
-*
-*/
+//////////////////////////////////////////////////////////////////////////
+/// An Short Running Application will start periodly.
+//////////////////////////////////////////////////////////////////////////
 class ApplicationShortRun : public Application
 {
 public:
@@ -40,5 +36,3 @@ protected:
 	int m_timerId;
 	std::shared_ptr<AppProcess> m_bufferProcess;
 };
-
-#endif 

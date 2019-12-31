@@ -1,5 +1,5 @@
-#ifndef CONFIGURATION_H
-#define CONFIGURATION_H
+#pragma once
+
 #include <string>
 #include <memory>
 #include <vector>
@@ -13,7 +13,7 @@
 
 class RestHandler;
 //////////////////////////////////////////////////////////////////////////
-// All the operation functions to access appmg.json
+/// All the operation functions to access appmg.json
 //////////////////////////////////////////////////////////////////////////
 class Configuration
 {
@@ -91,5 +91,3 @@ private:
 
 	static std::shared_ptr<Configuration> m_instance;
 };
-
-#endif

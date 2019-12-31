@@ -1,5 +1,5 @@
-#ifndef APMANAGER_ROLE_H
-#define APMANAGER_ROLE_H
+#pragma once
+
 #include <string>
 #include <map>
 #include <set>
@@ -7,6 +7,9 @@
 #include <mutex>
 #include <cpprest/json.h>
 
+//////////////////////////////////////////////////////////////////////////
+/// Role
+//////////////////////////////////////////////////////////////////////////
 class Role
 {
 public:
@@ -49,5 +52,3 @@ private:
 	std::recursive_mutex m_mutex;
 
 };
-
-#endif

@@ -1,5 +1,5 @@
-#ifndef RESOURCE_COLLECTION_H
-#define RESOURCE_COLLECTION_H
+#pragma once
+
 #include <mutex>
 #include <memory>
 #include <string>
@@ -15,7 +15,7 @@ struct HostNetInterface
 	std::string address;
 };
 //////////////////////////////////////////////////////////////////////////
-// Host resource attribute
+/// Host resource attribute
 //////////////////////////////////////////////////////////////////////////
 struct HostResource
 {
@@ -62,5 +62,3 @@ private:
 	std::recursive_mutex m_mutex;
 	const std::chrono::system_clock::time_point m_appmgrStartTime;
 };
-
-#endif

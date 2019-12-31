@@ -1,5 +1,5 @@
-#ifndef ARGUMENT_PARSER_H
-#define ARGUMENT_PARSER_H
+#pragma once
+
 #include <string>
 #include <iomanip>
 #include <cpprest/json.h>
@@ -71,5 +71,3 @@ private:
 	std::string m_userpwd;
 
 };
-#endif
-

@@ -1,5 +1,4 @@
-#ifndef __STOUT_OS_PSTREE_HPP__
-#define __STOUT_OS_PSTREE_HPP__
+#pragma once
 
 #include <list>
 #include <set>
@@ -108,5 +107,3 @@ namespace os {
 	}
 
 } // namespace os {
-
-#endif // __STOUT_OS_PSTREE_HPP__

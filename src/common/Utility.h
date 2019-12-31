@@ -1,6 +1,4 @@
-#ifndef UTILITY_H
-#define UTILITY_H
-
+#pragma once
 #include <string>
 #include <cstring>
 #include <iostream>
@@ -82,7 +80,7 @@ namespace std
 const char* GET_STATUS_STR(unsigned int status);
 
 //////////////////////////////////////////////////////////////////////////
-// All common functions
+/// All common functions
 //////////////////////////////////////////////////////////////////////////
 class Utility
 {
@@ -259,6 +257,3 @@ public:
 #define PERMISSION_KEY_change_passwd  			"change-passwd"
 #define PERMISSION_KEY_lock_user  				"lock-user"
 #define PERMISSION_KEY_unlock_user  			"unlock-user"
-
-#endif
-

@@ -1,15 +1,14 @@
-#ifndef REST_HTTP_REQUEST_H
-#define REST_HTTP_REQUEST_H
+#pragma once
+
 #include <functional>
 #include <cpprest/http_client.h>
 
 using namespace web;
 using namespace http;
 
-//////////////////////////////////////////////////////////////////////
-// use app_http_request to handle across domain reply
-//////////////////////////////////////////////////////////////////////
-
+//////////////////////////////////////////////////////////////////////////
+/// HttpRequest is used to handle across domain reply
+//////////////////////////////////////////////////////////////////////////
 class HttpRequest : public web::http::http_request
 {
 public:
@@ -120,4 +119,3 @@ private:
 	std::string m_appName;
 	std::function<void(std::string)> m_callBackHandler;
 };
-#endif

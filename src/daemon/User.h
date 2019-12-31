@@ -1,5 +1,5 @@
-#ifndef APMANAGER_USER_H
-#define APMANAGER_USER_H
+#pragma once
+
 #include <string>
 #include <set>
 #include <map>
@@ -7,6 +7,9 @@
 #include <cpprest/json.h>
 #include "Role.h"
 
+//////////////////////////////////////////////////////////////////////////
+/// User
+//////////////////////////////////////////////////////////////////////////
 class User
 {
 public:
@@ -57,5 +60,3 @@ private:
 	std::map<std::string, std::shared_ptr<User>> m_users;
 	std::recursive_mutex m_mutex;
 };
-
-#endif

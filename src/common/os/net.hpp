@@ -1,5 +1,4 @@
-#ifndef __STOUT_POSIX_NET_HPP__
-#define __STOUT_POSIX_NET_HPP__
+#pragma once
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -122,5 +121,3 @@ namespace net {
 
 
 } // namespace net {
-
-#endif // __STOUT_POSIX_NET_HPP__

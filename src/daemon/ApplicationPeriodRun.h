@@ -1,14 +1,10 @@
-#ifndef APPLICATION_DEFINITION_PERIOD_RUN_H
-#define APPLICATION_DEFINITION_PERIOD_RUN_H
+#pragma once
 
 #include "ApplicationShortRun.h"
 
-/**
-* @class Application
-*
-* @brief An Period Application will start periodly but keep running all the time.
-*
-*/
+//////////////////////////////////////////////////////////////////////////
+/// An Period Application will start periodly but keep running all the time.
+//////////////////////////////////////////////////////////////////////////
 class ApplicationPeriodRun :public ApplicationShortRun
 {
 public:
@@ -22,5 +18,3 @@ public:
 
 	virtual void dump() override;
 };
-
-#endif

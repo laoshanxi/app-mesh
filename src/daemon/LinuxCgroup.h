@@ -1,9 +1,9 @@
-#ifndef LINUX_CGROUP_H
-#define LINUX_CGROUP_H
+#pragma once
+
 #include <string>
 
 //////////////////////////////////////////////////////////////////////////
-// Linux Cgroup Management interface
+/// Linux Cgroup Management interface
 //////////////////////////////////////////////////////////////////////////
 class LinuxCgroup
 {
@@ -33,5 +33,3 @@ private:
 	static std::string cgroupCpuRootName;
 	static const std::string cgroupBaseDir;
 };
-
-#endif

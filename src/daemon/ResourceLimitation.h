@@ -1,10 +1,10 @@
-#ifndef RESOURCE_LIMITATION_H
-#define RESOURCE_LIMITATION_H
+#pragma once
+
 #include <cpprest/json.h>
 #include <string>
 
 //////////////////////////////////////////////////////////////////////////
-// Define the application resource usage limitation
+/// Define the application resource usage limitation
 //////////////////////////////////////////////////////////////////////////
 class ResourceLimitation
 {
@@ -24,5 +24,3 @@ public:
 	std::string n_name;
 	int m_index;
 };
-
-#endif

@@ -1,5 +1,5 @@
-#ifndef REST_HANDLER_H
-#define REST_HANDLER_H
+#pragma once
+
 #include <memory>
 #include <functional>
 #include "TimerHandler.h"
@@ -16,7 +16,7 @@ class PrometheusRest;
 class Application;
 class HttpRequest;
 //////////////////////////////////////////////////////////////////////////
-// REST service
+/// REST service
 //////////////////////////////////////////////////////////////////////////
 class RestHandler : public TimerHandler
 {
@@ -98,5 +98,3 @@ private:
 	std::shared_ptr<CounterPtr> m_restDelCounter;
 	std::shared_ptr<CounterPtr> m_restPostCounter;
 };
-
-#endif

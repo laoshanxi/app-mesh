@@ -1,5 +1,5 @@
-#ifndef PROMETHEUS_REST_H
-#define PROMETHEUS_REST_H
+#pragma once
+
 #include <memory>
 #include <assert.h>
 #include <functional>
@@ -71,7 +71,7 @@ private:
 };
 
 //////////////////////////////////////////////////////////////////////////
-// Prometheus Exporter REST service
+/// Prometheus Exporter REST service
 //////////////////////////////////////////////////////////////////////////
 class PrometheusRest
 {
@@ -133,5 +133,3 @@ public:
 // Application process memory usage
 #define PROM_METRIC_NAME_appmgr_prom_process_memory_gauge "appmgr_prom_process_memory_gauge"
 #define PROM_METRIC_HELP_appmgr_prom_process_memory_gauge "application process memory bytes"
-
-#endif

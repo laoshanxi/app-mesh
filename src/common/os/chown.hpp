@@ -1,6 +1,5 @@
+#pragma once
 
-#ifndef __STOUT_OS_POSIX_CHOWN_HPP__
-#define __STOUT_OS_POSIX_CHOWN_HPP__
 #include <string>
 #include <fts.h>
 #include <sys/types.h>
@@ -98,5 +97,3 @@ namespace os {
 	}
 
 } // namespace os {
-
-#endif // __STOUT_OS_POSIX_CHOWN_HPP__

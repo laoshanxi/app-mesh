@@ -1,5 +1,5 @@
-#ifndef APP_PROCESS_H
-#define APP_PROCESS_H
+#pragma once
+
 #include <map>
 #include <string>
 #include <algorithm>
@@ -11,7 +11,7 @@
 #include "TimerHandler.h"
 
 //////////////////////////////////////////////////////////////////////////
-// Process Object
+/// Process Object
 //////////////////////////////////////////////////////////////////////////
 class AppProcess :public ACE_Process, public TimerHandler
 {
@@ -42,6 +42,3 @@ private:
 	std::string m_uuid;
 	int m_killTimerId;
 };
-
-#endif 
-

@@ -1,5 +1,4 @@
-#ifndef APPLICATION_DEFINITION_H
-#define APPLICATION_DEFINITION_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -17,12 +16,9 @@ class CounterPtr;
 class GaugePtr;
 class PrometheusRest;
 
-/**
-* @class Application
-*
-* @brief An Application is used to define and manage a process job.
-*
-*/
+//////////////////////////////////////////////////////////////////////////
+/// An Application is used to define and manage a process job.
+//////////////////////////////////////////////////////////////////////////
 class Application : public TimerHandler
 {
 public:
@@ -105,5 +101,3 @@ protected:
 	std::shared_ptr<CounterPtr> m_metricStartCount;
 	std::shared_ptr<GaugePtr> m_metricMemory;
 };
-
-#endif 

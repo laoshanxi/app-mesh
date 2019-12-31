@@ -1,5 +1,5 @@
-#ifndef APP_DOCKER_PROCESS_H
-#define APP_DOCKER_PROCESS_H
+#pragma once
+
 #include <map>
 #include <string>
 #include <algorithm>
@@ -10,7 +10,7 @@
 #include "MonitoredProcess.h"
 
 //////////////////////////////////////////////////////////////////////////
-// Docker Process Object
+/// Docker Process Object
 //////////////////////////////////////////////////////////////////////////
 class DockerProcess :public AppProcess
 {
@@ -41,5 +41,3 @@ private:
 
 	std::chrono::system_clock::time_point m_lastFetchTime;
 };
-
-#endif
