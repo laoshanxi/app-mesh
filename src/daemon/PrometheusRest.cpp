@@ -30,7 +30,7 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 		uri.set_port(port);
 		uri.set_path("/");
 		uri.set_scheme("http");
-		m_listener = std::make_unique<http_listener>(uri.to_uri());
+		m_listener = std::make_unique<web::http::experimental::listener::http_listener>(uri.to_uri());
 
 		m_listener->support(methods::GET, std::bind(&PrometheusRest::handle_get, this, std::placeholders::_1));
 		m_listener->support(methods::PUT, std::bind(&PrometheusRest::handle_put, this, std::placeholders::_1));

@@ -1,4 +1,6 @@
 #include <thread>
+#include <ace/Pipe.h>
+#include <ace/Process.h>
 #include "MonitoredProcess.h"
 #include "../common/Utility.h"
 #include "../common/HttpRequest.h"

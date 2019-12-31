@@ -2,14 +2,11 @@
 
 #include <map>
 #include <string>
-#include <algorithm>
-
 #include <ace/Process.h>
-
-#include "LinuxCgroup.h"
-#include "ResourceLimitation.h"
 #include "TimerHandler.h"
 
+class LinuxCgroup;
+class ResourceLimitation;
 //////////////////////////////////////////////////////////////////////////
 /// Process Object
 //////////////////////////////////////////////////////////////////////////

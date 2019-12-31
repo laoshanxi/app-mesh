@@ -1,4 +1,5 @@
 #include "ApplicationShortRun.h"
+#include "AppProcess.h"
 #include "Configuration.h"
 #include "../common/Utility.h"
 #include "../common/TimeZoneHelper.h"

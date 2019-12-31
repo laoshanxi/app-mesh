@@ -26,7 +26,7 @@
 #include <string>
 #include <assert.h>
 #include <memory>
-
+#include <fstream>
 #include "process.hpp"
 #include "../../common//Utility.h"
 

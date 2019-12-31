@@ -6,11 +6,6 @@
 #include <cpprest/http_listener.h> // HTTP server 
 #include "../common/HttpRequest.h"
 
-using namespace web;
-using namespace http;
-using namespace utility;
-using namespace http::experimental::listener;
-
 class CounterPtr;
 class PrometheusRest;
 class Application;
@@ -76,11 +71,11 @@ private:
 	void apiUnLockUser(const HttpRequest& message);
 	void apiHealth(const HttpRequest& message);
 
-	http_response requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
+	http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);
 
 private:
 	std::string m_listenAddress;
-	std::unique_ptr<http_listener> m_listener;
+	std::unique_ptr<web::http::experimental::listener::http_listener> m_listener;
 	// API functions
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restGetFunctions;
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restPutFunctions;

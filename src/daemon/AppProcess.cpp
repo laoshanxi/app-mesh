@@ -3,6 +3,7 @@
 #include "../common/Utility.h"
 #include "../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
+#include "ResourceLimitation.h"
 
 AppProcess::AppProcess(int cacheOutputLines)
 	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0)

@@ -4,26 +4,30 @@
 #include <cpprest/http_listener.h> // HTTP server 
 #include <cpprest/http_client.h>
 #include "RestHandler.h"
+#include "../common/Utility.h"
 #include "../prom_exporter/counter.h"
 #include "../prom_exporter/gauge.h"
 #include "PrometheusRest.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
+#include "../common/HttpRequest.h"
 #include "../common/Utility.h"
 #include "../common/jwt-cpp/jwt.h"
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
 #include "../common/HttpRequest.h"
 #include "../prom_exporter/text_serializer.h"
+#include "User.h"
+#include "Label.h"
+#include "Application.h"
 
 RestHandler::RestHandler(std::string ipaddress, int port)
-	:m_listenAddress(ipaddress)
+	:m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : m_listenAddress)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
 	// Construct URI
 	web::uri_builder uri;
-	if (m_listenAddress.empty()) m_listenAddress = "0.0.0.0";
 	uri.set_host(m_listenAddress);
 	uri.set_port(port);
 	uri.set_path("/");
@@ -36,7 +40,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 		}
 		// Support SSL
 		uri.set_scheme("https");
-		auto server_config = new http_listener_config();
+		auto server_config = new web::http::experimental::listener::http_listener_config();
 		server_config->set_ssl_context_callback(
 			[&](boost::asio::ssl::context& ctx) {
 				boost::system::error_code ec;
@@ -70,12 +74,12 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 				SSL_CTX_clear_options(ctx.native_handle(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
 			});
-		m_listener = std::make_unique<http_listener>(uri.to_uri(), *server_config);
+		m_listener = std::make_unique<web::http::experimental::listener::http_listener>(uri.to_uri(), *server_config);
 	}
 	else
 	{
 		uri.set_scheme("http");
-		m_listener = std::make_unique<http_listener>(uri.to_uri());
+		m_listener = std::make_unique<web::http::experimental::listener::http_listener>(uri.to_uri());
 	}
 
 	m_listener->support(methods::GET, std::bind(&RestHandler::handle_get, this, std::placeholders::_1));

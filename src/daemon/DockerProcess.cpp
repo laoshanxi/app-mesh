@@ -5,6 +5,7 @@
 #include "../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
 #include "MonitoredProcess.h"
+#include "ResourceLimitation.h"
 
 DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage, std::string appName)
 	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage),

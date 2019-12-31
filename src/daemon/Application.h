@@ -6,16 +6,14 @@
 #include <mutex>
 #include <chrono>
 #include <cpprest/json.h>
-
-#include "AppProcess.h"
-#include "DailyLimitation.h"
-#include "ResourceLimitation.h"
 #include "TimerHandler.h"
 
 class CounterPtr;
 class GaugePtr;
 class PrometheusRest;
-
+class AppProcess;
+class DailyLimitation;
+class ResourceLimitation;
 //////////////////////////////////////////////////////////////////////////
 /// An Application is used to define and manage a process job.
 //////////////////////////////////////////////////////////////////////////

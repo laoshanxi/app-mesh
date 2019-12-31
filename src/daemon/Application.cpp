@@ -2,6 +2,10 @@
 #include <assert.h>
 #include "Application.h"
 #include "ResourceCollection.h"
+#include "AppProcess.h"
+#include "DailyLimitation.h"
+#include "ResourceLimitation.h"
+#include "MonitoredProcess.h"
 #include "../common/Utility.h"
 #include "../common/TimeZoneHelper.h"
 #include "../prom_exporter/counter.h"

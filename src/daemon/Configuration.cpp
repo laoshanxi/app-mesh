@@ -2,10 +2,13 @@
 #include <ace/Signal.h>
 #include "Configuration.h"
 #include "../common/Utility.h"
+#include "Application.h"
 #include "ApplicationPeriodRun.h"
 #include "ResourceCollection.h"
 #include "PrometheusRest.h"
 #include "RestHandler.h"
+#include "Label.h"
+#include "User.h"
 
 // from main.cpp
 extern std::set<std::shared_ptr<RestHandler>> m_restList;

@@ -1,6 +1,8 @@
 #include "HealthCheckTask.h"
 #include "../common/Utility.h"
 #include "Configuration.h"
+#include "AppProcess.h"
+#include "Application.h"
 
 HealthCheckTask::HealthCheckTask()
 {

@@ -1,14 +1,11 @@
 #pragma once
 
-#include <map>
 #include <string>
-#include <algorithm>
 #include <chrono>
 #include <thread>
-#include <ace/Process.h>
 #include "AppProcess.h"
-#include "MonitoredProcess.h"
 
+class MonitoredProcess;
 //////////////////////////////////////////////////////////////////////////
 /// Docker Process Object
 //////////////////////////////////////////////////////////////////////////

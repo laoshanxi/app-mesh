@@ -11,6 +11,7 @@
 #include "PrometheusRest.h"
 #include "../common/Utility.h"
 #include "Application.h"
+#include "AppProcess.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "TimerHandler.h"

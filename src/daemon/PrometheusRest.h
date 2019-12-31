@@ -7,10 +7,6 @@
 #include "../common/HttpRequest.h"
 #include "../prom_exporter/family.h"
 
-using namespace web;
-using namespace http;
-using namespace utility;
-using namespace http::experimental::listener;
 namespace prometheus
 {
 	class Counter;
@@ -100,7 +96,7 @@ private:
 	void apiMetrics(const HttpRequest& message);
 
 private:
-	std::unique_ptr<http_listener> m_listener;
+	std::unique_ptr<web::http::experimental::listener::http_listener> m_listener;
 	// API functions
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restGetFunctions;
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restPutFunctions;

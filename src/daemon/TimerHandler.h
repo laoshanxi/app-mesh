@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 #include <ace/Event_Handler.h>
-#include <ace/Reactor.h>
 
 //////////////////////////////////////////////////////////////////////////
 /// Timer Event base class 

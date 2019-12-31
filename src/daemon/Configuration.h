@@ -4,14 +4,15 @@
 #include <memory>
 #include <vector>
 #include <mutex>
-#include <map>
+#include <set>
 #include <cpprest/json.h>
-#include "Application.h"
-#include "Role.h"
-#include "User.h"
-#include "Label.h"
 
 class RestHandler;
+class Roles;
+class Users;
+class User;
+class Label;
+class Application;
 //////////////////////////////////////////////////////////////////////////
 /// All the operation functions to access appmg.json
 //////////////////////////////////////////////////////////////////////////
