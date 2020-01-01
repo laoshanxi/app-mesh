@@ -75,6 +75,7 @@ namespace os {
 	// Snapshot of a process (modeled after /proc/[pid]/stat).
 	// For more information, see:
 	// http://www.kernel.org/doc/Documentation/filesystems/proc.txt
+	// https://blog.csdn.net/qq_34409701/article/details/52638631
 	struct ProcessStatus
 	{
 		ProcessStatus(

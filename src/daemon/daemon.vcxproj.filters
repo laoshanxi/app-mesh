@@ -45,6 +45,7 @@
     <ClCompile Include="PrometheusRest.cpp" />
     <ClCompile Include="Label.cpp" />
     <ClCompile Include="HealthCheckTask.cpp" />
+    <ClCompile Include="PersistManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -117,6 +118,7 @@
     <ClInclude Include="PrometheusRest.h" />
     <ClInclude Include="Label.h" />
     <ClInclude Include="HealthCheckTask.h" />
+    <ClInclude Include="PersistManager.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />

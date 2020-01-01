@@ -16,6 +16,8 @@
 #include "ResourceCollection.h"
 #include "TimerHandler.h"
 #include "HealthCheckTask.h"
+#include "PersistManager.h"
+#include "../common/os/linux.hpp"
 
 std::set< std::shared_ptr<RestHandler>> m_restList;
 
@@ -75,7 +77,7 @@ int main(int argc, char* argv[])
 					httpServerIp6 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
 					m_restList.insert(httpServerIp6);
 				}
-				catch (const std::exception& e)
+				catch (const std::exception & e)
 				{
 					LOG_ERR << fname << e.what();
 				}
@@ -89,9 +91,18 @@ int main(int argc, char* argv[])
 
 		// HA attach process to App
 		auto apps = config->getApps();
-		std::map<std::string, int> process;
-		AppProcess::getSysProcessList(process, nullptr);
-		std::for_each(apps.begin(), apps.end(), [&process](std::vector<std::shared_ptr<Application>>::reference p) { p->attach(process); });
+		auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
+		auto snap = Snapshot::FromJson(web::json::value::parse(snapfile.length() ? snapfile : std::string("{}")));
+		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p)
+			{
+				if (snap && snap->m_apps.count(p->getName()))
+				{
+					auto& appSnapshot = snap->m_apps.find(p->getName())->second;
+					auto stat = os::status(appSnapshot.m_pid);
+					if (stat && appSnapshot.m_startTime == (int64_t)stat->starttime) p->attach(appSnapshot.m_pid);
+				}
+				
+			});
 
 		config->registerPrometheus();
 
@@ -114,13 +125,14 @@ int main(int argc, char* argv[])
 			{
 				app->invoke();
 			}
-			
+
 			// health check
 			if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - healthCheckTime).count() >= DEFAULT_HEALTH_CHECK_INTERVAL)
 			{
 				HealthCheckTask::instance()->healthCheckAllApp();
 				healthCheckTime = std::chrono::system_clock::now();
 			}
+			PersistManager::instance()->persistSnapshot();
 		}
 	}
 	catch (const std::exception & e)

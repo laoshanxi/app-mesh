@@ -22,7 +22,7 @@
 #include "Application.h"
 
 RestHandler::RestHandler(std::string ipaddress, int port)
-	:m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : m_listenAddress)
+	:m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : ipaddress)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 

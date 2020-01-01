@@ -77,6 +77,7 @@ namespace std
 #define MAX_COMMAND_LINE_LENGH 2048
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
+#define SNAPSHOT_FILE_NAME ".snapshot"
 
 const char* GET_STATUS_STR(unsigned int status);
 

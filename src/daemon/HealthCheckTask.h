@@ -1,4 +1,5 @@
 #pragma once
+
 #include <memory>
 
 //////////////////////////////////////////////////////////////////////////
@@ -11,6 +12,7 @@ public:
 	virtual ~HealthCheckTask();
 
 	void healthCheckAllApp() const;
+
 	static std::unique_ptr<HealthCheckTask>& instance();
 };
 

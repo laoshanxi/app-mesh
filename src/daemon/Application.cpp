@@ -121,46 +121,15 @@ void Application::refreshPid()
 	if (m_metricMemory) m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
 }
 
-bool Application::attach(std::map<std::string, int>& process)
-{
-	const static char fname[] = "Application::attach() ";
-
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto iter = process.find(m_commandLine);
-	if (iter != process.end())
-	{
-		m_process->attach(iter->second);
-		m_pid = m_process->getpid();
-		LOG_INF << fname << "Process <" << m_commandLine << "> is running with pid <" << m_pid << ">.";
-		process.erase(iter);
-		return true;
-	}
-	return false;
-}
-
 bool Application::attach(int pid)
 {
 	const static char fname[] = "Application::attach() ";
 
-	std::map<std::string, int> process;
-	AppProcess::getSysProcessList(process, nullptr);
-	auto cmd = m_commandLine;
-	auto iter = std::find_if(process.begin(), process.end(),
-		[pid, &cmd](const std::pair<std::string, int> p) { return p.second == pid && p.first == cmd; }
-	);
-	if (iter != process.end())
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_process->attach(iter->second);
-		m_pid = m_process->getpid();
-		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
-		return true;
-	}
-	else
-	{
-		LOG_WAR << fname << "failed to attached pid <" << pid << "> to application " << m_name;
-		return false;
-	}
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_process->attach(pid);
+	m_pid = m_process->getpid();
+	LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
+	return true;
 }
 
 void Application::invoke()
@@ -313,6 +282,11 @@ void Application::checkAndUpdateHealth()
 		setHealth(false);
 	else if (m_healthCheckCmd.empty())
 		setHealth(true);
+}
+
+pid_t Application::getpid() const
+{
+	return m_pid;
 }
 
 std::string Application::getOutput(bool keepHistory)

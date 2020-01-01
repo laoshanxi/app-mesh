@@ -156,34 +156,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	return pid;
 }
 
-void AppProcess::getSysProcessList(std::map<std::string, int>& processList, const void * pt)
-{
-	const static char fname[] = "AppProcess::getSysProcessList() ";
-
-	std::shared_ptr<os::ProcessTree> ptree;
-	const os::ProcessTree* tree;
-	if (pt == nullptr)
-	{
-		// 1 is linux root process
-		ptree = os::pstree(1);
-		tree = ptree.get();
-	}
-	else
-	{
-		tree = (os::ProcessTree*)pt;
-	}
-
-	auto pname = Utility::stdStringTrim(tree->process.command);
-	processList[pname] = tree->process.pid;
-
-	LOG_DBG << fname << "Process: <" << pname << "> pid: " << tree->process.pid;
-
-	for (auto it = tree->children.begin(); it != tree->children.end(); ++it)
-	{
-		getSysProcessList(processList, &(*it));
-	}
-}
-
 std::string AppProcess::getOutputMsg()
 {
 	return std::string();

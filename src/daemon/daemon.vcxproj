@@ -82,6 +82,7 @@
     <ClCompile Include="LinuxCgroup.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MonitoredProcess.cpp" />
+    <ClCompile Include="PersistManager.cpp" />
     <ClCompile Include="PrometheusRest.cpp" />
     <ClCompile Include="ResourceCollection.cpp" />
     <ClCompile Include="ResourceLimitation.cpp" />
@@ -114,6 +115,7 @@
     <ClInclude Include="Label.h" />
     <ClInclude Include="LinuxCgroup.h" />
     <ClInclude Include="MonitoredProcess.h" />
+    <ClInclude Include="PersistManager.h" />
     <ClInclude Include="PrometheusRest.h" />
     <ClInclude Include="ResourceCollection.h" />
     <ClInclude Include="ResourceLimitation.h" />

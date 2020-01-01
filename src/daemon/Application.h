@@ -35,7 +35,6 @@ public:
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);
 
 	virtual void refreshPid();
-	bool attach(std::map<std::string, int>& process);
 	bool attach(int pid);
 
 	// Invoke immediately
@@ -57,6 +56,7 @@ public:
 	const std::string& getHealthCheck() { return m_healthCheckCmd; }
 	int getHealth() { return 1 - m_health; }
 	void checkAndUpdateHealth();
+	pid_t getpid() const;
 
 	// get normal stdout for running app
 	std::string getOutput(bool keepHistory);

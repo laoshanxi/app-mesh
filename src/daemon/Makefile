@@ -29,6 +29,7 @@ SRCS = \
 	Role.cpp \
 	Label.cpp \
 	HealthCheckTask.cpp \
+	PersistManager.cpp \
 	TimerHandler.cpp
 		
 

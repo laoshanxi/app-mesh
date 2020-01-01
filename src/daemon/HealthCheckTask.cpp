@@ -17,7 +17,7 @@ void HealthCheckTask::healthCheckAllApp() const
 	const static char fname[] = "HealthCheckTask::healthCheckAllApp() ";
 
 	auto apps = Configuration::instance()->getApps();
-	for (auto app : apps)
+	for (auto& app : apps)
 	{
 		if (app->getHealthCheck().empty()) continue;
 		try
@@ -30,6 +30,7 @@ void HealthCheckTask::healthCheckAllApp() const
 				ACE_exitcode exitCode;
 				proc->wait(&exitCode);
 				app->setHealth(0 == exitCode);
+				// proc->killgroup();
 				LOG_DBG << fname << app->getName() << " health check :" << app->getHealthCheck() << " return " << exitCode;
 			}
 			else
