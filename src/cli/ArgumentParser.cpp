@@ -24,7 +24,7 @@ const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv
 static std::string m_jwtToken;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled)
-	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0), m_sessionLogin(true)
+	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
 	, m_username(JWT_USER_NAME), m_userpwd(JWT_USER_KEY)
 {
 	po::options_description global("Global options");
