@@ -5,6 +5,21 @@
 #include "Application.h"
 #include "../common/os/linux.hpp"
 
+#define SNAPSHOT_JSON_KEY_pid "pid"
+#define SNAPSHOT_JSON_KEY_starttime "starttime"
+
+//////////////////////////////////////////////////////////////////////////
+/// HA for app process recover
+//////////////////////////////////////////////////////////////////////////
+PersistManager::PersistManager()
+{
+	m_persistedSnapshot = std::make_shared<Snapshot>();
+}
+
+PersistManager::~PersistManager()
+{
+}
+
 std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 {
 	auto snap = std::make_shared<Snapshot>();
@@ -12,15 +27,14 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 	for (auto& app : apps)
 	{
 		auto pid = app->getpid();
-		if (m_persistedSnapshot->m_apps.count(app->getName()) &&
-			m_persistedSnapshot->m_apps.find(app->getName())->second.m_pid == pid)
+		auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
+		if (snapAppIter != m_persistedSnapshot->m_apps.end() && snapAppIter->second.m_pid == pid)
 		{
 			// if application does not changed pid, do not need call stat
 			snap->m_apps.insert(std::pair<std::string, AppSnap>(
 				app->getName(),
-				AppSnap(m_persistedSnapshot->m_apps.find(app->getName())->second.m_pid,
-					m_persistedSnapshot->m_apps.find(app->getName())->second.m_startTime)
-				));
+				AppSnap(snapAppIter->second.m_pid, snapAppIter->second.m_startTime))
+			);
 		}
 		else
 		{
@@ -30,22 +44,13 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			{
 				snap->m_apps.insert(std::pair<std::string, AppSnap>(
 					app->getName(),
-					AppSnap(pid, (int64_t)stat->starttime)
-					));
+					AppSnap(pid, (int64_t)stat->starttime))
+				);
 			}
 		}
 
 	}
 	return std::move(snap);
-}
-
-PersistManager::PersistManager()
-{
-	m_persistedSnapshot = std::make_shared<Snapshot>();
-}
-
-PersistManager::~PersistManager()
-{
 }
 
 void PersistManager::persistSnapshot()
@@ -83,11 +88,6 @@ std::unique_ptr<PersistManager>& PersistManager::instance()
 	return singleton;
 }
 
-//////////////////////////////////////////////////////////////////////////
-/// HA for app process recover
-//////////////////////////////////////////////////////////////////////////
-#define SNAPSHOT_JSON_KEY_pid "pid"
-#define SNAPSHOT_JSON_KEY_starttime "starttime"
 bool Snapshot::operator==(const Snapshot& snapshort) const
 {
 	for (const auto& app : m_apps)
