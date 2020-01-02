@@ -1,18 +1,20 @@
-#include <algorithm>
 #include <assert.h>
+
+#include <algorithm>
+
 #include "Application.h"
-#include "ResourceCollection.h"
 #include "AppProcess.h"
+#include "Configuration.h"
 #include "DailyLimitation.h"
-#include "ResourceLimitation.h"
+#include "DockerProcess.h"
 #include "MonitoredProcess.h"
-#include "../common/Utility.h"
+#include "PrometheusRest.h"
+#include "ResourceCollection.h"
+#include "ResourceLimitation.h"
 #include "../common/TimeZoneHelper.h"
+#include "../common/Utility.h"
 #include "../prom_exporter/counter.h"
 #include "../prom_exporter/gauge.h"
-#include "Configuration.h"
-#include "DockerProcess.h"
-#include "PrometheusRest.h"
 
 Application::Application()
 	:m_status(STATUS::ENABLED), m_health(true), m_appId(Utility::createUUID())

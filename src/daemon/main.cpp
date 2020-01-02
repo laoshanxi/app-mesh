@@ -1,23 +1,26 @@
 #include <stdio.h>
+
 #include <iostream>
 #include <string>
 #include <chrono>
 #include <thread>
 #include <set>
 #include <fstream>
+
 #include <ace/Init_ACE.h>
 #include <pplx/threadpool.h>
-#include "RestHandler.h"
-#include "PrometheusRest.h"
-#include "../common/Utility.h"
+
 #include "Application.h"
 #include "AppProcess.h"
 #include "Configuration.h"
-#include "ResourceCollection.h"
-#include "TimerHandler.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
+#include "PrometheusRest.h"
+#include "ResourceCollection.h"
+#include "RestHandler.h"
+#include "TimerHandler.h"
 #include "../common/os/linux.hpp"
+#include "../common/Utility.h"
 
 std::set< std::shared_ptr<RestHandler>> m_restList;
 
