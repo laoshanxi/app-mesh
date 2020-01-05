@@ -1,6 +1,7 @@
 #!/bin/sh
 
 mkdir ssl
+cd ssl
 
 yum install -y openssl-devel gcc-c++
 wget https://www.openssl.org/source/openssl-1.1.1d.tar.gz
