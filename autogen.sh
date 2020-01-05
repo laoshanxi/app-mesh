@@ -21,11 +21,14 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y https://centos7.iuscommunity.org/ius-release.rpm
 
 	yum install -y git222 make cmake3 gcc-c++
+	yum install -y dos2unix
         CMAKE=$(which cmake3)
 
 	yum install -y boost169-devel boost169-static
 	export BOOST_LIBRARYDIR=/usr/lib64/boost169
 	export BOOST_INCLUDEDIR=/usr/include/boost169
+	ln -s /usr/include/boost169/boost /usr/local/include/boost
+	ln -s /usr/lib64/boost169/ /usr/local/lib64/boost
 
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
 	yum install -y ruby rubygems ruby-devel
