@@ -24,6 +24,7 @@ if [ -f "/usr/bin/yum" ]; then
         CMAKE=$(which cmake3)
 
 	yum install -y boost169-devel.x86_64
+	export BOOST_INCLUDEDIR=/usr/include/boost169/
 
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
 	yum install -y ruby rubygems ruby-devel
