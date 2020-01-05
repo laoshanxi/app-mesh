@@ -24,7 +24,8 @@ if [ -f "/usr/bin/yum" ]; then
         CMAKE=$(which cmake3)
 
 	yum install -y boost169-devel boost169-static
-	export BOOST_OPTS="-DBOOST_INCLUDEDIR=/usr/include/boost169/ -DBOOST_LIBRARYDIR=/usr/lib64/boost169/ -DBoost_USE_STATIC_LIBS=OFF"
+	ln -s /usr/include/boost169/ /usr/include/boost
+	ln -s /usr/lib64/boost169/ /usr/lib64/boost
 
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
 	yum install -y ruby rubygems ruby-devel
@@ -49,7 +50,7 @@ git clone https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion" $BOOST_OPTS 
+$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion"
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so
