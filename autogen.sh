@@ -13,16 +13,24 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-#RHEL
+MAKE=
+
 if [ -f "/usr/bin/yum" ]; then
-	yum install -y dos2unix git openssl-devel gcc-c++ make cmake
+	#RHEL
+	yum install -y epel-release
+	yum install -y https://centos7.iuscommunity.org/ius-release.rpm
+
+	yum install -y git222 make cmake3 gcc-c++
+        CMAKE=$(which cmake3)
+
+	yum install -y boost169-devel.x86_64
+
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
 	yum install -y ruby rubygems ruby-devel
 	yum install -y rpm-build
-fi
-
-#Ubuntu
-if [ -f "/usr/bin/apt" ]; then
+elif [ -f "/usr/bin/apt" ]; then
+	#Ubuntu
+	CMAKE=$(which cmake)
 	apt install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
 	apt install -y libboost-all-dev libace-dev 
 	#apt install -y libcpprest-dev libjsoncpp-dev liblog4cpp5-dev
@@ -33,26 +41,6 @@ fi
 gem install fpm
 
 # build boost_1_68_0 on RHEL
-if [ -f "/usr/bin/yum" ]; then
-	# BOOST:
-	# https://www.cnblogs.com/eagle6688/p/5840773.html
-	wget https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.gz
-	tar zxvf boost_1_68_0.tar.gz
-	cd ./boost_1_68_0
-	./bootstrap.sh
-	./b2
-	./b2 install
-	ls -al /usr/local/lib*/libboost_system.so.1.68.0
-	cd $ROOTDIR
-fi
-
-CMAKE=$(which cmake)
-# update cmake on RHEL
-if [ -f "/usr/bin/yum" ]; then
-	yum install epel-release -y
-	yum install cmake3 -y
-	CMAKE=$(which cmake3)
-fi
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
