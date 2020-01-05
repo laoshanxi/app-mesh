@@ -23,7 +23,7 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y git222 make cmake3 gcc-c++
         CMAKE=$(which cmake3)
 
-	yum install -y boost169-devel.x86_64
+	yum install -y boost169-devel boost169-static
 	export BOOST_INCLUDEDIR=/usr/include/boost169/
 
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
