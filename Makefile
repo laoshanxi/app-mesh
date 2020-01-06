@@ -33,8 +33,6 @@ build_dir:
 	env LD_LIBRARY_PATH=${LDPATH} \
 	ldd ./src/cli/appc | grep boost | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./src/daemon/appsvc | grep jsoncpp | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
-	env LD_LIBRARY_PATH=${LDPATH} \
 	ldd ./src/daemon/appsvc | grep ACE | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
 	ldd ./src/daemon/appsvc | grep cpprest | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'

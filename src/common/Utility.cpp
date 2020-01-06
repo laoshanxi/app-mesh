@@ -22,7 +22,6 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/RollingFileAppender.hh>
 #include <log4cpp/OstreamAppender.hh>
-#include <json/reader.h>
 #include <ace/UUID.h>
 
 #include "../common/Utility.h"
@@ -628,18 +627,75 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string>& envMa
 
 std::string Utility::prettyJson(const std::string& jsonStr)
 {
-	static Json::CharReaderBuilder builder;
-	static Json::CharReader* reader(builder.newCharReader());
-	Json::Value root;
-	Json::String errs;
-	if (reader->parse(jsonStr.c_str(), jsonStr.c_str() + std::strlen(jsonStr.c_str()), &root, &errs))
+	// https://github.com/KrzysztofSzewczyk/json-beautifier/blob/master/beautify.c
+	std::ostringstream result;
+	std::stringstream stream;
+	stream << jsonStr;
+
+	const char ident = '\t';
+	size_t level = 0;
+	char c;
+	bool ignore_next = false, in_string = false;
+
+	while (!stream.eof() && stream.get(c))
 	{
-		return std::move(root.toStyledString());
+
+		switch (c)
+		{
+		case '[':
+		case '{':
+			result << (c);
+			if (!in_string)
+			{
+				++level;
+				result << ('\n');
+				for (size_t i = 0; i < level; i++)
+					result << (ident);
+			}
+			break;
+		case ']':
+		case '}':
+			if (!in_string)
+			{
+				if (level != 0)
+					level--;
+				result << ('\n');
+				for (size_t i = 0; i < level; i++)
+					result << (ident);
+			}
+			result << (c);
+			break;
+		case ',':
+			result << (c);
+			if (!in_string) {
+				result << ('\n');
+				for (size_t i = 0; i < level; i++)
+					result << (ident);
+			}
+			break;
+		case '\\':
+			ignore_next = !ignore_next;
+			result << (c);
+			break;
+		case '"':
+			if (!ignore_next) in_string = !in_string;
+			result << (c);
+			break;
+		case ' ':
+			if (in_string) result << (c);
+			break;
+		case ':':
+			result << (c);
+			if (!in_string)	result << (' ');
+			break;
+		case '\r':
+		case '\n':
+			break;
+		default:
+			if (ignore_next) ignore_next = false;
+			result << (c);
+			break;
+		}
 	}
-	else
-	{
-		std::string msg = "Failed to parse json : " + jsonStr + " with error :" + errs;
-		LOG_ERR << msg;
-		throw std::invalid_argument(msg);
-	}
+	return result.str();
 }

@@ -451,7 +451,6 @@ appmgr_prom_process_memory_gauge{application="timer",host="appmgr",pid="10791"} 
 - [ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Microsoft/cpprestsdk](https://github.com/Microsoft/cpprestsdk)
 - [boost](https://github.com/boostorg/boost)
-- [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
 - [HowardHinnant/date](https://github.com/HowardHinnant/date)

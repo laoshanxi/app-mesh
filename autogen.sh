@@ -37,7 +37,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	CMAKE=$(which cmake)
 	apt install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
 	apt install -y libboost-all-dev libace-dev 
-	#apt install -y libcpprest-dev libjsoncpp-dev liblog4cpp5-dev
+	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 fi
 
@@ -69,17 +69,6 @@ make install
 ls -al /usr/local/lib*/liblog4cpp.a
 cd $ROOTDIR
 	
-# build jsoncpp:
-git clone https://github.com/open-source-parsers/jsoncpp.git jsoncpp
-cd jsoncpp
-mkdir -p build/release
-cd build/release
-$CMAKE -DCMAKE_BUILD_TYPE=release -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DARCHIVE_INSTALL_DIR=. -G "Unix Makefiles" ../..
-make
-make install
-ls -al /usr/local/lib*/libjsoncpp.a
-cd $ROOTDIR
-
 # build ACE on RHEL
 if [ -f "/usr/bin/yum" ]; then
 	# ubuntu does not need build ACE
