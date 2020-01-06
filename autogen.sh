@@ -13,16 +13,15 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-MAKE=
-
+CMAKE=
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
 	yum install -y epel-release
 	yum install -y https://centos7.iuscommunity.org/ius-release.rpm
 
 	yum install -y git222 make cmake3 gcc-c++
-	yum install -y dos2unix
-        CMAKE=$(which cmake3)
+	CMAKE=$(which cmake3)
+	yum install -y dos2unix openssl-devel
 
 	yum install -y boost169-devel boost169-static
 	export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -44,8 +43,6 @@ fi
 
 #install fpm
 gem install fpm
-
-# build boost_1_68_0 on RHEL
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
