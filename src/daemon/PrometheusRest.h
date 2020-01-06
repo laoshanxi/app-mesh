@@ -102,7 +102,7 @@ private:
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restPutFunctions;
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restPstFunctions;
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restDelFunctions;
-
+	bool m_enabled;
 	std::recursive_mutex m_mutex;
 
 	// prometheus

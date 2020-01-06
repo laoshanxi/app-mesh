@@ -9,7 +9,7 @@
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest(std::string ipaddress, int port)
-	:m_scrapeCounter(0)
+	:m_enabled(false), m_scrapeCounter(0)
 {
 	const static char fname[] = "PrometheusRest::PrometheusRest() ";
 	m_promRegistry = std::make_shared<prometheus::Registry>();
@@ -41,6 +41,7 @@ PrometheusRest::PrometheusRest(std::string ipaddress, int port)
 		bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
 
 		this->open();
+		m_enabled = true;
 		LOG_INF << fname << "Listening for requests at:" << uri.to_string();
 	}
 	else
@@ -200,11 +201,13 @@ void PrometheusRest::initMetrics()
 
 std::shared_ptr<CounterPtr> PrometheusRest::createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
+	if (!m_enabled) return nullptr;
 	return std::make_shared<CounterPtr>(m_promRegistry, metricName, metricHelp, labels);
 }
 
 std::shared_ptr<GaugePtr> PrometheusRest::createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
 {
+	if (!m_enabled) return nullptr;
 	return std::make_shared<GaugePtr>(m_promRegistry, metricName, metricHelp, labels);
 }
 
