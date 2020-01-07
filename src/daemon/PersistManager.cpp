@@ -26,6 +26,8 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 	auto apps = Configuration::instance()->getApps();
 	for (auto& app : apps)
 	{
+		if (!app->isEnabled()) continue;
+
 		auto pid = app->getpid();
 		auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
 		if (snapAppIter != m_persistedSnapshot->m_apps.end() && snapAppIter->second.m_pid == pid)
