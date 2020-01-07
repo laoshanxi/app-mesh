@@ -639,7 +639,6 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 
 	while (!stream.eof() && stream.get(c))
 	{
-
 		switch (c)
 		{
 		case '[':
