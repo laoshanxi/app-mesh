@@ -193,7 +193,7 @@ namespace os {
 	inline std::shared_ptr<ProcessStatus> status(pid_t pid)
 	{
 		const static char fname[] = "proc::status() ";
-
+		if (pid <= 0) return nullptr;
 		std::string path = "/proc/" + std::to_string(pid) + "/stat";
 
 		std::string read = Utility::readFile(path);
