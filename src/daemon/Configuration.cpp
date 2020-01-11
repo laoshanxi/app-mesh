@@ -331,6 +331,16 @@ std::set<std::string> Configuration::getUserPermissions(const std::string& userN
 	return std::move(permissionSet);
 }
 
+const std::shared_ptr<Users> Configuration::getUsers() const
+{
+	return m_security->m_jwtUsers;
+}
+
+const std::shared_ptr<Roles> Configuration::getRoles() const
+{
+	return m_security->m_roles;
+}
+
 const std::string& Configuration::getJwtRedirectUrl()
 {
 	return m_security->m_JwtRedirectUrl;

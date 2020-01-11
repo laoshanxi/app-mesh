@@ -21,7 +21,7 @@
     "Users": {
       "admin": {
         "key": "Admin123",
-        "roles": [ "manage", "view" ],
+        "roles": [ "manage", "view", "usermgr" ],
         "locked": false
       },
       "user": {
@@ -60,6 +60,10 @@
         "run-app-async-output",
         "label-view",
         "config-view"
+      ],
+      "usermgr": [
+        "add-user",
+        "delete-user"
       ]
     }
   },

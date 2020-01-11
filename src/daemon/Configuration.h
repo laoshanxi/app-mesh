@@ -93,6 +93,8 @@ public:
 
 	const std::shared_ptr<User> getUserInfo(const std::string& userName);
 	std::set<std::string> getUserPermissions(const std::string& userName);
+	const std::shared_ptr<Users> getUsers() const;
+	const std::shared_ptr<Roles> getRoles() const;
 	const std::string& getJwtRedirectUrl();
 
 	void dump();

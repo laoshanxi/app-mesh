@@ -56,23 +56,28 @@ std::shared_ptr<User> Users::getUser(std::string name)
 	}
 }
 
-void Users::addUser(const web::json::value& obj, std::shared_ptr<Roles> roles)
+void Users::addUsers(const web::json::value& obj, std::shared_ptr<Roles> roles)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (!obj.is_null() && obj.is_object())
 	{
 		auto users = obj.as_object();
 		for (auto userJson : users)
 		{
-			auto userName = GET_STD_STRING(userJson.first);
-			auto user = User::FromJson(userName, userJson.second, roles);
-			m_users[userName] = user;
+			addUser(GET_STD_STRING(userJson.first), userJson.second, roles);
 		}
 	}
 	else
 	{
 		throw std::invalid_argument("incorrect user json section");
 	}
+}
+
+void Users::addUser(const std::string userName, const web::json::value& userJson, std::shared_ptr<Roles> roles)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_users.count(userName)) throw std::invalid_argument("user already exist");
+	auto user = User::FromJson(userName, userJson, roles);
+	m_users[userName] = user;
 }
 
 void Users::delUser(std::string name)
@@ -110,7 +115,7 @@ web::json::value User::AsJson()
 	return result;
 }
 
-std::shared_ptr<User> User::FromJson(std::string userName, const web::json::value& obj, std::shared_ptr<Roles> roles)
+std::shared_ptr<User> User::FromJson(std::string userName, const web::json::value& obj, const std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<User> result;
 	if (!obj.is_null())

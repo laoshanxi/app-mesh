@@ -66,9 +66,11 @@ private:
 	void apiGetPermissions(const HttpRequest& message);
 	void apiGetBasicConfig(const HttpRequest& message);
 	void apiSetBasicConfig(const HttpRequest& message);
-	void apiChangePassword(const HttpRequest& message);
-	void apiLockUser(const HttpRequest& message);
-	void apiUnLockUser(const HttpRequest& message);
+	void apiUserChangePwd(const HttpRequest& message);
+	void apiUserLock(const HttpRequest& message);
+	void apiUserUnlock(const HttpRequest& message);
+	void apiUserAdd(const HttpRequest& message);
+	void apiUserDel(const HttpRequest& message);
 	void apiHealth(const HttpRequest& message);
 
 	http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);

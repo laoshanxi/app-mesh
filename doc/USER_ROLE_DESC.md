@@ -19,45 +19,55 @@
 ### User and Role configure json sample
 
 ```shell
-"JWT": {
-    "admin": {
-      "name": "admin",
-      "key": "Admin123$",
-      "roles": [ "manage" ]
+ "Security": {
+    "Users": {
+      "admin": {
+        "key": "Admin123",
+        "roles": [ "manage", "view", "usermgr" ],
+        "locked": false
+      },
+      "user": {
+        "key": "password",
+        "roles": [ "view" ],
+        "locked": false
+      },
+      "test": {
+        "key": "test",
+        "roles": [],
+        "locked": true
+      }
     },
-    "user": {
-      "name": "user",
-      "key": "User123$",
-      "roles": [ "view" ]
+    "Roles": {
+      "manage": [
+        "app-reg",
+        "app-control",
+        "app-delete",
+        "run-app-async",
+        "run-app-sync",
+        "file-download",
+        "file-upload",
+        "label-view",
+        "label-set",
+        "label-delete",
+        "config-set",
+        "change-passwd",
+        "lock-user",
+        "unlock-user"
+      ],
+      "view": [
+        "view-app",
+        "view-app-output",
+        "view-all-app",
+        "view-host-resource",
+        "run-app-async-output",
+        "label-view",
+        "config-view"
+      ],
+      "usermgr": [
+        "add-user",
+        "delete-user"
+      ]
     }
-  },
- "Roles": {
-    "manage": [
-      "app-reg",
-      "app-reg-shell",
-      "app-control",
-      "app-delete",
-      "run-app-async",
-      "run-app-sync",
-      "file-download",
-      "file-upload",
-      "label-view",
-      "label-set",
-      "label-delete",
-      "config-set",
-      "change-passwd",
-      "lock-user",
-      "unlock-user"
-    ],
-    "view": [
-      "view-app",
-      "view-app-output",
-      "view-all-app",
-      "view-host-resource",
-      "run-app-async-output",
-      "label-view",
-      "config-view"
-    ]
   }
 ```
 
@@ -84,6 +94,10 @@
 | POST    | /app-manager/config | `config-view`  |
 | GET    | /app-manager/config | `config-set`  |
 | POST    | /user/admin/passwd | `change-passwd`  |
+| POST    | /user/usera/lock | `lock-user`  |
+| POST    | /user/usera/unlock | `unlock-user`  |
+| DEL    | /user/usera | `delete-user`  |
+| PUT    | /user/usera | `add-user`  |
 
 
 ### Command line authentication

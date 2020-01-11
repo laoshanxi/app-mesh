@@ -267,3 +267,5 @@ public:
 #define PERMISSION_KEY_change_passwd  			"change-passwd"
 #define PERMISSION_KEY_lock_user  				"lock-user"
 #define PERMISSION_KEY_unlock_user  			"unlock-user"
+#define PERMISSION_KEY_add_user  				"add-user"
+#define PERMISSION_KEY_delete_user  			"delete-user"

@@ -143,9 +143,11 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, "/app-manager/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
 	// 8. Security
-	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiChangePassword, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiLockUser, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUnLockUser, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiUserChangePwd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiUserLock, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/user/([^/\*]+))", std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/user/([^/\*]+))", std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
 
 	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
@@ -709,9 +711,9 @@ void RestHandler::apiSetBasicConfig(const HttpRequest& message)
 	apiGetBasicConfig(message);
 }
 
-void RestHandler::apiChangePassword(const HttpRequest& message)
+void RestHandler::apiUserChangePwd(const HttpRequest& message)
 {
-	const static char fname[] = "RestHandler::apiChangePassword() ";
+	const static char fname[] = "RestHandler::apiUserChangePwd() ";
 
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	permissionCheck(message, PERMISSION_KEY_change_passwd);
@@ -747,9 +749,9 @@ void RestHandler::apiChangePassword(const HttpRequest& message)
 	message.reply(status_codes::OK, "password changed success");
 }
 
-void RestHandler::apiLockUser(const HttpRequest& message)
+void RestHandler::apiUserLock(const HttpRequest& message)
 {
-	const static char fname[] = "RestHandler::apiLockUser() ";
+	const static char fname[] = "RestHandler::apiUserLock() ";
 
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	permissionCheck(message, PERMISSION_KEY_lock_user);
@@ -779,9 +781,9 @@ void RestHandler::apiLockUser(const HttpRequest& message)
 	message.reply(status_codes::OK);
 }
 
-void RestHandler::apiUnLockUser(const HttpRequest& message)
+void RestHandler::apiUserUnlock(const HttpRequest& message)
 {
-	const static char fname[] = "RestHandler::apiUnLockUser() ";
+	const static char fname[] = "RestHandler::apiUserUnlock() ";
 
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	permissionCheck(message, PERMISSION_KEY_lock_user);
@@ -804,6 +806,52 @@ void RestHandler::apiUnLockUser(const HttpRequest& message)
 	Configuration::instance()->saveConfigToDisk();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
+	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiUserAdd(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiUserAdd() ";
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	permissionCheck(message, PERMISSION_KEY_add_user);
+
+	auto vec = Utility::splitString(path, "/");
+	if (vec.size() != 2)
+	{
+		throw std::invalid_argument("failed to get user name from path");
+	}
+	auto pathUserName = vec[1];
+	auto tokenUserName = getTokenUser(message);
+
+	Configuration::instance()->getUsers()->addUser(pathUserName, message.extract_json(true).get(), Configuration::instance()->getRoles());
+
+	Configuration::instance()->saveConfigToDisk();
+
+	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
+	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiUserDel(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiUserDel() ";
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	permissionCheck(message, PERMISSION_KEY_delete_user);
+
+	auto vec = Utility::splitString(path, "/");
+	if (vec.size() != 2)
+	{
+		throw std::invalid_argument("failed to get user name from path");
+	}
+	auto pathUserName = vec[1];
+	auto tokenUserName = getTokenUser(message);
+
+	Configuration::instance()->getUsers()->delUser(pathUserName);
+
+	Configuration::instance()->saveConfigToDisk();
+
+	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
 	message.reply(status_codes::OK);
 }
 
