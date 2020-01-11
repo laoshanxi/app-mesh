@@ -21,7 +21,6 @@ Configuration::Configuration()
 	m_label = std::make_unique<Label>();
 	m_security = std::make_shared<JsonSecurity>();
 	m_rest = std::make_shared<JsonRest>();
-	m_roles = std::make_shared<Roles>();
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
 }
 
@@ -69,12 +68,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		config->m_scheduleInterval = DEFAULT_SCHEDULE_INTERVAL;
 		LOG_INF << "Default value <" << config->m_scheduleInterval << "> will by used for ScheduleIntervalSec";
 	}
-	// Roles
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))
-	{
-		config->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
-	}
-
+	
 	// REST
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
@@ -84,7 +78,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	// Security
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
 	{
-		config->m_security = JsonSecurity::FromJson(jsonValue.at(JSON_KEY_Security), config->m_roles);
+		config->m_security = JsonSecurity::FromJson(jsonValue.at(JSON_KEY_Security));
 	}
 	// Labels	
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
@@ -158,8 +152,6 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_Description] = web::json::value::string(GET_STRING_T(m_hostDescription));
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(GET_STRING_T(m_logLevel));
-	//Roles
-	result[JSON_KEY_Roles] = m_roles->AsJson();
 
 	// REST
 	result[JSON_KEY_REST] = m_rest->AsJson();
@@ -501,12 +493,14 @@ void Configuration::hotUpdate(const web::json::value& config)
 		if (HAS_JSON_FIELD(sec, JSON_KEY_JWTRedirectUrl)) SET_COMPARE(this->m_security->m_JwtRedirectUrl, newConfig->m_security->m_JwtRedirectUrl);
 		if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
 		if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users)) SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
+
+		// Roles
+		if (HAS_JSON_FIELD(sec, JSON_KEY_Roles)) SET_COMPARE(this->m_security->m_roles, newConfig->m_security->m_roles);
 	}
 
 	// Labels
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
-	// Roles
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) SET_COMPARE(this->m_roles, newConfig->m_roles);
+	
 	ResourceCollection::instance()->getHostName(true);
 
 	this->dump();
@@ -645,12 +639,14 @@ Configuration::JsonSsl::JsonSsl()
 {
 }
 
-std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJson(const web::json::value& jsonValue, std::shared_ptr<Roles> roles)
+std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJson(const web::json::value& jsonValue)
 {
 	auto security = std::make_shared<Configuration::JsonSecurity>();
+	// Roles
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) security->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
 	security->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users)) security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), roles);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users)) security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), security->m_roles);
 	return security;
 }
 
@@ -663,10 +659,13 @@ web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
 	{
 		result[JSON_KEY_JWT_Users] = m_jwtUsers->AsJson();
 	}
+	//Roles
+	result[JSON_KEY_Roles] = m_roles->AsJson();
 	return result;
 }
 
 Configuration::JsonSecurity::JsonSecurity()
 	:m_jwtEnabled(true)
 {
+	m_roles = std::make_shared<Roles>();
 }

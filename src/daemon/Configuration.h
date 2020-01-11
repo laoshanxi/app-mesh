@@ -40,11 +40,12 @@ class Configuration
 		JsonRest();
 	};
 	struct JsonSecurity {
-		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value& jobj, std::shared_ptr<Roles> roles);
+		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value& jobj);
 		web::json::value AsJson(bool returnRuntimeInfo);
 		bool m_jwtEnabled;
 		std::string m_JwtRedirectUrl;
 		std::shared_ptr<Users> m_jwtUsers;
+		std::shared_ptr<Roles> m_roles;
 		JsonSecurity();
 	};
 public:
@@ -102,7 +103,7 @@ private:
 	int m_scheduleInterval;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonSecurity> m_security;
-	std::shared_ptr<Roles> m_roles;
+	
 	std::string m_logLevel;
 
 	std::recursive_mutex m_mutex;
