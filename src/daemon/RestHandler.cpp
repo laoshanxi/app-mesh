@@ -702,7 +702,7 @@ void RestHandler::apiSetBasicConfig(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_set);
 
-	Configuration::instance()->hotUpdate(message.extract_json().get(), true);
+	Configuration::instance()->hotUpdate(message.extract_json().get());
 
 	Configuration::instance()->saveConfigToDisk();
 

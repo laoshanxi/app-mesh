@@ -307,7 +307,7 @@ std::string Utility::convertTime2Str(const std::chrono::system_clock::time_point
 	// put_time is not ready when gcc version < 5
 	auto timet = std::chrono::system_clock::to_time_t(time);
 	std::tm timetm = *std::localtime(&timet);
-	strftime(buff, sizeof(buff), "%Y-%m-%d %H:%M:%S", &timetm);
+	strftime(buff, sizeof(buff), DATE_TIME_FORMAT, &timetm);
 	return std::string(buff);
 }
 
@@ -371,7 +371,7 @@ std::string Utility::getSystemPosixTimeZone()
 std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point& time)
 {
 	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
-	return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(time));
+	return date::format(DATE_TIME_FORMAT_RFC3339, std::chrono::time_point_cast<std::chrono::milliseconds>(time));
 }
 
 std::string Utility::getFmtTimeSeconds(const std::chrono::system_clock::time_point& time, const char* fmt)
@@ -447,7 +447,7 @@ std::string Utility::readFileCpp(const std::string& path)
 
 	if (!Utility::isFileExist(path))
 	{
-		LOG_ERR << fname << "File not exist :" << path;
+		LOG_WAR << fname << "File not exist :" << path;
 		return std::string();
 	}
 

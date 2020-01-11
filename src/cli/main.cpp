@@ -18,8 +18,8 @@ int main(int argc, const char* argv[])
 	PRINT_VERSION();
 	try
 	{
-		int port;
-		bool ssl;
+		int port = DEFAULT_REST_LISTEN_PORT;
+		bool ssl = false;
 		crossplat::threadpool::initialize_with_threads(1);
 		getListenPort(port, ssl);
 		ArgumentParser parser(argc, argv, port, ssl);
@@ -36,7 +36,6 @@ int main(int argc, const char* argv[])
 void getListenPort(int& port, bool& sslEnabled)
 {
 	// Get listen port
-	port = DEFAULT_REST_LISTEN_PORT;
 	web::json::value jsonValue;
 	auto configPath = Utility::getSelfFullPath();
 	configPath[configPath.length() - 1] = '\0';
@@ -53,11 +52,17 @@ void getListenPort(int& port, bool& sslEnabled)
 	if (file.length() > 0)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(file));
-		auto p = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
-		if (p > 1000 && p < 65534)
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST) &&
+			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_RestListenPort))
 		{
-			port = p;
+			auto rest = jsonValue.at(JSON_KEY_REST);
+			port = GET_JSON_INT_VALUE(rest, JSON_KEY_RestListenPort);
+			// SSL
+			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL) &&
+				HAS_JSON_FIELD(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled))
+			{
+				sslEnabled = GET_JSON_BOOL_VALUE(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled);
+			}
 		}
-		sslEnabled = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled);
 	}
 }

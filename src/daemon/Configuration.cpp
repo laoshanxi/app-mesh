@@ -15,11 +15,13 @@ extern std::set<std::shared_ptr<RestHandler>> m_restList;
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
-	:m_threadPoolSize(6), m_scheduleInterval(0), m_restListenPort(DEFAULT_REST_LISTEN_PORT),
-	m_promListenPort(DEFAULT_PROM_LISTEN_PORT), m_sslEnabled(false), m_restEnabled(true), m_jwtEnabled(true)
+	:m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
 	m_label = std::make_unique<Label>();
+	m_security = std::make_shared<JsonSecurity>();
+	m_rest = std::make_shared<JsonRest>();
+	m_roles = std::make_shared<Roles>();
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
 }
 
@@ -56,40 +58,41 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
 	}
 	auto config = std::make_shared<Configuration>();
+
+	// Global Prameters
 	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
-	config->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
-	config->m_RestListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, config->m_sslEnabled);
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, config->m_restEnabled);
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, config->m_jwtEnabled);
-	config->m_sslCertificateFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
-	config->m_sslCertificateKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{
 		// Use default value instead
 		config->m_scheduleInterval = DEFAULT_SCHEDULE_INTERVAL;
 		LOG_INF << "Default value <" << config->m_scheduleInterval << "> will by used for ScheduleIntervalSec";
 	}
-	if (config->m_restListenPort < 1000 || config->m_restListenPort > 65534)
+	// Roles
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))
 	{
-		config->m_restListenPort = DEFAULT_REST_LISTEN_PORT;
-		LOG_INF << "Default value <" << config->m_restListenPort << "> will by used for RestListenPort";
+		config->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
 	}
-	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, config->m_promListenPort);
-	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
-	if (threadpool > 0 && threadpool < 40)
+
+	// REST
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
-		config->m_threadPoolSize = threadpool;
+		config->m_rest = JsonRest::FromJson(jsonValue.at(JSON_KEY_REST));
 	}
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
 
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))	config->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) config->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT), config->m_roles);
+	// Security
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
+	{
+		config->m_security = JsonSecurity::FromJson(jsonValue.at(JSON_KEY_Security), config->m_roles);
+	}
+	// Labels	
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
+	{
+		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
+	}
 
-	config->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
-
+	// Applications
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications))
 	{
 		auto& jArr = jsonValue.at(JSON_KEY_Applications).as_array();
@@ -146,35 +149,26 @@ void Configuration::handleReloadSignal()
 
 web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 {
-	// get applications
-	auto apps = getApplicationJson(false);
-
-	// get global parameters
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
+	// Applications
+	result[JSON_KEY_Applications] = getApplicationJson(false);
 
+	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(GET_STRING_T(m_hostDescription));
-	result[JSON_KEY_RestListenPort] = web::json::value::number(m_restListenPort);
-	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
-	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_RestListenAddress);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(GET_STRING_T(m_logLevel));
+	//Roles
+	result[JSON_KEY_Roles] = m_roles->AsJson();
 
-	result[JSON_KEY_RestEnabled] = web::json::value::boolean(m_restEnabled);
-	result[JSON_KEY_SSLEnabled] = web::json::value::boolean(m_sslEnabled);
-	result[JSON_KEY_SSLCertificateFile] = web::json::value::string(GET_STRING_T(m_sslCertificateFile));
-	result[JSON_KEY_SSLCertificateKeyFile] = web::json::value::string(GET_STRING_T(m_sslCertificateKeyFile));
-	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
-	result[JSON_KEY_HttpThreadPoolSize] = web::json::value::number((uint32_t)m_threadPoolSize);
-	if (!returnRuntimeInfo)
-	{
-		result[JSON_KEY_JWT] = m_jwtUsers->AsJson();
-		result[JSON_KEY_Roles] = m_roles->AsJson();
-	}
+	// REST
+	result[JSON_KEY_REST] = m_rest->AsJson();
 
-	result[JSON_KEY_Applications] = apps;
-	result[JSON_KEY_Labels] = getLabel()->AsJson();
-	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(GET_STRING_T(m_JwtRedirectUrl));
+	// Labels
+	result[JSON_KEY_Labels] = m_label->AsJson();
+
+	// Security
+	result[JSON_KEY_Security] = m_security->AsJson(returnRuntimeInfo);
 
 	return result;
 }
@@ -220,21 +214,25 @@ int Configuration::getRestListenPort()
 			{
 				overrideListenPortValue = std::stoi(envStr);
 				LOG_INF << fname << ENV_APP_MANAGER_LISTEN_PORT << "=" << overrideListenPortValue;
+				return overrideListenPortValue;
 			}
 			else
 			{
-				overrideListenPortValue = m_restListenPort;
-				LOG_WAR << fname << ENV_APP_MANAGER_LISTEN_PORT << " is not a number: " << envStr << ", config value will be used: " << m_restListenPort;
+				LOG_WAR << fname << ENV_APP_MANAGER_LISTEN_PORT << " is not a number: " << envStr << ", config value will be used";
 			}
 		}
-		return overrideListenPortValue;
 	}
-	return m_restListenPort;
+	return m_rest->m_restListenPort;
+}
+
+int Configuration::getPromListenPort()
+{
+	return m_rest->m_promListenPort;
 }
 
 std::string Configuration::getRestListenAddress()
 {
-	return m_RestListenAddress;
+	return m_rest->m_restListenAddress;
 }
 
 const utility::string_t Configuration::getConfigContentStr()
@@ -245,10 +243,10 @@ const utility::string_t Configuration::getConfigContentStr()
 const utility::string_t Configuration::getSecureConfigContentStr()
 {
 	auto json = this->AsJson(false);
-	if (HAS_JSON_FIELD(json, JSON_KEY_JWT))
+	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
 	{
-		auto& jwtObj = json.at(JSON_KEY_JWT).as_object();
-		for (auto& user : jwtObj)
+		auto& users = json.at(JSON_KEY_Security).at(JSON_KEY_JWT_Users).as_object();
+		for (auto& user : users)
 		{
 			if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
 			{
@@ -297,32 +295,37 @@ const std::string Configuration::getLogLevel() const
 
 bool Configuration::getSslEnabled() const
 {
-	return m_sslEnabled;
+	return m_rest->m_ssl->m_sslEnabled;
 }
 
 std::string Configuration::getSSLCertificateFile() const
 {
-	return m_sslCertificateFile;
+	return m_rest->m_ssl->m_certFile;
 }
 
 std::string Configuration::getSSLCertificateKeyFile() const
 {
-	return m_sslCertificateKeyFile;
+	return m_rest->m_ssl->m_certKeyFile;
 }
 
 bool Configuration::getRestEnabled() const
 {
-	return m_restEnabled;
+	return m_rest->m_restEnabled;
 }
 
 bool Configuration::getJwtEnabled() const
 {
-	return m_jwtEnabled;
+	return m_rest->m_restEnabled;
+}
+
+const size_t Configuration::getThreadPoolSize() const
+{
+	return m_rest->m_httpThreadPoolSize;
 }
 
 const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName)
 {
-	return m_jwtUsers->getUser(userName);
+	return m_security->m_jwtUsers->getUser(userName);
 }
 
 std::set<std::string> Configuration::getUserPermissions(const std::string& userName)
@@ -338,7 +341,7 @@ std::set<std::string> Configuration::getUserPermissions(const std::string& userN
 
 const std::string& Configuration::getJwtRedirectUrl()
 {
-	return m_JwtRedirectUrl;
+	return m_security->m_JwtRedirectUrl;
 }
 
 void Configuration::dump()
@@ -440,7 +443,7 @@ void Configuration::saveConfigToDisk()
 	}
 }
 
-void Configuration::hotUpdate(const web::json::value& config, bool updateBasicConfig)
+void Configuration::hotUpdate(const web::json::value& config)
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
@@ -454,26 +457,8 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 	auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));
 
 	// update
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description)) SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_restListenPort, newConfig->m_restListenPort);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_RestListenAddress, newConfig->m_RestListenAddress);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_jwtEnabled, newConfig->m_jwtEnabled);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_threadPoolSize, newConfig->m_threadPoolSize);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_PrometheusExporterListenPort) && (this->m_promListenPort != newConfig->m_promListenPort))
-	{
-		SET_COMPARE(this->m_promListenPort, newConfig->m_promListenPort);
-		PrometheusRest::instance(nullptr);
-		PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
-		registerPrometheus();
-	}
-	if (!updateBasicConfig)
-	{
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) SET_COMPARE(this->m_roles, newConfig->m_roles);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT)) SET_COMPARE(this->m_jwtUsers, newConfig->m_jwtUsers);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
-		ResourceCollection::instance()->getHostName(true);
-	}
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_restEnabled, newConfig->m_restEnabled);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description))
+		SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_LogLevel))
 	{
 		if (this->m_logLevel != newConfig->m_logLevel)
@@ -483,10 +468,46 @@ void Configuration::hotUpdate(const web::json::value& config, bool updateBasicCo
 		}
 	}
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_sslCertificateFile, newConfig->m_sslCertificateFile);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_sslCertificateKeyFile, newConfig->m_sslCertificateKeyFile);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_sslEnabled, newConfig->m_sslEnabled);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWTRedirectUrl)) SET_COMPARE(this->m_JwtRedirectUrl, newConfig->m_JwtRedirectUrl);
+
+	// REST
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
+	{
+		auto rest = jsonValue.at(JSON_KEY_REST);
+		if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
+		if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
+		if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
+		if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_rest->m_httpThreadPoolSize, newConfig->m_rest->m_httpThreadPoolSize);
+		if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort) && (this->m_rest->m_promListenPort != newConfig->m_rest->m_promListenPort))
+		{
+			SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
+			PrometheusRest::instance(nullptr);
+			PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
+			registerPrometheus();
+		}
+		// SSL
+		if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
+		{
+			auto ssl = rest.at(JSON_KEY_SSL);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
+		}
+	}
+
+	// Security
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
+	{
+		auto sec = jsonValue.at(JSON_KEY_Security);
+		if (HAS_JSON_FIELD(sec, JSON_KEY_JWTRedirectUrl)) SET_COMPARE(this->m_security->m_JwtRedirectUrl, newConfig->m_security->m_JwtRedirectUrl);
+		if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
+		if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users)) SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
+	}
+
+	// Labels
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
+	// Roles
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) SET_COMPARE(this->m_roles, newConfig->m_roles);
+	ResourceCollection::instance()->getHostName(true);
 
 	this->dump();
 	ResourceCollection::instance()->dump();
@@ -552,4 +573,100 @@ std::shared_ptr<Application> Configuration::getApp(const std::string& appName)
 		}
 	}
 	throw std::invalid_argument("No such application found");
+}
+
+std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value& jsonValue)
+{
+	const static char fname[] = "Configuration::JsonRest::FromJson() ";
+
+	auto rest = std::make_shared<JsonRest>();
+	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
+	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
+	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
+	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
+	if (threadpool > 0 && threadpool < 40)
+	{
+		rest->m_httpThreadPoolSize = threadpool;
+	}
+	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
+	{
+		rest->m_restListenPort = DEFAULT_REST_LISTEN_PORT;
+		LOG_INF << fname << "Default value <" << rest->m_restListenPort << "> will by used for RestListenPort";
+	}
+	// SSL
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSL))
+	{
+		rest->m_ssl = JsonSsl::FromJson(jsonValue.at(JSON_KEY_SSL));
+	}
+	return rest;
+}
+
+web::json::value Configuration::JsonRest::AsJson()
+{
+	auto result = web::json::value::object();
+	result[JSON_KEY_RestEnabled] = web::json::value::boolean(m_restEnabled);
+	result[JSON_KEY_HttpThreadPoolSize] = web::json::value::number((uint32_t)m_httpThreadPoolSize);
+	result[JSON_KEY_RestListenPort] = web::json::value::number(m_restListenPort);
+	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
+	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_restListenAddress);
+	// SSL
+	result[JSON_KEY_SSL] = m_ssl->AsJson();
+	return result;
+}
+
+Configuration::JsonRest::JsonRest()
+	:m_restEnabled(false), m_httpThreadPoolSize(DEFAULT_HTTP_THREAD_POOL_SIZE),
+	m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT)
+{
+	m_ssl = std::make_shared<JsonSsl>();
+}
+
+std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const web::json::value& jsonValue)
+{
+	auto ssl = std::make_shared<JsonSsl>();
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, ssl->m_sslEnabled);
+	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
+	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
+	return ssl;
+}
+
+web::json::value Configuration::JsonSsl::AsJson()
+{
+	auto result = web::json::value::object();
+	result[JSON_KEY_SSLEnabled] = web::json::value::boolean(m_sslEnabled);
+	result[JSON_KEY_SSLCertificateFile] = web::json::value::string(GET_STRING_T(m_certFile));
+	result[JSON_KEY_SSLCertificateKeyFile] = web::json::value::string(GET_STRING_T(m_certKeyFile));
+	return result;
+}
+
+Configuration::JsonSsl::JsonSsl()
+	:m_sslEnabled(false)
+{
+}
+
+std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJson(const web::json::value& jsonValue, std::shared_ptr<Roles> roles)
+{
+	auto security = std::make_shared<Configuration::JsonSecurity>();
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
+	security->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users)) security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), roles);
+	return security;
+}
+
+web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
+{
+	auto result = web::json::value::object();
+	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(GET_STRING_T(m_JwtRedirectUrl));
+	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
+	if (!returnRuntimeInfo)
+	{
+		result[JSON_KEY_JWT_Users] = m_jwtUsers->AsJson();
+	}
+	return result;
+}
+
+Configuration::JsonSecurity::JsonSecurity()
+	:m_jwtEnabled(true)
+{
 }

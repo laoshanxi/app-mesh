@@ -59,6 +59,7 @@ int main(int argc, char* argv[])
 		{
 			// Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
+			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 
 			// Init Prometheus Exporter
 			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
@@ -89,7 +90,6 @@ int main(int argc, char* argv[])
 					LOG_ERR << fname << "unknown exception";
 				}
 			}
-			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
 		}
 
 		// HA attach process to App

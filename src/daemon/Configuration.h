@@ -13,11 +13,40 @@ class Users;
 class User;
 class Label;
 class Application;
+
 //////////////////////////////////////////////////////////////////////////
 /// All the operation functions to access appmg.json
 //////////////////////////////////////////////////////////////////////////
 class Configuration
 {
+	struct JsonSsl {
+		static std::shared_ptr<JsonSsl> FromJson(const web::json::value& jobj);
+		web::json::value AsJson();
+		bool m_sslEnabled;
+		std::string m_certFile;
+		std::string m_certKeyFile;
+		JsonSsl();
+	};
+	struct JsonRest {
+		static std::shared_ptr<JsonRest> FromJson(const web::json::value& jobj);
+		web::json::value AsJson();
+
+		bool m_restEnabled;
+		int m_httpThreadPoolSize;
+		int m_restListenPort;
+		int m_promListenPort;
+		std::string m_restListenAddress;
+		std::shared_ptr<JsonSsl> m_ssl;
+		JsonRest();
+	};
+	struct JsonSecurity {
+		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value& jobj, std::shared_ptr<Roles> roles);
+		web::json::value AsJson(bool returnRuntimeInfo);
+		bool m_jwtEnabled;
+		std::string m_JwtRedirectUrl;
+		std::shared_ptr<Users> m_jwtUsers;
+		JsonSecurity();
+	};
 public:
 	Configuration();
 	virtual ~Configuration();
@@ -30,7 +59,7 @@ public:
 	static std::shared_ptr<Configuration> FromJson(const std::string& str) noexcept(false);
 	web::json::value AsJson(bool returnRuntimeInfo);
 	void saveConfigToDisk();
-	void hotUpdate(const web::json::value& config, bool updateBasicConfig = false);
+	void hotUpdate(const web::json::value& config);
 	void registerPrometheus();
 
 	std::vector<std::shared_ptr<Application>> getApps();
@@ -41,7 +70,7 @@ public:
 
 	int getScheduleInterval();
 	int getRestListenPort();
-	int getPromListenPort() { return m_promListenPort; }
+	int getPromListenPort();
 	std::string getRestListenAddress();
 	const utility::string_t getConfigContentStr();
 	const utility::string_t getSecureConfigContentStr();
@@ -58,36 +87,27 @@ public:
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getJwtEnabled() const;
-	const size_t getThreadPoolSize() const { return m_threadPoolSize; }
+	const size_t getThreadPoolSize() const;
 	const std::string getDescription() const { return m_hostDescription; }
 
 	const std::shared_ptr<User> getUserInfo(const std::string& userName);
 	std::set<std::string> getUserPermissions(const std::string& userName);
 	const std::string& getJwtRedirectUrl();
+
 	void dump();
 
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
 	std::string m_hostDescription;
-	size_t m_threadPoolSize;
 	int m_scheduleInterval;
-	int m_restListenPort;
-	int m_promListenPort;
-	std::string m_RestListenAddress;
+	std::shared_ptr<JsonRest> m_rest;
+	std::shared_ptr<JsonSecurity> m_security;
+	std::shared_ptr<Roles> m_roles;
 	std::string m_logLevel;
-	std::string m_JwtRedirectUrl;
 
 	std::recursive_mutex m_mutex;
 	std::string m_jsonFilePath;
 
-	bool m_sslEnabled;
-	bool m_restEnabled;
-	bool m_jwtEnabled;
-	std::string m_sslCertificateFile;
-	std::string m_sslCertificateKeyFile;
-
-	std::shared_ptr<Roles> m_roles;
-	std::shared_ptr<Users> m_jwtUsers;
 	std::shared_ptr<Label> m_label;
 
 	static std::shared_ptr<Configuration> m_instance;

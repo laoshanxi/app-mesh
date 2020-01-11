@@ -67,6 +67,7 @@ namespace std
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_SCHEDULE_INTERVAL 2
+#define DEFAULT_HTTP_THREAD_POOL_SIZE 6
 
 #define JWT_USER_KEY "password"
 #define JWT_USER_NAME "user"
@@ -153,23 +154,30 @@ public:
 #define MAX_APP_CACHED_LINES 1024
 
 #define JSON_KEY_Description "Description"
+
+#define JSON_KEY_REST "REST"
+#define JSON_KEY_RestEnabled "RestEnabled"
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
+
 #define JSON_KEY_ScheduleIntervalSeconds "ScheduleIntervalSeconds"
 #define JSON_KEY_LogLevel "LogLevel"
+
+#define JSON_KEY_SSL "SSL"
 #define JSON_KEY_SSLEnabled "SSLEnabled"
-#define JSON_KEY_RestEnabled "RestEnabled"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
+
+#define JSON_KEY_Security "Security"
+
 #define JSON_KEY_JWTEnabled "JWTEnabled"
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
-#define JSON_KEY_JWT "JWT"
 #define JSON_KEY_Roles "Roles"
 #define JSON_KEY_Applications "Applications"
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
-
+#define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"
 #define JSON_KEY_APP_comments "comments"

@@ -790,7 +790,7 @@ void ArgumentParser::processLoglevel()
 	po::options_description desc("Set log level:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("level,l", po::value<std::string>(), "log level")
+		("level,l", po::value<std::string>(), "log level (e.g., DEBUG,INFO,NOTICE,WARN,ERROR)")
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);

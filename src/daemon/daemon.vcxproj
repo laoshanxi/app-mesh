@@ -148,7 +148,7 @@
   <ImportGroup Label="ExtensionTargets" />
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties />
+      <UserProperties appsvc_1json__JsonSchema="http://json.schemastore.org/appsettings" />
     </VisualStudio>
   </ProjectExtensions>
 </Project>

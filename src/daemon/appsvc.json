@@ -1,17 +1,68 @@
 {
   "Description": "myhost",
   "ScheduleIntervalSeconds": 2,
-  "PrometheusExporterListenPort": 0,
-  "RestListenPort": 6060,
-  "RestListenAddress": "0.0.0.0",
-  "RestEnabled": true,
   "LogLevel": "DEBUG",
-  "SSLEnabled": true,
-  "SSLCertificateFile": "server.crt",
-  "SSLCertificateKeyFile": "server.key",
-  "HttpThreadPoolSize": 6,
-  "JWTEnabled": true,
-  "JWTRedirectUrl": "",
+  "REST": {
+    "RestEnabled": true,
+    "HttpThreadPoolSize": 6,
+    "RestListenPort": 6060,
+    "RestListenAddress": "0.0.0.0",
+    "PrometheusExporterListenPort": 0,
+    "SSL": {
+      "SSLEnabled": true,
+      "SSLCertificateFile": "server.crt",
+      "SSLCertificateKeyFile": "server.key"
+    }
+  },
+  "Security": {
+    "JWTEnabled": true,
+    "JWTRedirectUrl": null,
+    "JWTRedirectUrl_example": "https://192.168.2.1:6060",
+    "Users": {
+      "admin": {
+        "key": "Admin123",
+        "roles": [ "manage", "view" ],
+        "locked": false
+      },
+      "user": {
+        "key": "password",
+        "roles": [ "view" ],
+        "locked": false
+      },
+      "test": {
+        "key": "test",
+        "roles": [],
+        "locked": true
+      }
+    },
+    "Roles": {
+      "manage": [
+        "app-reg",
+        "app-control",
+        "app-delete",
+        "run-app-async",
+        "run-app-sync",
+        "file-download",
+        "file-upload",
+        "label-view",
+        "label-set",
+        "label-delete",
+        "config-set",
+        "change-passwd",
+        "lock-user",
+        "unlock-user"
+      ],
+      "view": [
+        "view-app",
+        "view-app-output",
+        "view-all-app",
+        "view-host-resource",
+        "run-app-async-output",
+        "label-view",
+        "config-view"
+      ]
+    }
+  },
   "Applications": [
     {
       "command": "ping www.baidu.com -w 300",
@@ -20,52 +71,8 @@
       "cache_lines": 30
     }
   ],
-  "JWT": {
-    "admin": {
-      "key": "Admin123",
-      "roles": [ "manage", "view" ],
-      "locked": false
-    },
-    "user": {
-      "key": "password",
-      "roles": [ "view" ],
-      "locked": false
-    },
-    "test": {
-      "key": "test",
-      "roles": [],
-      "locked": true
-    }
-  },
   "Labels": {
     "os_version": "centos7.6",
     "arch": "x86_64"
-  },
-  "Roles": {
-    "manage": [
-      "app-reg",
-      "app-control",
-      "app-delete",
-      "run-app-async",
-      "run-app-sync",
-      "file-download",
-      "file-upload",
-      "label-view",
-      "label-set",
-      "label-delete",
-      "config-set",
-      "change-passwd",
-      "lock-user",
-      "unlock-user"
-    ],
-    "view": [
-      "view-app",
-      "view-app-output",
-      "view-all-app",
-      "view-host-resource",
-      "run-app-async-output",
-      "label-view",
-      "config-view"
-    ]
   }
 }
