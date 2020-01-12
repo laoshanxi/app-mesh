@@ -1,14 +1,12 @@
-#include <string>
 #include <algorithm>
+#include <chrono>
+#include <ctime>
 #include <fstream>
-#include <queue>
 #include <iomanip>
-#ifdef _WIN32
-#include <process.h>
-#include <Windows.h>
-#else
-#include <pwd.h>
-#endif
+#include <queue>
+#include <string>
+#include <sstream>
+
 #include <thread>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
@@ -25,7 +23,6 @@
 #include <ace/UUID.h>
 
 #include "../common/Utility.h"
-#include "../common/date.h"
 
 const char* GET_STATUS_STR(unsigned int status)
 {
@@ -370,13 +367,28 @@ std::string Utility::getSystemPosixTimeZone()
 
 std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point& time)
 {
+	// https://blog.csdn.net/qq_27274871/article/details/83414306
 	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
-	return date::format(DATE_TIME_FORMAT_RFC3339, std::chrono::time_point_cast<std::chrono::milliseconds>(time));
+	const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()).count() % 1000;
+	std::stringstream ss;
+	ss << formatTime(time, "%FT%T") << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';
+	return ss.str();
 }
 
-std::string Utility::getFmtTimeSeconds(const std::chrono::system_clock::time_point& time, const char* fmt)
+std::string Utility::formatTime(const std::chrono::system_clock::time_point& time, const char* fmt)
 {
-	return date::format(fmt, std::chrono::time_point_cast<std::chrono::seconds>(time));
+	const static char fname[] = "Utility::getFmtTimeSeconds() ";
+
+	struct tm localtime;
+	time_t timtt = std::chrono::system_clock::to_time_t(time);
+	localtime_r(&timtt, &localtime);
+
+	char buff[64] = { 0 };
+	if (!strftime(buff, sizeof(buff), fmt, &localtime))
+	{
+		LOG_ERR << fname << "strftime failed with error : " << std::strerror(errno);
+	}
+	return buff;
 }
 
 std::string Utility::encode64(const std::string& val)

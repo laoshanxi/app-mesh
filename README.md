@@ -455,7 +455,6 @@ appmgr_prom_process_memory_gauge{application="timer",host="appmgr",pid="10791"} 
 - [boost](https://github.com/boostorg/boost)
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
-- [HowardHinnant/date](https://github.com/HowardHinnant/date)
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 
 ---

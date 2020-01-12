@@ -92,7 +92,6 @@
     <ClCompile Include="User.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\common\date.h" />
     <ClInclude Include="..\common\HttpRequest.h" />
     <ClInclude Include="..\common\jwt-cpp\base.h" />
     <ClInclude Include="..\common\jwt-cpp\jwt.h" />

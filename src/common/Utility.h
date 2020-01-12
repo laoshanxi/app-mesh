@@ -128,7 +128,7 @@ public:
 	static std::string getSystemPosixTimeZone();
 	// rfc3339 time
 	static std::string getRfc3339Time(const std::chrono::system_clock::time_point& time);
-	static std::string getFmtTimeSeconds(const std::chrono::system_clock::time_point& time, const char* fmt);
+	static std::string formatTime(const std::chrono::system_clock::time_point& time, const char* fmt);
 
 	// Base64
 	static std::string encode64(const std::string& val);
@@ -147,7 +147,6 @@ public:
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"							// used to pass docker extra parameters to docker startup cmd
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT"	// app manager pull docker image timeout seconds
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
-#define DATE_TIME_FORMAT_RFC3339 "%FT%TZ"		//= "%Y-%m-%dT%H:%M:%SZ"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS (60 * 60 * 8)	// default 8 hour
 #define MAX_TOKEN_EXPIRE_SECONDS (60 * 60 * 24) // max 24 hour
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10		// run app default timeout

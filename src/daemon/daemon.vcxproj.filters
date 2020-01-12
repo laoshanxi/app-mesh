@@ -100,9 +100,6 @@
     <ClInclude Include="MonitoredProcess.h">
       <Filter>process</Filter>
     </ClInclude>
-    <ClInclude Include="..\common\date.h">
-      <Filter>common</Filter>
-    </ClInclude>
     <ClInclude Include="AppProcess.h">
       <Filter>process</Filter>
     </ClInclude>
