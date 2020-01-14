@@ -151,6 +151,7 @@ public:
 #define MAX_TOKEN_EXPIRE_SECONDS (60 * 60 * 24) // max 24 hour
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10		// run app default timeout
 #define MAX_APP_CACHED_LINES 1024
+#define SECURIRE_USER_KEY "******"
 
 #define JSON_KEY_Description "Description"
 
@@ -268,3 +269,4 @@ public:
 #define PERMISSION_KEY_unlock_user  			"unlock-user"
 #define PERMISSION_KEY_add_user  				"add-user"
 #define PERMISSION_KEY_delete_user  			"delete-user"
+#define PERMISSION_KEY_get_users  				"get-users"

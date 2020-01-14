@@ -418,6 +418,7 @@ POST| /user/user/lock | | admin user to lock a user
 POST| /user/user/unlock | | admin user to unlock a user
 PUT| /user/usera | | Add usera to Users
 DEL| /user/usera | | Delete usera
+GET| /users | | Get user list
 
 ---
 ### Prometheus Exporter

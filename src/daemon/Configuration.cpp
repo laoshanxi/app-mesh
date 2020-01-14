@@ -242,7 +242,7 @@ const utility::string_t Configuration::getSecureConfigContentStr()
 		{
 			if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
 			{
-				user.second[JSON_KEY_USER_key] = web::json::value::string("*****");
+				user.second[JSON_KEY_USER_key] = web::json::value::string(SECURIRE_USER_KEY);
 			}
 		}
 	}

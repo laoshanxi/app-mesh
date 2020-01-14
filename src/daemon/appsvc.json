@@ -59,7 +59,8 @@
         "view-host-resource",
         "run-app-async-output",
         "label-view",
-        "config-view"
+        "config-view",
+        "get-users"
       ],
       "usermgr": [
         "add-user",

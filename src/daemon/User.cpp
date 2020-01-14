@@ -21,7 +21,7 @@ web::json::value Users::AsJson()
 	{
 		result[user.first] = user.second->AsJson();
 	}
-	return result;
+	return std::move(result);
 }
 
 std::shared_ptr<Users> Users::FromJson(const web::json::value& obj, std::shared_ptr<Roles> roles)

@@ -71,6 +71,7 @@ private:
 	void apiUserUnlock(const HttpRequest& message);
 	void apiUserAdd(const HttpRequest& message);
 	void apiUserDel(const HttpRequest& message);
+	void apiUserList(const HttpRequest& message);
 	void apiHealth(const HttpRequest& message);
 
 	http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token);

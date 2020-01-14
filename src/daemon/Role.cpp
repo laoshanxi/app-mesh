@@ -27,7 +27,8 @@ std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
 	PERMISSION_KEY_lock_user,
 	PERMISSION_KEY_unlock_user,
 	PERMISSION_KEY_add_user,
-	PERMISSION_KEY_delete_user
+	PERMISSION_KEY_delete_user,
+	PERMISSION_KEY_get_users
 };
 
 //////////////////////////////////////////////////////////////////////

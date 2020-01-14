@@ -61,7 +61,8 @@
         "view-host-resource",
         "run-app-async-output",
         "label-view",
-        "config-view"
+        "config-view",
+		"get-users"
       ],
       "usermgr": [
         "add-user",
@@ -98,6 +99,7 @@
 | POST    | /user/usera/unlock | `unlock-user`  |
 | DEL    | /user/usera | `delete-user`  |
 | PUT    | /user/usera | `add-user`  |
+| GET    | /users | `get-users`  |
 
 
 ### Command line authentication

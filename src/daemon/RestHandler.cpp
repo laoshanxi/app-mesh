@@ -148,6 +148,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, R"(/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, R"(/user/([^/\*]+))", std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, R"(/user/([^/\*]+))", std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
 
 	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
@@ -704,7 +705,11 @@ void RestHandler::apiSetBasicConfig(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_set);
 
-	Configuration::instance()->hotUpdate(message.extract_json().get());
+	auto json = message.extract_json().get();
+	// do not allow users update from host-update API
+	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
+		json.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
+	Configuration::instance()->hotUpdate(json);
 
 	Configuration::instance()->saveConfigToDisk();
 
@@ -768,10 +773,10 @@ void RestHandler::apiUserLock(const HttpRequest& message)
 	{
 		throw std::invalid_argument("admin user can not be locked");
 	}
-	if (tokenUserName != JWT_ADMIN_NAME)
-	{
-		throw std::invalid_argument("only admin can lock/unlock users");
-	}
+	//if (tokenUserName != JWT_ADMIN_NAME)
+	//{
+	//	throw std::invalid_argument("only admin can lock/unlock users");
+	//}
 
 	Configuration::instance()->getUserInfo(pathUserName)->lock();
 
@@ -795,11 +800,10 @@ void RestHandler::apiUserUnlock(const HttpRequest& message)
 	}
 	auto pathUserName = vec[1];
 	auto tokenUserName = getTokenUser(message);
-
-	if (tokenUserName != JWT_ADMIN_NAME)
-	{
-		throw std::invalid_argument("only admin can lock/unlock users");
-	}
+	//if (tokenUserName != JWT_ADMIN_NAME)
+	//{
+	//	throw std::invalid_argument("only admin can lock/unlock users");
+	//}
 
 	Configuration::instance()->getUserInfo(pathUserName)->unlock();
 
@@ -853,6 +857,19 @@ void RestHandler::apiUserDel(const HttpRequest& message)
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiUserList(const HttpRequest& message)
+{
+	permissionCheck(message, PERMISSION_KEY_get_users);
+
+	auto users = Configuration::instance()->getUsers()->AsJson();
+	for (auto& user : users.as_object())
+	{
+		if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key)) user.second.erase(JSON_KEY_USER_key);
+	}
+
+	message.reply(status_codes::OK, users);
 }
 
 void RestHandler::apiHealth(const HttpRequest& message)
