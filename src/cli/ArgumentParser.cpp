@@ -1049,7 +1049,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(12) << name;
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status));
-		std::cout << std::setw(7) << std::to_string(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_health) == 0);
+		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_health);
 		std::cout << std::setw(7);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
