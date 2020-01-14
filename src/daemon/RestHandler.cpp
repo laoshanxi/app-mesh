@@ -684,21 +684,11 @@ void RestHandler::apiGetBasicConfig(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
-	// admin can get whole configure info include user & role
-	bool isAdmin = (getTokenUser(message) == JWT_ADMIN_NAME);
+	auto config = Configuration::instance()->AsJson(false);
+	if (HAS_JSON_FIELD(config, JSON_KEY_Security) && HAS_JSON_FIELD(config.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
+		config.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
 
-	auto config = web::json::value::parse(Configuration::instance()->getSecureConfigContentStr());
-
-	if (!isAdmin)
-	{
-		// only return basic configuration [the first level]
-		auto jsonObj = config.as_object();
-		for (auto json : jsonObj)
-		{
-			if (json.second.is_object() || json.second.is_array()) config.erase(json.first);
-		}
-	}
-	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(config.serialize())));
+	message.reply(status_codes::OK, config);
 }
 
 void RestHandler::apiSetBasicConfig(const HttpRequest& message)

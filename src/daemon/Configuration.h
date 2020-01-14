@@ -73,8 +73,7 @@ public:
 	int getRestListenPort();
 	int getPromListenPort();
 	std::string getRestListenAddress();
-	const utility::string_t getConfigContentStr();
-	const utility::string_t getSecureConfigContentStr();
+	const web::json::value getSecureConfigJson();
 	web::json::value getApplicationJson(bool returnRuntimeInfo);
 	std::shared_ptr<Application> getApp(const std::string& appName) noexcept(false);
 	void disableApp(const std::string& appName);

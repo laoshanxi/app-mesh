@@ -227,12 +227,7 @@ std::string Configuration::getRestListenAddress()
 	return m_rest->m_restListenAddress;
 }
 
-const utility::string_t Configuration::getConfigContentStr()
-{
-	return this->AsJson(false).serialize();
-}
-
-const utility::string_t Configuration::getSecureConfigContentStr()
+const web::json::value Configuration::getSecureConfigJson()
 {
 	auto json = this->AsJson(false);
 	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
@@ -247,7 +242,7 @@ const utility::string_t Configuration::getSecureConfigContentStr()
 		}
 	}
 
-	return json.serialize();
+	return std::move(json);
 }
 
 web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
@@ -350,7 +345,7 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getSecureConfigContentStr());
+	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getSecureConfigJson().serialize());
 
 	auto apps = getApps();
 	for (auto app : apps)
@@ -418,7 +413,7 @@ void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = GET_STD_STRING(this->getConfigContentStr());
+	auto content = GET_STD_STRING(this->AsJson(false).serialize());
 	if (content.length())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
