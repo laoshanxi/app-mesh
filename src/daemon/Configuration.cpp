@@ -285,6 +285,11 @@ bool Configuration::getSslEnabled() const
 	return m_rest->m_ssl->m_sslEnabled;
 }
 
+bool Configuration::getEncryptKey() const
+{
+	return m_security->m_encryptKey;
+}
+
 std::string Configuration::getSSLCertificateFile() const
 {
 	return m_rest->m_ssl->m_certFile;
@@ -650,6 +655,7 @@ std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJs
 	// Roles
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) security->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SECURITY_EncryptKey, security->m_encryptKey);
 	security->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users)) security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), security->m_roles);
 	return security;
@@ -660,6 +666,7 @@ web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
 	auto result = web::json::value::object();
 	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(GET_STRING_T(m_JwtRedirectUrl));
 	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
+	result[JSON_KEY_SECURITY_EncryptKey] = web::json::value::boolean(m_encryptKey);
 	if (!returnRuntimeInfo)
 	{
 		result[JSON_KEY_JWT_Users] = m_jwtUsers->AsJson();
@@ -670,7 +677,7 @@ web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
 }
 
 Configuration::JsonSecurity::JsonSecurity()
-	:m_jwtEnabled(true)
+	:m_jwtEnabled(true),m_encryptKey(false)
 {
 	m_roles = std::make_shared<Roles>();
 }

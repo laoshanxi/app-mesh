@@ -44,6 +44,7 @@ class Configuration
 		web::json::value AsJson(bool returnRuntimeInfo);
 		bool m_jwtEnabled;
 		std::string m_JwtRedirectUrl;
+		bool m_encryptKey;
 		std::shared_ptr<Users> m_jwtUsers;
 		std::shared_ptr<Roles> m_roles;
 		JsonSecurity();
@@ -83,6 +84,7 @@ public:
 
 	const std::string getLogLevel() const;
 	bool getSslEnabled() const;
+	bool getEncryptKey() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;

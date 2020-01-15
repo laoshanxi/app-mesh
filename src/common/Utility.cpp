@@ -710,3 +710,8 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 	}
 	return result.str();
 }
+
+std::string Utility::hash(const std::string& str)
+{
+	return std::move(std::to_string(std::hash<std::string>()(str)));
+}

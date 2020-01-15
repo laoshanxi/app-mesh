@@ -18,6 +18,7 @@
     "JWTEnabled": true,
     "JWTRedirectUrl": null,
     "JWTRedirectUrl_example": "https://192.168.2.1:6060",
+    "EncryptKey": false,
     "Users": {
       "admin": {
         "key": "Admin123",

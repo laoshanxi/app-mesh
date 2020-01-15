@@ -818,7 +818,9 @@ void RestHandler::apiUserAdd(const HttpRequest& message)
 	auto pathUserName = vec[1];
 	auto tokenUserName = getTokenUser(message);
 
-	Configuration::instance()->getUsers()->addUser(pathUserName, message.extract_json(true).get(), Configuration::instance()->getRoles());
+	auto user = Configuration::instance()->getUsers()->addUser(pathUserName, message.extract_json(true).get(), Configuration::instance()->getRoles());
+	// Store encrypted key if any
+	if (Configuration::instance()->getEncryptKey()) user->updateKey(Utility::hash(user->getKey()));
 
 	Configuration::instance()->saveConfigToDisk();
 
@@ -912,6 +914,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 			return;
 		}
 
+		if (Configuration::instance()->getEncryptKey()) passwd = Utility::hash(passwd);
 		auto token = createToken(uname, passwd, timeoutSeconds);
 
 		web::json::value result = web::json::value::object();

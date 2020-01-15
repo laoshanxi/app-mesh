@@ -109,6 +109,7 @@ public:
 	static std::string stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst);
 	static std::string humanReadableSize(long double bytesSize);
 	static std::string prettyJson(const std::string& jsonStr);
+	static std::string hash(const std::string& str);
 
 	static void initLogging();
 	static bool setLogLevel(const std::string& level);
@@ -147,7 +148,7 @@ public:
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"							// used to pass docker extra parameters to docker startup cmd
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT"	// app manager pull docker image timeout seconds
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS (60 * 60 * 8)	// default 8 hour
+#define DEFAULT_TOKEN_EXPIRE_SECONDS 3 * 3 *(60 * 60 * 8)	// default 3 days
 #define MAX_TOKEN_EXPIRE_SECONDS (60 * 60 * 24) // max 24 hour
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10		// run app default timeout
 #define MAX_APP_CACHED_LINES 1024
@@ -177,6 +178,7 @@ public:
 #define JSON_KEY_Applications "Applications"
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
+#define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"
