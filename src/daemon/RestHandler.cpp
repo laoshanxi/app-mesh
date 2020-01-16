@@ -737,6 +737,8 @@ void RestHandler::apiUserChangePwd(const HttpRequest& message)
 
 	auto user = Configuration::instance()->getUserInfo(tokenUserName);
 	user->updateKey(newPasswd);
+	// Store encrypted key if any
+	if (Configuration::instance()->getEncryptKey()) user->updateKey(Utility::hash(user->getKey()));
 
 	Configuration::instance()->saveConfigToDisk();
 

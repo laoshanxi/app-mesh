@@ -17,7 +17,15 @@
 #include "../common/os/chown.hpp"
 
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
-#define HELP_ARG_CHECK_WITH_RETURN if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
+#define OPTION_USER_PSWD ("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
+						 ("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
+#define GET_USER_NAME_PASS if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
+	{ \
+		m_username = m_commandLineVariables["user"].as<std::string>(); \
+		m_userpwd = m_commandLineVariables["password"].as<std::string>(); \
+	}
+#define HELP_ARG_CHECK_WITH_RETURN GET_USER_NAME_PASS \
+	if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
 
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmgr_";
@@ -25,7 +33,6 @@ static std::string m_jwtToken;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled)
 	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
-	, m_username(JWT_USER_NAME), m_userpwd(JWT_USER_KEY)
 {
 	po::options_description global("Global options");
 	global.add_options()
@@ -177,8 +184,7 @@ void ArgumentParser::processLogon()
 	po::options_description desc("Log on to AppManager:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.")
-		("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
+		OPTION_USER_PSWD
 		("timeout,t", po::value<int>()->default_value(DEFAULT_TOKEN_EXPIRE_SECONDS), "Specifies the command session duration in minutes.")
 		("help,h", "Prints command usage to stdout and exits")
 		;
@@ -186,21 +192,13 @@ void ArgumentParser::processLogon()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	m_tokenTimeoutSeconds = m_commandLineVariables["timeout"].as<int>();
-	if (m_commandLineVariables.count("user"))
-	{
-		m_username = m_commandLineVariables["user"].as<std::string>();
-	}
-	else
+	if (!m_commandLineVariables.count("user"))
 	{
 		std::cout << "User: ";
 		std::cin >> m_username;
 	}
 
-	if (m_commandLineVariables.count("password"))
-	{
-		m_userpwd = m_commandLineVariables["password"].as<std::string>();
-	}
-	else
+	if (!m_commandLineVariables.count("password"))
 	{
 		if (!m_commandLineVariables.count("user"))
 		{
@@ -220,7 +218,6 @@ void ArgumentParser::processLogon()
 	// clear token first
 	if (Utility::isFileExist(tokenFile))
 	{
-
 		std::ofstream ofs(tokenFile, std::ios::trunc);
 		ofs.close();
 	}
@@ -260,7 +257,7 @@ void ArgumentParser::processLogoff()
 		std::ofstream ofs(tokenFile, std::ios::trunc);
 		ofs.close();
 	}
-	std::cout << "User <" << m_username << "> logoff from " << m_hostname << " success." << std::endl;
+	std::cout << "User logoff from " << m_hostname << " success." << std::endl;
 }
 
 // appName is null means this is a normal application (not a shell application)
@@ -269,16 +266,17 @@ void ArgumentParser::processReg()
 	po::options_description desc("Register a new application");
 	desc.add_options()
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("name,n", po::value<std::string>(), "application name")
 		("comments,g", po::value<std::string>(), "application comments")
-		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
+		("appuser,a", po::value<std::string>(), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
-		("status,a", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
+		("status,s", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
 		("start_time,t", po::value<std::string>(), "start date time for short running app (e.g., '2018-01-01 09:00:00')")
-		("daily_start,s", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
+		("daily_start,d", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
 		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
 		("pid,p", po::value<int>(), "process id used to attach")
@@ -286,7 +284,7 @@ void ArgumentParser::processReg()
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
 		("interval,i", po::value<int>(), "start interval seconds for short running app")
-		("extra_time,x", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
+		("extra_time,q", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", po::value<bool>()->default_value(false), "monitor and keep running for short running app in start interval")
 		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side (used for none-container app)")
@@ -326,7 +324,7 @@ void ArgumentParser::processReg()
 	jsobObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count("cmd"))jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("health_check"))jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
-	if (m_commandLineVariables.count("user")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
+	if (m_commandLineVariables.count("appuser")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["appuser"].as<std::string>());
 	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
 	if (m_commandLineVariables.count(JSON_KEY_APP_comments)) jsobObj[JSON_KEY_APP_comments] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_comments].as<std::string>());
@@ -388,6 +386,7 @@ void ArgumentParser::processUnReg()
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("name,n", po::value<std::vector<std::string>>(), "remove application by name")
 		("force,f", "force without confirm.");
 
@@ -430,6 +429,7 @@ void ArgumentParser::processView()
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("name,n", po::value<std::string>(), "view application by name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
@@ -470,6 +470,7 @@ void ArgumentParser::processResource()
 	po::options_description desc("View host resource usage:");
 	desc.add_options()
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);
@@ -486,6 +487,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("all,a", "action for all applications")
 		("name,n", po::value<std::vector<std::string>>(), "enable/disable application by name.")
 		;
@@ -540,11 +542,12 @@ void ArgumentParser::processRun()
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		OPTION_HOST_NAME
-		("user,u", po::value<std::string>()->default_value("root"), "application process running user name")
+		OPTION_USER_PSWD
+		("appuser,a", po::value<std::string>()->default_value("root"), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("timeout,x", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
+		("timeout,t", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
 		("retention,r", po::value<int>()->default_value(DEFAULT_RUN_APP_RETENTION_DURATION), "retention duration after run finished (default 10s)")
 		;
 	shiftCommandLineArgs(desc);
@@ -562,7 +565,7 @@ void ArgumentParser::processRun()
 
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	if (m_commandLineVariables.count("user")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
+	if (m_commandLineVariables.count("appuser")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["appuser"].as<std::string>());
 	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
 	{
@@ -622,6 +625,7 @@ void ArgumentParser::processDownload()
 	po::options_description desc("Download file:");
 	desc.add_options()
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("remote,r", po::value<std::string>(), "remote file path")
 		("local,l", po::value<std::string>(), "save to local file path")
 		("help,h", "Prints command usage to stdout and exits")
@@ -658,6 +662,7 @@ void ArgumentParser::processUpload()
 	po::options_description desc("Upload file:");
 	desc.add_options()
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("remote,r", po::value<std::string>(), "save to remote file path")
 		("local,l", po::value<std::string>(), "local file path")
 		("help,h", "Prints command usage to stdout and exits")
@@ -714,6 +719,7 @@ void ArgumentParser::processTags()
 	po::options_description desc("Manage labels:");
 	desc.add_options()
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("view,v", "list labels")
 		("add,a", "add labels")
 		("remove,r", "remove labels")
@@ -790,6 +796,7 @@ void ArgumentParser::processLoglevel()
 	po::options_description desc("Set log level:");
 	desc.add_options()
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("level,l", po::value<std::string>(), "log level (e.g., DEBUG,INFO,NOTICE,WARN,ERROR)")
 		("help,h", "Prints command usage to stdout and exits")
 		;
@@ -817,6 +824,7 @@ void ArgumentParser::processConfigView()
 	po::options_description desc("Manage labels:");
 	desc.add_options()
 		OPTION_HOST_NAME
+		OPTION_USER_PSWD
 		("view,v", "view basic configurations")
 		("help,h", "Prints command usage to stdout and exits")
 		;
@@ -833,21 +841,22 @@ void ArgumentParser::processChangePwd()
 	po::options_description desc("Manage labels:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("user,u", po::value<std::string>(), "new password")
-		("passwd,x", po::value<std::string>(), "new password")
+		OPTION_USER_PSWD
+		("target,t", po::value<std::string>(), "target user to change passwd")
+		("newpasswd,p", po::value<std::string>(), "new password")
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (!m_commandLineVariables.count("user") || !m_commandLineVariables.count("passwd"))
+	if (!m_commandLineVariables.count("target") || !m_commandLineVariables.count("newpasswd"))
 	{
 		std::cout << desc << std::endl;
 		return;
 	}
 
-	auto user = m_commandLineVariables["user"].as<std::string>();
-	auto passwd = m_commandLineVariables["passwd"].as<std::string>();
+	auto user = m_commandLineVariables["target"].as<std::string>();
+	auto passwd = m_commandLineVariables["newpasswd"].as<std::string>();
 
 	std::string restPath = std::string("/user/") + user + "/passwd";
 	std::map<std::string, std::string> query, headers;
@@ -861,20 +870,21 @@ void ArgumentParser::processLockUser()
 	po::options_description desc("Manage labels:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("user,u", po::value<std::string>(), "new password")
+		OPTION_USER_PSWD
+		("target,t", po::value<std::string>(), "target user")
 		("unlock,k", po::value<bool>(), "lock or unlock user")
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (!m_commandLineVariables.count("user") || !m_commandLineVariables.count("unlock"))
+	if (!m_commandLineVariables.count("target") || !m_commandLineVariables.count("unlock"))
 	{
 		std::cout << desc << std::endl;
 		return;
 	}
 
-	auto user = m_commandLineVariables["user"].as<std::string>();
+	auto user = m_commandLineVariables["target"].as<std::string>();
 	auto lock = !m_commandLineVariables["lock"].as<bool>();
 
 	std::string restPath = std::string("/user/") + user + (lock ? "/lock" : "/unlock");
@@ -973,35 +983,24 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 
 std::string ArgumentParser::getAuthenToken()
 {
-	// 1. try to read from token file
-	m_jwtToken = readAuthenToken();
-
-	// 2. try to get from REST
-	if (m_jwtToken.empty())
+	std::string token;
+	// 1. try to get from REST
+	if (m_username.length() && m_userpwd.length())
 	{
-		auto protocol = m_sslEnabled ? U("https://") : U("http://");
-		auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
-		http_client_config config;
-		config.set_validate_certificates(false);
-		http_client client(restPath, config);
-		http_request requestLogin(web::http::methods::POST);
-		uri_builder builder(GET_STRING_T("/login"));
-		requestLogin.set_request_uri(builder.to_uri());
-		requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(m_username));
-		requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(m_userpwd));
-		if (m_tokenTimeoutSeconds) requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
-		http_response response = client.request(requestLogin).get();
-		if (response.status_code() != status_codes::OK)
+		token = requestToken(m_username, m_userpwd);
+	}
+	else
+	{
+		// 2. try to read from token file
+		token = readAuthenToken();
+
+		// 3. try to get get default token from REST
+		if (token.empty())
 		{
-			throw std::invalid_argument(std::string("Login failed ") + response.extract_utf8string(true).get());
-		}
-		else
-		{
-			auto jwtContent = response.extract_json(true).get();
-			m_jwtToken = GET_JSON_STR_VALUE(jwtContent, HTTP_HEADER_JWT_access_token);
+			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY));
 		}
 	}
-	return m_jwtToken;
+	return token;
 }
 
 std::string ArgumentParser::readAuthenToken()
@@ -1018,6 +1017,31 @@ std::string ArgumentParser::readAuthenToken()
 		}
 	}
 	return std::move(jwtToken);
+}
+
+std::string ArgumentParser::requestToken(const std::string& user, const std::string& passwd)
+{
+	auto protocol = m_sslEnabled ? U("https://") : U("http://");
+	auto restPath = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	http_client_config config;
+	config.set_validate_certificates(false);
+	http_client client(restPath, config);
+	http_request requestLogin(web::http::methods::POST);
+	uri_builder builder(GET_STRING_T("/login"));
+	requestLogin.set_request_uri(builder.to_uri());
+	requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(user));
+	requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(passwd));
+	if (m_tokenTimeoutSeconds) requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
+	http_response response = client.request(requestLogin).get();
+	if (response.status_code() != status_codes::OK)
+	{
+		throw std::invalid_argument(std::string("Login failed ") + response.extract_utf8string(true).get());
+	}
+	else
+	{
+		auto jwtContent = response.extract_json(true).get();
+		return GET_JSON_STR_VALUE(jwtContent, HTTP_HEADER_JWT_access_token);
+	}
 }
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)

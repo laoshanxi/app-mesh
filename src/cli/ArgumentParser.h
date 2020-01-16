@@ -50,6 +50,7 @@ private:
 
 	std::string getAuthenToken();
 	std::string readAuthenToken();
+	std::string requestToken(const std::string& user, const std::string& passwd);
 
 private:
 	bool isAppExist(const std::string& appName);
