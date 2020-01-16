@@ -16,17 +16,17 @@
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
 
-#define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
-#define COMMON_OPTIONS OPTION_HOST_NAME \
-						 ("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
-						 ("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
-#define GET_USER_NAME_PASS if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
-	{ \
-		m_username = m_commandLineVariables["user"].as<std::string>(); \
-		m_userpwd = m_commandLineVariables["password"].as<std::string>(); \
-	}
+#define OPTION_HOST_NAME	("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
+#define COMMON_OPTIONS		OPTION_HOST_NAME \
+							("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
+							("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
+#define GET_USER_NAME_PASS	if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
+							{ \
+								m_username = m_commandLineVariables["user"].as<std::string>(); \
+								m_userpwd = m_commandLineVariables["password"].as<std::string>(); \
+							}
 #define HELP_ARG_CHECK_WITH_RETURN GET_USER_NAME_PASS \
-	if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
+							if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
 
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmgr_";
@@ -294,7 +294,7 @@ void ArgumentParser::processReg()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 	if (m_commandLineVariables.count("name") == 0 ||
-	   (m_commandLineVariables.count("docker_image")== 0 && m_commandLineVariables.count("cmd") == 0))
+		(m_commandLineVariables.count("docker_image") == 0 && m_commandLineVariables.count("cmd") == 0))
 	{
 		std::cout << desc << std::endl;
 		return;
@@ -720,7 +720,7 @@ void ArgumentParser::processTags()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	
+
 	std::vector<std::string> inputTags;
 	if (m_commandLineVariables.count("label")) inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
 
