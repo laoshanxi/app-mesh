@@ -17,7 +17,8 @@
 #include "../common/os/chown.hpp"
 
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
-#define OPTION_USER_PSWD ("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
+#define COMMON_OPTIONS OPTION_HOST_NAME \
+						 ("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
 						 ("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
 #define GET_USER_NAME_PASS if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
 	{ \
@@ -183,8 +184,7 @@ void ArgumentParser::processLogon()
 {
 	po::options_description desc("Log on to AppManager:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("timeout,t", po::value<int>()->default_value(DEFAULT_TOKEN_EXPIRE_SECONDS), "Specifies the command session duration in minutes.")
 		("help,h", "Prints command usage to stdout and exits")
 		;
@@ -265,8 +265,7 @@ void ArgumentParser::processReg()
 {
 	po::options_description desc("Register a new application");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
 		("comments,g", po::value<std::string>(), "application comments")
 		("appuser,a", po::value<std::string>(), "application process running user name")
@@ -385,8 +384,7 @@ void ArgumentParser::processUnReg()
 	po::options_description desc("Unregister and remove an application");
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("name,n", po::value<std::vector<std::string>>(), "remove application by name")
 		("force,f", "force without confirm.");
 
@@ -428,8 +426,7 @@ void ArgumentParser::processView()
 	po::options_description desc("List application[s]");
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "view application by name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
@@ -469,8 +466,7 @@ void ArgumentParser::processResource()
 {
 	po::options_description desc("View host resource usage:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);
@@ -486,8 +482,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	po::options_description desc("Start application:");
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("all,a", "action for all applications")
 		("name,n", po::value<std::vector<std::string>>(), "enable/disable application by name.")
 		;
@@ -541,8 +536,7 @@ void ArgumentParser::processRun()
 	po::options_description desc("Shell application:");
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("appuser,a", po::value<std::string>()->default_value("root"), "application process running user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
@@ -624,8 +618,7 @@ void ArgumentParser::processDownload()
 {
 	po::options_description desc("Download file:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("remote,r", po::value<std::string>(), "remote file path")
 		("local,l", po::value<std::string>(), "save to local file path")
 		("help,h", "Prints command usage to stdout and exits")
@@ -661,8 +654,7 @@ void ArgumentParser::processUpload()
 {
 	po::options_description desc("Upload file:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("remote,r", po::value<std::string>(), "save to remote file path")
 		("local,l", po::value<std::string>(), "local file path")
 		("help,h", "Prints command usage to stdout and exits")
@@ -718,8 +710,7 @@ void ArgumentParser::processTags()
 {
 	po::options_description desc("Manage labels:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("view,v", "list labels")
 		("add,a", "add labels")
 		("remove,r", "remove labels")
@@ -795,8 +786,7 @@ void ArgumentParser::processLoglevel()
 {
 	po::options_description desc("Set log level:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("level,l", po::value<std::string>(), "log level (e.g., DEBUG,INFO,NOTICE,WARN,ERROR)")
 		("help,h", "Prints command usage to stdout and exits")
 		;
@@ -823,8 +813,7 @@ void ArgumentParser::processConfigView()
 {
 	po::options_description desc("Manage labels:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("view,v", "view basic configurations")
 		("help,h", "Prints command usage to stdout and exits")
 		;
@@ -840,8 +829,7 @@ void ArgumentParser::processChangePwd()
 {
 	po::options_description desc("Manage labels:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user to change passwd")
 		("newpasswd,p", po::value<std::string>(), "new password")
 		("help,h", "Prints command usage to stdout and exits")
@@ -869,8 +857,7 @@ void ArgumentParser::processLockUser()
 {
 	po::options_description desc("Manage labels:");
 	desc.add_options()
-		OPTION_HOST_NAME
-		OPTION_USER_PSWD
+		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user")
 		("unlock,k", po::value<bool>(), "lock or unlock user")
 		("help,h", "Prints command usage to stdout and exits")
