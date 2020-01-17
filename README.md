@@ -27,23 +27,24 @@ Extra Features | Application can define avialable time range in a day <br> Appli
 **CentOS**:
 ```
 # centos
-yum install -y appmanager-1.5.2-1.x86_64.rpm
+yum install -y appmanager-1.7.0-1.x86_64.rpm
 # ubuntu
-apt install -y appmanager_1.5.2_amd64.deb
+apt install -y appmanager_1.7.0_amd64.deb
 # after installation, service will be started automaticlly, check status by bellow command:
 $ systemctl status appmanager
 ● appmanager.service - Application Manager Systemd Service
    Loaded: loaded (/usr/lib/systemd/system/appmanager.service; enabled; vendor preset: disabled)
-   Active: active (running) since Sat 2019-11-23 07:56:37 EST; 5s ago
+   Active: active (running) since Fri 2020-01-17 14:49:00 CST; 11min ago
      Docs: https://github.com/laoshanxi/app-manager
- Main PID: 1202 (appsvc)
+ Main PID: 2427 (appsvc)
+    Tasks: 8
+   Memory: 1.6M
    CGroup: /system.slice/appmanager.service
-           ├─1202 /opt/appmanager/appsvc
-           └─1465 ping www.baidu.com -w 300
+           └─2427 /opt/appmanager/appsvc
 $ appc view
-id name        user  status   return pid    memory  start_time          command_line
-1  ping        root  enabled  0      6631   616 K   2019-09-19 19:31:45 /bin/sleep 60
-2  sleep       root  enabled  0      -      -       -                   ping www.baidu.com
+id name        user  status   health pid    memory  return last_start_time     command
+1  ipmail      root  enabled  0       -      -       -     2020-01-17 14:58:50 sh /opt/qqmail/launch.sh
+2  test        root  enabled  0       -      -       -     2020-01-17 15:00:30 /usr/bin/env
 
 # Note that on windows WSL ubuntu, you must use `service appmanager start` to force service start, WSL VM does not have full init.d
 ```
@@ -64,9 +65,12 @@ Commands:
   reg         Add a new application
   unreg       Remove an application
   run         Run application and get output
-  sh          Use shell run a command and get output
   get         Download remote file to local
   put         Upload file to server
+  config      Manage basic configurations
+  passwd      Change user password
+  lock        Lock unlock a user
+  log         Set log level
 
 Run 'appc COMMAND --help' for more information on a command.
 Use '-b hostname' to run remote command.
@@ -80,9 +84,9 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 
 ```
 $ appc view
-id name        user  status   return pid    memory  start_time          command_line
-1  sleep       root  enabled  0      3986   360 K   2019-09-21 23:50:36 /bin/sleep 60
-2  docker      root  enabled  0      4044   1.9 M   2019-09-21 23:50:36 ping www.baidu.com
+id name        user  status   health pid    memory  return last_start_time     command
+1  ipmail      root  enabled  0       -      -       -     2020-01-17 14:58:50 sh /opt/qqmail/launch.sh
+2  test        root  enabled  0       -      -       -     2020-01-17 15:01:00 /usr/bin/env
 
 ```
 - View application output
@@ -119,32 +123,45 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 $ appc reg
 Register a new application:
   -b [ --host ] arg (=localhost) host name or ip address
+  -u [ --user ] arg              Specifies the name of the user to connect to 
+                                 AppManager for this command.
+  -x [ --password ] arg          Specifies the user password to connect to 
+                                 AppManager for this command.
   -n [ --name ] arg              application name
-  -u [ --user ] arg (=root)      application process running user name
+  -g [ --comments ] arg          application comments
+  -a [ --appuser ] arg           application process running user name
   -c [ --cmd ] arg               full command line with arguments
+  -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl
+                                 host:port/health', return 0 is health)
+  -d [ --docker_image ] arg      docker image which used to run command line 
+                                 (this will enable docker)
   -w [ --workdir ] arg (=/tmp)   working directory
-  -a [ --status ] arg (=1)       application status status (start is true, stop
+  -s [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
   -t [ --start_time ] arg        start date time for short running app (e.g., 
                                  '2018-01-01 09:00:00')
-  -s [ --daily_start ] arg       daily start time (e.g., '09:00:00')
-  -d [ --daily_end ] arg         daily end time (e.g., '20:00:00')
+  -d [ --daily_start ] arg       daily start time (e.g., '09:00:00')
+  -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
+  -p [ --pid ] arg               process id used to attach
   -v [ --virtual_memory ] arg    virtual memory limit in MByte
-  -p [ --cpu_shares ] arg        CPU shares (relative weight)
+  -r [ --cpu_shares ] arg        CPU shares (relative weight)
   -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e
-                                 env2=value2)
+                                 env2=value2, APP_DOCKER_OPTS is used to input 
+                                 docker parameters)
   -i [ --interval ] arg          start interval seconds for short running app
-  -x [ --extra_time ] arg        extra timeout for short running app,the value 
+  -q [ --extra_time ] arg        extra timeout for short running app,the value 
                                  must less than interval  (default 0)
   -z [ --timezone ] arg          posix timezone for the application, reflect 
                                  [start_time|daily_start|daily_end] (e.g., 
                                  'WST+08:00' is Australia Standard Time)
   -k [ --keep_running ] arg (=0) monitor and keep running for short running app
                                  in start interval
+  -o [ --cache_lines ] arg (=0)  number of output lines will be cached in 
+                                 server side (used for none-container app)
   -f [ --force ]                 force without confirm
   -g [ --debug ]                 print debug information
-  -h [ --help ]                  help message
+  -h [ --help ]                  Prints command usage to stdout and exits
 
 # register a app with a native command
 $ appc reg -n ping -u kfc -c 'ping www.google.com' -w /opt
@@ -321,7 +338,7 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 
 - Run a shell command and get stdout
 ``` sh
-$ appc sh -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view" 
+$ appc run -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view" 
 id name        user  status   pid    return memory  command_line
 1  period      root  enabled  1044   0      668 K   /bin/sleep 20
 2  ping        root  enabled  586    0      956 K   ping www.baidu.com
