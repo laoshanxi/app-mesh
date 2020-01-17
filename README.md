@@ -8,7 +8,7 @@
 
 # Application Manager
 ### Introduction
-Application Manager is a daemon service to manage different types of applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line manage applications easily.
+Application Manager is a cloud native daemon service to manage different types of applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line manage applications easily.
 
 The internal timer is multi-threaded with high-precision that can be used to replace Linux cron-tab and supervisor.
 
