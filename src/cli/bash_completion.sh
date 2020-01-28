@@ -14,13 +14,13 @@ _appc_modeule()
         COMPREPLY=()
         cur="${COMP_WORDS[COMP_CWORD]}"
         prev="${COMP_WORDS[COMP_CWORD-1]}"
-		case $cur in
-				'appc')
-						COMPREPLY=( $(compgen -W "logon logoff view resource label enable disable restart reg unreg run get put config passwd lock log" -- $cur) )
+        case $cur in
+                'appc')
+                        COMPREPLY=( $(compgen -W "logon logoff view resource label enable disable restart reg unreg run get put config passwd lock log" -- $cur) )
                         return 0
-						;;
-		esac
-		case $cur in
+                        ;;
+        esac
+        case $cur in
                 '-n' | '--name')
                         local APPS=`appc view | awk '{print $2}'`
                         COMPREPLY=( $(compgen -W "$APPS" -- $cur) )
