@@ -21,6 +21,11 @@ if [ -f "/opt/appmanager/.appsvc.json" ]; then
 	mv /opt/appmanager/.appsvc.json /opt/appmanager/appsvc.json
 fi
 
+# bash completion
+if [ -d "/usr/share/bash-completion/completions" ]; then
+	cp -f $INSTALL_DIR/script/bash_completion.sh /usr/share/bash-completion/completions/appc
+fi
+
 rm -rf /usr/bin/appc
 ln -s /opt/appmanager/script/appc.sh /usr/bin/appc
 chmod +x /opt/appmanager/script/appc.sh

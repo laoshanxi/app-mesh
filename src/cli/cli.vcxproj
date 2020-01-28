@@ -69,6 +69,7 @@
   <ItemGroup>
     <ClCompile Include="..\common\Utility.cpp" />
     <ClCompile Include="ArgumentParser.cpp" />
+    <ClCompile Include="bash_completion.sh" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
