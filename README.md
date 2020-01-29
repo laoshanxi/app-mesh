@@ -134,7 +134,7 @@ Register a new application:
                                  is false)
   -t [ --start_time ] arg        start date time for short running app (e.g., 
                                  '2018-01-01 09:00:00')
-  -d [ --daily_start ] arg       daily start time (e.g., '09:00:00')
+  -j [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
   -p [ --pid ] arg               process id used to attach
