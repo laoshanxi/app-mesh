@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <ace/Event_Handler.h>
+#include <ace/Reactor.h>
 
 //////////////////////////////////////////////////////////////////////////
 /// Timer Event base class 
@@ -52,15 +53,20 @@ public:
 	bool cancleTimer(int timerId);
 
 	/// <summary>
-	/// Use ACE_Reactor::instance() to run timer event, block function, should used in a thread
+	/// Use ACE_Reactor for timer event, block function, should used in a thread
 	/// </summary>
-	static void runTimerThread();
+	static void runReactorEvent(ACE_Reactor* reactor);
 	/// <summary>
-	/// End thread which watch ACE_Reactor::instance()
+	/// End ACE_Reactor
 	/// </summary>
-	static int endEventLoop();
+	static int endReactorEvent(ACE_Reactor* reactor);
+
 private:
 	// key: timer ID point, must unique, value: function point
 	std::map<const int*, std::shared_ptr<TimerDefinition>> m_timers;
 	std::recursive_mutex m_mutex;
+
+protected:
+	// this reactor can be init as none-default one
+	ACE_Reactor* m_reactor;
 };

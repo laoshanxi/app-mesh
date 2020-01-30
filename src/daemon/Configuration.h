@@ -49,6 +49,19 @@ class Configuration
 		std::shared_ptr<Roles> m_roles;
 		JsonSecurity();
 	};
+	struct JsonConsul {
+		static std::shared_ptr<JsonConsul> FromJson(const web::json::value& jobj);
+		web::json::value AsJson();
+		// http://consul.service.consul:8500
+		std::string m_consulUrl;
+		// Node (string: "<agent>") - Specifies the name of the node. This must refer to a node that is already registered.
+		std::string m_sessionNode;
+		// TTL (string: "") - Specifies the number of seconds (between 10s and 86400s).
+		int m_ttl;
+		// report status to consul interval
+		int m_reportInterval;
+		JsonConsul();
+	};
 public:
 	Configuration();
 	virtual ~Configuration();
@@ -97,6 +110,7 @@ public:
 	const std::shared_ptr<Users> getUsers() const;
 	const std::shared_ptr<Roles> getRoles() const;
 	const std::string& getJwtRedirectUrl();
+	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
 
 	void dump();
 
@@ -106,6 +120,7 @@ private:
 	int m_scheduleInterval;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonSecurity> m_security;
+	std::shared_ptr<JsonConsul> m_consul;
 	
 	std::string m_logLevel;
 

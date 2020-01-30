@@ -75,6 +75,7 @@
     <ClCompile Include="ApplicationShortRun.cpp" />
     <ClCompile Include="AppProcess.cpp" />
     <ClCompile Include="Configuration.cpp" />
+    <ClCompile Include="ConsulConnection.cpp" />
     <ClCompile Include="DailyLimitation.cpp" />
     <ClCompile Include="DockerProcess.cpp" />
     <ClCompile Include="HealthCheckTask.cpp" />
@@ -108,6 +109,7 @@
     <ClInclude Include="ApplicationShortRun.h" />
     <ClInclude Include="AppProcess.h" />
     <ClInclude Include="Configuration.h" />
+    <ClInclude Include="ConsulConnection.h" />
     <ClInclude Include="DailyLimitation.h" />
     <ClInclude Include="DockerProcess.h" />
     <ClInclude Include="HealthCheckTask.h" />

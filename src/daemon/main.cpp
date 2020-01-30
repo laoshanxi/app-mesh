@@ -13,6 +13,7 @@
 #include "Application.h"
 #include "AppProcess.h"
 #include "Configuration.h"
+#include "ConsulConnection.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
 #include "PrometheusRest.h"
@@ -110,13 +111,15 @@ int main(int argc, char* argv[])
 		config->registerPrometheus();
 
 		// start one thread for timers
-		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runTimerThread));
+		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+
+		// init consul
+		ConsulConnection::instance()->initTimer();
 
 		// health check share main thread for now
 		// // start one thread for health check
 		// HealthCheckTask::instance()->open();
 		auto healthCheckTime = std::chrono::system_clock::now();
-
 		// monitor applications
 		while (true)
 		{

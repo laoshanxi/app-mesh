@@ -30,6 +30,7 @@ SRCS = \
 	Label.cpp \
 	HealthCheckTask.cpp \
 	PersistManager.cpp \
+	ConsulConnection.cpp \
 	TimerHandler.cpp
 		
 

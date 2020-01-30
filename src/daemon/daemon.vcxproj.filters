@@ -46,6 +46,7 @@
     <ClCompile Include="Label.cpp" />
     <ClCompile Include="HealthCheckTask.cpp" />
     <ClCompile Include="PersistManager.cpp" />
+    <ClCompile Include="ConsulConnection.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -116,6 +117,7 @@
     <ClInclude Include="Label.h" />
     <ClInclude Include="HealthCheckTask.h" />
     <ClInclude Include="PersistManager.h" />
+    <ClInclude Include="ConsulConnection.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />

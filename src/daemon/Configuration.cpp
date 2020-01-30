@@ -1,6 +1,7 @@
 #include <set>
 #include <ace/Signal.h>
 #include "Configuration.h"
+#include "ConsulConnection.h"
 #include "../common/Utility.h"
 #include "Application.h"
 #include "ApplicationPeriodRun.h"
@@ -21,6 +22,7 @@ Configuration::Configuration()
 	m_label = std::make_unique<Label>();
 	m_security = std::make_shared<JsonSecurity>();
 	m_rest = std::make_shared<JsonRest>();
+	m_consul = std::make_shared<JsonConsul>();
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
 }
 
@@ -84,6 +86,11 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
 	{
 		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
+	}
+	// Consul
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
+	{
+		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSULE));
 	}
 
 	// Applications
@@ -161,6 +168,9 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 
 	// Security
 	result[JSON_KEY_Security] = m_security->AsJson(returnRuntimeInfo);
+
+	// Consul
+	result[JSON_KEY_CONSULE] = m_consul->AsJson();
 
 	return result;
 }
@@ -346,6 +356,11 @@ const std::string& Configuration::getJwtRedirectUrl()
 	return m_security->m_JwtRedirectUrl;
 }
 
+const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
+{
+	return m_consul;
+}
+
 void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
@@ -510,6 +525,13 @@ void Configuration::hotUpdate(const web::json::value& config)
 
 	// Labels
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
+
+	// Consul
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
+	{
+		SET_COMPARE(this->m_consul, newConfig->m_consul);
+		ConsulConnection::instance()->initTimer();
+	}
 	
 	ResourceCollection::instance()->getHostName(true);
 
@@ -639,8 +661,8 @@ web::json::value Configuration::JsonSsl::AsJson()
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_SSLEnabled] = web::json::value::boolean(m_sslEnabled);
-	result[JSON_KEY_SSLCertificateFile] = web::json::value::string(GET_STRING_T(m_certFile));
-	result[JSON_KEY_SSLCertificateKeyFile] = web::json::value::string(GET_STRING_T(m_certKeyFile));
+	result[JSON_KEY_SSLCertificateFile] = web::json::value::string(m_certFile);
+	result[JSON_KEY_SSLCertificateKeyFile] = web::json::value::string(m_certKeyFile);
 	return result;
 }
 
@@ -664,7 +686,7 @@ std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJs
 web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
 {
 	auto result = web::json::value::object();
-	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(GET_STRING_T(m_JwtRedirectUrl));
+	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(m_JwtRedirectUrl);
 	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
 	result[JSON_KEY_SECURITY_EncryptKey] = web::json::value::boolean(m_encryptKey);
 	if (!returnRuntimeInfo)
@@ -680,4 +702,29 @@ Configuration::JsonSecurity::JsonSecurity()
 	:m_jwtEnabled(true),m_encryptKey(false)
 {
 	m_roles = std::make_shared<Roles>();
+}
+
+std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value& jobj)
+{
+	auto consul = std::make_shared<JsonConsul>();
+	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
+	consul->m_sessionNode = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_SESSION_NODE);
+	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
+	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
+	return consul;
+}
+
+web::json::value Configuration::JsonConsul::AsJson()
+{
+	auto result = web::json::value::object();
+	result[JSON_KEY_CONSULE_URL] = web::json::value::string(m_consulUrl);
+	result[JSON_KEY_CONSULE_SESSION_NODE] = web::json::value::string(m_sessionNode);
+	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
+	result[JSON_KEY_CONSULE_REPORT_INTERVAL] = web::json::value::number(m_reportInterval);
+	return result;
+}
+
+Configuration::JsonConsul::JsonConsul()
+	:m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL)
+{
 }

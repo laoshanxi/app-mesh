@@ -7,6 +7,7 @@
 #include "../common/Utility.h"
 
 TimerHandler::TimerHandler()
+	:m_reactor(ACE_Reactor::instance())
 {
 }
 
@@ -61,7 +62,7 @@ int TimerHandler::registerTimer(long int delayMillisecond, size_t intervalSecond
 	}
 
 	int* timerIdPtr = new int(0);
-	(*timerIdPtr) = ACE_Reactor::instance()->schedule_timer(this, (void*)timerIdPtr, delay, interval);
+	(*timerIdPtr) = m_reactor->schedule_timer(this, (void*)timerIdPtr, delay, interval);
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	assert(m_timers.find(timerIdPtr) == m_timers.end());
 	m_timers[timerIdPtr] = std::make_shared<TimerDefinition>(timerIdPtr, handler, this->shared_from_this(), callOnce);
@@ -73,7 +74,7 @@ bool TimerHandler::cancleTimer(int timerId)
 {
 	const static char fname[] = "TimerHandler::cancleTimer() ";
 
-	auto cancled = ACE_Reactor::instance()->cancel_timer(timerId);
+	auto cancled = m_reactor->cancel_timer(timerId);
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -90,23 +91,26 @@ bool TimerHandler::cancleTimer(int timerId)
 	return cancled;
 }
 
-void TimerHandler::runTimerThread()
+void TimerHandler::runReactorEvent(ACE_Reactor* reactor)
 {
-	const static char fname[] = "TimerHandler::runEventLoop() ";
+	const static char fname[] = "TimerHandler::runReactorEvent() ";
 	LOG_DBG << fname << "Entered";
 
-	while (!ACE_Reactor::instance()->reactor_event_loop_done())
+	while (!reactor->reactor_event_loop_done())
 	{
 		// set the owner of the reactor to the identity of the thread that runs the event loop
-		ACE_Reactor::instance()->owner(ACE_OS::thr_self());
-		ACE_Reactor::instance()->run_reactor_event_loop();
+		reactor->owner(ACE_OS::thr_self());
+		reactor->run_reactor_event_loop();
 	}
 	LOG_WAR << fname << "Exit";
 }
 
-int TimerHandler::endEventLoop()
+int TimerHandler::endReactorEvent(ACE_Reactor* reactor)
 {
-	return ACE_Reactor::instance()->end_reactor_event_loop();
+	const static char fname[] = "TimerHandler::endReactorEvent() ";
+	LOG_DBG << fname << "Entered";
+
+	return reactor->end_reactor_event_loop();
 }
 
 TimerHandler::TimerDefinition::TimerDefinition(const int* timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)

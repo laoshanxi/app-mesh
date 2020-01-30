@@ -77,6 +77,12 @@
       "cache_lines": 30
     }
   ],
+  "Consul": {
+    "url": "http://localhost:8500",
+    "session_node": null,
+    "session_TTL": 30,
+    "report_interval": 10
+  },
   "Labels": {
     "os_version": "centos7.6",
     "arch": "x86_64"
