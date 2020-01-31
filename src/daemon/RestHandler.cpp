@@ -1103,7 +1103,7 @@ http_response RestHandler::requestHttp(const method& mtd, const std::string& pat
 
 	auto restURL = Configuration::instance()->getJwtRedirectUrl();
 
-	LOG_INF << fname << "Redirect :" << path << " to: " << restURL;
+	LOG_DBG << fname << "Redirect :" << path << " to: " << restURL;
 
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;

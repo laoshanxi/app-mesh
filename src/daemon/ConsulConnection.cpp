@@ -29,6 +29,12 @@ ConsulConnection::~ConsulConnection()
 		this->cancleTimer(m_reportStatusTimerId);
 		m_reportStatusTimerId = 0;
 	}
+
+	if (m_thread)
+	{
+		TimerHandler::endReactorEvent(m_reactor);
+		m_thread->join();
+	}
 }
 
 std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
@@ -44,23 +50,13 @@ void ConsulConnection::reportStatus(int timerId)
 	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (!m_ssnRenewTimerId)
-	{
-		// wait for timer request session id
-		initTimer();
-		return;
-	}
 
-	if (m_sessionId.empty())
-	{
-		// wait for timer request session id
-		return;
-	}
+	// wait for timer request session id
+	if (m_sessionId.empty()) return;
 
 	try
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-
+		// Consul path: /appmgr/status/myhost/resource
 		std::string path = BASE_PATH;
 		path.append("status/");
 		path.append(ResourceCollection::instance()->getHostName()).append("/");
@@ -92,39 +88,31 @@ void ConsulConnection::reportStatus(int timerId)
 	}
 }
 
-web::http::http_response ConsulConnection::requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body)
+void ConsulConnection::refreshSession(int timerId)
 {
-	const static char fname[] = "ConsulConnection::requestHttp() ";
+	const static char fname[] = "ConsulConnection::refreshSession() ";
+	try
+	{
+		if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
 
-	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
-
-	LOG_INF << fname << "request :" << path << " to: " << restURL;
-
-	// Create http_client to send the request.
-	web::http::client::http_client_config config;
-	config.set_timeout(std::chrono::seconds(5));
-	config.set_validate_certificates(false);
-	web::http::client::http_client client(restURL, config);
-
-	// Build request URI and start the request.
-	web::uri_builder builder(GET_STRING_T(path));
-	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		if (m_sessionId.empty())
 		{
-			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
-		});
-
-	web::http::http_request request(mtd);
-	for (auto h : header)
-	{
-		request.headers().add(h.first, h.second);
+			m_sessionId = requestSessionId();
+		}
+		else
+		{
+			m_sessionId = renewSessionId();
+		}
 	}
-	request.set_request_uri(builder.to_uri());
-	if (body != nullptr)
+	catch (const std::exception & ex)
 	{
-		request.set_body(*body);
+		LOG_WAR << fname << " got exception: " << ex.what();
 	}
-	web::http::http_response response = client.request(request).get();
-	return std::move(response);
+	catch (...)
+	{
+		LOG_WAR << fname << " exception";
+	}
 }
 
 std::string ConsulConnection::requestSessionId()
@@ -182,58 +170,12 @@ std::string ConsulConnection::renewSessionId()
 	return std::string();
 }
 
-std::string ConsulConnection::getSessionId(const web::json::value& json)
-{
-	const static char fname[] = "ConsulConnection::getSessionId() ";
-
-	LOG_DBG << fname << json.serialize();
-
-	web::json::value jvalue = json;
-
-	if (json.is_array() && json.as_array().size()) jvalue = json.as_array().at(0);
-
-	if (HAS_JSON_FIELD(json, "ID"))
-	{
-		auto sessionId = GET_JSON_STR_VALUE(json, "ID");
-		LOG_DBG << fname << "sessionId=" << sessionId;
-		return sessionId;
-	}
-	return std::string();
-}
-
-void ConsulConnection::refreshSession(int timerId)
-{
-	const static char fname[] = "ConsulConnection::refreshSession() ";
-	try
-	{
-		if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
-
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		if (m_sessionId.empty())
-		{
-			m_sessionId = requestSessionId();
-		}
-		else
-		{
-			m_sessionId = renewSessionId();
-		}
-	}
-	catch (const std::exception & ex)
-	{
-		LOG_WAR << fname << " got exception: " << ex.what();
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << " exception";
-	}
-}
-
 void ConsulConnection::initTimer()
 {
 	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
 
 	// start a single thread for consul timer
-	static std::thread timerThread(&TimerHandler::runReactorEvent, std::ref(m_reactor));
+	if (!m_thread) m_thread = std::make_shared<std::thread>(&TimerHandler::runReactorEvent, std::ref(m_reactor));
 
 	// session renew timer
 	if (m_ssnRenewTimerId)
@@ -241,7 +183,7 @@ void ConsulConnection::initTimer()
 		this->cancleTimer(m_ssnRenewTimerId);
 	}
 	m_ssnRenewTimerId = this->registerTimer(
-		2,
+		0,
 		Configuration::instance()->getConsul()->m_ttl - 3,
 		std::bind(&ConsulConnection::refreshSession, this, std::placeholders::_1),
 		__FUNCTION__
@@ -253,9 +195,44 @@ void ConsulConnection::initTimer()
 		this->cancleTimer(m_reportStatusTimerId);
 	}
 	m_reportStatusTimerId = this->registerTimer(
-		1,
+		2,
 		Configuration::instance()->getConsul()->m_reportInterval,
 		std::bind(&ConsulConnection::reportStatus, this, std::placeholders::_1),
 		__FUNCTION__
 	);
+}
+
+web::http::http_response ConsulConnection::requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body)
+{
+	const static char fname[] = "ConsulConnection::requestHttp() ";
+
+	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
+
+	LOG_DBG << fname << "request :" << path << " to: " << restURL;
+
+	// Create http_client to send the request.
+	web::http::client::http_client_config config;
+	config.set_timeout(std::chrono::seconds(5));
+	config.set_validate_certificates(false);
+	web::http::client::http_client client(restURL, config);
+
+	// Build request URI and start the request.
+	web::uri_builder builder(GET_STRING_T(path));
+	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
+		{
+			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
+		});
+
+	web::http::http_request request(mtd);
+	for (auto h : header)
+	{
+		request.headers().add(h.first, h.second);
+	}
+	request.set_request_uri(builder.to_uri());
+	if (body != nullptr)
+	{
+		request.set_body(*body);
+	}
+	web::http::http_response response = client.request(request).get();
+	return std::move(response);
 }
