@@ -23,7 +23,8 @@
 #include "../common/os/linux.hpp"
 #include "../common/Utility.h"
 
-std::set< std::shared_ptr<RestHandler>> m_restList;
+std::set<std::shared_ptr<RestHandler>> m_restList;
+ACE_Reactor* m_subTimerReactor = nullptr;
 
 int main(int argc, char* argv[])
 {
@@ -33,6 +34,8 @@ int main(int argc, char* argv[])
 	try
 	{
 		ACE::init();
+		m_subTimerReactor = new ACE_Reactor();
+
 		// set working dir
 		ACE_OS::chdir(Utility::getSelfDir().c_str());
 
@@ -112,14 +115,13 @@ int main(int argc, char* argv[])
 
 		// start one thread for timers
 		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		auto subTimerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_subTimerReactor));
 
 		// init consul
 		ConsulConnection::instance()->initTimer();
+		// init health-check
+		HealthCheckTask::instance()->initTimer();
 
-		// health check share main thread for now
-		// // start one thread for health check
-		// HealthCheckTask::instance()->open();
-		auto healthCheckTime = std::chrono::system_clock::now();
 		// monitor applications
 		while (true)
 		{
@@ -132,12 +134,6 @@ int main(int argc, char* argv[])
 				app->invoke();
 			}
 
-			// health check
-			if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - healthCheckTime).count() >= DEFAULT_HEALTH_CHECK_INTERVAL)
-			{
-				HealthCheckTask::instance()->healthCheckAllApp();
-				healthCheckTime = std::chrono::system_clock::now();
-			}
 			PersistManager::instance()->persistSnapshot();
 		}
 	}

@@ -6,13 +6,14 @@
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
 
-#define BASE_PATH  "/v1/kv/appmgr/"
+#define CONSUL_BASE_PATH  "/v1/kv/appmgr/"
+extern ACE_Reactor* m_subTimerReactor;
 
 ConsulConnection::ConsulConnection()
 	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0)
 {
 	// override default reactor
-	m_reactor = new ACE_Reactor();
+	m_reactor = m_subTimerReactor;
 }
 
 ConsulConnection::~ConsulConnection()
@@ -28,12 +29,6 @@ ConsulConnection::~ConsulConnection()
 	{
 		this->cancleTimer(m_reportStatusTimerId);
 		m_reportStatusTimerId = 0;
-	}
-
-	if (m_thread)
-	{
-		TimerHandler::endReactorEvent(m_reactor);
-		m_thread->join();
 	}
 }
 
@@ -57,7 +52,7 @@ void ConsulConnection::reportStatus(int timerId)
 	try
 	{
 		// Consul path: /appmgr/status/myhost/resource
-		std::string path = BASE_PATH;
+		std::string path = CONSUL_BASE_PATH;
 		path.append("status/");
 		path.append(ResourceCollection::instance()->getHostName()).append("/");
 		path.append("resource");
@@ -173,9 +168,6 @@ std::string ConsulConnection::renewSessionId()
 void ConsulConnection::initTimer()
 {
 	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
-
-	// start a single thread for consul timer
-	if (!m_thread) m_thread = std::make_shared<std::thread>(&TimerHandler::runReactorEvent, std::ref(m_reactor));
 
 	// session renew timer
 	if (m_ssnRenewTimerId)

@@ -670,7 +670,7 @@ namespace os {
 				continue;
 			}
 
-			LOG_DBG << fname << "device:" << device << " mountPoint:" << mountPoint;
+			//LOG_DBG << fname << "device:" << device << " mountPoint:" << mountPoint;
 
 			std::set<std::string> ignoreMap;
 			ignoreMap.insert("tmpfs");

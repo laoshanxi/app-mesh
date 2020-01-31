@@ -505,9 +505,9 @@ void Configuration::hotUpdate(const web::json::value& config)
 		if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
 		{
 			auto ssl = rest.at(JSON_KEY_SSL);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
+			if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
+			if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
+			if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
 		}
 	}
 

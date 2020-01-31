@@ -29,6 +29,5 @@ private:
 	std::string m_sessionId;
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;
-	std::shared_ptr<std::thread> m_thread;
 };
 

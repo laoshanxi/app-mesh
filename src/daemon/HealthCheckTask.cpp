@@ -4,17 +4,40 @@
 #include "AppProcess.h"
 #include "Application.h"
 
+extern ACE_Reactor* m_subTimerReactor;
 HealthCheckTask::HealthCheckTask()
+	:m_timerId(0)
 {
+	// override default reactor
+	m_reactor = m_subTimerReactor;
 }
 
 HealthCheckTask::~HealthCheckTask()
 {
+	if (m_timerId)
+	{
+		this->cancleTimer(m_timerId);
+		m_timerId = 0;
+	}
 }
 
-void HealthCheckTask::healthCheckAllApp() const
+void HealthCheckTask::initTimer()
 {
-	const static char fname[] = "HealthCheckTask::healthCheckAllApp() ";
+	if (m_timerId)
+	{
+		this->cancleTimer(m_timerId);
+	}
+	m_timerId = this->registerTimer(
+		2,
+		DEFAULT_HEALTH_CHECK_INTERVAL,
+		std::bind(&HealthCheckTask::healthCheckTimer, this, std::placeholders::_1),
+		__FUNCTION__
+	);
+}
+
+void HealthCheckTask::healthCheckTimer(int timerId)
+{
+	const static char fname[] = "HealthCheckTask::healthCheckTimer() ";
 
 	auto apps = Configuration::instance()->getApps();
 	for (auto& app : apps)
@@ -49,8 +72,8 @@ void HealthCheckTask::healthCheckAllApp() const
 	}
 }
 
-std::unique_ptr<HealthCheckTask>& HealthCheckTask::instance()
+std::shared_ptr<HealthCheckTask>& HealthCheckTask::instance()
 {
-	static auto singleton = std::make_unique<HealthCheckTask>();
+	static auto singleton = std::make_shared<HealthCheckTask>();
 	return singleton;
 }
