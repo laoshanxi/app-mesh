@@ -128,8 +128,8 @@ int main(int argc, char* argv[])
 			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
 
 			// monitor application
-			auto apps = Configuration::instance()->getApps();
-			for (const auto& app : apps)
+			auto allApp = Configuration::instance()->getApps();
+			for (const auto& app : allApp)
 			{
 				app->invoke();
 			}
