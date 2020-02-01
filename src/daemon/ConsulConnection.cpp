@@ -1,8 +1,9 @@
-#include <thread>
-#include "Application.h"
-#include "ConsulConnection.h"
 #include <cpprest/http_client.h>
 #include "cpprest/json.h"
+#include <thread>
+
+#include "Application.h"
+#include "ConsulConnection.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
@@ -44,11 +45,9 @@ void ConsulConnection::reportStatus(int timerId)
 	const static char fname[] = "ConsulConnection::reportStatus() ";
 
 	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
-
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// wait for session id
 	if (m_sessionId.empty()) return;
-
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	try
 	{
@@ -176,15 +175,19 @@ std::map<std::string, web::json::value> ConsulConnection::retrieveTopology()
 {
 	const static char fname[] = "ConsulConnection::retrieveTopology() ";
 
-	std::map<std::string, web::json::value> result;
+	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	// wait for session id
+	if (m_sessionId.empty()) return;
 
+	std::map<std::string, web::json::value> result;
 	// get task
-	web::json::value taskJson;
+	std::shared_ptr<ConsulTask> tasks;
 	std::string path = std::string(CONSUL_BASE_PATH).append("task");
 	auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		taskJson = resp.extract_json(true).get();
+		tasks = ConsulTask::FromJson(resp.extract_json(true).get());
 	}
 	else
 	{
@@ -195,20 +198,12 @@ std::map<std::string, web::json::value> ConsulConnection::retrieveTopology()
 	resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		auto json = resp.extract_json(true).get();
-		LOG_DBG << fname << json.serialize();
-		if (json.is_array() && json.as_array().size())
+		auto topology = ConsulTopology::FromJson(resp.extract_json(true).get());
+		for (auto app : topology->m_apps)
 		{
-			json = json.as_array().at(0);
-			for (auto app : json.as_object())
+			if (tasks->m_apps.count(app))
 			{
-				if (!app.second.is_null() && app.second.has_string_field(ResourceCollection::instance()->getHostName()))
-				{
-					if (taskJson.has_field(app.first))
-					{
-						result[app.first] = taskJson.at(app.first).at("content");
-					}
-				}
+				result[app] = tasks->m_apps[app];
 			}
 		}
 	}
@@ -332,4 +327,51 @@ web::json::value ConsulConnection::ConsulStatus::AsJson()
 	}
 	result["applications"] = apps;
 	return result;
+}
+
+std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::FromJson(const web::json::value& jobj)
+{
+	auto consul = std::make_shared<ConsulConnection::ConsulTask>();
+	for (auto app : jobj.as_object())
+	{
+		if (HAS_JSON_FIELD(app.second, "content") && HAS_JSON_FIELD(app.second, "replication") &&
+			app.second.at("replication").is_integer() &&
+			app.second.at("content").is_object())
+		{
+			consul->m_apps[app.first] = app.second.at("content");
+			consul->m_replications[app.first] = app.second.at("replication").as_integer();
+		}
+	}
+	return consul;
+}
+
+web::json::value ConsulConnection::ConsulTask::AsJson()
+{
+	auto result = web::json::value::object();
+	for (auto app : m_apps)
+	{
+		auto jsonApp = web::json::value::object();
+		jsonApp["replication"] = m_replications[app.first];
+		jsonApp["content"] = app.second;
+		result[app.first] = jsonApp;
+	}
+	return result;
+}
+
+std::shared_ptr<ConsulConnection::ConsulTopology> ConsulConnection::ConsulTopology::FromJson(const web::json::value& jobj)
+{
+	auto consul = std::make_shared<ConsulConnection::ConsulTopology>();
+	if (jobj.has_object_field(ResourceCollection::instance()->getHostName()))
+	{
+		for (auto host : jobj.at(ResourceCollection::instance()->getHostName()).as_array())
+		{
+			consul->m_apps.insert(GET_STD_STRING(host.as_string()));
+		}
+	}
+	return consul;
+}
+
+web::json::value ConsulConnection::ConsulTopology::AsJson()
+{
+	return web::json::value();
 }

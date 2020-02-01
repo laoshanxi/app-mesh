@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <map>
+#include <set>
 #include <string>
 #include <thread>
 #include <cpprest/http_msg.h>
@@ -20,14 +21,19 @@ class ConsulConnection :public TimerHandler
 	struct ConsulTask {
 		static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
+
+		std::map<std::string, int> m_replications;
+		std::map<std::string, web::json::value> m_apps;
 	};
-	struct ConsulWorker {
-		static std::shared_ptr<ConsulWorker> FromJson(const web::json::value& jobj);
-		web::json::value AsJson();
-	};
+	//struct ConsulWorker {
+	//	static std::shared_ptr<ConsulWorker> FromJson(const web::json::value& jobj);
+	//	web::json::value AsJson();
+	//};
 	struct ConsulTopology {
 		static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
+
+		std::set<std::string> m_apps;
 	};
 public:
 	ConsulConnection();
