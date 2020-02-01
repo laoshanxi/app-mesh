@@ -79,6 +79,7 @@ namespace std
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
+#define APP_COMMENTS_FROM_CONSUL "CONSUL_APP"
 
 const char* GET_STATUS_STR(unsigned int status);
 
@@ -208,6 +209,7 @@ public:
 #define JSON_KEY_APP_last_start "last_start_time"
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
+#define JSON_KEY_APP_version "version"
 
 #define JSON_KEY_PERIOD_APP_keep_running "keep_running"
 

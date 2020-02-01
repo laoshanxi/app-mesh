@@ -62,6 +62,8 @@ public:
 	std::string getOutput(bool keepHistory);
 
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
+	int getVersion();
+	void setVersion(int version);
 
 	void destroy();
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
@@ -84,7 +86,7 @@ protected:
 	bool m_health;
 	std::string m_healthCheckCmd;
 	const std::string m_appId;
-
+	int m_version;
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
 	int m_pid;

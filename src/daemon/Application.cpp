@@ -18,7 +18,7 @@
 
 Application::Application()
 	:m_status(STATUS::ENABLED), m_health(true), m_appId(Utility::createUUID())
-	, m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
+	, m_version(0), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
 	const static char fname[] = "Application::Application() ";
@@ -92,7 +92,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_cache_lines), MAX_APP_CACHED_LINES);
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid)) app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
-
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_version)) SET_JSON_INT_VALUE(jobj, JSON_KEY_APP_version, app->m_version);
 	app->dump();
 }
 
@@ -328,6 +328,18 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	}
 }
 
+int Application::getVersion()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_version;
+}
+
+void Application::setVersion(int version)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_version = version;
+}
+
 web::json::value Application::AsJson(bool returnRuntimeInfo)
 {
 	web::json::value result = web::json::value::object();
@@ -374,6 +386,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_posixTimeZone.length()) result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
 	if (m_cacheOutputLines) result[JSON_KEY_APP_cache_lines] = web::json::value::number(m_cacheOutputLines);
 	if (m_dockerImage.length()) result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
+	result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 	return result;
 }
 
@@ -392,6 +405,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
+	LOG_DBG << fname << "m_version:" << m_version;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }

@@ -638,8 +638,7 @@ namespace os {
 
 	inline std::map<std::string, std::string> getMoundPoints()
 	{
-		const static char fname[] = "getMoundPoints() ";
-
+		//const static char fname[] = "getMoundPoints() ";
 		std::map<std::string, std::string> points;
 		struct mntent* mountEntryPtr;
 		struct mntent mountEntry;

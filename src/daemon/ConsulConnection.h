@@ -5,10 +5,30 @@
 #include <string>
 #include <thread>
 #include <cpprest/http_msg.h>
+#include <cpprest/json.h>
 #include "TimerHandler.h"
 
 class ConsulConnection :public TimerHandler
 {
+	struct ConsulStatus {
+		static std::shared_ptr<ConsulStatus> FromJson(const web::json::value& json);
+		web::json::value AsJson();
+
+		web::json::value m_resource;
+		std::map<std::string, web::json::value> m_apps;
+	};
+	struct ConsulTask {
+		static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
+		web::json::value AsJson();
+	};
+	struct ConsulWorker {
+		static std::shared_ptr<ConsulWorker> FromJson(const web::json::value& jobj);
+		web::json::value AsJson();
+	};
+	struct ConsulTopology {
+		static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj);
+		web::json::value AsJson();
+	};
 public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
@@ -22,6 +42,7 @@ private:
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
 	std::string requestSessionId();
 	std::string renewSessionId();
+	std::map<std::string, web::json::value> retrieveTopology();
 
 private:
 	std::recursive_mutex m_mutex;

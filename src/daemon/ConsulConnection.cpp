@@ -1,4 +1,5 @@
 #include <thread>
+#include "Application.h"
 #include "ConsulConnection.h"
 #include <cpprest/http_client.h>
 #include "cpprest/json.h"
@@ -44,22 +45,28 @@ void ConsulConnection::reportStatus(int timerId)
 
 	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-
-	// wait for timer request session id
+	// wait for session id
 	if (m_sessionId.empty()) return;
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	try
 	{
-		// Consul path: /appmgr/status/myhost/resource
+		// Consul path: /appmgr/status/myhost
 		std::string path = CONSUL_BASE_PATH;
 		path.append("status/");
-		path.append(ResourceCollection::instance()->getHostName()).append("/");
-		path.append("resource");
+		path.append(ResourceCollection::instance()->getHostName());
 
-		auto body = ResourceCollection::instance()->AsJson();
+		auto consul = std::make_shared<ConsulConnection::ConsulStatus>();
+		consul->m_resource = ResourceCollection::instance()->AsJson();
+		auto apps = Configuration::instance()->getApps();
+		for (auto app : apps)
+		{
+			consul->m_apps[app->getName()] = app->AsJson(true);
+		}
+		auto body = consul->AsJson();
 
-		auto resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
+		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", m_sessionId} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
@@ -69,7 +76,7 @@ void ConsulConnection::reportStatus(int timerId)
 			}
 			else
 			{
-				LOG_WAR << fname << "report failed with response :" << result;
+				LOG_WAR << fname << "report failed with response : " << result;
 			}
 		}
 	}
@@ -165,6 +172,73 @@ std::string ConsulConnection::renewSessionId()
 	return std::string();
 }
 
+std::map<std::string, web::json::value> ConsulConnection::retrieveTopology()
+{
+	const static char fname[] = "ConsulConnection::retrieveTopology() ";
+
+	std::map<std::string, web::json::value> result;
+
+	// get task
+	web::json::value taskJson;
+	std::string path = std::string(CONSUL_BASE_PATH).append("task");
+	auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		taskJson = resp.extract_json(true).get();
+	}
+	else
+	{
+		return result;
+	}
+
+	path = std::string(CONSUL_BASE_PATH).append("topology");
+	resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto json = resp.extract_json(true).get();
+		LOG_DBG << fname << json.serialize();
+		if (json.is_array() && json.as_array().size())
+		{
+			json = json.as_array().at(0);
+			for (auto app : json.as_object())
+			{
+				if (!app.second.is_null() && app.second.has_string_field(ResourceCollection::instance()->getHostName()))
+				{
+					if (taskJson.has_field(app.first))
+					{
+						result[app.first] = taskJson.at(app.first).at("content");
+					}
+				}
+			}
+		}
+	}
+	for (auto app : result)
+	{
+		std::shared_ptr<Application> newApp, runningApp;
+		try
+		{
+			// set consul flag for app
+			app.second[JSON_KEY_APP_comments] = web::json::value::string(APP_COMMENTS_FROM_CONSUL);
+
+			newApp = Configuration::instance()->parseApp(app.second);
+			runningApp = Configuration::instance()->getApp(app.first);
+
+			if (runningApp->getVersion() > newApp->getVersion())
+			{
+				Configuration::instance()->registerApp(newApp);
+			}
+		}
+		catch (...)
+		{
+			if (newApp && !runningApp)
+			{
+				Configuration::instance()->registerApp(newApp);
+			}
+		}
+	}
+	return std::move(result);
+}
+
 void ConsulConnection::initTimer()
 {
 	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
@@ -227,4 +301,35 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	}
 	web::http::http_response response = client.request(request).get();
 	return std::move(response);
+}
+
+std::shared_ptr<ConsulConnection::ConsulStatus> ConsulConnection::ConsulStatus::FromJson(const web::json::value& json)
+{
+	auto consul = std::make_shared<ConsulConnection::ConsulStatus>();
+	if (HAS_JSON_FIELD(json, "resource"))
+	{
+		consul->m_resource = json.at("resource");
+	}
+	if (HAS_JSON_FIELD(json, "applications"))
+	{
+		auto apps = json.at("applications").as_object();
+		for (auto app : apps)
+		{
+			consul->m_apps[GET_STD_STRING(app.first)] = app.second;
+		}
+	}
+	return consul;
+}
+
+web::json::value ConsulConnection::ConsulStatus::AsJson()
+{
+	auto result = web::json::value::object();
+	result["resource"] = m_resource;
+	auto apps = web::json::value::object();
+	for (auto app : m_apps)
+	{
+		apps[app.first] = app.second;
+	}
+	result["applications"] = apps;
+	return result;
 }
