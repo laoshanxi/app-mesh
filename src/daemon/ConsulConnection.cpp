@@ -199,11 +199,14 @@ std::map<std::string, web::json::value> ConsulConnection::retrieveTopology()
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto topology = ConsulTopology::FromJson(resp.extract_json(true).get());
-		for (auto app : topology->m_apps)
+		if (topology->m_apps.count(ResourceCollection::instance()->getHostName()))
 		{
-			if (tasks->m_apps.count(app))
+			for (auto app : topology->m_apps[ResourceCollection::instance()->getHostName()])
 			{
-				result[app] = tasks->m_apps[app];
+				if (tasks->m_apps.count(app))
+				{
+					result[app] = tasks->m_apps[app];
+				}
 			}
 		}
 	}
@@ -361,17 +364,31 @@ web::json::value ConsulConnection::ConsulTask::AsJson()
 std::shared_ptr<ConsulConnection::ConsulTopology> ConsulConnection::ConsulTopology::FromJson(const web::json::value& jobj)
 {
 	auto consul = std::make_shared<ConsulConnection::ConsulTopology>();
-	if (jobj.has_object_field(ResourceCollection::instance()->getHostName()))
+	for (auto host : jobj.as_object())
 	{
-		for (auto host : jobj.at(ResourceCollection::instance()->getHostName()).as_array())
+		std::set<std::string> apps;
+		for (auto app : host.second.as_array())
 		{
-			consul->m_apps.insert(GET_STD_STRING(host.as_string()));
+			apps.insert(app.as_string());
 		}
+		consul->m_apps[GET_STD_STRING(host.first)] = apps;
 	}
 	return consul;
 }
 
 web::json::value ConsulConnection::ConsulTopology::AsJson()
 {
-	return web::json::value();
+	auto result = web::json::value::object();
+	for (auto host : m_apps)
+	{
+		auto& apps = host.second;
+		auto jsonApps = web::json::value::array(apps.size());
+		int index = 0;
+		for (auto app : apps)
+		{
+			jsonApps[index++] = web::json::value::string(app);
+		}
+		result[host.first] = jsonApps;
+	}
+	return result;
 }

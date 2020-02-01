@@ -33,7 +33,7 @@ class ConsulConnection :public TimerHandler
 		static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
 
-		std::set<std::string> m_apps;
+		std::map<std::string, std::set<std::string> > m_apps;
 	};
 public:
 	ConsulConnection();
