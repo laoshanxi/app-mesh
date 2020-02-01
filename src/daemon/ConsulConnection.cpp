@@ -174,13 +174,13 @@ std::string ConsulConnection::renewSessionId()
 std::map<std::string, web::json::value> ConsulConnection::retrieveTopology()
 {
 	const static char fname[] = "ConsulConnection::retrieveTopology() ";
+	std::map<std::string, web::json::value> result;
 
-	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
+	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return result;
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// wait for session id
-	if (m_sessionId.empty()) return;
+	if (m_sessionId.empty()) return result;
 
-	std::map<std::string, web::json::value> result;
 	// get task
 	std::shared_ptr<ConsulTask> tasks;
 	std::string path = std::string(CONSUL_BASE_PATH).append("task");
