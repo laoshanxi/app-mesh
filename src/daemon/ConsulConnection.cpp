@@ -187,7 +187,7 @@ std::map<std::string, web::json::value> ConsulConnection::retrieveTopology()
 	auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		tasks = ConsulTask::FromJson(resp.extract_json(true).get());
+		tasks = ConsulTask::FromJson(web::json::value::parse(Utility::decode64(resp.extract_string().get())));
 	}
 	else
 	{
@@ -198,7 +198,7 @@ std::map<std::string, web::json::value> ConsulConnection::retrieveTopology()
 	resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		auto topology = ConsulTopology::FromJson(resp.extract_json(true).get());
+		auto topology = ConsulTopology::FromJson(web::json::value::parse(Utility::decode64(resp.extract_string().get())));
 		if (topology->m_apps.count(ResourceCollection::instance()->getHostName()))
 		{
 			for (auto app : topology->m_apps[ResourceCollection::instance()->getHostName()])
