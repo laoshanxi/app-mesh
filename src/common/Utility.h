@@ -156,6 +156,7 @@ public:
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define CONSUL_REPORT_DEFAULT_INTERVAL 15
+#define CONSUL_TOPOLOGY_DEFAULT_INTERVAL 5
 
 #define JSON_KEY_Description "Description"
 
@@ -187,6 +188,7 @@ public:
 #define JSON_KEY_CONSULE_SESSION_NODE "session_node"
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSULE_REPORT_INTERVAL "report_interval"
+#define JSON_KEY_CONSULE_TOPOLOGY_INTERVAL "topology_interval"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"

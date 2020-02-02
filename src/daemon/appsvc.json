@@ -81,7 +81,8 @@
     "url": "http://localhost:8500",
     "session_node": null,
     "session_TTL": 30,
-    "report_interval": 10
+    "report_interval": 10,
+    "topology_interval": 5
   },
   "Labels": {
     "os_version": "centos7.6",

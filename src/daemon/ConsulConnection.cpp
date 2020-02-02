@@ -50,7 +50,7 @@ void ConsulConnection::reportStatus(int timerId)
 	const static char fname[] = "ConsulConnection::reportStatus() ";
 
 	// check feature enabled
-	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
+	if (!Configuration::instance()->getConsul()->enabled()) return;
 
 	// check session id ready
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -116,7 +116,7 @@ void ConsulConnection::refreshSession(int timerId)
 	try
 	{
 		// check feature enabled
-		if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
+		if (!Configuration::instance()->getConsul()->enabled()) return;
 
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		if (m_sessionId.empty())
@@ -144,7 +144,7 @@ void ConsulConnection::applyTopology(int timerId)
 	try
 	{
 		// check feature enabled
-		if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
+		if (!Configuration::instance()->getConsul()->enabled()) return;
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		// check session id
 		if (m_sessionId.empty()) return;
@@ -353,7 +353,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 
 void ConsulConnection::initTimer()
 {
-	if (Configuration::instance()->getConsul()->m_consulUrl.empty()) return;
+	if (!Configuration::instance()->getConsul()->enabled()) return;
 
 	// session renew timer
 	if (m_ssnRenewTimerId)
@@ -386,7 +386,7 @@ void ConsulConnection::initTimer()
 	}
 	m_applyTopoTimerId = this->registerTimer(
 		1,
-		Configuration::instance()->getConsul()->m_reportInterval,
+		Configuration::instance()->getConsul()->m_topologyInterval,
 		std::bind(&ConsulConnection::applyTopology, this, std::placeholders::_1),
 		__FUNCTION__
 	);

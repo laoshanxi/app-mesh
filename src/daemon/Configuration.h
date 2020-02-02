@@ -50,8 +50,11 @@ class Configuration
 		JsonSecurity();
 	};
 	struct JsonConsul {
+		JsonConsul();
 		static std::shared_ptr<JsonConsul> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
+		bool enabled() const;
+
 		// http://consul.service.consul:8500
 		std::string m_consulUrl;
 		// Node (string: "<agent>") - Specifies the name of the node. This must refer to a node that is already registered.
@@ -60,7 +63,7 @@ class Configuration
 		int m_ttl;
 		// report status to consul interval
 		int m_reportInterval;
-		JsonConsul();
+		int m_topologyInterval;
 	};
 public:
 	Configuration();

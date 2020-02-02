@@ -715,6 +715,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	consul->m_sessionNode = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_SESSION_NODE);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
+	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_TOPOLOGY_INTERVAL, consul->m_topologyInterval);
 	return consul;
 }
 
@@ -725,10 +726,16 @@ web::json::value Configuration::JsonConsul::AsJson()
 	result[JSON_KEY_CONSULE_SESSION_NODE] = web::json::value::string(m_sessionNode);
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSULE_REPORT_INTERVAL] = web::json::value::number(m_reportInterval);
+	result[JSON_KEY_CONSULE_TOPOLOGY_INTERVAL] = web::json::value::number(m_topologyInterval);
 	return result;
 }
 
+bool Configuration::JsonConsul::enabled() const
+{
+	return !m_consulUrl.empty();
+}
+
 Configuration::JsonConsul::JsonConsul()
-	:m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL)
+	:m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_topologyInterval(CONSUL_TOPOLOGY_DEFAULT_INTERVAL)
 {
 }
