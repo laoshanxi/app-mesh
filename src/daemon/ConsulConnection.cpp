@@ -183,7 +183,7 @@ void ConsulConnection::applyTopology(int timerId)
 			{
 				if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 				{
-					if (!(topology.count(ResourceCollection::instance()->getHostName()) ||
+					if (!(topology.count(ResourceCollection::instance()->getHostName()) &&
 						topology[ResourceCollection::instance()->getHostName()].count(currentApp->getName())))
 					{
 						// Remove no used topology
