@@ -355,8 +355,6 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 				{
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(app, "Value"));
 					auto appJson = web::json::value::parse(appText);
-					// set flag to mark consul application
-					appJson[JSON_KEY_APP_comments] = web::json::value::string(APP_COMMENTS_FROM_CONSUL);
 					auto task = ConsulTask::FromJson(appJson);
 					if (task->m_app->getName().length()) result[task->m_app->getName()] = task;
 				}
@@ -478,7 +476,10 @@ std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::From
 		jobj.at("replication").is_integer() &&
 		jobj.at("content").is_object())
 	{
-		consul->m_app = Configuration::instance()->parseApp(jobj.at("content"));
+		auto appJson = jobj.at("content");
+		// set flag to mark consul application
+		appJson[JSON_KEY_APP_comments] = web::json::value::string(APP_COMMENTS_FROM_CONSUL);
+		consul->m_app = Configuration::instance()->parseApp(appJson);
 		consul->m_replication = jobj.at("replication").as_integer();
 	}
 	return consul;
