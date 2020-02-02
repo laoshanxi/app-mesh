@@ -79,7 +79,7 @@ namespace std
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
-#define APP_COMMENTS_FROM_CONSUL "CONSUL_APP"
+#define APP_COMMENTS_FROM_CONSUL "_CONSUL_APP_"
 
 const char* GET_STATUS_STR(unsigned int status);
 

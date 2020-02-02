@@ -20,13 +20,11 @@ ConsulConnection::ConsulConnection()
 
 ConsulConnection::~ConsulConnection()
 {
-	// 1. clean old timer
 	if (m_ssnRenewTimerId)
 	{
 		this->cancleTimer(m_ssnRenewTimerId);
 		m_ssnRenewTimerId = 0;
 	}
-
 	if (m_reportStatusTimerId)
 	{
 		this->cancleTimer(m_reportStatusTimerId);
@@ -153,30 +151,43 @@ void ConsulConnection::applyTopology(int timerId)
 		auto topology = retrieveTopology(ResourceCollection::instance()->getHostName());
 		if (topology.count(ResourceCollection::instance()->getHostName()))
 		{
-			for (auto app : topology[ResourceCollection::instance()->getHostName()])
+			auto currentAllApps = Configuration::instance()->getApps();
+			for (auto topologyAppStr : topology[ResourceCollection::instance()->getHostName()])
 			{
-				if (task.count(app))
+				if (task.count(topologyAppStr))
 				{
-					std::shared_ptr<Application> newApp, runningApp;
-					newApp = task[app]->m_app;
-					auto apps = Configuration::instance()->getApps();
-					auto it = std::find_if(apps.begin(), apps.end(), [&app](std::shared_ptr<Application> const& obj) {
-						return obj->getName() == app;
+					std::shared_ptr<Application> topologyAppObj;
+					topologyAppObj = task[topologyAppStr]->m_app;
+					auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&topologyAppStr](std::shared_ptr<Application> const& obj) {
+						return obj->getName() == topologyAppStr;
 						});
-					if (it != apps.end())
+					if (it != currentAllApps.end())
 					{
-						runningApp = *it;
-						if (runningApp->getVersion() > newApp->getVersion())
+						// Update app
+						auto currentRunningApp = *it;
+						if (currentRunningApp->getVersion() > topologyAppObj->getVersion())
 						{
-							Configuration::instance()->registerApp(newApp);
+							Configuration::instance()->registerApp(topologyAppObj);
+							LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
 						}
 					}
 					else
 					{
-						Configuration::instance()->registerApp(newApp);
+						// New add app
+						Configuration::instance()->registerApp(topologyAppObj);
+						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
 					}
-					runningApp = Configuration::instance()->getApp(app);
-
+				}
+			}
+			for (auto currentApp : currentAllApps)
+			{
+				if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
+				{
+					if (topology.count(ResourceCollection::instance()->getHostName()) && topology[ResourceCollection::instance()->getHostName()].count(currentApp->getName()) == 0)
+					{
+						// Remove no used topology
+						Configuration::instance()->removeApp(currentApp->getName());
+					}
 				}
 			}
 		}
@@ -342,6 +353,8 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 				{
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(app, "Value"));
 					auto appJson = web::json::value::parse(appText);
+					// set flag to mark consul application
+					appJson[JSON_KEY_APP_comments] = web::json::value::string(APP_COMMENTS_FROM_CONSUL);
 					auto task = ConsulTask::FromJson(appJson);
 					if (task->m_app->getName().length()) result[task->m_app->getName()] = task;
 				}

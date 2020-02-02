@@ -64,6 +64,7 @@ public:
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();
 	void setVersion(int version);
+	const std::string getComments() const { return m_comments; }
 
 	void destroy();
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
