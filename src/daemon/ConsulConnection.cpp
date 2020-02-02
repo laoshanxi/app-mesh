@@ -364,9 +364,11 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 	return std::move(result);
 }
 
-void ConsulConnection::initTimer()
+void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 {
 	if (!Configuration::instance()->getConsul()->enabled()) return;
+
+	if (!recoveredConsulSsnId.empty()) m_sessionId = recoveredConsulSsnId;
 
 	// session renew timer
 	if (m_ssnRenewTimerId)
@@ -403,6 +405,12 @@ void ConsulConnection::initTimer()
 		std::bind(&ConsulConnection::applyTopology, this, std::placeholders::_1),
 		__FUNCTION__
 	);
+}
+
+const std::string ConsulConnection::getConsulSessionId()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_sessionId;
 }
 
 web::http::http_response ConsulConnection::requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body)

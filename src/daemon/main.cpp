@@ -118,7 +118,7 @@ int main(int argc, char* argv[])
 		auto subTimerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_subTimerReactor));
 
 		// init consul
-		ConsulConnection::instance()->initTimer();
+		ConsulConnection::instance()->initTimer(snap->m_consulSessionId);
 		// init health-check
 		HealthCheckTask::instance()->initTimer();
 

@@ -29,7 +29,8 @@ public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection>& instance();
-	void initTimer();
+	void initTimer(const std::string& recoveredConsulSsnId = "");
+	const std::string getConsulSessionId();
 
 private:
 	virtual void reportStatus(int timerId = 0);

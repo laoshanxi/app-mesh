@@ -3,6 +3,7 @@
 #include "AppProcess.h"
 #include <fstream>
 #include "Application.h"
+#include "ConsulConnection.h"
 #include "../common/os/linux.hpp"
 
 #define SNAPSHOT_JSON_KEY_pid "pid"
@@ -50,8 +51,8 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 				);
 			}
 		}
-
 	}
+	snap->m_consulSessionId = ConsulConnection::instance()->getConsulSessionId();
 	return std::move(snap);
 }
 
@@ -104,19 +105,25 @@ bool Snapshot::operator==(const Snapshot& snapshort) const
 			return false;
 		}
 	}
-	return snapshort.m_apps.size() == m_apps.size();
+	return snapshort.m_apps.size() == m_apps.size() &&
+		snapshort.m_consulSessionId == m_consulSessionId;
 }
 
 web::json::value Snapshot::AsJson()
 {
 	web::json::value result = web::json::value::object();
+	// Applications
+	web::json::value apps = web::json::value::object();
 	for (const auto& app : m_apps)
 	{
 		auto json = web::json::value::object();
 		json[SNAPSHOT_JSON_KEY_pid] = web::json::value::number(app.second.m_pid);
 		json[SNAPSHOT_JSON_KEY_starttime] = web::json::value::number(app.second.m_startTime);
-		result[app.first] = std::move(json);
+		apps[app.first] = std::move(json);
 	}
+	result["Applications"] = apps;
+	// Consul
+	result["ConsulSessionId"] = web::json::value::string(m_consulSessionId);
 	return std::move(result);
 }
 
@@ -125,7 +132,8 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value& obj)
 	auto snap = std::make_shared<Snapshot>();
 	if (!obj.is_null() && obj.is_object())
 	{
-		for (auto app : obj.as_object())
+		if (obj.has_object_field("Applications"))
+		for (auto app : obj.at("Applications").as_object())
 		{
 			if (HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_starttime) &&
 				app.second.has_number_field(SNAPSHOT_JSON_KEY_pid) && app.second.has_number_field(SNAPSHOT_JSON_KEY_starttime))
@@ -138,6 +146,8 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value& obj)
 					));
 			}
 		}
+		if (obj.has_string_field("ConsulSessionId"))
+			snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
 	}
 	return std::move(snap);
 }
