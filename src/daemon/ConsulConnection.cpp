@@ -183,10 +183,12 @@ void ConsulConnection::applyTopology(int timerId)
 			{
 				if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 				{
-					if (topology.count(ResourceCollection::instance()->getHostName()) && topology[ResourceCollection::instance()->getHostName()].count(currentApp->getName()) == 0)
+					if (!(topology.count(ResourceCollection::instance()->getHostName()) ||
+						topology[ResourceCollection::instance()->getHostName()].count(currentApp->getName())))
 					{
 						// Remove no used topology
 						Configuration::instance()->removeApp(currentApp->getName());
+						LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
 					}
 				}
 			}
@@ -368,6 +370,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 {
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (!recoveredConsulSsnId.empty()) m_sessionId = recoveredConsulSsnId;
 
 	// session renew timer
