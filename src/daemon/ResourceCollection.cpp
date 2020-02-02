@@ -200,5 +200,5 @@ web::json::value ResourceCollection::AsJson()
 	result[GET_STRING_T("appmgr_start_time")] = web::json::value::string(Utility::convertTime2Str(m_appmgrStartTime));
 	result[GET_STRING_T("pid")] = web::json::value::number(getPid());
 	LOG_DBG << fname << "Exit";
-	return result;
+	return std::move(result);
 }
