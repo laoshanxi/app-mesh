@@ -4,12 +4,12 @@
 #include "AppProcess.h"
 #include "Application.h"
 
-extern ACE_Reactor* m_subTimerReactor;
+extern ACE_Reactor* m_timerReactor;
 HealthCheckTask::HealthCheckTask()
 	:m_timerId(0)
 {
 	// override default reactor
-	m_reactor = m_subTimerReactor;
+	m_reactor = m_timerReactor;
 }
 
 HealthCheckTask::~HealthCheckTask()

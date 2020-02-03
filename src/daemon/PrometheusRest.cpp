@@ -96,7 +96,7 @@ void PrometheusRest::handle_options(const HttpRequest& message)
 	message.reply(status_codes::OK);
 }
 
-void PrometheusRest::handleRest(const http_request& message, std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions)
+void PrometheusRest::handleRest(const http_request& message, const std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions)
 {
 	static char fname[] = "PrometheusRest::handle_rest() ";
 
@@ -228,7 +228,7 @@ CounterPtr::CounterPtr(std::shared_ptr<prometheus::Registry> retistry, const std
 {
 	const static char fname[] = "CounterPtr::CounterPtr() ";
 
-	std::map<std::string, std::string> commonLabels = { {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
+	std::map<std::string, std::string> commonLabels = { {"host", MY_HOST_NAME}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
 	commonLabels.insert(label.begin(), label.end());
 
 	auto& family = prometheus::BuildCounter()
@@ -258,7 +258,7 @@ GaugePtr::GaugePtr(std::shared_ptr<prometheus::Registry> retistry, const std::st
 {
 	const static char fname[] = "GaugePtr::GaugePtr() ";
 
-	std::map<std::string, std::string> commonLabels = { {"host", ResourceCollection::instance()->getHostName()}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
+	std::map<std::string, std::string> commonLabels = { {"host", MY_HOST_NAME}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
 	commonLabels.insert(label.begin(), label.end());
 
 	auto& family = prometheus::BuildGauge()

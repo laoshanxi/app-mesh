@@ -53,6 +53,8 @@ namespace std
 }
 #endif
 
+#define MY_HOST_NAME ResourceCollection::instance()->getHostName()
+
 // Get attribute from json Object
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))

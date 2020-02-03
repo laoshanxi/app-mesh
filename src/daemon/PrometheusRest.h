@@ -84,7 +84,7 @@ protected:
 	void initMetrics();
 
 private:
-	void handleRest(const http_request& message, std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions);
+	void handleRest(const http_request& message, const std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions);
 	void bindRestMethod(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func);
 	void handle_get(const HttpRequest& message);
 	void handle_put(const HttpRequest& message);

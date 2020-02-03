@@ -9,13 +9,13 @@
 #include "../common/Utility.h"
 
 #define CONSUL_BASE_PATH  "/v1/kv/appmgr/"
-extern ACE_Reactor* m_subTimerReactor;
+extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
 	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0)
 {
 	// override default reactor
-	m_reactor = m_subTimerReactor;
+	m_reactor = m_timerReactor;
 }
 
 ConsulConnection::~ConsulConnection()
@@ -57,7 +57,7 @@ void ConsulConnection::reportStatus(int timerId)
 	try
 	{
 		//report resource: /appmgr/status/myhost/resource
-		std::string path = std::string(CONSUL_BASE_PATH).append("status/").append(ResourceCollection::instance()->getHostName()).append("/resource");
+		std::string path = std::string(CONSUL_BASE_PATH).append("status/").append(MY_HOST_NAME).append("/resource");
 		auto body = ResourceCollection::instance()->AsJson();
 		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", m_sessionId} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
@@ -65,17 +65,17 @@ void ConsulConnection::reportStatus(int timerId)
 			auto result = resp.extract_utf8string(true).get();
 			if (result == "true")
 			{
-				LOG_DBG << fname << "report " << path << " success";
+				//LOG_DBG << fname << "report resource to " << path << " success";
 			}
 			else
 			{
-				LOG_WAR << fname << "report " << path << " failed with response : " << result;
+				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
 				return;
 			}
 		}
 
 		//report resource: /appmgr/status/myhost/applications
-		path = std::string(CONSUL_BASE_PATH).append("status/").append(ResourceCollection::instance()->getHostName()).append("/applications");
+		path = std::string(CONSUL_BASE_PATH).append("status/").append(MY_HOST_NAME).append("/applications");
 		auto consul = std::make_shared<ConsulConnection::ConsulStatus>();
 		auto apps = Configuration::instance()->getApps();
 		for (auto app : apps)
@@ -89,11 +89,11 @@ void ConsulConnection::reportStatus(int timerId)
 			auto result = resp.extract_utf8string(true).get();
 			if (result == "true")
 			{
-				LOG_DBG << fname << "report success";
+				//LOG_DBG << fname << "report applications success";
 			}
 			else
 			{
-				LOG_WAR << fname << "report failed with response : " << result;
+				LOG_WAR << fname << "report applications failed with response : " << result;
 				return;
 			}
 		}
@@ -125,6 +125,7 @@ void ConsulConnection::refreshSession(int timerId)
 		{
 			m_sessionId = renewSessionId();
 		}
+		return;
 	}
 	catch (const std::exception & ex)
 	{
@@ -134,6 +135,8 @@ void ConsulConnection::refreshSession(int timerId)
 	{
 		LOG_WAR << fname << " exception";
 	}
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_sessionId.clear();
 }
 
 void ConsulConnection::applyTopology(int timerId)
@@ -148,11 +151,11 @@ void ConsulConnection::applyTopology(int timerId)
 		if (m_sessionId.empty()) return;
 
 		auto task = retrieveTask();
-		auto topology = retrieveTopology(ResourceCollection::instance()->getHostName());
-		if (topology.count(ResourceCollection::instance()->getHostName()))
+		auto topology = retrieveTopology(MY_HOST_NAME);
+		if (topology.count(MY_HOST_NAME))
 		{
 			auto currentAllApps = Configuration::instance()->getApps();
-			for (auto topologyAppStr : topology[ResourceCollection::instance()->getHostName()])
+			for (auto topologyAppStr : topology[MY_HOST_NAME])
 			{
 				if (task.count(topologyAppStr))
 				{
@@ -183,8 +186,8 @@ void ConsulConnection::applyTopology(int timerId)
 			{
 				if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 				{
-					if (!(topology.count(ResourceCollection::instance()->getHostName()) &&
-						topology[ResourceCollection::instance()->getHostName()].count(currentApp->getName())))
+					if (!(topology.count(MY_HOST_NAME) &&
+						topology[MY_HOST_NAME].count(currentApp->getName())))
 					{
 						// Remove no used topology
 						Configuration::instance()->removeApp(currentApp->getName());
@@ -211,11 +214,11 @@ std::string ConsulConnection::requestSessionId()
 	// https://www.consul.io/api/session.html
 
 	auto node = Configuration::instance()->getConsul()->m_sessionNode;
-	if (node.empty()) node = ResourceCollection::instance()->getHostName();
+	if (node.empty()) node = MY_HOST_NAME;
 
 	auto payload = web::json::value::object();
 	payload["LockDelay"] = web::json::value::string("15s");
-	payload["Name"] = web::json::value::string(std::string("appmgr-lock-") + ResourceCollection::instance()->getHostName());
+	payload["Name"] = web::json::value::string(std::string("appmgr-lock-") + MY_HOST_NAME);
 	payload["Node"] = web::json::value::string(node);
 	payload["Behavior"] = web::json::value::string("delete");
 	payload["TTL"] = web::json::value::string(std::to_string(Configuration::instance()->getConsul()->m_ttl) + "s");
@@ -292,12 +295,12 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (auto app : json.as_array())
+			for (auto section : json.as_array())
 			{
-				if (HAS_JSON_FIELD(app, "Value"))
+				if (HAS_JSON_FIELD(section, "Value"))
 				{
-					auto hostText = Utility::decode64(GET_JSON_STR_VALUE(app, "Value"));
-					auto consulKey = GET_JSON_STR_VALUE(app, "Key");
+					auto hostText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
+					auto consulKey = GET_JSON_STR_VALUE(section, "Key");
 					auto vec = Utility::splitString(consulKey, "/");
 					auto hostName = vec[vec.size() - 1];
 					auto appJson = web::json::value::parse(hostText).as_array();
@@ -349,11 +352,11 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (auto app : json.as_array())
+			for (auto section : json.as_array())
 			{
-				if (HAS_JSON_FIELD(app, "Value"))
+				if (HAS_JSON_FIELD(section, "Value"))
 				{
-					auto appText = Utility::decode64(GET_JSON_STR_VALUE(app, "Value"));
+					auto appText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					auto appJson = web::json::value::parse(appText);
 					auto task = ConsulTask::FromJson(appJson);
 					if (task->m_app->getName().length()) result[task->m_app->getName()] = task;

@@ -24,7 +24,9 @@
 #include "../common/Utility.h"
 
 std::set<std::shared_ptr<RestHandler>> m_restList;
-ACE_Reactor* m_subTimerReactor = nullptr;
+// The default timer reactor is ACE_Reactor::instance() that used for application monitor
+// This timer is used to handle HealthCheck and Consul
+ACE_Reactor* m_timerReactor = nullptr;
 
 int main(int argc, char* argv[])
 {
@@ -34,7 +36,7 @@ int main(int argc, char* argv[])
 	try
 	{
 		ACE::init();
-		m_subTimerReactor = new ACE_Reactor();
+		m_timerReactor = new ACE_Reactor();
 
 		// set working dir
 		ACE_OS::chdir(Utility::getSelfDir().c_str());
@@ -82,7 +84,7 @@ int main(int argc, char* argv[])
 				m_restList.insert(httpServerIp4);
 				try
 				{
-					httpServerIp6 = std::make_shared<RestHandler>(ResourceCollection::instance()->getHostName(), config->getRestListenPort());
+					httpServerIp6 = std::make_shared<RestHandler>(MY_HOST_NAME, config->getRestListenPort());
 					m_restList.insert(httpServerIp6);
 				}
 				catch (const std::exception & e)
@@ -115,7 +117,7 @@ int main(int argc, char* argv[])
 
 		// start one thread for timers
 		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-		auto subTimerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_subTimerReactor));
+		auto subTimerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_timerReactor));
 
 		// init consul
 		ConsulConnection::instance()->initTimer(snap->m_consulSessionId);

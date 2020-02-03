@@ -217,7 +217,7 @@ void RestHandler::handle_options(const HttpRequest& message)
 	message.reply(status_codes::OK);
 }
 
-void RestHandler::handleRest(const http_request& message, std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions)
+void RestHandler::handleRest(const http_request& message, const std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions)
 {
 	static char fname[] = "RestHandler::handle_rest() ";
 
@@ -1124,7 +1124,7 @@ http_response RestHandler::requestHttp(const method& mtd, const std::string& pat
 		request.headers().add(h.first, h.second);
 	}
 	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + token);
-	request.headers().add(HTTP_HEADER_JWT_redirect_from, ResourceCollection::instance()->getHostName());
+	request.headers().add(HTTP_HEADER_JWT_redirect_from, MY_HOST_NAME);
 	request.set_request_uri(builder.to_uri());
 	if (body != nullptr)
 	{
