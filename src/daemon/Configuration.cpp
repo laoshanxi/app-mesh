@@ -405,6 +405,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 	if (!app->isUnAvialable())
 	{
 		// invoke immediately
+		// TODO: not invoke here, use ACE_Event to trigger main loop
 		app->invoke();
 		saveConfigToDisk();
 	}

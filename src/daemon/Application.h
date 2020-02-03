@@ -24,7 +24,7 @@ public:
 	{
 		DISABLED,
 		ENABLED,
-		NOTAVIALABLE
+		NOTAVIALABLE	// used for temp app from RestHandler::apiRunParseApp and destroyed app
 	};
 	Application();
 	virtual ~Application();

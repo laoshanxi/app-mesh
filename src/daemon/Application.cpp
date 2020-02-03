@@ -386,7 +386,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_posixTimeZone.length()) result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
 	if (m_cacheOutputLines) result[JSON_KEY_APP_cache_lines] = web::json::value::number(m_cacheOutputLines);
 	if (m_dockerImage.length()) result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
-	result[JSON_KEY_APP_version] = web::json::value::number(m_version);
+	if (m_version) result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 	return result;
 }
 
