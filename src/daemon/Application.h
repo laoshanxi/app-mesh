@@ -87,7 +87,7 @@ protected:
 	bool m_health;
 	std::string m_healthCheckCmd;
 	const std::string m_appId;
-	int m_version;
+	unsigned int m_version;
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
 	int m_pid;
