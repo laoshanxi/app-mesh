@@ -402,7 +402,12 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 	// only update version in case of no defined
 	if (app->getVersion() == 0) app->setVersion(appVer);
 	// Write to disk
-	if (!app->isUnAvialable()) saveConfigToDisk();
+	if (!app->isUnAvialable())
+	{
+		// invoke immediately
+		app->invoke();
+		saveConfigToDisk();
+	}
 
 	return app;
 }
