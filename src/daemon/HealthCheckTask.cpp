@@ -28,7 +28,7 @@ void HealthCheckTask::initTimer()
 		this->cancleTimer(m_timerId);
 	}
 	m_timerId = this->registerTimer(
-		2,
+		1000L * 2,
 		DEFAULT_HEALTH_CHECK_INTERVAL,
 		std::bind(&HealthCheckTask::healthCheckTimer, this, std::placeholders::_1),
 		__FUNCTION__

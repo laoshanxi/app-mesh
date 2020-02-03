@@ -115,16 +115,19 @@ void ConsulConnection::refreshSession(int timerId)
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->enabled()) return;
-
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		// get session id
+		std::string sessionId;
 		if (m_sessionId.empty())
 		{
-			m_sessionId = requestSessionId();
+			sessionId = requestSessionId();
 		}
 		else
 		{
-			m_sessionId = renewSessionId();
+			sessionId = renewSessionId();
 		}
+		// set session id
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_sessionId = sessionId;
 		return;
 	}
 	catch (const std::exception & ex)
@@ -371,7 +374,8 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 {
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	// do not hold lock to call register timer
+	// std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (!recoveredConsulSsnId.empty()) m_sessionId = recoveredConsulSsnId;
 
 	// session renew timer
@@ -392,7 +396,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 		this->cancleTimer(m_reportStatusTimerId);
 	}
 	m_reportStatusTimerId = this->registerTimer(
-		2,
+		1000L * 2,
 		Configuration::instance()->getConsul()->m_reportInterval,
 		std::bind(&ConsulConnection::reportStatus, this, std::placeholders::_1),
 		__FUNCTION__
@@ -404,7 +408,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 		this->cancleTimer(m_applyTopoTimerId);
 	}
 	m_applyTopoTimerId = this->registerTimer(
-		1,
+		1000L * 1,
 		Configuration::instance()->getConsul()->m_topologyInterval,
 		std::bind(&ConsulConnection::applyTopology, this, std::placeholders::_1),
 		__FUNCTION__

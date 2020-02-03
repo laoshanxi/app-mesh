@@ -169,7 +169,7 @@ void ApplicationShortRun::initTimer()
 	const static char fname[] = "ApplicationShortRun::initTimer() ";
 	LOG_DBG << fname << "Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	// std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// 1. clean old timer
 	if (m_timerId)
 	{
