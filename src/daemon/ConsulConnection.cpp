@@ -698,37 +698,3 @@ web::json::value ConsulConnection::ConsulTask::AsJson()
 	result["content"] = m_app->AsJson(false);
 	return result;
 }
-
-
-/*
-{
-	"appmgr": {
-		"status": {
-			"myhost": {
-				"resource": {},
-				"applications": {
-					"app1": {
-						"name": "myapp",
-						"health": 0
-					}
-				}
-			}
-		},
-		"task": {
-			"myapp": {
-				"replication": 2,
-				"content": {
-					"name": "myapp",
-					"command": "sleep 30"
-				}
-			}
-		},
-		"worker": {
-			"myapp": ["myhost", "host2"]
-		},
-		"topology": {
-			"myhost": ["myapp", "app2"]
-		}
-	}
-}
-*/

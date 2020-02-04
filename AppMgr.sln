@@ -14,6 +14,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		script\appmanager.systemd.service = script\appmanager.systemd.service
 		script\appmg-entrypoint.sh = script\appmg-entrypoint.sh
 		autogen.sh = autogen.sh
+		doc\CONSUL.md = doc\CONSUL.md
 		Dockerfile = Dockerfile
 		script\install.sh = script\install.sh
 		doc\JWT_DESC.md = doc\JWT_DESC.md
