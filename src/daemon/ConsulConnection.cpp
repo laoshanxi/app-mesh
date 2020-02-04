@@ -243,10 +243,10 @@ void ConsulConnection::leaderSchedule()
 	if (eletionLeader())
 	{
 		auto task = retrieveTask();
-		auto hosts = retrieveStatusHost();
+		auto hostSet = retrieveStatusHost();
 		auto oldTopology = retrieveTopology("");
 
-		if (hosts.empty()) return;
+		if (hostSet.empty()) return;
 
 		// simple scheduler
 		std::map<std::string, std::set<std::string>> newTopology;
@@ -260,8 +260,12 @@ void ConsulConnection::leaderSchedule()
 		}
 
 		// set convert to vector
-		std::vector<std::string> hostVec(hosts.size());
-		std::copy(hosts.begin(), --(hosts.end()), std::back_inserter(hostVec));
+		std::vector<std::string> hostVec(hostSet.size());
+		std::transform(hostSet.begin(), hostSet.end(), std::inserter(hostVec, hostVec.begin()),
+			[](const std::string& key_value)
+			{
+				return key_value;
+			});
 
 		for (size_t i = 0; i < tasks.size(); i++)
 		{
@@ -326,8 +330,6 @@ void ConsulConnection::nodeSchedule()
 
 bool ConsulConnection::eletionLeader()
 {
-	const static char fname[] = "ConsulConnection::eletionLeader() ";
-
 	// get session id
 	std::string sessionId = getSessionId();
 	if (sessionId.empty()) return false;
@@ -406,7 +408,7 @@ bool ConsulConnection::writeTopology(const std::string& host, const std::set<std
 			body[index++] = web::json::value::string(app);
 		}
 		resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
-		LOG_INF << fname << "write <" << body.serialize() << "> to >" << host << ">";
+		LOG_INF << fname << "write <" << body.serialize() << "> to <" << host << ">";
 	}
 	else
 	{
