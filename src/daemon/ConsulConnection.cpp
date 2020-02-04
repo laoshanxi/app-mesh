@@ -261,7 +261,7 @@ void ConsulConnection::leaderSchedule()
 
 		// set convert to vector
 		std::vector<std::string> hostVec(hosts.size());
-		std::copy(hosts.begin(), hosts.end(), std::back_inserter(hostVec));
+		std::copy(hosts.begin(), --(hosts.end()), std::back_inserter(hostVec));
 
 		for (size_t i = 0; i < tasks.size(); i++)
 		{
@@ -406,12 +406,12 @@ bool ConsulConnection::writeTopology(const std::string& host, const std::set<std
 			body[index++] = web::json::value::string(app);
 		}
 		resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
-		LOG_INF << fname << "write " << body.serialize() << " to " << host;
+		LOG_INF << fname << "write <" << body.serialize() << "> to >" << host << ">";
 	}
 	else
 	{
 		resp = requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
-		LOG_INF << fname << "delete topology for " << host;
+		LOG_INF << fname << "delete topology for <" << host << ">";
 	}
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
