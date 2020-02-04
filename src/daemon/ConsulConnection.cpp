@@ -560,7 +560,7 @@ std::set<std::string> ConsulConnection::retrieveStatusHost()
 				auto tmp = Utility::stringReplace(key, "appmgr/status/", "");
 				tmp = Utility::stringReplace(tmp, "/applications", "");
 				auto host = Utility::stringReplace(tmp, "/resource", "");
-				result.insert(host);
+				if (host.length()) result.insert(host);
 			}
 		}
 	}
