@@ -1,7 +1,7 @@
-#include <cpprest/http_client.h>
-#include "cpprest/json.h"
+#include <algorithm>
 #include <thread>
-
+#include <cpprest/http_client.h>
+#include <cpprest/json.h>
 #include "Application.h"
 #include "ConsulConnection.h"
 #include "Configuration.h"
@@ -304,8 +304,11 @@ void ConsulConnection::leaderSchedule()
 				tasks.push_back(app.first);
 			}
 		}
-		std::vector<std::string> hostVec;
-		for (auto h : hosts) hostVec.push_back(h);
+
+		// set convert to vector
+		std::vector<std::string> hostVec(hosts.size());
+		std::copy(hosts.begin(), hosts.end(), std::back_inserter(hostVec));
+
 		for (size_t i = 0; i < tasks.size(); i++)
 		{
 			auto t = tasks[i];
@@ -382,7 +385,7 @@ void ConsulConnection::compareTopologyAndDispatch(std::map<std::string, std::set
 	}
 }
 
-bool ConsulConnection::writeTopology(std::string host, std::set<std::string> apps)
+bool ConsulConnection::writeTopology(const std::string& host, const std::set<std::string>& apps)
 {
 	const static char fname[] = "ConsulConnection::writeTopology() ";
 

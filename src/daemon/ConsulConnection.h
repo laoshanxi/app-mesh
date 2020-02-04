@@ -44,7 +44,7 @@ private:
 	void leaderSchedule();
 	bool eletionLeader();
 	void compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT);
-	bool writeTopology(std::string host, std::set<std::string> apps);
+	bool writeTopology(const std::string& host, const std::set<std::string>& apps);
 	std::map<std::string, std::set<std::string>> retrieveTopology(std::string host);
 	std::map<std::string, std::shared_ptr<ConsulTask>> retrieveTask();
 	std::set<std::string> retrieveStatusHost();
