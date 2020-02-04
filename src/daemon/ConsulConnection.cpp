@@ -12,7 +12,7 @@
 extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0), m_leader(false)
+	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0)
 {
 	// override default reactor
 	m_reactor = m_timerReactor;
@@ -324,23 +324,16 @@ bool ConsulConnection::eletionLeader()
 	std::string sessionId = getSessionId();
 	if (sessionId.empty()) return false;
 
-	if (!m_leader)
+	// write hostname to leader path : /appmgr/leader
+	std::string path = std::string(CONSUL_BASE_PATH).append("leader");
+	auto body = web::json::value::string(MY_HOST_NAME);
+	auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
+	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		// write hostname to leader path : /appmgr/leader
-		std::string path = std::string(CONSUL_BASE_PATH).append("leader");
-		auto body = web::json::value::string(MY_HOST_NAME);
-		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
-		if (resp.status_code() == web::http::status_codes::OK)
-		{
-			auto result = resp.extract_utf8string(true).get();
-			m_leader = (result == "true");
-			if (m_leader)
-			{
-				LOG_INF << fname << "I am leader now";
-			}
-		}
+		auto result = resp.extract_utf8string(true).get();
+		return (result == "true");
 	}
-	return m_leader;
+	return false;
 }
 
 void ConsulConnection::compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT)

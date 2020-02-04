@@ -56,6 +56,5 @@ private:
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;
 	int m_applyTopoTimerId;
-	bool m_leader;
 };
 
