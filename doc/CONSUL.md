@@ -17,6 +17,7 @@
 > * Consul watch
 > * Task dispatch policy have not implemented
 > * Schedule consider resource usage
+> * Node selector has not supported
 
 ### Consul configuration
 
@@ -30,11 +31,11 @@
   }
 ```
 
+------
 
 
-
-#### status report
- Two report key for each node:
+- Status report
+ Each node will report 2 keys:
  1. appmgr/status/$host_name/resource
  2. appmgr/status/$host_name/applications
 
@@ -44,7 +45,7 @@
  
  ```
 
- #### Consul task
+- Consul task
  Consul task define cluster level applications, the defined application will be dispatch to tasks in consul.
  App Manager leader node will get defined task and current working node. The consul task can define replication number and 
  application json content which is the same as App Manager app json.
@@ -61,7 +62,7 @@
 }
  ```
 
- #### Consul topology
+- Consul topology
  Topology is Consul task schedule result, each host is a key, Only  App Manager leader node will write this part.
 
  ```shell
@@ -72,7 +73,7 @@
 ]
  ```
 
- ### Consul orgnization
+ ### Consul Key/Value organization
 ```
 {
 	"appmgr": {
@@ -129,3 +130,7 @@
 }
 ```
  
+- Use bellow command to start single Consul instance
+```shell
+$ docker rm consul -f ; docker run --restart=always --net=host -p 8500:8500 -e CONSUL_BIND_INTERFACE=p8p1 --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 -bind=192.168.3.24 -bootstrap-expect=1 -ui
+```
