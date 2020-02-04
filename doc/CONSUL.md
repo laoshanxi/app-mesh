@@ -87,21 +87,22 @@
 					"fs": []
 					"net": []
 					"systime": "2020-02-04 16:01:58"
-}				},
+				},
 				"applications": {
 					"ipmail": {
-					"cache_lines": 20,
-					"command": "sh /opt/qqmail/launch.sh",
-					"health": 0,
-					"id": "2d93b31e-4721-11ea-8000-6c2b59df0017",
-					"last_start_time": "2020-02-04 15:58:50",
-					"name": "ipmail",
-					"next_start_time": "2020-02-04 16:03:50",
-					"start_interval_seconds": 300,
-					"start_time": "2020-01-14 21:38:50",
-					"status": 1,
-					"user": "root",
-					"working_dir": "/opt/qqmail"
+						"cache_lines": 20,
+						"command": "sh /opt/qqmail/launch.sh",
+						"health": 0,
+						"id": "2d93b31e-4721-11ea-8000-6c2b59df0017",
+						"last_start_time": "2020-02-04 15:58:50",
+						"name": "ipmail",
+						"next_start_time": "2020-02-04 16:03:50",
+						"start_interval_seconds": 300,
+						"start_time": "2020-01-14 21:38:50",
+						"status": 1,
+						"user": "root",
+						"working_dir": "/opt/qqmail"
+					}
 				}
 			}
 		},
