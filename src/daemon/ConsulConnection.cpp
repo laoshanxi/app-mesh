@@ -260,7 +260,7 @@ void ConsulConnection::leaderSchedule()
 		}
 
 		// set convert to vector
-		std::vector<std::string> hostVec(hostSet.size());
+		std::vector<std::string> hostVec;
 		std::transform(hostSet.begin(), hostSet.end(), std::inserter(hostVec, hostVec.begin()),
 			[](const std::string& key_value)
 			{
