@@ -242,7 +242,7 @@ void ConsulConnection::leaderSchedule()
 	// leader's responsibility
 	if (eletionLeader())
 	{
-		auto task = retrieveTask();
+		auto taskDef = retrieveTask();
 		auto hostSet = retrieveStatusHost();
 		auto oldTopology = retrieveTopology("");
 
@@ -251,7 +251,7 @@ void ConsulConnection::leaderSchedule()
 		// simple scheduler
 		std::map<std::string, std::set<std::string>> newTopology;
 		std::vector<std::string> allSingleApps;
-		for (auto app : task)
+		for (auto app : taskDef)
 		{
 			for (size_t i = 0; i < app.second->m_replication; i++)
 			{
