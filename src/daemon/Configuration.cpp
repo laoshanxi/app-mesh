@@ -398,19 +398,19 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 		// Register app
 		registerApp(app);
 	}
-	app->initMetrics(PrometheusRest::instance());
-	// only update version in case of no defined
+	// only update version in case of not defined
 	if (app->getVersion() == 0) app->setVersion(appVer);
 	// Write to disk
 	if (!app->isUnAvialable())
 	{
+		app->initMetrics(PrometheusRest::instance());
 		// invoke immediately
 		// TODO: not invoke here, use ACE_Event to trigger main loop
 		app->invoke();
 		saveConfigToDisk();
 	}
 
-	return app;
+	return std::move(app);
 }
 
 void Configuration::removeApp(const std::string& appName)

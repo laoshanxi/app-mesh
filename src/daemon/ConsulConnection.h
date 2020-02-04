@@ -22,7 +22,7 @@ class ConsulConnection :public TimerHandler
 		static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
 
-		int m_replication;
+		size_t m_replication;
 		std::shared_ptr<Application> m_app;
 	};
 public:
@@ -40,8 +40,14 @@ private:
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
 	std::string requestSessionId();
 	std::string renewSessionId();
+	std::string getSessionId();
+	void leaderSchedule();
+	bool eletionLeader();
+	void compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT);
+	bool writeTopology(std::string host, std::set<std::string> apps);
 	std::map<std::string, std::set<std::string>> retrieveTopology(std::string host);
 	std::map<std::string, std::shared_ptr<ConsulTask>> retrieveTask();
+	std::set<std::string> retrieveStatusHost();
 
 private:
 	std::recursive_mutex m_mutex;
@@ -50,5 +56,6 @@ private:
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;
 	int m_applyTopoTimerId;
+	bool m_leader;
 };
 

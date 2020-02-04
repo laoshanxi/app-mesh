@@ -415,7 +415,7 @@ std::string Utility::readFile(const std::string& path)
 	FILE* file = ::fopen(path.c_str(), "r");
 	if (nullptr == file)
 	{
-		LOG_ERR << fname << "Get file stream failed with error : " << std::strerror(errno);
+		LOG_ERR << fname << "Get file <" << path << "> failed with error : " << std::strerror(errno);
 		return "";
 	}
 

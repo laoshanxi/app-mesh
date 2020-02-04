@@ -12,7 +12,7 @@
 extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0)
+	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0), m_leader(false)
 {
 	// override default reactor
 	m_reactor = m_timerReactor;
@@ -51,27 +51,28 @@ void ConsulConnection::reportStatus(int timerId)
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
 	// check session id ready
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_sessionId.empty()) return;
+	auto sessionId = getSessionId();
+	if (sessionId.empty()) return;
 
 	try
 	{
 		//report resource: /appmgr/status/myhost/resource
 		std::string path = std::string(CONSUL_BASE_PATH).append("status/").append(MY_HOST_NAME).append("/resource");
 		auto body = ResourceCollection::instance()->AsJson();
-		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", m_sessionId} }, {}, &body);
+		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
-			if (result == "true")
-			{
-				//LOG_DBG << fname << "report resource to " << path << " success";
-			}
-			else
+			if (result != "true")
 			{
 				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
 				return;
 			}
+		}
+		else
+		{
+			LOG_WAR << fname << "report resource to " << path << " failed with response : " << resp.extract_utf8string(true).get();
+			return;
 		}
 
 		//report resource: /appmgr/status/myhost/applications
@@ -83,19 +84,20 @@ void ConsulConnection::reportStatus(int timerId)
 			consul->m_apps[app->getName()] = app->AsJson(true);
 		}
 		body = consul->AsJson();
-		resp = requestHttp(web::http::methods::PUT, path, { {"acquire", m_sessionId} }, {}, &body);
+		resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
-			if (result == "true")
-			{
-				//LOG_DBG << fname << "report applications success";
-			}
-			else
+			if (result != "true")
 			{
 				LOG_WAR << fname << "report applications failed with response : " << result;
 				return;
 			}
+		}
+		else
+		{
+			LOG_WAR << fname << "report resource to " << path << " failed with response : " << resp.extract_utf8string(true).get();
+			return;
 		}
 	}
 	catch (const std::exception & ex)
@@ -116,8 +118,8 @@ void ConsulConnection::refreshSession(int timerId)
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->enabled()) return;
 		// get session id
-		std::string sessionId;
-		if (m_sessionId.empty())
+		std::string sessionId = getSessionId();
+		if (sessionId.empty())
 		{
 			sessionId = requestSessionId();
 		}
@@ -149,9 +151,11 @@ void ConsulConnection::applyTopology(int timerId)
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->enabled()) return;
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		// check session id
-		if (m_sessionId.empty()) return;
+
+		if (getSessionId().empty()) return;
+
+		// Leader's job
+		leaderSchedule();
 
 		auto task = retrieveTask();
 		auto topology = retrieveTopology(MY_HOST_NAME);
@@ -238,6 +242,10 @@ std::string ConsulConnection::requestSessionId()
 			return sessionId;
 		}
 	}
+	else
+	{
+		LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
+	}
 	return std::string();
 }
 
@@ -245,10 +253,10 @@ std::string ConsulConnection::renewSessionId()
 {
 	const static char fname[] = "ConsulConnection::renewSessionId() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_sessionId.length())
+	auto sessionId = getSessionId();
+	if (sessionId.length())
 	{
-		auto resp = requestHttp(web::http::methods::PUT, std::string("/v1/session/renew/").append(m_sessionId), {}, {}, nullptr);
+		auto resp = requestHttp(web::http::methods::PUT, std::string("/v1/session/renew/").append(sessionId), {}, {}, nullptr);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto json = resp.extract_json(true).get();
@@ -256,13 +264,167 @@ std::string ConsulConnection::renewSessionId()
 			if (json.is_array() && json.as_array().size())
 			{
 				json = json.as_array().at(0);
-				auto sessionId = GET_JSON_STR_VALUE(json, "ID");
+				sessionId = GET_JSON_STR_VALUE(json, "ID");
 				LOG_DBG << fname << "sessionId=" << sessionId;
-				return sessionId;
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
+			sessionId.clear();
+		}
+	}
+	return sessionId;
+}
+
+std::string ConsulConnection::getSessionId()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_sessionId;
+}
+
+void ConsulConnection::leaderSchedule()
+{
+	// leader's responsibility
+	if (eletionLeader())
+	{
+		auto task = retrieveTask();
+		auto hosts = retrieveStatusHost();
+		auto oldTopology = retrieveTopology("");
+
+		if (hosts.empty()) return;
+
+		// simple scheduler
+		std::map<std::string, std::set<std::string>> newTopology;
+		std::vector<std::string> tasks;
+		for (auto app : task)
+		{
+			for (size_t i = 0; i < app.second->m_replication; i++)
+			{
+				tasks.push_back(app.first);
+			}
+		}
+		std::vector<std::string> hostVec;
+		for (auto h : hosts) hostVec.push_back(h);
+		for (size_t i = 0; i < tasks.size(); i++)
+		{
+			auto t = tasks[i];
+			auto host = hostVec[i % hostVec.size()];
+			newTopology[host].insert(t);
+		}
+		compareTopologyAndDispatch(oldTopology, newTopology);
+	}
+}
+
+bool ConsulConnection::eletionLeader()
+{
+	const static char fname[] = "ConsulConnection::eletionLeader() ";
+
+	// get session id
+	std::string sessionId = getSessionId();
+	if (sessionId.empty()) return false;
+
+	if (!m_leader)
+	{
+		// write hostname to leader path : /appmgr/leader
+		std::string path = std::string(CONSUL_BASE_PATH).append("leader");
+		auto body = web::json::value::string(MY_HOST_NAME);
+		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
+		if (resp.status_code() == web::http::status_codes::OK)
+		{
+			auto result = resp.extract_utf8string(true).get();
+			m_leader = (result == "true");
+			if (m_leader)
+			{
+				LOG_INF << fname << "I am leader now";
 			}
 		}
 	}
-	return std::string();
+	return m_leader;
+}
+
+void ConsulConnection::compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT)
+{
+	for (auto newHost : newT)
+	{
+		if (oldT.count(newHost.first))
+		{
+			auto equal = true;
+			if (newHost.second.size() == oldT[newHost.first].size())
+			{
+				for (auto app : newHost.second)
+				{
+					if (!oldT[newHost.first].count(app))
+					{
+						equal = false;
+						break;
+					}
+				}
+				// equal, do nothing here
+			}
+			else
+			{
+				equal = false;
+			}
+			if (!equal)
+			{
+				// update
+				writeTopology(newHost.first, newHost.second);
+			}
+		}
+		else
+		{
+			// add
+			writeTopology(newHost.first, newHost.second);
+		}
+	}
+
+	for (auto oldHost : oldT)
+	{
+		if (!newT.count(oldHost.first))
+		{
+			// delete
+			writeTopology(oldHost.first, {});
+		}
+	}
+}
+
+bool ConsulConnection::writeTopology(std::string host, std::set<std::string> apps)
+{
+	const static char fname[] = "ConsulConnection::writeTopology() ";
+
+	//topology: /appmgr/topology/myhost
+	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
+	web::http::http_response resp;
+	if (apps.size())
+	{
+		auto body = web::json::value::array(apps.size());
+		int index = 0;
+		for (auto app : apps)
+		{
+			body[index++] = web::json::value::string(app);
+		}
+		resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
+		LOG_INF << fname << "write " << body.serialize() << " to " << host;
+	}
+	else
+	{
+		resp = requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
+		LOG_INF << fname << "delete topology for " << host;
+	}
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto result = resp.extract_utf8string(true).get();
+		if (result == "true")
+		{
+			return true;
+		}
+		else
+		{
+			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
+		}
+	}
+	return false;
 }
 
 /*
@@ -303,16 +465,20 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
 					auto hostText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
+					if (hostText.empty()) break;
 					auto consulKey = GET_JSON_STR_VALUE(section, "Key");
 					auto vec = Utility::splitString(consulKey, "/");
 					auto hostName = vec[vec.size() - 1];
-					auto appJson = web::json::value::parse(hostText).as_array();
-					std::set<std::string> apps;
-					for (auto app : appJson)
+					auto appArrayJson = web::json::value::parse(hostText);
+					if (appArrayJson.is_array())
 					{
-						apps.insert(GET_STD_STRING(app.as_string()));
+						std::set<std::string> apps;
+						for (auto app : appArrayJson.as_array())
+						{
+							apps.insert(GET_STD_STRING(app.as_string()));
+						}
+						topology[hostName] = apps;
 					}
-					topology[hostName] = apps;
 				}
 			}
 		}
@@ -369,14 +535,47 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 	}
 	return std::move(result);
 }
+/*
+[
+	"appmgr/status/cents/applications",
+	"appmgr/status/cents/resource"
+]
+*/
+std::set<std::string> ConsulConnection::retrieveStatusHost()
+{
+	std::set<std::string> result;
+
+	// /appmgr/status
+	std::string path = std::string(CONSUL_BASE_PATH).append("status");
+	auto resp = requestHttp(web::http::methods::GET, path, { {"keys","true"} }, {}, nullptr);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto json = resp.extract_json(true).get();
+		if (json.is_array())
+		{
+			for (auto section : json.as_array())
+			{
+				auto key = GET_STD_STRING(section.as_string());
+				auto tmp = Utility::stringReplace(key, "appmgr/status/", "");
+				tmp = Utility::stringReplace(tmp, "/applications", "");
+				auto host = Utility::stringReplace(tmp, "/resource", "");
+				result.insert(host);
+			}
+		}
+	}
+
+	return std::move(result);
+}
 
 void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 {
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
-	// do not hold lock to call register timer
-	// std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (!recoveredConsulSsnId.empty()) m_sessionId = recoveredConsulSsnId;
+	if (!recoveredConsulSsnId.empty())
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_sessionId = recoveredConsulSsnId;
+	}
 
 	// session renew timer
 	if (m_ssnRenewTimerId)
