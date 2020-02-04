@@ -42,6 +42,7 @@ private:
 	std::string renewSessionId();
 	std::string getSessionId();
 	void leaderSchedule();
+	void nodeSchedule();
 	bool eletionLeader();
 	void compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT);
 	bool writeTopology(const std::string& host, const std::set<std::string>& apps);

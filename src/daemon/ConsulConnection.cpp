@@ -75,7 +75,7 @@ void ConsulConnection::reportStatus(int timerId)
 			return;
 		}
 
-		//report resource: /appmgr/status/myhost/applications
+		//report applications: /appmgr/status/myhost/applications
 		path = std::string(CONSUL_BASE_PATH).append("status/").append(MY_HOST_NAME).append("/applications");
 		auto consul = std::make_shared<ConsulConnection::ConsulStatus>();
 		auto apps = Configuration::instance()->getApps();
@@ -96,7 +96,7 @@ void ConsulConnection::reportStatus(int timerId)
 		}
 		else
 		{
-			LOG_WAR << fname << "report resource to " << path << " failed with response : " << resp.extract_utf8string(true).get();
+			LOG_WAR << fname << "report applications to " << path << " failed with response : " << resp.extract_utf8string(true).get();
 			return;
 		}
 	}
@@ -151,58 +151,13 @@ void ConsulConnection::applyTopology(int timerId)
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->enabled()) return;
-
 		if (getSessionId().empty()) return;
 
 		// Leader's job
 		leaderSchedule();
 
-		auto task = retrieveTask();
-		auto topology = retrieveTopology(MY_HOST_NAME);
-		if (topology.count(MY_HOST_NAME))
-		{
-			auto currentAllApps = Configuration::instance()->getApps();
-			for (auto topologyAppStr : topology[MY_HOST_NAME])
-			{
-				if (task.count(topologyAppStr))
-				{
-					std::shared_ptr<Application> topologyAppObj;
-					topologyAppObj = task[topologyAppStr]->m_app;
-					auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&topologyAppStr](std::shared_ptr<Application> const& obj) {
-						return obj->getName() == topologyAppStr;
-						});
-					if (it != currentAllApps.end())
-					{
-						// Update app
-						auto currentRunningApp = *it;
-						if (currentRunningApp->getVersion() > topologyAppObj->getVersion())
-						{
-							Configuration::instance()->registerApp(topologyAppObj);
-							LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
-						}
-					}
-					else
-					{
-						// New add app
-						Configuration::instance()->registerApp(topologyAppObj);
-						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
-					}
-				}
-			}
-			for (auto currentApp : currentAllApps)
-			{
-				if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
-				{
-					if (!(topology.count(MY_HOST_NAME) &&
-						topology[MY_HOST_NAME].count(currentApp->getName())))
-					{
-						// Remove no used topology
-						Configuration::instance()->removeApp(currentApp->getName());
-						LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
-					}
-				}
-			}
-		}
+		// Node's job
+		nodeSchedule();
 	}
 	catch (const std::exception & ex)
 	{
@@ -219,7 +174,7 @@ std::string ConsulConnection::requestSessionId()
 	const static char fname[] = "ConsulConnection::requestSessionId() ";
 
 	// https://www.consul.io/api/session.html
-
+	std::string sessionId;
 	auto node = Configuration::instance()->getConsul()->m_sessionNode;
 	if (node.empty()) node = MY_HOST_NAME;
 
@@ -237,16 +192,15 @@ std::string ConsulConnection::requestSessionId()
 		LOG_DBG << fname << json.serialize();
 		if (HAS_JSON_FIELD(json, "ID"))
 		{
-			auto sessionId = GET_JSON_STR_VALUE(json, "ID");
+			sessionId = GET_JSON_STR_VALUE(json, "ID");
 			LOG_DBG << fname << "sessionId=" << sessionId;
-			return sessionId;
 		}
 	}
 	else
 	{
 		LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
 	}
-	return std::string();
+	return sessionId;
 }
 
 std::string ConsulConnection::renewSessionId()
@@ -316,6 +270,57 @@ void ConsulConnection::leaderSchedule()
 			newTopology[host].insert(t);
 		}
 		compareTopologyAndDispatch(oldTopology, newTopology);
+	}
+}
+
+void ConsulConnection::nodeSchedule()
+{
+	const static char fname[] = "ConsulConnection::nodeSchedule() ";
+
+	auto task = retrieveTask();
+	auto topology = retrieveTopology(MY_HOST_NAME);
+	if (topology.count(MY_HOST_NAME))
+	{
+		auto currentAllApps = Configuration::instance()->getApps();
+		for (auto topologyAppStr : topology[MY_HOST_NAME])
+		{
+			if (task.count(topologyAppStr))
+			{
+				std::shared_ptr<Application> topologyAppObj = task[topologyAppStr]->m_app;
+				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&topologyAppStr](std::shared_ptr<Application> const& obj) {
+					return obj->getName() == topologyAppStr;
+					});
+				if (it != currentAllApps.end())
+				{
+					// Update app
+					auto currentRunningApp = *it;
+					if (currentRunningApp->getVersion() > topologyAppObj->getVersion())
+					{
+						Configuration::instance()->registerApp(topologyAppObj);
+						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
+					}
+				}
+				else
+				{
+					// New add app
+					Configuration::instance()->registerApp(topologyAppObj);
+					LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
+				}
+			}
+		}
+		for (auto currentApp : currentAllApps)
+		{
+			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
+			{
+				if (!(topology.count(MY_HOST_NAME) &&
+					topology[MY_HOST_NAME].count(currentApp->getName())))
+				{
+					// Remove no used topology
+					Configuration::instance()->removeApp(currentApp->getName());
+					LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+				}
+			}
+		}
 	}
 }
 
@@ -618,11 +623,7 @@ const std::string ConsulConnection::getConsulSessionId()
 
 web::http::http_response ConsulConnection::requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body)
 {
-	const static char fname[] = "ConsulConnection::requestHttp() ";
-
 	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
-
-	LOG_DBG << fname << "request :" << path << " to: " << restURL;
 
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
