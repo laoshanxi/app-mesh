@@ -250,26 +250,27 @@ void ConsulConnection::leaderSchedule()
 
 		// simple scheduler
 		std::map<std::string, std::set<std::string>> newTopology;
-		std::vector<std::string> tasks;
+		std::vector<std::string> allSingleApps;
 		for (auto app : task)
 		{
 			for (size_t i = 0; i < app.second->m_replication; i++)
 			{
-				tasks.push_back(app.first);
+				allSingleApps.push_back(app.first);
 			}
 		}
 
 		// set convert to vector
 		std::vector<std::string> hostVec;
-		std::transform(hostSet.begin(), hostSet.end(), std::inserter(hostVec, hostVec.begin()),
-			[](const std::string& key_value)
-			{
-				return key_value;
-			});
+		std::copy(hostSet.begin(), hostSet.end(), std::back_inserter(hostVec));
+		//std::transform(hostSet.begin(), hostSet.end(), std::back_inserter(hostVec),
+		//	[](const std::string& key_value)
+		//	{
+		//		return key_value;
+		//	});
 
-		for (size_t i = 0; i < tasks.size(); i++)
+		for (size_t i = 0; i < allSingleApps.size(); i++)
 		{
-			auto t = tasks[i];
+			auto t = allSingleApps[i];
 			auto host = hostVec[i % hostVec.size()];
 			newTopology[host].insert(t);
 		}
