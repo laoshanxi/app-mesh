@@ -219,7 +219,7 @@ std::string ConsulConnection::renewSessionId()
 			{
 				json = json.as_array().at(0);
 				sessionId = GET_JSON_STR_VALUE(json, "ID");
-				LOG_DBG << fname << "sessionId=" << sessionId;
+				//LOG_DBG << fname << "sessionId=" << sessionId;
 			}
 		}
 		else
