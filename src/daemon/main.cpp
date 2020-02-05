@@ -124,8 +124,8 @@ int main(int argc, char* argv[])
 		config->registerPrometheus();
 
 		// start one thread for timers
-		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-		auto subTimerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_timerReactor));
+		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_timerReactor));
 
 		// init consul
 		ConsulConnection::instance()->initTimer(snap->m_consulSessionId);
