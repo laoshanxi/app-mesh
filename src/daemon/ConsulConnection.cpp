@@ -683,6 +683,7 @@ std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::From
 		jobj.at("content").is_object())
 	{
 		auto appJson = jobj.at("content");
+		// TODO: use explicit distinguish to identify <consul app> and <native app>
 		// set flag to mark consul application
 		appJson[JSON_KEY_APP_comments] = web::json::value::string(APP_COMMENTS_FROM_CONSUL);
 		consul->m_app = Configuration::instance()->parseApp(appJson);

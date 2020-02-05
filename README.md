@@ -12,7 +12,7 @@ Supported applications  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> REST service support IPv6 <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ Provide Prometheus Exporter <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) <br> ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md) 
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> REST service support IPv6 <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) <br> ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md) 
 
 
 ### How to install
@@ -428,34 +428,6 @@ POST| /user/user/unlock | | admin user to unlock a user
 PUT| /user/usera | | Add usera to Users
 DEL| /user/usera | | Delete usera
 GET| /users | | Get user list
-
----
-### Prometheus Exporter
-Application Manager provide a build-in Prometheus exporter:
-
-http://127.0.0.1:6061/metrics
-```
-# HELP appmgr_prom_scrape_count prometheus scrape count
-# TYPE appmgr_prom_scrape_count counter
-appmgr_prom_scrape_count{host="appmgr",pid="10791"} 6.000000
-# HELP appmgr_prom_process_start_count application process spawn count
-# TYPE appmgr_prom_process_start_count counter
-appmgr_prom_process_start_count{application="appweb",host="appmgr",pid="10791"} 1.000000
-appmgr_prom_process_start_count{application="timer",host="appmgr",pid="10791"} 0.000000
-# HELP appmgr_http_request_count application manager http request count
-# TYPE appmgr_http_request_count counter
-appmgr_http_request_count{host="appmgr",method="POST",pid="10791"} 0.000000
-appmgr_http_request_count{host="appmgr",method="DELETE",pid="10791"} 0.000000
-appmgr_http_request_count{host="appmgr",method="PUT",pid="10791"} 0.000000
-appmgr_http_request_count{host="appmgr",method="GET",pid="10791"} 0.000000
-# HELP appmgr_prom_scrape_up prometheus scrape alive
-# TYPE appmgr_prom_scrape_up gauge
-appmgr_prom_scrape_up{host="appmgr",pid="10791"} 1.000000
-# HELP appmgr_prom_process_memory_gauge application process memory bytes
-# TYPE appmgr_prom_process_memory_gauge gauge
-appmgr_prom_process_memory_gauge{application="appweb",host="appmgr",pid="10791"} 3268759.000000
-appmgr_prom_process_memory_gauge{application="timer",host="appmgr",pid="10791"} 0.000000
-```
 
 ---
 ### 3rd party deependencies
