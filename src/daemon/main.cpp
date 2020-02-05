@@ -99,9 +99,17 @@ int main(int argc, char* argv[])
 		}
 
 		// HA attach process to App
+		auto snap = std::make_shared<Snapshot>();
 		auto apps = config->getApps();
 		auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
-		auto snap = Snapshot::FromJson(web::json::value::parse(snapfile.length() ? snapfile : std::string("{}")));
+		try
+		{
+			snap = Snapshot::FromJson(web::json::value::parse(snapfile.length() ? snapfile : std::string("{}")));
+		}
+		catch (...)
+		{
+			LOG_ERR << "recover snapshot failed with error " << std::strerror(errno);
+		}
 		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p)
 			{
 				if (snap && snap->m_apps.count(p->getName()))
