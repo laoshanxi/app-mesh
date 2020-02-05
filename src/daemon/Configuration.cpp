@@ -712,6 +712,7 @@ Configuration::JsonSecurity::JsonSecurity()
 	:m_jwtEnabled(true),m_encryptKey(false)
 {
 	m_roles = std::make_shared<Roles>();
+	m_jwtUsers = std::make_shared<Users>();
 }
 
 std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value& jobj)
