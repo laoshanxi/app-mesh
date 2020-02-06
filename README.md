@@ -373,16 +373,6 @@ os_version=centos7.6
 ```
 
 ---
-
-## Examples
-
-- register app and run with standard output
-![example](https://github.com/laoshanxi/app-manager/blob/master/doc/example.gif?raw=true) 
-
-- Remote run a shell command
-![appc_sh](https://github.com/laoshanxi/app-manager/blob/master/doc/appc_sh.gif?raw=true) 
-
----
 ### Usage scenarios
 1. Integrate with package installation script and register startup command to app manager automaticlly
 2. Remote async shell execute (can build-up web ssh)
