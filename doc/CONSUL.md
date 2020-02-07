@@ -85,8 +85,8 @@
 					"cpu_processors": 6,
 					"cpu_sockets": 1,
 					"pid": 16567,
-					"fs": []
-					"net": []
+					"fs": [],
+					"net": [],
 					"systime": "2020-02-04 16:01:58"
 				},
 				"applications": {
@@ -122,7 +122,7 @@
 					"command": "sleep 100"
 				}
 			}
-		}
+		},
 		"topology": {
 			"myhost": ["myapp", "myapp2"]
 		}
