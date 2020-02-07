@@ -21,7 +21,7 @@
 
 ### Consul configuration
 
-```
+```json
  "Consul": {
     "url": "http://localhost:8500",
     "session_node": null,
@@ -74,7 +74,7 @@
  ```
 
  ### Consul Key/Value organization
-```
+```json
 {
 	"appmgr": {
 		"status": {

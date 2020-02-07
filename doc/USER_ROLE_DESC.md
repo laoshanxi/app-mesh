@@ -18,7 +18,7 @@
 
 ### User and Role configure json sample
 
-```shell
+```json
  "Security": {
     "Users": {
       "admin": {

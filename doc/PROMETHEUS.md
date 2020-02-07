@@ -12,7 +12,7 @@
 
 ### Defined Metrics
 http://127.0.0.1:6061/metrics
-```
+```html
 # HELP appmgr_prom_scrape_count prometheus scrape count
 # TYPE appmgr_prom_scrape_count counter
 appmgr_prom_scrape_count{host="appmgr",pid="10791"} 6.000000
