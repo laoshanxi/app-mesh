@@ -4,6 +4,8 @@
 ### Introduction
 Application Manager is a cloud native daemon service to manage different types of applications(process), each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line manage applications easily.
 
+Application Manager can manage Appcations in a cluster environment with the help of Consul, the cluster app can have mutipl replications and support HA.
+
 <div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
 
 
