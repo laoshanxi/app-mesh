@@ -589,6 +589,9 @@ std::set<std::string> ConsulConnection::retrieveStatusHost()
 
 void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 {
+	const static char fname[] = "ConsulConnection::initTimer() ";
+	LOG_DBG << fname;
+
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
 	if (!recoveredConsulSsnId.empty())
@@ -633,7 +636,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	if (m_applyTopoTimerId)
 	{
 		this->cancleTimer(m_applyTopoTimerId);
-		m_applyTopoTimerId;
+		m_applyTopoTimerId = 0;
 	}
 	if (Configuration::instance()->getConsul()->m_topologyInterval > 1)
 	{
