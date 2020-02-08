@@ -7,11 +7,13 @@
 #include <thread>
 #include <cpprest/http_msg.h>
 #include <cpprest/json.h>
+#include "Label.h"
 #include "TimerHandler.h"
 
 class Application;
 class ConsulConnection :public TimerHandler
 {
+	enum class Role { Master, Node, All, Nothing };
 	struct ConsulStatus {
 		static std::shared_ptr<ConsulStatus> FromJson(const web::json::value& json);
 		web::json::value AsJson();
@@ -19,11 +21,16 @@ class ConsulConnection :public TimerHandler
 		std::map<std::string, web::json::value> m_apps;
 	};
 	struct ConsulTask {
+		ConsulTask();
 		static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
 
 		size_t m_replication;
 		std::shared_ptr<Application> m_app;
+		
+		// schedule parameters
+		std::shared_ptr<Label> m_condition;
+		int m_priority;
 	};
 public:
 	ConsulConnection();

@@ -50,6 +50,14 @@ void ConsulConnection::reportStatus(int timerId)
 	// check feature enabled
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
+	// check Consul configuration
+	if (Configuration::instance()->getConsul()->m_nodeRole != "master" &&
+		Configuration::instance()->getConsul()->m_nodeRole != "all" &&
+		Configuration::instance()->getConsul()->m_nodeRole == "node")
+	{
+		return;
+	}
+
 	// check session id ready
 	auto sessionId = getSessionId();
 	if (sessionId.empty()) return;
@@ -117,6 +125,15 @@ void ConsulConnection::refreshSession(int timerId)
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->enabled()) return;
+
+		// check Consul configuration
+		if (Configuration::instance()->getConsul()->m_nodeRole != "master" &&
+			Configuration::instance()->getConsul()->m_nodeRole != "all" &&
+			Configuration::instance()->getConsul()->m_nodeRole == "node")
+		{
+			return;
+		}
+
 		// get session id
 		std::string sessionId = getSessionId();
 		if (sessionId.empty())
@@ -153,11 +170,19 @@ void ConsulConnection::applyTopology(int timerId)
 		if (!Configuration::instance()->getConsul()->enabled()) return;
 		if (getSessionId().empty()) return;
 
-		// Leader's job
-		leaderSchedule();
+		if (Configuration::instance()->getConsul()->m_nodeRole == "master" ||
+			Configuration::instance()->getConsul()->m_nodeRole == "all")
+		{
+			// Leader's job
+			leaderSchedule();
+		}
 
-		// Node's job
-		nodeSchedule();
+		if (Configuration::instance()->getConsul()->m_nodeRole == "node" ||
+			Configuration::instance()->getConsul()->m_nodeRole == "all")
+		{
+			// Node's job
+			nodeSchedule();
+		}
 	}
 	catch (const std::exception & ex)
 	{
@@ -262,11 +287,6 @@ void ConsulConnection::leaderSchedule()
 		// set convert to vector
 		std::vector<std::string> hostVec;
 		std::copy(hostSet.begin(), hostSet.end(), std::back_inserter(hostVec));
-		//std::transform(hostSet.begin(), hostSet.end(), std::back_inserter(hostVec),
-		//	[](const std::string& key_value)
-		//	{
-		//		return key_value;
-		//	});
 
 		for (size_t i = 0; i < allSingleApps.size(); i++)
 		{
@@ -586,36 +606,45 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	{
 		this->cancleTimer(m_ssnRenewTimerId);
 	}
-	m_ssnRenewTimerId = this->registerTimer(
-		0,
-		Configuration::instance()->getConsul()->m_ttl - 3,
-		std::bind(&ConsulConnection::refreshSession, this, std::placeholders::_1),
-		__FUNCTION__
-	);
+	if (Configuration::instance()->getConsul()->m_ttl > 10)
+	{
+		m_ssnRenewTimerId = this->registerTimer(
+			0,
+			Configuration::instance()->getConsul()->m_ttl - 3,
+			std::bind(&ConsulConnection::refreshSession, this, std::placeholders::_1),
+			__FUNCTION__
+		);
+	}
 
 	// report status timer
 	if (m_reportStatusTimerId)
 	{
 		this->cancleTimer(m_reportStatusTimerId);
 	}
-	m_reportStatusTimerId = this->registerTimer(
-		1000L * 2,
-		Configuration::instance()->getConsul()->m_reportInterval,
-		std::bind(&ConsulConnection::reportStatus, this, std::placeholders::_1),
-		__FUNCTION__
-	);
+	if (Configuration::instance()->getConsul()->m_reportInterval > 3)
+	{
+		m_reportStatusTimerId = this->registerTimer(
+			1000L * 2,
+			Configuration::instance()->getConsul()->m_reportInterval,
+			std::bind(&ConsulConnection::reportStatus, this, std::placeholders::_1),
+			__FUNCTION__
+		);
+	}
 
 	// aply topology timer
 	if (m_applyTopoTimerId)
 	{
 		this->cancleTimer(m_applyTopoTimerId);
 	}
-	m_applyTopoTimerId = this->registerTimer(
-		1000L * 1,
-		Configuration::instance()->getConsul()->m_topologyInterval,
-		std::bind(&ConsulConnection::applyTopology, this, std::placeholders::_1),
-		__FUNCTION__
-	);
+	if (Configuration::instance()->getConsul()->m_topologyInterval > 1)
+	{
+		m_applyTopoTimerId = this->registerTimer(
+			1000L * 1,
+			Configuration::instance()->getConsul()->m_topologyInterval,
+			std::bind(&ConsulConnection::applyTopology, this, std::placeholders::_1),
+			__FUNCTION__
+		);
+	}
 }
 
 const std::string ConsulConnection::getConsulSessionId()
@@ -675,6 +704,11 @@ web::json::value ConsulConnection::ConsulStatus::AsJson()
 	return result;
 }
 
+ConsulConnection::ConsulTask::ConsulTask()
+	:m_replication(0), m_priority(0)
+{
+}
+
 std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::FromJson(const web::json::value& jobj)
 {
 	auto consul = std::make_shared<ConsulConnection::ConsulTask>();
@@ -688,6 +722,11 @@ std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::From
 		appJson[JSON_KEY_APP_comments] = web::json::value::string(APP_COMMENTS_FROM_CONSUL);
 		consul->m_app = Configuration::instance()->parseApp(appJson);
 		consul->m_replication = jobj.at("replication").as_integer();
+		SET_JSON_INT_VALUE(jobj, "priority", consul->m_priority);
+		if (HAS_JSON_FIELD(jobj, "condition"))
+		{
+			consul->m_condition = Label::FromJson(jobj.at("condition"));
+		}
 	}
 	return consul;
 }
@@ -696,6 +735,8 @@ web::json::value ConsulConnection::ConsulTask::AsJson()
 {
 	auto result = web::json::value::object();
 	result["replication"] = web::json::value::number(m_replication);
+	result["priority"] = web::json::value::number(m_priority);
 	result["content"] = m_app->AsJson(false);
+	if (m_condition != nullptr) result["condition"] = m_condition->AsJson();
 	return result;
 }

@@ -78,6 +78,8 @@
     }
   ],
   "Consul": {
+    "node_role_example": "master/node/all/null",
+    "node_role": "master",
     "url": "http://localhost:8500",
     "session_node": null,
     "session_TTL": 30,

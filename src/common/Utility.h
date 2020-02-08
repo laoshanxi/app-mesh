@@ -187,6 +187,7 @@ public:
 #define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
 #define JSON_KEY_CONSULE "Consul"
 #define JSON_KEY_CONSULE_URL "url"
+#define JSON_KEY_CONSULE_NODE_ROLE "node_role"
 #define JSON_KEY_CONSULE_SESSION_NODE "session_node"
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSULE_REPORT_INTERVAL "report_interval"
