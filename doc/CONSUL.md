@@ -23,6 +23,8 @@
 
 ```json
  "Consul": {
+    "is_master": true,
+    "is_node": true,
     "url": "http://localhost:8500",
     "session_node": null,
     "session_TTL": 30,

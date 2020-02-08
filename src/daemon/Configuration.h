@@ -55,7 +55,8 @@ class Configuration
 		web::json::value AsJson();
 		bool enabled() const;
 
-		std::string m_nodeRole;
+		bool m_isMaster;
+		bool m_isNode;
 		// http://consul.service.consul:8500
 		std::string m_consulUrl;
 		// Node (string: "<agent>") - Specifies the name of the node. This must refer to a node that is already registered.

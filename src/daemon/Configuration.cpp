@@ -719,7 +719,8 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
 	consul->m_sessionNode = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_SESSION_NODE);
-	consul->m_nodeRole = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_NODE_ROLE);
+	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MASTER);
+	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_TOPOLOGY_INTERVAL, consul->m_topologyInterval);
@@ -731,7 +732,8 @@ web::json::value Configuration::JsonConsul::AsJson()
 	auto result = web::json::value::object();
 	result[JSON_KEY_CONSULE_URL] = web::json::value::string(m_consulUrl);
 	result[JSON_KEY_CONSULE_SESSION_NODE] = web::json::value::string(m_sessionNode);
-	result[JSON_KEY_CONSULE_NODE_ROLE] = web::json::value::string(m_nodeRole);
+	result[JSON_KEY_CONSULE_IS_MASTER] = web::json::value::boolean(m_isMaster);
+	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSULE_REPORT_INTERVAL] = web::json::value::number(m_reportInterval);
 	result[JSON_KEY_CONSULE_TOPOLOGY_INTERVAL] = web::json::value::number(m_topologyInterval);

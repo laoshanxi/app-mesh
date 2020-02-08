@@ -51,9 +51,8 @@ void ConsulConnection::reportStatus(int timerId)
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
 	// check Consul configuration
-	if (Configuration::instance()->getConsul()->m_nodeRole != "master" &&
-		Configuration::instance()->getConsul()->m_nodeRole != "all" &&
-		Configuration::instance()->getConsul()->m_nodeRole == "node")
+	if (!Configuration::instance()->getConsul()->m_isMaster && 
+		!Configuration::instance()->getConsul()->m_isNode)
 	{
 		return;
 	}
@@ -127,9 +126,8 @@ void ConsulConnection::refreshSession(int timerId)
 		if (!Configuration::instance()->getConsul()->enabled()) return;
 
 		// check Consul configuration
-		if (Configuration::instance()->getConsul()->m_nodeRole != "master" &&
-			Configuration::instance()->getConsul()->m_nodeRole != "all" &&
-			Configuration::instance()->getConsul()->m_nodeRole == "node")
+		if (!Configuration::instance()->getConsul()->m_isMaster &&
+			!Configuration::instance()->getConsul()->m_isNode)
 		{
 			return;
 		}
@@ -170,15 +168,13 @@ void ConsulConnection::applyTopology(int timerId)
 		if (!Configuration::instance()->getConsul()->enabled()) return;
 		if (getSessionId().empty()) return;
 
-		if (Configuration::instance()->getConsul()->m_nodeRole == "master" ||
-			Configuration::instance()->getConsul()->m_nodeRole == "all")
+		if (Configuration::instance()->getConsul()->m_isMaster)
 		{
 			// Leader's job
 			leaderSchedule();
 		}
 
-		if (Configuration::instance()->getConsul()->m_nodeRole == "node" ||
-			Configuration::instance()->getConsul()->m_nodeRole == "all")
+		if (Configuration::instance()->getConsul()->m_isNode)
 		{
 			// Node's job
 			nodeSchedule();
@@ -605,6 +601,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	if (m_ssnRenewTimerId)
 	{
 		this->cancleTimer(m_ssnRenewTimerId);
+		m_ssnRenewTimerId = 0;
 	}
 	if (Configuration::instance()->getConsul()->m_ttl > 10)
 	{
@@ -620,6 +617,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	if (m_reportStatusTimerId)
 	{
 		this->cancleTimer(m_reportStatusTimerId);
+		m_reportStatusTimerId = 0;
 	}
 	if (Configuration::instance()->getConsul()->m_reportInterval > 3)
 	{
@@ -635,6 +633,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	if (m_applyTopoTimerId)
 	{
 		this->cancleTimer(m_applyTopoTimerId);
+		m_applyTopoTimerId;
 	}
 	if (Configuration::instance()->getConsul()->m_topologyInterval > 1)
 	{
