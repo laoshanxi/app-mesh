@@ -34,7 +34,9 @@ Application::~Application()
 
 bool Application::operator==(const std::shared_ptr<Application>& app) const
 {
-	if (this->m_dailyLimit == nullptr && app->m_dailyLimit != nullptr)
+	if (app->m_dailyLimit != nullptr && !app->m_dailyLimit->operator==(this->m_dailyLimit))
+		return false;
+	if (this->m_dailyLimit != nullptr && !this->m_dailyLimit->operator==(app->m_dailyLimit))
 		return false;
 
 	return (this->m_name == app->m_name &&
@@ -45,8 +47,7 @@ bool Application::operator==(const std::shared_ptr<Application>& app) const
 		this->m_cacheOutputLines == app->m_cacheOutputLines &&
 		this->m_healthCheckCmd == app->m_healthCheckCmd &&
 		this->m_posixTimeZone == app->m_posixTimeZone &&
-		this->m_status == app->m_status &&
-		this->m_dailyLimit->operator==(app->m_dailyLimit));
+		this->m_status == app->m_status);
 }
 
 const std::string Application::getName() const
