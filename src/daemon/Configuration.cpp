@@ -101,7 +101,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		{
 			auto jsonApp = *(iterB);
 			auto app = config->parseApp(jsonApp);
-			app->dump();
 			config->registerApp(app);
 		}
 	}
@@ -409,7 +408,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 		app->invoke();
 		saveConfigToDisk();
 	}
-
+	app->dump();
 	return std::move(app);
 }
 
