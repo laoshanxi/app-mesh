@@ -28,6 +28,7 @@ public:
 	};
 	Application();
 	virtual ~Application();
+	virtual bool operator==(const std::shared_ptr<Application>& app) const;
 	const std::string getName() const;
 	bool isEnabled();
 	bool isUnAvialable();

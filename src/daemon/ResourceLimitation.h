@@ -11,6 +11,7 @@ class ResourceLimitation
 public:
 	ResourceLimitation();
 	virtual ~ResourceLimitation();
+	bool operator==(const std::shared_ptr<ResourceLimitation>& obj) const;
 	void dump();
 
 	virtual web::json::value AsJson();
@@ -21,6 +22,6 @@ public:
 	int m_cpuShares;
 
 	// runtime info
-	std::string n_name;
+	std::string m_name;
 	int m_index;
 };

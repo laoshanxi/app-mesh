@@ -80,7 +80,7 @@ void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
 	if (limit != nullptr)
 	{
 		m_cgroup = std::make_unique<LinuxCgroup>(limit->m_memoryMb, limit->m_memoryVirtMb - limit->m_memoryMb, limit->m_cpuShares);
-		m_cgroup->setCgroup(limit->n_name, getpid(), ++(limit->m_index));
+		m_cgroup->setCgroup(limit->m_name, getpid(), ++(limit->m_index));
 	}
 }
 

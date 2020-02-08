@@ -32,6 +32,23 @@ Application::~Application()
 	LOG_DBG << fname << "Entered.";
 }
 
+bool Application::operator==(const std::shared_ptr<Application>& app) const
+{
+	if (this->m_dailyLimit == nullptr && app->m_dailyLimit != nullptr)
+		return false;
+
+	return (this->m_name == app->m_name &&
+		this->m_commandLine == app->m_commandLine &&
+		this->m_user == app->m_user &&
+		this->m_dockerImage == app->m_dockerImage &&
+		this->m_version == app->m_version &&
+		this->m_cacheOutputLines == app->m_cacheOutputLines &&
+		this->m_healthCheckCmd == app->m_healthCheckCmd &&
+		this->m_posixTimeZone == app->m_posixTimeZone &&
+		this->m_status == app->m_status &&
+		this->m_dailyLimit->operator==(app->m_dailyLimit));
+}
+
 const std::string Application::getName() const
 {
 	return m_name;

@@ -10,6 +10,12 @@ DailyLimitation::~DailyLimitation()
 {
 }
 
+bool DailyLimitation::operator==(const std::shared_ptr<DailyLimitation>& obj) const
+{
+	if (obj == nullptr) return false;
+	return (m_startTime == obj->m_startTime && m_endTime == obj->m_endTime);
+}
+
 void DailyLimitation::dump()
 {
 	const static char fname[] = "DailyLimitation::dump() ";

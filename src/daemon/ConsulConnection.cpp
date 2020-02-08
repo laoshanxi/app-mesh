@@ -299,7 +299,7 @@ void ConsulConnection::nodeSchedule()
 				{
 					// Update app
 					auto currentRunningApp = *it;
-					if (currentRunningApp->getVersion() > topologyAppObj->getVersion())
+					if (!currentRunningApp->operator==(topologyAppObj))
 					{
 						Configuration::instance()->registerApp(topologyAppObj);
 						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";

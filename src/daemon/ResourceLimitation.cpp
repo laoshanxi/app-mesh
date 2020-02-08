@@ -11,6 +11,15 @@ ResourceLimitation::~ResourceLimitation()
 {
 }
 
+bool ResourceLimitation::operator==(const std::shared_ptr<ResourceLimitation>& obj) const
+{
+	if (obj == nullptr) return false;
+	return (m_cpuShares == obj->m_cpuShares &&
+		m_memoryMb == obj->m_memoryMb &&
+		m_memoryVirtMb == obj->m_memoryVirtMb &&
+		m_name == obj->m_name);
+}
+
 void ResourceLimitation::dump()
 {
 	const static char fname[] = "ResourceLimitation::dump() ";
@@ -39,7 +48,7 @@ std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json
 		result->m_memoryMb = GET_JSON_INT_VALUE(jobj, JSON_KEY_RESOURCE_LIMITATION_memory_mb);
 		result->m_memoryVirtMb = GET_JSON_INT_VALUE(jobj, JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb);
 		result->m_cpuShares = GET_JSON_INT_VALUE(jobj, JSON_KEY_RESOURCE_LIMITATION_cpu_shares);
-		result->n_name = appName;
+		result->m_name = appName;
 	}
 	return result;
 }

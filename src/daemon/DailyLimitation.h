@@ -13,6 +13,7 @@ class DailyLimitation
 public:
 	DailyLimitation();
 	virtual ~DailyLimitation();
+	bool operator==(const std::shared_ptr<DailyLimitation>& obj) const;
 	void dump();
 
 	virtual web::json::value AsJson();
