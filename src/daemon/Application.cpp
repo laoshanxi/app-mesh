@@ -39,6 +39,11 @@ bool Application::operator==(const std::shared_ptr<Application>& app) const
 	if (this->m_dailyLimit != nullptr && !this->m_dailyLimit->operator==(app->m_dailyLimit))
 		return false;
 
+	if (app->m_resourceLimit != nullptr && !app->m_resourceLimit->operator==(this->m_resourceLimit))
+		return false;
+	if (this->m_resourceLimit != nullptr && !this->m_resourceLimit->operator==(app->m_resourceLimit))
+		return false;
+
 	return (this->m_name == app->m_name &&
 		this->m_commandLine == app->m_commandLine &&
 		this->m_user == app->m_user &&
