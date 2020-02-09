@@ -316,13 +316,23 @@ void ConsulConnection::nodeSchedule()
 			}
 		}
 	}
-
+	
 	for (auto currentApp : currentAllApps)
 	{
 		if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 		{
-			if (!(topology.count(MY_HOST_NAME) && topology[MY_HOST_NAME].count(currentApp->getName())))
+			if (topology.count(MY_HOST_NAME))
 			{
+				if (!(topology[MY_HOST_NAME].count(currentApp->getName())))
+				{
+					// Remove no used topology
+					Configuration::instance()->removeApp(currentApp->getName());
+					LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+				}
+			}
+			else
+			{
+				// TODO: if topology missed for some times treat as remove
 				// Remove no used topology
 				Configuration::instance()->removeApp(currentApp->getName());
 				LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
