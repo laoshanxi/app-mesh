@@ -661,7 +661,7 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 
 	// /appmgr/status
 	std::string path = std::string(CONSUL_BASE_PATH).append("status");
-	auto resp = requestHttp(web::http::methods::GET, path, { {"keys","true"} }, {}, nullptr);
+	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto json = resp.extract_json(true).get();
