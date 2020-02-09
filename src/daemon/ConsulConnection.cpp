@@ -807,6 +807,7 @@ web::json::value ConsulConnection::ConsulStatus::AsJson()
 ConsulConnection::ConsulTask::ConsulTask()
 	:m_replication(0), m_priority(0)
 {
+	m_condition = std::make_shared<Label>();
 }
 
 std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::FromJson(const web::json::value& jobj)
