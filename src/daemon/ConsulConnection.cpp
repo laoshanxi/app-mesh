@@ -284,11 +284,11 @@ void ConsulConnection::nodeSchedule()
 {
 	const static char fname[] = "ConsulConnection::nodeSchedule() ";
 
+	auto currentAllApps = Configuration::instance()->getApps();
 	auto task = retrieveTask();
 	auto topology = retrieveTopology(MY_HOST_NAME);
 	if (topology.count(MY_HOST_NAME))
 	{
-		auto currentAllApps = Configuration::instance()->getApps();
 		for (auto topologyAppStr : topology[MY_HOST_NAME])
 		{
 			if (task.count(topologyAppStr))
@@ -315,17 +315,17 @@ void ConsulConnection::nodeSchedule()
 				}
 			}
 		}
-		for (auto currentApp : currentAllApps)
+	}
+
+	for (auto currentApp : currentAllApps)
+	{
+		if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 		{
-			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
+			if (!(topology.count(MY_HOST_NAME) && topology[MY_HOST_NAME].count(currentApp->getName())))
 			{
-				if (!(topology.count(MY_HOST_NAME) &&
-					topology[MY_HOST_NAME].count(currentApp->getName())))
-				{
-					// Remove no used topology
-					Configuration::instance()->removeApp(currentApp->getName());
-					LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
-				}
+				// Remove no used topology
+				Configuration::instance()->removeApp(currentApp->getName());
+				LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
 			}
 		}
 	}
@@ -354,7 +354,7 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 	for (auto& task : taskMap)
 	{
 		task.second->m_findMatchedHosts.clear();
-		for(auto& h : hosts)
+		for (auto& h : hosts)
 		{
 			auto& hostLable = h.second;
 			auto& taskCondition = task.second->m_condition;
@@ -449,7 +449,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 			}
 		}
 	}
-	
+
 	return std::move(newTopology);
 }
 
@@ -592,10 +592,6 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 				}
 			}
 		}
-	}
-	else
-	{
-		LOG_DBG << fname << "failed with response : " << resp.extract_utf8string(true).get();
 	}
 	return topology;
 }
