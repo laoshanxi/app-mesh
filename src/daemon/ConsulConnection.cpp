@@ -51,7 +51,7 @@ void ConsulConnection::reportStatus(int timerId)
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
 	// Only node need report status
-	if (Configuration::instance()->getConsul()->m_isNode)
+	if (!Configuration::instance()->getConsul()->m_isNode)
 	{
 		return;
 	}
@@ -239,7 +239,7 @@ std::string ConsulConnection::renewSessionId()
 		else
 		{
 			LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
-			sessionId.clear();
+			sessionId = requestSessionId();
 		}
 	}
 	return sessionId;
@@ -253,6 +253,8 @@ std::string ConsulConnection::getSessionId()
 
 void ConsulConnection::leaderSchedule()
 {
+	const static char fname[] = "ConsulConnection::leaderSchedule() ";
+
 	// leader's responsibility
 	if (eletionLeader())
 	{
@@ -261,7 +263,11 @@ void ConsulConnection::leaderSchedule()
 		auto nodesMap = retrieveNode();
 		auto oldTopology = retrieveTopology("");
 
-		if (nodesMap.empty()) return;
+		if (nodesMap.empty())
+		{
+			LOG_DBG << fname << "retrieveNode is empty";
+			return;
+		}
 
 		// find matched hosts for each task
 		findTaskAvialableHost(tasksMapDef, nodesMap);
