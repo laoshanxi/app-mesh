@@ -24,6 +24,7 @@ class ConsulConnection :public TimerHandler
 		ConsulTask();
 		static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
+		void dump();
 
 		size_t m_replication;
 		std::shared_ptr<Application> m_app;

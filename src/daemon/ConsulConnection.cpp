@@ -259,7 +259,7 @@ void ConsulConnection::leaderSchedule()
 	if (eletionLeader())
 	{
 		// prepair
-		auto tasksMapDef = retrieveTask();
+		auto tasksMap = retrieveTask();
 		auto nodesMap = retrieveNode();
 		auto oldTopology = retrieveTopology("");
 
@@ -270,10 +270,10 @@ void ConsulConnection::leaderSchedule()
 		}
 
 		// find matched hosts for each task
-		findTaskAvialableHost(tasksMapDef, nodesMap);
+		findTaskAvialableHost(tasksMap, nodesMap);
 
 		// schedule task
-		auto newTopology = scheduleTask(tasksMapDef, oldTopology);
+		auto newTopology = scheduleTask(tasksMap, oldTopology);
 
 		// apply schedule result
 		compareTopologyAndDispatch(oldTopology, newTopology);
@@ -367,16 +367,21 @@ bool ConsulConnection::eletionLeader()
 
 void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<Label>>& hosts)
 {
-	for (auto& task : taskMap)
+	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
+
+	for (auto task : taskMap)
 	{
+		auto taskName = task.first;
 		task.second->m_findMatchedHosts.clear();
-		for (auto& h : hosts)
+		for (auto host : hosts)
 		{
-			auto& hostLable = h.second;
+			auto& hostName = host.first;
+			auto& hostLable = host.second;
 			auto& taskCondition = task.second->m_condition;
 			if (hostLable->match(taskCondition))
 			{
-				task.second->m_findMatchedHosts.insert(h.first);
+				task.second->m_findMatchedHosts.insert(hostName);
+				LOG_DBG << fname << " task <" << taskName << "> match host <" << hostName << ">";
 			}
 		}
 	}
@@ -384,21 +389,21 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 
 std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::set<std::string>>& oldTopology)
 {
-	const static char fname[] = "ConsulConnection::writeTopology() ";
+	const static char fname[] = "ConsulConnection::scheduleTask() ";
 
 	std::map<std::string, std::set<std::string>> newTopology;
 
 	struct HostQuata {
-		HostQuata(const std::string& n) :quata(0), hostname(n) {};
-		int quata;
+		HostQuata(const std::string& n) :quota(0), hostname(n) {};
+		int quota;
 		std::string hostname;
 	};
 	std::map<std::string, std::shared_ptr<HostQuata>> hostQuatoMap;
 
-	// Fill hostQuatoMap
-	for (auto& task : taskMap)
+	// fill hostQuatoMap
+	for (auto task : taskMap)
 	{
-		for (auto& host : task.second->m_findMatchedHosts)
+		for (auto host : task.second->m_findMatchedHosts)
 		{
 			if (!hostQuatoMap.count(host))
 			{
@@ -408,13 +413,13 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 	}
 
 	// ignore old schedule
-	for (auto& task : taskMap)
+	for (auto task : taskMap)
 	{
 		auto& taskName = task.first;
 		auto& taskDedicateHosts = task.second->m_findMatchedHosts;
 		auto& taskReplication = task.second->m_replication;
 
-		for (auto& oldHost : oldTopology)
+		for (auto oldHost : oldTopology)
 		{
 			if (taskReplication <= 0) break;
 			auto& oldHostName = oldHost.first;
@@ -425,43 +430,51 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 				taskDedicateHosts.erase(oldHostName);
 				--taskReplication;
 
+				LOG_DBG << fname << " task <" << taskName << "> already running on host <" << oldHostName << ">";
+
 				// save to topology
 				newTopology[oldHostName].insert(taskName);
 
 				// update quato
 				std::shared_ptr<HostQuata> hostQ;
-				if (hostQuatoMap.count(oldHostName)) hostQuatoMap[oldHostName]->quata++;
+				if (hostQuatoMap.count(oldHostName)) hostQuatoMap[oldHostName]->quota++;
 			}
 		}
 	}
 
 	// do schedule
-	for (auto& task : taskMap)
+	for (auto task : taskMap)
 	{
 		// get current task
 		auto& taskDedicateHosts = task.second->m_findMatchedHosts;
 		auto& taskReplication = task.second->m_replication;
 		auto& taskName = task.first;
-		std::vector<std::shared_ptr<HostQuata>> hostQuato4NewTask;
+		std::vector<std::shared_ptr<HostQuata>> hostQuota4NewTask;
 
-		if (taskReplication <= 0) break;
-		for (auto& host : taskDedicateHosts)
+		LOG_DBG << fname << "schedule task <" << taskName << ">";
+
+		if (taskReplication <= 0)
+			continue;
+
+		for (auto host : taskDedicateHosts)
 		{
-			hostQuato4NewTask.push_back(hostQuatoMap[host]);
+			hostQuota4NewTask.push_back(hostQuatoMap[host]);
 		}
 		// sort hosts
-		std::sort(hostQuato4NewTask.begin(), hostQuato4NewTask.end(),
+		std::sort(hostQuota4NewTask.begin(), hostQuota4NewTask.end(),
 			[](const std::shared_ptr<HostQuata> a, const std::shared_ptr<HostQuata> b)
-			{ return a->quata < b->quata; });
+			{ return a->quota < b->quota; });
 
 		// assign host to task
 		for (size_t i = 0; i < taskReplication; i++)
 		{
-			if (i < hostQuato4NewTask.size())
+			if (i < hostQuota4NewTask.size())
 			{
-				auto& selectedHost = hostQuato4NewTask[i];
-				selectedHost->quata += 1;
+				auto& selectedHost = hostQuota4NewTask[i];
+				selectedHost->quota += 1;
 				newTopology[selectedHost->hostname].insert(taskName);
+
+				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << selectedHost->hostname << ">";
 			}
 		}
 	}
@@ -604,6 +617,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 							apps.insert(GET_STD_STRING(app.as_string()));
 						}
 						topology[hostName] = apps;
+						LOG_DBG << fname << "get <" << apps.size() << "> task for <" << hostName << ">";
 					}
 				}
 			}
@@ -634,6 +648,8 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 */
 std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConnection::retrieveTask()
 {
+	const static char fname[] = "ConsulConnection::retrieveTask() ";
+
 	std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> result;
 	// /appmgr/task/myapp
 	std::string path = std::string(CONSUL_BASE_PATH).append("task");
@@ -650,7 +666,12 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					auto appJson = web::json::value::parse(appText);
 					auto task = ConsulTask::FromJson(appJson);
-					if (task->m_app->getName().length()) result[task->m_app->getName()] = task;
+					if (task->m_app->getName().length())
+					{
+						result[task->m_app->getName()] = task;
+						LOG_DBG << fname << "get task <" << task->m_app->getName() << ">";
+						task->dump();
+					}
 				}
 			}
 		}
@@ -665,6 +686,8 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 */
 std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 {
+	const static char fname[] = "ConsulConnection::retrieveNode() ";
+
 	std::map<std::string, std::shared_ptr<Label>> result;
 
 	// /appmgr/status
@@ -684,7 +707,10 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 					{
 						auto tmp = Utility::stringReplace(key, "appmgr/status/", "");
 						auto host = Utility::stringReplace(tmp, "/label", "");
-						result[host] = Label::FromJson(web::json::value::parse(Utility::decode64(section.at("Value").as_string())));
+						auto label = Utility::decode64(section.at("Value").as_string());
+						if (label.empty()) label = "{}";
+						result[host] = Label::FromJson(web::json::value::parse(label));
+						LOG_DBG << fname << "get host <" << host << "> with label: " << label;
 					}
 				}
 			}
@@ -848,4 +874,12 @@ web::json::value ConsulConnection::ConsulTask::AsJson()
 	result["content"] = m_app->AsJson(false);
 	if (m_condition != nullptr) result["condition"] = m_condition->AsJson();
 	return result;
+}
+
+void ConsulConnection::ConsulTask::dump()
+{
+	const static char fname[] = "ConsulConnection::dump() ";
+	LOG_DBG << fname << "m_app=" << m_app->getName();
+	LOG_DBG << fname << "m_priority=" << m_priority;
+	LOG_DBG << fname << "m_replication=" << m_replication;
 }
