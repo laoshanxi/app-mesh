@@ -108,7 +108,8 @@ public:
 	static std::string stdStringTrim(const std::string& str);
 	static std::string stdStringTrim(const std::string& str, char trimChar, bool trimStart = true, bool trimEnd = true);
 	static std::vector<std::string> splitString(const std::string& s, const std::string& c);
-	static bool startWith(const std::string& str, std::string head);
+	static bool startWith(const std::string& str, const std::string& head);
+	static bool endWith(const std::string& str, const std::string& end);
 	static std::string stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst);
 	static std::string humanReadableSize(long double bytesSize);
 	static std::string prettyJson(const std::string& jsonStr);

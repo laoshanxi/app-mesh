@@ -545,13 +545,19 @@ std::vector<std::string> Utility::splitString(const std::string& source, const s
 	return std::move(result);
 }
 
-bool Utility::startWith(const std::string& str, std::string head)
+bool Utility::startWith(const std::string& str, const std::string& head)
 {
 	if (str.length() >= head.length())
 	{
 		return (str.compare(0, head.size(), head) == 0);
 	}
 	return false;
+}
+
+bool Utility::endWith(const std::string& value, const std::string& ending)
+{
+	if (value.size() > value.size()) return false;
+	return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
 std::string Utility::stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst)

@@ -49,3 +49,17 @@ void Label::delLabel(const std::string& name)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_labels.count(name)) m_labels.erase(name);
 }
+
+bool Label::match(const std::shared_ptr<Label>& label) const
+{
+	for (const auto& la : label->m_labels)
+	{
+		const auto& key = la.first;
+		const auto& val = la.second;
+		if (!(m_labels.count(key) && m_labels.find(key)->second == val))
+		{
+			return false;
+		}
+	}
+	return true;
+}

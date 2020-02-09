@@ -31,6 +31,9 @@ class ConsulConnection :public TimerHandler
 		// schedule parameters
 		std::shared_ptr<Label> m_condition;
 		int m_priority;
+
+		// used for schedule fill
+		std::set<std::string> m_findMatchedHosts;
 	};
 public:
 	ConsulConnection();
@@ -51,11 +54,15 @@ private:
 	void leaderSchedule();
 	void nodeSchedule();
 	bool eletionLeader();
+
+	void findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<Label>>& hosts);
+	std::map<std::string, std::set<std::string>> scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::set<std::string>>& oldTopology);
 	void compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT);
+
 	bool writeTopology(const std::string& host, const std::set<std::string>& apps);
 	std::map<std::string, std::set<std::string>> retrieveTopology(std::string host);
 	std::map<std::string, std::shared_ptr<ConsulTask>> retrieveTask();
-	std::set<std::string> retrieveStatusHost();
+	std::map<std::string, std::shared_ptr<Label>> retrieveNode();
 
 private:
 	std::recursive_mutex m_mutex;
