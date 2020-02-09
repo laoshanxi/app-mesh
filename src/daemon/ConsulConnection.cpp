@@ -349,18 +349,18 @@ bool ConsulConnection::eletionLeader()
 	return false;
 }
 
-void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<Label>>& hosts)
+void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<Label>>& hosts)
 {
-	for (auto& t : task)
+	for (auto& task : taskMap)
 	{
-		t.second->m_findMatchedHosts.clear();
+		task.second->m_findMatchedHosts.clear();
 		for(auto& h : hosts)
 		{
 			auto& hostLable = h.second;
-			auto& taskCondition = t.second->m_condition;
+			auto& taskCondition = task.second->m_condition;
 			if (hostLable->match(taskCondition))
 			{
-				t.second->m_findMatchedHosts.insert(h.first);
+				task.second->m_findMatchedHosts.insert(h.first);
 			}
 		}
 	}
@@ -368,25 +368,25 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 
 std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::set<std::string>>& oldTopology)
 {
+	const static char fname[] = "ConsulConnection::writeTopology() ";
+
 	std::map<std::string, std::set<std::string>> newTopology;
 
 	struct HostQuata {
-		HostQuata(const std::string& n) :quata(0), name(n) {};
+		HostQuata(const std::string& n) :quata(0), hostname(n) {};
 		int quata;
-		std::string name;
+		std::string hostname;
 	};
-	std::map<std::string, std::shared_ptr<HostQuata>> taskQuatoMap;
+	std::map<std::string, std::shared_ptr<HostQuata>> hostQuatoMap;
 
-	// get all host object map
+	// Fill hostQuatoMap
 	for (auto& task : taskMap)
 	{
-		auto& taskDedicateHosts = task.second->m_findMatchedHosts;
-		for (auto& host : taskDedicateHosts)
+		for (auto& host : task.second->m_findMatchedHosts)
 		{
-			if (!taskQuatoMap.count(host))
+			if (!hostQuatoMap.count(host))
 			{
-				auto hostQ = std::make_shared<HostQuata>(host);
-				taskQuatoMap[host] = hostQ;
+				hostQuatoMap[host] = std::make_shared<HostQuata>(host);
 			}
 		}
 	}
@@ -401,26 +401,20 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 		for (auto& oldHost : oldTopology)
 		{
 			if (taskReplication <= 0) break;
-			if (taskDedicateHosts.count(oldHost.first) && oldHost.second.count(task.first))
+			auto& oldHostName = oldHost.first;
+			auto& oldTaskSet = oldHost.second;
+			if (taskDedicateHosts.count(oldHostName) && oldTaskSet.count(taskName))
 			{
 				// find
-				taskDedicateHosts.erase(oldHost.first);
+				taskDedicateHosts.erase(oldHostName);
 				--taskReplication;
 
 				// save to topology
-				newTopology[oldHost.first].insert(taskName);
+				newTopology[oldHostName].insert(taskName);
 
 				// update quato
 				std::shared_ptr<HostQuata> hostQ;
-				if (taskQuatoMap.count(oldHost.first))
-				{
-					hostQ = taskQuatoMap[oldHost.first];
-					hostQ->quata += 1;
-				}
-				else
-				{
-					// old useless schedule
-				}
+				if (hostQuatoMap.count(oldHostName)) hostQuatoMap[oldHostName]->quata++;
 			}
 		}
 	}
@@ -431,25 +425,27 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 		// get current task
 		auto& taskDedicateHosts = task.second->m_findMatchedHosts;
 		auto& taskReplication = task.second->m_replication;
+		auto& taskName = task.first;
 		std::vector<std::shared_ptr<HostQuata>> hostQuato4NewTask;
 
 		if (taskReplication <= 0) break;
 		for (auto& host : taskDedicateHosts)
 		{
-			hostQuato4NewTask.push_back(taskQuatoMap[host]);
+			hostQuato4NewTask.push_back(hostQuatoMap[host]);
 		}
 		// sort hosts
 		std::sort(hostQuato4NewTask.begin(), hostQuato4NewTask.end(),
-			[](const std::shared_ptr<HostQuata>& a, const std::shared_ptr<HostQuata>& b)
+			[](const std::shared_ptr<HostQuata> a, const std::shared_ptr<HostQuata> b)
 			{ return a->quata < b->quata; });
 
+		// assign host to task
 		for (size_t i = 0; i < taskReplication; i++)
 		{
 			if (i < hostQuato4NewTask.size())
 			{
-				auto selectedHost = hostQuato4NewTask[i];
+				auto& selectedHost = hostQuato4NewTask[i];
 				selectedHost->quata += 1;
-				newTopology[selectedHost->name].insert(task.first);
+				newTopology[selectedHost->hostname].insert(taskName);
 			}
 		}
 	}
