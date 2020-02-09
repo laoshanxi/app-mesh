@@ -669,7 +669,7 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 		{
 			for (auto section : json.as_array())
 			{
-				if (section.has_object_field("Value") && section.at("Value").as_string().length())
+				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
 					auto key = GET_JSON_STR_VALUE(section, "Key");
 					if (Utility::endWith(key, "/label"))
