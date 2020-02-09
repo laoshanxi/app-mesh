@@ -9,6 +9,7 @@
 > * Two types of Applications : Consul task and normal task
 > * App Manager Leader node schedule consul tasks and put result in Consul
 > * App Manager node retrieve consul tasks from Consul dynamiclly
+> * Consul App support node select
 > * Consul session id support HA
 > * Consul session requested with TTL and delete behavior when expired
 
@@ -17,7 +18,6 @@
 > * Consul watch
 > * Task dispatch policy have not implemented
 > * Schedule consider resource usage
-> * Node selector has not supported
 
 ### Consul configuration
 
@@ -58,7 +58,11 @@
 {
     "content": {
         "command": "sleep 30",
-        "name": "myapp"
+        "name": "myapp",
+		"condition": {
+			"arch": "x86_64",
+			"os_version": "centos7.6"
+		}
     },
     "replication": 1
 }
