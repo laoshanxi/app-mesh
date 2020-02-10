@@ -67,6 +67,29 @@ void ApplicationShortRun::refreshPid()
 	}
 }
 
+void ApplicationShortRun::checkAndUpdateHealth()
+{
+	if (m_healthCheckCmd.empty())
+	{
+		if (m_pid > 0)
+		{
+			setHealth(true);
+		}
+		else
+		{
+			// if return normally, set to health
+			if (m_return && 0 == *m_return)
+			{
+				setHealth(true);
+			}
+			else
+			{
+				setHealth(false);
+			}
+		}
+	}
+}
+
 void ApplicationShortRun::invoke()
 {
 	const static char fname[] = "ApplicationShortRun::invoke() ";

@@ -302,10 +302,20 @@ std::string Application::getAsyncRunOutput(const std::string& processUuid, int& 
 
 void Application::checkAndUpdateHealth()
 {
-	if (m_pid <= 0)
-		setHealth(false);
-	else if (m_healthCheckCmd.empty())
-		setHealth(true);
+	if (m_healthCheckCmd.empty())
+	{
+		// judged by pid
+		setHealth(m_pid > 0);
+	}
+	else
+	{
+		// if pid is zero, always un-health
+		if (m_pid <= 0)
+		{
+			setHealth(false);
+		}
+		// if pid is none-zero, this will depend on health-script
+	}
 }
 
 pid_t Application::getpid() const

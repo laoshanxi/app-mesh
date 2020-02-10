@@ -56,7 +56,7 @@ public:
 	void setHealth(bool health) { m_health = health; }
 	const std::string& getHealthCheck() { return m_healthCheckCmd; }
 	int getHealth() { return 1 - m_health; }
-	void checkAndUpdateHealth();
+	virtual void checkAndUpdateHealth();
 	pid_t getpid() const;
 
 	// get normal stdout for running app

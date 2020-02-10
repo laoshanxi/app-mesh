@@ -15,6 +15,6 @@ public:
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 
 	virtual void refreshPid() override;
-
+	virtual void checkAndUpdateHealth() override;
 	virtual void dump() override;
 };

@@ -24,6 +24,7 @@ public:
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	void initTimer();
 	virtual void refreshPid() override;
+	virtual void checkAndUpdateHealth() override;
 	int getStartInterval();
 	std::chrono::system_clock::time_point getStartTime();
 	virtual bool avialable() override;
