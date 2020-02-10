@@ -418,10 +418,10 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 		auto& taskName = task.first;
 		auto& taskDedicateHosts = task.second->m_findMatchedHosts;
 		auto& taskReplication = task.second->m_replication;
+		if (taskReplication <= 0) continue;
 
 		for (auto oldHost : oldTopology)
 		{
-			if (taskReplication <= 0) break;
 			auto& oldHostName = oldHost.first;
 			auto& oldTaskSet = oldHost.second;
 			if (taskDedicateHosts.count(oldHostName) && oldTaskSet.count(taskName))
@@ -604,7 +604,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
 					auto hostText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
-					if (hostText.empty()) break;
+					if (hostText.empty()) continue;
 					auto consulKey = GET_JSON_STR_VALUE(section, "Key");
 					auto vec = Utility::splitString(consulKey, "/");
 					auto hostName = vec[vec.size() - 1];
