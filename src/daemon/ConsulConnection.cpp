@@ -372,7 +372,7 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 	for (auto task : taskMap)
 	{
 		auto taskName = task.first;
-		task.second->m_findMatchedHosts.clear();
+		task.second->m_matchedHosts.clear();
 		for (auto host : hosts)
 		{
 			auto& hostName = host.first;
@@ -380,7 +380,7 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 			auto& taskCondition = task.second->m_condition;
 			if (hostLable->match(taskCondition))
 			{
-				task.second->m_findMatchedHosts.insert(hostName);
+				task.second->m_matchedHosts.insert(hostName);
 				LOG_DBG << fname << " task <" << taskName << "> match host <" << hostName << ">";
 			}
 		}
@@ -403,7 +403,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 	// fill hostQuatoMap
 	for (auto task : taskMap)
 	{
-		for (auto host : task.second->m_findMatchedHosts)
+		for (auto host : task.second->m_matchedHosts)
 		{
 			if (!hostQuatoMap.count(host))
 			{
@@ -416,10 +416,12 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 	for (auto task : taskMap)
 	{
 		auto& taskName = task.first;
-		auto& taskDedicateHosts = task.second->m_findMatchedHosts;
+		auto& taskDedicateHosts = task.second->m_matchedHosts;
+		auto& scheduleHosts = task.second->m_scheduleHosts;
 		auto& taskReplication = task.second->m_replication;
 		if (taskReplication <= 0) continue;
 
+		scheduleHosts.clear();
 		for (auto oldHost : oldTopology)
 		{
 			auto& oldHostName = oldHost.first;
@@ -429,6 +431,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 				// find
 				taskDedicateHosts.erase(oldHostName);
 				--taskReplication;
+				scheduleHosts.insert(oldHostName);
 
 				LOG_DBG << fname << " task <" << taskName << "> already running on host <" << oldHostName << ">";
 
@@ -446,7 +449,8 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 	for (auto task : taskMap)
 	{
 		// get current task
-		auto& taskDedicateHosts = task.second->m_findMatchedHosts;
+		auto& taskDedicateHosts = task.second->m_matchedHosts;
+		auto& scheduleHosts = task.second->m_scheduleHosts;
 		auto& taskReplication = task.second->m_replication;
 		auto& taskName = task.first;
 		std::vector<std::shared_ptr<HostQuata>> hostQuota4NewTask;
@@ -473,6 +477,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 				auto& selectedHost = hostQuota4NewTask[i];
 				selectedHost->quota += 1;
 				newTopology[selectedHost->hostname].insert(taskName);
+				scheduleHosts.insert(selectedHost->hostname);
 
 				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << selectedHost->hostname << ">";
 			}
@@ -533,7 +538,7 @@ bool ConsulConnection::writeTopology(const std::string& host, const std::set<std
 	const static char fname[] = "ConsulConnection::writeTopology() ";
 
 	//topology: /appmgr/topology/myhost
-	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
+	std::string path = std::string(CONSUL_BASE_PATH).append("topology/host/").append(host);
 	web::http::http_response resp;
 	if (apps.size())
 	{
@@ -591,7 +596,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 
 	// /appmgr/topology/myhost
 	std::map<std::string, std::set<std::string>> topology;
-	auto path = std::string(CONSUL_BASE_PATH).append("topology");
+	auto path = std::string(CONSUL_BASE_PATH).append("topology/host");
 	if (host.length()) path.append("/").append(host);
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
@@ -622,6 +627,10 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 				}
 			}
 		}
+	}
+	else
+	{
+		throw std::invalid_argument(std::string("failed get topology : ") + host);
 	}
 	return topology;
 }
@@ -789,6 +798,8 @@ const std::string ConsulConnection::getConsulSessionId()
 
 web::http::http_response ConsulConnection::requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body)
 {
+	const static char fname[] = "ConsulConnection::requestHttp() ";
+
 	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
 
 	// Create http_client to send the request.
@@ -815,6 +826,8 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 		request.set_body(*body);
 	}
 	web::http::http_response response = client.request(request).get();
+	// TODO: resp.status_code: 301
+	LOG_DBG << fname << path << " return " << response.status_code();
 	return std::move(response);
 }
 

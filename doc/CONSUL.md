@@ -69,10 +69,12 @@
  ```
 
 - Consul topology
- Topology is Consul task schedule result, each host is a key, Only  App Manager leader node will write this part.
+ Topology is Consul task schedule result, App Manager leader node will write this part.
+   For host dimension, each host is a key
+   For task demension, the result assemble to one key
 
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/topology/cents?raw | python -m json.tool  
+ curl -s http://localhost:8500/v1/kv/appmgr/topology/host/myhost?raw | python -m json.tool  
 [
     "myapp",
     "myapp2"
@@ -130,7 +132,13 @@
 			}
 		},
 		"topology": {
-			"myhost": ["myapp", "myapp2"]
+			"host": {
+				"myhost": ["myapp", "myapp2"],
+				"host2": ["myapp", "myapp2"]
+			}
+			"task": {
+				"myapp": ["myhost", "host2"]
+			}
 		}
 	}
 }

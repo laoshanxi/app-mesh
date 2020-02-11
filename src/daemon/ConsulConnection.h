@@ -34,7 +34,8 @@ class ConsulConnection :public TimerHandler
 		int m_priority;
 
 		// used for schedule fill
-		std::set<std::string> m_findMatchedHosts;
+		std::set<std::string> m_matchedHosts;
+		std::set<std::string> m_scheduleHosts;
 	};
 public:
 	ConsulConnection();
