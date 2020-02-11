@@ -38,6 +38,13 @@ const std::shared_ptr<Label> Label::FromJson(const web::json::value& obj)
 	return label;
 }
 
+bool Label::operator==(const std::shared_ptr<Label>& label)
+{
+	if (!label)	return false;
+	if (m_labels.size() != label->m_labels.size()) return false;
+	return this->match(label);
+}
+
 void Label::addLabel(const std::string& name, const std::string& value)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -52,6 +59,7 @@ void Label::delLabel(const std::string& name)
 
 bool Label::match(const std::shared_ptr<Label>& label) const
 {
+	if (!label) return false;
 	for (const auto& la : label->m_labels)
 	{
 		const auto& key = la.first;

@@ -14,17 +14,20 @@ class Application;
 class ConsulConnection :public TimerHandler
 {
 	enum class Role { Master, Node, All, Nothing };
+
 	struct ConsulStatus {
 		static std::shared_ptr<ConsulStatus> FromJson(const web::json::value& json);
 		web::json::value AsJson();
 
 		std::map<std::string, web::json::value> m_apps;
 	};
+
 	struct ConsulTask {
 		ConsulTask();
 		static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
 		void dump();
+		bool operator==(const std::shared_ptr<ConsulTask>& task);
 
 		size_t m_replication;
 		std::shared_ptr<Application> m_app;
@@ -37,6 +40,7 @@ class ConsulConnection :public TimerHandler
 		std::set<std::string> m_matchedHosts;
 		std::set<std::string> m_scheduleHosts;
 	};
+
 public:
 	ConsulConnection();
 	virtual ~ConsulConnection();

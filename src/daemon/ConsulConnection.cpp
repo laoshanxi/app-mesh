@@ -289,7 +289,7 @@ void ConsulConnection::nodeSchedule()
 	auto topology = retrieveTopology(MY_HOST_NAME);
 	if (topology.count(MY_HOST_NAME))
 	{
-		for (auto topologyAppStr : topology[MY_HOST_NAME])
+		for (const auto& topologyAppStr : topology[MY_HOST_NAME])
 		{
 			if (task.count(topologyAppStr))
 			{
@@ -316,7 +316,7 @@ void ConsulConnection::nodeSchedule()
 			}
 		}
 
-		for (auto currentApp : currentAllApps)
+		for (const auto& currentApp : currentAllApps)
 		{
 			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 			{
@@ -335,7 +335,7 @@ void ConsulConnection::nodeSchedule()
 	else
 	{
 		// TODO: if topology missed for some times treat as remove
-		for (auto currentApp : currentAllApps)
+		for (const auto& currentApp : currentAllApps)
 		{
 			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 			{
@@ -369,11 +369,11 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 {
 	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
 
-	for (auto task : taskMap)
+	for (const auto& task : taskMap)
 	{
 		auto taskName = task.first;
 		task.second->m_matchedHosts.clear();
-		for (auto host : hosts)
+		for (const auto& host : hosts)
 		{
 			auto& hostName = host.first;
 			auto& hostLable = host.second;
@@ -401,9 +401,9 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 	std::map<std::string, std::shared_ptr<HostQuata>> hostQuatoMap;
 
 	// fill hostQuatoMap
-	for (auto task : taskMap)
+	for (const auto& task : taskMap)
 	{
-		for (auto host : task.second->m_matchedHosts)
+		for (const auto& host : task.second->m_matchedHosts)
 		{
 			if (!hostQuatoMap.count(host))
 			{
@@ -413,7 +413,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 	}
 
 	// ignore old schedule
-	for (auto task : taskMap)
+	for (const auto& task : taskMap)
 	{
 		auto& taskName = task.first;
 		auto& taskDedicateHosts = task.second->m_matchedHosts;
@@ -422,7 +422,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 		if (taskReplication <= 0) continue;
 
 		scheduleHosts.clear();
-		for (auto oldHost : oldTopology)
+		for (const auto& oldHost : oldTopology)
 		{
 			auto& oldHostName = oldHost.first;
 			auto& oldTaskSet = oldHost.second;
@@ -446,7 +446,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 	}
 
 	// do schedule
-	for (auto task : taskMap)
+	for (const auto& task : taskMap)
 	{
 		// get current task
 		auto& taskDedicateHosts = task.second->m_matchedHosts;
@@ -460,7 +460,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 		if (taskReplication <= 0)
 			continue;
 
-		for (auto host : taskDedicateHosts)
+		for (const auto& host : taskDedicateHosts)
 		{
 			hostQuota4NewTask.push_back(hostQuatoMap[host]);
 		}
@@ -489,14 +489,14 @@ std::map<std::string, std::set<std::string>> ConsulConnection::scheduleTask(std:
 
 void ConsulConnection::compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT)
 {
-	for (auto newHost : newT)
+	for (const auto& newHost : newT)
 	{
 		if (oldT.count(newHost.first))
 		{
 			auto equal = true;
 			if (newHost.second.size() == oldT[newHost.first].size())
 			{
-				for (auto app : newHost.second)
+				for (const auto& app : newHost.second)
 				{
 					if (!oldT[newHost.first].count(app))
 					{
@@ -523,7 +523,7 @@ void ConsulConnection::compareTopologyAndDispatch(std::map<std::string, std::set
 		}
 	}
 
-	for (auto oldHost : oldT)
+	for (const auto& oldHost : oldT)
 	{
 		if (!newT.count(oldHost.first))
 		{
@@ -544,7 +544,7 @@ bool ConsulConnection::writeTopology(const std::string& host, const std::set<std
 	{
 		auto body = web::json::value::array(apps.size());
 		int index = 0;
-		for (auto app : apps)
+		for (const auto& app : apps)
 		{
 			body[index++] = web::json::value::string(app);
 		}
@@ -604,7 +604,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (auto section : json.as_array())
+			for (const auto& section : json.as_array())
 			{
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
@@ -617,7 +617,7 @@ std::map<std::string, std::set<std::string>> ConsulConnection::retrieveTopology(
 					if (appArrayJson.is_array())
 					{
 						std::set<std::string> apps;
-						for (auto app : appArrayJson.as_array())
+						for (const auto& app : appArrayJson.as_array())
 						{
 							apps.insert(GET_STD_STRING(app.as_string()));
 						}
@@ -668,7 +668,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (auto section : json.as_array())
+			for (const auto& section : json.as_array())
 			{
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
@@ -707,7 +707,7 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (auto section : json.as_array())
+			for (const auto& section : json.as_array())
 			{
 				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
@@ -816,7 +816,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 		});
 
 	web::http::http_request request(mtd);
-	for (auto h : header)
+	for (const auto& h : header)
 	{
 		request.headers().add(h.first, h.second);
 	}
@@ -834,7 +834,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 std::shared_ptr<ConsulConnection::ConsulStatus> ConsulConnection::ConsulStatus::FromJson(const web::json::value& json)
 {
 	auto consul = std::make_shared<ConsulConnection::ConsulStatus>();
-	for (auto app : json.as_object())
+	for (const auto& app : json.as_object())
 	{
 		consul->m_apps[GET_STD_STRING(app.first)] = app.second;
 	}
@@ -844,7 +844,7 @@ std::shared_ptr<ConsulConnection::ConsulStatus> ConsulConnection::ConsulStatus::
 web::json::value ConsulConnection::ConsulStatus::AsJson()
 {
 	auto result = web::json::value::object();
-	for (auto app : m_apps)
+	for (const auto& app : m_apps)
 	{
 		result[app.first] = app.second;
 	}
@@ -895,4 +895,13 @@ void ConsulConnection::ConsulTask::dump()
 	LOG_DBG << fname << "m_app=" << m_app->getName();
 	LOG_DBG << fname << "m_priority=" << m_priority;
 	LOG_DBG << fname << "m_replication=" << m_replication;
+}
+
+bool ConsulConnection::ConsulTask::operator==(const std::shared_ptr<ConsulTask>& task)
+{
+	if (!task) return false;
+	return m_replication == task->m_replication &&
+		m_priority == task->m_priority &&
+		m_app->operator==(task->m_app) &&
+		m_condition->operator==(task->m_condition);
 }
