@@ -32,8 +32,10 @@ Application::~Application()
 	LOG_DBG << fname << "Entered.";
 }
 
-bool Application::operator==(const std::shared_ptr<Application>& app) const
+bool Application::operator==(const std::shared_ptr<Application>& app)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+
 	if (app->m_dailyLimit != nullptr && !app->m_dailyLimit->operator==(this->m_dailyLimit))
 		return false;
 	if (this->m_dailyLimit != nullptr && !this->m_dailyLimit->operator==(app->m_dailyLimit))

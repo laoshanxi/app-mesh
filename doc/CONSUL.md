@@ -74,7 +74,7 @@
    For task demension, the result assemble to one key
 
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/topology/host/myhost?raw | python -m json.tool  
+ curl -s http://localhost:8500/v1/kv/appmgr/topology/myhost?raw | python -m json.tool  
 [
     "myapp",
     "myapp2"
@@ -132,13 +132,10 @@
 			}
 		},
 		"topology": {
-			"host": {
-				"myhost": ["myapp", "myapp2"],
-				"host2": ["myapp", "myapp2"]
-			}
-			"task": {
-				"myapp": ["myhost", "host2"]
-			}
+			"myhost": [ 
+			    {"app": "myapp", "peer_hosts": ["hosts"] },
+				{"app": "myapp2" }],
+			"host2": ["myapp", "myapp2"]
 		}
 	}
 }

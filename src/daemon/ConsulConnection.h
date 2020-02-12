@@ -31,7 +31,7 @@ class ConsulConnection :public TimerHandler
 
 		size_t m_replication;
 		std::shared_ptr<Application> m_app;
-		
+
 		// schedule parameters
 		std::shared_ptr<Label> m_condition;
 		int m_priority;
@@ -39,6 +39,14 @@ class ConsulConnection :public TimerHandler
 		// used for schedule fill
 		std::set<std::string> m_matchedHosts;
 		std::set<std::string> m_scheduleHosts;
+	};
+
+	struct ConsulTopology {
+		static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj);
+		web::json::value AsJson();
+
+		// key: application name, value : application hosts
+		std::map<std::string, std::set<std::string>> m_apps;
 	};
 
 public:
@@ -62,11 +70,12 @@ private:
 	bool eletionLeader();
 
 	void findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<Label>>& hosts);
-	std::map<std::string, std::set<std::string>> scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::set<std::string>>& oldTopology);
-	void compareTopologyAndDispatch(std::map<std::string, std::set<std::string>>& oldT, std::map<std::string, std::set<std::string>>& newT);
+	std::map<std::string, std::shared_ptr<ConsulTopology>> scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology);
+	void compareTopologyAndDispatch(const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldT, const std::map<std::string, std::shared_ptr<ConsulTopology>>& newT);
 
-	bool writeTopology(const std::string& host, const std::set<std::string>& apps);
-	std::map<std::string, std::set<std::string>> retrieveTopology(std::string host);
+	bool writeTopology(std::string hostName, std::shared_ptr<ConsulTopology> topology);
+	// key: host name, value: topology
+	std::map<std::string, std::shared_ptr<ConsulTopology>> retrieveTopology(std::string host);
 	std::map<std::string, std::shared_ptr<ConsulTask>> retrieveTask();
 	std::map<std::string, std::shared_ptr<Label>> retrieveNode();
 
