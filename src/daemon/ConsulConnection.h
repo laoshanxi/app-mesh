@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <cpprest/http_msg.h>
 #include <cpprest/json.h>
 #include "Label.h"
@@ -75,7 +76,7 @@ private:
 
 	bool writeTopology(std::string hostName, std::shared_ptr<ConsulTopology> topology);
 	// key: host name, value: topology
-	std::map<std::string, std::shared_ptr<ConsulTopology>> retrieveTopology(std::string host);
+	std::tuple<int, std::map<std::string, std::shared_ptr<ConsulTopology>>> retrieveTopology(std::string host);
 	std::map<std::string, std::shared_ptr<ConsulTask>> retrieveTask();
 	std::map<std::string, std::shared_ptr<Label>> retrieveNode();
 

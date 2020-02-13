@@ -261,7 +261,7 @@ void ConsulConnection::leaderSchedule()
 		// prepair
 		auto tasksMap = retrieveTask();
 		auto nodesMap = retrieveNode();
-		auto oldTopology = retrieveTopology("");
+		auto oldTopology = std::get<1>(retrieveTopology(""));
 
 		if (nodesMap.empty())
 		{
@@ -286,7 +286,15 @@ void ConsulConnection::nodeSchedule()
 
 	auto currentAllApps = Configuration::instance()->getApps();
 	auto task = retrieveTask();
-	auto topology = retrieveTopology(MY_HOST_NAME);
+	auto tupl = retrieveTopology(MY_HOST_NAME);
+	{
+		// ignore nothing changed case
+		auto consulIndex = std::get<0>(tupl);
+		static int lastConsulIndex = 0;
+		if (lastConsulIndex == consulIndex) return;
+		lastConsulIndex = consulIndex;
+	}
+	auto& topology = std::get<1>(tupl);
 	if (topology.count(MY_HOST_NAME))
 	{
 		for (const auto& hostApp : topology[MY_HOST_NAME]->m_apps)
@@ -591,11 +599,12 @@ bool ConsulConnection::writeTopology(std::string hostName, std::shared_ptr<Consu
 		"Value": "WyJteWFwcCJd"
 	}
 ]*/
-std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulConnection::retrieveTopology(std::string host)
+std::tuple<int, std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>>> ConsulConnection::retrieveTopology(std::string host)
 {
 	const static char fname[] = "ConsulConnection::retrieveTopology() ";
 
 	// /appmgr/topology/myhost
+	int consulIndex = 0;
 	std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> topology;
 	auto path = std::string(CONSUL_BASE_PATH).append("topology");
 	if (host.length()) path.append("/").append(host);
@@ -609,6 +618,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 			{
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
+					consulIndex = GET_JSON_INT_VALUE(section, "ModifyIndex");
 					auto hostText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					if (hostText.empty()) continue;
 					auto consulKey = GET_JSON_STR_VALUE(section, "Key");
@@ -628,7 +638,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 	{
 		throw std::invalid_argument(std::string("failed get topology : ") + host);
 	}
-	return topology;
+	return std::move(std::make_tuple(consulIndex, topology));
 }
 
 /*
