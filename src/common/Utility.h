@@ -191,6 +191,7 @@ public:
 #define JSON_KEY_CONSULE_IS_MASTER "is_master"
 #define JSON_KEY_CONSULE_IS_NODE "is_node"
 #define JSON_KEY_CONSULE_SESSION_NODE "session_node"
+#define JSON_KEY_CONSULE_DATACENTER "datacenter"
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSULE_REPORT_INTERVAL "report_interval"
 #define JSON_KEY_CONSULE_TOPOLOGY_INTERVAL "topology_interval"

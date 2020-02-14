@@ -37,6 +37,9 @@ class ConsulConnection :public TimerHandler
 		std::shared_ptr<Label> m_condition;
 		int m_priority;
 
+		// consul service port
+		int m_consulServicePort;
+
 		// used for schedule fill
 		std::set<std::string> m_matchedHosts;
 		std::set<std::string> m_scheduleHosts;
@@ -69,6 +72,8 @@ private:
 	void leaderSchedule();
 	void nodeSchedule();
 	bool eletionLeader();
+	bool registerService(const std::string appName, int port);
+	bool deregisterService(const std::string appName);
 
 	void findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<Label>>& hosts);
 	std::map<std::string, std::shared_ptr<ConsulTopology>> scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology);
@@ -82,7 +87,6 @@ private:
 
 private:
 	std::recursive_mutex m_mutex;
-	std::string m_consulUrl;
 	std::string m_sessionId;
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;

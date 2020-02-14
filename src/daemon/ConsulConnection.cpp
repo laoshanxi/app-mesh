@@ -302,7 +302,8 @@ void ConsulConnection::nodeSchedule()
 			const auto& appName = hostApp.first;
 			if (task.count(appName))
 			{
-				std::shared_ptr<Application> topologyAppObj = task[appName]->m_app;
+				auto& consulTask = task[appName];
+				std::shared_ptr<Application> topologyAppObj = consulTask->m_app;
 				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&appName](std::shared_ptr<Application> const& obj) {
 					return obj->getName() == appName;
 					});
@@ -314,6 +315,8 @@ void ConsulConnection::nodeSchedule()
 					{
 						Configuration::instance()->registerApp(topologyAppObj);
 						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
+						
+						registerService(appName, consulTask->m_consulServicePort);
 					}
 				}
 				else
@@ -321,6 +324,8 @@ void ConsulConnection::nodeSchedule()
 					// New add app
 					Configuration::instance()->registerApp(topologyAppObj);
 					LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
+					
+					registerService(appName, consulTask->m_consulServicePort);
 				}
 			}
 		}
@@ -334,6 +339,7 @@ void ConsulConnection::nodeSchedule()
 					// Remove no used topology
 					Configuration::instance()->removeApp(currentApp->getName());
 					LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+					deregisterService(currentApp->getName());
 				}
 			}
 		}
@@ -349,6 +355,7 @@ void ConsulConnection::nodeSchedule()
 				// Remove no used topology
 				Configuration::instance()->removeApp(currentApp->getName());
 				LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+				deregisterService(currentApp->getName());
 			}
 		}
 	}
@@ -367,6 +374,63 @@ bool ConsulConnection::eletionLeader()
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
+		return (result == "true");
+	}
+	return false;
+}
+
+bool ConsulConnection::registerService(const std::string appName, int port)
+{
+	const static char fname[] = "ConsulConnection::registerService() ";
+
+	//curl -X PUT -d 
+	//  '{"Node": "myhost", "Address": "myhost","Service": {"Service": "mysql", "tags": ["master","v1"], "Port": 3306}}'
+	//  http://127.0.0.1:8500/v1/catalog/register
+
+	if (port == 0) return false;
+
+	auto body = web::json::value();
+	if (Configuration::instance()->getConsul()->m_datacenter.length())
+	{
+		body["Datacenter"] = web::json::value::string(Configuration::instance()->getConsul()->m_datacenter);
+	}
+	body["Node"] = web::json::value::string(MY_HOST_NAME);
+	body["Address"] = web::json::value::string(MY_HOST_NAME);
+	auto svcSection = web::json::value::object();
+	svcSection["Service"] = web::json::value::string(appName);
+	svcSection["id"] = web::json::value::string(MY_HOST_NAME + ":" + appName);
+	svcSection["Port"] = web::json::value::number(port);
+	body["Service"] = svcSection;
+
+	std::string path = "/v1/catalog/register";
+	auto resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto result = resp.extract_utf8string(true).get();
+		LOG_DBG << fname << " service for task <" << appName << "> registered : " << result;
+		return (result == "true");
+	}
+	return false;
+}
+
+bool ConsulConnection::deregisterService(const std::string appName)
+{
+	const static char fname[] = "ConsulConnection::registerService() ";
+
+	auto body = web::json::value();
+	if (Configuration::instance()->getConsul()->m_datacenter.length())
+	{
+		body["Datacenter"] = web::json::value::string(Configuration::instance()->getConsul()->m_datacenter);
+	}
+	body["Node"] = web::json::value::string(MY_HOST_NAME);
+	body["ServiceID"] = web::json::value::string(MY_HOST_NAME + ":" + appName);
+
+	std::string path = "/v1/catalog/deregister";
+	auto resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto result = resp.extract_utf8string(true).get();
+		LOG_DBG << fname << " service for task <" << appName << "> removed : " << result;
 		return (result == "true");
 	}
 	return false;
@@ -858,7 +922,7 @@ web::json::value ConsulConnection::ConsulStatus::AsJson()
 }
 
 ConsulConnection::ConsulTask::ConsulTask()
-	:m_replication(0), m_priority(0)
+	:m_replication(0), m_priority(0), m_consulServicePort(0)
 {
 	m_condition = std::make_shared<Label>();
 }
@@ -877,6 +941,7 @@ std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::From
 		consul->m_app = Configuration::instance()->parseApp(appJson);
 		consul->m_replication = jobj.at("replication").as_integer();
 		SET_JSON_INT_VALUE(jobj, "priority", consul->m_priority);
+		SET_JSON_INT_VALUE(jobj, "port", consul->m_consulServicePort);
 		if (HAS_JSON_FIELD(jobj, "condition"))
 		{
 			consul->m_condition = Label::FromJson(jobj.at("condition"));
@@ -890,6 +955,7 @@ web::json::value ConsulConnection::ConsulTask::AsJson()
 	auto result = web::json::value::object();
 	result["replication"] = web::json::value::number(m_replication);
 	result["priority"] = web::json::value::number(m_priority);
+	result["port"] = web::json::value::number(m_consulServicePort);
 	result["content"] = m_app->AsJson(false);
 	if (m_condition != nullptr) result["condition"] = m_condition->AsJson();
 	return result;
@@ -908,6 +974,7 @@ bool ConsulConnection::ConsulTask::operator==(const std::shared_ptr<ConsulTask>&
 	if (!task) return false;
 	return m_replication == task->m_replication &&
 		m_priority == task->m_priority &&
+		m_consulServicePort == task->m_consulServicePort &&
 		m_app->operator==(task->m_app) &&
 		m_condition->operator==(task->m_condition);
 }
@@ -930,7 +997,7 @@ std::shared_ptr<ConsulConnection::ConsulTopology> ConsulConnection::ConsulTopolo
 			std::set<std::string> peers;
 			if (app.has_array_field("peer_hosts"))
 			{
-				for (auto peer : app.at("peer_hosts").as_array())
+				for (const auto& peer : app.at("peer_hosts").as_array())
 				{
 					peers.insert(GET_STD_STRING(peer.as_string()));
 				}

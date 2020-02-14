@@ -10,6 +10,7 @@
 > * App Manager Leader node schedule consul tasks and put result in Consul
 > * App Manager node retrieve consul tasks from Consul dynamiclly
 > * Consul App support node select
+> * Consul App support register as Consul Service for service discovery
 > * Consul session id support HA
 > * Consul session requested with TTL and delete behavior when expired
 
@@ -118,6 +119,7 @@
 		"task": {
 			"myapp": {
 				"replication": 2,
+				"port":8085,
 				"content": {
 					"name": "myapp",
 					"command": "sleep 30"
@@ -125,6 +127,7 @@
 			},
 			"myapp2": {
 				"replication": 1,
+				"port":0,
 				"content": {
 					"name": "myapp2",
 					"command": "sleep 100"

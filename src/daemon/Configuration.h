@@ -57,6 +57,7 @@ class Configuration
 
 		bool m_isMaster;
 		bool m_isNode;
+		std::string m_datacenter;
 		// http://consul.service.consul:8500
 		std::string m_consulUrl;
 		// Node (string: "<agent>") - Specifies the name of the node. This must refer to a node that is already registered.
