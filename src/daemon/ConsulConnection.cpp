@@ -292,11 +292,18 @@ void ConsulConnection::nodeSchedule()
 	auto currentAllApps = Configuration::instance()->getApps();
 	static std::shared_ptr<ConsulConnection::ConsulTopology> lastTopology;
 	auto topology = retrieveTopology(MY_HOST_NAME);
-	if (topology.count(MY_HOST_NAME) && !topology[MY_HOST_NAME]->operator==(lastTopology))
+	auto hostTopologyIt = topology.find(MY_HOST_NAME);
+	if (hostTopologyIt != topology.end())
 	{
-		lastTopology = topology[MY_HOST_NAME];
+		if (hostTopologyIt->second->operator==(lastTopology))
+		{
+			LOG_DBG << fname << " Consul topology not changed";
+			return;
+		}
+
+		lastTopology = hostTopologyIt->second;
 		auto task = retrieveTask();
-		for (const auto& hostApp : topology[MY_HOST_NAME]->m_apps)
+		for (const auto& hostApp : hostTopologyIt->second->m_apps)
 		{
 			const auto& appName = hostApp.first;
 			if (task.count(appName))
@@ -333,7 +340,7 @@ void ConsulConnection::nodeSchedule()
 		{
 			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 			{
-				if (!(topology.count(MY_HOST_NAME) && (topology[MY_HOST_NAME]->m_apps.count(currentApp->getName()))))
+				if (!(hostTopologyIt != topology.end() && (hostTopologyIt->second->m_apps.count(currentApp->getName()))))
 				{
 					// Remove no used topology
 					Configuration::instance()->removeApp(currentApp->getName());
