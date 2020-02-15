@@ -12,7 +12,7 @@
 extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0)
+	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0), m_leader(0)
 {
 	// override default reactor
 	m_reactor = m_timerReactor;
@@ -62,8 +62,8 @@ void ConsulConnection::reportStatus(int timerId)
 
 	try
 	{
-		//report resource: /appmgr/status/myhost/resource
-		std::string path = std::string(CONSUL_BASE_PATH).append("status/").append(MY_HOST_NAME).append("/resource");
+		//report resource: /appmgr/status/resource/myhost
+		std::string path = std::string(CONSUL_BASE_PATH).append("status/resource/").append(MY_HOST_NAME);
 		auto body = ResourceCollection::instance()->AsJson();
 		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
@@ -72,17 +72,15 @@ void ConsulConnection::reportStatus(int timerId)
 			if (result != "true")
 			{
 				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
-				return;
 			}
 		}
 		else
 		{
 			LOG_WAR << fname << "report resource to " << path << " failed with response : " << resp.extract_utf8string(true).get();
-			return;
 		}
 
-		//report resource: /appmgr/status/myhost/label
-		path = std::string(CONSUL_BASE_PATH).append("status/").append(MY_HOST_NAME).append("/label");
+		//report resource: /appmgr/status/label/myhost
+		path = std::string(CONSUL_BASE_PATH).append("status/label/").append(MY_HOST_NAME);
 		body = Configuration::instance()->getLabel()->AsJson();
 		resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
@@ -91,13 +89,16 @@ void ConsulConnection::reportStatus(int timerId)
 			if (result != "true")
 			{
 				LOG_WAR << fname << "report label to " << path << " failed with response : " << result;
-				return;
 			}
 		}
 		else
 		{
 			LOG_WAR << fname << "report label to " << path << " failed with response : " << resp.extract_utf8string(true).get();
-			return;
+		}
+
+		if (m_leader)
+		{
+			m_retrievedNode = retrieveNode();
 		}
 	}
 	catch (const std::exception & ex)
@@ -260,9 +261,13 @@ void ConsulConnection::leaderSchedule()
 	{
 		// prepair
 		auto tasksMap = retrieveTask();
-		auto nodesMap = retrieveNode();
-		auto oldTopology = std::get<1>(retrieveTopology(""));
-
+		if (!taskChanged(tasksMap))
+		{
+			LOG_DBG << fname << "Consul task not changed";
+			return;
+		}
+		auto oldTopology = retrieveTopology("");
+		auto nodesMap = m_retrievedNode;
 		if (nodesMap.empty())
 		{
 			LOG_DBG << fname << "retrieveNode is empty";
@@ -285,18 +290,12 @@ void ConsulConnection::nodeSchedule()
 	const static char fname[] = "ConsulConnection::nodeSchedule() ";
 
 	auto currentAllApps = Configuration::instance()->getApps();
-	auto task = retrieveTask();
-	auto tupl = retrieveTopology(MY_HOST_NAME);
+	static std::shared_ptr<ConsulConnection::ConsulTopology> lastTopology;
+	auto topology = retrieveTopology(MY_HOST_NAME);
+	if (topology.count(MY_HOST_NAME) && !topology[MY_HOST_NAME]->operator==(lastTopology))
 	{
-		// ignore nothing changed case
-		auto consulIndex = std::get<0>(tupl);
-		static int lastConsulIndex = 0;
-		if (lastConsulIndex == consulIndex) return;
-		lastConsulIndex = consulIndex;
-	}
-	auto& topology = std::get<1>(tupl);
-	if (topology.count(MY_HOST_NAME))
-	{
+		lastTopology = topology[MY_HOST_NAME];
+		auto task = retrieveTask();
 		for (const auto& hostApp : topology[MY_HOST_NAME]->m_apps)
 		{
 			const auto& appName = hostApp.first;
@@ -315,7 +314,7 @@ void ConsulConnection::nodeSchedule()
 					{
 						Configuration::instance()->registerApp(topologyAppObj);
 						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
-						
+
 						registerService(appName, consulTask->m_consulServicePort);
 					}
 				}
@@ -324,7 +323,7 @@ void ConsulConnection::nodeSchedule()
 					// New add app
 					Configuration::instance()->registerApp(topologyAppObj);
 					LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
-					
+
 					registerService(appName, consulTask->m_consulServicePort);
 				}
 			}
@@ -374,9 +373,13 @@ bool ConsulConnection::eletionLeader()
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
-		return (result == "true");
+		m_leader = (result == "true");
 	}
-	return false;
+	else
+	{
+		m_leader = false;
+	}
+	return m_leader;
 }
 
 bool ConsulConnection::registerService(const std::string appName, int port)
@@ -663,12 +666,11 @@ bool ConsulConnection::writeTopology(std::string hostName, std::shared_ptr<Consu
 		"Value": "WyJteWFwcCJd"
 	}
 ]*/
-std::tuple<int, std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>>> ConsulConnection::retrieveTopology(std::string host)
+std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulConnection::retrieveTopology(std::string host)
 {
 	const static char fname[] = "ConsulConnection::retrieveTopology() ";
 
 	// /appmgr/topology/myhost
-	int consulIndex = 0;
 	std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> topology;
 	auto path = std::string(CONSUL_BASE_PATH).append("topology");
 	if (host.length()) path.append("/").append(host);
@@ -682,7 +684,7 @@ std::tuple<int, std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTo
 			{
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
-					consulIndex = GET_JSON_INT_VALUE(section, "ModifyIndex");
+					// int consulIndex = GET_JSON_INT_VALUE(section, "ModifyIndex");
 					auto hostText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					if (hostText.empty()) continue;
 					auto consulKey = GET_JSON_STR_VALUE(section, "Key");
@@ -702,7 +704,7 @@ std::tuple<int, std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTo
 	{
 		throw std::invalid_argument(std::string("failed get topology : ") + host);
 	}
-	return std::move(std::make_tuple(consulIndex, topology));
+	return std::move(topology);
 }
 
 /*
@@ -757,10 +759,45 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 	}
 	return std::move(result);
 }
+bool ConsulConnection::taskChanged(const std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>>& currentTasks)
+{
+	static std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> lastTasks = {};
+
+	bool changed = false;
+	if (currentTasks.size() != lastTasks.size())
+	{
+		changed = true;
+	}
+	else
+	{
+		for (const auto& tsk : currentTasks)
+		{
+			const auto iter = lastTasks.find(tsk.first);
+			if (iter != lastTasks.end())
+			{
+				if (!iter->second->operator==(tsk.second))
+				{
+					changed = true;
+					break;
+				}
+			}
+			else
+			{
+				changed = true;
+				break;
+			}
+		}
+	}
+
+	// save changed record to static variable
+	if (changed) lastTasks = currentTasks;
+
+	return changed;
+}
 /*
 [
-	"appmgr/status/cents/applications",
-	"appmgr/status/cents/resource"
+	"appmgr/status/label/cents",
+	"appmgr/status/resource/cents"
 ]
 */
 std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
@@ -770,7 +807,7 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 	std::map<std::string, std::shared_ptr<Label>> result;
 
 	// /appmgr/status
-	std::string path = std::string(CONSUL_BASE_PATH).append("status");
+	std::string path = std::string(CONSUL_BASE_PATH).append("status/label");
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
@@ -782,10 +819,9 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
 					auto key = GET_JSON_STR_VALUE(section, "Key");
-					if (Utility::endWith(key, "/label"))
+					if (Utility::startWith(key, "appmgr/status/label/"))
 					{
-						auto tmp = Utility::stringReplace(key, "appmgr/status/", "");
-						auto host = Utility::stringReplace(tmp, "/label", "");
+						auto host = Utility::stringReplace(key, "appmgr/status/label/", "");
 						auto label = Utility::decode64(section.at("Value").as_string());
 						if (label.empty()) label = "{}";
 						result[host] = Label::FromJson(web::json::value::parse(label));
@@ -836,7 +872,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	if (Configuration::instance()->getConsul()->m_reportInterval > 3)
 	{
 		m_reportStatusTimerId = this->registerTimer(
-			1000L * 2,
+			1000L * 1,
 			Configuration::instance()->getConsul()->m_reportInterval,
 			std::bind(&ConsulConnection::reportStatus, this, std::placeholders::_1),
 			__FUNCTION__
@@ -852,7 +888,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	if (Configuration::instance()->getConsul()->m_topologyInterval > 1)
 	{
 		m_applyTopoTimerId = this->registerTimer(
-			1000L * 1,
+			1000L * 2,
 			Configuration::instance()->getConsul()->m_topologyInterval,
 			std::bind(&ConsulConnection::applyTopology, this, std::placeholders::_1),
 			__FUNCTION__
@@ -1026,4 +1062,23 @@ web::json::value ConsulConnection::ConsulTopology::AsJson()
 		result[appIndex++] = appJson;
 	}
 	return std::move(result);
+}
+
+bool ConsulConnection::ConsulTopology::operator==(const std::shared_ptr<ConsulTopology>& topology)
+{
+	if (!topology) return false;
+	if (m_apps.size() != topology->m_apps.size()) return false;
+
+	for (const auto& app : m_apps)
+	{
+		if (topology->m_apps.count(app.first) == 0) return false;
+
+		const auto& topologyTasks = topology->m_apps[app.first];
+		if (app.second.size() != topologyTasks.size()) return false;
+		for (const auto& task : app.second)
+		{
+			if (topologyTasks.count(task) == 0) return false;
+		}
+	}
+	return true;
 }

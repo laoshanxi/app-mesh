@@ -18,8 +18,6 @@ web::json::value Label::AsJson()
 	{
 		tags[tag.first] = web::json::value::string(tag.second);
 	}
-	// add default label here
-	tags[DEFAULT_LABLE_HOST_NAME] = web::json::value::string(MY_HOST_NAME);
 	return tags;
 }
 

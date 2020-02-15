@@ -86,6 +86,8 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
 	{
 		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
+		// add default label here
+		config->m_label->addLabel(DEFAULT_LABLE_HOST_NAME, MY_HOST_NAME);
 	}
 	// Consul
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))

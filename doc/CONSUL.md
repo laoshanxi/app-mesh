@@ -9,7 +9,7 @@
 > * Two types of Applications : Consul task and normal task
 > * App Manager Leader node schedule consul tasks and put result in Consul
 > * App Manager node retrieve consul tasks from Consul dynamiclly
-> * Consul App support node select
+> * Consul App support node selector (the selector can be hostname or any AppManager Labels)
 > * Consul App support register as Consul Service for service discovery
 > * Consul session id support HA
 > * Consul session requested with TTL and delete behavior when expired
@@ -39,12 +39,12 @@
 
 - Status report
  Each node will report 2 keys:
- 1. appmgr/status/$host_name/resource
- 2. appmgr/status/$host_name/applications
+ 1. appmgr/status/label/$host_name
+ 2. appmgr/status/resource/$host_name
 
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/status/cents/resource?raw | python -m json.tool
- curl -s http://localhost:8500/v1/kv/appmgr/status/cents/applications?raw | python -m json.tool
+ curl -s http://localhost:8500/v1/kv/appmgr/status/resource/cents?raw | python -m json.tool
+ curl -s http://localhost:8500/v1/kv/appmgr/status/label/cents?raw | python -m json.tool
  
  ```
 

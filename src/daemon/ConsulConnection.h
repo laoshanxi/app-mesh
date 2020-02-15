@@ -5,7 +5,6 @@
 #include <set>
 #include <string>
 #include <thread>
-#include <tuple>
 #include <cpprest/http_msg.h>
 #include <cpprest/json.h>
 #include "Label.h"
@@ -48,6 +47,7 @@ class ConsulConnection :public TimerHandler
 	struct ConsulTopology {
 		static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
+		bool operator==(const std::shared_ptr<ConsulTopology>& topology);
 
 		// key: application name, value : application hosts
 		std::map<std::string, std::set<std::string>> m_apps;
@@ -81,8 +81,9 @@ private:
 
 	bool writeTopology(std::string hostName, std::shared_ptr<ConsulTopology> topology);
 	// key: host name, value: topology
-	std::tuple<int, std::map<std::string, std::shared_ptr<ConsulTopology>>> retrieveTopology(std::string host);
+	std::map<std::string, std::shared_ptr<ConsulTopology>> retrieveTopology(std::string host);
 	std::map<std::string, std::shared_ptr<ConsulTask>> retrieveTask();
+	bool taskChanged(const std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>>& tasks);
 	std::map<std::string, std::shared_ptr<Label>> retrieveNode();
 
 private:
@@ -91,5 +92,8 @@ private:
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;
 	int m_applyTopoTimerId;
+	
+	bool m_leader;
+	std::map<std::string, std::shared_ptr<Label>> m_retrievedNode;
 };
 
