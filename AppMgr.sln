@@ -24,7 +24,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		script\pre_uninstall.sh = script\pre_uninstall.sh
 		doc\PROMETHEUS.md = doc\PROMETHEUS.md
 		README.md = README.md
-		script\ssl.update.sh = script\ssl.update.sh
+		ssl\ssl.update.sh = ssl\ssl.update.sh
+		ssl\ssl_generate.sh = ssl\ssl_generate.sh
 		script\uninstall.sh = script\uninstall.sh
 		doc\USER_ROLE_DESC.md = doc\USER_ROLE_DESC.md
 	EndProjectSection

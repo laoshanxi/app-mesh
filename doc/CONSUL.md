@@ -4,7 +4,7 @@
 
 ### What is supported:
 
-> * Implement a Consul connection to access Consul REST APIs
+> * Implement a Consul connection(support SSL) to access Consul REST APIs
 > * Two types of Applications : Consul task and normal task
 > * App Manager on each node organize to a cluster and have one eletion leader
 > * Each App Manager node report status to Consul with a requested Consul session id
@@ -16,7 +16,7 @@
 > * Consul session requested with TTL and expire delete behavior
 
 ### What is **not** supported:
-> * Consul connection ACL and SSL are not supported
+> * Consul connection ACL are not supported
 > * Consul watch
 > * Schedule consider resource usage
 

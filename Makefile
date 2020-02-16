@@ -18,15 +18,17 @@ code:
 build_dir:
 	rm -rf ${RELEASE_DIR}
 	mkdir -p ${TMP_DIR}/script
+	mkdir -p ${TMP_DIR}/ssl
 	mkdir -p ${TMP_LIB_DIR}
 	cp ./src/cli/appc ${TMP_DIR}/
 	cp ./src/daemon/appsvc ${TMP_DIR}/
 	cp ./src/daemon/appsvc.json ${TMP_DIR}/
 	cp ./script/*.sh ${TMP_DIR}/script
+	cp ./ssl/*.sh ${TMP_DIR}/ssl
 	cp ./script/*.service ${TMP_DIR}/script
 	cp ./src/cli/bash_completion.sh ${TMP_DIR}/script
-	cp ./script/server.crt ${TMP_DIR}/
-	cp ./script/server.key ${TMP_DIR}/
+	cp /usr/local/bin/cfssl ${TMP_DIR}/ssl
+	cp /usr/local/bin/cfssljson ${TMP_DIR}/ssl
 	chmod +x ${TMP_DIR}/script/*.sh
 	dos2unix ${TMP_DIR}/script/*.sh
 	env LD_LIBRARY_PATH=${LDPATH} \

@@ -26,9 +26,14 @@ if [ -d "/usr/share/bash-completion/completions" ]; then
 	cp -f $INSTALL_DIR/script/bash_completion.sh /usr/share/bash-completion/completions/appc
 fi
 
+# ssl cert gernerate
+cd /opt/appmanager/ssl/; sh /opt/appmanager/ssl/ssl_generate.sh
+
+# create appc softlink
 rm -rf /usr/bin/appc
 ln -s /opt/appmanager/script/appc.sh /usr/bin/appc
 chmod +x /opt/appmanager/script/appc.sh
 
+# start service directly
 systemctl enable appmanager
 systemctl start appmanager

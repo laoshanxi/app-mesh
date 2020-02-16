@@ -10,8 +10,8 @@
     "PrometheusExporterListenPort": 0,
     "SSL": {
       "SSLEnabled": true,
-      "SSLCertificateFile": "server.crt",
-      "SSLCertificateKeyFile": "server.key"
+      "SSLCertificateFile": "/opt/appmanager/ssl/server.pem",
+      "SSLCertificateKeyFile": "/opt/appmanager/ssl/server-key.pem"
     }
   },
   "Security": {
