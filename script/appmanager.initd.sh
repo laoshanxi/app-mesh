@@ -1,4 +1,9 @@
 #!/bin/bash
+################################################################################
+## init.d service definition file
+## Not used for now, replaced by systemd service instead
+################################################################################
+
 ### BEGIN INIT INFO
 #
 # Provides:  appsvc

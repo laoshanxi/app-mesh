@@ -1,4 +1,7 @@
 #!/bin/bash
+################################################################################
+## RPM post installation script file, will be executed while installation
+################################################################################
 INSTALL_DIR=/opt/appmanager
 if [ ! -d $INSTALL_DIR ]; then
 	mkdir -p $INSTALL_DIR

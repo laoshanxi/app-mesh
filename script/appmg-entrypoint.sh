@@ -1,9 +1,8 @@
 #!/bin/bash
-
-#####################################################################
-# This script is used for init.d service startup appsvc process
-# Also can be used for docker entrypoint
-#####################################################################
+################################################################################
+## This script is used for init.d service startup appsvc process
+## and also can be used for docker image entrypoint
+################################################################################
 
 # give short time while system starting up.
 sleep 0.5

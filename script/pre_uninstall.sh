@@ -1,4 +1,8 @@
 #!/bin/bash
+################################################################################
+## RPM pre uninstallation script file, will be executed before installation
+################################################################################
+
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
 
 # backup configuration file to avoid overide when next installation

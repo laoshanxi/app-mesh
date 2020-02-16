@@ -1,4 +1,7 @@
 #!/bin/bash
+################################################################################
+## RPM post uninstallation script file, will be executed when uninstalled
+################################################################################
 
 systemctl stop appmanager
 systemctl disable appmanager
