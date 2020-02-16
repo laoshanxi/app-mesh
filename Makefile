@@ -24,8 +24,8 @@ build_dir:
 	cp ./src/daemon/appsvc ${TMP_DIR}/
 	cp ./src/daemon/appsvc.json ${TMP_DIR}/
 	cp ./script/*.sh ${TMP_DIR}/script
-	cp ./ssl/*.sh ${TMP_DIR}/ssl
 	cp ./script/*.service ${TMP_DIR}/script
+	cp ./ssl/*.sh ${TMP_DIR}/ssl
 	cp ./src/cli/bash_completion.sh ${TMP_DIR}/script
 	cp /usr/local/bin/cfssl ${TMP_DIR}/ssl
 	cp /usr/local/bin/cfssljson ${TMP_DIR}/ssl

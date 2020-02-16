@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 ## init.d service definition file
-## Not used for now, replaced by systemd service instead
+## will be used when systemd is not installed on Linux
 ################################################################################
 
 ### BEGIN INIT INFO
@@ -18,7 +18,7 @@
 
 ## Fill in name of program here.
 PROG="appsvc"
-PROG_WATCHDOG="appmg-entrypoint.sh"
+PROG_WATCHDOG="appmgr-entrypoint.sh"
 PROGC="appc"
 PROG_PATH="/opt/appmanager" ## Not need, but sometimes helpful (if $PROG resides in /opt for example).
 PROG_ARGS="" 
