@@ -30,7 +30,7 @@ if [ -d "/usr/share/bash-completion/completions" ]; then
 fi
 
 # ssl cert gernerate
-cd /opt/appmanager/ssl/; sh /opt/appmanager/ssl/ssl_generate.sh
+cd /opt/appmanager/ssl/; sh /opt/appmanager/ssl/ssl_cert_generate.sh
 
 # create appc softlink
 rm -rf /usr/bin/appc
