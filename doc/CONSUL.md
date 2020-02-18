@@ -1,5 +1,9 @@
 # Consul Integration
 
+Application Manager can work as stand-alone mode and cluster mode when enable consul integration.
+- The hosted application is static in stand-alone mode, can only on-board application by CLI or REST APIs.
+- The hosted application is dynamic in cluster mode. The cluster will vote one leader to do the consul application schedule, and register to Consul for application service discovery.
+
 ------
 
 ### What is supported:
