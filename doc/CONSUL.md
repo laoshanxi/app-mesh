@@ -1,8 +1,8 @@
 # Consul Integration
 
-Application Manager can work as stand-alone mode and cluster mode when enable consul integration.
-- The hosted application is static in stand-alone mode, can only on-board application by CLI or REST APIs.
-- The hosted application is dynamic in cluster mode. The cluster will vote one leader to do the consul application schedule, and register to Consul for application service discovery.
+Application Manager can work as stand-alone mode and cluster mode when enable Consul integration.
+- The hosted apps is static in stand-alone mode, can only on-board apps by CLI or REST APIs.
+- The hosted apps is dynamic in cluster mode. The cluster will vote one leader to do the Consul application schedule, and register to Consul for application service discovery.
 
 ------
 
@@ -12,8 +12,8 @@ Application Manager can work as stand-alone mode and cluster mode when enable co
 > * Two types of Applications : Consul task and normal task
 > * App Manager on each node organize to a cluster and have one eletion leader
 > * Each App Manager node report status to Consul with a requested Consul session id
-> * App Manager Leader node schedule consul tasks and put result in Consul
-> * App Manager work node retrieve consul tasks from Consul dynamiclly
+> * App Manager Leader node schedule Consul tasks and put result in Consul
+> * App Manager work node retrieve Consul tasks from Consul dynamiclly
 > * Consul App support node selector (the selector can be hostname or any AppManager Labels)
 > * Consul App support register as Consul Service for service discovery
 > * Consul session id support HA recovery
@@ -53,10 +53,10 @@ Application Manager can work as stand-alone mode and cluster mode when enable co
  ```
 
 - Consul task
- Consul task define cluster level applications, the defined application will be dispatch to tasks in consul.
- App Manager leader node will get defined task and current working node. The consul task can define replication number and 
+ Consul task define cluster level applications, the defined application will be dispatch to tasks in Consul.
+ App Manager leader node will get defined task and current working node. The Consul task can define replication number and 
  application json content which is the same as App Manager app json.
- Each task is a consul key.
+ Each task is a Consul key.
  ```shell
  curl -s http://localhost:8500/v1/kv/appmgr/task?recurse | python -m json.tool 
  curl -s http://localhost:8500/v1/kv/appmgr/task/myapp?raw | python -m json.tool        
