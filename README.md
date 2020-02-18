@@ -14,8 +14,10 @@ Features  | Behavior
 Long running application | Monitor app running all time and restart when exited immediately
 Short runing application | Periodic startup app
 Periodic long running application |Long running applicatin but will be restart periodic
-Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> SSL support (ECDH and secure ciphers) <br> Collect host/app resource usage <br> REST service support IPv6 <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager` <br> ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md) 
 Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md) 
+Extra Features | Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Docker container app support <br> Hot-update support `systemctl reload appmanager`
+Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
+Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
 
 
 ### How to install
