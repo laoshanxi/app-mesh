@@ -261,11 +261,11 @@ void ConsulConnection::leaderSchedule()
 	{
 		// prepair
 		auto tasksMap = retrieveTask();
-		if (!taskChanged(tasksMap))
-		{
-			LOG_DBG << fname << "Consul task not changed";
-			return;
-		}
+		//if (!taskChanged(tasksMap))
+		//{
+		//	LOG_DBG << fname << "Consul task not changed";
+		//	return;
+		//}
 		auto oldTopology = retrieveTopology("");
 		auto nodesMap = m_retrievedNode;
 		if (nodesMap.empty())
@@ -306,17 +306,18 @@ void ConsulConnection::nodeSchedule()
 		for (const auto& hostApp : hostTopologyIt->second->m_apps)
 		{
 			const auto& appName = hostApp.first;
+			const auto& appHosts = hostApp.second;
 			if (task.count(appName))
 			{
 				auto& consulTask = task[appName];
-				std::shared_ptr<Application> topologyAppObj = consulTask->m_app;
+				std::shared_ptr<Application> topologyAppObj = addPeerEnv2App(consulTask->m_app, appHosts);
 				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&appName](std::shared_ptr<Application> const& obj) {
 					return obj->getName() == appName;
 					});
 				if (it != currentAllApps.end())
 				{
 					// Update app
-					auto currentRunningApp = *it;
+					auto& currentRunningApp = *it;
 					if (!currentRunningApp->operator==(topologyAppObj))
 					{
 						Configuration::instance()->registerApp(topologyAppObj);
@@ -553,22 +554,26 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 			[](const std::shared_ptr<HostQuata> a, const std::shared_ptr<HostQuata> b)
 			{ return a->quota < b->quota; });
 
-		// assign host to task
+		// prepair scheduleHosts
+		scheduleHosts.clear();
 		for (size_t i = 0; i < taskReplication; i++)
 		{
-			if (i < hostQuota4NewTask.size())
+			if (i < hostQuota4NewTask.size()) scheduleHosts.insert(hostQuota4NewTask[i]->hostname);
+		}
+
+		// assign host to task
+		for (size_t i = 0; i < scheduleHosts.size(); i++)
+		{
+			const auto hostname = hostQuota4NewTask[i]->hostname;
+			auto tmpHosts = scheduleHosts;
+			tmpHosts.erase(hostname);	// remove host self
+			hostQuota4NewTask[i]->quota += 1;
+			// save to topology
 			{
-				auto& selectedHost = hostQuota4NewTask[i];
-				const auto& hostname = selectedHost->hostname;
-				scheduleHosts.insert(hostname);
-				selectedHost->quota += 1;
-				// save to topology
-				{
-					if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
-					newTopology[hostname]->m_apps[taskName] = scheduleHosts;
-				}
-				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
+				if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
+				newTopology[hostname]->m_apps[taskName] = tmpHosts;
 			}
+			LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
 		}
 	}
 
@@ -839,6 +844,32 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 		}
 	}
 	return std::move(result);
+}
+
+std::shared_ptr<Application> ConsulConnection::addPeerEnv2App(std::shared_ptr<Application> app, std::set<std::string> peers)
+{
+	// check pointer
+	if (!app) return app;
+	if (peers.empty()) return app;
+
+	// seriarize to json
+	auto appJson = app->AsJson(false);
+
+	// update app json env section
+	web::json::value envObj = web::json::value::object();
+	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_env)) envObj = appJson.at(JSON_KEY_APP_env);
+	std::string peersHostEnv;
+	size_t i = 0;
+	for (const auto& host : peers)
+	{
+		if (i++ != 0) peersHostEnv += ',';
+		peersHostEnv += host;
+	}
+	envObj[CONSOL_APP_PEERS] = web::json::value::string(peersHostEnv);
+	appJson[JSON_KEY_APP_env] = envObj;
+
+	// re-construct to app object
+	return Configuration::instance()->parseApp(appJson);
 }
 
 void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)

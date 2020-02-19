@@ -86,6 +86,8 @@ private:
 	bool taskChanged(const std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>>& tasks);
 	std::map<std::string, std::shared_ptr<Label>> retrieveNode();
 
+	std::shared_ptr<Application> addPeerEnv2App(std::shared_ptr<Application> app, std::set<std::string> peers);
+
 private:
 	std::recursive_mutex m_mutex;
 	std::string m_sessionId;
@@ -97,3 +99,4 @@ private:
 	std::map<std::string, std::shared_ptr<Label>> m_retrievedNode;
 };
 
+#define CONSOL_APP_PEERS "CONSOL_APP_PEERS"
