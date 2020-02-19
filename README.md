@@ -1,13 +1,11 @@
 ﻿[Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
 
 # Application Manager
-### Introduction
-Application Manager is a Cloud Native microservice management platform to manage different types of microservice applications, the application can be local app or microservice cluster level app, each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line manage applications easily.
 
-Application Manager can manage Appcations in a cluster environment with the help of Consul, the cluster app can have mutipl replications and support HA.
+### Introduction
+Application Manager is a Cloud Native Microservice management platform to manage different types of microservice applications, the application can be local app or microservice cluster level app [microservice cluster level app](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md "microservice cluster level app"). , each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line manage applications easily.
 
 <div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
-
 
 Features  | Behavior
 ---|---
