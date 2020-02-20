@@ -15,7 +15,7 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 > * App Manager Leader node schedule Consul tasks and put result in Consul
 > * App Manager work node retrieve Consul tasks from Consul dynamiclly
 > * Consul App support node selector (the selector can be hostname or any AppManager Labels)
-> * Consul App support register as Consul Service for service discovery
+> * Consul App support register as Consul Service for service discovery (each peer app will get others by env)
 > * Consul session id support HA recovery
 > * Consul session requested with TTL and expire delete behavior
 
