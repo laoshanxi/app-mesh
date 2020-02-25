@@ -711,6 +711,13 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 				}
 			}
 		}
+
+		if (host.length())
+		{
+			// write retrieve flag
+			auto timeSeconds = Utility::formatTime(std::chrono::system_clock::now(), "%Y%m%d%H%M%S");
+			auto resp = requestHttp(web::http::methods::PUT, path, { {"flags",timeSeconds} }, {}, &json);
+		}
 	}
 	else
 	{
