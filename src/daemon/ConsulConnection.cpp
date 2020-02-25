@@ -705,18 +705,19 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 					auto appArrayJson = web::json::value::parse(hostText);
 					if (appArrayJson.is_array())
 					{
-						topology[hostName] = ConsulTopology::FromJson(appArrayJson);;
+						topology[hostName] = ConsulTopology::FromJson(appArrayJson);
 						LOG_DBG << fname << "get <" << appArrayJson.size() << "> task for <" << hostName << ">";
 					}
 				}
 			}
 		}
 
-		if (host.length())
+		if (topology.count(host))
 		{
+			auto updateFlagTopology = topology[host]->AsJson();
 			// write retrieve flag
 			auto timeSeconds = Utility::formatTime(std::chrono::system_clock::now(), "%Y%m%d%H%M%S");
-			auto resp = requestHttp(web::http::methods::PUT, path, { {"flags",timeSeconds} }, {}, &json);
+			auto resp = requestHttp(web::http::methods::PUT, path, { {"flags",timeSeconds} }, {}, &updateFlagTopology);
 		}
 	}
 	else
