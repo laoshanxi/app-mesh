@@ -80,7 +80,8 @@
   "Consul": {
     "is_master": true,
     "is_node": true,
-    "url": "http://localhost:8500",
+    "url": null,
+    "url_example": "http://localhost:8500",
     "session_node": null,
     "datacenter": "dc1",
     "session_TTL": 30,
