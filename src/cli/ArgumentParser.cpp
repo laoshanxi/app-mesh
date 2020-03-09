@@ -16,7 +16,8 @@
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
 
-#define OPTION_HOST_NAME	("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")
+#define OPTION_HOST_NAME	("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address") \
+							("port", po::value<int>(), "port number")
 #define COMMON_OPTIONS		OPTION_HOST_NAME \
 							("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
 							("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
@@ -26,7 +27,13 @@
 								m_userpwd = m_commandLineVariables["password"].as<std::string>(); \
 							}
 #define HELP_ARG_CHECK_WITH_RETURN GET_USER_NAME_PASS \
-							if (m_commandLineVariables.count("help") > 0) { std::cout << desc << std::endl; return; } m_hostname = m_commandLineVariables["host"].as<std::string>();
+							if (m_commandLineVariables.count("help") > 0) \
+							{ \
+								std::cout << desc << std::endl; \
+								return; \
+							} \
+							m_hostname = m_commandLineVariables["host"].as<std::string>(); \
+							if (m_commandLineVariables.count("port")) m_listenPort = m_commandLineVariables["port"].as<int>();
 
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmgr_";
@@ -174,7 +181,7 @@ void ArgumentParser::printMainHelp()
 
 	std::cout << std::endl;
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
-	std::cout << "Use '-b hostname' to run remote command." << std::endl;
+	std::cout << "Use '-b $hostname','--port $port' to run remote command." << std::endl;
 
 	std::cout << std::endl;
 	std::cout << "Usage:  appc [COMMAND] [ARG...] [flags]" << std::endl;
