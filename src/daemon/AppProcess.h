@@ -26,6 +26,8 @@ public:
 	virtual std::string containerId() { return std::string(); };
 	virtual void containerId(std::string containerId) {};
 
+	std::tuple<std::string, std::string> extractCommand(const std::string& cmd);
+
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
 
 	virtual std::string getOutputMsg();

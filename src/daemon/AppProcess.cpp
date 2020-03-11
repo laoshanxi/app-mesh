@@ -94,12 +94,61 @@ void AppProcess::regKillTimer(size_t timeout, const std::string from)
 	m_killTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
 }
 
+// tuple: 1 cmdRoot, 2 parameters
+std::tuple<std::string, std::string> AppProcess::extractCommand(const std::string& cmd)
+{
+	std::unique_ptr<char[]> buff(new char[cmd.length() + 1]);
+
+	// find the string at the first blank not in a quote, quotes are removed
+	size_t idxSrc = 0, idxDst = 0;
+	bool isInQuote = false;
+	while (cmd[idxSrc] != '\0')
+	{
+		if (cmd[idxSrc] == ' ' && !isInQuote)
+		{
+			break;
+		}
+		else if (cmd[idxSrc] == '\"')
+		{
+			isInQuote = isInQuote ^ true;
+		}
+		else
+		{
+			buff[idxDst++] = cmd[idxSrc];
+		}
+		idxSrc++;
+	}
+	buff[idxDst] = '\0';
+
+	// remaining string are the parameters
+	std::string params = cmd.substr(idxSrc);
+	std::string cmdroot = buff.get();
+	return std::tuple<std::string, std::string>(params, cmdroot);
+}
 
 int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
 	int pid = -1;
+
+	// check command file existance & permission
+	auto cmdRoot = std::get<1>(extractCommand(cmd));
+	bool checkCmd = true;
+	if (cmdRoot.rfind('/') == std::string::npos && cmdRoot.rfind('\\') == std::string::npos)
+	{
+		checkCmd = false;
+	}
+	if (checkCmd && !Utility::isFileExist(cmdRoot))
+	{
+		LOG_WAR << fname << "command file <" << cmdRoot << "> does not exist";
+		return ACE_INVALID_PID;
+	}
+	if (checkCmd && ACE_OS::access(cmdRoot.c_str(), X_OK) != 0)
+	{
+		LOG_WAR << fname << "command file <" << cmdRoot << "> does not have execution permission";
+		return ACE_INVALID_PID;
+	}
 	
 	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::formatTime(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
 	size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;

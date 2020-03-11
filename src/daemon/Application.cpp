@@ -18,12 +18,11 @@
 
 Application::Application()
 	:m_status(STATUS::ENABLED), m_health(true), m_appId(Utility::createUUID())
-	, m_version(0), m_cacheOutputLines(0), m_pid(ACE_INVALID_PID)
+	, m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
-	m_process.reset(new AppProcess());
 }
 
 Application::~Application()
