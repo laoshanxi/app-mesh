@@ -13,8 +13,9 @@ public:
 
 	static void FromJson(std::shared_ptr<ApplicationPeriodRun>& app, const web::json::value& jobj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
+	virtual void dump() override;
 
+protected:
 	virtual void refreshPid() override;
 	virtual void checkAndUpdateHealth() override;
-	virtual void dump() override;
 };

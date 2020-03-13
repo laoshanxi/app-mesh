@@ -29,26 +29,24 @@ public:
 	Application();
 	virtual ~Application();
 	virtual bool operator==(const std::shared_ptr<Application>& app);
+
+	virtual bool avialable();
 	const std::string getName() const;
 	bool isEnabled();
 	bool isUnAvialable();
-	virtual bool avialable();
-	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);
-
-	virtual void refreshPid();
 	bool attach(int pid);
+	
+	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);
+	virtual web::json::value AsJson(bool returnRuntimeInfo);
+	virtual void dump();
 
-	// Invoke immediately
-	virtual void invokeNow(int timerId);
 	// Invoke by scheduler
 	virtual void invoke();
-
 	virtual void disable();
 	virtual void enable();
+	void destroy();
 
-	// run app in a new process object
-	std::string runApp(int timeoutSeconds) noexcept(false);
-	std::string runAsyncrize(int timeoutSeconds)noexcept(false);
+	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest) noexcept(false);
 	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished) noexcept(false);
 
@@ -56,7 +54,6 @@ public:
 	void setHealth(bool health) { m_health = health; }
 	const std::string& getHealthCheck() { return m_healthCheckCmd; }
 	int getHealth() { return 1 - m_health; }
-	virtual void checkAndUpdateHealth();
 	pid_t getpid() const;
 
 	// get normal stdout for running app
@@ -67,13 +64,14 @@ public:
 	void setVersion(int version);
 	const std::string getComments() const { return m_comments; }
 
-	void destroy();
-	virtual web::json::value AsJson(bool returnRuntimeInfo);
-	virtual void dump();
-
 protected:
+	// Invoke immediately
+	virtual void invokeNow(int timerId);
+	virtual void refreshPid();
 	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage, std::string appName);
 	bool isInDailyTimeRange();
+	virtual void checkAndUpdateHealth();
+	std::string runApp(int timeoutSeconds) noexcept(false);
 
 protected:
 	STATUS m_status;
