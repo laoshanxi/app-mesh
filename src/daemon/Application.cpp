@@ -84,6 +84,8 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	// "ping www.baidu.com 123"
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
+	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_init_command));
+	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_fini_command));
 	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_health_check_cmd));
 	if (app->m_healthCheckCmd.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("health check lengh should less than 2048");
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_working_dir));
@@ -381,6 +383,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
 	if (m_user.length()) result[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T(m_user));
 	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
+	if (m_commandLineInit.length()) result[GET_STRING_T(JSON_KEY_APP_init_command)] = web::json::value::string(GET_STRING_T(m_commandLineInit));
+	if (m_commandLineFini.length()) result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
 	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));

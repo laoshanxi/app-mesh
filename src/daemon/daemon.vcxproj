@@ -71,6 +71,7 @@
     <ClCompile Include="..\common\TimeZoneHelper.cpp" />
     <ClCompile Include="..\common\Utility.cpp" />
     <ClCompile Include="Application.cpp" />
+    <ClCompile Include="ApplicationInitialize.cpp" />
     <ClCompile Include="ApplicationPeriodRun.cpp" />
     <ClCompile Include="ApplicationShortRun.cpp" />
     <ClCompile Include="AppProcess.cpp" />
@@ -105,6 +106,7 @@
     <ClInclude Include="..\common\TimeZoneHelper.h" />
     <ClInclude Include="..\common\Utility.h" />
     <ClInclude Include="Application.h" />
+    <ClInclude Include="ApplicationInitialize.h" />
     <ClInclude Include="ApplicationPeriodRun.h" />
     <ClInclude Include="ApplicationShortRun.h" />
     <ClInclude Include="AppProcess.h" />

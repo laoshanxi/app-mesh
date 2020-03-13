@@ -30,7 +30,9 @@ const char* GET_STATUS_STR(unsigned int status)
 	{
 		"disabled",
 		"enabled",
-		"N/A"
+		"N/A",
+		"init",
+		"fini"
 	};
 	assert(status < ARRAY_LEN(STATUS_STR));
 	return STATUS_STR[status];

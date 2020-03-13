@@ -57,6 +57,9 @@
     <ClCompile Include="LinuxCgroup.cpp">
       <Filter>common\os</Filter>
     </ClCompile>
+    <ClCompile Include="ApplicationInitialize.cpp">
+      <Filter>application</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -137,6 +140,9 @@
     </ClInclude>
     <ClInclude Include="LinuxCgroup.h">
       <Filter>common\os</Filter>
+    </ClInclude>
+    <ClInclude Include="ApplicationInitialize.h">
+      <Filter>application</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

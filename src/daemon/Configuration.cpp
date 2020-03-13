@@ -4,6 +4,7 @@
 #include "ConsulConnection.h"
 #include "../common/Utility.h"
 #include "Application.h"
+#include "ApplicationInitialize.h"
 #include "ApplicationPeriodRun.h"
 #include "ResourceCollection.h"
 #include "PrometheusRest.h"
@@ -70,7 +71,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		config->m_scheduleInterval = DEFAULT_SCHEDULE_INTERVAL;
 		LOG_INF << "Default value <" << config->m_scheduleInterval << "> will by used for ScheduleIntervalSec";
 	}
-	
+
 	// REST
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
@@ -543,7 +544,7 @@ void Configuration::hotUpdate(const web::json::value& config)
 		SET_COMPARE(this->m_consul, newConfig->m_consul);
 		ConsulConnection::instance()->initTimer();
 	}
-	
+
 	ResourceCollection::instance()->getHostName(true);
 
 	this->dump();
@@ -570,6 +571,15 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 	LOG_DBG << fname << "Json Object:\n" << Utility::prettyJson(jsonApp.serialize());
 
 	std::shared_ptr<Application> app;
+
+	// check initial application
+	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_need_handle_initial_command) && Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command)).length())
+	{
+		std::shared_ptr<ApplicationInitialize> initApp(new ApplicationInitialize());
+		app = initApp;
+		ApplicationInitialize::FromJson(initApp, jsonApp);
+		return app;
+	}
 
 	if (GET_JSON_INT_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds) > 0)
 	{
@@ -610,6 +620,19 @@ std::shared_ptr<Application> Configuration::getApp(const std::string& appName)
 		}
 	}
 	throw std::invalid_argument("No such application found");
+}
+
+bool Configuration::isAppExist(const std::string& appName)
+{
+	std::vector<std::shared_ptr<Application>> apps = getApps();
+	for (auto app : apps)
+	{
+		if (app->getName() == appName)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value& jsonValue)
@@ -710,7 +733,7 @@ web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
 }
 
 Configuration::JsonSecurity::JsonSecurity()
-	:m_jwtEnabled(true),m_encryptKey(false)
+	:m_jwtEnabled(true), m_encryptKey(false)
 {
 	m_roles = std::make_shared<Roles>();
 	m_jwtUsers = std::make_shared<Users>();

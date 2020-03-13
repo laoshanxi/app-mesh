@@ -24,7 +24,9 @@ public:
 	{
 		DISABLED,
 		ENABLED,
-		NOTAVIALABLE	// used for temp app from RestHandler::apiRunParseApp and destroyed app
+		NOTAVIALABLE,	// used for temp app from RestHandler::apiRunParseApp and destroyed app
+		INITIALIZING,
+		UNINITIALIZING
 	};
 	Application();
 	virtual ~Application();
@@ -63,6 +65,7 @@ public:
 	int getVersion();
 	void setVersion(int version);
 	const std::string getComments() const { return m_comments; }
+	const std::string getInitCmd() const { return m_commandLineInit; }
 
 protected:
 	// Invoke immediately
@@ -77,6 +80,8 @@ protected:
 	STATUS m_status;
 	std::string m_name;
 	std::string m_commandLine;
+	std::string m_commandLineInit;
+	std::string m_commandLineFini;
 	std::string m_user;
 	std::string m_workdir;
 	std::string m_comments;

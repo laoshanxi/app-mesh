@@ -1093,6 +1093,17 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	{
 		throw std::invalid_argument("invalid json format");
 	}
+	auto initCmd = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command);
+	if (initCmd.length())
+	{
+		// if same app not exist, do init
+		// if same app exist but init cmd changed, do init
+		auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
+		if (!Configuration::instance()->isAppExist(appName) || initCmd != Configuration::instance()->getApp(appName)->getInitCmd())
+		{
+			jsonApp[JSON_KEY_APP_need_handle_initial_command] = web::json::value::boolean(true);
+		}
+	}
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
 }
