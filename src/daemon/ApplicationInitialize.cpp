@@ -19,7 +19,7 @@ ApplicationInitialize::~ApplicationInitialize()
 
 void ApplicationInitialize::FromJson(std::shared_ptr<ApplicationInitialize>& app, const web::json::value& jobj)
 {
-	const static char fname[] = "ApplicationInitialize::ApplicationInitialize() ";
+	const static char fname[] = "ApplicationInitialize::FromJson() ";
 	LOG_DBG << fname << "Entered.";
 
 	std::shared_ptr<Application> fatherApp = app;
@@ -42,8 +42,11 @@ web::json::value ApplicationInitialize::AsJson(bool returnRuntimeInfo)
 		result[obj.first] = obj.second;
 	}
 
-	// overfide status
-	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::INITIALIZING));
+	// override status
+	if (returnRuntimeInfo)
+	{
+		result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::INITIALIZING));
+	}
 	return std::move(result);
 }
 
@@ -97,26 +100,18 @@ void ApplicationInitialize::invoke()
 	else if (m_executed && !m_process->running())
 	{
 		LOG_DBG << fname << "initialize finished for application <" << getName() << ">.";
-		if (HAS_JSON_FIELD(m_application, JSON_KEY_APP_need_handle_initial_command))
+		if (HAS_JSON_FIELD(m_application, JSON_KEY_APP_initial_application_only))
 		{
-			m_application.erase(JSON_KEY_APP_need_handle_initial_command);
+			m_application.erase(JSON_KEY_APP_initial_application_only);
 		}
-		// switch thread
-		this->registerTimer(0, 0, std::bind(&ApplicationInitialize::onInitComplete, this, std::placeholders::_1), __FUNCTION__);
-	}
-}
 
-void ApplicationInitialize::onInitComplete(int timerId)
-{
-	const static char fname[] = "ApplicationInitialize::onInitComplete() ";
-	LOG_DBG << fname << "Entered.";
-
-	try
-	{
-		Configuration::instance()->addApp(m_application);
-	}
-	catch (std::exception& ex)
-	{
-		LOG_ERR << fname << ex.what();
+		try
+		{
+			Configuration::instance()->addApp(m_application);
+		}
+		catch (std::exception & ex)
+		{
+			LOG_ERR << fname << ex.what();
+		}
 	}
 }

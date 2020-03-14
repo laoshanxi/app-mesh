@@ -93,7 +93,7 @@ void ApplicationShortRun::checkAndUpdateHealth()
 void ApplicationShortRun::invoke()
 {
 	const static char fname[] = "ApplicationShortRun::invoke() ";
-	if (!isUnAvialable())
+	if (isWorkingState())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		// 1. kill unexpected process
@@ -115,7 +115,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 		this->cancleTimer(timerId);
 		return;
 	}
-	if (isUnAvialable()) return;
+	if (!isWorkingState()) return;
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// clean old process
 	if (m_process->running())

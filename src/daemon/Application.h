@@ -35,7 +35,7 @@ public:
 	virtual bool avialable();
 	const std::string getName() const;
 	bool isEnabled();
-	bool isUnAvialable();
+	bool isWorkingState();
 	bool attach(int pid);
 	
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);
@@ -48,6 +48,7 @@ public:
 	virtual void enable();
 	void destroy();
 	void removeGlobalRef(int timerId = 0);
+	void refFiniApp(int timerId = 0);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest) noexcept(false);

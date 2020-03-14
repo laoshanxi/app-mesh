@@ -1017,7 +1017,7 @@ void RestHandler::apiRunAsyncOut(const HttpRequest& message)
 			resp.set_status_code(status_codes::Created);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
 			// remove temp app immediately
-			if (appObj->isUnAvialable()) Configuration::instance()->removeApp(app);
+			if (!appObj->isWorkingState()) Configuration::instance()->removeApp(app);
 		}
 
 		LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
@@ -1074,7 +1074,7 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 		auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 		if (!Configuration::instance()->isAppExist(appName) || initCmd != Configuration::instance()->getApp(appName)->getInitCmd())
 		{
-			jsonApp[JSON_KEY_APP_need_handle_initial_command] = web::json::value::boolean(true);
+			jsonApp[JSON_KEY_APP_initial_application_only] = web::json::value::boolean(true);
 		}
 	}
 	auto app = Configuration::instance()->addApp(jsonApp);

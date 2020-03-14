@@ -60,6 +60,9 @@
     <ClCompile Include="ApplicationInitialize.cpp">
       <Filter>application</Filter>
     </ClCompile>
+    <ClCompile Include="ApplicationOnetime.cpp">
+      <Filter>application</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -142,6 +145,9 @@
       <Filter>common\os</Filter>
     </ClInclude>
     <ClInclude Include="ApplicationInitialize.h">
+      <Filter>application</Filter>
+    </ClInclude>
+    <ClInclude Include="ApplicationOnetime.h">
       <Filter>application</Filter>
     </ClInclude>
   </ItemGroup>

@@ -387,6 +387,9 @@ os_version=centos7.6
 
 ### Development
 
+- Application state machine
+<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/state_machine.jpg" width=400 height=400 align=center /></div>
+
 - REST APIs
 
 Method | URI | Body/Headers | Desc

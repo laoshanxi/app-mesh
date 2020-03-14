@@ -5,6 +5,7 @@
 #include "../common/Utility.h"
 #include "Application.h"
 #include "ApplicationInitialize.h"
+#include "ApplicationOnetime.h"
 #include "ApplicationPeriodRun.h"
 #include "ResourceCollection.h"
 #include "PrometheusRest.h"
@@ -264,7 +265,7 @@ web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
 	for (auto app : m_apps)
 	{
 		// do not persist temp application
-		if (returnRuntimeInfo || !app->isUnAvialable()) apps.push_back(app);
+		if (returnRuntimeInfo || app->isWorkingState()) apps.push_back(app);
 	}
 	// Build Json
 	auto result = web::json::value::array(apps.size());
@@ -403,7 +404,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 	// only update version in case of not defined
 	if (app->getVersion() == 0) app->setVersion(appVer);
 	// Write to disk
-	if (!app->isUnAvialable())
+	if (app->isWorkingState())
 	{
 		app->initMetrics(PrometheusRest::instance());
 		// invoke immediately
@@ -427,11 +428,11 @@ void Configuration::removeApp(const std::string& appName)
 	{
 		if ((*iterA)->getName() == appName)
 		{
-			bool tempApp = (*iterA)->isUnAvialable();
+			bool needPersist = (*iterA)->isWorkingState();
 			(*iterA)->destroy();
 			iterA = m_apps.erase(iterA);
 			// Write to disk
-			if (!tempApp) saveConfigToDisk();
+			if (needPersist) saveConfigToDisk();
 			LOG_DBG << fname << "removed " << appName;
 		}
 		else
@@ -573,11 +574,19 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 	std::shared_ptr<Application> app;
 
 	// check initial application
-	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_need_handle_initial_command) && Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command)).length())
+	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_initial_application_only) && Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command)).length())
 	{
 		std::shared_ptr<ApplicationInitialize> initApp(new ApplicationInitialize());
 		app = initApp;
 		ApplicationInitialize::FromJson(initApp, jsonApp);
+		return app;
+	}
+	// check uninitial application
+	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_onetime_application_only))
+	{
+		std::shared_ptr<ApplicationOnetime> oneApp(new ApplicationOnetime());
+		app = oneApp;
+		ApplicationOnetime::FromJson(oneApp, jsonApp);
 		return app;
 	}
 

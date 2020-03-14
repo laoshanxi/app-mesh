@@ -67,10 +67,10 @@ bool Application::isEnabled()
 	return (m_status == STATUS::ENABLED);
 }
 
-bool Application::isUnAvialable()
+bool Application::isWorkingState()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return (m_status == STATUS::NOTAVIALABLE);
+	return (m_status == STATUS::ENABLED || m_status == STATUS::DISABLED);
 }
 
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::value& jobj)
@@ -162,7 +162,7 @@ bool Application::attach(int pid)
 void Application::invoke()
 {
 	const static char fname[] = "Application::invoke() ";
-	if (!isUnAvialable())
+	if (isWorkingState())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		if (this->avialable())
@@ -215,9 +215,9 @@ void Application::enable()
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
 	}
-	else if (isUnAvialable())
+	else if (!isWorkingState())
 	{
-		LOG_WAR << fname << "Application <" << m_name << "> is UNUSEABLE status, enable is forbidden.";
+		LOG_WAR << fname << "Application <" << m_name << "> is <" << GET_STATUS_STR(static_cast<int>(m_status))  << "> status, enable is forbidden.";
 	}
 }
 
@@ -506,10 +506,21 @@ void Application::destroy()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	this->disable();
 	this->m_status = STATUS::NOTAVIALABLE;
+	if (m_commandLineFini.length())
+	{
+		this->registerTimer(0, 0, std::bind(&Application::refFiniApp, this, std::placeholders::_1), __FUNCTION__);
+	}
 }
 
 void Application::removeGlobalRef(int timerId)
 {
 	Configuration::instance()->removeApp(m_name);
+}
+
+void Application::refFiniApp(int timerId)
+{
+	auto jsonApp = this->AsJson(false);
+	jsonApp[JSON_KEY_APP_onetime_application_only] = web::json::value::boolean(true);
+	Configuration::instance()->addApp(jsonApp);
 }
 

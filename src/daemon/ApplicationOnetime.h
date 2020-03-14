@@ -5,16 +5,16 @@
 #include "Application.h"
 
 //////////////////////////////////////////////////////////////////////////
-/// An Initialize Application is pre-start cmd
+/// An UnInitialize Application is pre-start cmd
 ///  and change to normal app when finished.
 //////////////////////////////////////////////////////////////////////////
-class ApplicationInitialize : public Application
+class ApplicationOnetime : public Application
 {
 public:
-	ApplicationInitialize();
-	virtual ~ApplicationInitialize();
+	ApplicationOnetime();
+	virtual ~ApplicationOnetime();
 
-	static void FromJson(std::shared_ptr<ApplicationInitialize>& app, const web::json::value& jobj) noexcept(false);
+	static void FromJson(std::shared_ptr<ApplicationOnetime>& app, const web::json::value& jobj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	virtual void dump() override;
 
