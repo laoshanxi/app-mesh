@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <functional>
-#include "TimerHandler.h"
 #include <cpprest/http_listener.h> // HTTP server 
 #include "../common/HttpRequest.h"
 
@@ -13,7 +12,7 @@ class HttpRequest;
 //////////////////////////////////////////////////////////////////////////
 /// REST service
 //////////////////////////////////////////////////////////////////////////
-class RestHandler : public TimerHandler
+class RestHandler
 {
 public:
 	explicit RestHandler(std::string ipaddress, int port);
@@ -40,8 +39,6 @@ private:
 	bool permissionCheck(const HttpRequest& message, const std::string& permission);
 	std::string getTokenStr(const HttpRequest& message);
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
-	void cleanTempApp(int timerId = 0);
-	void cleanTempAppByName(std::string appNameStr);
 	int getHttpQueryValue(const HttpRequest& message, const std::string key, int defaultValue, int min, int max) const;
 
 	void apiLogin(const HttpRequest& message);
@@ -86,8 +83,6 @@ private:
 	std::map<std::string, std::function<void(const HttpRequest&)>> m_restDelFunctions;
 
 	std::recursive_mutex m_mutex;
-	// key: timerId, value: appName
-	std::map<int, std::string> m_tempAppsForClean;
 
 	// prometheus
 	std::shared_ptr<CounterPtr> m_promScrapeCounter;

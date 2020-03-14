@@ -508,3 +508,8 @@ void Application::destroy()
 	this->m_status = STATUS::NOTAVIALABLE;
 }
 
+void Application::removeGlobalRef(int timerId)
+{
+	Configuration::instance()->removeApp(m_name);
+}
+

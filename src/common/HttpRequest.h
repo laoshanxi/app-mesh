@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <cpprest/http_client.h>
 
 using namespace web;
@@ -118,4 +119,15 @@ public:
 private:
 	std::string m_appName;
 	std::function<void(std::string)> m_callBackHandler;
+};
+
+class Application;
+class HttpRequestWithAppRef : public HttpRequest
+{
+public:
+	HttpRequestWithAppRef(const web::http::http_request& message, const std::shared_ptr<Application>& appObj);
+	virtual ~HttpRequestWithAppRef();
+
+private:
+	const std::shared_ptr<Application> m_app;
 };

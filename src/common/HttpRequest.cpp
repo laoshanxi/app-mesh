@@ -1,5 +1,5 @@
 #include "HttpRequest.h"
-
+#include "../daemon/Application.h"
 
 HttpRequest::HttpRequest(const web::http::http_request& message)
 	:http_request(message)
@@ -80,4 +80,16 @@ HttpRequestWithCallback::~HttpRequestWithCallback()
 	{
 		m_callBackHandler(m_appName);
 	}
+}
+////////////////////////////////////////////////////////////////////////////////
+// HttpRequest with remove app from global map
+////////////////////////////////////////////////////////////////////////////////
+HttpRequestWithAppRef::HttpRequestWithAppRef(const web::http::http_request& message, const std::shared_ptr<Application>& appObj)
+	:HttpRequest(message), m_app(appObj)
+{
+}
+
+HttpRequestWithAppRef::~HttpRequestWithAppRef()
+{
+	if (m_app) m_app->removeGlobalRef();
 }

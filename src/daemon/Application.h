@@ -47,6 +47,7 @@ public:
 	virtual void disable();
 	virtual void enable();
 	void destroy();
+	void removeGlobalRef(int timerId = 0);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest) noexcept(false);

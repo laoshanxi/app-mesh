@@ -440,30 +440,6 @@ std::string RestHandler::createToken(const std::string& uname, const std::string
 	return std::move(token);
 }
 
-void RestHandler::cleanTempApp(int timerId)
-{
-	const static char fname[] = "RestHandler::cleanTempApp() ";
-
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_tempAppsForClean.count(timerId))
-	{
-		auto app = m_tempAppsForClean[timerId];
-		Configuration::instance()->removeApp(app);
-	}
-	m_tempAppsForClean.erase(timerId);
-
-	LOG_DBG << fname << "timer id: " << timerId << " left map size : " << m_tempAppsForClean.size();
-}
-
-void RestHandler::cleanTempAppByName(std::string appNameStr)
-{
-	const static char fname[] = "RestHandler::cleanTempAppByName() ";
-
-	// see RestHandler::apiSyncRun
-	LOG_DBG << fname << appNameStr;
-	Configuration::instance()->removeApp(appNameStr);
-}
-
 int RestHandler::getHttpQueryValue(const HttpRequest& message, const std::string key, int defaultValue, int min, int max) const
 {
 	const static char fname[] = "RestHandler::getQueryValue() ";
@@ -999,11 +975,8 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
 	message.reply(status_codes::OK, result);
 
-	// Save cleaup footprint
-	auto timerId = this->registerTimer(1000L * (timeout + retention), 0,
-		std::bind(&RestHandler::cleanTempApp, this, std::placeholders::_1), fname);
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_tempAppsForClean[timerId] = appObj->getName();
+	// clean from timer
+	appObj->registerTimer(1000L * (timeout + retention), 0, std::bind(&Application::removeGlobalRef, appObj, std::placeholders::_1), fname);
 }
 
 void RestHandler::apiRunSync(const HttpRequest& message)
@@ -1014,7 +987,7 @@ void RestHandler::apiRunSync(const HttpRequest& message)
 	auto appObj = apiRunParseApp(message);
 
 	// Use async reply here
-	HttpRequest* asyncRequest = new HttpRequestWithCallback(message, appObj->getName(), std::bind(&RestHandler::cleanTempAppByName, this, std::placeholders::_1));
+	HttpRequest* asyncRequest = new HttpRequestWithAppRef(message, appObj);
 	appObj->runSyncrize(timeout, asyncRequest);
 }
 
