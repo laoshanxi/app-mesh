@@ -5,7 +5,7 @@
 #include "../common/Utility.h"
 #include "Application.h"
 #include "ApplicationInitialize.h"
-#include "ApplicationOnetime.h"
+#include "ApplicationUnInitia.h"
 #include "ApplicationPeriodRun.h"
 #include "ResourceCollection.h"
 #include "PrometheusRest.h"
@@ -584,9 +584,9 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 	// check uninitial application
 	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_onetime_application_only))
 	{
-		std::shared_ptr<ApplicationOnetime> oneApp(new ApplicationOnetime());
+		std::shared_ptr<ApplicationUnInitia> oneApp(new ApplicationUnInitia());
 		app = oneApp;
-		ApplicationOnetime::FromJson(oneApp, jsonApp);
+		ApplicationUnInitia::FromJson(oneApp, jsonApp);
 		return app;
 	}
 

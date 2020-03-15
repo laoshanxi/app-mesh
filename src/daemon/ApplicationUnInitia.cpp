@@ -1,25 +1,25 @@
-#include "ApplicationOnetime.h"
+#include "ApplicationUnInitia.h"
 #include "AppProcess.h"
 #include "Configuration.h"
 #include "../common/Utility.h"
 
-ApplicationOnetime::ApplicationOnetime()
+ApplicationUnInitia::ApplicationUnInitia()
 	:m_executed(false)
 {
-	const static char fname[] = "ApplicationOnetime::ApplicationOnetime() ";
+	const static char fname[] = "ApplicationUnInitia::ApplicationUnInitia() ";
 	LOG_DBG << fname << "Entered.";
 }
 
 
-ApplicationOnetime::~ApplicationOnetime()
+ApplicationUnInitia::~ApplicationUnInitia()
 {
-	const static char fname[] = "ApplicationOnetime::~ApplicationOnetime() ";
+	const static char fname[] = "ApplicationUnInitia::~ApplicationUnInitia() ";
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationOnetime::FromJson(std::shared_ptr<ApplicationOnetime>& app, const web::json::value& jobj)
+void ApplicationUnInitia::FromJson(std::shared_ptr<ApplicationUnInitia>& app, const web::json::value& jobj)
 {
-	const static char fname[] = "ApplicationOnetime::FromJson() ";
+	const static char fname[] = "ApplicationUnInitia::FromJson() ";
 	LOG_DBG << fname << "Entered.";
 	auto jsonApp = jobj;
 	std::shared_ptr<Application> fatherApp = app;
@@ -35,9 +35,9 @@ void ApplicationOnetime::FromJson(std::shared_ptr<ApplicationOnetime>& app, cons
 	}
 }
 
-web::json::value ApplicationOnetime::AsJson(bool returnRuntimeInfo)
+web::json::value ApplicationUnInitia::AsJson(bool returnRuntimeInfo)
 {
-	const static char fname[] = "ApplicationOnetime::AsJson() ";
+	const static char fname[] = "ApplicationUnInitia::AsJson() ";
 	LOG_DBG << fname << "Entered.";
 	
 	// get runtime info
@@ -57,34 +57,34 @@ web::json::value ApplicationOnetime::AsJson(bool returnRuntimeInfo)
 	return std::move(result);
 }
 
-void ApplicationOnetime::enable()
+void ApplicationUnInitia::enable()
 {
-	const static char fname[] = "ApplicationOnetime::enable() ";
+	const static char fname[] = "ApplicationUnInitia::enable() ";
 	LOG_ERR << fname << "Application is in initialize status, enable is not supported";
 }
 
-void ApplicationOnetime::disable()
+void ApplicationUnInitia::disable()
 {
-	const static char fname[] = "ApplicationOnetime::disable() ";
+	const static char fname[] = "ApplicationUnInitia::disable() ";
 	LOG_WAR << fname << "Application is in initialize status, disable is not supported";
 }
 
-bool ApplicationOnetime::avialable()
+bool ApplicationUnInitia::avialable()
 {
 	return true;
 }
 
-void ApplicationOnetime::dump()
+void ApplicationUnInitia::dump()
 {
-	const static char fname[] = "ApplicationOnetime::dump() ";
+	const static char fname[] = "ApplicationUnInitia::dump() ";
 
 	Application::dump();
 	LOG_DBG << fname << "m_executed:" << m_executed;
 }
 
-void ApplicationOnetime::invoke()
+void ApplicationUnInitia::invoke()
 {
-	const static char fname[] = "ApplicationOnetime::invoke() ";
+	const static char fname[] = "ApplicationUnInitia::invoke() ";
 	LOG_DBG << fname << "Entered.";
 
 	refreshPid();

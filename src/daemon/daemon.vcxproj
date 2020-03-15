@@ -75,6 +75,7 @@
     <ClCompile Include="ApplicationInitialize.cpp" />
     <ClCompile Include="ApplicationPeriodRun.cpp" />
     <ClCompile Include="ApplicationShortRun.cpp" />
+    <ClCompile Include="ApplicationUnInitia.cpp" />
     <ClCompile Include="AppProcess.cpp" />
     <ClCompile Include="Configuration.cpp" />
     <ClCompile Include="ConsulConnection.cpp" />
@@ -111,6 +112,7 @@
     <ClInclude Include="ApplicationInitialize.h" />
     <ClInclude Include="ApplicationPeriodRun.h" />
     <ClInclude Include="ApplicationShortRun.h" />
+    <ClInclude Include="ApplicationUnInitia.h" />
     <ClInclude Include="AppProcess.h" />
     <ClInclude Include="Configuration.h" />
     <ClInclude Include="ConsulConnection.h" />

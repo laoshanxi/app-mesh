@@ -63,6 +63,9 @@
     <ClCompile Include="ApplicationOnetime.cpp">
       <Filter>application</Filter>
     </ClCompile>
+    <ClCompile Include="ApplicationUnInitia.cpp">
+      <Filter>application</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -148,6 +151,9 @@
       <Filter>application</Filter>
     </ClInclude>
     <ClInclude Include="ApplicationOnetime.h">
+      <Filter>application</Filter>
+    </ClInclude>
+    <ClInclude Include="ApplicationUnInitia.h">
       <Filter>application</Filter>
     </ClInclude>
   </ItemGroup>

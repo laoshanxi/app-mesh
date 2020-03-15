@@ -15,7 +15,7 @@ SRCS = \
 	Application.cpp \
 	ApplicationShortRun.cpp \
 	ApplicationInitialize.cpp \
-	ApplicationOnetime.cpp \
+	ApplicationUnInitia.cpp \
 	ApplicationPeriodRun.cpp \
 	Configuration.cpp \
 	RestHandler.cpp \
