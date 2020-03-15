@@ -28,6 +28,11 @@ void ApplicationOnetime::FromJson(std::shared_ptr<ApplicationOnetime>& app, cons
 	app->m_commandLine = app->m_commandLineFini;
 	// avoid fini app re-fini again
 	app->m_commandLineFini.clear();
+	// clean uninitia flag
+	if (HAS_JSON_FIELD(app->m_application, JSON_KEY_APP_onetime_application_only))
+	{
+		app->m_application.erase(JSON_KEY_APP_onetime_application_only);
+	}
 }
 
 web::json::value ApplicationOnetime::AsJson(bool returnRuntimeInfo)

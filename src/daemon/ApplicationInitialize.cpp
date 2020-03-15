@@ -26,6 +26,11 @@ void ApplicationInitialize::FromJson(std::shared_ptr<ApplicationInitialize>& app
 	Application::FromJson(fatherApp, jobj);
 	app->m_application = jobj;
 	app->m_commandLine = app->m_commandLineInit;
+	// clean initia flag
+	if (HAS_JSON_FIELD(app->m_application, JSON_KEY_APP_initial_application_only))
+	{
+		app->m_application.erase(JSON_KEY_APP_initial_application_only);
+	}
 }
 
 web::json::value ApplicationInitialize::AsJson(bool returnRuntimeInfo)
@@ -100,11 +105,6 @@ void ApplicationInitialize::invoke()
 	else if (m_executed && !m_process->running())
 	{
 		LOG_DBG << fname << "initialize finished for application <" << getName() << ">.";
-		if (HAS_JSON_FIELD(m_application, JSON_KEY_APP_initial_application_only))
-		{
-			m_application.erase(JSON_KEY_APP_initial_application_only);
-		}
-
 		try
 		{
 			Configuration::instance()->addApp(m_application);
