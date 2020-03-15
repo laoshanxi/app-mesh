@@ -93,7 +93,7 @@ void ApplicationInitialize::invoke()
 		if (!m_process->running())
 		{
 			LOG_INF << fname << "Starting initializing for application <" << m_name << ">.";
-			m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
+			m_process = allocProcess(m_cacheOutputLines, "", m_name);
 			m_procStartTime = std::chrono::system_clock::now();
 			m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 		}
