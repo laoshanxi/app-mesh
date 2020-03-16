@@ -105,7 +105,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		{
 			auto jsonApp = *(iterB);
 			auto app = config->parseApp(jsonApp);
-			config->registerApp(app);
+			config->addApp2Map(app);
 		}
 	}
 
@@ -184,9 +184,9 @@ std::vector<std::shared_ptr<Application>> Configuration::getApps()
 	return m_apps;
 }
 
-void Configuration::registerApp(std::shared_ptr<Application> app)
+void Configuration::addApp2Map(std::shared_ptr<Application> app)
 {
-	const static char fname[] = "Configuration::registerApp() ";
+	const static char fname[] = "Configuration::addApp2Map() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	for (size_t i = 0; i < m_apps.size(); i++)
@@ -399,7 +399,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 	if (!update)
 	{
 		// Register app
-		registerApp(app);
+		addApp2Map(app);
 	}
 	// only update version in case of not defined
 	if (app->getVersion() == 0) app->setVersion(appVer);

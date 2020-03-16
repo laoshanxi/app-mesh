@@ -86,7 +86,6 @@ public:
 	std::vector<std::shared_ptr<Application>> getApps();
 	std::shared_ptr<Application> addApp(const web::json::value& jsonApp);
 	void removeApp(const std::string& appName);
-	void registerApp(std::shared_ptr<Application> app);
 	std::shared_ptr<Application> parseApp(const web::json::value& jsonApp);
 
 	int getScheduleInterval();
@@ -120,6 +119,9 @@ public:
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
 
 	void dump();
+
+private:
+		void addApp2Map(std::shared_ptr<Application> app);
 
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;

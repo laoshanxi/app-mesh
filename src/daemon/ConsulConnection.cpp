@@ -267,6 +267,10 @@ void ConsulConnection::leaderSchedule()
 		//	return;
 		//}
 		auto oldTopology = retrieveTopology("");
+		//for (const auto& oldHost : oldTopology)
+		//{
+		//	LOG_DBG << fname << oldHost.first << ":" << oldHost.second;
+		//}
 		auto nodesMap = m_retrievedNode;
 		if (nodesMap.empty())
 		{
@@ -320,7 +324,7 @@ void ConsulConnection::nodeSchedule()
 					auto& currentRunningApp = *it;
 					if (!currentRunningApp->operator==(topologyAppObj))
 					{
-						Configuration::instance()->registerApp(topologyAppObj);
+						Configuration::instance()->addApp(topologyAppObj->AsJson(false));
 						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
 
 						registerService(appName, consulTask->m_consulServicePort);
@@ -329,7 +333,7 @@ void ConsulConnection::nodeSchedule()
 				else
 				{
 					// New add app
-					Configuration::instance()->registerApp(topologyAppObj);
+					Configuration::instance()->addApp(topologyAppObj->AsJson(false));
 					LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
 
 					registerService(appName, consulTask->m_consulServicePort);
@@ -621,7 +625,7 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 		if (!newT.count(oldHost.first))
 		{
 			// delete
-			writeTopology(oldHost.first, {});
+			writeTopology(oldHost.first, std::make_shared<ConsulTopology>());
 		}
 	}
 }
