@@ -625,7 +625,7 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 		if (!newT.count(oldHost.first))
 		{
 			// delete
-			writeTopology(oldHost.first, std::make_shared<ConsulTopology>());
+			writeTopology(oldHost.first, nullptr);
 		}
 	}
 }
@@ -637,7 +637,7 @@ bool ConsulConnection::writeTopology(std::string hostName, std::shared_ptr<Consu
 	//topology: /appmgr/topology/myhost
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
 	web::http::http_response resp;
-	if (topology->m_apps.size())
+	if (topology && topology->m_apps.size())
 	{
 		auto body = topology->AsJson();
 		resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
@@ -726,7 +726,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 	}
 	else
 	{
-		throw std::invalid_argument(std::string("failed get topology : ") + host);
+		LOG_DBG << fname << "no topology found for <" << host << ">";
 	}
 	return std::move(topology);
 }
