@@ -9,11 +9,9 @@ Application Manager is a Cloud Native Microservice management platform to manage
 
 Features  | Behavior
 ---|---
-Long running application | Monitor app running all time and restart when exited immediately
-Short runing application | Periodic startup app
-Periodic long running application |Long running applicatin but will be restart periodic
+Basic applications | Long running <br> Short running <br> Periodic long running
 Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md) 
-Application behavior | Application support initial and clean command <br> Application can define avialable time range in a day <br> Application can define envionment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
+Application behavior | Application support initial and clean command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
 Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmanager`
@@ -68,12 +66,12 @@ Commands:
   log         Set log level
 
 Run 'appc COMMAND --help' for more information on a command.
-Use '-b hostname' to run remote command.
+Use '-b $hostname','--port $port' to run remote command.
 
 Usage:  appc [COMMAND] [ARG...] [flags]
 ```
 ---
-## 1. Applicaton Management
+## 1. Application Management
 
 - List application[s]
 
@@ -118,6 +116,7 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 $ appc reg
 Register a new application:
   -b [ --host ] arg (=localhost) host name or ip address
+  --port arg                     port number
   -u [ --user ] arg              Specifies the name of the user to connect to 
                                  AppManager for this command.
   -x [ --password ] arg          Specifies the user password to connect to 
@@ -126,6 +125,8 @@ Register a new application:
   -g [ --comments ] arg          application comments
   -a [ --appuser ] arg           application process running user name
   -c [ --cmd ] arg               full command line with arguments
+  --init arg                     initial command line with arguments
+  --fini arg                     fini command line with arguments
   -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl
                                  host:port/health', return 0 is health)
   -d [ --docker_image ] arg      docker image which used to run command line 
