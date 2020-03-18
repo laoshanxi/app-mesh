@@ -448,4 +448,4 @@ cd app-manager
 make
 ```
 - Thread model
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=500 height=255 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=512 height=292 align=center /></div>
