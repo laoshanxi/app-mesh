@@ -41,6 +41,7 @@ private:
 	void processConfigView();
 	void processChangePwd();
 	void processLockUser();
+	void processEncryptUserPwd();
 
 	bool confirmInput(const char* msg);
 	http_response requestHttp(const method& mtd, const std::string& path);

@@ -151,6 +151,10 @@ void ArgumentParser::parse()
 	{
 		processLockUser();
 	}
+	else if (cmd == "appmgpwd")
+	{
+		processEncryptUserPwd();
+	}
 	else
 	{
 		printMainHelp();
@@ -888,6 +892,30 @@ void ArgumentParser::processLockUser()
 	std::string restPath = std::string("/user/") + user + (lock ? "/lock" : "/unlock");
 	http_response response = requestHttp(methods::POST, restPath);
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+}
+
+void ArgumentParser::processEncryptUserPwd()
+{
+	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
+	if (opts.size()) opts.erase(opts.begin());
+
+	std::string str;
+	if (opts.size() == 0)
+	{
+		std::cin >> str;
+		while (str.size())
+		{
+			std::cout << std::hash<std::string>()(str) << std::endl;
+			std::cin >> str;
+		}
+	}
+	else
+	{
+		for (auto str : opts)
+		{
+			std::cout << std::hash<std::string>()(str) << std::endl;
+		}
+	}
 }
 
 bool ArgumentParser::confirmInput(const char* msg)
