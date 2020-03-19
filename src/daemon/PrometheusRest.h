@@ -77,6 +77,7 @@ public:
 
 	std::shared_ptr<CounterPtr> createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
 	std::shared_ptr<GaugePtr> createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels) noexcept(false);
+	const std::string collectData();
 
 protected:
 	void open();

@@ -211,16 +211,21 @@ std::shared_ptr<GaugePtr> PrometheusRest::createPromGauge(const std::string& met
 	return std::make_shared<GaugePtr>(m_promRegistry, metricName, metricHelp, labels);
 }
 
+const std::string PrometheusRest::collectData()
+{
+	// leave a static text serializer here
+	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
+	return std::move(promSerializer->Serialize(m_promRegistry->Collect()));
+}
+
 void PrometheusRest::apiMetrics(const HttpRequest& message)
 {
 	const static char fname[] = "PrometheusRest::apiMetrics() ";
 	LOG_DBG << fname << "Entered";
-	// leave a static text serializer here
-	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
 
 	if (m_scrapeCounter) m_scrapeCounter->metric().Increment();
 
-	message.reply(status_codes::OK, promSerializer->Serialize(m_promRegistry->Collect()), "text/plain; version=0.0.4");
+	message.reply(status_codes::OK, collectData(), "text/plain; version=0.0.4");
 }
 
 CounterPtr::CounterPtr(std::shared_ptr<prometheus::Registry> retistry, const std::string& name, const std::string& help, std::map<std::string, std::string> label)

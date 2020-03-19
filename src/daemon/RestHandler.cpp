@@ -151,6 +151,7 @@ RestHandler::RestHandler(std::string ipaddress, int port)
 	bindRestMethod(web::http::methods::GET, "/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
 
 	bindRestMethod(web::http::methods::GET, R"(/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
 
 	this->open();
 
@@ -849,6 +850,11 @@ void RestHandler::apiHealth(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 	message.reply(status_codes::OK, std::to_string(Configuration::instance()->getApp(appName)->getHealth()));
+}
+
+void RestHandler::apiMetrics(const HttpRequest& message)
+{
+	message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
 }
 
 void RestHandler::apiLogin(const HttpRequest& message)
