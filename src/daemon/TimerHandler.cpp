@@ -70,10 +70,11 @@ int TimerHandler::registerTimer(long int delayMillisecond, size_t intervalSecond
 	return *timerIdPtr;
 }
 
-bool TimerHandler::cancleTimer(int timerId)
+bool TimerHandler::cancleTimer(int& timerId)
 {
 	const static char fname[] = "TimerHandler::cancleTimer() ";
 
+	if (0 == timerId) return false;
 	auto cancled = m_reactor->cancel_timer(timerId);
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
@@ -87,7 +88,7 @@ bool TimerHandler::cancleTimer(int timerId)
 			break;
 		}
 	}
-
+	timerId = 0;
 	return cancled;
 }
 

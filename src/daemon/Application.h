@@ -47,8 +47,9 @@ public:
 	virtual void disable();
 	virtual void enable();
 	void destroy();
-	void removeGlobalRef(int timerId = 0);
-	void refFiniApp(int timerId = 0);
+	void onSuicideEvent(int timerId = 0);
+	void onFinishEvent(int timerId = 0);
+	void onEndEvent(int timerId = 0);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest) noexcept(false);
@@ -77,6 +78,7 @@ protected:
 	bool isInDailyTimeRange();
 	virtual void checkAndUpdateHealth();
 	std::string runApp(int timeoutSeconds) noexcept(false);
+	void handleEndTimer();
 
 protected:
 	STATUS m_status;
@@ -90,6 +92,9 @@ protected:
 	//the exit code of last instance
 	std::unique_ptr<int> m_return;
 	std::string m_posixTimeZone;
+	std::chrono::system_clock::time_point m_startTime;
+	std::chrono::system_clock::time_point m_endTime;
+	int m_endTimerId;
 	bool m_health;
 	std::string m_healthCheckCmd;
 	const std::string m_appId;

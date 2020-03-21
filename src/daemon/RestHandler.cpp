@@ -981,8 +981,8 @@ void RestHandler::apiRunAsync(const HttpRequest& message)
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
 	message.reply(status_codes::OK, result);
 
-	// clean from timer
-	appObj->registerTimer(1000L * (timeout + retention), 0, std::bind(&Application::removeGlobalRef, appObj, std::placeholders::_1), fname);
+	// clean reference from timer
+	appObj->registerTimer(1000L * (timeout + retention), 0, std::bind(&Application::onSuicideEvent, appObj, std::placeholders::_1), fname);
 }
 
 void RestHandler::apiRunSync(const HttpRequest& message)

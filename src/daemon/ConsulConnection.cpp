@@ -20,21 +20,9 @@ ConsulConnection::ConsulConnection()
 
 ConsulConnection::~ConsulConnection()
 {
-	if (m_ssnRenewTimerId)
-	{
-		this->cancleTimer(m_ssnRenewTimerId);
-		m_ssnRenewTimerId = 0;
-	}
-	if (m_reportStatusTimerId)
-	{
-		this->cancleTimer(m_reportStatusTimerId);
-		m_reportStatusTimerId = 0;
-	}
-	if (m_applyTopoTimerId)
-	{
-		this->cancleTimer(m_applyTopoTimerId);
-		m_applyTopoTimerId = 0;
-	}
+	this->cancleTimer(m_ssnRenewTimerId);
+	this->cancleTimer(m_reportStatusTimerId);
+	this->cancleTimer(m_applyTopoTimerId);
 }
 
 std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
@@ -898,11 +886,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	}
 
 	// session renew timer
-	if (m_ssnRenewTimerId)
-	{
-		this->cancleTimer(m_ssnRenewTimerId);
-		m_ssnRenewTimerId = 0;
-	}
+	this->cancleTimer(m_ssnRenewTimerId);
 	if (Configuration::instance()->getConsul()->m_ttl > 10)
 	{
 		m_ssnRenewTimerId = this->registerTimer(
@@ -914,11 +898,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	}
 
 	// report status timer
-	if (m_reportStatusTimerId)
-	{
-		this->cancleTimer(m_reportStatusTimerId);
-		m_reportStatusTimerId = 0;
-	}
+	this->cancleTimer(m_reportStatusTimerId);
 	if (Configuration::instance()->getConsul()->m_reportInterval > 3)
 	{
 		m_reportStatusTimerId = this->registerTimer(
@@ -930,11 +910,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	}
 
 	// aply topology timer
-	if (m_applyTopoTimerId)
-	{
-		this->cancleTimer(m_applyTopoTimerId);
-		m_applyTopoTimerId = 0;
-	}
+	this->cancleTimer(m_applyTopoTimerId);
 	if (Configuration::instance()->getConsul()->m_topologyInterval > 1)
 	{
 		m_applyTopoTimerId = this->registerTimer(

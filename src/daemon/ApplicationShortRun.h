@@ -33,7 +33,6 @@ protected:
 	std::chrono::system_clock::time_point getStartTime();
 
 protected:
-	std::chrono::system_clock::time_point m_startTime;
 	std::unique_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	int m_startInterval;
 	int m_bufferTime;

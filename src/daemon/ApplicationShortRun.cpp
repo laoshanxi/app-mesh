@@ -20,31 +20,10 @@ ApplicationShortRun::~ApplicationShortRun()
 
 void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, const web::json::value& jobj)
 {
-	const static char fname[] = "ApplicationShortRun::ApplicationShortRun() ";
-
 	std::shared_ptr<Application> fatherApp = app;
 	Application::FromJson(fatherApp, jobj);
 	app->m_startInterval = GET_JSON_INT_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_seconds);
 	assert(app->m_startInterval > 0);
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time))
-	{
-		auto start_time = GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_time);
-		app->m_startTime = Utility::convertStr2Time(start_time);
-		LOG_DBG << fname << "start_time is set to: " << start_time;
-	}
-	else
-	{
-		// If missed set start_time, set to next schedule time point, so the first start time will be now.
-		app->m_startTime = std::chrono::system_clock::now() + std::chrono::seconds(Configuration::instance()->getScheduleInterval() * 2);
-		LOG_WAR << fname << "Short running application did not set start_time, set start_time to : " << Utility::convertTime2Str(app->m_startTime);
-	}
-	
-	SET_JSON_INT_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_timeout, app->m_bufferTime);
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time) && app->m_posixTimeZone.length())
-	{
-		app->m_startTime = TimeZoneHelper::convert2tzTime(app->m_startTime, app->m_posixTimeZone);
-		LOG_DBG << fname << "posixTimeZone is set to " << app->m_posixTimeZone << ", convert to current zone start_time : " << Utility::convertTime2Str(app->m_startTime);
-	}
 }
 
 
@@ -151,7 +130,6 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	web::json::value result = Application::AsJson(returnRuntimeInfo);
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::convertTime2Str(m_startTime));
 	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_startInterval);
 	if (m_bufferTime) result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
 	if (returnRuntimeInfo)
@@ -182,7 +160,6 @@ void ApplicationShortRun::disable()
 	if (m_timerId)
 	{
 		this->cancleTimer(m_timerId);
-		m_timerId = 0;
 	}
 	m_nextLaunchTime = nullptr;
 }
@@ -194,11 +171,7 @@ void ApplicationShortRun::initTimer()
 
 	// std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// 1. clean old timer
-	if (m_timerId)
-	{
-		this->cancleTimer(m_timerId);
-		m_timerId = 0;
-	}
+	this->cancleTimer(m_timerId);
 
 	// 2. reg new timer
 	const auto now = std::chrono::system_clock::now();
@@ -247,7 +220,6 @@ void ApplicationShortRun::dump()
 
 	Application::dump();
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	LOG_DBG << fname << "m_startTime:" << Utility::convertTime2Str(m_startTime);
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
 	if (m_nextLaunchTime != nullptr) LOG_DBG << fname << "m_nextLaunchTime:" << Utility::convertTime2Str(*m_nextLaunchTime);

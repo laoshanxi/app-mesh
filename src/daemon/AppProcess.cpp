@@ -41,11 +41,10 @@ void AppProcess::killgroup(int timerId)
 
 	LOG_INF << fname << "kill process <" << getpid() << ">.";
 
-	if (timerId == 0 && m_killTimerId > 0)
+	if (timerId == 0)
 	{
 		// killed before timer event, cancle timer event
 		this->cancleTimer(m_killTimerId);
-		m_killTimerId = 0;
 	}
 	if (m_killTimerId > 0 && m_killTimerId == timerId)
 	{

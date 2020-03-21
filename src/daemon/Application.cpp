@@ -17,7 +17,7 @@
 #include "../prom_exporter/gauge.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_health(true), m_appId(Utility::createUUID())
+	:m_status(STATUS::ENABLED), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID())
 	, m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
@@ -53,6 +53,8 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		this->m_cacheOutputLines == app->m_cacheOutputLines &&
 		this->m_healthCheckCmd == app->m_healthCheckCmd &&
 		this->m_posixTimeZone == app->m_posixTimeZone &&
+		this->m_startTime == app->m_startTime &&
+		this->m_endTime == app->m_endTime &&
 		this->m_status == app->m_status);
 }
 
@@ -119,6 +121,28 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid)) app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_version)) SET_JSON_INT_VALUE(jobj, JSON_KEY_APP_version, app->m_version);
+
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time))
+	{
+		app->m_startTime = Utility::convertStr2Time(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_time));
+		if (app->m_posixTimeZone.length())
+		{
+			app->m_startTime = TimeZoneHelper::convert2tzTime(app->m_startTime, app->m_posixTimeZone);
+		}
+	}
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_end_time))
+	{
+		app->m_endTime = Utility::convertStr2Time(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_end_time));
+		if (app->m_posixTimeZone.length())
+		{
+			app->m_endTime = TimeZoneHelper::convert2tzTime(app->m_endTime, app->m_posixTimeZone);
+		}
+	}
+	if (app->m_endTime.time_since_epoch().count())
+	{
+		if (app->m_startTime > app->m_endTime) throw std::invalid_argument("end_time should greater than the start_time");
+		app->handleEndTimer();
+	}
 }
 
 void Application::refreshPid()
@@ -202,6 +226,7 @@ void Application::disable()
 		LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	}
 	if (m_process != nullptr) m_process->killgroup();
+	if (m_endTimerId) this->cancleTimer(m_endTimerId);
 }
 
 void Application::enable()
@@ -214,6 +239,7 @@ void Application::enable()
 		m_status = STATUS::ENABLED;
 		invokeNow(0);
 		LOG_INF << fname << "Application <" << m_name << "> started.";
+		handleEndTimer();
 	}
 	else if (!isWorkingState())
 	{
@@ -278,6 +304,32 @@ std::string Application::runApp(int timeoutSeconds)
 	}
 
 	return m_process->getuuid();
+}
+
+void Application::handleEndTimer()
+{
+	const static char fname[] = "Application::handleEndTimer() ";
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_endTimerId == 0)
+	{
+		// reg finish timer
+		auto now = std::chrono::system_clock::now();
+		if (m_endTime > now)
+		{
+			m_endTimerId = this->registerTimer(std::chrono::duration_cast<std::chrono::milliseconds>(m_endTime - now).count(),
+				0, std::bind(&Application::onEndEvent, this, std::placeholders::_1), fname);
+		}
+		else if (m_endTime.time_since_epoch().count())
+		{
+			LOG_WAR << fname << "end time for <" << m_name << "> was set and expired, set application to end finished.";
+			onEndEvent();
+		}
+	}
+	else
+	{
+		LOG_WAR << fname << "end timer already exist for <" << m_name << ">.";
+	}
 }
 
 std::string Application::getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished)
@@ -424,6 +476,10 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_cacheOutputLines) result[JSON_KEY_APP_cache_lines] = web::json::value::number(m_cacheOutputLines);
 	if (m_dockerImage.length()) result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
 	if (m_version) result[JSON_KEY_APP_version] = web::json::value::number(m_version);
+
+	if (m_startTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::convertTime2Str(m_startTime));
+	if (m_endTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::convertTime2Str(m_endTime));
+
 	return result;
 }
 
@@ -440,6 +496,8 @@ void Application::dump()
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
+	LOG_DBG << fname << "m_startTime:" << Utility::convertTime2Str(m_startTime);
+	LOG_DBG << fname << "m_endTime:" << Utility::convertTime2Str(m_endTime);
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_version:" << m_version;
@@ -477,10 +535,15 @@ std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, std:
 
 bool Application::isInDailyTimeRange()
 {
+	auto nowClock = std::chrono::system_clock::now();
+	// 1. check date range
+	if (nowClock < m_startTime) return false;
+	if (m_endTime.time_since_epoch().count() && nowClock > m_endTime) return false;
+	// 2. check daily range
 	if (m_dailyLimit != nullptr)
 	{
 		// Convert now to day time [%H:%M:%S], less than 24h
-		auto now = Utility::convertStr2DayTime(Utility::convertDayTime2Str(std::chrono::system_clock::now()));
+		auto now = Utility::convertStr2DayTime(Utility::convertDayTime2Str(nowClock));
 
 		if (m_dailyLimit->m_startTime < m_dailyLimit->m_endTime)
 		{
@@ -508,19 +571,35 @@ void Application::destroy()
 	this->m_status = STATUS::NOTAVIALABLE;
 	if (m_commandLineFini.length())
 	{
-		this->registerTimer(0, 0, std::bind(&Application::refFiniApp, this, std::placeholders::_1), __FUNCTION__);
+		this->registerTimer(0, 0, std::bind(&Application::onFinishEvent, this, std::placeholders::_1), __FUNCTION__);
 	}
 }
 
-void Application::removeGlobalRef(int timerId)
+void Application::onSuicideEvent(int timerId)
 {
 	Configuration::instance()->removeApp(m_name);
 }
 
-void Application::refFiniApp(int timerId)
+void Application::onFinishEvent(int timerId)
 {
 	auto jsonApp = this->AsJson(false);
 	jsonApp[JSON_KEY_APP_onetime_application_only] = web::json::value::boolean(true);
 	Configuration::instance()->addApp(jsonApp);
+}
+
+void Application::onEndEvent(int timerId)
+{
+	const static char fname[] = "Application::onEndEvent() ";
+
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	
+	// reset timer id
+	assert(m_endTimerId == timerId);
+	m_endTimerId = 0;
+
+	this->disable();
+	this->m_status = STATUS::NOTAVIALABLE;
+
+	LOG_DBG << fname << "Application <" << m_name << "> is end finished";
 }
 

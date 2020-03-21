@@ -91,5 +91,5 @@ HttpRequestWithAppRef::HttpRequestWithAppRef(const web::http::http_request& mess
 
 HttpRequestWithAppRef::~HttpRequestWithAppRef()
 {
-	if (m_app) m_app->removeGlobalRef();
+	if (m_app) m_app->onSuicideEvent();
 }

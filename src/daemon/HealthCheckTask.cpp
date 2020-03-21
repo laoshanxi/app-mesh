@@ -14,19 +14,12 @@ HealthCheckTask::HealthCheckTask()
 
 HealthCheckTask::~HealthCheckTask()
 {
-	if (m_timerId)
-	{
-		this->cancleTimer(m_timerId);
-		m_timerId = 0;
-	}
+	this->cancleTimer(m_timerId);
 }
 
 void HealthCheckTask::initTimer()
 {
-	if (m_timerId)
-	{
-		this->cancleTimer(m_timerId);
-	}
+	this->cancleTimer(m_timerId);
 	m_timerId = this->registerTimer(
 		1000L * 2,
 		DEFAULT_HEALTH_CHECK_INTERVAL,

@@ -279,7 +279,7 @@ void ArgumentParser::processReg()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
 		("comments,g", po::value<std::string>(), "application comments")
-		("appuser,a", po::value<std::string>(), "application process running user name")
+		("appuser,a", po::value<std::string>(), "application process running OS user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("init", po::value<std::string>(), "initial command line with arguments")
 		("fini", po::value<std::string>(), "fini command line with arguments")
@@ -287,7 +287,8 @@ void ArgumentParser::processReg()
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
 		("status,s", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
-		("start_time,t", po::value<std::string>(), "start date time for short running app (e.g., '2018-01-01 09:00:00')")
+		("start_time,t", po::value<std::string>(), "start date time for app (e.g., '2018-01-01 09:00:00')")
+		("end_time", po::value<std::string>(), "end date time for app (e.g., '2018-01-01 09:00:00')")
 		("daily_start,j", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
 		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
@@ -301,7 +302,6 @@ void ArgumentParser::processReg()
 		("keep_running,k", po::value<bool>()->default_value(false), "monitor and keep running for short running app in start interval")
 		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side (used for none-container app)")
 		("force,f", "force without confirm")
-		("debug,g", "print debug information")
 		("help,h", "Prints command usage to stdout and exits");
 
 	shiftCommandLineArgs(desc);
@@ -345,6 +345,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("docker_image")) jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
 	if (m_commandLineVariables.count("timezone")) jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
 	if (m_commandLineVariables.count("start_time")) jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
+	if (m_commandLineVariables.count("end_time")) jsobObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
 	if (m_commandLineVariables.count("interval")) jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
 	if (m_commandLineVariables.count("extra_time")) jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
 	if (m_commandLineVariables.count("keep_running")) jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(m_commandLineVariables["keep_running"].as<bool>());

@@ -50,7 +50,7 @@ public:
 	/// </summary>
 	/// <param name="timerId">Timer unique ID.</param>
 	/// <return>Cancel success or not.</return>
-	bool cancleTimer(int timerId);
+	bool cancleTimer(int& timerId);
 
 	/// <summary>
 	/// Use ACE_Reactor for timer event, block function, should used in a thread
