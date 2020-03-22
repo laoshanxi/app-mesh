@@ -47,6 +47,8 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 
 	return (this->m_name == app->m_name &&
 		this->m_commandLine == app->m_commandLine &&
+		this->m_commandLineInit == app->m_commandLineInit &&
+		this->m_commandLineFini == app->m_commandLineFini &&
 		this->m_user == app->m_user &&
 		this->m_dockerImage == app->m_dockerImage &&
 		this->m_version == app->m_version &&
