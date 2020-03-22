@@ -24,7 +24,7 @@
 #include "../common/Utility.h"
 
 std::set<std::shared_ptr<RestHandler>> m_restList;
-// The default timer reactor is ACE_Reactor::instance() that used for application monitor
+// The default timer reactor is ACE_Reactor::instance() that used for application & process event
 // This timer is used to handle HealthCheck and Consul
 ACE_Reactor* m_timerReactor = nullptr;
 
@@ -40,11 +40,12 @@ int main(int argc, char* argv[])
 
 		// set working dir
 		ACE_OS::chdir(Utility::getSelfDir().c_str());
+		LOG_INF << fname << "Entered working dir: " << getcwd(NULL, 0);
 
 		// init log
 		Utility::initLogging();
-
-		LOG_INF << fname << "entered with working dir: " << getcwd(NULL, 0);
+		
+		// catch SIGHUP for 'systemctl reload'
 		Configuration::handleReloadSignal();
 
 		// Resource init
@@ -120,11 +121,12 @@ int main(int argc, char* argv[])
 				}
 				
 			});
-
+		// reg prometheus
 		config->registerPrometheus();
 
-		// start one thread for timers
+		// start one thread for timer (application & process event)
 		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		// start one thread for timer (consul & healthcheck)
 		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_timerReactor));
 
 		// init consul
