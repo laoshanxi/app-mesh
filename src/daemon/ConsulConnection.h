@@ -48,6 +48,7 @@ class ConsulConnection :public TimerHandler
 		static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
 		bool operator==(const std::shared_ptr<ConsulTopology>& topology);
+		void dump();
 
 		// key: application name, value : application hosts
 		std::map<std::string, std::set<std::string>> m_apps;

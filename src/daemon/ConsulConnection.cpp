@@ -283,19 +283,24 @@ void ConsulConnection::nodeSchedule()
 
 	auto currentAllApps = Configuration::instance()->getApps();
 	static std::shared_ptr<ConsulConnection::ConsulTopology> lastTopology;
+	std::shared_ptr<ConsulConnection::ConsulTopology> newTopology;
 	auto topology = retrieveTopology(MY_HOST_NAME);
 	auto hostTopologyIt = topology.find(MY_HOST_NAME);
-	if (hostTopologyIt != topology.end())
+	if (hostTopologyIt != topology.end()) newTopology = hostTopologyIt->second;
+
+	if (newTopology)
 	{
-		if (hostTopologyIt->second->operator==(lastTopology))
+		if (newTopology->operator==(lastTopology))
 		{
+			//newTopology->dump();
 			LOG_DBG << fname << " Consul topology not changed";
+			//lastTopology->dump();
 			return;
 		}
 
-		lastTopology = hostTopologyIt->second;
+		lastTopology = newTopology;
 		auto task = retrieveTask();
-		for (const auto& hostApp : hostTopologyIt->second->m_apps)
+		for (const auto& hostApp : newTopology->m_apps)
 		{
 			const auto& appName = hostApp.first;
 			const auto& appHosts = hostApp.second;
@@ -333,7 +338,7 @@ void ConsulConnection::nodeSchedule()
 		{
 			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
 			{
-				if (!(hostTopologyIt != topology.end() && (hostTopologyIt->second->m_apps.count(currentApp->getName()))))
+				if (!(newTopology && (newTopology->m_apps.count(currentApp->getName()))))
 				{
 					// Remove no used topology
 					Configuration::instance()->removeApp(currentApp->getName());
@@ -759,7 +764,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					auto appJson = web::json::value::parse(appText);
 					auto task = ConsulTask::FromJson(appJson);
-					if (task->m_app->getName().length())
+					if (task->m_app->getName().length() && task->m_replication)
 					{
 						result[task->m_app->getName()] = task;
 						LOG_DBG << fname << "get task <" << task->m_app->getName() << ">";
@@ -1107,4 +1112,16 @@ bool ConsulConnection::ConsulTopology::operator==(const std::shared_ptr<ConsulTo
 		}
 	}
 	return true;
+}
+
+void ConsulConnection::ConsulTopology::dump()
+{
+	const static char fname[] = "ConsulTopology::dump() ";
+	for (const auto& app : m_apps)
+	{
+		for (const auto& task : app.second)
+		{
+			LOG_DBG << fname << "app:" << app.first << " host:" << task;
+		}
+	}
 }
