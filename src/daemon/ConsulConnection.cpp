@@ -282,7 +282,6 @@ void ConsulConnection::nodeSchedule()
 	const static char fname[] = "ConsulConnection::nodeSchedule() ";
 
 	auto currentAllApps = Configuration::instance()->getApps();
-	static std::shared_ptr<ConsulConnection::ConsulTopology> lastTopology;
 	std::shared_ptr<ConsulConnection::ConsulTopology> newTopology;
 	auto topology = retrieveTopology(MY_HOST_NAME);
 	auto hostTopologyIt = topology.find(MY_HOST_NAME);
@@ -290,16 +289,6 @@ void ConsulConnection::nodeSchedule()
 
 	if (newTopology)
 	{
-		// TBD: not work well
-		//if (newTopology->operator==(lastTopology))
-		//{
-		//	newTopology->dump();
-		//	LOG_DBG << fname << " Consul topology not changed";
-		//	lastTopology->dump();
-		//	return;
-		//}
-
-		lastTopology = newTopology;
 		auto task = retrieveTask();
 		for (const auto& hostApp : newTopology->m_apps)
 		{
