@@ -37,7 +37,7 @@ void ApplicationShortRun::refreshPid()
 	if (nullptr != m_bufferProcess && m_bufferProcess->running())
 	{
 		ACE_Time_Value tv;
-		tv.msec(5);
+		tv.msec(10);
 		int ret = m_bufferProcess->wait(tv);
 		if (ret > 0)
 		{

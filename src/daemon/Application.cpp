@@ -164,12 +164,12 @@ void Application::refreshPid()
 				m_return = std::make_unique<int>(m_process->return_value());
 				m_pid = ACE_INVALID_PID;
 			}
-			checkAndUpdateHealth();
 		}
 		else if (m_pid > 0)
 		{
 			m_pid = ACE_INVALID_PID;
 		}
+		checkAndUpdateHealth();
 	}
 	if (m_metricMemory) m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
 }
