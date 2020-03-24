@@ -27,11 +27,12 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 ### Consul configuration
 
 ```json
- "Consul": {
+  "Consul": {
     "is_master": true,
     "is_node": true,
     "url": "http://localhost:8500",
     "session_node": null,
+    "datacenter": "dc1",
     "session_TTL": 30,
     "report_interval": 10,
     "topology_interval": 5
@@ -49,7 +50,11 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
  ```shell
  curl -s http://localhost:8500/v1/kv/appmgr/status/resource/cents?raw | python -m json.tool
  curl -s http://localhost:8500/v1/kv/appmgr/status/label/cents?raw | python -m json.tool
- 
+ {
+    "HOST_NAME": "cents",
+    "arch": "x86_64",
+    "os_version": "centos7.6"
+}
  ```
 
 - Consul task
@@ -59,18 +64,49 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
  Each task is a Consul key.
  ```shell
  curl -s http://localhost:8500/v1/kv/appmgr/task?recurse | python -m json.tool 
+ `
+ [
+    {
+        "CreateIndex": 22168,
+        "Flags": 0,
+        "Key": "appmgr/task/",
+        "LockIndex": 0,
+        "ModifyIndex": 22168,
+        "Value": null
+    },
+    {
+        "CreateIndex": 113084,
+        "Flags": 0,
+        "Key": "appmgr/task/myapp",
+        "LockIndex": 0,
+        "ModifyIndex": 237498,
+        "Value": "ewoJCQkJInJlcGxpY2F0aW9uIjogMSwKICAgICAgICAicG9ydCI6NjY2NiwKCQkJCSJjb250ZW50IjogewoJCQkJCSJuYW1lIjogIm15YXBwIiwKCQkJCQkiY29tbWFuZCI6ICJzbGVlcCAzMCIKCQkJCX0sCiAgICAgICJjb25kaXRpb24iOiB7CiAgICAgICAgICAiYXJjaCI6ICJ4ODZfNjQiLAogICAgICAgICAgIm9zX3ZlcnNpb24iOiAiY2VudG9zNy42IgogICAgICB9Cn0="
+    },
+    {
+        "CreateIndex": 25051,
+        "Flags": 0,
+        "Key": "appmgr/task/myapp2",
+        "LockIndex": 0,
+        "ModifyIndex": 241391,
+        "Value": "ewoJCQkJInJlcGxpY2F0aW9uIjogMCwKICAgICAgICAicG9ydCI6NjY2NywKCQkJCSJjb250ZW50IjogewoJCQkJCSJuYW1lIjogIm15YXBwMiIsCgkJCQkJImNvbW1hbmQiOiAic2xlZXAgNjAiCgkJCQl9LAogICAgICAgICAiY29uZGl0aW9uIjogewoJICAgIAkJImFyY2giOiAieDg2XzY0IgoJICAgIAl9Cn0="
+    }
+]
+ `
  curl -s http://localhost:8500/v1/kv/appmgr/task/myapp?raw | python -m json.tool        
+`
 {
+	"replication": 1,
+	"port": 6666,
+    "condition": {
+        "arch": "x86_64",
+        "os_version": "centos7.6"
+    },
     "content": {
         "command": "sleep 30",
-        "name": "myapp",
-		"condition": {
-			"arch": "x86_64",
-			"os_version": "centos7.6"
-		}
-    },
-    "replication": 1
+        "name": "myapp"
+    }
 }
+`
  ```
 
 - Consul topology
@@ -79,10 +115,23 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
    For task demension, the result assemble to one key
 
  ```shell
+ curl -s http://localhost:8500/v1/kv/appmgr/topology?recurse | python -m json.tool | grep Key
+        "Key": "appmgr/topology/",
+        "Key": "appmgr/topology/cents",
  curl -s http://localhost:8500/v1/kv/appmgr/topology/myhost?raw | python -m json.tool  
 [
-    "myapp",
-    "myapp2"
+    {
+        "app": "myapp",
+        "peer_hosts": [
+            "myhost"
+        ]
+    },
+    {
+        "app": "myapp2",
+        "peer_hosts": [
+            "myhost"
+        ]
+    }
 ]
  ```
 
@@ -91,34 +140,10 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 {
 	"appmgr": {
 		"status": {
-			"myhost": {
-				"resource": {
-					"appmgr_start_time": "2020-02-04 15:37:21",
-					"cpu_cores": 6,
-					"cpu_processors": 6,
-					"cpu_sockets": 1,
-					"pid": 16567,
-					"fs": [],
-					"net": [],
-					"systime": "2020-02-04 16:01:58"
-				},
-				"applications": {
-					"ipmail": {
-						"cache_lines": 20,
-						"command": "sh /opt/qqmail/launch.sh",
-						"health": 0,
-						"id": "2d93b31e-4721-11ea-8000-6c2b59df0017",
-						"last_start_time": "2020-02-04 15:58:50",
-						"name": "ipmail",
-						"next_start_time": "2020-02-04 16:03:50",
-						"start_interval_seconds": 300,
-						"start_time": "2020-01-14 21:38:50",
-						"status": 1,
-						"user": "root",
-						"working_dir": "/opt/qqmail"
-					}
-				}
-			}
+			"label": {
+				"myhost": {"HOST_NAME":"myhost","arch":"x86_64","os_version":"centos7.6"}
+			}£¬
+			"resource": {}
 		},
 		"task": {
 			"myapp": {
@@ -130,7 +155,7 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 				}
 			},
 			"myapp2": {
-				"replication": 1,
+				"replication": 2,
 				"port":0,
 				"content": {
 					"name": "myapp2",
@@ -140,9 +165,9 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 		},
 		"topology": {
 			"myhost": [ 
-			    {"app": "myapp", "peer_hosts": ["hosts"] },
-				{"app": "myapp2" }],
-			"host2": ["myapp", "myapp2"]
+			    {"app": "myapp", "peer_hosts": ["host2"] },
+				{"app": "myapp2","peer_hosts": [] }],
+			"host2": ["app": "myhost","peer_hosts": ["myhost"] }]
 		}
 	}
 }
@@ -152,3 +177,4 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 ```shell
 $ docker rm consul -f ; docker run --restart=always --net=host -p 8500:8500 -e CONSUL_BIND_INTERFACE=p8p1 --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 -bind=192.168.3.24 -bootstrap-expect=1 -ui
 ```
+Note: consul container healthcheck will call outside URL, so need DNS to access other hostname or URL

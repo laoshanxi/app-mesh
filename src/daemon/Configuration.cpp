@@ -381,9 +381,8 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 {
 	auto app = parseApp(jsonApp);
 	bool update = false;
-	int appVer = 1;
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update, &appVer](std::shared_ptr<Application>& mapApp)
+	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application>& mapApp)
 		{
 			if (mapApp->getName() == app->getName())
 			{
@@ -391,7 +390,6 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 				mapApp->disable();
 				mapApp = app;
 				update = true;
-				appVer += mapApp->getVersion();
 				return;
 			}
 		});
@@ -401,8 +399,6 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 		// Register app
 		addApp2Map(app);
 	}
-	// only update version in case of not defined
-	if (app->getVersion() == 0) app->setVersion(appVer);
 	// Write to disk
 	if (app->isWorkingState())
 	{

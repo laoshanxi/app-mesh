@@ -425,6 +425,7 @@ POST| /user/user/unlock | | admin user to unlock a user
 PUT| /user/usera | | Add usera to Users
 DEL| /user/usera | | Delete usera
 GET| /users | | Get user list
+GET| /metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)
 
 ---
 ### 3rd party deependencies

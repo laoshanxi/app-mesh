@@ -849,7 +849,10 @@ void RestHandler::apiHealth(const HttpRequest& message)
 	// /app/$app-name/health
 	std::string appName = path.substr(strlen("/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
-	message.reply(status_codes::OK, std::to_string(Configuration::instance()->getApp(appName)->getHealth()));
+	auto health = Configuration::instance()->getApp(appName)->getHealth();
+	http::status_code status = status_codes::OK;
+	if (health != 0) status = status_codes::NotAcceptable;
+	message.reply(status, std::to_string(health));
 }
 
 void RestHandler::apiMetrics(const HttpRequest& message)

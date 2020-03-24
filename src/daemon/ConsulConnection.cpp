@@ -290,13 +290,14 @@ void ConsulConnection::nodeSchedule()
 
 	if (newTopology)
 	{
-		if (newTopology->operator==(lastTopology))
-		{
-			//newTopology->dump();
-			LOG_DBG << fname << " Consul topology not changed";
-			//lastTopology->dump();
-			return;
-		}
+		// TBD: not work well
+		//if (newTopology->operator==(lastTopology))
+		//{
+		//	newTopology->dump();
+		//	LOG_DBG << fname << " Consul topology not changed";
+		//	lastTopology->dump();
+		//	return;
+		//}
 
 		lastTopology = newTopology;
 		auto task = retrieveTask();
@@ -390,7 +391,7 @@ bool ConsulConnection::eletionLeader()
 bool ConsulConnection::registerService(const std::string appName, int port)
 {
 	const static char fname[] = "ConsulConnection::registerService() ";
-
+	// https://www.hashicorp.com/blog/consul-and-external-services/
 	//curl -X PUT -d 
 	//  '{"Node": "myhost", "Address": "myhost","Service": {"Service": "mysql", "tags": ["master","v1"], "Port": 3306}}'
 	//  http://127.0.0.1:8500/v1/catalog/register
@@ -398,20 +399,21 @@ bool ConsulConnection::registerService(const std::string appName, int port)
 	if (port == 0) return false;
 
 	auto body = web::json::value();
-	if (Configuration::instance()->getConsul()->m_datacenter.length())
-	{
-		body["Datacenter"] = web::json::value::string(Configuration::instance()->getConsul()->m_datacenter);
-	}
-	body["Node"] = web::json::value::string(MY_HOST_NAME);
+	body["ID"] = web::json::value::string(MY_HOST_NAME + ":" + appName);
+	body["Name"] = web::json::value::string(appName);
 	body["Address"] = web::json::value::string(MY_HOST_NAME);
-	auto svcSection = web::json::value::object();
-	svcSection["Service"] = web::json::value::string(appName);
-	svcSection["id"] = web::json::value::string(MY_HOST_NAME + ":" + appName);
-	svcSection["Port"] = web::json::value::number(port);
-	body["Service"] = svcSection;
+	body["Port"] = web::json::value::number(port);
 
-	std::string path = "/v1/catalog/register";
-	auto resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
+	auto check = web::json::value::object();
+	check["HTTP"] = web::json::value::string("https://" + MY_HOST_NAME + ":" + std::to_string(Configuration::instance()->getRestListenPort()) + "/app/" + appName + "/health");
+	check["Interval"] = web::json::value::string("5s");
+	check["Timeout"] = web::json::value::string("4s");
+	check["Method"] = web::json::value::string("GET");
+	check["TLSSkipVerify"] = web::json::value::boolean(true);
+	body["Check"] = check;
+
+	std::string path = "/v1/agent/service/register";
+	auto resp = requestHttp(web::http::methods::PUT, path, { {"replace-existing-checks","true"} }, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
@@ -425,16 +427,9 @@ bool ConsulConnection::deregisterService(const std::string appName)
 {
 	const static char fname[] = "ConsulConnection::registerService() ";
 
-	auto body = web::json::value();
-	if (Configuration::instance()->getConsul()->m_datacenter.length())
-	{
-		body["Datacenter"] = web::json::value::string(Configuration::instance()->getConsul()->m_datacenter);
-	}
-	body["Node"] = web::json::value::string(MY_HOST_NAME);
-	body["ServiceID"] = web::json::value::string(MY_HOST_NAME + ":" + appName);
-
-	std::string path = "/v1/catalog/deregister";
-	auto resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
+	auto serviceId = std::string(MY_HOST_NAME).append(":").append(appName);
+	std::string path = std::string("/v1/agent/service/deregister/").append(serviceId);
+	auto resp = requestHttp(web::http::methods::PUT, path, {}, {}, NULL);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
@@ -562,13 +557,11 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 		for (size_t i = 0; i < scheduleHosts.size(); i++)
 		{
 			const auto hostname = hostQuota4NewTask[i]->hostname;
-			auto tmpHosts = scheduleHosts;
-			tmpHosts.erase(hostname);	// remove host self
 			hostQuota4NewTask[i]->quota += 1;
 			// save to topology
 			{
 				if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
-				newTopology[hostname]->m_apps[taskName] = tmpHosts;
+				newTopology[hostname]->m_apps[taskName] = scheduleHosts;
 			}
 			LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
 		}
