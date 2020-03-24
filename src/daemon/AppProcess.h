@@ -20,6 +20,8 @@ public:
 	void detach();
 	virtual pid_t getpid(void) const;
 	virtual void killgroup(int timerId = 0);
+	virtual pid_t wait(const ACE_Time_Value& tv, ACE_exitcode* status = 0);
+	virtual pid_t wait(ACE_exitcode* status = 0, int wait_options = 0);
 	virtual void setCgroup(std::shared_ptr<ResourceLimitation>& limit);
 	const std::string getuuid() const;
 	void regKillTimer(size_t timeoutSec, const std::string from);
@@ -33,8 +35,12 @@ public:
 	virtual std::string getOutputMsg();
 	virtual std::string fetchOutputMsg();
 	virtual bool complete() { return true; }
+	std::shared_ptr<int> getReturnValue();
+
 protected:
 	const int m_cacheOutputLines;
+	std::shared_ptr<int> m_returnCode;
+
 private:
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	std::string m_uuid;

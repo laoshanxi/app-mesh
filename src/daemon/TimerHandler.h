@@ -64,9 +64,9 @@ public:
 private:
 	// key: timer ID point, must unique, value: function point
 	std::map<const int*, std::shared_ptr<TimerDefinition>> m_timers;
-	std::recursive_mutex m_mutex;
 
 protected:
 	// this reactor can be init as none-default one
 	ACE_Reactor* m_reactor;
+	std::recursive_mutex m_mutex;
 };

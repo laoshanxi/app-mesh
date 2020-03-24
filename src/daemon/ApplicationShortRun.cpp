@@ -41,7 +41,7 @@ void ApplicationShortRun::refreshPid()
 		int ret = m_bufferProcess->wait(tv);
 		if (ret > 0)
 		{
-			m_return = std::make_unique<int>(m_bufferProcess->return_value());
+			m_return = m_bufferProcess->getReturnValue();
 		}
 	}
 }
@@ -118,7 +118,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 		// Spawn new process
 		m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
-		m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+		m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
 		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(this->getStartInterval()));
 	}
 }

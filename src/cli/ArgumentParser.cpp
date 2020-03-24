@@ -1092,7 +1092,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
 	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value& jobj) {
-		const char* slash = " -";
+		const char* slash = "-";
 		auto name = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name);
 		if (reduce) name = reduceFunc(name, 12);
 		else if (name.length() >= 12) name += " ";

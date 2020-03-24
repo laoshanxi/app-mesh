@@ -90,7 +90,7 @@ protected:
 	std::string m_workdir;
 	std::string m_comments;
 	//the exit code of last instance
-	std::unique_ptr<int> m_return;
+	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;
 	std::chrono::system_clock::time_point m_startTime;
 	std::chrono::system_clock::time_point m_endTime;
