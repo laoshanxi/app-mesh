@@ -56,7 +56,6 @@ void AppProcess::killgroup(int timerId)
 	{
 		ACE_OS::kill(-(this->getpid()), 9);
 		this->terminate();
-		m_returnCode = nullptr;
 		if (this->wait() < 0 && errno != 10)	// 10 is ECHILD:No child processes
 		{
 			//avoid  zombie process (Interrupted system call)
@@ -72,25 +71,6 @@ void AppProcess::killgroup(int timerId)
 			}
 		}
 	}
-}
-
-pid_t AppProcess::wait(const ACE_Time_Value& tv, ACE_exitcode* status)
-{
-	int ret = ACE_Process::wait(tv, status);
-	if (ret > 0)
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_returnCode = std::make_shared<int>(this->return_value());
-	}
-	return ret;
-}
-
-pid_t AppProcess::wait(ACE_exitcode* status, int wait_options)
-{
-	auto ret = ACE_Process::wait(status, wait_options);
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_returnCode = std::make_shared<int>(this->return_value());
-	return ret;
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
@@ -234,8 +214,3 @@ std::string AppProcess::fetchOutputMsg()
 	return std::string();
 }
 
-std::shared_ptr<int> AppProcess::getReturnValue()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_returnCode;
-}
