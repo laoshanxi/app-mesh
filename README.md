@@ -334,11 +334,11 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 
 - Run a shell command and get stdout
 ```shell
-$ appc run -e LD_LIBRARY_PATH=/opt/appmanager/lib64 -c "appc view" 
-id name        user  status   pid    return memory  command_line
-1  period      root  enabled  1044   0      668 K   /bin/sleep 20
-2  ping        root  enabled  586    0      956 K   ping www.baidu.com
-3  869d8991-0* root  disabled 0      0      0       /bin/sh -c 'export LD_LIBRARY_PATH=/opt/appmanager/lib64;appc view'
+$ appc run -c 'su -l -c "appc view"'
+id name        user  status   health pid    memory  return last_start_time     command
+1  appweb      root  enabled  0      3195   3 Mi    -      -                   
+2  myapp       root  enabled  0      20163  356 Ki  0      2020-03-26 19:46:30 sleep 30
+3  78d92c24-6* root  N/A      0      20181  3.4 Mi  -      2020-03-26 19:46:46 su -l -c "appc view"
 ```
 
 
