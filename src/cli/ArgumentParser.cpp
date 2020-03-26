@@ -17,7 +17,7 @@
 #include "../common/os/chown.hpp"
 
 #define OPTION_HOST_NAME	("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address") \
-							("port", po::value<int>(), "port number")
+							("port,B", po::value<int>(), "port number")
 #define COMMON_OPTIONS		OPTION_HOST_NAME \
 							("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
 							("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
@@ -281,8 +281,8 @@ void ArgumentParser::processReg()
 		("comments,g", po::value<std::string>(), "application comments")
 		("appuser,a", po::value<std::string>(), "application process running OS user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("init", po::value<std::string>(), "initial command line with arguments")
-		("fini", po::value<std::string>(), "fini command line with arguments")
+		("init,I", po::value<std::string>(), "initial command line with arguments")
+		("fini,F", po::value<std::string>(), "fini command line with arguments")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
