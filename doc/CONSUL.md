@@ -143,7 +143,7 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 			"label": {
 				"myhost": {"HOST_NAME":"myhost","arch":"x86_64","os_version":"centos7.6"}
 			}£¬
-			"resource": {}
+			"resource": { }
 		},
 		"task": {
 			"myapp": {
@@ -167,7 +167,9 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 			"myhost": [ 
 			    {"app": "myapp", "peer_hosts": ["host2"] },
 				{"app": "myapp2","peer_hosts": [] }],
-			"host2": ["app": "myhost","peer_hosts": ["myhost"] }]
+			"host2": [ 
+			    {"app": "myapp", "peer_hosts": ["myhost"] }
+			]
 		}
 	}
 }
