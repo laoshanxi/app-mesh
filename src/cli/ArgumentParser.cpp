@@ -185,7 +185,7 @@ void ArgumentParser::printMainHelp()
 
 	std::cout << std::endl;
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
-	std::cout << "Use '-b $hostname','--port $port' to run remote command." << std::endl;
+	std::cout << "Use '-b $hostname','-B $port' to run remote command." << std::endl;
 
 	std::cout << std::endl;
 	std::cout << "Usage:  appc [COMMAND] [ARG...] [flags]" << std::endl;

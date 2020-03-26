@@ -18,7 +18,7 @@ Extra Features | Collect host/app resource usage <br> Remote run shell commands 
 
 ### How to install
 **CentOS**:
-```shell
+```text
 # centos
 yum install -y appmanager-1.7.0-1.x86_64.rpm
 # ubuntu
@@ -44,7 +44,7 @@ id name        user  status   health pid    memory  return last_start_time     c
 
 ### Supported command lines
 
-```shell
+```text
 $ appc
 Commands:
   logon       Log on to AppManager for a specific time period.
@@ -75,7 +75,7 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 
 - List application[s]
 
-```shell
+```text
 $ appc view
 id name        user  status   health pid    memory  return last_start_time     command
 1  ipmail      root  enabled  0       -      -       -     2020-01-17 14:58:50 sh /opt/qqmail/launch.sh
@@ -83,7 +83,7 @@ id name        user  status   health pid    memory  return last_start_time     c
 
 ```
 - View application output
-```shell
+```text
 $ appc reg -n ping -c 'ping www.baidu.com' -o 10
 {
         "cache_lines" : 10,
@@ -112,7 +112,7 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 
 - Register a new application
 
-```shell
+```text
 $ appc reg
 Register a new application:
   -b [ --host ] arg (=localhost) host name or ip address
@@ -195,7 +195,7 @@ CONTAINER ID        IMAGE               COMMAND             CREATED             
 ```
 
 - Remove an application
-```shell
+```text
 appc unreg -n ping
 Are you sure you want to remove the application (y/n)?
 y
@@ -203,7 +203,7 @@ Success
 ```
 
 - Enable/Disable an application
-```shell
+```text
 $ appc enable -n ping
 $ appc disable -n ping
 $ appc restart -n ping
@@ -217,7 +217,7 @@ $ appc restart -n ping
 <details>
 <summary>appc resource</summary>
 
-```shell
+```text
 $ appc resource
 {
         "cpu_cores" : 2,
@@ -303,7 +303,7 @@ $ appc resource
 
 - View application resource (application process tree memory usage)
 
-```shell
+```text
 $ appc view -n ping
 {
         "command" : "/bin/sleep 60",
@@ -322,7 +322,7 @@ $ appc view -n ping
 ## 3. Remote command and application output (with session login)
 
 - Run remote application and get stdout
-```shell
+```text
 $ appc run -n ping -t 5
 PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 64 bytes from 220.181.112.244: icmp_seq=1 ttl=55 time=20.0 ms
@@ -333,7 +333,7 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 ```
 
 - Run a shell command and get stdout
-```shell
+```text
 $ appc run -c 'su -l -c "appc view"'
 id name        user  status   health pid    memory  return last_start_time     command
 1  appweb      root  enabled  0      3195   3 Mi    -      -                   
@@ -346,13 +346,13 @@ id name        user  status   health pid    memory  return last_start_time     c
 ## 4. File Management
 
 - Download a file from server
-```shell
+```text
 $ # appc get -r /opt/appmanager/log/appsvc.log -l ./1.log
 file <./1.log> size <10.4 M>
 ```
 
 - Upload a local file to server
-```shell
+```text
 $ # appc put -r /opt/appmanager/log/appsvc.log -l ./1.log
 Success
 ```
@@ -360,7 +360,7 @@ Success
 ---
 ## 5. Label Management
 - Manage labels
-```shell
+```text
 # list label
 $ appc label
 arch=x86_64
@@ -439,12 +439,12 @@ GET| /metrics | | Get Prometheus exporter metrics (this is not scrap url for pro
 
 ---
 - Setup build environment on CentOS/Ubuntu/Debian
-```shell
+```text
 git clone https://github.com/laoshanxi/app-manager.git
 sudo sh app-manager/autogen.sh
 ```
 - Build Application Manager
-```shell
+```text
 cd app-manager
 make
 ```
