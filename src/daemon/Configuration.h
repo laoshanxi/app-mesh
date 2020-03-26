@@ -60,8 +60,6 @@ class Configuration
 		std::string m_datacenter;
 		// http://consul.service.consul:8500
 		std::string m_consulUrl;
-		// Node (string: "<agent>") - Specifies the name of the node. This must refer to a node that is already registered.
-		std::string m_sessionNode;
 		// TTL (string: "") - Specifies the number of seconds (between 10s and 86400s).
 		int m_ttl;
 		// report status to consul interval

@@ -178,13 +178,10 @@ std::string ConsulConnection::requestSessionId()
 
 	// https://www.consul.io/api/session.html
 	std::string sessionId;
-	auto node = Configuration::instance()->getConsul()->m_sessionNode;
-	if (node.empty()) node = MY_HOST_NAME;
 
 	auto payload = web::json::value::object();
 	payload["LockDelay"] = web::json::value::string("15s");
 	payload["Name"] = web::json::value::string(std::string("appmgr-lock-") + MY_HOST_NAME);
-	payload["Node"] = web::json::value::string(node);
 	payload["Behavior"] = web::json::value::string("delete");
 	payload["TTL"] = web::json::value::string(std::to_string(Configuration::instance()->getConsul()->m_ttl) + "s");
 
