@@ -18,7 +18,7 @@
 #endif
 
 #ifndef JWT_CLAIM_EXPLICIT
-#define JWT_CLAIM_EXPLICIT 1
+#define JWT_CLAIM_EXPLICIT explicit
 #endif
 
 namespace jwt {
@@ -329,6 +329,9 @@ namespace jwt {
 					pkey.reset(PEM_read_bio_EC_PUBKEY(pubkey_bio.get(), nullptr, nullptr, (void*)public_key_password.c_str()), EC_KEY_free);
 					if (!pkey)
 						throw ecdsa_exception("failed to load public key: PEM_read_bio_EC_PUBKEY failed:" + std::string(ERR_error_string(ERR_get_error(), NULL)));
+					size_t keysize = EC_GROUP_get_degree(EC_KEY_get0_group(pkey.get()));
+					if(keysize != signature_length*4 && (signature_length != 132 || keysize != 521))
+						throw ecdsa_exception("invalid key size");
 				}
 
 				if (!private_key.empty()) {
@@ -338,6 +341,9 @@ namespace jwt {
 					pkey.reset(PEM_read_bio_ECPrivateKey(privkey_bio.get(), nullptr, nullptr, const_cast<char*>(private_key_password.c_str())), EC_KEY_free);
 					if (!pkey)
 						throw rsa_exception("failed to load private key: PEM_read_bio_ECPrivateKey failed");
+					size_t keysize = EC_GROUP_get_degree(EC_KEY_get0_group(pkey.get()));
+					if(keysize != signature_length*4 && (signature_length != 132 || keysize != 521))
+						throw ecdsa_exception("invalid key size");
 				}
 				if(!pkey)
 					throw rsa_exception("at least one of public or private key need to be present");
@@ -766,33 +772,18 @@ namespace jwt {
 		claim()
 			: val()
 		{}
-#if JWT_CLAIM_EXPLICIT
-		explicit claim(std::string s)
+		JWT_CLAIM_EXPLICIT claim(std::string s)
 			: val(std::move(s))
 		{}
-		explicit claim(const date& s)
+		JWT_CLAIM_EXPLICIT claim(const date& s)
 			: val(int64_t(std::chrono::system_clock::to_time_t(s)))
 		{}
-		explicit claim(const std::set<std::string>& s)
+		JWT_CLAIM_EXPLICIT claim(const std::set<std::string>& s)
 			: val(picojson::array(s.cbegin(), s.cend()))
 		{}
-		explicit claim(const picojson::value& val)
+		JWT_CLAIM_EXPLICIT claim(const picojson::value& val)
 			: val(val)
 		{}
-#else
-		claim(std::string s)
-			: val(std::move(s))
-		{}
-		claim(const date& s)
-			: val(int64_t(std::chrono::system_clock::to_time_t(s)))
-		{}
-		claim(const std::set<std::string>& s)
-			: val(picojson::array(s.cbegin(), s.cend()))
-		{}
-		claim(const picojson::value& val)
-			: val(val)
-		{}
-#endif
 
 		template<typename Iterator>
 		claim(Iterator start, Iterator end)
@@ -810,6 +801,15 @@ namespace jwt {
 		 */
 		picojson::value to_json() const {
 			return val;
+		}
+
+		/**
+		 * Parse input stream into wrapped json object
+		 * \return input stream
+		 */
+		inline std::istream& operator>>(std::istream& is)
+		{
+			return is >> val;
 		}
 
 		/**
@@ -1596,4 +1596,14 @@ namespace jwt {
 	decoded_jwt decode(const std::string& token) {
 		return decoded_jwt(token);
 	}
+}
+
+inline std::istream& operator>>(std::istream& is, jwt::claim& c)
+{
+	return c.operator>>(is);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const jwt::claim& c)
+{
+	return os << c.to_json();
 }
