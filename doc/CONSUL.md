@@ -9,11 +9,11 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 ### What is supported:
 
 > * Implement a Consul connection(support SSL) to access Consul REST APIs
-> * Two types of Applications : Consul task and local task
+> * Two types of Applications : Consul app and local app
 > * App Manager on each node organize to a cluster and have one eletion leader
 > * Each App Manager node report status to Consul with a requested Consul session id
-> * App Manager Leader node schedule Consul tasks and put result in Consul
-> * App Manager worker node retrieve Consul tasks from Consul dynamicly
+> * App Manager Leader node schedule Consul apps and put result in Consul
+> * App Manager worker node retrieve Consul apps from Consul dynamicly
 > * Consul App support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
 > * Consul App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
 > * Consul session id support HA recovery
@@ -57,11 +57,10 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 }
  ```
 
-- Consul task
- Consul task define cluster level applications, the defined application will be dispatch to tasks in Consul.
- App Manager leader node will get defined task and current working node. The Consul task can define replication number and 
- application json content which is the same as App Manager app json.
- Each task is a Consul key.
+- Consul application
+ Consul application is cluster level application defined in Consul with replication and node selector.
+ App Manager leader node will get defined Consul application and current working nodes. schedule applications to working nodes and write schedule result to Consul.
+ Each working node will watch and get its Consul application.
  ```shell
  curl -s http://localhost:8500/v1/kv/appmgr/task?recurse | python -m json.tool 
  `
@@ -142,7 +141,7 @@ Application Manager can work as *stand-alone* mode and *cluster* mode when enabl
 		"status": {
 			"label": {
 				"myhost": {"HOST_NAME":"myhost","arch":"x86_64","os_version":"centos7.6"}
-			}£¬
+			},
 			"resource": { }
 		},
 		"task": {
