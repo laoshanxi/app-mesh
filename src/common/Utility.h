@@ -206,6 +206,7 @@ public:
 #define JSON_KEY_APP_onetime_application_only "onetime_application_only"
 #define JSON_KEY_APP_health_check_cmd "health_check_cmd"
 #define JSON_KEY_APP_working_dir "working_dir"
+#define JSON_KEY_APP_REG_TIME "register_time"
 #define JSON_KEY_APP_status "status"
 #define JSON_KEY_APP_daily_limitation "daily_limitation"
 #define JSON_KEY_APP_resource_limit "resource_limit"

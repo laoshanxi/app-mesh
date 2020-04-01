@@ -23,6 +23,7 @@ Application::Application()
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
+	m_regTime = std::chrono::system_clock::now();
 }
 
 Application::~Application()
@@ -144,6 +145,10 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	{
 		if (app->m_startTime > app->m_endTime) throw std::invalid_argument("end_time should greater than the start_time");
 		app->handleEndTimer();
+	}
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_REG_TIME))
+	{
+		app->m_regTime = Utility::convertStr2Time(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_REG_TIME));
 	}
 }
 
@@ -482,7 +487,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 
 	if (m_startTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::convertTime2Str(m_startTime));
 	if (m_endTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::convertTime2Str(m_endTime));
-
+	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(Utility::convertTime2Str(m_regTime));
 	return result;
 }
 
