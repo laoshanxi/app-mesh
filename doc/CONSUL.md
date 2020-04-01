@@ -3,17 +3,18 @@
 ------
 
 Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
-- Stand-alone mode: The hosted applications is static and can only manage applications by CLI or REST APIs.
-- Consul-cluster mode: The hosted apps is dynamic, The cluster will vote one leader to do the Consul application schedule, and application will register to Consul for service discovery.
+- Stand-alone mode: The hosted applications are static and applications can only be managed by CLI or REST APIs.
+- Consul-cluster mode: The hosted applications are dynamic, The cluster will vote one leader  App Manager node to do the Consul application schedule, and application will register to Consul for service discovery.
 
 ### What is supported:
 
 > * App Manager will keep connection(support SSL) to Consul Service as a consul session
-> * App Manager on each node organize to a cluster and have one eletion leader
+> * App Manager only talks to Consul service
 > * Each App Manager node report status to Consul with a requested Consul session id
-> * App Manager Leader node schedule Consul apps and write result to Consul
-> * App Manager worker node retrieve Consul apps from Consul dynamicly
-> * Consul App support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
+> * App Manager can be a leader node or worker node
+> * App Manager Leader node schedule Consul applications and write result to Consul
+> * App Manager worker node retrieve Consul applications from Consul dynamicly
+> * Consul App is defined in Consul and support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
 > * Consul App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
 > * Consul session support HA recovery
 > * Consul session requested with TTL and expire delete behavior
@@ -30,7 +31,6 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
     "is_master": true,
     "is_node": true,
     "url": "http://localhost:8500",
-    "session_node": null,
     "datacenter": "dc1",
     "session_TTL": 30,
     "report_interval": 10,
@@ -57,7 +57,7 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
  ```
 
 - Consul application
- Consul application is cluster level application defined in Consul with replication and node selector.
+ Consul application is cluster level application that defined in Consul with replication and node selector.
  App Manager leader node will get defined Consul application and current working nodes. schedule applications to working nodes and write schedule result to Consul.
  Each working node will watch and get its Consul application.
  ```shell
@@ -110,7 +110,7 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 - Consul topology
  Topology is Consul task schedule result, App Manager leader node will write this part.
    For host dimension, each host is a key
-   For task demension, the result assemble to one key
+   For task dimension, the result assemble to one key
 
  ```shell
  curl -s http://localhost:8500/v1/kv/appmgr/topology?recurse | python -m json.tool | grep Key

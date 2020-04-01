@@ -116,17 +116,17 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 $ appc reg
 Register a new application:
   -b [ --host ] arg (=localhost) host name or ip address
-  --port arg                     port number
+  -B [ --port ] arg              port number
   -u [ --user ] arg              Specifies the name of the user to connect to 
                                  AppManager for this command.
   -x [ --password ] arg          Specifies the user password to connect to 
                                  AppManager for this command.
   -n [ --name ] arg              application name
   -g [ --comments ] arg          application comments
-  -a [ --appuser ] arg           application process running user name
+  -a [ --appuser ] arg           application process running OS user name
   -c [ --cmd ] arg               full command line with arguments
-  --init arg                     initial command line with arguments
-  --fini arg                     fini command line with arguments
+  -I [ --init ] arg              initial command line with arguments
+  -F [ --fini ] arg              fini command line with arguments
   -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl
                                  host:port/health', return 0 is health)
   -d [ --docker_image ] arg      docker image which used to run command line 
@@ -134,8 +134,10 @@ Register a new application:
   -w [ --workdir ] arg (=/tmp)   working directory
   -s [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
-  -t [ --start_time ] arg        start date time for short running app (e.g., 
-                                 '2018-01-01 09:00:00')
+  -t [ --start_time ] arg        start date time for app (e.g., '2018-01-01 
+                                 09:00:00')
+  --end_time arg                 end date time for app (e.g., '2018-01-01 
+                                 09:00:00')
   -j [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
@@ -156,7 +158,6 @@ Register a new application:
   -o [ --cache_lines ] arg (=0)  number of output lines will be cached in 
                                  server side (used for none-container app)
   -f [ --force ]                 force without confirm
-  -g [ --debug ]                 print debug information
   -h [ --help ]                  Prints command usage to stdout and exits
 
 # register a app with a native command
@@ -378,11 +379,12 @@ os_version=centos7.6
 
 ---
 ### Usage scenarios
-1. Integrate with package installation script and register startup command to app manager automaticlly
+1. Integrate rpm installation script and register rpm startup command to app manager automaticlly
 2. Remote async shell execute (can build-up web ssh)
 3. Host/app resource monitor
 4. Can be a standalone JWT server
 5. File server
+6. Microservice management
 
 ---
 
