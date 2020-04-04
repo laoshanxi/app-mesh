@@ -23,15 +23,15 @@ web::json::value Label::AsJson()
 
 const std::shared_ptr<Label> Label::FromJson(const web::json::value& obj)
 {
-	const static char fname[] = "Label::FromJson() ";
-
 	std::shared_ptr<Label> label = std::make_shared<Label>();
-	auto jobj = obj.as_object();
-	for (auto lblJson : jobj)
+	if (!obj.is_null() && obj.is_object())
 	{
-		std::string lableKey = GET_STD_STRING(lblJson.first);
-		label->m_labels[lableKey] = GET_STD_STRING(lblJson.second.as_string());
-		LOG_INF << fname << "label: " << lableKey << "=" << label->m_labels[lableKey];
+		auto jobj = obj.as_object();
+		for (auto lblJson : jobj)
+		{
+			std::string lableKey = GET_STD_STRING(lblJson.first);
+			label->m_labels[lableKey] = GET_STD_STRING(lblJson.second.as_string());
+		}
 	}
 	return label;
 }

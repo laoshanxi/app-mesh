@@ -38,11 +38,8 @@ void ConsulConnection::reportStatus(int timerId)
 	// check feature enabled
 	if (!Configuration::instance()->getConsul()->enabled()) return;
 
-	// Only node need report status
-	if (!Configuration::instance()->getConsul()->m_isNode)
-	{
-		return;
-	}
+	// Only node need report status for node (master does not need report)
+	if (!Configuration::instance()->getConsul()->m_isNode) return;
 
 	// check session id ready
 	auto sessionId = getSessionId();
@@ -50,9 +47,11 @@ void ConsulConnection::reportStatus(int timerId)
 
 	try
 	{
-		//report resource: /appmgr/status/resource/myhost
-		std::string path = std::string(CONSUL_BASE_PATH).append("status/resource/").append(MY_HOST_NAME);
-		auto body = ResourceCollection::instance()->AsJson();
+		//report resource: /appmgr/nodes/myhost
+		std::string path = std::string(CONSUL_BASE_PATH).append("nodes/").append(MY_HOST_NAME);
+		web::json::value body = web::json::value::object();
+		body["resource"] = ResourceCollection::instance()->getConsulJson();
+		body["label"] = Configuration::instance()->getLabel()->AsJson();
 		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
@@ -65,28 +64,6 @@ void ConsulConnection::reportStatus(int timerId)
 		else
 		{
 			LOG_WAR << fname << "report resource to " << path << " failed with response : " << resp.extract_utf8string(true).get();
-		}
-
-		//report resource: /appmgr/status/label/myhost
-		path = std::string(CONSUL_BASE_PATH).append("status/label/").append(MY_HOST_NAME);
-		body = Configuration::instance()->getLabel()->AsJson();
-		resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
-		if (resp.status_code() == web::http::status_codes::OK)
-		{
-			auto result = resp.extract_utf8string(true).get();
-			if (result != "true")
-			{
-				LOG_WAR << fname << "report label to " << path << " failed with response : " << result;
-			}
-		}
-		else
-		{
-			LOG_WAR << fname << "report label to " << path << " failed with response : " << resp.extract_utf8string(true).get();
-		}
-
-		if (m_leader)
-		{
-			m_retrievedNode = retrieveNode();
 		}
 	}
 	catch (const std::exception & ex)
@@ -244,7 +221,6 @@ void ConsulConnection::leaderSchedule()
 	// leader's responsibility
 	if (eletionLeader())
 	{
-		// prepair
 		auto tasksMap = retrieveTask();
 		//if (!taskChanged(tasksMap))
 		//{
@@ -256,7 +232,7 @@ void ConsulConnection::leaderSchedule()
 		//{
 		//	LOG_DBG << fname << oldHost.first << ":" << oldHost.second;
 		//}
-		auto nodesMap = m_retrievedNode;
+		auto nodesMap = retrieveNode();
 		if (nodesMap.empty())
 		{
 			LOG_DBG << fname << "retrieveNode is empty";
@@ -289,12 +265,11 @@ void ConsulConnection::nodeSchedule()
 		auto task = retrieveTask();
 		for (const auto& hostApp : newTopology->m_apps)
 		{
-			const auto& appName = hostApp.first;
-			const auto& appHosts = hostApp.second;
+			const auto& appName = hostApp;
 			if (task.count(appName))
 			{
 				auto& consulTask = task[appName];
-				std::shared_ptr<Application> topologyAppObj = addPeerEnv2App(consulTask->m_app, appHosts);
+				std::shared_ptr<Application> topologyAppObj = consulTask->m_app;
 				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&appName](std::shared_ptr<Application> const& obj) {
 					return obj->getName() == appName;
 					});
@@ -425,7 +400,7 @@ bool ConsulConnection::deregisterService(const std::string appName)
 	return false;
 }
 
-void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<Label>>& hosts)
+void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
 {
 	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
 
@@ -436,11 +411,11 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 		for (const auto& host : hosts)
 		{
 			auto& hostName = host.first;
-			auto& hostLable = host.second;
+			auto& consulHost = host.second;
 			auto& taskCondition = task.second->m_condition;
-			if (hostLable->match(taskCondition))
+			if (consulHost->m_label->match(taskCondition))
 			{
-				task.second->m_matchedHosts.insert(hostName);
+				task.second->m_matchedHosts[hostName] = consulHost;
 				LOG_DBG << fname << " task <" << taskName << "> match host <" << hostName << ">";
 			}
 		}
@@ -451,59 +426,36 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 {
 	const static char fname[] = "ConsulConnection::scheduleTask() ";
 
+	// key: hostname, value: task list
 	std::map<std::string, std::shared_ptr<ConsulTopology>> newTopology;
-
-	struct HostQuata {
-		HostQuata(const std::string& n) :quota(0), hostname(n) {};
-		int quota;
-		std::string hostname;
-	};
-	std::map<std::string, std::shared_ptr<HostQuata>> hostQuatoMap;
-
-	// fill hostQuatoMap
-	for (const auto& task : taskMap)
-	{
-		for (const auto& host : task.second->m_matchedHosts)
-		{
-			if (!hostQuatoMap.count(host))
-			{
-				hostQuatoMap[host] = std::make_shared<HostQuata>(host);
-			}
-		}
-	}
 
 	// ignore old schedule
 	for (const auto& task : taskMap)
 	{
 		auto& taskName = task.first;
 		auto& taskDedicateHosts = task.second->m_matchedHosts;
-		auto& scheduleHosts = task.second->m_scheduleHosts;
 		auto& taskReplication = task.second->m_replication;
 		if (taskReplication <= 0) continue;
 
-		scheduleHosts.clear();
 		for (const auto& oldHost : oldTopology)
 		{
 			auto& oldHostName = oldHost.first;
 			auto& oldTaskSet = oldHost.second->m_apps;
 			if (taskDedicateHosts.count(oldHostName) && oldTaskSet.count(taskName))
 			{
-				// find
+				auto consulNode = taskDedicateHosts[oldHostName];
+				// found app running on old host still match
 				taskDedicateHosts.erase(oldHostName);
 				--taskReplication;
-				scheduleHosts.insert(oldHostName);
 
 				LOG_DBG << fname << " task <" << taskName << "> already running on host <" << oldHostName << ">";
 
-				// save to topology
 				{
+					// save to topology
 					if (!newTopology.count(oldHostName)) newTopology[oldHostName] = std::make_shared<ConsulTopology>();
-					newTopology[oldHostName]->m_apps[taskName].insert(oldHostName);
+					newTopology[oldHostName]->m_apps.insert(taskName);
+					consulNode->assignApp(task.second->m_app);
 				}
-
-				// update quato
-				std::shared_ptr<HostQuata> hostQ;
-				if (hostQuatoMap.count(oldHostName)) hostQuatoMap[oldHostName]->quota++;
 			}
 		}
 	}
@@ -513,10 +465,9 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 	{
 		// get current task
 		auto& taskDedicateHosts = task.second->m_matchedHosts;
-		auto& scheduleHosts = task.second->m_scheduleHosts;
 		auto& taskReplication = task.second->m_replication;
 		auto& taskName = task.first;
-		std::vector<std::shared_ptr<HostQuata>> hostQuota4NewTask;
+		std::vector<std::shared_ptr<ConsulNode>> hostList4NewTask;
 
 		LOG_DBG << fname << "schedule task <" << taskName << ">";
 
@@ -525,31 +476,43 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 
 		for (const auto& host : taskDedicateHosts)
 		{
-			hostQuota4NewTask.push_back(hostQuatoMap[host]);
+			hostList4NewTask.push_back(host.second);
 		}
 		// sort hosts
-		std::sort(hostQuota4NewTask.begin(), hostQuota4NewTask.end(),
-			[](const std::shared_ptr<HostQuata> a, const std::shared_ptr<HostQuata> b)
-			{ return a->quota < b->quota; });
-
-		// prepair scheduleHosts
-		scheduleHosts.clear();
-		for (size_t i = 0; i < taskReplication; i++)
-		{
-			if (i < hostQuota4NewTask.size()) scheduleHosts.insert(hostQuota4NewTask[i]->hostname);
-		}
+		// return left < right is Ascending
+		// return left > right is Descending
+		std::sort(hostList4NewTask.begin(), hostList4NewTask.end(),
+			[](const std::shared_ptr<ConsulNode>& left, const std::shared_ptr<ConsulNode>& right)
+			{ 
+				if (left->m_assignedApps.size() < right->m_assignedApps.size())
+				{
+					return true;
+				}
+				else if (left->m_assignedApps.size() == right->m_assignedApps.size())
+				{
+					return (left->getAssignedAppMem() < right->getAssignedAppMem());
+				}
+				else
+				{
+					return false;
+				}
+			});
 
 		// assign host to task
-		for (size_t i = 0; i < scheduleHosts.size(); i++)
+		for (size_t i = 0; i < taskReplication; i++)
 		{
-			const auto hostname = hostQuota4NewTask[i]->hostname;
-			hostQuota4NewTask[i]->quota += 1;
-			// save to topology
+			if (i < hostList4NewTask.size())
 			{
-				if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
-				newTopology[hostname]->m_apps[taskName] = scheduleHosts;
+				const auto& hostname = hostList4NewTask[i]->m_hostName;
+				const auto & consulNode = hostList4NewTask[i];
+				// save to topology
+				{
+					if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
+					newTopology[hostname]->m_apps.insert(taskName);
+					consulNode->assignApp(task.second->m_app);
+				}
+				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
 			}
-			LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
 		}
 	}
 
@@ -567,7 +530,7 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 			{
 				for (const auto& app : newHost.second->m_apps)
 				{
-					if (!oldT.find(newHost.first)->second->m_apps.count(app.first))
+					if (!oldT.find(newHost.first)->second->m_apps.count(app))
 					{
 						equal = false;
 						break;
@@ -602,7 +565,7 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 	}
 }
 
-bool ConsulConnection::writeTopology(std::string hostName, std::shared_ptr<ConsulTopology> topology)
+bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr<ConsulTopology> topology)
 {
 	const static char fname[] = "ConsulConnection::writeTopology() ";
 
@@ -681,7 +644,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 					auto appArrayJson = web::json::value::parse(hostText);
 					if (appArrayJson.is_array())
 					{
-						topology[hostName] = ConsulTopology::FromJson(appArrayJson);
+						topology[hostName] = ConsulTopology::FromJson(appArrayJson, hostName);
 						LOG_DBG << fname << "get <" << appArrayJson.size() << "> task for <" << hostName << ">";
 					}
 				}
@@ -792,18 +755,17 @@ bool ConsulConnection::taskChanged(const std::map<std::string, std::shared_ptr<C
 }
 /*
 [
-	"appmgr/status/label/cents",
-	"appmgr/status/resource/cents"
+	"appmgr/nodes/cents"
 ]
 */
-std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
+std::map<std::string, std::shared_ptr<ConsulConnection::ConsulNode>> ConsulConnection::retrieveNode()
 {
 	const static char fname[] = "ConsulConnection::retrieveNode() ";
 
-	std::map<std::string, std::shared_ptr<Label>> result;
+	std::map<std::string, std::shared_ptr<ConsulConnection::ConsulNode>> result;
 
-	// /appmgr/status
-	std::string path = std::string(CONSUL_BASE_PATH).append("status/label");
+	// /appmgr/nodes
+	std::string path = std::string(CONSUL_BASE_PATH).append("nodes");
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
@@ -815,45 +777,18 @@ std::map<std::string, std::shared_ptr<Label>> ConsulConnection::retrieveNode()
 				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
 					auto key = GET_JSON_STR_VALUE(section, "Key");
-					if (Utility::startWith(key, "appmgr/status/label/"))
+					if (Utility::startWith(key, "appmgr/nodes/"))
 					{
-						auto host = Utility::stringReplace(key, "appmgr/status/label/", "");
-						auto label = Utility::decode64(section.at("Value").as_string());
-						if (label.empty()) label = "{}";
-						result[host] = Label::FromJson(web::json::value::parse(label));
-						LOG_DBG << fname << "get host <" << host << "> with label: " << label;
+						auto host = Utility::stringReplace(key, "appmgr/nodes/", "");
+						auto json = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
+						result[host] = ConsulNode::FromJson(json, host);
+						LOG_DBG << fname << "get host <" << host << "> ";
 					}
 				}
 			}
 		}
 	}
 	return std::move(result);
-}
-
-std::shared_ptr<Application> ConsulConnection::addPeerEnv2App(std::shared_ptr<Application> app, std::set<std::string> peers)
-{
-	// check pointer
-	if (!app) return app;
-	if (peers.empty()) return app;
-
-	// seriarize to json
-	auto appJson = app->AsJson(false);
-
-	// update app json env section
-	web::json::value envObj = web::json::value::object();
-	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_env)) envObj = appJson.at(JSON_KEY_APP_env);
-	std::string peersHostEnv;
-	size_t i = 0;
-	for (const auto& host : peers)
-	{
-		if (i++ != 0) peersHostEnv += ',';
-		peersHostEnv += host;
-	}
-	envObj[CONSOL_APP_PEERS] = web::json::value::string(peersHostEnv);
-	appJson[JSON_KEY_APP_env] = envObj;
-
-	// re-construct to app object
-	return Configuration::instance()->parseApp(appJson);
 }
 
 void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
@@ -1032,23 +967,16 @@ bool ConsulConnection::ConsulTask::operator==(const std::shared_ptr<ConsulTask>&
 			"host2": ["myapp", "myapp2"]
 		}
 */
-std::shared_ptr<ConsulConnection::ConsulTopology> ConsulConnection::ConsulTopology::FromJson(const web::json::value& jobj)
+std::shared_ptr<ConsulConnection::ConsulTopology> ConsulConnection::ConsulTopology::FromJson(const web::json::value& jobj, const std::string& hostName)
 {
 	auto topology = std::make_shared<ConsulTopology>();
+	topology->m_hostName = hostName;
 	if (jobj.is_array())
 	{
 		for (const auto& app : jobj.as_array())
 		{
 			auto appName = GET_JSON_STR_VALUE(app, "app");
-			std::set<std::string> peers;
-			if (app.has_array_field("peer_hosts"))
-			{
-				for (const auto& peer : app.at("peer_hosts").as_array())
-				{
-					peers.insert(GET_STD_STRING(peer.as_string()));
-				}
-			}
-			topology->m_apps[appName] = peers;
+			topology->m_apps.insert(appName);
 		}
 	}
 	return std::move(topology);
@@ -1061,14 +989,7 @@ web::json::value ConsulConnection::ConsulTopology::AsJson()
 	for (const auto& app : m_apps)
 	{
 		auto appJson = web::json::value::object();
-		appJson["app"] = web::json::value::string(app.first);
-		auto peersJson = web::json::value::array(app.second.size());
-		size_t index = 0;
-		for (const auto& peer : app.second)
-		{
-			peersJson[index++] = web::json::value::string(peer);
-		}
-		appJson["peer_hosts"] = peersJson;
+		appJson["app"] = web::json::value::string(app);
 		result[appIndex++] = appJson;
 	}
 	return std::move(result);
@@ -1081,14 +1002,7 @@ bool ConsulConnection::ConsulTopology::operator==(const std::shared_ptr<ConsulTo
 
 	for (const auto& app : m_apps)
 	{
-		if (topology->m_apps.count(app.first) == 0) return false;
-
-		const auto& topologyTasks = topology->m_apps[app.first];
-		if (app.second.size() != topologyTasks.size()) return false;
-		for (const auto& task : app.second)
-		{
-			if (topologyTasks.count(task) == 0) return false;
-		}
+		if (topology->m_apps.count(app) == 0) return false;
 	}
 	return true;
 }
@@ -1098,9 +1012,46 @@ void ConsulConnection::ConsulTopology::dump()
 	const static char fname[] = "ConsulTopology::dump() ";
 	for (const auto& app : m_apps)
 	{
-		for (const auto& task : app.second)
-		{
-			LOG_DBG << fname << "app:" << app.first << " host:" << task;
-		}
+		LOG_DBG << fname << "app:" << app << " host:" << m_hostName;
 	}
+}
+
+std::shared_ptr<ConsulConnection::ConsulNode> ConsulConnection::ConsulNode::FromJson(const web::json::value& jobj, const std::string& hostName)
+{
+	auto node = std::make_shared<ConsulNode>();
+	node->m_hostName = hostName;
+	if (HAS_JSON_FIELD(jobj, "label"))
+	{
+		node->m_label = Label::FromJson(jobj.at("label"));
+	}
+	else
+	{
+		node->m_label = std::make_shared<Label>();
+	}
+	node->m_cores = 0;
+	if (HAS_JSON_FIELD(jobj, "cpu_cores"))
+	{
+		node->m_cores = GET_JSON_INT_VALUE(jobj, "cpu_cores");
+	}
+	node->m_free_bytes = 0;
+	if (HAS_JSON_FIELD(jobj, "mem_free_bytes"))
+	{
+		node->m_free_bytes = GET_JSON_NUMBER_VALUE(jobj, "mem_free_bytes");
+	}
+	node->m_total_bytes = 0;
+	if (HAS_JSON_FIELD(jobj, "mem_total_bytes"))
+	{
+		node->m_total_bytes = GET_JSON_NUMBER_VALUE(jobj, "mem_total_bytes");
+	}
+	return node;
+}
+
+void ConsulConnection::ConsulNode::assignApp(std::shared_ptr<Application>& app)
+{
+	m_assignedApps[app->getName()] = app;
+}
+
+uint64_t ConsulConnection::ConsulNode::getAssignedAppMem() const
+{
+	return uint64_t(0);
 }

@@ -56,6 +56,7 @@ public:
 	void dump();
 
 	web::json::value AsJson();
+	web::json::value getConsulJson();
 
 private:
 	HostResource m_resources;
