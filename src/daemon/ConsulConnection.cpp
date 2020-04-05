@@ -298,7 +298,7 @@ void ConsulConnection::nodeSchedule()
 
 		for (const auto& currentApp : currentAllApps)
 		{
-			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
+			if (currentApp->isCloudApp())
 			{
 				if (!(newTopology && (newTopology->m_apps.count(currentApp->getName()))))
 				{
@@ -316,7 +316,7 @@ void ConsulConnection::nodeSchedule()
 		// retrieveTopology will throw if connection was not reached
 		for (const auto& currentApp : currentAllApps)
 		{
-			if (currentApp->getComments() == APP_COMMENTS_FROM_CONSUL)
+			if (currentApp->isCloudApp())
 			{
 				// Remove no used topology
 				Configuration::instance()->removeApp(currentApp->getName());
@@ -916,9 +916,8 @@ std::shared_ptr<ConsulConnection::ConsulTask> ConsulConnection::ConsulTask::From
 		jobj.at("content").is_object())
 	{
 		auto appJson = jobj.at("content");
-		// TODO: use explicit distinguish to identify <consul app> and <native app>
-		// set flag to mark consul application
-		appJson[JSON_KEY_APP_comments] = web::json::value::string(APP_COMMENTS_FROM_CONSUL);
+		// mark consul application
+		appJson[JSON_KEY_APP_CLOUD] = web::json::value::boolean(true);
 		consul->m_app = Configuration::instance()->parseApp(appJson);
 		consul->m_replication = jobj.at("replication").as_integer();
 		SET_JSON_INT_VALUE(jobj, "priority", consul->m_priority);
@@ -1016,6 +1015,11 @@ void ConsulConnection::ConsulTopology::dump()
 	}
 }
 
+ConsulConnection::ConsulNode::ConsulNode()
+	:m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_free_bytes(0)
+{
+}
+
 std::shared_ptr<ConsulConnection::ConsulNode> ConsulConnection::ConsulNode::FromJson(const web::json::value& jobj, const std::string& hostName)
 {
 	auto node = std::make_shared<ConsulNode>();
@@ -1024,21 +1028,14 @@ std::shared_ptr<ConsulConnection::ConsulNode> ConsulConnection::ConsulNode::From
 	{
 		node->m_label = Label::FromJson(jobj.at("label"));
 	}
-	else
-	{
-		node->m_label = std::make_shared<Label>();
-	}
-	node->m_cores = 0;
 	if (HAS_JSON_FIELD(jobj, "cpu_cores"))
 	{
 		node->m_cores = GET_JSON_INT_VALUE(jobj, "cpu_cores");
 	}
-	node->m_free_bytes = 0;
 	if (HAS_JSON_FIELD(jobj, "mem_free_bytes"))
 	{
 		node->m_free_bytes = GET_JSON_NUMBER_VALUE(jobj, "mem_free_bytes");
 	}
-	node->m_total_bytes = 0;
 	if (HAS_JSON_FIELD(jobj, "mem_total_bytes"))
 	{
 		node->m_total_bytes = GET_JSON_NUMBER_VALUE(jobj, "mem_total_bytes");

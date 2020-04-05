@@ -13,8 +13,6 @@
 class Application;
 class ConsulConnection :public TimerHandler
 {
-	enum class Role { Master, Node, All, Nothing };
-
 	struct ConsulStatus {
 		static std::shared_ptr<ConsulStatus> FromJson(const web::json::value& json);
 		web::json::value AsJson();
@@ -23,6 +21,7 @@ class ConsulConnection :public TimerHandler
 	};
 
 	struct ConsulNode {
+		ConsulNode();
 		static std::shared_ptr<ConsulNode> FromJson(const web::json::value& jobj, const std::string& hostName);
 		void assignApp(std::shared_ptr<Application>& app);
 		uint64_t getAssignedAppMem() const;

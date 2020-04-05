@@ -17,7 +17,7 @@
 #include "../prom_exporter/gauge.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID())
+	:m_status(STATUS::ENABLED), m_endTimerId(0), m_health(true), m_cloudApp(false), m_appId(Utility::createUUID())
 	, m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
 {
@@ -149,6 +149,10 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_REG_TIME))
 	{
 		app->m_regTime = Utility::convertStr2Time(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_REG_TIME));
+	}
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_CLOUD))
+	{
+		app->m_cloudApp = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_APP_CLOUD);
 	}
 }
 
@@ -488,6 +492,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_startTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::convertTime2Str(m_startTime));
 	if (m_endTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::convertTime2Str(m_endTime));
 	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(Utility::convertTime2Str(m_regTime));
+	if (m_cloudApp) result[JSON_KEY_APP_CLOUD] = web::json::value::boolean(m_cloudApp);
 	return result;
 }
 

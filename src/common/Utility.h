@@ -81,7 +81,6 @@ namespace std
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
-#define APP_COMMENTS_FROM_CONSUL "_CONSUL_APP_"
 
 const char* GET_STATUS_STR(unsigned int status);
 
@@ -214,6 +213,7 @@ public:
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_cache_lines "cache_lines"
 #define JSON_KEY_APP_docker_image "docker_image"
+#define JSON_KEY_APP_CLOUD "cloud"
 // runtime attr
 #define JSON_KEY_APP_pid "pid"
 #define JSON_KEY_APP_return "return"
