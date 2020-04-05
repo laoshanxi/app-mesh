@@ -512,6 +512,7 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTopology>> ConsulC
 					consulNode->assignApp(task.second->m_app);
 				}
 				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
+				task.second->dump();
 			}
 		}
 	}
@@ -710,7 +711,6 @@ std::map<std::string, std::shared_ptr<ConsulConnection::ConsulTask>> ConsulConne
 					{
 						result[task->m_app->getName()] = task;
 						LOG_DBG << fname << "get task <" << task->m_app->getName() << ">";
-						task->dump();
 					}
 				}
 			}
@@ -943,10 +943,11 @@ web::json::value ConsulConnection::ConsulTask::AsJson()
 
 void ConsulConnection::ConsulTask::dump()
 {
-	const static char fname[] = "ConsulConnection::dump() ";
+	const static char fname[] = "ConsulTask::dump() ";
 	LOG_DBG << fname << "m_app=" << m_app->getName();
 	LOG_DBG << fname << "m_priority=" << m_priority;
 	LOG_DBG << fname << "m_replication=" << m_replication;
+	m_app->dump();
 }
 
 bool ConsulConnection::ConsulTask::operator==(const std::shared_ptr<ConsulTask>& task)

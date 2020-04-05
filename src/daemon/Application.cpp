@@ -514,6 +514,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_version:" << m_version;
+	LOG_DBG << fname << "m_cloudApp:" << m_cloudApp;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
