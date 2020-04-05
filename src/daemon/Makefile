@@ -33,6 +33,7 @@ SRCS = \
 	HealthCheckTask.cpp \
 	PersistManager.cpp \
 	ConsulConnection.cpp \
+	ConsulEntity.cpp \
 	TimerHandler.cpp
 		
 
