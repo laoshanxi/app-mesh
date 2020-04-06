@@ -64,7 +64,7 @@ class Configuration
 		int m_ttl;
 		// report status to consul interval
 		int m_reportInterval;
-		int m_topologyInterval;
+		int m_scheduleInterval;
 	};
 public:
 	Configuration();

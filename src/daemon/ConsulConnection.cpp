@@ -12,7 +12,7 @@
 extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_applyTopoTimerId(0), m_leader(0)
+	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_scheduleTimerId(0), m_leader(0)
 {
 	// override default reactor
 	m_reactor = m_timerReactor;
@@ -22,7 +22,7 @@ ConsulConnection::~ConsulConnection()
 {
 	this->cancleTimer(m_ssnRenewTimerId);
 	this->cancleTimer(m_reportStatusTimerId);
-	this->cancleTimer(m_applyTopoTimerId);
+	this->cancleTimer(m_scheduleTimerId);
 }
 
 std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
@@ -118,9 +118,9 @@ void ConsulConnection::refreshSession(int timerId)
 	m_sessionId.clear();
 }
 
-void ConsulConnection::applyTopology(int timerId)
+void ConsulConnection::schedule(int timerId)
 {
-	const static char fname[] = "ConsulConnection::applyTopology() ";
+	const static char fname[] = "ConsulConnection::schedule() ";
 	try
 	{
 		// check feature enabled
@@ -146,6 +146,16 @@ void ConsulConnection::applyTopology(int timerId)
 	catch (...)
 	{
 		LOG_WAR << fname << " exception";
+	}
+
+	// set next timer
+	if (Configuration::instance()->getConsul()->m_scheduleInterval > 1)
+	{
+		m_scheduleTimerId = this->registerTimer(
+			Configuration::instance()->getConsul()->m_scheduleInterval * 1000L, 0,
+			std::bind(&ConsulConnection::schedule, this, std::placeholders::_1),
+			__FUNCTION__
+		);
 	}
 }
 
@@ -218,35 +228,23 @@ void ConsulConnection::leaderSchedule()
 {
 	const static char fname[] = "ConsulConnection::leaderSchedule() ";
 
-	// leader's responsibility
+	// leader's job
 	if (eletionLeader())
 	{
-		auto tasksMap = retrieveTask();
-		//if (!taskChanged(tasksMap))
-		//{
-		//	LOG_DBG << fname << "Consul task not changed";
-		//	return;
-		//}
+		auto taskList = retrieveTask();
 		auto oldTopology = retrieveTopology("");
-		//for (const auto& oldHost : oldTopology)
-		//{
-		//	LOG_DBG << fname << oldHost.first << ":" << oldHost.second;
-		//}
-		auto nodesMap = retrieveNode();
-		if (nodesMap.empty())
+		auto nodes = retrieveNode();
+		if (nodes.size())
 		{
-			LOG_DBG << fname << "retrieveNode is empty";
-			return;
+			// find matched hosts for each task
+			findTaskAvialableHost(taskList, nodes);
+
+			// schedule task
+			auto newTopology = scheduleTask(taskList, oldTopology);
+
+			// apply schedule result
+			compareTopologyAndDispatch(oldTopology, newTopology);
 		}
-
-		// find matched hosts for each task
-		findTaskAvialableHost(tasksMap, nodesMap);
-
-		// schedule task
-		auto newTopology = scheduleTask(tasksMap, oldTopology);
-
-		// apply schedule result
-		compareTopologyAndDispatch(oldTopology, newTopology);
 	}
 }
 
@@ -483,7 +481,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 		// return left > right is Descending
 		std::sort(hostList4NewTask.begin(), hostList4NewTask.end(),
 			[](const std::shared_ptr<ConsulNode>& left, const std::shared_ptr<ConsulNode>& right)
-			{ 
+			{
 				if (left->m_assignedApps.size() < right->m_assignedApps.size())
 				{
 					return true;
@@ -504,7 +502,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 			if (i < hostList4NewTask.size())
 			{
 				const auto& hostname = hostList4NewTask[i]->m_hostName;
-				const auto & consulNode = hostList4NewTask[i];
+				const auto& consulNode = hostList4NewTask[i];
 				// save to topology
 				{
 					if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
@@ -718,41 +716,7 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 	}
 	return std::move(result);
 }
-bool ConsulConnection::taskChanged(const std::map<std::string, std::shared_ptr<ConsulTask>>& currentTasks)
-{
-	static std::map<std::string, std::shared_ptr<ConsulTask>> lastTasks = {};
 
-	bool changed = false;
-	if (currentTasks.size() != lastTasks.size())
-	{
-		changed = true;
-	}
-	else
-	{
-		for (const auto& tsk : currentTasks)
-		{
-			const auto iter = lastTasks.find(tsk.first);
-			if (iter != lastTasks.end())
-			{
-				if (!iter->second->operator==(tsk.second))
-				{
-					changed = true;
-					break;
-				}
-			}
-			else
-			{
-				changed = true;
-				break;
-			}
-		}
-	}
-
-	// save changed record to static variable
-	if (changed) lastTasks = currentTasks;
-
-	return changed;
-}
 /*
 [
 	"appmgr/nodes/cents"
@@ -788,6 +752,7 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 			}
 		}
 	}
+	LOG_DBG << fname << "get nodes size : " << result.size();
 	return std::move(result);
 }
 
@@ -829,13 +794,12 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	}
 
 	// aply topology timer
-	this->cancleTimer(m_applyTopoTimerId);
-	if (Configuration::instance()->getConsul()->m_topologyInterval > 1)
+	this->cancleTimer(m_scheduleTimerId);
+	if (Configuration::instance()->getConsul()->m_scheduleInterval > 1)
 	{
-		m_applyTopoTimerId = this->registerTimer(
-			1000L * 2,
-			Configuration::instance()->getConsul()->m_topologyInterval,
-			std::bind(&ConsulConnection::applyTopology, this, std::placeholders::_1),
+		m_scheduleTimerId = this->registerTimer(
+			Configuration::instance()->getConsul()->m_scheduleInterval * 1000L, 0,
+			std::bind(&ConsulConnection::schedule, this, std::placeholders::_1),
 			__FUNCTION__
 		);
 	}
