@@ -232,8 +232,6 @@ std::string ConsulConnection::getSessionId()
 
 void ConsulConnection::leaderSchedule()
 {
-	const static char fname[] = "ConsulConnection::leaderSchedule() ";
-
 	// leader's job
 	if (eletionLeader())
 	{
