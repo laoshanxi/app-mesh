@@ -7,6 +7,7 @@
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
+#include "../common/PerfLog.h"
 
 #define CONSUL_BASE_PATH  "/v1/kv/appmgr/"
 extern ACE_Reactor* m_timerReactor;
@@ -34,6 +35,7 @@ std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
 void ConsulConnection::reportStatus(int timerId)
 {
 	const static char fname[] = "ConsulConnection::reportStatus() ";
+	PerfLog perf(fname);
 
 	// check feature enabled
 	if (!Configuration::instance()->getConsul()->enabled()) return;
@@ -79,6 +81,8 @@ void ConsulConnection::reportStatus(int timerId)
 void ConsulConnection::refreshSession(int timerId)
 {
 	const static char fname[] = "ConsulConnection::refreshSession() ";
+	PerfLog perf(fname);
+
 	try
 	{
 		// check feature enabled
@@ -121,6 +125,8 @@ void ConsulConnection::refreshSession(int timerId)
 void ConsulConnection::schedule(int timerId)
 {
 	const static char fname[] = "ConsulConnection::schedule() ";
+	PerfLog perf(fname);
+
 	try
 	{
 		// check feature enabled

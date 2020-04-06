@@ -66,6 +66,9 @@
     <ClCompile Include="ConsulEntity.cpp">
       <Filter>rest</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\PerfLog.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Configuration.h" />
@@ -155,6 +158,9 @@
     </ClInclude>
     <ClInclude Include="ConsulEntity.h">
       <Filter>rest</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\PerfLog.h">
+      <Filter>common</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

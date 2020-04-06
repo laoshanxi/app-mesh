@@ -22,6 +22,7 @@
 #include "TimerHandler.h"
 #include "../common/os/linux.hpp"
 #include "../common/Utility.h"
+#include "../common/PerfLog.h"
 
 std::set<std::shared_ptr<RestHandler>> m_restList;
 // The default timer reactor is ACE_Reactor::instance() that used for application & process event
@@ -138,6 +139,7 @@ int main(int argc, char* argv[])
 		while (true)
 		{
 			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
+			PerfLog perf(fname);
 
 			// monitor application
 			auto allApp = Configuration::instance()->getApps();

@@ -1,8 +1,9 @@
+#include "Application.h"
+#include "AppProcess.h"
+#include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "../common/Utility.h"
-#include "Configuration.h"
-#include "AppProcess.h"
-#include "Application.h"
+#include "../common/PerfLog.h"
 
 extern ACE_Reactor* m_timerReactor;
 HealthCheckTask::HealthCheckTask()
@@ -31,7 +32,7 @@ void HealthCheckTask::initTimer()
 void HealthCheckTask::healthCheckTimer(int timerId)
 {
 	const static char fname[] = "HealthCheckTask::healthCheckTimer() ";
-
+	PerfLog perf(fname);
 	auto apps = Configuration::instance()->getApps();
 	for (auto& app : apps)
 	{
