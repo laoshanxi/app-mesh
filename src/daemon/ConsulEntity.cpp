@@ -46,10 +46,10 @@ std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value& jobj)
 		jobj.at("content").is_object())
 	{
 		auto appJson = jobj.at("content");
-		// mark consul application
+		// mark consul application flag
 		appJson[JSON_KEY_APP_CLOUD] = web::json::value::boolean(true);
 		consul->m_app = Configuration::instance()->parseApp(appJson);
-		consul->m_replication = jobj.at("replication").as_integer();
+		SET_JSON_INT_VALUE(jobj, "replication", consul->m_replication);
 		SET_JSON_INT_VALUE(jobj, "priority", consul->m_priority);
 		SET_JSON_INT_VALUE(jobj, "port", consul->m_consulServicePort);
 		if (HAS_JSON_FIELD(jobj, "condition"))

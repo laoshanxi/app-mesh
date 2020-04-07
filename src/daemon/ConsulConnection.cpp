@@ -434,7 +434,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 	// ignore old schedule
 	for (const auto& task : taskMap)
 	{
-		auto& taskName = task.first;
+		const auto& taskName = task.first;
 		auto& taskDedicateHosts = task.second->m_matchedHosts;
 		auto& taskReplication = task.second->m_replication;
 		if (taskReplication <= 0) continue;
@@ -466,10 +466,10 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 	for (const auto& task : taskMap)
 	{
 		// get current task
-		auto& taskDedicateHosts = task.second->m_matchedHosts;
+		const auto& taskDedicateHosts = task.second->m_matchedHosts;
 		auto& taskReplication = task.second->m_replication;
-		auto& taskName = task.first;
-		std::vector<std::shared_ptr<ConsulNode>> hostList4NewTask;
+		const auto& taskName = task.first;
+		std::vector<std::shared_ptr<ConsulNode>> taskDedicateHostsVec;
 
 		LOG_DBG << fname << "schedule task <" << taskName << ">";
 
@@ -478,12 +478,12 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 
 		for (const auto& host : taskDedicateHosts)
 		{
-			hostList4NewTask.push_back(host.second);
+			taskDedicateHostsVec.push_back(host.second);
 		}
 		// sort hosts
 		// return left < right is Ascending
 		// return left > right is Descending
-		std::sort(hostList4NewTask.begin(), hostList4NewTask.end(),
+		std::sort(taskDedicateHostsVec.begin(), taskDedicateHostsVec.end(),
 			[](const std::shared_ptr<ConsulNode>& left, const std::shared_ptr<ConsulNode>& right)
 			{
 				if (left->m_assignedApps.size() < right->m_assignedApps.size())
@@ -500,13 +500,17 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 				}
 			});
 
+		if (taskReplication > taskDedicateHostsVec.size())
+		{
+			LOG_WAR << fname << taskName << " : Replication <" << taskReplication << "> Dedicate Host < " << taskDedicateHostsVec.size() << ">";
+		}
 		// assign host to task
 		for (size_t i = 0; i < taskReplication; i++)
 		{
-			if (i < hostList4NewTask.size())
+			if (i < taskDedicateHostsVec.size())
 			{
-				const auto& hostname = hostList4NewTask[i]->m_hostName;
-				const auto& consulNode = hostList4NewTask[i];
+				const auto& hostname = taskDedicateHostsVec[i]->m_hostName;
+				const auto& consulNode = taskDedicateHostsVec[i];
 				// save to topology
 				{
 					if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
@@ -515,6 +519,10 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 				}
 				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
 				task.second->dump();
+			}
+			else
+			{
+				break;
 			}
 		}
 	}
