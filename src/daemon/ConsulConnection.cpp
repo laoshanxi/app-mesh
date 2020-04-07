@@ -758,7 +758,6 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 						auto host = Utility::stringReplace(key, "appmgr/nodes/", "");
 						auto json = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
 						result[host] = ConsulNode::FromJson(json, host);
-						LOG_DBG << fname << "get host <" << host << "> ";
 					}
 				}
 			}
