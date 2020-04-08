@@ -32,6 +32,9 @@ std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
 	return singleton;
 }
 
+// report label and resource to host KV
+// report timestamp to Flags attr for KV
+// report does not associate session ID
 void ConsulConnection::reportStatus(int timerId)
 {
 	const static char fname[] = "ConsulConnection::reportStatus() ";
@@ -43,10 +46,6 @@ void ConsulConnection::reportStatus(int timerId)
 	// Only node need report status for node (master does not need report)
 	if (!Configuration::instance()->getConsul()->m_isNode) return;
 
-	// check session id ready
-	auto sessionId = getSessionId();
-	if (sessionId.empty()) return;
-
 	try
 	{
 		//report resource: /appmgr/nodes/myhost
@@ -54,7 +53,8 @@ void ConsulConnection::reportStatus(int timerId)
 		web::json::value body = web::json::value::object();
 		body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
-		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
+		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+		auto resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
@@ -68,7 +68,7 @@ void ConsulConnection::reportStatus(int timerId)
 			LOG_WAR << fname << "report resource to " << path << " failed with response : " << resp.extract_utf8string(true).get();
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -110,7 +110,7 @@ void ConsulConnection::refreshSession(int timerId)
 		m_sessionId = sessionId;
 		return;
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -145,7 +145,7 @@ void ConsulConnection::schedule(int timerId)
 			nodeSchedule();
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -338,7 +338,8 @@ bool ConsulConnection::eletionLeader()
 	// write hostname to leader path : /appmgr/leader
 	std::string path = std::string(CONSUL_BASE_PATH).append("leader");
 	auto body = web::json::value::string(MY_HOST_NAME);
-	auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId} }, {}, &body);
+	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+	auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
@@ -586,7 +587,8 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 	if (topology && topology->m_apps.size())
 	{
 		auto body = topology->AsJson();
-		resp = requestHttp(web::http::methods::PUT, path, {}, {}, &body);
+		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+		resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
 		LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
 	}
 	else
@@ -661,14 +663,6 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::retriev
 				}
 			}
 		}
-
-		if (topology.count(host))
-		{
-			auto updateFlagTopology = topology[host]->AsJson();
-			// write retrieve flag
-			auto timeSeconds = Utility::formatTime(std::chrono::system_clock::now(), "%Y%m%d%H%M%S");
-			auto resp = requestHttp(web::http::methods::PUT, path, { {"flags",timeSeconds} }, {}, &updateFlagTopology);
-		}
 	}
 	else
 	{
@@ -739,7 +733,8 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	const static char fname[] = "ConsulConnection::retrieveNode() ";
 
 	std::map<std::string, std::shared_ptr<ConsulNode>> result;
-
+	auto now = std::chrono::system_clock::now();
+	auto reportInterval = Configuration::instance()->getConsul()->m_reportInterval;
 	// /appmgr/nodes
 	std::string path = std::string(CONSUL_BASE_PATH).append("nodes");
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
@@ -753,7 +748,10 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
 					auto key = GET_JSON_STR_VALUE(section, "Key");
-					if (Utility::startWith(key, "appmgr/nodes/"))
+					auto flags = GET_JSON_NUMBER_VALUE(section, "Flags");
+					auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(now - std::chrono::system_clock::from_time_t(flags)).count();
+					// ignore node when last update time more than reportInterval * 2
+					if (Utility::startWith(key, "appmgr/nodes/") && timeDiff <= reportInterval * 2)
 					{
 						auto host = Utility::stringReplace(key, "appmgr/nodes/", "");
 						auto json = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
