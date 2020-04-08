@@ -750,8 +750,9 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 					auto key = GET_JSON_STR_VALUE(section, "Key");
 					auto flags = GET_JSON_NUMBER_VALUE(section, "Flags");
 					auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(now - std::chrono::system_clock::from_time_t(flags)).count();
-					// ignore node when last update time more than reportInterval * 2
-					if (Utility::startWith(key, "appmgr/nodes/") && timeDiff <= reportInterval * 2)
+					// ignore node when last update time more than reportInterval * 3 (consider time diff between hosts)
+					// TODO: need to sync-up clock in the whole cluster
+					if (Utility::startWith(key, "appmgr/nodes/") && timeDiff <= reportInterval * 3)
 					{
 						auto host = Utility::stringReplace(key, "appmgr/nodes/", "");
 						auto json = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
