@@ -17,7 +17,7 @@ struct ConsulStatus {
 struct ConsulNode {
 	ConsulNode();
 	static std::shared_ptr<ConsulNode> FromJson(const web::json::value& jobj, const std::string& hostName);
-	void assignApp(std::shared_ptr<Application>& app);
+	void assignApp(const std::shared_ptr<Application>& app);
 	uint64_t getAssignedAppMem() const;
 	std::shared_ptr<Label> m_label;
 	// CPU

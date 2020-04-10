@@ -15,7 +15,7 @@ class HttpRequest;
 class RestHandler
 {
 public:
-	explicit RestHandler(std::string ipaddress, int port);
+	explicit RestHandler(const std::string& ipaddress, int port);
 	virtual ~RestHandler();
 
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
@@ -39,7 +39,7 @@ private:
 	bool permissionCheck(const HttpRequest& message, const std::string& permission);
 	std::string getTokenStr(const HttpRequest& message);
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
-	int getHttpQueryValue(const HttpRequest& message, const std::string key, int defaultValue, int min, int max) const;
+	int getHttpQueryValue(const HttpRequest& message, const std::string& key, int defaultValue, int min, int max) const;
 
 	void apiLogin(const HttpRequest& message);
 	void apiAuth(const HttpRequest& message);

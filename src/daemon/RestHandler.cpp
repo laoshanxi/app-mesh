@@ -21,7 +21,7 @@
 #include "Label.h"
 #include "Application.h"
 
-RestHandler::RestHandler(std::string ipaddress, int port)
+RestHandler::RestHandler(const std::string& ipaddress, int port)
 	:m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : ipaddress)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
@@ -363,7 +363,6 @@ bool RestHandler::permissionCheck(const HttpRequest& message, const std::string&
 		{
 			std::map<std::string, std::string> headers;
 			if (permission.length()) headers[HTTP_HEADER_JWT_auth_permission] = permission;
-			auto userName = getTokenUser(message);
 			auto resp = requestHttp(
 				web::http::methods::POST,
 				std::string("/auth/") + userName,
@@ -441,7 +440,7 @@ std::string RestHandler::createToken(const std::string& uname, const std::string
 	return std::move(token);
 }
 
-int RestHandler::getHttpQueryValue(const HttpRequest& message, const std::string key, int defaultValue, int min, int max) const
+int RestHandler::getHttpQueryValue(const HttpRequest& message, const std::string& key, int defaultValue, int min, int max) const
 {
 	const static char fname[] = "RestHandler::getQueryValue() ";
 

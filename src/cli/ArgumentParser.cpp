@@ -912,9 +912,9 @@ void ArgumentParser::processEncryptUserPwd()
 	}
 	else
 	{
-		for (auto str : opts)
+		for (auto optStr : opts)
 		{
-			std::cout << std::hash<std::string>()(str) << std::endl;
+			std::cout << std::hash<std::string>()(optStr) << std::endl;
 		}
 	}
 }

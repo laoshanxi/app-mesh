@@ -13,7 +13,7 @@
 class Role
 {
 public:
-	explicit Role(std::string name);
+	explicit Role(const std::string& name);
 	virtual ~Role();
 
 	// seriarize
@@ -39,7 +39,7 @@ public:
 	Roles();
 	virtual ~Roles();
 
-	std::shared_ptr<Role> getRole(std::string roleName);
+	std::shared_ptr<Role> getRole(const std::string& roleName);
 
 	virtual web::json::value AsJson();
 	static const std::shared_ptr<Roles> FromJson(const web::json::value& obj) noexcept(false);

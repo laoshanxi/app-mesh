@@ -174,7 +174,7 @@ std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value& jobj, c
 	return node;
 }
 
-void ConsulNode::assignApp(std::shared_ptr<Application>& app)
+void ConsulNode::assignApp(const std::shared_ptr<Application>& app)
 {
 	m_assignedApps[app->getName()] = app;
 }

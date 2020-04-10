@@ -772,6 +772,6 @@ bool Configuration::JsonConsul::enabled() const
 }
 
 Configuration::JsonConsul::JsonConsul()
-	:m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_scheduleInterval(CONSUL_TOPOLOGY_DEFAULT_INTERVAL)
+	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_scheduleInterval(CONSUL_TOPOLOGY_DEFAULT_INTERVAL)
 {
 }

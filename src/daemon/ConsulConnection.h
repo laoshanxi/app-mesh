@@ -32,11 +32,11 @@ private:
 	void leaderSchedule();
 	void nodeSchedule();
 	bool eletionLeader();
-	bool registerService(const std::string appName, int port);
+	bool registerService(const std::string& appName, int port);
 	bool deregisterService(const std::string appName);
 
-	void findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts);
-	std::map<std::string, std::shared_ptr<ConsulTopology>> scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology);
+	void findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts);
+	std::map<std::string, std::shared_ptr<ConsulTopology>> scheduleTask(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology);
 	void compareTopologyAndDispatch(const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldT, const std::map<std::string, std::shared_ptr<ConsulTopology>>& newT);
 
 	bool writeTopology(std::string hostName, const std::shared_ptr<ConsulTopology> topology);
@@ -46,7 +46,6 @@ private:
 	std::map<std::string, std::shared_ptr<ConsulNode>> retrieveNode();
 
 private:
-	std::recursive_mutex m_mutex;
 	std::string m_sessionId;
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;

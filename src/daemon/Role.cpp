@@ -42,7 +42,7 @@ Roles::~Roles()
 {
 }
 
-std::shared_ptr<Role> Roles::getRole(std::string roleName)
+std::shared_ptr<Role> Roles::getRole(const std::string& roleName)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto role = m_roles.find(roleName);
@@ -100,7 +100,7 @@ void Roles::delRole(std::string name)
 //////////////////////////////////////////////////////////////////////
 /// Role
 //////////////////////////////////////////////////////////////////////
-Role::Role(std::string name) :m_name(name)
+Role::Role(const std::string& name) :m_name(name)
 {
 }
 

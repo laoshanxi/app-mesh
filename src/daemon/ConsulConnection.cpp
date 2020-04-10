@@ -352,7 +352,7 @@ bool ConsulConnection::eletionLeader()
 	return m_leader;
 }
 
-bool ConsulConnection::registerService(const std::string appName, int port)
+bool ConsulConnection::registerService(const std::string& appName, int port)
 {
 	const static char fname[] = "ConsulConnection::registerService() ";
 	// https://www.hashicorp.com/blog/consul-and-external-services/
@@ -403,7 +403,7 @@ bool ConsulConnection::deregisterService(const std::string appName)
 	return false;
 }
 
-void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
+void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
 {
 	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
 
@@ -425,7 +425,7 @@ void ConsulConnection::findTaskAvialableHost(std::map<std::string, std::shared_p
 	}
 }
 
-std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::scheduleTask(std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology)
+std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::scheduleTask(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology)
 {
 	const static char fname[] = "ConsulConnection::scheduleTask() ";
 
@@ -755,8 +755,8 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 					if (Utility::startWith(key, "appmgr/nodes/") && timeDiff <= reportInterval * 3)
 					{
 						auto host = Utility::stringReplace(key, "appmgr/nodes/", "");
-						auto json = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
-						result[host] = ConsulNode::FromJson(json, host);
+						auto value = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
+						result[host] = ConsulNode::FromJson(value, host);
 					}
 				}
 			}

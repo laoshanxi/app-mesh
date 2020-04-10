@@ -47,7 +47,7 @@ int TimerHandler::handle_timeout(const ACE_Time_Value& current_time, const void*
 	return 0;
 }
 
-int TimerHandler::registerTimer(long int delayMillisecond, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string from)
+int TimerHandler::registerTimer(long int delayMillisecond, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string& from)
 {
 	const static char fname[] = "TimerHandler::registerTimer() ";
 
@@ -79,14 +79,16 @@ bool TimerHandler::cancleTimer(int& timerId)
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	for (auto& v : m_timers)
-	{
-		if (timerId == *(v.first))
+	auto it = std::find_if(m_timers.begin(), m_timers.end(),
+		[timerId](std::map<const int*, std::shared_ptr<TimerDefinition>>::value_type const& pair)
 		{
-			m_timers.erase(v.first);
-			LOG_DBG << fname << "Timer removed <" << timerId << ">.";
-			break;
+			return timerId == *(pair.first);
 		}
+	);
+	if (it != m_timers.end())
+	{
+		m_timers.erase(it);
+		LOG_DBG << fname << "Timer removed <" << timerId << ">.";
 	}
 	timerId = 0;
 	return cancled;

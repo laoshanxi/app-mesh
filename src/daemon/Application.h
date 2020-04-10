@@ -105,7 +105,6 @@ protected:
 	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
 	int m_pid;
-	std::recursive_mutex m_mutex;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;
