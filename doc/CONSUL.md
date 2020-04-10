@@ -9,15 +9,15 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 ### What is supported:
 
 > * App Manager will keep connection(support SSL) to Consul Service as a consul session
-> * App Manager only talks to Consul service
-> * Each App Manager node report status to Consul with a requested Consul session id
-> * App Manager can be a leader node or worker node
-> * App Manager Leader node schedule Consul applications and write result to Consul
-> * App Manager worker node retrieve Consul applications from Consul dynamicly
+> * App Manager only talks to Consul service by one way communication
+> * Each App Manager node report status to Consul KV data
+> * App Manager can be a cluster leader node or worker node
+> * App Manager Leader node schedule Consul applications and write result to Consul KV data
+> * App Manager worker node retrieve Consul applications from Consul dynamically
 > * Consul App is defined in Consul and support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
 > * Consul App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
 > * Consul session support HA recovery
-> * Consul session requested with TTL and expire delete behavior
+> * App Manager request Consul session with TTL and expire delete behavior
 
 ### What is **not** supported:
 > * Consul connection ACL
@@ -42,17 +42,22 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 
 
 - Status report
- Each node will report 2 keys:
- 1. appmgr/status/label/$host_name
- 2. appmgr/status/resource/$host_name
+ Each node will report to Consul KV path `appmgr/nodes/$host_name`
 
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/status/resource/cents?raw | python -m json.tool
- curl -s http://localhost:8500/v1/kv/appmgr/status/label/cents?raw | python -m json.tool
- {
-    "HOST_NAME": "cents",
-    "arch": "x86_64",
-    "os_version": "centos7.6"
+curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool         
+{
+    "label": {
+        "HOST_NAME": "host2",
+        "arch": "x86_64",
+        "fdef": "fefe",
+        "os_version": "centos7.6"
+    },
+    "resource": {
+        "cpu_cores": 1,
+        "mem_free_bytes": 93171712,
+        "mem_total_bytes": 1039081472
+    }
 }
  ```
 
@@ -137,11 +142,19 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 ```json
 {
 	"appmgr": {
-		"status": {
-			"label": {
-				"myhost": {"HOST_NAME":"myhost","arch":"x86_64","os_version":"centos7.6"}
-			},
-			"resource": { }
+		"nodes": {
+            "label": {
+                "HOST_NAME": "host2",
+                "arch": "x86_64",
+                "fdef": "fefe",
+                "os_version": "centos7.6"
+            },
+            "resource": {
+                "cpu_cores": 1,
+                "mem_free_bytes": 93171712,
+                "mem_total_bytes": 1039081472
+            },
+			"host2": { }
 		},
 		"task": {
 			"myapp": {
@@ -181,4 +194,4 @@ $ docker rm consul -f ; docker run --restart=always --net=host -p 8500:8500 -v /
 ```shell
 $ docker run --name consulproxy --net=host -d -v /opt/appmanager/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmanager/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro -v $PWD/nginx.conf:/etc/nginx/nginx.conf nginx
 ```
-Note: consul container healthcheck will call outside URL, so need DNS to access other hostname or URL
+Note: consul container health-check will call outside URL, so need DNS to access other hostname or URL
