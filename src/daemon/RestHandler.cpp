@@ -461,7 +461,7 @@ void RestHandler::apiEnableApp(const HttpRequest& message)
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/enable
-	std::string appName = path.substr(strlen("/app/"));
+	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
 	Configuration::instance()->enableApp(appName);
@@ -473,8 +473,8 @@ void RestHandler::apiDisableApp(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	// /app/$app-name/disable
-	std::string appName = path.substr(strlen("/app/"));
+	// /appmgr/app/$app-name/disable
+	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
 	Configuration::instance()->disableApp(appName);
@@ -486,7 +486,7 @@ void RestHandler::apiDeleteApp(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_app_delete);
 	auto path = GET_STD_STRING(message.relative_uri().path());
 
-	std::string appName = path.substr(strlen("/app/"));
+	std::string appName = path.substr(strlen("/appmgr/app/"));
 	Configuration::instance()->removeApp(appName);
 	auto msg = std::string("application <") + appName + "> removed.";
 	message.reply(status_codes::OK, msg);
@@ -690,11 +690,11 @@ void RestHandler::apiUserChangePwd(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_change_passwd);
 
 	auto vec = Utility::splitString(path, "/");
-	if (vec.size() != 3)
+	if (vec.size() != 4)
 	{
 		throw std::invalid_argument("failed to get user name from path");
 	}
-	auto pathUserName = vec[1];
+	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
 	if (!message.headers().has(HTTP_HEADER_JWT_new_password))
 	{
@@ -730,11 +730,11 @@ void RestHandler::apiUserLock(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_lock_user);
 
 	auto vec = Utility::splitString(path, "/");
-	if (vec.size() != 3)
+	if (vec.size() != 4)
 	{
 		throw std::invalid_argument("failed to get user name from path");
 	}
-	auto pathUserName = vec[1];
+	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
 
 	if (pathUserName == JWT_ADMIN_NAME)
@@ -762,11 +762,11 @@ void RestHandler::apiUserUnlock(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_lock_user);
 
 	auto vec = Utility::splitString(path, "/");
-	if (vec.size() != 3)
+	if (vec.size() != 4)
 	{
 		throw std::invalid_argument("failed to get user name from path");
 	}
-	auto pathUserName = vec[1];
+	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
 	//if (tokenUserName != JWT_ADMIN_NAME)
 	//{
@@ -789,11 +789,11 @@ void RestHandler::apiUserAdd(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_add_user);
 
 	auto vec = Utility::splitString(path, "/");
-	if (vec.size() != 2)
+	if (vec.size() != 3)
 	{
 		throw std::invalid_argument("failed to get user name from path");
 	}
-	auto pathUserName = vec[1];
+	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
 
 	auto user = Configuration::instance()->getUsers()->addUser(pathUserName, message.extract_json(true).get(), Configuration::instance()->getRoles());
@@ -814,11 +814,11 @@ void RestHandler::apiUserDel(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_delete_user);
 
 	auto vec = Utility::splitString(path, "/");
-	if (vec.size() != 2)
+	if (vec.size() != 3)
 	{
 		throw std::invalid_argument("failed to get user name from path");
 	}
-	auto pathUserName = vec[1];
+	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
 
 	Configuration::instance()->getUsers()->delUser(pathUserName);
@@ -845,8 +845,8 @@ void RestHandler::apiUserList(const HttpRequest& message)
 void RestHandler::apiHealth(const HttpRequest& message)
 {
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	// /app/$app-name/health
-	std::string appName = path.substr(strlen("/app/"));
+	// /appmgr/app/$app-name/health
+	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 	auto health = Configuration::instance()->getApp(appName)->getHealth();
 	http::status_code status = status_codes::OK;
@@ -953,7 +953,7 @@ void RestHandler::apiGetApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	std::string app = path.substr(strlen("/app/"));
+	std::string app = path.substr(strlen("/appmgr/app/"));
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
 }
 
@@ -1005,8 +1005,8 @@ void RestHandler::apiRunAsyncOut(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	// /app/$app-name/run?timeout=5
-	std::string app = path.substr(strlen("/app/"));
+	// /appmgr/app/$app-name/run?timeout=5
+	std::string app = path.substr(strlen("/appmgr/app/"));
 	app = app.substr(0, app.find_first_of('/'));
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
@@ -1046,7 +1046,7 @@ void RestHandler::apiGetAppOutput(const HttpRequest& message)
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/output
-	std::string app = path.substr(strlen("/app/"));
+	std::string app = path.substr(strlen("/appmgr/app/"));
 	app = app.substr(0, app.find_first_of('/'));
 	bool keepHis = getHttpQueryValue(message, HTTP_QUERY_KEY_keep_history, false, 0, 0);
 	auto output = Configuration::instance()->getApp(app)->getOutput(keepHis);
