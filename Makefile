@@ -51,7 +51,7 @@ deb:
 	fpm -s dir -t deb -v ${VERSION} -n ${PACKAGE_NAME} -d 'psmisc' --vendor ${VENDER} --description ${VENDER} --post-install ${TMP_DIR}/script/rpm_post_install.sh --before-remove ${TMP_DIR}/script/rpm_pre_uninstall.sh --after-remove ${TMP_DIR}/script/rpm_post_uninstall.sh -C ${RELEASE_DIR}
 rpm:
 	rm -f *.rpm
-	/usr/local/bin/fpm -s dir -t rpm -v ${VERSION} -n ${PACKAGE_NAME} -d 'psmisc' --vendor ${VENDER} --description ${VENDER} --post-install ${TMP_DIR}/script/rpm_post_install.sh --before-remove ${TMP_DIR}/script/rpm_pre_uninstall.sh --after-remove ${TMP_DIR}/script/rpm_post_uninstall.sh -C ${RELEASE_DIR}
+	/usr/local/bin/fpm -s dir -t rpm -v ${VERSION} -n ${PACKAGE_NAME} -d 'psmisc,libicu' --vendor ${VENDER} --description ${VENDER} --post-install ${TMP_DIR}/script/rpm_post_install.sh --before-remove ${TMP_DIR}/script/rpm_pre_uninstall.sh --after-remove ${TMP_DIR}/script/rpm_post_uninstall.sh -C ${RELEASE_DIR}
 cppcheck:
 	cppcheck --enable=all --quiet --std=c++11 --platform=native .
 install:
