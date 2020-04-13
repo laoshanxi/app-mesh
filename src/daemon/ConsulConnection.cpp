@@ -706,12 +706,12 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 		{
 			for (const auto& section : json.as_array())
 			{
-				if (HAS_JSON_FIELD(section, "Value"))
+				if (HAS_JSON_FIELD(section, "Value") && GET_JSON_STR_VALUE(section, "Key") != "appmgr/task")
 				{
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					auto appJson = web::json::value::parse(appText);
 					auto task = ConsulTask::FromJson(appJson);
-					if (task->m_app->getName().length() && task->m_replication)
+					if (task->m_app && task->m_app->getName().length() && task->m_replication)
 					{
 						result[task->m_app->getName()] = task;
 						LOG_DBG << fname << "get task <" << task->m_app->getName() << ">";
