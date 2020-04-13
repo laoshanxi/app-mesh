@@ -190,8 +190,4 @@ curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool
 ```shell
 $ docker rm consul -f ; docker run --restart=always --net=host -p 8500:8500 -v /etc/hosts:/etc/hosts -e CONSUL_BIND_INTERFACE=eth0 --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 -bind=192.168.3.24 -bootstrap-expect=1 -ui
 ```
-- Use bellow command to export Consul 8500 to 8501 with SSL enabled
-```shell
-$ docker run --name consulproxy --net=host -d -v /opt/appmanager/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmanager/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro -v $PWD/nginx.conf:/etc/nginx/nginx.conf nginx
-```
 Note: consul container health-check will call outside URL, so need DNS to access other hostname or URL
