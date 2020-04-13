@@ -365,7 +365,7 @@ bool RestHandler::permissionCheck(const HttpRequest& message, const std::string&
 			if (permission.length()) headers[HTTP_HEADER_JWT_auth_permission] = permission;
 			auto resp = requestHttp(
 				web::http::methods::POST,
-				std::string("/auth/") + userName,
+				std::string("/appmgr/auth/") + userName,
 				{}, headers,
 				nullptr,
 				getTokenStr(message));
@@ -637,7 +637,7 @@ void RestHandler::apiGetPermissions(const HttpRequest& message)
 	{
 		auto resp = requestHttp(
 			web::http::methods::GET,
-			"/auth/permissions",
+			"/appmgr/auth/permissions",
 			{}, {},
 			nullptr,
 			getTokenStr(message));
@@ -892,7 +892,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 			headers[HTTP_HEADER_JWT_expire_seconds] = std::to_string(timeoutSeconds);
 			auto resp = requestHttp(
 				web::http::methods::POST,
-				"/login",
+				"/appmgr/login",
 				{}, headers,
 				nullptr,
 				getTokenStr(message));
