@@ -749,7 +749,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
-	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_TOPOLOGY_INTERVAL, consul->m_scheduleInterval);
+	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SCHEDULE_INTERVAL, consul->m_scheduleInterval);
 	return consul;
 }
 
@@ -762,7 +762,7 @@ web::json::value Configuration::JsonConsul::AsJson()
 	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSULE_REPORT_INTERVAL] = web::json::value::number(m_reportInterval);
-	result[JSON_KEY_CONSULE_TOPOLOGY_INTERVAL] = web::json::value::number(m_scheduleInterval);
+	result[JSON_KEY_CONSULE_SCHEDULE_INTERVAL] = web::json::value::number(m_scheduleInterval);
 	return result;
 }
 

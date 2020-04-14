@@ -84,8 +84,8 @@
     "url_example": "http://localhost:8500",
     "datacenter": "dc1",
     "session_TTL": 30,
-    "report_interval": 10,
-    "topology_interval": 5
+    "report_interval": 15,
+    "schedule_interval": 10
   },
   "Labels": {
     "os_version": "centos7.6",
