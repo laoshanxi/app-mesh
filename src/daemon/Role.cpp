@@ -2,38 +2,6 @@
 #include "../common/Utility.h"
 
 //////////////////////////////////////////////////////////////////////
-/// pre-defined permissions
-//////////////////////////////////////////////////////////////////////
-std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
-	PERMISSION_KEY_view_app ,
-	PERMISSION_KEY_view_app_output,
-	PERMISSION_KEY_view_all_app,
-	PERMISSION_KEY_view_host_resource,
-	PERMISSION_KEY_app_reg,
-	PERMISSION_KEY_app_control,
-	PERMISSION_KEY_app_delete,
-	PERMISSION_KEY_run_app_async,
-	PERMISSION_KEY_run_app_sync,
-	PERMISSION_KEY_run_app_async_output,
-	PERMISSION_KEY_file_download,
-	PERMISSION_KEY_file_upload,
-	PERMISSION_KEY_label_view,
-	PERMISSION_KEY_label_set,
-	PERMISSION_KEY_label_delete,
-	PERMISSION_KEY_loglevel,
-	PERMISSION_KEY_config_view,
-	PERMISSION_KEY_config_set,
-	PERMISSION_KEY_change_passwd,
-	PERMISSION_KEY_lock_user,
-	PERMISSION_KEY_unlock_user,
-	PERMISSION_KEY_add_user,
-	PERMISSION_KEY_delete_user,
-	PERMISSION_KEY_get_users,
-	PERMISSION_KEY_role_update,
-	PERMISSION_KEY_role_view
-};
-
-//////////////////////////////////////////////////////////////////////
 /// Users
 //////////////////////////////////////////////////////////////////////
 Roles::Roles()
@@ -91,6 +59,12 @@ void Roles::addRole(const web::json::value& obj, std::string name)
 	for (auto role : roles->m_roles)
 	{
 		m_roles[role.first] = role.second;
+		// remove role if have no permission
+		if (role.second->getPermissions().size() == 0)
+		{
+			m_roles.erase(role.first);
+		}
+		break;
 	}
 }
 
@@ -134,15 +108,7 @@ std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value& obj
 	for (auto permmisionJson : permissions)
 	{
 		auto perm = permmisionJson.as_string();
-		if (APP_MANAGER_PERMISSIONS.count(perm))
-		{
-			role->m_permissions.insert(perm);
-		}
-		else
-		{
-			LOG_WAR << fname << "No such permission " << perm << " defined";
-			//throw std::invalid_argument("no such permission defined");
-		}
+		if (perm.length()) role->m_permissions.insert(perm);
 	}
 	return role;
 }

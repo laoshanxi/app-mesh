@@ -26,7 +26,6 @@ public:
 	const std::string getName() const;
 
 private:
-	static std::set<std::string> APP_MANAGER_PERMISSIONS;
 	std::set<std::string> m_permissions;
 	std::string m_name;
 	std::recursive_mutex m_mutex;
