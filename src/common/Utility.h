@@ -295,3 +295,5 @@ public:
 #define PERMISSION_KEY_add_user  				"add-user"
 #define PERMISSION_KEY_delete_user  			"delete-user"
 #define PERMISSION_KEY_get_users  				"get-users"
+#define PERMISSION_KEY_role_update  			"role_update"
+#define PERMISSION_KEY_role_view 				"role_view"

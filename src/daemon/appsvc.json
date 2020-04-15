@@ -61,11 +61,13 @@
         "run-app-async-output",
         "label-view",
         "config-view",
-        "get-users"
+        "get-users",
+        "role_view"
       ],
       "usermgr": [
         "add-user",
-        "delete-user"
+        "delete-user",
+        "role_update"
       ]
     }
   },

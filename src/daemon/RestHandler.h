@@ -69,6 +69,8 @@ private:
 	void apiUserAdd(const HttpRequest& message);
 	void apiUserDel(const HttpRequest& message);
 	void apiUserList(const HttpRequest& message);
+	void apiRoleView(const HttpRequest& message);
+	void apiRoleUpdate(const HttpRequest& message);
 	void apiHealth(const HttpRequest& message);
 	void apiMetrics(const HttpRequest& message);
 

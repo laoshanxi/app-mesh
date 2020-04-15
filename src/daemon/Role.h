@@ -44,7 +44,7 @@ public:
 	virtual web::json::value AsJson();
 	static const std::shared_ptr<Roles> FromJson(const web::json::value& obj) noexcept(false);
 
-	void addRole(const web::json::value& obj);
+	void addRole(const web::json::value& obj, std::string name);
 	void delRole(std::string name);
 
 private:

@@ -149,7 +149,10 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	bindRestMethod(web::http::methods::PUT, R"(/appmgr/user/([^/\*]+))", std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, R"(/appmgr/user/([^/\*]+))", std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmgr/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmgr/roles", std::bind(&RestHandler::apiRoleView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmgr/role/([^/\*]+))", std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
 
+	// 9. metrics
 	bindRestMethod(web::http::methods::GET, R"(/appmgr/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmgr/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
 
@@ -840,6 +843,43 @@ void RestHandler::apiUserList(const HttpRequest& message)
 	}
 
 	message.reply(status_codes::OK, users);
+}
+
+void RestHandler::apiRoleView(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiRoleView() ";
+
+	permissionCheck(message, PERMISSION_KEY_role_view);
+
+	message.reply(status_codes::OK, Configuration::instance()->getRoles()->AsJson());
+}
+
+void RestHandler::apiRoleUpdate(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiRoleUpdate() ";
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	permissionCheck(message, PERMISSION_KEY_role_update);
+
+	auto vec = Utility::splitString(path, "/");
+	if (vec.size() != 3)
+	{
+		throw std::invalid_argument("failed to get role name from path");
+	}
+	auto pathRoleName = vec[2];
+	auto tokenUserName = getTokenUser(message);
+
+	//if (tokenUserName == JWT_ADMIN_NAME)
+	//{
+	//	throw std::invalid_argument("role can be only updated by admin");
+	//}
+
+	Configuration::instance()->getRoles()->addRole(message.extract_json(true).get(), pathRoleName);
+
+	Configuration::instance()->saveConfigToDisk();
+
+	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiHealth(const HttpRequest& message)

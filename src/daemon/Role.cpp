@@ -28,7 +28,9 @@ std::set<std::string> Role::APP_MANAGER_PERMISSIONS = {
 	PERMISSION_KEY_unlock_user,
 	PERMISSION_KEY_add_user,
 	PERMISSION_KEY_delete_user,
-	PERMISSION_KEY_get_users
+	PERMISSION_KEY_get_users,
+	PERMISSION_KEY_role_update,
+	PERMISSION_KEY_role_view
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -80,9 +82,11 @@ const std::shared_ptr<Roles> Roles::FromJson(const web::json::value& obj)
 	return roles;
 }
 
-void Roles::addRole(const web::json::value& obj)
+void Roles::addRole(const web::json::value& obj, std::string name)
 {
-	auto roles = Roles::FromJson(obj);
+	web::json::value result = web::json::value::object();
+	result[name] = obj;
+	auto roles = Roles::FromJson(result);
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	for (auto role : roles->m_roles)
 	{
