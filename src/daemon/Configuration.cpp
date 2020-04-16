@@ -790,9 +790,14 @@ web::json::value Configuration::JsonConsul::AsJson()
 	return result;
 }
 
-bool Configuration::JsonConsul::enabled() const
+bool Configuration::JsonConsul::consulEnabled() const
 {
 	return !m_consulUrl.empty();
+}
+
+bool Configuration::JsonConsul::consulSecurityEnabled() const
+{
+	return !m_consulUrl.empty() && m_securitySyncInterval > 0;
 }
 
 Configuration::JsonConsul::JsonConsul()

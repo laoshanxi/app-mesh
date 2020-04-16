@@ -4,13 +4,14 @@
 #include <cpprest/http_listener.h> // HTTP server 
 #include <cpprest/http_client.h>
 
+#include "Application.h"
+#include "Configuration.h"
+#include "ConsulConnection.h"
 #include "RestHandler.h"
 #include "PrometheusRest.h"
-#include "Configuration.h"
 #include "ResourceCollection.h"
 #include "User.h"
 #include "Label.h"
-#include "Application.h"
 
 #include "../common/Utility.h"
 #include "../prom_exporter/counter.h"
@@ -23,6 +24,10 @@
 #include "../common/HttpRequest.h"
 #include "../prom_exporter/text_serializer.h"
 
+#define CONSUL_SAVE() 	if (Configuration::instance()->getConsul()->consulSecurityEnabled()) \
+							ConsulConnection::instance()->saveSecurity(); \
+						else \
+							Configuration::instance()->saveConfigToDisk();
 
 RestHandler::RestHandler(const std::string& ipaddress, int port)
 	:m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : ipaddress)
@@ -683,7 +688,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest& message)
 	// Store encrypted key if any
 	if (Configuration::instance()->getEncryptKey()) user->updateKey(Utility::hash(user->getKey()));
 
-	Configuration::instance()->saveConfigToDisk();
+	CONSUL_SAVE();
 
 	LOG_INF << fname << "User <" << uname << "> changed password";
 	message.reply(status_codes::OK, "password changed success");
@@ -715,7 +720,7 @@ void RestHandler::apiUserLock(const HttpRequest& message)
 
 	Configuration::instance()->getUserInfo(pathUserName)->lock();
 
-	Configuration::instance()->saveConfigToDisk();
+	CONSUL_SAVE();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -742,7 +747,7 @@ void RestHandler::apiUserUnlock(const HttpRequest& message)
 
 	Configuration::instance()->getUserInfo(pathUserName)->unlock();
 
-	Configuration::instance()->saveConfigToDisk();
+	CONSUL_SAVE();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -767,7 +772,7 @@ void RestHandler::apiUserAdd(const HttpRequest& message)
 	// Store encrypted key if any
 	if (Configuration::instance()->getEncryptKey()) user->updateKey(Utility::hash(user->getKey()));
 
-	Configuration::instance()->saveConfigToDisk();
+	CONSUL_SAVE();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -790,7 +795,7 @@ void RestHandler::apiUserDel(const HttpRequest& message)
 
 	Configuration::instance()->getUsers()->delUser(pathUserName);
 
-	Configuration::instance()->saveConfigToDisk();
+	CONSUL_SAVE();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -838,7 +843,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest& message)
 
 	Configuration::instance()->getRoles()->addRole(message.extract_json(true).get(), pathRoleName);
 
-	Configuration::instance()->saveConfigToDisk();
+	CONSUL_SAVE();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
 	message.reply(status_codes::OK);

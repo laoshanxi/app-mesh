@@ -19,6 +19,7 @@ public:
 	static std::unique_ptr<ConsulConnection>& instance();
 	void initTimer(const std::string& recoveredConsulSsnId = "");
 	const std::string getConsulSessionId();
+	void saveSecurity();
 
 private:
 	virtual void reportStatus(int timerId = 0);

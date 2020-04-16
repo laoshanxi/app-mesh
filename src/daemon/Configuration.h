@@ -43,7 +43,8 @@ class Configuration
 		JsonConsul();
 		static std::shared_ptr<JsonConsul> FromJson(const web::json::value& jobj);
 		web::json::value AsJson();
-		bool enabled() const;
+		bool consulEnabled() const;
+		bool consulSecurityEnabled() const;
 
 		bool m_isMaster;
 		bool m_isNode;

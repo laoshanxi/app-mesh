@@ -40,7 +40,7 @@ void ConsulConnection::reportStatus(int timerId)
 	const static char fname[] = "ConsulConnection::reportStatus() ";
 
 	// check feature enabled
-	if (!Configuration::instance()->getConsul()->enabled()) return;
+	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 
 	// Only node need report status for node (master does not need report)
 	if (!Configuration::instance()->getConsul()->m_isNode) return;
@@ -85,7 +85,7 @@ void ConsulConnection::refreshSession(int timerId)
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->enabled()) return;
+		if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 
 		// check Consul configuration
 		if (!Configuration::instance()->getConsul()->m_isMaster &&
@@ -129,7 +129,7 @@ void ConsulConnection::schedule(int timerId)
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->enabled()) return;
+		if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 		if (getSessionId().empty()) return;
 
 		PerfLog perf(fname);
@@ -173,8 +173,7 @@ void ConsulConnection::security(int timerId)
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->enabled()) return;
-		if (Configuration::instance()->getConsul()->m_securitySyncInterval < 1) return;
+		if (!Configuration::instance()->getConsul()->consulSecurityEnabled()) return;
 
 		PerfLog perf(fname);
 
@@ -447,6 +446,30 @@ bool ConsulConnection::deregisterService(const std::string appName)
 	return false;
 }
 
+void ConsulConnection::saveSecurity()
+{
+	const static char fname[] = "ConsulConnection::saveSecurity() ";
+
+	// /appmgr/security
+	std::string path = std::string(CONSUL_BASE_PATH).append("appmgr/security");
+	
+	auto body = Configuration::instance()->getSecurity()->AsJson(true);
+	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto result = resp.extract_utf8string(true).get();
+		if (result != "true")
+		{
+			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
+		}
+	}
+	else
+	{
+		LOG_WAR << fname << " PUT " << path << " failed with response code : " << resp.status_code();
+	}
+}
+
 void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
 {
 	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
@@ -652,6 +675,10 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
 		}
 	}
+	else
+	{
+		LOG_WAR << fname << " PUT " << path << " failed with response code : " << resp.status_code();
+	}
 	return false;
 }
 
@@ -815,7 +842,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	const static char fname[] = "ConsulConnection::initTimer() ";
 	LOG_DBG << fname;
 
-	if (!Configuration::instance()->getConsul()->enabled()) return;
+	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 
 	if (!recoveredConsulSsnId.empty())
 	{
@@ -860,7 +887,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 
 	// security sync timer
 	this->cancleTimer(m_securityTimerId);
-	if (Configuration::instance()->getConsul()->m_securitySyncInterval > 3)
+	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
 		m_securityTimerId = this->registerTimer(
 			1000L * 1,
