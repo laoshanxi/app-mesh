@@ -1,5 +1,6 @@
 #include <set>
 #include <ace/Signal.h>
+#include <boost/algorithm/string_regex.hpp>
 #include "Configuration.h"
 #include "ConsulConnection.h"
 #include "../common/Utility.h"
@@ -354,11 +355,6 @@ const std::shared_ptr<Roles> Configuration::getRoles() const
 	return m_security->m_roles;
 }
 
-const std::string& Configuration::getJwtRedirectUrl()
-{
-	return m_security->m_JwtRedirectUrl;
-}
-
 const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
 {
 	return m_consul;
@@ -524,7 +520,6 @@ void Configuration::hotUpdate(const web::json::value& config)
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
 	{
 		auto sec = jsonValue.at(JSON_KEY_Security);
-		if (HAS_JSON_FIELD(sec, JSON_KEY_JWTRedirectUrl)) SET_COMPARE(this->m_security->m_JwtRedirectUrl, newConfig->m_security->m_JwtRedirectUrl);
 		if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
 		if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users)) SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
 
@@ -689,6 +684,14 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const w
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, ssl->m_sslEnabled);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
+	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certFile))
+	{
+		throw std::invalid_argument("SSLCertificateFile not exist");
+	}
+	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certKeyFile))
+	{
+		throw std::invalid_argument("SSLCertificateKeyFile not exist");
+	}
 	return ssl;
 }
 
@@ -713,7 +716,6 @@ std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJs
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) security->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SECURITY_EncryptKey, security->m_encryptKey);
-	security->m_JwtRedirectUrl = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_JWTRedirectUrl);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users)) security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), security->m_roles);
 	return security;
 }
@@ -721,7 +723,6 @@ std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJs
 web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
 {
 	auto result = web::json::value::object();
-	result[JSON_KEY_JWTRedirectUrl] = web::json::value::string(m_JwtRedirectUrl);
 	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
 	result[JSON_KEY_SECURITY_EncryptKey] = web::json::value::boolean(m_encryptKey);
 	if (!returnRuntimeInfo)
@@ -750,6 +751,12 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SCHEDULE_INTERVAL, consul->m_scheduleInterval);
+	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSUL_SECURITY_INTERVAL, consul->m_securitySyncInterval);
+	const static std::string urlParttern = R"(http|hppts://\\w*$)";
+	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, boost::regex(urlParttern)))
+	{
+		throw std::invalid_argument("consul URL is not correct");
+	}
 	return consul;
 }
 
@@ -763,6 +770,7 @@ web::json::value Configuration::JsonConsul::AsJson()
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSULE_REPORT_INTERVAL] = web::json::value::number(m_reportInterval);
 	result[JSON_KEY_CONSULE_SCHEDULE_INTERVAL] = web::json::value::number(m_scheduleInterval);
+	result[JSON_KEY_CONSUL_SECURITY_INTERVAL] = web::json::value::number(m_securitySyncInterval);
 	return result;
 }
 
@@ -772,6 +780,8 @@ bool Configuration::JsonConsul::enabled() const
 }
 
 Configuration::JsonConsul::JsonConsul()
-	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_scheduleInterval(CONSUL_TOPOLOGY_DEFAULT_INTERVAL)
+	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), 
+	m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_scheduleInterval(CONSUL_TOPOLOGY_DEFAULT_INTERVAL),
+	m_securitySyncInterval(CONSUL_SECURITY_SYNC_DEFAULT_INTERVAL)
 {
 }

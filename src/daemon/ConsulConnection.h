@@ -24,6 +24,7 @@ private:
 	virtual void reportStatus(int timerId = 0);
 	virtual void refreshSession(int timerId = 0);
 	virtual void schedule(int timerId = 0);
+	virtual void security(int timerId = 0);
 
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
 	std::string requestSessionId();
@@ -50,6 +51,7 @@ private:
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;
 	int m_scheduleTimerId;
+	int m_securityTimerId;
 	
 	bool m_leader;
 };

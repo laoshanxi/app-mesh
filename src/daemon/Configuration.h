@@ -43,7 +43,6 @@ class Configuration
 		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value& jobj);
 		web::json::value AsJson(bool returnRuntimeInfo);
 		bool m_jwtEnabled;
-		std::string m_JwtRedirectUrl;
 		bool m_encryptKey;
 		std::shared_ptr<Users> m_jwtUsers;
 		std::shared_ptr<Roles> m_roles;
@@ -65,6 +64,7 @@ class Configuration
 		// report status to consul interval
 		int m_reportInterval;
 		int m_scheduleInterval;
+		int m_securitySyncInterval;
 	};
 public:
 	Configuration();
@@ -113,7 +113,6 @@ public:
 	std::set<std::string> getUserPermissions(const std::string& userName);
 	const std::shared_ptr<Users> getUsers() const;
 	const std::shared_ptr<Roles> getRoles() const;
-	const std::string& getJwtRedirectUrl();
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
 
 	void dump();

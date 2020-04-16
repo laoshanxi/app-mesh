@@ -101,8 +101,6 @@ web::json::value Role::AsJson()
 
 std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value& obj)
 {
-	const static char fname[] = "Role::FromJson() ";
-
 	auto role = std::make_shared<Role>(roleName);
 	auto permissions = obj.as_array();
 	for (auto permmisionJson : permissions)

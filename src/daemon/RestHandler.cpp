@@ -3,13 +3,18 @@
 #include <cpprest/filestream.h>
 #include <cpprest/http_listener.h> // HTTP server 
 #include <cpprest/http_client.h>
+
 #include "RestHandler.h"
-#include "../common/Utility.h"
-#include "../prom_exporter/counter.h"
-#include "../prom_exporter/gauge.h"
 #include "PrometheusRest.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
+#include "User.h"
+#include "Label.h"
+#include "Application.h"
+
+#include "../common/Utility.h"
+#include "../prom_exporter/counter.h"
+#include "../prom_exporter/gauge.h"
 #include "../common/HttpRequest.h"
 #include "../common/Utility.h"
 #include "../common/jwt-cpp/jwt.h"
@@ -17,9 +22,7 @@
 #include "../common/os/chown.hpp"
 #include "../common/HttpRequest.h"
 #include "../prom_exporter/text_serializer.h"
-#include "User.h"
-#include "Label.h"
-#include "Application.h"
+
 
 RestHandler::RestHandler(const std::string& ipaddress, int port)
 	:m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : ipaddress)
@@ -360,42 +363,16 @@ bool RestHandler::permissionCheck(const HttpRequest& message, const std::string&
 	auto userName = verifyToken(message);
 	if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
 	{
-		// 1. redirect to remote permission check
-		if (Configuration::instance()->getJwtRedirectUrl().length() &&
-			!message.headers().has(HTTP_HEADER_JWT_redirect_from))
+		// check user role permission
+		if (Configuration::instance()->getUserPermissions(userName).count(permission))
 		{
-			std::map<std::string, std::string> headers;
-			if (permission.length()) headers[HTTP_HEADER_JWT_auth_permission] = permission;
-			auto resp = requestHttp(
-				web::http::methods::POST,
-				std::string("/appmgr/auth/") + userName,
-				{}, headers,
-				nullptr,
-				getTokenStr(message));
-			if (resp.status_code() == status_codes::OK)
-			{
-				return true;
-			}
-			else
-			{
-				LOG_WAR << fname << "Remote " << Configuration::instance()->getJwtRedirectUrl() << " permission <"
-					<< permission << "> for user: " << userName << " return code: " << resp.status_code();
-				throw std::invalid_argument(resp.extract_utf8string().get());
-			}
+			LOG_DBG << fname << "authentication success for remote: " << message.remote_address() << " with user : " << userName << " and permission : " << permission;
+			return true;
 		}
 		else
 		{
-			// 2. check user role permission
-			if (Configuration::instance()->getUserPermissions(userName).count(permission))
-			{
-				LOG_DBG << fname << "authentication success for remote: " << message.remote_address() << " with user : " << userName << " and permission : " << permission;
-				return true;
-			}
-			else
-			{
-				LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-				throw std::invalid_argument(std::string("No such permission <") + permission + "> for user <" + userName + ">");
-			}
+			LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
+			throw std::invalid_argument(std::string("No such permission <") + permission + "> for user <" + userName + ">");
 		}
 	}
 	else
@@ -635,19 +612,6 @@ void RestHandler::apiDeleteLabel(const HttpRequest& message)
 
 void RestHandler::apiGetPermissions(const HttpRequest& message)
 {
-	if (Configuration::instance()->getJwtRedirectUrl().length() &&
-		!message.headers().has(HTTP_HEADER_JWT_redirect_from))
-	{
-		auto resp = requestHttp(
-			web::http::methods::GET,
-			"/appmgr/auth/permissions",
-			{}, {},
-			nullptr,
-			getTokenStr(message));
-		message.reply(resp.status_code(), resp.body());
-		return;
-	}
-
 	auto userName = verifyToken(message);
 	auto permissions = Configuration::instance()->getUserPermissions(userName);
 	auto json = web::json::value::array(permissions.size());
@@ -847,8 +811,6 @@ void RestHandler::apiUserList(const HttpRequest& message)
 
 void RestHandler::apiRoleView(const HttpRequest& message)
 {
-	const static char fname[] = "RestHandler::apiRoleView() ";
-
 	permissionCheck(message, PERMISSION_KEY_role_view);
 
 	message.reply(status_codes::OK, Configuration::instance()->getRoles()->AsJson());
@@ -921,23 +883,6 @@ void RestHandler::apiLogin(const HttpRequest& message)
 					LOG_WAR << fname << "User <" << uname << "> login expire_seconds was set from " << timeout << "to " << timeoutValue;
 				}
 			}
-		}
-
-		// redirect auth
-		if (Configuration::instance()->getJwtRedirectUrl().length() && !message.headers().has(HTTP_HEADER_JWT_redirect_from))
-		{
-			std::map<std::string, std::string> headers;
-			headers[HTTP_HEADER_JWT_username] = message.headers().find(HTTP_HEADER_JWT_username)->second;
-			headers[HTTP_HEADER_JWT_password] = message.headers().find(HTTP_HEADER_JWT_password)->second;
-			headers[HTTP_HEADER_JWT_expire_seconds] = std::to_string(timeoutSeconds);
-			auto resp = requestHttp(
-				web::http::methods::POST,
-				"/appmgr/login",
-				{}, headers,
-				nullptr,
-				getTokenStr(message));
-			message.reply(resp.status_code(), resp.body());
-			return;
 		}
 
 		if (Configuration::instance()->getEncryptKey()) passwd = Utility::hash(passwd);
@@ -1127,43 +1072,6 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	}
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
-}
-
-http_response RestHandler::requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body, const std::string& token)
-{
-	const static char fname[] = "RestHandler::requestHttp() ";
-
-	auto restURL = Configuration::instance()->getJwtRedirectUrl();
-
-	LOG_DBG << fname << "Redirect :" << path << " to: " << restURL;
-
-	// Create http_client to send the request.
-	web::http::client::http_client_config config;
-	//config.set_timeout(std::chrono::seconds(65));
-	config.set_validate_certificates(false);
-	web::http::client::http_client client(restURL, config);
-
-	// Build request URI and start the request.
-	uri_builder builder(GET_STRING_T(path));
-	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
-		{
-			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
-		});
-
-	HttpRequest request(mtd);
-	for (auto h : header)
-	{
-		request.headers().add(h.first, h.second);
-	}
-	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + token);
-	request.headers().add(HTTP_HEADER_JWT_redirect_from, MY_HOST_NAME);
-	request.set_request_uri(builder.to_uri());
-	if (body != nullptr)
-	{
-		request.set_body(*body);
-	}
-	http_response response = client.request(request).get();
-	return std::move(response);
 }
 
 void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)

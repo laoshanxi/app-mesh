@@ -13,7 +13,7 @@
 extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_scheduleTimerId(0), m_leader(0)
+	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_scheduleTimerId(0), m_securityTimerId(0), m_leader(0)
 {
 	// override default reactor
 	m_reactor = m_timerReactor;
@@ -24,6 +24,7 @@ ConsulConnection::~ConsulConnection()
 	this->cancleTimer(m_ssnRenewTimerId);
 	this->cancleTimer(m_reportStatusTimerId);
 	this->cancleTimer(m_scheduleTimerId);
+	this->cancleTimer(m_securityTimerId);
 }
 
 std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
@@ -163,6 +164,11 @@ void ConsulConnection::schedule(int timerId)
 			__FUNCTION__
 		);
 	}
+}
+
+void ConsulConnection::security(int timerId)
+{
+
 }
 
 std::string ConsulConnection::requestSessionId()
@@ -810,6 +816,18 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 		m_scheduleTimerId = this->registerTimer(
 			Configuration::instance()->getConsul()->m_scheduleInterval * 1000L, 0,
 			std::bind(&ConsulConnection::schedule, this, std::placeholders::_1),
+			__FUNCTION__
+		);
+	}
+
+	// security sync timer
+	this->cancleTimer(m_securityTimerId);
+	if (Configuration::instance()->getConsul()->m_securitySyncInterval > 3)
+	{
+		m_securityTimerId = this->registerTimer(
+			1000L * 1,
+			Configuration::instance()->getConsul()->m_securitySyncInterval,
+			std::bind(&ConsulConnection::security, this, std::placeholders::_1),
 			__FUNCTION__
 		);
 	}

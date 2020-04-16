@@ -159,6 +159,7 @@ public:
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define CONSUL_REPORT_DEFAULT_INTERVAL 15
 #define CONSUL_TOPOLOGY_DEFAULT_INTERVAL 5
+#define CONSUL_SECURITY_SYNC_DEFAULT_INTERVAL 10
 
 #define JSON_KEY_Description "Description"
 
@@ -194,6 +195,7 @@ public:
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSULE_REPORT_INTERVAL "report_interval"
 #define JSON_KEY_CONSULE_SCHEDULE_INTERVAL "schedule_interval"
+#define JSON_KEY_CONSUL_SECURITY_INTERVAL "enable_consul_secutiry_interval"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"
@@ -256,7 +258,6 @@ public:
 #define HTTP_HEADER_JWT_password "password"
 #define HTTP_HEADER_JWT_new_password "new_password"
 #define HTTP_HEADER_JWT_auth_permission "auth_permission"
-#define HTTP_HEADER_JWT_redirect_from "redirect_from"
 #define HTTP_HEADER_KEY_exit_code "exit_code"
 #define HTTP_HEADER_KEY_file_path "file_path"
 #define HTTP_HEADER_KEY_file_mode "file_mode"
