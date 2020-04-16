@@ -768,8 +768,8 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SCHEDULE_INTERVAL, consul->m_scheduleInterval);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSUL_SECURITY_INTERVAL, consul->m_securitySyncInterval);
-	const static std::string urlParttern = R"((http|https)://((\\w)*|([0-9]*)|([-|_])*)+([\\.|/]((\\w)*|([0-9]*)|([-|_])*))+)";
-	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, boost::regex(urlParttern)))
+	const static boost::regex urlExrp("(http|https)://((\\w)*|([0-9]*)|([-|_])*)+([\\.|/]((\\w)*|([0-9]*)|([-|_])*))+");
+	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExrp))
 	{
 		throw std::invalid_argument("consul URL is not correct");
 	}
