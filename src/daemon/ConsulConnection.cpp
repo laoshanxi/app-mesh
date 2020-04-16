@@ -63,10 +63,6 @@ void ConsulConnection::reportStatus(int timerId)
 				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
 			}
 		}
-		else
-		{
-			LOG_WAR << fname << "report resource to " << path << " failed with response : " << resp.extract_utf8string(true).get();
-		}
 	}
 	catch (const std::exception& ex)
 	{
@@ -234,10 +230,6 @@ std::string ConsulConnection::requestSessionId()
 			sessionId = GET_JSON_STR_VALUE(json, "ID");
 			LOG_DBG << fname << "sessionId=" << sessionId;
 		}
-	}
-	else
-	{
-		LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
 	}
 	return sessionId;
 }
@@ -464,10 +456,6 @@ void ConsulConnection::saveSecurity()
 			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
 		}
 	}
-	else
-	{
-		LOG_WAR << fname << " PUT " << path << " failed with response code : " << resp.status_code();
-	}
 }
 
 void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
@@ -674,10 +662,6 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 		{
 			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
 		}
-	}
-	else
-	{
-		LOG_WAR << fname << " PUT " << path << " failed with response code : " << resp.status_code();
 	}
 	return false;
 }
@@ -931,10 +915,9 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	request.set_request_uri(builder.to_uri());
 	if (body != nullptr)
 	{
-		request.set_body(*body);
+		request.set_body(Utility::prettyJson(body->serialize()));
 	}
 	web::http::http_response response = client.request(request).get();
-	// TODO: resp.status_code: 301
 	LOG_DBG << fname << path << " return " << response.status_code();
 	return std::move(response);
 }

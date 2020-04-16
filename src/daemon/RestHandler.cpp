@@ -24,7 +24,7 @@
 #include "../common/HttpRequest.h"
 #include "../prom_exporter/text_serializer.h"
 
-#define CONSUL_SAVE() 	if (Configuration::instance()->getConsul()->consulSecurityEnabled()) \
+#define SAVE_CONFIG() 	if (Configuration::instance()->getConsul()->consulSecurityEnabled()) \
 							ConsulConnection::instance()->saveSecurity(); \
 						else \
 							Configuration::instance()->saveConfigToDisk();
@@ -650,6 +650,7 @@ void RestHandler::apiSetBasicConfig(const HttpRequest& message)
 	Configuration::instance()->hotUpdate(json);
 
 	Configuration::instance()->saveConfigToDisk();
+	if (Configuration::instance()->getConsul()->consulSecurityEnabled()) ConsulConnection::instance()->saveSecurity();
 
 	apiGetBasicConfig(message);
 }
@@ -688,7 +689,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest& message)
 	// Store encrypted key if any
 	if (Configuration::instance()->getEncryptKey()) user->updateKey(Utility::hash(user->getKey()));
 
-	CONSUL_SAVE();
+	SAVE_CONFIG();
 
 	LOG_INF << fname << "User <" << uname << "> changed password";
 	message.reply(status_codes::OK, "password changed success");
@@ -720,7 +721,7 @@ void RestHandler::apiUserLock(const HttpRequest& message)
 
 	Configuration::instance()->getUserInfo(pathUserName)->lock();
 
-	CONSUL_SAVE();
+	SAVE_CONFIG();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -747,7 +748,7 @@ void RestHandler::apiUserUnlock(const HttpRequest& message)
 
 	Configuration::instance()->getUserInfo(pathUserName)->unlock();
 
-	CONSUL_SAVE();
+	SAVE_CONFIG();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -772,7 +773,7 @@ void RestHandler::apiUserAdd(const HttpRequest& message)
 	// Store encrypted key if any
 	if (Configuration::instance()->getEncryptKey()) user->updateKey(Utility::hash(user->getKey()));
 
-	CONSUL_SAVE();
+	SAVE_CONFIG();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -795,7 +796,7 @@ void RestHandler::apiUserDel(const HttpRequest& message)
 
 	Configuration::instance()->getUsers()->delUser(pathUserName);
 
-	CONSUL_SAVE();
+	SAVE_CONFIG();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
 	message.reply(status_codes::OK);
@@ -843,7 +844,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest& message)
 
 	Configuration::instance()->getRoles()->addRole(message.extract_json(true).get(), pathRoleName);
 
-	CONSUL_SAVE();
+	SAVE_CONFIG();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
 	message.reply(status_codes::OK);
