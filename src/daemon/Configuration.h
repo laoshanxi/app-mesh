@@ -39,15 +39,6 @@ class Configuration
 		std::shared_ptr<JsonSsl> m_ssl;
 		JsonRest();
 	};
-	struct JsonSecurity {
-		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value& jobj);
-		web::json::value AsJson(bool returnRuntimeInfo);
-		bool m_jwtEnabled;
-		bool m_encryptKey;
-		std::shared_ptr<Users> m_jwtUsers;
-		std::shared_ptr<Roles> m_roles;
-		JsonSecurity();
-	};
 	struct JsonConsul {
 		JsonConsul();
 		static std::shared_ptr<JsonConsul> FromJson(const web::json::value& jobj);
@@ -67,6 +58,15 @@ class Configuration
 		int m_securitySyncInterval;
 	};
 public:
+	struct JsonSecurity {
+		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value& jobj);
+		web::json::value AsJson(bool returnRuntimeInfo);
+		bool m_jwtEnabled;
+		bool m_encryptKey;
+		std::shared_ptr<Users> m_jwtUsers;
+		std::shared_ptr<Roles> m_roles;
+		JsonSecurity();
+	};
 	Configuration();
 	virtual ~Configuration();
 
@@ -111,9 +111,11 @@ public:
 
 	const std::shared_ptr<User> getUserInfo(const std::string& userName);
 	std::set<std::string> getUserPermissions(const std::string& userName);
-	const std::shared_ptr<Users> getUsers() const;
-	const std::shared_ptr<Roles> getRoles() const;
+	const std::shared_ptr<Users> getUsers();
+	const std::shared_ptr<Roles> getRoles();
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
+	const std::shared_ptr<Configuration::JsonSecurity> getSecurity();
+	void updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security);
 
 	void dump();
 

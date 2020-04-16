@@ -86,7 +86,7 @@
     "session_TTL": 30,
     "report_interval": 15,
     "schedule_interval": 10,
-    "enable_consul_secutiry_interval": 10
+    "enable_consul_security_interval": 10
   },
   "Labels": {
     "os_version": "centos7.6",

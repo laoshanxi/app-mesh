@@ -195,7 +195,7 @@ public:
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSULE_REPORT_INTERVAL "report_interval"
 #define JSON_KEY_CONSULE_SCHEDULE_INTERVAL "schedule_interval"
-#define JSON_KEY_CONSUL_SECURITY_INTERVAL "enable_consul_secutiry_interval"
+#define JSON_KEY_CONSUL_SECURITY_INTERVAL "enable_consul_security_interval"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"

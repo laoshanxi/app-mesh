@@ -331,6 +331,7 @@ const size_t Configuration::getThreadPoolSize() const
 
 const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName)
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_security->m_jwtUsers->getUser(userName);
 }
 
@@ -345,19 +346,33 @@ std::set<std::string> Configuration::getUserPermissions(const std::string& userN
 	return std::move(permissionSet);
 }
 
-const std::shared_ptr<Users> Configuration::getUsers() const
+const std::shared_ptr<Users> Configuration::getUsers()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_security->m_jwtUsers;
 }
 
-const std::shared_ptr<Roles> Configuration::getRoles() const
+const std::shared_ptr<Roles> Configuration::getRoles()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_security->m_roles;
 }
 
 const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
 {
 	return m_consul;
+}
+
+const std::shared_ptr<Configuration::JsonSecurity> Configuration::getSecurity()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_security;
+}
+
+void Configuration::updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_security = security;
 }
 
 void Configuration::dump()
@@ -471,6 +486,7 @@ void Configuration::hotUpdate(const web::json::value& config)
 
 	LOG_DBG << fname << "Entered";
 
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// not support update [Application] section
 	auto jsonValue = config;
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
@@ -752,7 +768,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SCHEDULE_INTERVAL, consul->m_scheduleInterval);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSUL_SECURITY_INTERVAL, consul->m_securitySyncInterval);
-	const static std::string urlParttern = R"(http|hppts://\\w*$)";
+	const static std::string urlParttern = R"((http|https)://((\\w)*|([0-9]*)|([-|_])*)+([\\.|/]((\\w)*|([0-9]*)|([-|_])*))+)";
 	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, boost::regex(urlParttern)))
 	{
 		throw std::invalid_argument("consul URL is not correct");

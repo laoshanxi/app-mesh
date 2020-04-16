@@ -39,7 +39,6 @@ std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
 void ConsulConnection::reportStatus(int timerId)
 {
 	const static char fname[] = "ConsulConnection::reportStatus() ";
-	PerfLog perf(fname);
 
 	// check feature enabled
 	if (!Configuration::instance()->getConsul()->enabled()) return;
@@ -47,6 +46,7 @@ void ConsulConnection::reportStatus(int timerId)
 	// Only node need report status for node (master does not need report)
 	if (!Configuration::instance()->getConsul()->m_isNode) return;
 
+	PerfLog perf(fname);
 	try
 	{
 		//report resource: /appmgr/nodes/myhost
@@ -82,8 +82,7 @@ void ConsulConnection::reportStatus(int timerId)
 void ConsulConnection::refreshSession(int timerId)
 {
 	const static char fname[] = "ConsulConnection::refreshSession() ";
-	PerfLog perf(fname);
-
+	
 	try
 	{
 		// check feature enabled
@@ -96,6 +95,7 @@ void ConsulConnection::refreshSession(int timerId)
 			return;
 		}
 
+		PerfLog perf(fname);
 		// get session id
 		std::string sessionId = getSessionId();
 		if (sessionId.empty())
@@ -126,13 +126,14 @@ void ConsulConnection::refreshSession(int timerId)
 void ConsulConnection::schedule(int timerId)
 {
 	const static char fname[] = "ConsulConnection::schedule() ";
-	PerfLog perf(fname);
 
 	try
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->enabled()) return;
 		if (getSessionId().empty()) return;
+
+		PerfLog perf(fname);
 
 		if (Configuration::instance()->getConsul()->m_isMaster)
 		{
@@ -168,7 +169,47 @@ void ConsulConnection::schedule(int timerId)
 
 void ConsulConnection::security(int timerId)
 {
+	const static char fname[] = "ConsulConnection::security() ";
 
+	try
+	{
+		// check feature enabled
+		if (!Configuration::instance()->getConsul()->enabled()) return;
+		if (Configuration::instance()->getConsul()->m_securitySyncInterval < 1) return;
+
+		PerfLog perf(fname);
+
+		static long lastIndex = 0;
+		auto securityJson = web::json::value::object();
+		auto resp = requestHttp(web::http::methods::GET, "/v1/kv/appmgr/security", {}, {}, nullptr);
+		if (resp.status_code() == web::http::status_codes::OK)
+		{
+			auto arr = resp.extract_json(true).get().as_array();
+			if (arr.size() == 0 || !HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value")) return;
+			auto securityJson = arr[0];
+			auto index = GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
+			if (index > lastIndex)
+			{
+				auto security = web::json::value::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
+				auto securityObj = Configuration::JsonSecurity::FromJson(security);
+				Configuration::instance()->updateSecurity(securityObj);
+				lastIndex = index;
+				LOG_DBG << fname << "Security info updated from Consul successfully";
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
+		}
+	}
+	catch (const std::exception& ex)
+	{
+		LOG_WAR << fname << " got exception: " << ex.what();
+	}
+	catch (...)
+	{
+		LOG_WAR << fname << " exception";
+	}
 }
 
 std::string ConsulConnection::requestSessionId()
