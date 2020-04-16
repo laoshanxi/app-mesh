@@ -16,7 +16,7 @@ class ConsulConnection :public TimerHandler
 public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
-	static std::shared_ptr<ConsulConnection>& instance();
+	static std::unique_ptr<ConsulConnection>& instance();
 	void initTimer(const std::string& recoveredConsulSsnId = "");
 	const std::string getConsulSessionId();
 

@@ -27,15 +27,14 @@ ConsulConnection::~ConsulConnection()
 	this->cancleTimer(m_securityTimerId);
 }
 
-std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
+std::unique_ptr<ConsulConnection>& ConsulConnection::instance()
 {
-	static auto singleton = std::make_shared<ConsulConnection>();
+	static auto singleton = std::make_unique<ConsulConnection>();
 	return singleton;
 }
 
 // report label and resource to host KV
 // report timestamp to Flags attr for KV
-// report does not associate session ID
 void ConsulConnection::reportStatus(int timerId)
 {
 	const static char fname[] = "ConsulConnection::reportStatus() ";
@@ -180,13 +179,14 @@ void ConsulConnection::security(int timerId)
 		PerfLog perf(fname);
 
 		static long lastIndex = 0;
-		auto securityJson = web::json::value::object();
 		auto resp = requestHttp(web::http::methods::GET, "/v1/kv/appmgr/security", {}, {}, nullptr);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
-			auto arr = resp.extract_json(true).get().as_array();
-			if (arr.size() == 0 || !HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value")) return;
-			auto securityJson = arr[0];
+			auto respJson = resp.extract_json(true).get();
+			if (!respJson.is_array() || respJson.as_array().size() == 0) return;
+			auto securityJson = respJson.as_array().at(0);
+			if (!HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value")) return;
+			
 			auto index = GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
 			if (index > lastIndex)
 			{
@@ -254,12 +254,10 @@ std::string ConsulConnection::renewSessionId()
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto json = resp.extract_json(true).get();
-			LOG_DBG << fname << json.serialize();
 			if (json.is_array() && json.as_array().size())
 			{
 				json = json.as_array().at(0);
 				sessionId = GET_JSON_STR_VALUE(json, "ID");
-				//LOG_DBG << fname << "sessionId=" << sessionId;
 			}
 		}
 		else
@@ -361,7 +359,6 @@ void ConsulConnection::nodeSchedule()
 	}
 	else
 	{
-		// TODO: if topology missed for some times treat as remove
 		// retrieveTopology will throw if connection was not reached
 		for (const auto& currentApp : currentAllApps)
 		{
