@@ -27,9 +27,9 @@ ConsulConnection::~ConsulConnection()
 	this->cancleTimer(m_securityTimerId);
 }
 
-std::unique_ptr<ConsulConnection>& ConsulConnection::instance()
+std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
 {
-	static auto singleton = std::make_unique<ConsulConnection>();
+	static auto singleton = std::make_shared<ConsulConnection>();
 	return singleton;
 }
 
