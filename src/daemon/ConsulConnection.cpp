@@ -445,7 +445,7 @@ void ConsulConnection::saveSecurity()
 	// /appmgr/security
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
 	
-	auto body = Configuration::instance()->getSecurity()->AsJson(true);
+	auto body = Configuration::instance()->getSecurity()->AsJson(false);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
