@@ -49,7 +49,7 @@ git clone https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion"
+$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so
