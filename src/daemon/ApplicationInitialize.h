@@ -21,7 +21,7 @@ public:
 	virtual void enable() override;
 	virtual void disable() override;
 	virtual bool avialable() override;
-	virtual void invoke();
+	virtual void invoke() override;
 
 protected:
 	web::json::value m_application;
