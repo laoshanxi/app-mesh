@@ -443,7 +443,7 @@ void ConsulConnection::saveSecurity()
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
 
 	// /appmgr/security
-	std::string path = std::string(CONSUL_BASE_PATH).append("appmgr/security");
+	std::string path = std::string(CONSUL_BASE_PATH).append("security");
 	
 	auto body = Configuration::instance()->getSecurity()->AsJson(true);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
