@@ -346,6 +346,19 @@ std::set<std::string> Configuration::getUserPermissions(const std::string& userN
 	return std::move(permissionSet);
 }
 
+std::set<std::string> Configuration::getAllPermissions()
+{
+	std::set<std::string> permissionSet;
+	for (auto user : getSecurity()->m_jwtUsers->getUsers())
+	{
+		for (auto role : user.second->getRoles())
+		{
+			for (auto perm : role->getPermissions()) permissionSet.insert(perm);
+		}
+	}
+	return std::move(permissionSet);
+}
+
 const std::shared_ptr<Users> Configuration::getUsers()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);

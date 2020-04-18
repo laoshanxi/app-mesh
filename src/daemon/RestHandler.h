@@ -60,7 +60,7 @@ private:
 	void apiGetLabels(const HttpRequest& message);
 	void apiAddLabel(const HttpRequest& message);
 	void apiDeleteLabel(const HttpRequest& message);
-	void apiGetPermissions(const HttpRequest& message);
+	void apiGetUserPermissions(const HttpRequest& message);
 	void apiGetBasicConfig(const HttpRequest& message);
 	void apiSetBasicConfig(const HttpRequest& message);
 	void apiUserChangePwd(const HttpRequest& message);
@@ -71,6 +71,7 @@ private:
 	void apiUserList(const HttpRequest& message);
 	void apiRoleView(const HttpRequest& message);
 	void apiRoleUpdate(const HttpRequest& message);
+	void apiListPermissions(const HttpRequest& message);
 	void apiHealth(const HttpRequest& message);
 	void apiMetrics(const HttpRequest& message);
 

@@ -298,3 +298,4 @@ public:
 #define PERMISSION_KEY_get_users  				"get-users"
 #define PERMISSION_KEY_role_update  			"role_update"
 #define PERMISSION_KEY_role_view 				"role_view"
+#define PERMISSION_KEY_permission_list			"permission_list"

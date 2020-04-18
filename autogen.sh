@@ -22,11 +22,11 @@ if [ -f "/usr/bin/yum" ]; then
 	CMAKE=$(which cmake3)
 	yum install -y dos2unix openssl-devel
 
-	yum install -y boost169-devel boost169-static
-	export BOOST_LIBRARYDIR=/usr/lib64/boost169
-	export BOOST_INCLUDEDIR=/usr/include/boost169
-	ln -s /usr/include/boost169/boost /usr/local/include/boost
-	ln -s /usr/lib64/boost169/ /usr/local/lib64/boost
+	#yum install -y boost169-devel boost169-static
+	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
+	#export BOOST_INCLUDEDIR=/usr/include/boost169
+	#ln -s /usr/include/boost169/boost /usr/local/include/boost
+	#ln -s /usr/lib64/boost169/ /usr/local/lib64/boost
 
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
 	yum install -y ruby rubygems ruby-devel
@@ -42,6 +42,20 @@ fi
 
 #install fpm
 gem install fpm
+
+# build boost_1_69_0 on RHEL
+if [ -f "/usr/bin/yum" ]; then
+	# BOOST:
+	# https://www.cnblogs.com/eagle6688/p/5840773.html
+	wget https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz
+	tar zxvf boost_1_69_0.tar.gz
+	cd ./boost_1_69_0
+	./bootstrap.sh
+	./b2
+	./b2 install
+	ls -al /usr/local/lib/libboost_system.so.1.69.0 /usr/local/include/boost/thread.hpp 
+	cd $ROOTDIR
+fi
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
@@ -105,15 +119,3 @@ mv cfssl_linux-amd64 /usr/local/bin/cfssl
 mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
 mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo
 
-# GCC 4.9.4
-cd $ROOTDIR
-wget http://www.netgull.com/gcc/releases/gcc-4.9.4/gcc-4.9.4.tar.gz
-tar zxvf gcc-4.9.4.tar.gz
-cd gcc-4.9.4
-./contrib/download_prerequisites 
-mkdir build
-cd build
-../configure --enable-checking=release --enable-languages=c,c++ --disable-multilib
-make -j 4
-make install
-gcc -v

@@ -399,7 +399,6 @@ Method | URI | Body/Headers | Desc
 ---|---|---|---
 POST| /appmgr/login | username=base64(uname) <br> password=base64(passwd) <br> Optional: <br> expire_seconds=600 | JWT authenticate login
 POST| /appmgr/auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/auth/admin <br> Optional: <br> auth_permission=permission_id | JWT token authenticate
-GET | /appmgr/auth/permissions |  | Get user self permissions, user token is required in header
 GET | /appmgr/app/$app-name | | Get an application infomation
 GET | /appmgr/app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealth
 GET | /appmgr/app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
@@ -429,6 +428,8 @@ DEL | /appmgr/user/usera | | Delete usera
 GET | /appmgr/users | | Get user list
 GET | /appmgr/roles | | Get role list
 POST| /appmgr/role/roleA | | Update roleA with defined permissions
+GET | /appmgr/user/permissions |  | Get user self permissions, user token is required in header
+GET | /appmgr/permissions |  | Get all permissions
 GET | /appmgr/metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)
 
 ---

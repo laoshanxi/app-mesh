@@ -60,6 +60,7 @@
         "label-view",
         "config-view",
         "get-users",
+        "permission_list",
         "role_view"
       ],
       "usermgr": [

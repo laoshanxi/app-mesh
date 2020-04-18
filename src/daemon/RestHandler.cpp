@@ -101,8 +101,7 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, "/appmgr/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/admin
 	bindRestMethod(web::http::methods::POST, R"(/appmgr/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/auth/permissions
-	bindRestMethod(web::http::methods::GET, "/appmgr/auth/permissions", std::bind(&RestHandler::apiGetPermissions, this, std::placeholders::_1));
+	
 
 	// 2. View Application
 	// http://127.0.0.1:6060/app/app-name
@@ -159,6 +158,8 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	bindRestMethod(web::http::methods::GET, "/appmgr/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmgr/roles", std::bind(&RestHandler::apiRoleView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/appmgr/role/([^/\*]+))", std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmgr/user/permissions", std::bind(&RestHandler::apiGetUserPermissions, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmgr/permissions", std::bind(&RestHandler::apiListPermissions, this, std::placeholders::_1));
 
 	// 9. metrics
 	bindRestMethod(web::http::methods::GET, R"(/appmgr/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
@@ -615,7 +616,7 @@ void RestHandler::apiDeleteLabel(const HttpRequest& message)
 	message.reply(status_codes::OK);
 }
 
-void RestHandler::apiGetPermissions(const HttpRequest& message)
+void RestHandler::apiGetUserPermissions(const HttpRequest& message)
 {
 	auto userName = verifyToken(message);
 	auto permissions = Configuration::instance()->getUserPermissions(userName);
@@ -848,6 +849,21 @@ void RestHandler::apiRoleUpdate(const HttpRequest& message)
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiListPermissions(const HttpRequest& message)
+{
+	permissionCheck(message, PERMISSION_KEY_permission_list);
+
+	auto userName = verifyToken(message);
+	auto permissions = Configuration::instance()->getAllPermissions();
+	auto json = web::json::value::array(permissions.size());
+	int index = 0;
+	for (auto perm : permissions)
+	{
+		json[index++] = web::json::value::string(perm);
+	}
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiHealth(const HttpRequest& message)

@@ -112,6 +112,7 @@ public:
 
 	const std::shared_ptr<User> getUserInfo(const std::string& userName);
 	std::set<std::string> getUserPermissions(const std::string& userName);
+	std::set<std::string> getAllPermissions();
 	const std::shared_ptr<Users> getUsers();
 	const std::shared_ptr<Roles> getRoles();
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
