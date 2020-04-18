@@ -23,7 +23,8 @@ build_dir:
 	cp ./src/cli/appc ${TMP_DIR}/
 	cp ./src/daemon/appsvc ${TMP_DIR}/
 	cp ./src/daemon/appsvc.json ${TMP_DIR}/
-	cp ./script/*.sh ${TMP_DIR}/script
+	cp ./script/app*.sh ${TMP_DIR}/script
+	cp ./script/rpm*.sh ${TMP_DIR}/script
 	cp ./script/*.service ${TMP_DIR}/script
 	cp ./ssl/*.sh ${TMP_DIR}/ssl
 	cp ./src/cli/bash_completion.sh ${TMP_DIR}/script
