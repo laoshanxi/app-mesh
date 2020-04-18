@@ -31,7 +31,7 @@ build_dir:
 	cp /usr/local/bin/cfssl ${TMP_DIR}/ssl
 	cp /usr/local/bin/cfssljson ${TMP_DIR}/ssl
 	chmod +x ${TMP_DIR}/script/*.sh
-	dos2unix ${TMP_DIR}/script/*.sh
+	-dos2unix ${TMP_DIR}/script/*.sh
 	env LD_LIBRARY_PATH=${LDPATH} \
 	ldd ./src/daemon/appsvc | grep boost | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
