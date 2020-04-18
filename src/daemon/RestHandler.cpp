@@ -932,7 +932,9 @@ void RestHandler::apiAuth(const HttpRequest& message)
 	// with permission means token and permission check both
 	if (permissionCheck(message, permission))
 	{
-		message.reply(status_codes::OK, "Success");
+		auto result = web::json::value::object();
+		result["user"] = web::json::value::string(getTokenUser(message));
+		message.reply(status_codes::OK, result);
 	}
 	else
 	{
