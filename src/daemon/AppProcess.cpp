@@ -6,7 +6,7 @@
 #include "ResourceLimitation.h"
 
 AppProcess::AppProcess(int cacheOutputLines)
-	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0)
+	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE)
 {
 	m_uuid = Utility::createUUID();
 }
@@ -17,6 +17,11 @@ AppProcess::~AppProcess()
 	if (this->running())
 	{
 		killgroup();
+	}
+	if (m_stdoutHandler != ACE_INVALID_HANDLE)
+	{
+		ACE_OS::close(m_stdoutHandler);
+		m_stdoutHandler = ACE_INVALID_HANDLE;
 	}
 }
 
@@ -125,7 +130,7 @@ std::tuple<std::string, std::string> AppProcess::extractCommand(const std::strin
 	return std::tuple<std::string, std::string>(params, cmdroot);
 }
 
-int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
@@ -172,7 +177,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			return ACE_INVALID_PID;
 		}
 	}
-	option.setgroup(0);
+	option.setgroup(0);	// set group id with the process id, used to kill process group
 	option.inherit_environment(true);
 	option.handle_inheritance(0);
 	if (workDir.length()) option.working_directory(workDir.c_str());
@@ -181,6 +186,19 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
 		LOG_DBG << "spawnProcess env: " << pair.first.c_str() << "=" << pair.second.c_str();
 	});
+	option.release_handles();
+	if (m_stdoutHandler != ACE_INVALID_HANDLE)
+	{
+		ACE_OS::close(m_stdoutHandler);
+		m_stdoutHandler = ACE_INVALID_HANDLE;
+	}
+	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
+	if (stdoutFile.length())
+	{
+		dummy = ACE_OS::open("/dev/null", O_RDWR);
+		m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND);
+		option.set_handles(dummy, m_stdoutHandler, m_stdoutHandler);
+	}
 	// do not inherit LD_LIBRARY_PATH to child
 	static const std::string ldEnv = ::getenv("LD_LIBRARY_PATH");
 	if (!ldEnv.empty())
@@ -201,6 +219,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		pid = -1;
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << std::strerror(errno);
 	}
+	if (dummy != ACE_INVALID_HANDLE) ACE_OS::close(dummy);
 	return pid;
 }
 

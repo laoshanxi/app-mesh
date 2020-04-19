@@ -84,6 +84,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
 	if (app->m_user.empty()) app->m_user = "root";
 	app->m_comments = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_comments));
+	app->m_stdoutFile = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_stdout_file));
 	// Be noticed do not use multiple spaces between command arguments
 	// "ping www.baidu.com    123" equals
 	// "ping www.baidu.com 123"
@@ -208,7 +209,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
-				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 				if (m_metricStartCount) m_metricStartCount->metric().Increment();
 			}
 		}
@@ -302,7 +303,7 @@ std::string Application::runApp(int timeoutSeconds)
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit);
+	m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 
 	if (m_metricStartCount) m_metricStartCount->metric().Increment();
 
@@ -451,6 +452,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_commandLineFini.length()) result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
 	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
+	if (m_stdoutFile.length()) result[JSON_KEY_APP_stdout_file] = web::json::value::string(GET_STRING_T(m_stdoutFile));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
 	if (m_comments.length()) result[JSON_KEY_APP_comments] = web::json::value::string(GET_STRING_T(m_comments));
 	if (returnRuntimeInfo)

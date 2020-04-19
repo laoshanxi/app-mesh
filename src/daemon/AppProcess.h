@@ -28,7 +28,9 @@ public:
 
 	std::tuple<std::string, std::string> extractCommand(const std::string& cmd);
 
-	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit);
+	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
+		std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+		std::string stdoutFile);
 
 	virtual std::string getOutputMsg();
 	virtual std::string fetchOutputMsg();
@@ -42,4 +44,5 @@ private:
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	std::string m_uuid;
 	int m_killTimerId;
+	ACE_HANDLE m_stdoutHandler;
 };

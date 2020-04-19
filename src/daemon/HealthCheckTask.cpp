@@ -42,7 +42,7 @@ void HealthCheckTask::healthCheckTimer(int timerId)
 			if (app->avialable())
 			{
 				auto proc = std::make_shared<AppProcess>(0);
-				proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr);
+				proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr, "");
 				proc->regKillTimer(DEFAULT_HEALTH_CHECK_INTERVAL, fname);
 				ACE_exitcode exitCode;
 				proc->wait(&exitCode);

@@ -30,7 +30,7 @@ MonitoredProcess::~MonitoredProcess()
 	LOG_DBG << fname << "Process <" << this->getpid() << "> released";
 }
 
-pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
+pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 {
 	const static char fname[] = "MonitoredProcess::spawn() ";
 
@@ -48,11 +48,12 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & options)
 	}
 	else
 	{
+		auto dummy = ACE_OS::open("/dev/null", O_RDWR);
 		// release the handles if already set in process options
-		options.release_handles();
-		options.set_handles(ACE_STDIN, m_pipe->write_handle(), m_pipe->write_handle());
+		option.release_handles();
+		option.set_handles(dummy, m_pipe->write_handle(), m_pipe->write_handle());
 	}
-	auto rt = AppProcess::spawn(options);
+	auto rt = AppProcess::spawn(option);
 
 	// Start thread to read stdout/stderr stream
 	if (m_enableBuildinThread) m_thread = std::make_unique<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));

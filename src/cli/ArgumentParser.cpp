@@ -286,6 +286,7 @@ void ArgumentParser::processReg()
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>()->default_value("/tmp"), "working directory")
+		("stdout,S", po::value<std::string>(), "stdout file")
 		("status,s", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
 		("start_time,t", po::value<std::string>(), "start date time for app (e.g., '2018-01-01 09:00:00')")
 		("end_time", po::value<std::string>(), "end date time for app (e.g., '2018-01-01 09:00:00')")
@@ -339,6 +340,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("fini"))jsobObj[JSON_KEY_APP_fini_command] = web::json::value::string(m_commandLineVariables["fini"].as<std::string>());
 	if (m_commandLineVariables.count("health_check"))jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
 	if (m_commandLineVariables.count("appuser")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["appuser"].as<std::string>());
+	if (m_commandLineVariables.count("stdout")) jsobObj[JSON_KEY_APP_stdout_file] = web::json::value::string(m_commandLineVariables["stdout"].as<std::string>());
 	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
 	if (m_commandLineVariables.count(JSON_KEY_APP_comments)) jsobObj[JSON_KEY_APP_comments] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_comments].as<std::string>());

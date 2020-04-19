@@ -89,6 +89,7 @@ protected:
 	std::string m_commandLineFini;
 	std::string m_user;
 	std::string m_workdir;
+	std::string m_stdoutFile;
 	std::string m_comments;
 	//the exit code of last instance
 	std::shared_ptr<int> m_return;

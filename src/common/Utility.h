@@ -200,6 +200,7 @@ public:
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"
 #define JSON_KEY_APP_comments "comments"
+#define JSON_KEY_APP_stdout_file "stdout_file"
 #define JSON_KEY_APP_command "command"
 #define JSON_KEY_APP_init_command "init_command"
 #define JSON_KEY_APP_fini_command "fini_command"
