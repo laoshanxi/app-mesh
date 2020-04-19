@@ -1,11 +1,14 @@
 #include <algorithm>
-#include <thread>
 #include <cpprest/http_client.h>
 #include <cpprest/json.h>
+#include <thread>
+
 #include "Application.h"
-#include "ConsulConnection.h"
 #include "Configuration.h"
+#include "ConsulConnection.h"
 #include "ResourceCollection.h"
+#include "User.h"
+
 #include "../common/Utility.h"
 #include "../common/PerfLog.h"
 
@@ -187,9 +190,12 @@ void ConsulConnection::security(int timerId)
 			{
 				auto security = web::json::value::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
 				auto securityObj = Configuration::JsonSecurity::FromJson(security);
-				Configuration::instance()->updateSecurity(securityObj);
+				if (securityObj->m_jwtUsers->getUsers().size())
+				{
+					Configuration::instance()->updateSecurity(securityObj);
+					LOG_DBG << fname << "Security info updated from Consul successfully";
+				}
 				lastIndex = index;
-				LOG_DBG << fname << "Security info updated from Consul successfully";
 			}
 		}
 		else
@@ -441,6 +447,8 @@ bool ConsulConnection::deregisterService(const std::string appName)
 void ConsulConnection::saveSecurity()
 {
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
+
+	if (!Configuration::instance()->getConsul()->consulSecurityEnabled()) return;
 
 	// /appmgr/security
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");

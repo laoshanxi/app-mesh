@@ -1,18 +1,20 @@
 #include <set>
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
-#include "Configuration.h"
-#include "ConsulConnection.h"
-#include "../common/Utility.h"
+
 #include "Application.h"
 #include "ApplicationInitialize.h"
 #include "ApplicationUnInitia.h"
 #include "ApplicationPeriodRun.h"
+#include "Configuration.h"
+#include "ConsulConnection.h"
+#include "Label.h"
 #include "ResourceCollection.h"
 #include "PrometheusRest.h"
 #include "RestHandler.h"
-#include "Label.h"
 #include "User.h"
+
+#include "../common/Utility.h"
 
 // from main.cpp
 extern std::set<std::shared_ptr<RestHandler>> m_restList;
