@@ -48,6 +48,8 @@ void DockerProcess::killgroup(int timerId)
 	{
 		m_imagePullProc->killgroup();
 	}
+	// detach manully
+	this->detach();
 }
 
 int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit)
