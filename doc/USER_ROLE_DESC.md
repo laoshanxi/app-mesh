@@ -50,23 +50,23 @@
         "label-set",
         "label-delete",
         "config-set",
-        "change-passwd",
-        "lock-user",
-        "unlock-user"
+        "passwd-change",
+        "user-lock",
+        "user-unlock"
       ],
       "view": [
-        "view-app",
-        "view-app-output",
-        "view-all-app",
-        "view-host-resource",
+        "app-view",
+        "app-output-view",
+        "app-view-all",
+        "host-resource-view",
         "run-app-async-output",
         "label-view",
         "config-view",
-		"get-users"
+		"user-list"
       ],
       "usermgr": [
-        "add-user",
-        "delete-user"
+        "user-add",
+        "user-delete"
       ]
     }
   }
