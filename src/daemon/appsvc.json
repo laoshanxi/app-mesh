@@ -15,59 +15,82 @@
     }
   },
   "Security": {
-    "JWTEnabled": true,
     "EncryptKey": false,
-    "Users": {
-      "admin": {
-        "key": "Admin123",
-        "roles": [ "manage", "view", "usermgr" ],
-        "locked": false
-      },
-      "user": {
-        "key": "password",
-        "roles": [ "view" ],
-        "locked": false
-      },
-      "test": {
-        "key": "test",
-        "roles": [],
-        "locked": true
-      }
-    },
+    "JWTEnabled": true,
     "Roles": {
       "manage": [
-        "app-reg",
+        "add-user",
         "app-control",
         "app-delete",
-        "run-app-async",
-        "run-app-sync",
+        "app-reg",
+        "change-passwd",
+        "config-set",
+        "config-view",
+        "delete-user",
         "file-download",
         "file-upload",
-        "label-view",
-        "label-set",
+        "get-users",
         "label-delete",
-        "config-set",
-        "change-passwd",
+        "label-set",
+        "lable_view",
         "lock-user",
-        "unlock-user"
-      ],
-      "view": [
+        "permission_list",
+        "role_update",
+        "role_view",
+        "run-app-async",
+        "run-app-async-output",
+        "run-app-sync",
+        "unlock-user",
+        "view-all-app",
         "view-app",
         "view-app-output",
-        "view-all-app",
-        "view-host-resource",
-        "run-app-async-output",
-        "label-view",
-        "config-view",
-        "get-users",
-        "permission_list",
-        "role_view"
+        "view-host-resource"
       ],
       "usermgr": [
         "add-user",
+        "change-passwd",
         "delete-user",
-        "role_update"
+        "get-users",
+        "lock-user",
+        "permission_list",
+        "role_update",
+        "role_view",
+        "unlock-user"
+      ],
+      "view": [
+        "config-view",
+        "lable_view",
+        "role_view",
+        "view-all-app",
+        "view-app",
+        "view-app-output",
+        "view-host-resource"
       ]
+    },
+    "Users": {
+      "admin": {
+        "key": "Admin123",
+        "locked": false,
+        "roles": [
+          "manage",
+          "view",
+          "usermgr"
+        ]
+      },
+      "test": {
+        "key": "123",
+        "locked": false,
+        "roles": [
+
+        ]
+      },
+      "user": {
+        "key": "password",
+        "locked": true,
+        "roles": [
+          "view"
+        ]
+      }
     }
   },
   "Applications": [
