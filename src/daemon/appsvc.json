@@ -35,6 +35,7 @@
         "lable_view",
         "lock-user",
         "permission_list",
+        "role_delete",
         "role_update",
         "role_view",
         "run-app-async",
