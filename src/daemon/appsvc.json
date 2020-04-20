@@ -54,6 +54,7 @@
         "get-users",
         "lock-user",
         "permission_list",
+        "role_delete",
         "role_update",
         "role_view",
         "unlock-user"
