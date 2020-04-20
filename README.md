@@ -428,6 +428,7 @@ DEL | /appmgr/user/usera | | Delete usera
 GET | /appmgr/users | | Get user list
 GET | /appmgr/roles | | Get role list
 POST| /appmgr/role/roleA | | Update roleA with defined permissions
+DELETE| /appmgr/role/roleA | | Delete roleA
 GET | /appmgr/user/permissions |  | Get user self permissions, user token is required in header
 GET | /appmgr/permissions |  | Get all permissions
 GET | /appmgr/metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)

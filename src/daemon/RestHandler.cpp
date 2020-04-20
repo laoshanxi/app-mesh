@@ -154,6 +154,7 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	bindRestMethod(web::http::methods::GET, "/appmgr/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmgr/roles", std::bind(&RestHandler::apiRoleView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/appmgr/role/([^/\*]+))", std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmgr/role/([^/\*]+))", std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmgr/user/permissions", std::bind(&RestHandler::apiGetUserPermissions, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmgr/permissions", std::bind(&RestHandler::apiListPermissions, this, std::placeholders::_1));
 
@@ -850,6 +851,35 @@ void RestHandler::apiRoleUpdate(const HttpRequest& message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
+	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiRoleDelete(const HttpRequest& message)
+{
+	const static char fname[] = "RestHandler::apiRoleDelete() ";
+
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	permissionCheck(message, PERMISSION_KEY_role_delete);
+
+	auto vec = Utility::splitString(path, "/");
+	if (vec.size() != 3)
+	{
+		throw std::invalid_argument("failed to get role name from path");
+	}
+	auto pathRoleName = vec[2];
+	auto tokenUserName = getTokenUser(message);
+
+	//if (tokenUserName == JWT_ADMIN_NAME)
+	//{
+	//	throw std::invalid_argument("role can be only updated by admin");
+	//}
+
+	Configuration::instance()->getRoles()->delRole(pathRoleName);
+
+	Configuration::instance()->saveConfigToDisk();
+	ConsulConnection::instance()->saveSecurity();
+
+	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
 	message.reply(status_codes::OK);
 }
 
