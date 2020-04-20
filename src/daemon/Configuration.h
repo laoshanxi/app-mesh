@@ -102,7 +102,7 @@ public:
 
 	const std::string getLogLevel() const;
 	bool getSslEnabled() const;
-	bool getEncryptKey() const;
+	bool getEncryptKey();
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;

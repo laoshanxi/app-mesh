@@ -301,9 +301,9 @@ bool Configuration::getSslEnabled() const
 	return m_rest->m_ssl->m_sslEnabled;
 }
 
-bool Configuration::getEncryptKey() const
+bool Configuration::getEncryptKey()
 {
-	return m_security->m_encryptKey;
+	return getSecurity()->m_encryptKey;
 }
 
 std::string Configuration::getSSLCertificateFile() const
@@ -333,8 +333,7 @@ const size_t Configuration::getThreadPoolSize() const
 
 const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_security->m_jwtUsers->getUser(userName);
+	return getSecurity()->m_jwtUsers->getUser(userName);
 }
 
 std::set<std::string> Configuration::getUserPermissions(const std::string& userName)
@@ -363,14 +362,12 @@ std::set<std::string> Configuration::getAllPermissions()
 
 const std::shared_ptr<Users> Configuration::getUsers()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_security->m_jwtUsers;
+	return getSecurity()->m_jwtUsers;
 }
 
 const std::shared_ptr<Roles> Configuration::getRoles()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_security->m_roles;
+	return getSecurity()->m_roles;
 }
 
 const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
