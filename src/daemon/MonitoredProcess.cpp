@@ -18,11 +18,8 @@ MonitoredProcess::~MonitoredProcess()
 	if (m_pipe != nullptr) m_pipe->close();
 	if (m_readPipeFile != nullptr) ACE_OS::fclose(m_readPipeFile);
 
-	if (m_httpRequest)
-	{
-		delete (HttpRequest*)m_httpRequest;
-		m_httpRequest = nullptr;
-	}
+	std::unique_ptr<HttpRequest> response((HttpRequest*)m_httpRequest);
+	m_httpRequest = nullptr;
 
 	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 	if (m_thread != nullptr) m_thread->join();
@@ -65,6 +62,9 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 
 void MonitoredProcess::safeWait(int timerId)
 {
+	// double check avoid wait hang
+	if (this->running()) this->killgroup();
+
 	ACE_Process::wait();
 	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 	if (nullptr != m_thread)
@@ -147,11 +147,11 @@ void MonitoredProcess::runPipeReaderThread()
 			web::http::http_response resp(web::http::status_codes::OK);
 			resp.set_body(this->fetchOutputMsg());
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->return_value());
-			if (m_httpRequest)
+			std::unique_ptr<HttpRequest> response((HttpRequest*)m_httpRequest);
+			m_httpRequest = nullptr;
+			if (nullptr != response)
 			{
-				((HttpRequest*)m_httpRequest)->reply(resp).get();
-				delete (HttpRequest*)m_httpRequest;
-				m_httpRequest = nullptr;
+				response->reply(resp).get();
 			}
 		}
 		catch (...)
