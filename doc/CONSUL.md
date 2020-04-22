@@ -190,4 +190,13 @@ curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool
 ```shell
 $ docker rm consul -f ; docker run --restart=always --net=host -p 8500:8500 -v /etc/hosts:/etc/hosts -e CONSUL_BIND_INTERFACE=eth0 --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 -bind=192.168.3.24 -bootstrap-expect=1 -ui
 ```
+- Use bellow command to start 3 nodes Consul cluster
+```shell
+# server-1
+docker run --restart=always --net=host --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config -bind=192.168.1.1 -bootstrap-expect=3 -ui
+# server-2
+docker run --restart=always --net=host --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config -bind=192.168.1.2 -bootstrap-expect=3 -ui -join 192.168.1.1
+# server-3
+docker run --restart=always --net=host --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config -bind=192.168.1.3 -bootstrap-expect=3 -ui -join 192.168.1.1
+```
 Note: consul container health-check will call outside URL, so need DNS to access other hostname or URL
