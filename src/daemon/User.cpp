@@ -76,7 +76,16 @@ std::shared_ptr<User> Users::addUser(const std::string userName, const web::json
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = User::FromJson(userName, userJson, roles);
-	m_users[userName] = user;
+	if (m_users.count(userName))
+	{
+		// update
+		m_users[userName]->updateRoles(user->getRoles());
+	}
+	else
+	{
+		// insert
+		m_users[userName] = user;
+	}
 	return user;
 }
 
