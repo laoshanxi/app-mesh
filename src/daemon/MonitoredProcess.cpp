@@ -62,8 +62,14 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 
 void MonitoredProcess::safeWait(int timerId)
 {
+	const static char fname[] = "MonitoredProcess::safeWait() ";
+
 	// double check avoid wait hang
-	if (this->running()) this->killgroup();
+	if (this->running())
+	{
+		LOG_WAR << fname << "process <" << this->getpid() << "> is still running, terminate before wait.";
+		this->killgroup();
+	}
 
 	ACE_Process::wait();
 	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
@@ -122,10 +128,11 @@ void MonitoredProcess::runPipeReaderThread()
 	auto self = this->shared_from_this();
 
 	const int stdoutQueueMaxLineCount = m_cacheOutputLines;
-	char buffer[1024] = { 0 };
+	const auto bufsize = 2048;
+	std::shared_ptr<char> buffer(new char[bufsize], std::default_delete<char[]>());
 	while (true)
 	{
-		char* result = fgets(buffer, sizeof(buffer), m_readPipeFile);
+		char* result = fgets(buffer.get(), sizeof(buffer), m_readPipeFile);
 		if (result == nullptr)
 		{
 			LOG_DBG << fname << "Get message from pipe finished";
@@ -134,7 +141,7 @@ void MonitoredProcess::runPipeReaderThread()
 		// LOG_DBG << fname << "Read line : " << buffer;
 
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
-		m_msgQueue.push(buffer);
+		m_msgQueue.push(buffer.get());
 		// Do not store too much in memory
 		if ((int)m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
