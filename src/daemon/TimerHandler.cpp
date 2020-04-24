@@ -116,12 +116,7 @@ int TimerHandler::endReactorEvent(ACE_Reactor* reactor)
 	return reactor->end_reactor_event_loop();
 }
 
-TimerHandler::TimerDefinition::TimerDefinition(const int* timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)
+TimerHandler::TimerDefinition::TimerDefinition(int* timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)
 	:m_timerId(timerId), m_handler(handler), m_timerObject(object), m_callOnce(callOnce)
 {
-}
-
-TimerHandler::TimerDefinition::~TimerDefinition()
-{
-	delete m_timerId;
 }

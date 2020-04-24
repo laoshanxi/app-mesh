@@ -17,9 +17,9 @@ class TimerHandler : public ACE_Event_Handler, public std::enable_shared_from_th
 private:
 	struct TimerDefinition
 	{
-		TimerDefinition(const int* timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce);
-		~TimerDefinition();
-		const int* m_timerId;
+		// timerId will be deleted in TimerDefinition de-construction
+		TimerDefinition(int* timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce);
+		const std::shared_ptr<int> m_timerId;
 		std::function<void(int)> m_handler;
 		const std::shared_ptr<TimerHandler> m_timerObject;
 		const bool m_callOnce;

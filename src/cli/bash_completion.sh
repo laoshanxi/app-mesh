@@ -1,3 +1,4 @@
+#/usr/bin/env bash
 # appc(1) completion                                     -*- shell-script -*-
 
 _appc()
@@ -5,7 +6,7 @@ _appc()
     local cur prev words cword
     _init_completion || return
 
-    case prev in
+    case $prev in
         appc)
             COMPREPLY=( $(compgen -W "logon logoff view resource label enable disable restart reg unreg run get put config passwd lock log" -- $cur) )
             return

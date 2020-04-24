@@ -113,9 +113,7 @@ std::string MonitoredProcess::getOutputMsg()
 		stdoutMsg << msgQueue.front();
 		msgQueue.pop();
 	}
-	std::string msgStr = stdoutMsg.str();
-	LOG_DBG << fname;// << msgStr;
-	return std::move(msgStr);
+	return std::move(stdoutMsg.str());
 }
 
 void MonitoredProcess::runPipeReaderThread()
