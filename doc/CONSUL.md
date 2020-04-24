@@ -4,7 +4,7 @@
 
 Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 - Stand-alone mode: The hosted applications are static and applications can only be managed by CLI or REST APIs.
-- Consul-cluster mode: The hosted applications are dynamic, The cluster will vote one leader  App Manager node to do the Consul application schedule, and application will register to Consul for service discovery.
+- Consul-cluster mode: The hosted applications are dynamic, The cluster will vote one leader node to do the Consul application schedule, and application will register to Consul for service discovery.
 
 ### What is supported:
 
@@ -33,8 +33,9 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
     "url": "http://localhost:8500",
     "datacenter": "dc1",
     "session_TTL": 30,
-    "report_interval": 10,
-    "topology_interval": 5
+    "report_interval": 15,
+    "schedule_interval": 10,
+    "enable_consul_security_interval": 0
   }
 ```
 

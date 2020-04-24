@@ -3,7 +3,7 @@
 # Application Manager
 
 ### Introduction
-Application Manager is a Cloud Native Microservice management platform to manage different types of microservice applications, the application can be local app or microservice cluster level app [microservice cluster level app](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific jobs, the app-manager will make sure all defined applications running on-time with defined behavior. provide REST APIs for integrate with outside app, provide command-line manage applications easily.
+Application Manager is a Cloud Native Microservice management middleware to manage different types of microservice applications, the application can be local or microservice cluster level [microservice cluster level app](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific micro service, the app-manager will make sure all defined applications running on-time with defined behavior. Provide REST APIs and command-line.
 
 <div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
 
@@ -11,38 +11,26 @@ Features  | Behavior
 ---|---
 Basic applications | Long running <br> Short running <br> Periodic long running
 Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md) 
-Application behavior | Application support initial and clean command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
+Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
 Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
-Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmanager`
+Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmanager` <br> Bash completion
 
 ### How to install
 **CentOS**:
 ```text
 # centos
-yum install -y appmanager-1.7.0-1.x86_64.rpm
-# ubuntu
-apt install -y appmanager_1.7.0_amd64.deb
-# after installation, service will be started automaticlly, check status by bellow command:
-$ systemctl status appmanager
-● appmanager.service - Application Manager Systemd Service
-   Loaded: loaded (/usr/lib/systemd/system/appmanager.service; enabled; vendor preset: disabled)
-   Active: active (running) since Fri 2020-01-17 14:49:00 CST; 11min ago
-     Docs: https://github.com/laoshanxi/app-manager
- Main PID: 2427 (appsvc)
-    Tasks: 8
-   Memory: 1.6M
-   CGroup: /system.slice/appmanager.service
-           └─2427 /opt/appmanager/appsvc
+yum install -y appmanager-1.8.0-1.x86_64.rpm
+
 $ appc view
 id name        user  status   health pid    memory  return last_start_time     command
 1  ipmail      root  enabled  0       -      -       -     2020-01-17 14:58:50 sh /opt/qqmail/launch.sh
 2  test        root  enabled  0       -      -       -     2020-01-17 15:00:30 /usr/bin/env
 
-# Note that on windows WSL ubuntu, you must use `service appmanager start` to force service start, WSL VM does not have full init.d
+# Note that on windows WSL ubuntu, you must use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
 ```
 
-### Supported command lines
+### Command lines
 
 ```text
 $ appc
@@ -132,6 +120,7 @@ Register a new application:
   -d [ --docker_image ] arg      docker image which used to run command line 
                                  (this will enable docker)
   -w [ --workdir ] arg (=/tmp)   working directory
+  -S [ --stdout ] arg            stdout file
   -s [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
   -t [ --start_time ] arg        start date time for app (e.g., '2018-01-01 
