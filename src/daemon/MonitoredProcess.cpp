@@ -38,6 +38,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 		return ACE_INVALID_PID;
 	}
 	m_readPipeFile = ACE_OS::fdopen(m_pipe->read_handle(), "r");
+	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
 	if (m_readPipeFile == nullptr)
 	{
 		LOG_ERR << fname << "Get file stream failed with error : " << std::strerror(errno);
@@ -45,7 +46,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 	}
 	else
 	{
-		auto dummy = ACE_OS::open("/dev/null", O_RDWR);
+		dummy = ACE_OS::open("/dev/null", O_RDWR);
 		// release the handles if already set in process options
 		option.release_handles();
 		option.set_handles(dummy, m_pipe->write_handle(), m_pipe->write_handle());
@@ -57,6 +58,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 
 	// close write in parent side (write handler is used for child process in our case)
 	m_pipe->close_write();
+	if (dummy != ACE_INVALID_HANDLE) ACE_OS::close(dummy);
 	return rt;
 }
 
@@ -100,8 +102,6 @@ std::string MonitoredProcess::fetchOutputMsg()
 
 std::string MonitoredProcess::getOutputMsg()
 {
-	const static char fname[] = "MonitoredProcess::getPipeMessages() ";
-
 	std::stringstream stdoutMsg;
 	std::queue<std::string> msgQueue;
 	{
