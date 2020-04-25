@@ -19,13 +19,11 @@ Extra Features | Collect host/app resource usage <br> Remote run shell commands 
 ### How to install
 **CentOS**:
 ```text
-# centos
+# centos7
 yum install -y appmanager-1.8.0-1.x86_64.rpm
 
-$ appc view
-id name        user  status   health pid    memory  return last_start_time     command
-1  ipmail      root  enabled  0       -      -       -     2020-01-17 14:58:50 sh /opt/qqmail/launch.sh
-2  test        root  enabled  0       -      -       -     2020-01-17 15:00:30 /usr/bin/env
+# centos8
+rpm -ivh appmanager-1.8.0-1.x86_64.rpm --force
 
 # Note that on windows WSL ubuntu, you must use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
 ```

@@ -58,8 +58,9 @@ rpm:
 cppcheck:
 	cppcheck --enable=all --quiet --std=c++11 --platform=native .
 install:
-	-dpkg -i ./${PACKAGE_NAME}_${VERSION}_amd64.deb
-	-yum install -y ./${PACKAGE_NAME}*.rpm
+	#-dpkg -i ./${PACKAGE_NAME}_${VERSION}_amd64.deb
+	#-yum install -y ./${PACKAGE_NAME}*.rpm
+	rpm -ivh ./${PACKAGE_NAME}*.rpm --force
 	
 uninstall:
 	-dpkg -P ${PACKAGE_NAME}
