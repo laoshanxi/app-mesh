@@ -95,10 +95,8 @@ if [ -f "/usr/bin/yum" ]; then
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
 	make
-	make install INSTALL_PREFIX=/usr/local/ace
-	ls -al /usr/local/ace/lib*/libACE.so
-	# create link for visual studio Intellisense
-	ln -s /usr/local/ace/include/ace /usr/local/include/ace
+	make install INSTALL_PREFIX=/usr/local
+	ls -al /usr/local/lib*/libACE.so
 	cd $ROOTDIR
 	exit 1
 fi
