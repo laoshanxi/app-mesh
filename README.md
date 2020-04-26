@@ -1,4 +1,6 @@
-﻿[Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
+﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url]
+
+[Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
 
 # Application Manager
 
@@ -14,7 +16,7 @@ Microservice application | ⚡️ [Consul micro-service cluster management](http
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
 Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
-Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmanager` <br> Bash completion
+Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmanager` <br> Bash completion <br> Reverse proxy <br> Web GUI
 
 ### How to install
 **CentOS**:
@@ -24,9 +26,9 @@ yum install -y appmanager-1.8.0-1.x86_64.rpm
 
 # centos8
 rpm -ivh appmanager-1.8.0-1.x86_64.rpm --force
-
-# Note that on windows WSL ubuntu, you must use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
 ```
+Note that on windows WSL ubuntu, need use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
+
 
 ### Command lines
 
