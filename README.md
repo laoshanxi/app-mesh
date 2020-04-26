@@ -445,3 +445,14 @@ make
 ```
 - Thread model
 <div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=512 height=292 align=center /></div>
+
+
+
+[language.url]:   https://isocpp.org/
+[language.badge]: https://img.shields.io/badge/language-C++-blue.svg
+
+[standard.url]:   https://en.wikipedia.org/wiki/C%2B%2B#Standardization
+[standard.badge]: https://img.shields.io/badge/C%2B%2B-11%2F14%2F17-blue.svg
+
+[release.url]:    https://github.com/laoshanxi/app-manager/releases
+[release.badge]:  https://img.shields.io/github/v/release/laoshanxi/app-manager.svg
