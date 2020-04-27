@@ -149,13 +149,15 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
 
-	size_t startPos = 0;
 	std::string containerId;
 	if (dockerProcess->exit_code() == 0)
 	{
 		containerId = Utility::stdStringTrim(dockerProcess->fetchLine());
 	}
-	
+	else
+	{
+		LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << dockerProcess->fetchOutputMsg();
+	}
 	if (containerId.length())
 	{
 		// set container id here for future clean
@@ -173,19 +175,33 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
-	auto pidStr = Utility::stdStringTrim(dockerProcess->fetchLine());
-	if (Utility::isNumber(pidStr))
+	if (dockerProcess->exit_code() == 0)
 	{
-		pid = std::stoi(pidStr);
-		if (pid > 1)
+		auto pidStr = Utility::stdStringTrim(dockerProcess->fetchLine());
+		if (Utility::isNumber(pidStr))
 		{
-			this->attach(pid);
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			m_containerId = containerId;
-			LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerId;
-			return pid;
+			pid = std::stoi(pidStr);
+			if (pid > 1)
+			{
+				// Success
+				this->attach(pid);
+				std::lock_guard<std::recursive_mutex> guard(m_mutex);
+				m_containerId = containerId;
+				LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerId;
+				return pid;
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "can not get correct container pid :" << pidStr;
 		}
 	}
+	else
+	{
+		LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << dockerProcess->fetchOutputMsg();
+	}
+	
+	// failed
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_containerId = containerId;
 	this->detach();
