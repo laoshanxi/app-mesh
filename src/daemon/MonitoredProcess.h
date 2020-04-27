@@ -3,6 +3,7 @@
 #include <thread>
 #include <memory>
 #include <queue>
+#include <string>
 #include <mutex>
 #include "AppProcess.h"
 
@@ -26,6 +27,7 @@ public:
 	// pipe message
 	virtual std::string getOutputMsg() override;
 	virtual std::string fetchOutputMsg() override;
+	std::string fetchLine();
 	void runPipeReaderThread();
 	virtual bool complete() override { return m_buildinThreadFinished; }
 private:

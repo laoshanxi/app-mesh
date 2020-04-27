@@ -100,6 +100,18 @@ std::string MonitoredProcess::fetchOutputMsg()
 	return std::move(stdoutMsg.str());
 }
 
+std::string MonitoredProcess::fetchLine()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
+	if (m_msgQueue.size())
+	{
+		auto line = m_msgQueue.front();
+		m_msgQueue.pop();
+		return std::move(line);
+	}
+	return std::string();
+}
+
 std::string MonitoredProcess::getOutputMsg()
 {
 	std::stringstream stdoutMsg;
