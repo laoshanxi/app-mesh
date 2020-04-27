@@ -62,18 +62,8 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 	return rt;
 }
 
-void MonitoredProcess::safeWait(int timerId)
+void MonitoredProcess::waitThread(int timerId)
 {
-	const static char fname[] = "MonitoredProcess::safeWait() ";
-
-	// double check avoid wait hang
-	if (this->running())
-	{
-		LOG_WAR << fname << "process <" << this->getpid() << "> is still running, terminate before wait.";
-		this->killgroup();
-	}
-
-	ACE_Process::wait();
 	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 	if (nullptr != m_thread)
 	{
@@ -155,6 +145,13 @@ void MonitoredProcess::runPipeReaderThread()
 		// Do not store too much in memory
 		if ((int)m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
+	// double check avoid wait hang
+	if (this->running())
+	{
+		LOG_WAR << fname << "process <" << this->getpid() << "> is still running, terminate before wait.";
+		this->killgroup();
+	}
+	ACE_Process::wait();	// if no wait, there will be no exit_code
 
 	///////////////////////////////////////////////////////////////////////
 	if (m_httpRequest)
@@ -179,5 +176,5 @@ void MonitoredProcess::runPipeReaderThread()
 	///////////////////////////////////////////////////////////////////////
 	LOG_DBG << fname << "Exited";
 	m_buildinThreadFinished = true;
-	this->registerTimer(0, 0, std::bind(&MonitoredProcess::safeWait, this, std::placeholders::_1), fname);
+	this->registerTimer(0, 0, std::bind(&MonitoredProcess::waitThread, this, std::placeholders::_1), fname);
 }

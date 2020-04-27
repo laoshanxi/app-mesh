@@ -21,7 +21,7 @@ public:
 	// overwrite ACE_Process spawn method
 	virtual pid_t spawn(ACE_Process_Options& options);
 
-	virtual void safeWait(int timerId = 0);
+	virtual void waitThread(int timerId = 0);
 	void setAsyncHttpRequest(void* httpRequest) { m_httpRequest = httpRequest; }
 
 	// pipe message

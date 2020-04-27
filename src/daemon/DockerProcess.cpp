@@ -150,7 +150,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerProcess->runPipeReaderThread();
 
 	std::string containerId;
-	if (dockerProcess->exit_code() == 0)
+	if (dockerProcess->return_value() == 0)
 	{
 		containerId = Utility::stdStringTrim(dockerProcess->fetchLine());
 	}
@@ -175,7 +175,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
-	if (dockerProcess->exit_code() == 0)
+	if (dockerProcess->return_value() == 0)
 	{
 		auto pidStr = Utility::stdStringTrim(dockerProcess->fetchLine());
 		if (Utility::isNumber(pidStr))
