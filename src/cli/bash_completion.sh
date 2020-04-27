@@ -12,7 +12,7 @@ _appc()
             return
             ;;
         -n|--name)
-            local APPS=`appc view | awk '{print $2}'`
+            local APPS=`appc view | awk 'NR>1 {print $2}'`
             COMPREPLY=( $(compgen -W "$APPS" -- $cur) )
             return
             ;;
