@@ -20,8 +20,7 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y git222 make cmake3 gcc-c++ libtool
 
 	unalias cp
-	if [[ -f "/usr/bin/cmake" ]] && [[ -f "/usr/bin/cmake3" ]]; then
-		mv /usr/bin/cmake /usr/bin/cmake2
+	if [[ -f "/usr/bin/cmake3" ]]; then
 		cp /usr/bin/cmake3 /usr/bin/cmake
 	fi
 	alias cp='cp -i'
