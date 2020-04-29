@@ -26,7 +26,7 @@ fi
 
 if [ "$APPMGR_FRESH_INSTALL" = "Y" ]; then
 	# ssl cert gernerate
-	if [ ! -f "/opt/appmanager/ssl/server.pem" ]
+	if [ ! -f "/opt/appmanager/ssl/server.pem" ]; then
 		cd /opt/appmanager/ssl/; sh /opt/appmanager/ssl/ssl_cert_generate.sh
 	fi
 else
