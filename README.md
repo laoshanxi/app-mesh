@@ -27,8 +27,9 @@ yum install -y appmanager-1.8.0-1.x86_64.rpm
 # centos8
 rpm -ivh appmanager-1.8.0-1.x86_64.rpm --force
 ```
-Note that on windows WSL ubuntu, need use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
-
+Note:
+1. On windows WSL ubuntu, need use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
+2. Use env APPMGR_FRESH_INSTALL=Y to enable clean installation
 
 ### Command lines
 

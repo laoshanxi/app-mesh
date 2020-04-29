@@ -2,7 +2,7 @@
 ################################################################################
 ## This script is used to install all 3rd-party dependency libraries
 ################################################################################
-
+set -x
 mkdir -p dep
 cd dep
 export ROOTDIR=`pwd`
@@ -40,7 +40,7 @@ if [ -f "/usr/bin/yum" ]; then
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	apt install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
-	apt install -y libboost-all-dev libace-dev 
+	apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 fi
@@ -52,6 +52,7 @@ gem install fpm
 if [ -f "/usr/bin/yum" ]; then
 	# BOOST:
 	# https://www.cnblogs.com/eagle6688/p/5840773.html
+	yum install -y python2-devel
 	wget https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz
 	tar zxvf boost_1_69_0.tar.gz
 	cd ./boost_1_69_0
