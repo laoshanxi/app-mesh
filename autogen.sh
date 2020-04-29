@@ -103,7 +103,7 @@ if [ -f "/usr/bin/yum" ]; then
 	make install INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
 	cd $ROOTDIR
-	exit 1
+	exit 0
 fi
 
 
