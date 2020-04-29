@@ -497,74 +497,77 @@ void Configuration::hotUpdate(const web::json::value& config)
 	const static char fname[] = "Configuration::hotUpdate() ";
 
 	LOG_DBG << fname << "Entered";
-
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	// not support update [Application] section
-	auto jsonValue = config;
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
-
-	// parse
-	auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));
-
-	// update
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description))
-		SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_LogLevel))
+	bool consulUpdated = false;
 	{
-		if (this->m_logLevel != newConfig->m_logLevel)
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		// not support update [Application] section
+		auto jsonValue = config;
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
+
+		// parse
+		auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));
+
+		// update
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description))
+			SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_LogLevel))
 		{
-			Utility::setLogLevel(newConfig->m_logLevel);
-			SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
+			if (this->m_logLevel != newConfig->m_logLevel)
+			{
+				Utility::setLogLevel(newConfig->m_logLevel);
+				SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
+			}
+		}
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
+
+		// REST
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
+		{
+			auto rest = jsonValue.at(JSON_KEY_REST);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_rest->m_httpThreadPoolSize, newConfig->m_rest->m_httpThreadPoolSize);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort) && (this->m_rest->m_promListenPort != newConfig->m_rest->m_promListenPort))
+			{
+				SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
+				PrometheusRest::instance(nullptr);
+				PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
+				registerPrometheus();
+			}
+			// SSL
+			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
+			{
+				auto ssl = rest.at(JSON_KEY_SSL);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
+			}
+		}
+
+		// Security
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
+		{
+			auto sec = jsonValue.at(JSON_KEY_Security);
+			if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
+			if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users)) SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
+
+			// Roles
+			if (HAS_JSON_FIELD(sec, JSON_KEY_Roles)) SET_COMPARE(this->m_security->m_roles, newConfig->m_security->m_roles);
+		}
+
+		// Labels
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
+
+		// Consul
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
+		{
+			SET_COMPARE(this->m_consul, newConfig->m_consul);
+			consulUpdated = true;
 		}
 	}
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
-
-	// REST
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
-	{
-		auto rest = jsonValue.at(JSON_KEY_REST);
-		if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
-		if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
-		if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
-		if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_rest->m_httpThreadPoolSize, newConfig->m_rest->m_httpThreadPoolSize);
-		if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort) && (this->m_rest->m_promListenPort != newConfig->m_rest->m_promListenPort))
-		{
-			SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
-			PrometheusRest::instance(nullptr);
-			PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
-			registerPrometheus();
-		}
-		// SSL
-		if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
-		{
-			auto ssl = rest.at(JSON_KEY_SSL);
-			if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
-			if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
-			if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
-		}
-	}
-
-	// Security
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
-	{
-		auto sec = jsonValue.at(JSON_KEY_Security);
-		if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
-		if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users)) SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
-
-		// Roles
-		if (HAS_JSON_FIELD(sec, JSON_KEY_Roles)) SET_COMPARE(this->m_security->m_roles, newConfig->m_security->m_roles);
-	}
-
-	// Labels
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
-
-	// Consul
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
-	{
-		SET_COMPARE(this->m_consul, newConfig->m_consul);
-		ConsulConnection::instance()->initTimer();
-	}
-
+	// do not hold Configuration lock to access timer, timer lock is higher level
+	if (consulUpdated) ConsulConnection::instance()->initTimer();
 	ResourceCollection::instance()->getHostName(true);
 
 	this->dump();
