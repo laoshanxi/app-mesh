@@ -12,15 +12,21 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-CMAKE=
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
 	yum install -y epel-release
 	yum install -y https://centos7.iuscommunity.org/ius-release.rpm
 
 	yum install -y git222 make cmake3 gcc-c++ libtool
-	CMAKE=$(which cmake3)
-	yum install -y dos2unix openssl-devel
+
+	unalias cp
+	if [[ -f "/usr/bin/cmake" ]] && [[ -f "/usr/bin/cmake3" ]]; then
+		mv /usr/bin/cmake /usr/bin/cmake2
+		cp /usr/bin/cmake3 /usr/bin/cmake
+	fi
+	alias cp='cp -i'
+
+	yum install -y dos2unix openssl-devel wget which
 
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -33,7 +39,6 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y rpm-build
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
-	CMAKE=$(which cmake)
 	apt install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
 	apt install -y libboost-all-dev libace-dev 
 	#apt install -y libcpprest-dev liblog4cpp5-dev
@@ -63,7 +68,7 @@ git clone -b v2.10.15 https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so

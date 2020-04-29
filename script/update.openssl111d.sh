@@ -3,10 +3,10 @@
 ## This Script file is used to update OS openssl version to 1.1.1d for CentOS 7.x
 ################################################################################
 
-mkdir ssl
-cd ssl
+mkdir ssl_build
+cd ssl_build
 
-yum install -y openssl-devel gcc-c++
+yum install -y openssl-devel gcc-c++ wget make perl
 wget https://www.openssl.org/source/openssl-1.1.1d.tar.gz
 
 tar zxvf openssl-1.1.1d.tar.gz
@@ -25,7 +25,7 @@ ln -s /usr/local/lib64/libssl.so.1.1 /usr/lib64/libssl.so.1.1
 ln -s /usr/local/lib64/libcrypto.so.1.1 /usr/lib64/libcrypto.so.1.1
 
 cd ..
-rm -rf ssl
+rm -rf ssl_build
 
 cd /usr/lib64/
 rm -f libssl.so

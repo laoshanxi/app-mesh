@@ -46,8 +46,6 @@ build_dir:
 	ldd ./src/daemon/appsvc | grep crypto | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	env LD_LIBRARY_PATH=${LDPATH} \
 	ldd ./src/daemon/appsvc | grep log4cpp | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
-	env LD_LIBRARY_PATH=${LDPATH} \
-	ldd ./src/daemon/appsvc | grep libstdc++.so | awk '{cmd="cp "$$3" ${TMP_LIB_DIR}";print(cmd);system(cmd)}'
 	
 deb:
 	rm -f *.deb
