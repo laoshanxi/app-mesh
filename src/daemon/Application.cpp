@@ -83,7 +83,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
 	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
 	if (app->m_user.empty()) app->m_user = "root";
-	app->m_comments = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_comments));
+	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
 	app->m_stdoutFile = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_stdout_file));
 	// Be noticed do not use multiple spaces between command arguments
 	// "ping www.baidu.com    123" equals
@@ -455,7 +455,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	if (m_stdoutFile.length()) result[JSON_KEY_APP_stdout_file] = web::json::value::string(GET_STRING_T(m_stdoutFile));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
-	if (m_comments.length()) result[JSON_KEY_APP_comments] = web::json::value::string(GET_STRING_T(m_comments));
+	if (m_metadata.length()) result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
 	if (returnRuntimeInfo)
 	{
 		if (m_pid > 0) result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);

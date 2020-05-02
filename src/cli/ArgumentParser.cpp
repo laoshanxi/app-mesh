@@ -155,6 +155,10 @@ void ArgumentParser::parse()
 	{
 		processEncryptUserPwd();
 	}
+	else if (cmd == "watch")
+	{
+		processWatch();
+	}
 	else
 	{
 		printMainHelp();
@@ -278,7 +282,7 @@ void ArgumentParser::processReg()
 	desc.add_options()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
-		("comments,g", po::value<std::string>(), "application comments")
+		("metadata,g", po::value<std::string>(), "application comments")
 		("appuser,a", po::value<std::string>(), "application process running OS user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("init,I", po::value<std::string>(), "initial command line with arguments")
@@ -343,7 +347,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("stdout")) jsobObj[JSON_KEY_APP_stdout_file] = web::json::value::string(m_commandLineVariables["stdout"].as<std::string>());
 	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
-	if (m_commandLineVariables.count(JSON_KEY_APP_comments)) jsobObj[JSON_KEY_APP_comments] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_comments].as<std::string>());
+	if (m_commandLineVariables.count(JSON_KEY_APP_metadata)) jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>());
 	if (m_commandLineVariables.count("docker_image")) jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
 	if (m_commandLineVariables.count("timezone")) jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
 	if (m_commandLineVariables.count("start_time")) jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
@@ -830,7 +834,7 @@ void ArgumentParser::processLoglevel()
 
 void ArgumentParser::processConfigView()
 {
-	po::options_description desc("Manage labels:");
+	po::options_description desc("View configurations:");
 	desc.add_options()
 		COMMON_OPTIONS
 		("view,v", "view basic configurations")
@@ -846,7 +850,7 @@ void ArgumentParser::processConfigView()
 
 void ArgumentParser::processChangePwd()
 {
-	po::options_description desc("Manage labels:");
+	po::options_description desc("Change password:");
 	desc.add_options()
 		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user to change passwd")
@@ -874,7 +878,7 @@ void ArgumentParser::processChangePwd()
 
 void ArgumentParser::processLockUser()
 {
-	po::options_description desc("Manage labels:");
+	po::options_description desc("Manage users:");
 	desc.add_options()
 		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user")
@@ -920,6 +924,30 @@ void ArgumentParser::processEncryptUserPwd()
 			std::cout << std::hash<std::string>()(optStr) << std::endl;
 		}
 	}
+}
+
+void ArgumentParser::processWatch()
+{
+	po::options_description desc("Post consul watch:");
+	desc.add_options()
+		COMMON_OPTIONS
+		("type,t", po::value<std::string>(), "consul watch type (security/topology/schedule)")
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	if (!m_commandLineVariables.count("type"))
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
+
+	auto type = m_commandLineVariables["type"].as<std::string>();
+
+	std::string restPath = std::string("/appmgr/watch/") + type;
+	http_response response = requestHttp(methods::POST, restPath);
+	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
 bool ArgumentParser::confirmInput(const char* msg)

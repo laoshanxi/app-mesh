@@ -776,13 +776,13 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 {
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
+	consul->m_consulDockerImg = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_DOCKER_IMG);
 	consul->m_datacenter = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_DATACENTER);
 	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MASTER);
 	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
-	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SCHEDULE_INTERVAL, consul->m_scheduleInterval);
-	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSUL_SECURITY_INTERVAL, consul->m_securitySyncInterval);
+	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
 	const static boost::regex urlExrp("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
 	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExrp))
 	{
@@ -795,13 +795,13 @@ web::json::value Configuration::JsonConsul::AsJson()
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_CONSULE_URL] = web::json::value::string(m_consulUrl);
+	result[JSON_KEY_CONSULE_DOCKER_IMG] = web::json::value::string(m_consulDockerImg);
 	result[JSON_KEY_CONSULE_DATACENTER] = web::json::value::string(m_datacenter);
 	result[JSON_KEY_CONSULE_IS_MASTER] = web::json::value::boolean(m_isMaster);
 	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSULE_REPORT_INTERVAL] = web::json::value::number(m_reportInterval);
-	result[JSON_KEY_CONSULE_SCHEDULE_INTERVAL] = web::json::value::number(m_scheduleInterval);
-	result[JSON_KEY_CONSUL_SECURITY_INTERVAL] = web::json::value::number(m_securitySyncInterval);
+	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
 	return result;
 }
 
@@ -812,12 +812,11 @@ bool Configuration::JsonConsul::consulEnabled() const
 
 bool Configuration::JsonConsul::consulSecurityEnabled() const
 {
-	return !m_consulUrl.empty() && m_securitySyncInterval > 0;
+	return !m_consulUrl.empty() && m_securitySync;
 }
 
 Configuration::JsonConsul::JsonConsul()
 	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), 
-	m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_scheduleInterval(CONSUL_TOPOLOGY_DEFAULT_INTERVAL),
-	m_securitySyncInterval(CONSUL_SECURITY_SYNC_DEFAULT_INTERVAL)
+	m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_securitySync(false)
 {
 }

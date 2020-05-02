@@ -68,7 +68,7 @@ public:
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();
 	void setVersion(int version);
-	const std::string getComments() const { return m_comments; }
+	const std::string getMetadata() const { return m_metadata; }
 	const std::string getInitCmd() const { return m_commandLineInit; }
 
 protected:
@@ -90,7 +90,7 @@ protected:
 	std::string m_user;
 	std::string m_workdir;
 	std::string m_stdoutFile;
-	std::string m_comments;
+	std::string m_metadata;
 	//the exit code of last instance
 	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;

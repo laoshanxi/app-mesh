@@ -25,9 +25,6 @@
 #include "../common/PerfLog.h"
 
 std::set<std::shared_ptr<RestHandler>> m_restList;
-// The default timer reactor is ACE_Reactor::instance() that used for application & process event
-// This timer is used to handle HealthCheck and Consul
-ACE_Reactor* m_timerReactor = nullptr;
 
 int main(int argc, char* argv[])
 {
@@ -37,7 +34,6 @@ int main(int argc, char* argv[])
 	try
 	{
 		ACE::init();
-		m_timerReactor = new ACE_Reactor();
 
 		// set working dir
 		ACE_OS::chdir(Utility::getSelfDir().c_str());
@@ -125,10 +121,8 @@ int main(int argc, char* argv[])
 		// reg prometheus
 		config->registerPrometheus();
 
-		// start one thread for timer (application & process event)
-		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-		// start one thread for timer (consul & healthcheck)
-		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, m_timerReactor));
+		// start one thread for timer (application & process event & healthcheck & consul report event)
+		auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// init consul
 		ConsulConnection::instance()->initTimer(snap->m_consulSessionId);

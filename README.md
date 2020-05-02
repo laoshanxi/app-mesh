@@ -111,7 +111,7 @@ Register a new application:
   -x [ --password ] arg          Specifies the user password to connect to 
                                  AppManager for this command.
   -n [ --name ] arg              application name
-  -g [ --comments ] arg          application comments
+  -g [ --metadata ] arg          application metadata string
   -a [ --appuser ] arg           application process running OS user name
   -c [ --cmd ] arg               full command line with arguments
   -I [ --init ] arg              initial command line with arguments

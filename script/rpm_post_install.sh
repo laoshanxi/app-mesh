@@ -24,16 +24,13 @@ if [ -d "/usr/share/bash-completion/completions" ]; then
 	cp -f $INSTALL_DIR/script/bash_completion.sh /usr/share/bash-completion/completions/appc
 fi
 
-if [ "$APPMGR_FRESH_INSTALL" = "Y" ]; then
+if [[ "$APPMGR_FRESH_INSTALL" = "Y" ]] || [[ ! -f "/opt/appmanager/ssl/server.pem" ]]; then
 	# ssl cert gernerate
-	if [ ! -f "/opt/appmanager/ssl/server.pem" ]; then
-		cd /opt/appmanager/ssl/; sh /opt/appmanager/ssl/ssl_cert_generate.sh
-	fi
-else
+	cd /opt/appmanager/ssl/; sh /opt/appmanager/ssl/ssl_cert_generate.sh
+fi
+if [[ ! "$APPMGR_FRESH_INSTALL" = "Y" ]] && [ -f "/opt/appmanager/.appsvc.json" ]; then
 	# restore previous configuration file
-	if [ -f "/opt/appmanager/.appsvc.json" ]; then
-		mv /opt/appmanager/.appsvc.json /opt/appmanager/appsvc.json
-	fi
+	mv /opt/appmanager/.appsvc.json /opt/appmanager/appsvc.json
 fi
 
 # create appc softlink

@@ -34,8 +34,7 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
     "datacenter": "dc1",
     "session_TTL": 30,
     "report_interval": 15,
-    "schedule_interval": 10,
-    "enable_consul_security_interval": 0
+    "enable_consul_security": false
   }
 ```
 

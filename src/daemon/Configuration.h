@@ -55,8 +55,8 @@ class Configuration
 		int m_ttl;
 		// report status to consul interval
 		int m_reportInterval;
-		int m_scheduleInterval;
-		int m_securitySyncInterval;
+		bool m_securitySync;
+		std::string m_consulDockerImg;
 	};
 public:
 	struct JsonSecurity {

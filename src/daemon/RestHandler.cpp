@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <boost/algorithm/string_regex.hpp>
 #include <cpprest/filestream.h>
@@ -161,6 +162,9 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	// 9. metrics
 	bindRestMethod(web::http::methods::GET, R"(/appmgr/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmgr/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
+
+	// 10. consul
+	bindRestMethod(web::http::methods::POST, R"(/appmgr/watch/([^/\*]+))", std::bind(&RestHandler::apiPostWatch, this, std::placeholders::_1));
 
 	this->open();
 
@@ -913,6 +917,40 @@ void RestHandler::apiHealth(const HttpRequest& message)
 void RestHandler::apiMetrics(const HttpRequest& message)
 {
 	message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
+}
+
+void RestHandler::apiPostWatch(const HttpRequest& message)
+{
+	permissionCheck(message, PERMISSION_KEY_consul_watch);
+	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	std::string type = path.substr(strlen("/appmgr/watch/"));
+	if (type == "security")
+	{
+		message.reply(status_codes::OK, "success");
+		ConsulConnection::instance()->syncSecurity();
+	}
+	else if (type == "topology")
+	{
+		message.reply(status_codes::OK, "success");
+		ConsulConnection::instance()->syncTopology();
+	}
+	else if (type == "schedule")
+	{
+		message.reply(status_codes::OK, "success");
+		// avoid schedule storm, only need leave one schedule request in pending
+		static std::atomic_int scheduleWorkers(0);
+		if (scheduleWorkers < 2)
+		{
+			scheduleWorkers++;
+			ConsulConnection::instance()->syncSchedule();
+			scheduleWorkers--;
+		}
+		
+	}
+	else
+	{
+		message.reply(status_codes::BadRequest, "invalid watch type");
+	}
 }
 
 void RestHandler::apiLogin(const HttpRequest& message)

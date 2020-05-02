@@ -10,6 +10,7 @@
 #include "Label.h"
 #include "TimerHandler.h"
 #include "ConsulEntity.h"
+#include "AppProcess.h"
 
 class ConsulConnection :public TimerHandler
 {
@@ -21,18 +22,20 @@ public:
 	const std::string getConsulSessionId();
 	void saveSecurity();
 
+	void syncSchedule();
+	void syncSecurity();
+	void syncTopology();
+
 private:
 	virtual void reportStatus(int timerId = 0);
 	virtual void refreshSession(int timerId = 0);
-	virtual void schedule(int timerId = 0);
-	virtual void security(int timerId = 0);
 
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
 	std::string requestSessionId();
 	std::string renewSessionId();
 	std::string getSessionId();
 	void leaderSchedule();
-	void nodeSchedule();
+	void regWatchApp(const std::string& name, const std::string& cmd, const std::string& dockerImg);
 	bool eletionLeader();
 	bool registerService(const std::string& appName, int port);
 	bool deregisterService(const std::string appName);
@@ -51,8 +54,5 @@ private:
 	std::string m_sessionId;
 	int m_ssnRenewTimerId;
 	int m_reportStatusTimerId;
-	int m_scheduleTimerId;
-	int m_securityTimerId;
-	
 	bool m_leader;
 };

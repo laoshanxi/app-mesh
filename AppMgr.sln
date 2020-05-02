@@ -15,6 +15,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		script\appmgr.systemd.service = script\appmgr.systemd.service
 		autogen.sh = autogen.sh
 		doc\CONSUL.md = doc\CONSUL.md
+		script\consul_watch.sh = script\consul_watch.sh
 		Dockerfile = Dockerfile
 		doc\JWT_DESC.md = doc\JWT_DESC.md
 		make.def = make.def

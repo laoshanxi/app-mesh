@@ -158,8 +158,6 @@ public:
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define CONSUL_REPORT_DEFAULT_INTERVAL 15
-#define CONSUL_TOPOLOGY_DEFAULT_INTERVAL 5
-#define CONSUL_SECURITY_SYNC_DEFAULT_INTERVAL 10
 
 #define JSON_KEY_Description "Description"
 
@@ -188,18 +186,18 @@ public:
 #define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
 #define JSON_KEY_CONSULE "Consul"
 #define JSON_KEY_CONSULE_URL "url"
+#define JSON_KEY_CONSULE_DOCKER_IMG "consul_docker_img"
 #define JSON_KEY_CONSULE_IS_MASTER "is_master"
 #define JSON_KEY_CONSULE_IS_NODE "is_node"
 #define JSON_KEY_CONSULE_SESSION_NODE "session_node"
 #define JSON_KEY_CONSULE_DATACENTER "datacenter"
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSULE_REPORT_INTERVAL "report_interval"
-#define JSON_KEY_CONSULE_SCHEDULE_INTERVAL "schedule_interval"
-#define JSON_KEY_CONSUL_SECURITY_INTERVAL "enable_consul_security_interval"
+#define JSON_KEY_CONSUL_SECURITY "enable_consul_security"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"
-#define JSON_KEY_APP_comments "comments"
+#define JSON_KEY_APP_metadata "metadata"
 #define JSON_KEY_APP_stdout_file "stdout_file"
 #define JSON_KEY_APP_command "command"
 #define JSON_KEY_APP_init_command "init_command"
@@ -301,3 +299,4 @@ public:
 #define PERMISSION_KEY_role_delete  			"role-delete"
 #define PERMISSION_KEY_role_view 				"role-view"
 #define PERMISSION_KEY_permission_list			"permission-list"
+#define PERMISSION_KEY_consul_watch 			"consul-watch"

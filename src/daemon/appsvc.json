@@ -66,7 +66,8 @@
         "app-view-all",
         "app-view",
         "app-output-view",
-        "host-resource-view"
+        "host-resource-view",
+        "consul-watch"
       ]
     },
     "Users": {
@@ -111,8 +112,8 @@
     "datacenter": "dc1",
     "session_TTL": 30,
     "report_interval": 15,
-    "schedule_interval": 10,
-    "enable_consul_security_interval": 0
+    "enable_consul_security": false,
+    "consul_docker_img": "consul:latest"
   },
   "Labels": {
     "os_version": "centos7.6",

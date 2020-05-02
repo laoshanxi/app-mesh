@@ -5,12 +5,9 @@
 #include "../common/Utility.h"
 #include "../common/PerfLog.h"
 
-extern ACE_Reactor* m_timerReactor;
 HealthCheckTask::HealthCheckTask()
 	:m_timerId(0)
 {
-	// override default reactor
-	m_reactor = m_timerReactor;
 }
 
 HealthCheckTask::~HealthCheckTask()

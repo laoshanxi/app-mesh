@@ -13,21 +13,19 @@
 #include "../common/PerfLog.h"
 
 #define CONSUL_BASE_PATH  "/v1/kv/appmgr/"
-extern ACE_Reactor* m_timerReactor;
+//extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_scheduleTimerId(0), m_securityTimerId(0), m_leader(0)
+	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_leader(0)
 {
-	// override default reactor
-	m_reactor = m_timerReactor;
+	// override default reactor here
+	// m_reactor = m_timerReactor;
 }
 
 ConsulConnection::~ConsulConnection()
 {
 	this->cancleTimer(m_ssnRenewTimerId);
 	this->cancleTimer(m_reportStatusTimerId);
-	this->cancleTimer(m_scheduleTimerId);
-	this->cancleTimer(m_securityTimerId);
 }
 
 std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
@@ -42,6 +40,9 @@ void ConsulConnection::reportStatus(int timerId)
 {
 	const static char fname[] = "ConsulConnection::reportStatus() ";
 
+	std::string sessionId = getSessionId();
+	if (sessionId.empty()) return;
+
 	// check feature enabled
 	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 
@@ -51,13 +52,17 @@ void ConsulConnection::reportStatus(int timerId)
 	PerfLog perf(fname);
 	try
 	{
-		//report resource: /appmgr/nodes/myhost
-		std::string path = std::string(CONSUL_BASE_PATH).append("nodes/").append(MY_HOST_NAME);
+		//report resource: /appmgr/cluster/nodes/myhost
+		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 		web::json::value body = web::json::value::object();
-		body["resource"] = ResourceCollection::instance()->getConsulJson();
+		//body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-		auto resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
+		static utility::string_t lastReport;
+		auto newReport = body.serialize();
+		if (lastReport == newReport) return;	// do not do report when same
+		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
+		lastReport = body.serialize();
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
@@ -67,7 +72,7 @@ void ConsulConnection::reportStatus(int timerId)
 			}
 		}
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -80,18 +85,11 @@ void ConsulConnection::reportStatus(int timerId)
 void ConsulConnection::refreshSession(int timerId)
 {
 	const static char fname[] = "ConsulConnection::refreshSession() ";
-	
+
 	try
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->consulEnabled()) return;
-
-		// check Consul configuration
-		if (!Configuration::instance()->getConsul()->m_isMaster &&
-			!Configuration::instance()->getConsul()->m_isNode)
-		{
-			return;
-		}
 
 		PerfLog perf(fname);
 		// get session id
@@ -109,7 +107,7 @@ void ConsulConnection::refreshSession(int timerId)
 		m_sessionId = sessionId;
 		return;
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -121,31 +119,31 @@ void ConsulConnection::refreshSession(int timerId)
 	m_sessionId.clear();
 }
 
-void ConsulConnection::schedule(int timerId)
+void ConsulConnection::syncSchedule()
 {
 	const static char fname[] = "ConsulConnection::schedule() ";
+	LOG_DBG << fname;
 
 	try
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->consulEnabled()) return;
-		if (getSessionId().empty()) return;
+		if (getSessionId().empty())
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			m_sessionId = requestSessionId();
+		}
 
 		PerfLog perf(fname);
 
 		if (Configuration::instance()->getConsul()->m_isMaster)
 		{
 			// Leader's job
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
 			leaderSchedule();
 		}
-
-		if (Configuration::instance()->getConsul()->m_isNode)
-		{
-			// Node's job
-			nodeSchedule();
-		}
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -153,19 +151,9 @@ void ConsulConnection::schedule(int timerId)
 	{
 		LOG_WAR << fname << " exception";
 	}
-
-	// set next timer
-	if (Configuration::instance()->getConsul()->m_scheduleInterval > 1)
-	{
-		m_scheduleTimerId = this->registerTimer(
-			Configuration::instance()->getConsul()->m_scheduleInterval * 1000L, 0,
-			std::bind(&ConsulConnection::schedule, this, std::placeholders::_1),
-			__FUNCTION__
-		);
-	}
 }
 
-void ConsulConnection::security(int timerId)
+void ConsulConnection::syncSecurity()
 {
 	const static char fname[] = "ConsulConnection::security() ";
 
@@ -184,7 +172,7 @@ void ConsulConnection::security(int timerId)
 			if (!respJson.is_array() || respJson.as_array().size() == 0) return;
 			auto securityJson = respJson.as_array().at(0);
 			if (!HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value")) return;
-			
+
 			auto index = GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
 			if (index > lastIndex)
 			{
@@ -203,7 +191,7 @@ void ConsulConnection::security(int timerId)
 			LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
 		}
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -230,7 +218,7 @@ std::string ConsulConnection::requestSessionId()
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto json = resp.extract_json(true).get();
-		LOG_DBG << fname << json.serialize();
+		//LOG_DBG << fname << json.serialize();
 		if (HAS_JSON_FIELD(json, "ID"))
 		{
 			sessionId = GET_JSON_STR_VALUE(json, "ID");
@@ -274,9 +262,14 @@ std::string ConsulConnection::getSessionId()
 
 void ConsulConnection::leaderSchedule()
 {
+	const static char fname[] = "ConsulConnection::schedule() ";
+	LOG_DBG << fname;
+
 	// leader's job
 	if (eletionLeader())
 	{
+		LOG_DBG << fname << "leader now, do schedule";
+
 		auto taskList = retrieveTask();
 		auto oldTopology = retrieveTopology("");
 		auto nodes = retrieveNode();
@@ -294,7 +287,23 @@ void ConsulConnection::leaderSchedule()
 	}
 }
 
-void ConsulConnection::nodeSchedule()
+void ConsulConnection::regWatchApp(const std::string& name, const std::string& cmd, const std::string& dockerImg)
+{
+	web::json::value app;
+	app[JSON_KEY_APP_name] = web::json::value::string(name);
+	app[JSON_KEY_APP_command] = web::json::value::string(cmd);
+	if (dockerImg.length())
+	{
+		app[JSON_KEY_APP_docker_image] = web::json::value::string(dockerImg);
+		web::json::value objEnvs = web::json::value::object();
+		objEnvs[ENV_APP_MANAGER_DOCKER_PARAMS] = web::json::value::string("-v /opt/appmanager:/opt/appmanager --net=host");
+		app[JSON_KEY_APP_env] = objEnvs;
+	}
+	app[JSON_KEY_APP_cache_lines] = web::json::value::number(100);
+	Configuration::instance()->addApp(app);
+}
+
+void ConsulConnection::syncTopology()
 {
 	const static char fname[] = "ConsulConnection::nodeSchedule() ";
 
@@ -452,7 +461,7 @@ void ConsulConnection::saveSecurity()
 
 	// /appmgr/security
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
-	
+
 	auto body = Configuration::instance()->getSecurity()->AsJson(false);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
@@ -491,6 +500,7 @@ void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::sh
 std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::scheduleTask(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology)
 {
 	const static char fname[] = "ConsulConnection::scheduleTask() ";
+	LOG_DBG << fname;
 
 	// key: hostname, value: task list
 	std::map<std::string, std::shared_ptr<ConsulTopology>> newTopology;
@@ -727,40 +737,18 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::retriev
 			}
 		}
 	}
-	else
-	{
-		LOG_DBG << fname << "no topology found for <" << host << ">";
-	}
+
+	LOG_DBG << fname << "get topology size : " << topology.size();
 	return std::move(topology);
 }
 
-/*
-[
-	{
-		"CreateIndex": 22168,
-		"Flags": 0,
-		"Key": "appmgr/task/",
-		"LockIndex": 0,
-		"ModifyIndex": 22168,
-		"Value": null
-	},
-	{
-		"CreateIndex": 22241,
-		"Flags": 0,
-		"Key": "appmgr/task/myapp",
-		"LockIndex": 0,
-		"ModifyIndex": 22241,
-		"Value": "ewoJCQkJInJlcGxpY2F0aW9uIjogMiwKCQkJCSJjb250ZW50IjogewoJCQkJCSJuYW1lIjogIm15YXBwIiwKCQkJCQkiY29tbWFuZCI6ICJzbGVlcCAzMCIKCQkJCX0KfQ=="
-	}
-]
-*/
 std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTask()
 {
 	const static char fname[] = "ConsulConnection::retrieveTask() ";
 
 	std::map<std::string, std::shared_ptr<ConsulTask>> result;
-	// /appmgr/task/myapp
-	std::string path = std::string(CONSUL_BASE_PATH).append("task");
+	// /appmgr/cluster/tasks/myapp
+	std::string path = std::string(CONSUL_BASE_PATH).append("cluster/tasks");
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
@@ -769,7 +757,7 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 		{
 			for (const auto& section : json.as_array())
 			{
-				if (HAS_JSON_FIELD(section, "Value") && GET_JSON_STR_VALUE(section, "Key") != "appmgr/task")
+				if (HAS_JSON_FIELD(section, "Value") && GET_JSON_STR_VALUE(section, "Key") != "appmgr/cluster/tasks")
 				{
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					auto appJson = web::json::value::parse(appText);
@@ -783,12 +771,13 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 			}
 		}
 	}
+	LOG_DBG << fname << "get tasks size : " << result.size();
 	return std::move(result);
 }
 
 /*
 [
-	"appmgr/nodes/cents"
+	"appmgr/cluster/nodes/cents"
 ]
 */
 std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNode()
@@ -796,10 +785,8 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	const static char fname[] = "ConsulConnection::retrieveNode() ";
 
 	std::map<std::string, std::shared_ptr<ConsulNode>> result;
-	auto now = std::chrono::system_clock::now();
-	auto reportInterval = Configuration::instance()->getConsul()->m_reportInterval;
-	// /appmgr/nodes
-	std::string path = std::string(CONSUL_BASE_PATH).append("nodes");
+	// /appmgr/cluster/nodes
+	std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes");
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
@@ -811,13 +798,9 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
 					auto key = GET_JSON_STR_VALUE(section, "Key");
-					auto flags = GET_JSON_NUMBER_VALUE(section, "Flags");
-					auto timeDiff = std::chrono::duration_cast<std::chrono::seconds>(now - std::chrono::system_clock::from_time_t(flags)).count();
-					// ignore node when last update time more than reportInterval * 3 (consider time diff between hosts)
-					// TODO: need to sync-up clock in the whole cluster
-					if (Utility::startWith(key, "appmgr/nodes/") && timeDiff <= reportInterval * 3)
+					if (Utility::startWith(key, "appmgr/cluster/nodes/"))
 					{
-						auto host = Utility::stringReplace(key, "appmgr/nodes/", "");
+						auto host = Utility::stringReplace(key, "appmgr/cluster/nodes/", "");
 						auto value = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
 						result[host] = ConsulNode::FromJson(value, host);
 					}
@@ -836,16 +819,16 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 
 	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 
-	if (!recoveredConsulSsnId.empty())
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_sessionId = recoveredConsulSsnId;
-	}
-
 	// session renew timer
 	this->cancleTimer(m_ssnRenewTimerId);
-	if (Configuration::instance()->getConsul()->m_ttl > 10)
+	if (Configuration::instance()->getConsul()->m_ttl > 10 &&
+		(Configuration::instance()->getConsul()->m_isMaster || Configuration::instance()->getConsul()->m_isNode))
 	{
+		if (!recoveredConsulSsnId.empty())
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			m_sessionId = recoveredConsulSsnId;
+		}
 		m_ssnRenewTimerId = this->registerTimer(
 			0,
 			Configuration::instance()->getConsul()->m_ttl - 3,
@@ -866,27 +849,34 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 		);
 	}
 
-	// aply topology timer
-	this->cancleTimer(m_scheduleTimerId);
-	if (Configuration::instance()->getConsul()->m_scheduleInterval > 1)
-	{
-		m_scheduleTimerId = this->registerTimer(
-			Configuration::instance()->getConsul()->m_scheduleInterval * 1000L, 0,
-			std::bind(&ConsulConnection::schedule, this, std::placeholders::_1),
-			__FUNCTION__
-		);
-	}
-
-	// security sync timer
-	this->cancleTimer(m_securityTimerId);
+	auto consulUrl = Configuration::instance()->getConsul()->m_consulUrl;
+	auto consulImg = Configuration::instance()->getConsul()->m_consulDockerImg;
+	// security watch app
+	const std::string securityApp = "watcher_secucrity";
+	Configuration::instance()->removeApp(securityApp);
 	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
-		m_securityTimerId = this->registerTimer(
-			1000L * 1,
-			Configuration::instance()->getConsul()->m_securitySyncInterval,
-			std::bind(&ConsulConnection::security, this, std::placeholders::_1),
-			__FUNCTION__
-		);
+		//docker run --net=host --rm consul consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/security "/opt/appmanager/appc watch -t security"
+		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=key -key=appmgr/security 'sh /opt/appmanager/script/consul_watch.sh security'";
+		regWatchApp(securityApp, cmd, consulImg);
+	}
+	// topology watch app
+	const std::string topologyApp = "watcher_topology";
+	Configuration::instance()->removeApp(topologyApp);
+	if (Configuration::instance()->getConsul()->m_isNode)
+	{
+		//docker run --net=host --rm consul consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/topology/myhost "/opt/appmanager/appc watch -t topology"
+		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=key -key=appmgr/topology/" + MY_HOST_NAME + " 'sh /opt/appmanager/script/consul_watch.sh topology'";
+		regWatchApp(topologyApp, cmd, consulImg);
+	}
+	// schedule nodes watch app
+	const std::string scheduleApp = "watcher_schedule";
+	Configuration::instance()->removeApp(scheduleApp);
+	if (Configuration::instance()->getConsul()->m_isMaster)
+	{
+		//docker run --net=host --rm consul consul watch -http-addr=http://localhost:8500 -type=keyprefix -prefix=appmgr/cluster/nodes "/opt/appmanager/appc watch -t schedule"
+		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=keyprefix -prefix=appmgr/cluster/ 'sh /opt/appmanager/script/consul_watch.sh schedule'";
+		regWatchApp(scheduleApp, cmd, consulImg);
 	}
 }
 
@@ -925,7 +915,24 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	{
 		request.set_body(Utility::prettyJson(body->serialize()));
 	}
-	web::http::http_response response = client.request(request).get();
-	LOG_DBG << fname << path << " return " << response.status_code();
+
+	try
+	{
+		// In case of REST server crash or block query timeout, will throw exception:
+		// "Failed to read HTTP status line"
+		web::http::http_response response = client.request(request).get();
+		LOG_DBG << fname << mtd << " " << path << " return " << response.status_code();
+		return std::move(response);
+	}
+	catch (const std::exception & ex)
+	{
+		LOG_WAR << fname << path << " got exception: " << ex.what();
+	}
+	catch (...)
+	{
+		LOG_WAR << fname << path << " exception";
+	}
+
+	web::http::http_response response(web::http::status_codes::ResetContent);
 	return std::move(response);
 }
