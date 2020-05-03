@@ -157,7 +157,6 @@ public:
 #define MAX_APP_CACHED_LINES 1024
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
-#define CONSUL_REPORT_DEFAULT_INTERVAL 15
 
 #define JSON_KEY_Description "Description"
 
@@ -192,7 +191,6 @@ public:
 #define JSON_KEY_CONSULE_SESSION_NODE "session_node"
 #define JSON_KEY_CONSULE_DATACENTER "datacenter"
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
-#define JSON_KEY_CONSULE_REPORT_INTERVAL "report_interval"
 #define JSON_KEY_CONSUL_SECURITY "enable_consul_security"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
@@ -224,6 +222,7 @@ public:
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
+#define JSON_KEY_APP_SYSTEM_INTERNAL "system-internal"
 
 #define JSON_KEY_PERIOD_APP_keep_running "keep_running"
 

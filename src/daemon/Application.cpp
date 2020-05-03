@@ -310,7 +310,7 @@ std::string Application::runApp(int timeoutSeconds)
 
 	if (m_pid > 0)
 	{
-		m_process->regKillTimer(timeoutSeconds, __FUNCTION__);
+		if (timeoutSeconds > 0) m_process->regKillTimer(timeoutSeconds, __FUNCTION__);
 	}
 	else
 	{

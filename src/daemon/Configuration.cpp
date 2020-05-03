@@ -781,13 +781,13 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MASTER);
 	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
-	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_REPORT_INTERVAL, consul->m_reportInterval);
 	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
 	const static boost::regex urlExrp("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
 	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExrp))
 	{
 		throw std::invalid_argument("consul URL is not correct");
 	}
+	if (consul->m_ttl < 5) throw std::invalid_argument("session TTL should not less than 5s");
 	return consul;
 }
 
@@ -800,7 +800,6 @@ web::json::value Configuration::JsonConsul::AsJson()
 	result[JSON_KEY_CONSULE_IS_MASTER] = web::json::value::boolean(m_isMaster);
 	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
-	result[JSON_KEY_CONSULE_REPORT_INTERVAL] = web::json::value::number(m_reportInterval);
 	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
 	return result;
 }
@@ -816,7 +815,6 @@ bool Configuration::JsonConsul::consulSecurityEnabled() const
 }
 
 Configuration::JsonConsul::JsonConsul()
-	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), 
-	m_reportInterval(CONSUL_REPORT_DEFAULT_INTERVAL), m_securitySync(false)
+	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL),m_securitySync(false)
 {
 }

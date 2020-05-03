@@ -53,8 +53,6 @@ class Configuration
 		std::string m_consulUrl;
 		// TTL (string: "") - Specifies the number of seconds (between 10s and 86400s).
 		int m_ttl;
-		// report status to consul interval
-		int m_reportInterval;
 		bool m_securitySync;
 		std::string m_consulDockerImg;
 	};

@@ -16,7 +16,7 @@
 //extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_reportStatusTimerId(0), m_leader(0)
+	:m_ssnRenewTimerId(0), m_leader(0)
 {
 	// override default reactor here
 	// m_reactor = m_timerReactor;
@@ -25,7 +25,6 @@ ConsulConnection::ConsulConnection()
 ConsulConnection::~ConsulConnection()
 {
 	this->cancleTimer(m_ssnRenewTimerId);
-	this->cancleTimer(m_reportStatusTimerId);
 }
 
 std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
@@ -103,8 +102,11 @@ void ConsulConnection::refreshSession(int timerId)
 			sessionId = renewSessionId();
 		}
 		// set session id
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_sessionId = sessionId;
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			m_sessionId = sessionId;
+		}
+		reportStatus(0);
 		return;
 	}
 	catch (const std::exception & ex)
@@ -289,18 +291,21 @@ void ConsulConnection::leaderSchedule()
 
 void ConsulConnection::regWatchApp(const std::string& name, const std::string& cmd, const std::string& dockerImg)
 {
-	web::json::value app;
-	app[JSON_KEY_APP_name] = web::json::value::string(name);
-	app[JSON_KEY_APP_command] = web::json::value::string(cmd);
+	web::json::value jsonApp;
+	jsonApp[JSON_KEY_APP_name] = web::json::value::string(name);
+	jsonApp[JSON_KEY_APP_command] = web::json::value::string(cmd);
+	jsonApp[JSON_KEY_APP_metadata] = web::json::value::string(JSON_KEY_APP_SYSTEM_INTERNAL);
+	//jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(Application::STATUS::NOTAVIALABLE));
 	if (dockerImg.length())
 	{
-		app[JSON_KEY_APP_docker_image] = web::json::value::string(dockerImg);
+		jsonApp[JSON_KEY_APP_docker_image] = web::json::value::string(dockerImg);
 		web::json::value objEnvs = web::json::value::object();
 		objEnvs[ENV_APP_MANAGER_DOCKER_PARAMS] = web::json::value::string("-v /opt/appmanager:/opt/appmanager --net=host");
-		app[JSON_KEY_APP_env] = objEnvs;
+		jsonApp[JSON_KEY_APP_env] = objEnvs;
 	}
-	app[JSON_KEY_APP_cache_lines] = web::json::value::number(100);
-	Configuration::instance()->addApp(app);
+	jsonApp[JSON_KEY_APP_cache_lines] = web::json::value::number(100);
+	auto app = Configuration::instance()->addApp(jsonApp);
+	//app->runAsyncrize(0);
 }
 
 void ConsulConnection::syncTopology()
@@ -837,18 +842,6 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 		);
 	}
 
-	// report status timer
-	this->cancleTimer(m_reportStatusTimerId);
-	if (Configuration::instance()->getConsul()->m_reportInterval > 3)
-	{
-		m_reportStatusTimerId = this->registerTimer(
-			1000L * 1,
-			Configuration::instance()->getConsul()->m_reportInterval,
-			std::bind(&ConsulConnection::reportStatus, this, std::placeholders::_1),
-			__FUNCTION__
-		);
-	}
-
 	auto consulUrl = Configuration::instance()->getConsul()->m_consulUrl;
 	auto consulImg = Configuration::instance()->getConsul()->m_consulDockerImg;
 	// security watch app
@@ -856,7 +849,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	Configuration::instance()->removeApp(securityApp);
 	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
-		//docker run --net=host --rm consul consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/security "/opt/appmanager/appc watch -t security"
+		//consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/security "/opt/appmanager/appc watch -t security"
 		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=key -key=appmgr/security 'sh /opt/appmanager/script/consul_watch.sh security'";
 		regWatchApp(securityApp, cmd, consulImg);
 	}
@@ -865,7 +858,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	Configuration::instance()->removeApp(topologyApp);
 	if (Configuration::instance()->getConsul()->m_isNode)
 	{
-		//docker run --net=host --rm consul consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/topology/myhost "/opt/appmanager/appc watch -t topology"
+		//consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/topology/myhost "/opt/appmanager/appc watch -t topology"
 		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=key -key=appmgr/topology/" + MY_HOST_NAME + " 'sh /opt/appmanager/script/consul_watch.sh topology'";
 		regWatchApp(topologyApp, cmd, consulImg);
 	}
@@ -874,7 +867,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	Configuration::instance()->removeApp(scheduleApp);
 	if (Configuration::instance()->getConsul()->m_isMaster)
 	{
-		//docker run --net=host --rm consul consul watch -http-addr=http://localhost:8500 -type=keyprefix -prefix=appmgr/cluster/nodes "/opt/appmanager/appc watch -t schedule"
+		//consul watch -http-addr=http://localhost:8500 -type=keyprefix -prefix=appmgr/cluster/nodes "/opt/appmanager/appc watch -t schedule"
 		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=keyprefix -prefix=appmgr/cluster/ 'sh /opt/appmanager/script/consul_watch.sh schedule'";
 		regWatchApp(scheduleApp, cmd, consulImg);
 	}
