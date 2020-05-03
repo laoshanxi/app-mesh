@@ -18,10 +18,10 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 > * Consul App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
 > * Consul session support HA recovery
 > * App Manager request Consul session with TTL and expire delete behavior
+> * Consul watch is supported for monitor consul schedule changes and security syncup
 
 ### What is **not** supported:
 > * Consul connection ACL
-> * Consul watch
 > * Schedule consider resource usage
 
 ### Consul configuration
@@ -42,23 +42,19 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 
 
 - Status report
- Each node will report to Consul KV path `appmgr/nodes/$host_name`
+ Each node will report to Consul KV path `appmgr/cluster/nodes/$host_name`
 
  ```shell
-curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool         
+curl -s http://localhost:8500/v1/kv/appmgr/cluster/nodes/centos8?raw | python3 -m json.tool
+`
 {
     "label": {
-        "HOST_NAME": "host2",
+        "HOST_NAME": "centos8",
         "arch": "x86_64",
-        "fdef": "fefe",
         "os_version": "centos7.6"
-    },
-    "resource": {
-        "cpu_cores": 1,
-        "mem_free_bytes": 93171712,
-        "mem_total_bytes": 1039081472
     }
 }
+`
  ```
 
 - Consul application
@@ -66,13 +62,13 @@ curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool
  App Manager leader node will get defined Consul application and current working nodes. schedule applications to working nodes and write schedule result to Consul.
  Each working node will watch and get its Consul application.
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/task?recurse | python -m json.tool 
+ curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks?recurse | python3 -m json.tool
  `
  [
     {
         "CreateIndex": 22168,
         "Flags": 0,
-        "Key": "appmgr/task/",
+        "Key": "appmgr/cluster/tasks/",
         "LockIndex": 0,
         "ModifyIndex": 22168,
         "Value": null
@@ -80,7 +76,7 @@ curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool
     {
         "CreateIndex": 113084,
         "Flags": 0,
-        "Key": "appmgr/task/myapp",
+        "Key": "appmgr/cluster/tasks/myapp",
         "LockIndex": 0,
         "ModifyIndex": 237498,
         "Value": "ewoJCQkJInJlcGxpY2F0aW9uIjogMSwKICAgICAgICAicG9ydCI6NjY2NiwKCQkJCSJjb250ZW50IjogewoJCQkJCSJuYW1lIjogIm15YXBwIiwKCQkJCQkiY29tbWFuZCI6ICJzbGVlcCAzMCIKCQkJCX0sCiAgICAgICJjb25kaXRpb24iOiB7CiAgICAgICAgICAiYXJjaCI6ICJ4ODZfNjQiLAogICAgICAgICAgIm9zX3ZlcnNpb24iOiAiY2VudG9zNy42IgogICAgICB9Cn0="
@@ -88,25 +84,25 @@ curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool
     {
         "CreateIndex": 25051,
         "Flags": 0,
-        "Key": "appmgr/task/myapp2",
+        "Key": "appmgr/cluster/tasks/myapp2",
         "LockIndex": 0,
         "ModifyIndex": 241391,
         "Value": "ewoJCQkJInJlcGxpY2F0aW9uIjogMCwKICAgICAgICAicG9ydCI6NjY2NywKCQkJCSJjb250ZW50IjogewoJCQkJCSJuYW1lIjogIm15YXBwMiIsCgkJCQkJImNvbW1hbmQiOiAic2xlZXAgNjAiCgkJCQl9LAogICAgICAgICAiY29uZGl0aW9uIjogewoJICAgIAkJImFyY2giOiAieDg2XzY0IgoJICAgIAl9Cn0="
     }
 ]
  `
- curl -s http://localhost:8500/v1/kv/appmgr/task/myapp?raw | python -m json.tool        
+curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks/myapp?raw | python3 -m json.tool
 `
 {
-	"replication": 1,
-	"port": 6666,
+    "replication": 1,
+    "port": 6666,
+    "content": {
+        "name": "myapp",
+        "command": "sleep 30"
+    },
     "condition": {
         "arch": "x86_64",
         "os_version": "centos7.6"
-    },
-    "content": {
-        "command": "sleep 30",
-        "name": "myapp"
     }
 }
 `
@@ -118,10 +114,10 @@ curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool
    For task dimension, the result assemble to one key
 
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/topology?recurse | python -m json.tool | grep Key
-        "Key": "appmgr/topology/",
-        "Key": "appmgr/topology/cents",
- curl -s http://localhost:8500/v1/kv/appmgr/topology/myhost?raw | python -m json.tool  
+ curl -s http://localhost:8500/v1/kv/appmgr/cluster/topology?recurse | python -m json.tool | grep Key
+        "Key": "appmgr/cluster/topology/",
+        "Key": "appmgr/cluster/topology/cents",
+ curl -s http://localhost:8500/v1/kv/appmgr/cluster/topology/myhost?raw | python -m json.tool  
 [
     {
         "app": "myapp",
@@ -142,38 +138,42 @@ curl -s http://localhost:8500/v1/kv/appmgr/nodes/host2?raw | python -m json.tool
 ```json
 {
 	"appmgr": {
-		"nodes": {
-            "label": {
-                "HOST_NAME": "host2",
-                "arch": "x86_64",
-                "fdef": "fefe",
-                "os_version": "centos7.6"
+        "cluster": {
+            "nodes": {
+                "host1": {
+                    "label": {
+                        "HOST_NAME": "centos8",
+                        "arch": "x86_64",
+                        "os_version": "centos7.6"
+                    }
+                },
+                "host2": {
+                    "label": {
+                        "HOST_NAME": "centos7",
+                        "arch": "x86_64",
+                        "os_version": "centos7.6"
+                    }
+                }
             },
-            "resource": {
-                "cpu_cores": 1,
-                "mem_free_bytes": 93171712,
-                "mem_total_bytes": 1039081472
-            },
-			"host2": { }
-		},
-		"task": {
-			"myapp": {
-				"replication": 2,
-				"port":8085,
-				"content": {
-					"name": "myapp",
-					"command": "sleep 30"
-				}
-			},
-			"myapp2": {
-				"replication": 2,
-				"port":0,
-				"content": {
-					"name": "myapp2",
-					"command": "sleep 100"
-				}
-			}
-		},
+            "tasks": {
+                "myapp": {
+                    "replication": 2,
+                    "port":8085,
+                    "content": {
+                        "name": "myapp",
+                        "command": "sleep 30"
+                    }
+                },
+                "myapp2": {
+                    "replication": 2,
+                    "port":0,
+                    "content": {
+                        "name": "myapp2",
+                        "command": "sleep 100"
+                    }
+                }
+            }
+        },
 		"topology": {
 			"myhost": [ 
 			    {"app": "myapp", "peer_hosts": ["host2"] },
