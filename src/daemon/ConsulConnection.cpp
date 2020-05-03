@@ -190,7 +190,7 @@ void ConsulConnection::syncSecurity()
 		}
 		else
 		{
-			LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
+			LOG_WAR << fname << "failed with return code : " << resp.status_code();
 		}
 	}
 	catch (const std::exception & ex)
@@ -249,7 +249,7 @@ std::string ConsulConnection::renewSessionId()
 		}
 		else
 		{
-			LOG_WAR << fname << "failed with response : " << resp.extract_utf8string(true).get();
+			LOG_WAR << fname << "failed with return code : " << resp.status_code();
 			sessionId = requestSessionId();
 		}
 	}
