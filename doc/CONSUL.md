@@ -21,10 +21,11 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 > * Consul session support HA recovery
 > * App Manager request Consul session with TTL and expire delete behavior
 > * Consul watch is supported for monitor consul schedule changes and security syncup
+> * Schedule consider resource usage
 
 ### What is **not** supported:
 > * Consul connection ACL
-> * Schedule consider resource usage
+> * Consul watch does not support SSL
 
 ### Consul configuration
 
