@@ -129,15 +129,15 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	{
 		if (limit->m_memoryMb)
 		{
-			dockerCommand += " --memory " + std::to_string(limit->m_memoryMb) + "M";
+			dockerCommand.append(" --memory ").append(std::to_string(limit->m_memoryMb)).append("M");
 			if (limit->m_memoryVirtMb && limit->m_memoryVirtMb > limit->m_memoryMb)
 			{
-				dockerCommand += " --memory-swap " + std::to_string(limit->m_memoryVirtMb - limit->m_memoryVirtMb) + "M";
+				dockerCommand.append(" --memory-swap ").append(std::to_string(limit->m_memoryVirtMb - limit->m_memoryMb)).append("M");
 			}
 		}
 		if (limit->m_cpuShares)
 		{
-			dockerCommand += " --cpu-shares " + std::to_string(limit->m_cpuShares);
+			dockerCommand.append(" --cpu-shares ").append(std::to_string(limit->m_cpuShares));
 		}
 	}
 	dockerCommand += " " + m_dockerImage;

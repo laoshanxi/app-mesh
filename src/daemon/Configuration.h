@@ -80,7 +80,7 @@ public:
 	void hotUpdate(const web::json::value& config);
 	void registerPrometheus();
 
-	std::vector<std::shared_ptr<Application>> getApps();
+	std::vector<std::shared_ptr<Application>> getApps() const;
 	std::shared_ptr<Application> addApp(const web::json::value& jsonApp);
 	void removeApp(const std::string& appName);
 	std::shared_ptr<Application> parseApp(const web::json::value& jsonApp);
@@ -90,8 +90,8 @@ public:
 	int getPromListenPort();
 	std::string getRestListenAddress();
 	const web::json::value getSecureConfigJson();
-	web::json::value getApplicationJson(bool returnRuntimeInfo);
-	std::shared_ptr<Application> getApp(const std::string& appName) noexcept(false);
+	web::json::value getApplicationJson(bool returnRuntimeInfo) const;
+	std::shared_ptr<Application> getApp(const std::string& appName) const noexcept(false);
 	bool isAppExist(const std::string& appName);
 	void disableApp(const std::string& appName);
 	void enableApp(const std::string& appName);
@@ -132,7 +132,7 @@ private:
 	
 	std::string m_logLevel;
 
-	std::recursive_mutex m_mutex;
+	mutable std::recursive_mutex m_mutex;
 	std::string m_jsonFilePath;
 
 	std::shared_ptr<Label> m_label;

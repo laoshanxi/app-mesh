@@ -181,7 +181,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	return result;
 }
 
-std::vector<std::shared_ptr<Application>> Configuration::getApps()
+std::vector<std::shared_ptr<Application>> Configuration::getApps() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_apps;
@@ -261,7 +261,7 @@ const web::json::value Configuration::getSecureConfigJson()
 	return std::move(json);
 }
 
-web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo)
+web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	std::vector<std::shared_ptr<Application>> apps;
@@ -636,30 +636,19 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 	return app;
 }
 
-std::shared_ptr<Application> Configuration::getApp(const std::string& appName)
+std::shared_ptr<Application> Configuration::getApp(const std::string& appName) const
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();
-	for (auto app : apps)
-	{
-		if (app->getName() == appName)
-		{
-			return app;
-		}
-	}
+	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application>& app) { return app->getName() == appName; });
+	if (iter != apps.end()) return *iter;
+
 	throw std::invalid_argument("No such application found");
 }
 
 bool Configuration::isAppExist(const std::string& appName)
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();
-	for (auto app : apps)
-	{
-		if (app->getName() == appName)
-		{
-			return true;
-		}
-	}
-	return false;
+	return std::any_of(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application>& app) { return app->getName() == appName; });
 }
 
 std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value& jsonValue)
