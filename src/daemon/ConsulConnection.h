@@ -20,7 +20,7 @@ public:
 	static std::shared_ptr<ConsulConnection>& instance();
 	void initTimer(const std::string& recoveredConsulSsnId = "");
 	const std::string getConsulSessionId();
-	void saveSecurity();
+	void saveSecurity(bool checkExistance = false);
 
 	void syncSchedule();
 	void syncSecurity();

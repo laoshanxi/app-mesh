@@ -652,7 +652,7 @@ void RestHandler::apiSetBasicConfig(const HttpRequest& message)
 	Configuration::instance()->hotUpdate(json);
 
 	Configuration::instance()->saveConfigToDisk();
-	ConsulConnection::instance()->saveSecurity();
+	ConsulConnection::instance()->saveSecurity(true);
 
 	apiGetBasicConfig(message);
 }

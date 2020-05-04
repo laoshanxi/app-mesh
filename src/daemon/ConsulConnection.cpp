@@ -166,8 +166,8 @@ void ConsulConnection::syncSecurity()
 
 		PerfLog perf(fname);
 
-		static long lastIndex = 0;
-		auto resp = requestHttp(web::http::methods::GET, "/v1/kv/appmgr/security", {}, {}, nullptr);
+		std::string path = std::string(CONSUL_BASE_PATH).append("security");
+		auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto respJson = resp.extract_json(true).get();
@@ -175,17 +175,12 @@ void ConsulConnection::syncSecurity()
 			auto securityJson = respJson.as_array().at(0);
 			if (!HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value")) return;
 
-			auto index = GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
-			if (index > lastIndex)
+			auto security = web::json::value::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
+			auto securityObj = Configuration::JsonSecurity::FromJson(security);
+			if (securityObj->m_jwtUsers->getUsers().size())
 			{
-				auto security = web::json::value::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
-				auto securityObj = Configuration::JsonSecurity::FromJson(security);
-				if (securityObj->m_jwtUsers->getUsers().size())
-				{
-					Configuration::instance()->updateSecurity(securityObj);
-					LOG_DBG << fname << "Security info updated from Consul successfully";
-				}
-				lastIndex = index;
+				Configuration::instance()->updateSecurity(securityObj);
+				LOG_DBG << fname << "Security info updated from Consul successfully";
 			}
 		}
 		else
@@ -458,7 +453,7 @@ bool ConsulConnection::deregisterService(const std::string appName)
 	return false;
 }
 
-void ConsulConnection::saveSecurity()
+void ConsulConnection::saveSecurity(bool checkExistance)
 {
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
 
@@ -466,7 +461,12 @@ void ConsulConnection::saveSecurity()
 
 	// /appmgr/security
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
-
+	// if check exist and security KV already exist, do nothing
+	if (checkExistance && requestHttp(web::http::methods::GET, path, {}, {}, nullptr).status_code() == web::http::status_codes::OK)
+	{
+		LOG_WAR << fname << path << " already exist, on need override";
+		return;
+	}
 	auto body = Configuration::instance()->getSecurity()->AsJson(false);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
