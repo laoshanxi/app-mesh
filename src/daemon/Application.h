@@ -34,8 +34,8 @@ public:
 
 	virtual bool avialable();
 	const std::string getName() const;
-	bool isEnabled();
-	bool isWorkingState();
+	bool isEnabled() const;
+	bool isWorkingState() const;
 	bool attach(int pid);
 	
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);

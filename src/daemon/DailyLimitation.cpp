@@ -24,7 +24,7 @@ void DailyLimitation::dump()
 	LOG_DBG << fname << "m_endTime:" << Utility::convertDayTime2Str(m_endTime);
 }
 
-web::json::value DailyLimitation::AsJson()
+web::json::value DailyLimitation::AsJson() const
 {
 	web::json::value result = web::json::value::object();
 

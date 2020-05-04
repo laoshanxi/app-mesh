@@ -19,7 +19,7 @@ struct AppSnap
 struct Snapshot
 {
 	bool operator==(const Snapshot& snapshort) const;
-	web::json::value AsJson();
+	web::json::value AsJson() const;
 	static std::shared_ptr<Snapshot> FromJson(const web::json::value& obj);
 	void persist();
 

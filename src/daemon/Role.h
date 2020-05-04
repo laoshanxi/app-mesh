@@ -17,7 +17,7 @@ public:
 	virtual ~Role();
 
 	// seriarize
-	virtual web::json::value AsJson();
+	web::json::value AsJson() const;
 	static std::shared_ptr<Role> FromJson(std::string roleName, web::json::value& obj) noexcept(false);
 
 	// get infomation
@@ -28,7 +28,7 @@ public:
 private:
 	std::set<std::string> m_permissions;
 	std::string m_name;
-	std::recursive_mutex m_mutex;
+	mutable std::recursive_mutex m_mutex;
 };
 
 
@@ -40,7 +40,7 @@ public:
 
 	std::shared_ptr<Role> getRole(const std::string& roleName);
 
-	virtual web::json::value AsJson();
+	web::json::value AsJson() const;
 	static const std::shared_ptr<Roles> FromJson(const web::json::value& obj) noexcept(false);
 
 	void addRole(const web::json::value& obj, std::string name);
@@ -48,6 +48,6 @@ public:
 
 private:
 	std::map<std::string, std::shared_ptr<Role>> m_roles;
-	std::recursive_mutex m_mutex;
+	mutable std::recursive_mutex m_mutex;
 
 };

@@ -689,7 +689,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	return rest;
 }
 
-web::json::value Configuration::JsonRest::AsJson()
+web::json::value Configuration::JsonRest::AsJson() const
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_RestEnabled] = web::json::value::boolean(m_restEnabled);
@@ -726,7 +726,7 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const w
 	return ssl;
 }
 
-web::json::value Configuration::JsonSsl::AsJson()
+web::json::value Configuration::JsonSsl::AsJson() const
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_SSLEnabled] = web::json::value::boolean(m_sslEnabled);
@@ -791,7 +791,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	return consul;
 }
 
-web::json::value Configuration::JsonConsul::AsJson()
+web::json::value Configuration::JsonConsul::AsJson() const
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_CONSULE_URL] = web::json::value::string(m_consulUrl);

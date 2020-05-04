@@ -19,7 +19,7 @@ std::shared_ptr<ConsulStatus> ConsulStatus::FromJson(const web::json::value& jso
 	return consul;
 }
 
-web::json::value ConsulStatus::AsJson()
+web::json::value ConsulStatus::AsJson() const
 {
 	auto result = web::json::value::object();
 	for (const auto& app : m_apps)
@@ -57,7 +57,7 @@ std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value& jobj)
 	return consul;
 }
 
-web::json::value ConsulTask::AsJson()
+web::json::value ConsulTask::AsJson() const
 {
 	auto result = web::json::value::object();
 	result["replication"] = web::json::value::number(m_replication);
@@ -109,7 +109,7 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value&
 	return std::move(topology);
 }
 
-web::json::value ConsulTopology::AsJson()
+web::json::value ConsulTopology::AsJson() const
 {
 	auto result = web::json::value::array(m_apps.size());
 	size_t appIndex = 0;

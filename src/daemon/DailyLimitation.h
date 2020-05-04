@@ -16,7 +16,7 @@ public:
 	bool operator==(const std::shared_ptr<DailyLimitation>& obj) const;
 	void dump();
 
-	virtual web::json::value AsJson();
+	web::json::value AsJson() const;
 	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value& obj) noexcept(false);
 
 	std::chrono::system_clock::time_point m_startTime;

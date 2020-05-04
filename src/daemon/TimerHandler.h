@@ -68,5 +68,5 @@ private:
 protected:
 	// this reactor can be init as none-default one
 	ACE_Reactor* m_reactor;
-	std::recursive_mutex m_mutex;
+	mutable std::recursive_mutex m_mutex;
 };

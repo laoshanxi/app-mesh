@@ -15,7 +15,7 @@ public:
 	Label();
 	virtual ~Label();
 
-	virtual web::json::value AsJson();
+	web::json::value AsJson() const;
 	static const std::shared_ptr<Label> FromJson(const web::json::value& obj) noexcept(false);
 	bool operator==(const std::shared_ptr<Label>& label);
 
@@ -26,6 +26,6 @@ public:
 
 private:
 	std::map<std::string, std::string> m_labels;
-	std::recursive_mutex m_mutex;
+	mutable std::recursive_mutex m_mutex;
 
 };

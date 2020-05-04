@@ -109,7 +109,7 @@ bool Snapshot::operator==(const Snapshot& snapshort) const
 		snapshort.m_consulSessionId == m_consulSessionId;
 }
 
-web::json::value Snapshot::AsJson()
+web::json::value Snapshot::AsJson() const
 {
 	web::json::value result = web::json::value::object();
 	// Applications

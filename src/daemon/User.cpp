@@ -13,7 +13,7 @@ Users::~Users()
 {
 }
 
-web::json::value Users::AsJson()
+web::json::value Users::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
@@ -107,7 +107,7 @@ User::~User()
 {
 }
 
-web::json::value User::AsJson()
+web::json::value User::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();

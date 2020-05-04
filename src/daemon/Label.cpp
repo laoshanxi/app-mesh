@@ -10,7 +10,7 @@ Label::~Label()
 {
 }
 
-web::json::value Label::AsJson()
+web::json::value Label::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto tags = web::json::value::object();

@@ -9,7 +9,7 @@ class Application;
 class Label;
 struct ConsulStatus {
 	static std::shared_ptr<ConsulStatus> FromJson(const web::json::value& json);
-	web::json::value AsJson();
+	web::json::value AsJson() const;
 
 	std::map<std::string, web::json::value> m_apps;
 };
@@ -32,7 +32,7 @@ struct ConsulNode {
 struct ConsulTask {
 	ConsulTask();
 	static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
-	web::json::value AsJson();
+	web::json::value AsJson() const;
 	void dump();
 	bool operator==(const std::shared_ptr<ConsulTask>& task);
 
@@ -52,7 +52,7 @@ struct ConsulTask {
 
 struct ConsulTopology {
 	static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj, const std::string& hostName);
-	web::json::value AsJson();
+	web::json::value AsJson() const;
 	bool operator==(const std::shared_ptr<ConsulTopology>& topology);
 	void dump();
 

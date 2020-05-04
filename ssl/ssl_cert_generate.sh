@@ -87,6 +87,7 @@ echo '{"CN":"Application Manager","hosts":[""],"key":{"algo":"rsa","size":2048}}
 #
 #cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server server-csr.json | cfssljson -bare server
 
+echo '{"CN":"Application Manager Client","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client -hostname="" - | cfssljson -bare client
 
 # Reference
 # https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md

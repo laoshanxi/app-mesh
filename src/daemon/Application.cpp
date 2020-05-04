@@ -66,13 +66,13 @@ const std::string Application::getName() const
 	return m_name;
 }
 
-bool Application::isEnabled()
+bool Application::isEnabled() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return (m_status == STATUS::ENABLED);
 }
 
-bool Application::isWorkingState()
+bool Application::isWorkingState() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return (m_status == STATUS::ENABLED || m_status == STATUS::DISABLED);

@@ -26,7 +26,7 @@ std::shared_ptr<Role> Roles::getRole(const std::string& roleName)
 	}
 }
 
-web::json::value Roles::AsJson()
+web::json::value Roles::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
@@ -86,7 +86,7 @@ Role::~Role()
 {
 }
 
-web::json::value Role::AsJson()
+web::json::value Role::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto rolePermissions = web::json::value::array(m_permissions.size());

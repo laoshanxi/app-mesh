@@ -17,7 +17,7 @@ public:
 	virtual ~User();
 
 	// seriarize
-	virtual web::json::value AsJson();
+	web::json::value AsJson() const;
 	static std::shared_ptr<User> FromJson(std::string userName, const web::json::value& obj, const std::shared_ptr<Roles> roles) noexcept(false);
 
 	// user update
@@ -36,7 +36,7 @@ private:
 	std::string m_key;
 	bool m_locked;
 	std::string m_name;
-	std::recursive_mutex m_mutex;
+	mutable std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
 };
 
@@ -46,7 +46,7 @@ public:
 	Users();
 	virtual ~Users();
 
-	virtual web::json::value AsJson();
+	web::json::value AsJson() const;
 	static std::shared_ptr<Users> FromJson(const web::json::value& obj, std::shared_ptr<Roles> roles) noexcept(false);
 
 	// find user
@@ -59,5 +59,5 @@ public:
 	void delUser(std::string name);
 private:
 	std::map<std::string, std::shared_ptr<User>> m_users;
-	std::recursive_mutex m_mutex;
+	mutable std::recursive_mutex m_mutex;
 };

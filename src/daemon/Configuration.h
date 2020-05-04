@@ -21,7 +21,7 @@ class Configuration
 {
 	struct JsonSsl {
 		static std::shared_ptr<JsonSsl> FromJson(const web::json::value& jobj);
-		web::json::value AsJson();
+		web::json::value AsJson() const;
 		bool m_sslEnabled;
 		std::string m_certFile;
 		std::string m_certKeyFile;
@@ -29,7 +29,7 @@ class Configuration
 	};
 	struct JsonRest {
 		static std::shared_ptr<JsonRest> FromJson(const web::json::value& jobj);
-		web::json::value AsJson();
+		web::json::value AsJson() const;
 
 		bool m_restEnabled;
 		int m_httpThreadPoolSize;
@@ -42,7 +42,7 @@ class Configuration
 	struct JsonConsul {
 		JsonConsul();
 		static std::shared_ptr<JsonConsul> FromJson(const web::json::value& jobj);
-		web::json::value AsJson();
+		web::json::value AsJson() const;
 		bool consulEnabled() const;
 		bool consulSecurityEnabled() const;
 
