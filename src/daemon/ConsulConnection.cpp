@@ -419,8 +419,8 @@ bool ConsulConnection::registerService(const std::string& appName, int port)
 
 	auto check = web::json::value::object();
 	check["HTTP"] = web::json::value::string("https://" + MY_HOST_NAME + ":" + std::to_string(Configuration::instance()->getRestListenPort()) + "/app/" + appName + "/health");
-	check["Interval"] = web::json::value::string("5s");
-	check["Timeout"] = web::json::value::string("4s");
+	check["Interval"] = web::json::value::string("15");
+	check["Timeout"] = web::json::value::string("5s");
 	check["Method"] = web::json::value::string("GET");
 	check["TLSSkipVerify"] = web::json::value::boolean(true);
 	body["Check"] = check;
