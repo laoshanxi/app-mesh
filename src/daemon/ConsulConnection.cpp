@@ -55,25 +55,14 @@ void ConsulConnection::reportStatus()
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 
 		static long long lastIndex = 0;
-		long long currentIndex = 0;
-		auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
-		if (resp.status_code() == web::http::status_codes::OK)
-		{
-			auto respJson = resp.extract_json(true).get();
-			if (!respJson.is_array() && respJson.as_array().size())
-			{
-				auto securityJson = respJson.as_array().at(0);
-				currentIndex = GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
-				if (currentIndex == lastIndex) return;
-				
-			}
-		}
+		auto currentIndex = getLastIndex(path);
+		if (currentIndex == lastIndex) return;
 
 		web::json::value body = web::json::value::object();
 		body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-		resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
+		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
@@ -83,7 +72,7 @@ void ConsulConnection::reportStatus()
 			}
 			else
 			{
-				lastIndex = currentIndex;
+				lastIndex = getLastIndex(path);
 			}
 		}
 	}
@@ -135,6 +124,22 @@ void ConsulConnection::refreshSession(int timerId)
 	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_sessionId.clear();
+}
+
+long long ConsulConnection::getLastIndex(const std::string& path)
+{
+	auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto respJson = resp.extract_json(true).get();
+		if (!respJson.is_array() && respJson.as_array().size())
+		{
+			auto securityJson = respJson.as_array().at(0);
+			return GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
+
+		}
+	}
+	return 0;
 }
 
 void ConsulConnection::syncSchedule()
@@ -570,7 +575,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 			continue;
 
 		// copy to vector
-		std::transform(taskDedicateHosts.begin(), taskDedicateHosts.end(), std::back_inserter(taskDedicateHostsVec), 
+		std::transform(taskDedicateHosts.begin(), taskDedicateHosts.end(), std::back_inserter(taskDedicateHostsVec),
 			[](const std::pair<std::string, std::shared_ptr<ConsulNode>> host) { return host.second; }
 		);
 		// sort hosts
