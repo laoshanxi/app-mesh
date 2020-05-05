@@ -891,7 +891,6 @@ void RestHandler::apiListPermissions(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_permission_list);
 
-	auto userName = verifyToken(message);
 	auto permissions = Configuration::instance()->getAllPermissions();
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;

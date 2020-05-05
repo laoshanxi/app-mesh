@@ -551,14 +551,13 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 		std::vector<std::shared_ptr<ConsulNode>> taskDedicateHostsVec;
 
 		LOG_DBG << fname << "schedule task <" << taskName << ">";
-
 		if (taskReplication <= 0)
 			continue;
 
-		for (const auto& host : taskDedicateHosts)
-		{
-			taskDedicateHostsVec.push_back(host.second);
-		}
+		// copy to vector
+		std::transform(taskDedicateHosts.begin(), taskDedicateHosts.end(), std::back_inserter(taskDedicateHostsVec), 
+			[](const std::pair<std::string, std::shared_ptr<ConsulNode>> host) { return host.second; }
+		);
 		// sort hosts
 		// return left < right is Ascending
 		// return left > right is Descending

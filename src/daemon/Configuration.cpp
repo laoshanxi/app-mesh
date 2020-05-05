@@ -53,7 +53,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(str));
 	}
-	catch (const std::exception& e)
+	catch (const std::exception & e)
 	{
 		LOG_ERR << "Failed to parse configuration file with error <" << e.what() << ">";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
@@ -132,7 +132,7 @@ void SigHupHandler(int signo)
 		{
 			config->hotUpdate(web::json::value::parse(Configuration::readConfiguration()));
 		}
-		catch (const std::exception& e)
+		catch (const std::exception & e)
 		{
 			LOG_ERR << fname << e.what();
 		}
@@ -265,11 +265,13 @@ web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	std::vector<std::shared_ptr<Application>> apps;
-	for (auto app : m_apps)
-	{
-		// do not persist temp application
-		if (returnRuntimeInfo || app->isWorkingState()) apps.push_back(app);
-	}
+
+	std::transform(m_apps.begin(), m_apps.end(), std::back_inserter(apps), [&returnRuntimeInfo](const std::shared_ptr<Application>& app)
+		{
+			// do not persist temp application
+			return returnRuntimeInfo || app->isWorkingState();
+		});
+
 	// Build Json
 	auto result = web::json::value::array(apps.size());
 	for (size_t i = 0; i < apps.size(); ++i)
@@ -804,6 +806,6 @@ bool Configuration::JsonConsul::consulSecurityEnabled() const
 }
 
 Configuration::JsonConsul::JsonConsul()
-	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL),m_securitySync(false)
+	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_securitySync(false)
 {
 }
