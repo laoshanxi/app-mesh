@@ -54,7 +54,7 @@ void ConsulConnection::reportStatus(int timerId)
 		//report resource: /appmgr/cluster/nodes/myhost
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 		web::json::value body = web::json::value::object();
-		//body["resource"] = ResourceCollection::instance()->getConsulJson();
+		body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 		static utility::string_t lastReport;

@@ -211,7 +211,7 @@ web::json::value ResourceCollection::getConsulJson()
 	web::json::value result = web::json::value::object();
 	result[GET_STRING_T("cpu_cores")] = web::json::value::number(cpus.size());
 	result[GET_STRING_T("mem_total_bytes")] = web::json::value::number(mem->total_bytes);
-	result[GET_STRING_T("mem_free_bytes")] = web::json::value::number(mem->free_bytes);
+	//result[GET_STRING_T("mem_free_bytes")] = web::json::value::number(mem->free_bytes);
 	//result[GET_STRING_T("mem_totalSwap_bytes")] = web::json::value::number(mem->totalSwap_bytes);
 	//result[GET_STRING_T("mem_freeSwap_bytes")] = web::json::value::number(mem->freeSwap_bytes);
 
