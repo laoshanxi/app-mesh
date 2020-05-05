@@ -35,7 +35,7 @@ std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
 
 // report label and resource to host KV
 // report timestamp to Flags attr for KV
-void ConsulConnection::reportStatus(int timerId)
+void ConsulConnection::reportStatus()
 {
 	const static char fname[] = "ConsulConnection::reportStatus() ";
 
@@ -53,21 +53,37 @@ void ConsulConnection::reportStatus(int timerId)
 	{
 		//report resource: /appmgr/cluster/nodes/myhost
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
+
+		static long long lastIndex = 0;
+		long long currentIndex = 0;
+		auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
+		if (resp.status_code() == web::http::status_codes::OK)
+		{
+			auto respJson = resp.extract_json(true).get();
+			if (!respJson.is_array() && respJson.as_array().size())
+			{
+				auto securityJson = respJson.as_array().at(0);
+				currentIndex = GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
+				if (currentIndex == lastIndex) return;
+				
+			}
+		}
+
 		web::json::value body = web::json::value::object();
 		body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-		static utility::string_t lastReport;
-		auto newReport = body.serialize();
-		if (lastReport == newReport) return;	// do not do report when same
-		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
-		lastReport = body.serialize();
+		resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
 			if (result != "true")
 			{
 				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
+			}
+			else
+			{
+				lastIndex = currentIndex;
 			}
 		}
 	}
@@ -106,7 +122,7 @@ void ConsulConnection::refreshSession(int timerId)
 			std::lock_guard<std::recursive_mutex> guard(m_mutex);
 			m_sessionId = sessionId;
 		}
-		reportStatus(0);
+		reportStatus();
 		return;
 	}
 	catch (const std::exception & ex)
