@@ -55,7 +55,7 @@ void ConsulConnection::reportStatus()
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 
 		static long long lastIndex = 0;
-		auto currentIndex = getLastIndex(path);
+		auto currentIndex = getModifyIndex(path);
 		if (currentIndex == lastIndex) return;
 
 		web::json::value body = web::json::value::object();
@@ -72,7 +72,7 @@ void ConsulConnection::reportStatus()
 			}
 			else
 			{
-				auto index = getLastIndex(path);
+				auto index = getModifyIndex(path);
 				if (index > 0) lastIndex = index;
 			}
 		}
@@ -127,17 +127,18 @@ void ConsulConnection::refreshSession(int timerId)
 	m_sessionId.clear();
 }
 
-long long ConsulConnection::getLastIndex(const std::string& path)
+long long ConsulConnection::getModifyIndex(const std::string& path)
 {
+	const static char fname[] = "ConsulConnection::getModifyIndex() ";
+
 	auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		auto respJson = resp.extract_json(true).get();
-		if (!respJson.is_array() && respJson.as_array().size())
+		if (resp.headers().has("X-Consul-Index"))
 		{
-			auto securityJson = respJson.as_array().at(0);
-			return GET_JSON_NUMBER_VALUE(securityJson, "ModifyIndex");
-
+			auto index = std::atoll(resp.headers().find("X-Consul-Index")->second.c_str());
+			LOG_DBG << fname << path << " index : " << index;
+			return index;
 		}
 	}
 	return -1;

@@ -29,7 +29,7 @@ public:
 private:
 	virtual void reportStatus();
 	virtual void refreshSession(int timerId = 0);
-	long long getLastIndex(const std::string& path);
+	long long getModifyIndex(const std::string& path);
 
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
 	std::string requestSessionId();
