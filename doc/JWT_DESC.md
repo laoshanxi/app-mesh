@@ -11,6 +11,7 @@ What is supported:
 
 > * REST login use JWT standard
 > * Provide login and auth API to run as a stand-alone JWT server
+> * Support centerized  user & role DB server by Consul
 
 What is **not** supported:
 > * Redirect authentication to another JWT server is not suported
