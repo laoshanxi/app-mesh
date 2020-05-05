@@ -72,7 +72,8 @@ void ConsulConnection::reportStatus()
 			}
 			else
 			{
-				lastIndex = getLastIndex(path);
+				auto index = getLastIndex(path);
+				if (index > 0) lastIndex = index;
 			}
 		}
 	}
@@ -139,7 +140,7 @@ long long ConsulConnection::getLastIndex(const std::string& path)
 
 		}
 	}
-	return 0;
+	return -1;
 }
 
 void ConsulConnection::syncSchedule()
