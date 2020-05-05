@@ -42,7 +42,7 @@ protected:
 
 private:
 	std::unique_ptr<LinuxCgroup> m_cgroup;
-	std::string m_uuid;
 	int m_killTimerId;
 	ACE_HANDLE m_stdoutHandler;
+	std::string m_uuid;
 };

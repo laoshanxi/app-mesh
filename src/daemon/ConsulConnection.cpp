@@ -299,8 +299,7 @@ void ConsulConnection::regWatchApp(const std::string& name, const std::string& c
 		jsonApp[JSON_KEY_APP_env] = objEnvs;
 	}
 	jsonApp[JSON_KEY_APP_cache_lines] = web::json::value::number(100);
-	auto app = Configuration::instance()->addApp(jsonApp);
-	//app->runAsyncrize(0);
+	Configuration::instance()->addApp(jsonApp);
 }
 
 void ConsulConnection::syncTopology()

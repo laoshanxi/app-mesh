@@ -6,9 +6,8 @@
 #include "ResourceLimitation.h"
 
 AppProcess::AppProcess(int cacheOutputLines)
-	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE)
+	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
 {
-	m_uuid = Utility::createUUID();
 }
 
 

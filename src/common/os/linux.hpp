@@ -463,11 +463,8 @@ namespace os {
 		pid_t pid,
 		const std::list<Process>& processes)
 	{
-		for (const Process& processPtr : processes) {
-			if (processPtr.pid == pid) {
-				return std::make_shared<Process>(processPtr);
-			}
-		}
+		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process& p) { return p.pid == pid; });
+		if (iter != processes.end()) return std::make_shared<Process>(*iter);
 		return nullptr;
 	}
 

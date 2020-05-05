@@ -547,19 +547,25 @@ std::vector<std::string> Utility::splitString(const std::string& source, const s
 	return std::move(result);
 }
 
-bool Utility::startWith(const std::string& str, const std::string& head)
+bool Utility::startWith(const std::string& big, const std::string& small)
 {
-	if (str.length() >= head.length())
-	{
-		return (str.compare(0, head.size(), head) == 0);
-	}
-	return false;
+	// https://luodaoyi.com/p/cpp-std-startwith-endwith.html
+	if (&big == &small) return true;
+	const std::string::size_type big_size = big.size();
+	const std::string::size_type small_size = small.size();
+	const bool valid_ = (big_size >= small_size);
+	const bool starts_with_ = (big.compare(0, small_size, small) == 0);
+	return valid_ and starts_with_;
 }
 
-bool Utility::endWith(const std::string& value, const std::string& ending)
+bool Utility::endWith(const std::string& big, const std::string& small)
 {
-	if (ending.size() > value.size()) return false;
-	return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+	if (&big == &small) return true;
+	const std::string::size_type big_size = big.size();
+	const std::string::size_type small_size = small.size();
+	const bool valid_ = (big_size >= small_size);
+	const bool ends_with_ = (big.compare(big_size - small_size, small_size, small) == 0);
+	return valid_ and ends_with_;
 }
 
 std::string Utility::stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst)

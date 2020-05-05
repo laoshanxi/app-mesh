@@ -29,12 +29,8 @@ namespace os {
 				children.push_back(*(tree.get()));
 			}
 		}
-
-		for (const Process& proc : processes) {
-			if (proc.pid == pid) {
-				return std::make_shared<ProcessTree>(ProcessTree(proc, children));
-			}
-		}
+		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process& p) { return p.pid == pid; });
+		if (iter != processes.end()) return std::make_shared<ProcessTree>(ProcessTree(*iter, children));
 
 		LOG_ERR << fname << "No process found at " << pid;
 		return nullptr;
