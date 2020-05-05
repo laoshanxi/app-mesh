@@ -265,12 +265,11 @@ web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	std::vector<std::shared_ptr<Application>> apps;
-
-	std::transform(m_apps.begin(), m_apps.end(), std::back_inserter(apps), [&returnRuntimeInfo](const std::shared_ptr<Application>& app)
-		{
-			// do not persist temp application
-			return returnRuntimeInfo || app->isWorkingState();
-		});
+	for (auto app : m_apps)
+	{
+		// do not persist temp application
+		if (returnRuntimeInfo || app->isWorkingState()) apps.push_back(app);
+	}
 
 	// Build Json
 	auto result = web::json::value::array(apps.size());
