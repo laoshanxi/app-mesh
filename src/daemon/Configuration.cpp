@@ -637,6 +637,11 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 	return app;
 }
 
+bool Configuration::isSystemInternalApp(const std::string& appName) const
+{
+	return (getApp(appName)->getMetadata() == JSON_KEY_APP_SYSTEM_INTERNAL);
+}
+
 std::shared_ptr<Application> Configuration::getApp(const std::string& appName) const
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();

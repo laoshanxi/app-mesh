@@ -98,7 +98,7 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	bindRestMethod(web::http::methods::POST, "/appmgr/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
 	// http://127.0.0.1:6060/auth/admin
 	bindRestMethod(web::http::methods::POST, R"(/appmgr/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
-	
+
 
 	// 2. View Application
 	// http://127.0.0.1:6060/app/app-name
@@ -451,6 +451,7 @@ void RestHandler::apiEnableApp(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
+	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for system interval application");
 	Configuration::instance()->enableApp(appName);
 	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
 }
@@ -464,6 +465,7 @@ void RestHandler::apiDisableApp(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
+	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for system interval application");
 	Configuration::instance()->disableApp(appName);
 	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
 }
@@ -474,6 +476,7 @@ void RestHandler::apiDeleteApp(const HttpRequest& message)
 	auto path = GET_STD_STRING(message.relative_uri().path());
 
 	std::string appName = path.substr(strlen("/appmgr/app/"));
+	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for system interval application");
 	Configuration::instance()->removeApp(appName);
 	auto msg = std::string("application <") + appName + "> removed.";
 	message.reply(status_codes::OK, msg);
@@ -944,7 +947,7 @@ void RestHandler::apiPostWatch(const HttpRequest& message)
 			ConsulConnection::instance()->syncSchedule();
 			scheduleWorkers--;
 		}
-		
+
 	}
 	else
 	{
@@ -1152,16 +1155,20 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	{
 		throw std::invalid_argument("invalid json format");
 	}
+	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	auto initCmd = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command);
 	if (initCmd.length())
 	{
 		// if same app not exist, do init
 		// if same app exist but init cmd changed, do init
-		auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 		if (!Configuration::instance()->isAppExist(appName) || initCmd != Configuration::instance()->getApp(appName)->getInitCmd())
 		{
 			jsonApp[JSON_KEY_APP_initial_application_only] = web::json::value::boolean(true);
 		}
+	}
+	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->isSystemInternalApp(appName))
+	{
+		throw std::invalid_argument("not allowed for system interval application");
 	}
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
