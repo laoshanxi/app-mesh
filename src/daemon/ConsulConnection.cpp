@@ -35,9 +35,9 @@ std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
 
 // report label and resource to host KV
 // report timestamp to Flags attr for KV
-void ConsulConnection::reportStatus()
+void ConsulConnection::reportNode()
 {
-	const static char fname[] = "ConsulConnection::reportStatus() ";
+	const static char fname[] = "ConsulConnection::reportNode() ";
 
 	std::string sessionId = getSessionId();
 	if (sessionId.empty()) return;
@@ -112,7 +112,7 @@ void ConsulConnection::refreshSession(int timerId)
 			std::lock_guard<std::recursive_mutex> guard(m_mutex);
 			m_sessionId = sessionId;
 		}
-		reportStatus();
+		reportNode();
 		return;
 	}
 	catch (const std::exception & ex)
