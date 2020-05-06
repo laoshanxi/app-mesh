@@ -866,7 +866,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	auto consulUrl = Configuration::instance()->getConsul()->m_consulUrl;
 	auto consulImg = Configuration::instance()->getConsul()->m_consulDockerImg;
 	// security watch app
-	const std::string securityApp = "watcher_secucrity";
+	const std::string securityApp = "watch_secucrity";
 	Configuration::instance()->removeApp(securityApp);
 	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
@@ -875,7 +875,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 		regWatchApp(securityApp, cmd, consulImg);
 	}
 	// topology watch app
-	const std::string topologyApp = "watcher_topology";
+	const std::string topologyApp = "watch_topology";
 	Configuration::instance()->removeApp(topologyApp);
 	if (Configuration::instance()->getConsul()->m_isNode)
 	{
@@ -884,7 +884,7 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 		regWatchApp(topologyApp, cmd, consulImg);
 	}
 	// schedule nodes watch app
-	const std::string scheduleApp = "watcher_schedule";
+	const std::string scheduleApp = "watch_schedule";
 	Configuration::instance()->removeApp(scheduleApp);
 	if (Configuration::instance()->getConsul()->m_isMaster)
 	{
