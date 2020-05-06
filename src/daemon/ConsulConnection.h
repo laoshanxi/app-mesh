@@ -27,7 +27,7 @@ public:
 	void syncTopology();
 
 private:
-	virtual void reportStatus();
+	virtual void reportNode();
 	virtual void refreshSession(int timerId = 0);
 	long long getModifyIndex(const std::string& path);
 
