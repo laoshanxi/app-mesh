@@ -437,6 +437,11 @@ void Application::setVersion(int version)
 	m_version = version;
 }
 
+bool Application::isCloudApp() const
+{
+	return m_metadata == JSON_KEY_APP_CLOUD_APP;
+}
+
 web::json::value Application::AsJson(bool returnRuntimeInfo)
 {
 	web::json::value result = web::json::value::object();

@@ -146,7 +146,7 @@ long long ConsulConnection::getModifyIndex(const std::string& path)
 
 void ConsulConnection::syncSchedule()
 {
-	const static char fname[] = "ConsulConnection::schedule() ";
+	const static char fname[] = "ConsulConnection::syncSchedule() ";
 	LOG_DBG << fname;
 
 	try
@@ -180,7 +180,7 @@ void ConsulConnection::syncSchedule()
 
 void ConsulConnection::syncSecurity()
 {
-	const static char fname[] = "ConsulConnection::security() ";
+	const static char fname[] = "ConsulConnection::syncSecurity() ";
 
 	try
 	{
@@ -282,7 +282,7 @@ std::string ConsulConnection::getSessionId()
 
 void ConsulConnection::leaderSchedule()
 {
-	const static char fname[] = "ConsulConnection::schedule() ";
+	const static char fname[] = "ConsulConnection::leaderSchedule() ";
 	LOG_DBG << fname;
 
 	// leader's job
@@ -327,7 +327,7 @@ void ConsulConnection::regWatchApp(const std::string& name, const std::string& c
 
 void ConsulConnection::syncTopology()
 {
-	const static char fname[] = "ConsulConnection::nodeSchedule() ";
+	const static char fname[] = "ConsulConnection::syncTopology() ";
 
 	auto currentAllApps = Configuration::instance()->getApps();
 	std::shared_ptr<ConsulTopology> newTopology;
@@ -461,7 +461,7 @@ bool ConsulConnection::registerService(const std::string& appName, int port)
 
 bool ConsulConnection::deregisterService(const std::string appName)
 {
-	const static char fname[] = "ConsulConnection::registerService() ";
+	const static char fname[] = "ConsulConnection::deregisterService() ";
 
 	auto serviceId = std::string(MY_HOST_NAME).append(":").append(appName);
 	std::string path = std::string("/v1/agent/service/deregister/").append(serviceId);

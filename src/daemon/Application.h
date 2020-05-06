@@ -69,6 +69,7 @@ public:
 	void setVersion(int version);
 	const std::string getMetadata() const { return m_metadata; }
 	const std::string getInitCmd() const { return m_commandLineInit; }
+	bool isCloudApp() const;
 
 protected:
 	// Invoke immediately
