@@ -212,7 +212,6 @@ public:
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_cache_lines "cache_lines"
 #define JSON_KEY_APP_docker_image "docker_image"
-#define JSON_KEY_APP_CLOUD "cloud"
 // runtime attr
 #define JSON_KEY_APP_pid "pid"
 #define JSON_KEY_APP_return "return"
@@ -223,6 +222,7 @@ public:
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
 #define JSON_KEY_APP_SYSTEM_INTERNAL "system-internal"
+#define JSON_KEY_APP_CLOUD_APP "cloud-app"
 
 #define JSON_KEY_PERIOD_APP_keep_running "keep_running"
 

@@ -60,7 +60,6 @@ public:
 	const std::string& getHealthCheck() { return m_healthCheckCmd; }
 	int getHealth() { return 1 - m_health; }
 	pid_t getpid() const;
-	const bool isCloudApp() const { return m_cloudApp;  };
 
 	// get normal stdout for running app
 	std::string getOutput(bool keepHistory);
@@ -99,7 +98,6 @@ protected:
 	std::chrono::system_clock::time_point m_regTime;
 	int m_endTimerId;
 	bool m_health;
-	bool m_cloudApp;
 	std::string m_healthCheckCmd;
 	const std::string m_appId;
 	unsigned int m_version;

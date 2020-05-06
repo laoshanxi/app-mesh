@@ -44,7 +44,7 @@ std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value& jobj)
 	{
 		auto appJson = jobj.at("content");
 		// mark consul application flag
-		appJson[JSON_KEY_APP_CLOUD] = web::json::value::boolean(true);
+		appJson[JSON_KEY_APP_metadata] = web::json::value::string(JSON_KEY_APP_CLOUD_APP);
 		consul->m_app = Configuration::instance()->parseApp(appJson);
 		SET_JSON_INT_VALUE(jobj, "replication", consul->m_replication);
 		SET_JSON_INT_VALUE(jobj, "priority", consul->m_priority);
