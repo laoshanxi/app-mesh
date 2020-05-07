@@ -52,7 +52,6 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			}
 		}
 	}
-	snap->m_consulSessionId = ConsulConnection::instance()->getConsulSessionId();
 	return std::move(snap);
 }
 
@@ -105,8 +104,7 @@ bool Snapshot::operator==(const Snapshot& snapshort) const
 			return false;
 		}
 	}
-	return snapshort.m_apps.size() == m_apps.size() &&
-		snapshort.m_consulSessionId == m_consulSessionId;
+	return snapshort.m_apps.size() == m_apps.size();
 }
 
 web::json::value Snapshot::AsJson() const
@@ -122,8 +120,6 @@ web::json::value Snapshot::AsJson() const
 		apps[app.first] = std::move(json);
 	}
 	result["Applications"] = apps;
-	// Consul
-	result["ConsulSessionId"] = web::json::value::string(m_consulSessionId);
 	return std::move(result);
 }
 
@@ -133,21 +129,19 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value& obj)
 	if (!obj.is_null() && obj.is_object())
 	{
 		if (obj.has_object_field("Applications"))
-		for (auto app : obj.at("Applications").as_object())
-		{
-			if (HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_starttime) &&
-				app.second.has_number_field(SNAPSHOT_JSON_KEY_pid) && app.second.has_number_field(SNAPSHOT_JSON_KEY_starttime))
+			for (auto app : obj.at("Applications").as_object())
 			{
-				snap->m_apps.insert(std::pair<std::string, AppSnap>(
-					app.first,
-					AppSnap(
-						GET_JSON_INT_VALUE(app.second, SNAPSHOT_JSON_KEY_pid),
-						GET_JSON_NUMBER_VALUE(app.second, SNAPSHOT_JSON_KEY_starttime))
-					));
+				if (HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_starttime) &&
+					app.second.has_number_field(SNAPSHOT_JSON_KEY_pid) && app.second.has_number_field(SNAPSHOT_JSON_KEY_starttime))
+				{
+					snap->m_apps.insert(std::pair<std::string, AppSnap>(
+						app.first,
+						AppSnap(
+							GET_JSON_INT_VALUE(app.second, SNAPSHOT_JSON_KEY_pid),
+							GET_JSON_NUMBER_VALUE(app.second, SNAPSHOT_JSON_KEY_starttime))
+						));
+				}
 			}
-		}
-		if (obj.has_string_field("ConsulSessionId"))
-			snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
 	}
 	return std::move(snap);
 }

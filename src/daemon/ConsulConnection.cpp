@@ -248,6 +248,17 @@ std::string ConsulConnection::requestSessionId()
 	return sessionId;
 }
 
+void ConsulConnection::releaseSessionId()
+{
+	auto sessionId = this->getSessionId();
+	if (sessionId.length())
+	{
+		requestHttp(web::http::methods::PUT, std::string("/v1/session/destroy/").append(sessionId), {}, {}, nullptr);
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_sessionId.clear();
+	}
+}
+
 std::string ConsulConnection::renewSessionId()
 {
 	const static char fname[] = "ConsulConnection::renewSessionId() ";
@@ -838,10 +849,12 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	return std::move(result);
 }
 
-void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
+void ConsulConnection::initTimer()
 {
 	const static char fname[] = "ConsulConnection::initTimer() ";
 	LOG_DBG << fname;
+
+	releaseSessionId();
 
 	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 
@@ -850,11 +863,6 @@ void ConsulConnection::initTimer(const std::string& recoveredConsulSsnId)
 	if (Configuration::instance()->getConsul()->m_ttl > 10 &&
 		(Configuration::instance()->getConsul()->m_isMaster || Configuration::instance()->getConsul()->m_isNode))
 	{
-		if (!recoveredConsulSsnId.empty())
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			m_sessionId = recoveredConsulSsnId;
-		}
 		m_ssnRenewTimerId = this->registerTimer(
 			0,
 			Configuration::instance()->getConsul()->m_ttl - 3,

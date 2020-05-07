@@ -18,7 +18,7 @@ public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection>& instance();
-	void initTimer(const std::string& recoveredConsulSsnId = "");
+	void initTimer();
 	const std::string getConsulSessionId();
 	void saveSecurity(bool checkExistance = false);
 
@@ -33,6 +33,7 @@ private:
 
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
 	std::string requestSessionId();
+	void releaseSessionId();
 	std::string renewSessionId();
 	std::string getSessionId();
 	void leaderSchedule();

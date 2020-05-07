@@ -127,7 +127,7 @@ int main(int argc, char* argv[])
 		//auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// init consul
-		ConsulConnection::instance()->initTimer(snap->m_consulSessionId);
+		ConsulConnection::instance()->initTimer();
 		// init health-check
 		HealthCheckTask::instance()->initTimer();
 
