@@ -66,14 +66,14 @@ void ConsulConnection::reportNode()
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
-			if (result != "true")
-			{
-				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
-			}
-			else
+			if (result == "true")
 			{
 				auto index = getModifyIndex(path);
 				if (index > 0) lastIndex = index;
+			}
+			else
+			{
+				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
 			}
 		}
 	}
