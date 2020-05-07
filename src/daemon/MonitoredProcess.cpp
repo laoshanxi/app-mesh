@@ -134,7 +134,11 @@ void MonitoredProcess::runPipeReaderThread()
 	{
 		char* result = fgets(buffer.get(), sizeof(buffer), m_readPipeFile);
 		if (result == nullptr) continue;
-		LOG_DBG << fname << "Read line : " << result;
+		// build-in thread is used for monitor app, do not need write log
+		if (!m_enableBuildinThread)
+		{
+			LOG_DBG << fname << "Read line : " << result;
+		}
 
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
 		m_msgQueue.push(result);
