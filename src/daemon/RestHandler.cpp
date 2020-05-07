@@ -451,7 +451,7 @@ void RestHandler::apiEnableApp(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
-	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for system interval application");
+	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for internal and cluster application");
 	Configuration::instance()->enableApp(appName);
 	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
 }
@@ -465,7 +465,7 @@ void RestHandler::apiDisableApp(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
-	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for system interval application");
+	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for internal and cluster application");
 	Configuration::instance()->disableApp(appName);
 	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
 }
@@ -476,7 +476,7 @@ void RestHandler::apiDeleteApp(const HttpRequest& message)
 	auto path = GET_STD_STRING(message.relative_uri().path());
 
 	std::string appName = path.substr(strlen("/appmgr/app/"));
-	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for system interval application");
+	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for internal and cluster application");
 	Configuration::instance()->removeApp(appName);
 	auto msg = std::string("application <") + appName + "> removed.";
 	message.reply(status_codes::OK, msg);
@@ -1168,7 +1168,7 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	}
 	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->isSystemInternalApp(appName))
 	{
-		throw std::invalid_argument("not allowed for system interval application");
+		throw std::invalid_argument("not allowed for internal and cluster application");
 	}
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
