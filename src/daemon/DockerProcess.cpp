@@ -79,28 +79,20 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 		LOG_WAR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
 
 		// pull docker image
-		if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT))
+		int pullTimeout = 5 * 60; //set default image pull timeout to 5 minutes
+		if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]))
 		{
-			int pullTimeout = 60; //set default image pull timeout to 60s
-			auto pullTimeoutStr = envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT];
-			if (Utility::isNumber(pullTimeoutStr))
-			{
-				pullTimeout = std::stoi(pullTimeoutStr);
-			}
-			else
-			{
-				LOG_WAR << fname << "ENV APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeoutStr << "> is not number, use default value : " << pullTimeout;
-			}
-			m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
-			m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile);
-			m_imagePullProc->regKillTimer(pullTimeout, fname);
-			this->attach(m_imagePullProc->getpid());
-			return m_imagePullProc->getpid();
+			pullTimeout = std::stoi(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]);
 		}
 		else
 		{
-			throw std::invalid_argument("Docker image does not exits");
+			LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
 		}
+		m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
+		m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile);
+		m_imagePullProc->regKillTimer(pullTimeout, fname);
+		this->attach(m_imagePullProc->getpid());
+		return m_imagePullProc->getpid();
 	}
 
 	// 2. build docker start command line
@@ -200,7 +192,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	{
 		LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << dockerProcess->fetchOutputMsg();
 	}
-	
+
 	// failed
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_containerId = containerId;
@@ -267,7 +259,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 			{
 				param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit, stdoutFile);
 			}
-			catch(...)
+			catch (...)
 			{
 				LOG_ERR << fname << "failed";
 			}

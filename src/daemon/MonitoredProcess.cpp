@@ -130,18 +130,14 @@ void MonitoredProcess::runPipeReaderThread()
 	const int stdoutQueueMaxLineCount = m_cacheOutputLines;
 	const auto bufsize = 2048;
 	std::shared_ptr<char> buffer(new char[bufsize], std::default_delete<char[]>());
-	while (true)
+	while (!feof(m_readPipeFile) && !ferror(m_readPipeFile))
 	{
 		char* result = fgets(buffer.get(), sizeof(buffer), m_readPipeFile);
-		if (result == nullptr)
-		{
-			LOG_DBG << fname << "Get message from pipe finished";
-			break;
-		}
-		// LOG_DBG << fname << "Read line : " << buffer;
+		if (result == nullptr) continue;
+		LOG_DBG << fname << "Read line : " << result;
 
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
-		m_msgQueue.push(buffer.get());
+		m_msgQueue.push(result);
 		// Do not store too much in memory
 		if ((int)m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
