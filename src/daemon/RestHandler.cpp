@@ -451,7 +451,6 @@ void RestHandler::apiEnableApp(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
-	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for internal and cluster application");
 	Configuration::instance()->enableApp(appName);
 	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
 }
@@ -465,7 +464,6 @@ void RestHandler::apiDisableApp(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/appmgr/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
-	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for internal and cluster application");
 	Configuration::instance()->disableApp(appName);
 	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
 }
