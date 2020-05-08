@@ -14,10 +14,10 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 > * App Manager only talks to Consul service by one way communication
 > * Each App Manager node report status to Consul KV data
 > * App Manager can be a cluster leader node or worker node
-> * App Manager Leader node schedule Consul applications and write result to Consul KV data
-> * App Manager worker node retrieve Consul applications from Consul dynamically
-> * Consul App is defined in Consul and support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
-> * Consul App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
+> * Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
+> * App Manager Leader node schedule cluster applications and write schedule result to Consul KV data
+> * App Manager worker node retrieve cluster applications (schedule result) and lanuch on worker node
+> * Cluster App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
 > * Consul session support HA recovery
 > * App Manager request Consul session with TTL and expire delete behavior
 > * Consul watch is supported for monitor consul schedule changes and security syncup
