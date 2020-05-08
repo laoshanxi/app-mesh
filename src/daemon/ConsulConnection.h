@@ -37,7 +37,7 @@ private:
 	std::string getSessionId();
 	void releaseSessionId();
 
-	void leaderSchedule();
+	void doSchedule();
 	bool eletionLeader();
 
 	bool registerService(const std::string& appName, int port);
