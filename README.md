@@ -22,14 +22,14 @@ Extra Features | Collect host/app resource usage <br> Remote run shell commands 
 **CentOS**:
 ```text
 # centos7
-yum install -y appmanager-1.8.0-1.x86_64.rpm
+yum install -y appmanager-1.8.1-1.x86_64.rpm
 
 # centos8
-rpm -ivh appmanager-1.8.0-1.x86_64.rpm --force
+rpm -ivh appmanager-1.8.1-1.x86_64.rpm --force
 ```
 Note:
 1. On windows WSL ubuntu, use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
-2. Use env `APPMGR_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will not be refreshed)
+2. Use env `export APPMGR_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will not be refreshed)
 
 ### Command lines
 
@@ -79,8 +79,7 @@ $ appc reg -n ping -c 'ping www.baidu.com' -o 10
         "command" : "ping www.baidu.com",
         "name" : "ping",
         "status" : 1,
-        "user" : "root",
-        "working_dir" : "/tmp"
+        "user" : "root"
 }
 
 $ appc view
@@ -120,13 +119,13 @@ Register a new application:
                                  host:port/health', return 0 is health)
   -d [ --docker_image ] arg      docker image which used to run command line 
                                  (this will enable docker)
-  -w [ --workdir ] arg (=/tmp)   working directory
+  -w [ --workdir ] arg           working directory (default /tmp)
   -S [ --stdout ] arg            stdout file
   -s [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
   -t [ --start_time ] arg        start date time for app (e.g., '2018-01-01 
                                  09:00:00')
-  --end_time arg                 end date time for app (e.g., '2018-01-01 
+  -E [ --end_time ] arg          end date time for app (e.g., '2018-01-01 
                                  09:00:00')
   -j [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
@@ -171,8 +170,7 @@ $ appc reg -n mydocker -c 'sleep 30' -d ubuntu
         "docker_image" : "ubuntu",
         "name" : "mydocker",
         "status" : 1,
-        "user" : "root",
-        "working_dir" : "/tmp"
+        "user" : "root"
 }
 
 $ appc view
@@ -304,8 +302,7 @@ $ appc view -n ping
         "pid" : 8426,
         "return" : 0,
         "status" : 1,
-        "user" : "root",
-        "working_dir" : "/tmp"
+        "user" : "root"
 }
 ```
 

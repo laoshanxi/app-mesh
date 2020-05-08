@@ -179,7 +179,14 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	option.setgroup(0);	// set group id with the process id, used to kill process group
 	option.inherit_environment(true);
 	option.handle_inheritance(0);
-	if (workDir.length()) option.working_directory(workDir.c_str());
+	if (workDir.length())
+	{
+		option.working_directory(workDir.c_str());
+	}
+	else
+	{
+		option.working_directory("/tmp");	// set /tmp as default working dir
+	}
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string>& pair)
 	{
 		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
