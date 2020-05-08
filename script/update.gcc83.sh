@@ -1,4 +1,7 @@
 #!/bin/sh
+################################################################################
+## This Script file is used to update gcc version to 8.3 for CentOS 7.x
+################################################################################
 
 # install base gcc
 yum install -y make gcc-c++ wget bzip2
