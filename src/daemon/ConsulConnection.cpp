@@ -66,14 +66,14 @@ void ConsulConnection::reportNode()
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
-			if (result != "true")
-			{
-				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
-			}
-			else
+			if (result == "true")
 			{
 				auto index = getModifyIndex(path);
 				if (index > 0) lastIndex = index;
+			}
+			else
+			{
+				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
 			}
 		}
 	}
@@ -144,9 +144,9 @@ long long ConsulConnection::getModifyIndex(const std::string& path)
 	return -1;
 }
 
-void ConsulConnection::syncSchedule()
+void ConsulConnection::watchSchedule()
 {
-	const static char fname[] = "ConsulConnection::syncSchedule() ";
+	const static char fname[] = "ConsulConnection::watchSchedule() ";
 	LOG_DBG << fname;
 
 	try
@@ -178,9 +178,9 @@ void ConsulConnection::syncSchedule()
 	}
 }
 
-void ConsulConnection::syncSecurity()
+void ConsulConnection::watchSecurity()
 {
-	const static char fname[] = "ConsulConnection::syncSecurity() ";
+	const static char fname[] = "ConsulConnection::watchSecurity() ";
 
 	try
 	{
@@ -349,9 +349,9 @@ void ConsulConnection::regWatchApp(const std::string& name, const std::string& c
 	Configuration::instance()->addApp(jsonApp);
 }
 
-void ConsulConnection::syncTopology()
+void ConsulConnection::watchTopology()
 {
-	const static char fname[] = "ConsulConnection::syncTopology() ";
+	const static char fname[] = "ConsulConnection::watchTopology() ";
 
 	auto currentAllApps = Configuration::instance()->getApps();
 	std::shared_ptr<ConsulTopology> newTopology;
@@ -913,12 +913,6 @@ void ConsulConnection::initTimer()
 		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=keyprefix -prefix=appmgr/cluster/ 'sh /opt/appmanager/script/consul_watch.sh schedule'";
 		regWatchApp(scheduleApp, cmd, consulImg);
 	}
-}
-
-const std::string ConsulConnection::getConsulSessionId()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_sessionId;
 }
 
 web::http::http_response ConsulConnection::requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body)

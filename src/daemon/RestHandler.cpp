@@ -927,12 +927,12 @@ void RestHandler::apiPostWatch(const HttpRequest& message)
 	if (type == "security")
 	{
 		message.reply(status_codes::OK, "success");
-		ConsulConnection::instance()->syncSecurity();
+		ConsulConnection::instance()->watchSecurity();
 	}
 	else if (type == "topology")
 	{
 		message.reply(status_codes::OK, "success");
-		ConsulConnection::instance()->syncTopology();
+		ConsulConnection::instance()->watchTopology();
 	}
 	else if (type == "schedule")
 	{
@@ -942,7 +942,7 @@ void RestHandler::apiPostWatch(const HttpRequest& message)
 		if (scheduleWorkers < 2)
 		{
 			scheduleWorkers++;
-			ConsulConnection::instance()->syncSchedule();
+			ConsulConnection::instance()->watchSchedule();
 			scheduleWorkers--;
 		}
 
