@@ -165,7 +165,7 @@ void ConsulConnection::syncSchedule()
 		{
 			// Leader's job
 			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			leaderSchedule();
+			doSchedule();
 		}
 	}
 	catch (const std::exception & ex)
@@ -291,9 +291,9 @@ std::string ConsulConnection::getSessionId()
 	return m_sessionId;
 }
 
-void ConsulConnection::leaderSchedule()
+void ConsulConnection::doSchedule()
 {
-	const static char fname[] = "ConsulConnection::leaderSchedule() ";
+	const static char fname[] = "ConsulConnection::doSchedule() ";
 	LOG_DBG << fname;
 
 	// leader's job
@@ -314,6 +314,19 @@ void ConsulConnection::leaderSchedule()
 
 			// apply schedule result
 			compareTopologyAndDispatch(oldTopology, newTopology);
+		}
+	}
+	else
+	{
+		std::string path = std::string(CONSUL_BASE_PATH).append("leader");
+		auto resp = requestHttp(web::http::methods::GET, path, { {"raw", "true"} }, {}, nullptr);
+		if (resp.status_code() == web::http::status_codes::OK)
+		{
+			LOG_DBG << fname << MY_HOST_NAME << " is not leader, leader is : " << resp.extract_utf8string().get();
+		}
+		else
+		{
+			LOG_WAR << fname << "no leader now!";
 		}
 	}
 }
