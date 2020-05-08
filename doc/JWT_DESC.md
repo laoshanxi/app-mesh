@@ -24,25 +24,28 @@ Method | URI | Body/Headers | Desc
 ---|---|---|---
 POST| /appmgr/login | username=base64(uname) <br> password=base64(passwd) <br> Optional: <br> expire_seconds=600 | JWT authenticate login, the max expire_seconds is 24h
 
+```shell
+curl -X POST -k -s -H "username:$(echo -n user | base64)" -H "password:$(echo -n password | base64)" -H "expire_seconds:2" https://localhost:6060/appmgr/login | python -m json.tool
+```
 The REST will response bellow json when authentication success:
 
 ```json
 {
-	"access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NzA3MDc3NzYsImlhdCI6MTU3MDcwNzE3NiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.CF_jXy4IrGpl0HKvM8Vh_T7LsGTGO-K73OkRxQ-BFF8",
-	"expire_time": 1570707176508714400,
-	"profile": {
-		"auth_time": 1570707176508711100,
-		"name": "admin"
-	},
-	"token_type": "Bearer"
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1ODg5Mjc1MTgsImlhdCI6MTU4ODkyNzUxNiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6InVzZXIifQ.MRK0MH3hBw0ZbcIbSEtynFMkHSca2SYCCziX24VdT0w",
+    "expire_time": 1588927516172435071,
+    "profile": {
+        "auth_time": 1588927516172426859,
+        "name": "user"
+    },
+    "token_type": "Bearer"
 }
 ```
 
 | response   |  desc   | 
 | --------   | -----  |
 | access_token     | JWT token content |
-| expire_time |  UTC time seconds the token will expire, is the server time  add the input expire_seconds| 
-| auth_time | the server UTC time seconds |
+| expire_time |  UTC time millisecond the token will expire, is the server time add the input expire_seconds| 
+| auth_time | the server UTC time millisecond |
 | token_type | JWT standard "Bearer" | 
 
 
@@ -51,3 +54,16 @@ The REST will response bellow json when authentication success:
 Method | URI | Body/Headers | Desc
 ---|---|---|---
 POST| /appmgr/auth | curl -X POST -k -H "Authorization:Bearer \$jwt_token" https://127.0.0.1:6060/appmgr/auth | JWT token authenticate
+
+```shell
+curl -s -X POST -k -H "Authorization:Bearer xxxx_token_xxxx" -H "auth_permission:app-view"  https://127.0.0.1:6060/appmgr/auth | python -m json.tool
+```
+The REST will response bellow json when authentication success:
+```json
+{
+    "permission": "app-view",
+    "success": true,
+    "user": "user"
+}
+```
+
