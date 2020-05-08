@@ -1040,7 +1040,7 @@ void RestHandler::apiGetApp(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_view_app);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 	std::string app = path.substr(strlen("/appmgr/app/"));
-	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(Configuration::instance()->getApp(app)->AsJson(true).serialize())));
+	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->AsJson(true));
 }
 
 std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& message)
@@ -1149,7 +1149,7 @@ void RestHandler::apiGetApps(const HttpRequest& message)
 void RestHandler::apiGetResources(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_host_resource);
-	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(ResourceCollection::instance()->AsJson().serialize())));
+	message.reply(status_codes::OK, ResourceCollection::instance()->AsJson());
 }
 
 void RestHandler::apiRegApp(const HttpRequest& message)
@@ -1176,7 +1176,7 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 		throw std::invalid_argument("not allowed for internal and cluster application");
 	}
 	auto app = Configuration::instance()->addApp(jsonApp);
-	message.reply(status_codes::OK, Utility::prettyJson(GET_STD_STRING(app->AsJson(false).serialize())));
+	message.reply(status_codes::OK, app->AsJson(false));
 }
 
 void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)

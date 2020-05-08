@@ -396,9 +396,15 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("cache_lines")) jsobObj[JSON_KEY_APP_cache_lines] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
 	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmgr/app/") + m_commandLineVariables["name"].as<std::string>();
-	auto response = requestHttp(methods::PUT, restPath, jsobObj);
-	auto appJsonStr = response.extract_utf8string(true).get();
-	std::cout << GET_STD_STRING(appJsonStr) << std::endl;
+	auto resp = requestHttp(methods::PUT, restPath, jsobObj);
+	if (resp.status_code() == http::status_codes::OK)
+	{
+		std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	}
+	else
+	{
+		std::cout << resp.extract_utf8string().get() << std::endl;
+	}
 }
 
 void ArgumentParser::processUnReg()
@@ -464,8 +470,15 @@ void ArgumentParser::processView()
 		{
 			// view app info
 			std::string restPath = std::string("/appmgr/app/") + m_commandLineVariables["name"].as<std::string>();
-			auto response = requestHttp(methods::GET, restPath);
-			std::cout << response.extract_utf8string(true).get() << std::endl;
+			auto resp = requestHttp(methods::GET, restPath);
+			if (resp.status_code() == http::status_codes::OK)
+			{
+				std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+			}
+			else
+			{
+				std::cout << resp.extract_utf8string().get() << std::endl;
+			}
 		}
 		else
 		{
@@ -495,8 +508,15 @@ void ArgumentParser::processResource()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/appmgr/resources";
-	auto bodyStr = requestHttp(methods::GET, restPath).extract_utf8string(true).get();
-	std::cout << GET_STD_STRING(bodyStr) << std::endl;
+	auto resp = requestHttp(methods::GET, restPath);
+	if (resp.status_code() == http::status_codes::OK)
+	{
+		std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	}
+	else
+	{
+		std::cout << resp.extract_utf8string().get() << std::endl;
+	}
 }
 
 void ArgumentParser::processEnableDisable(bool start)
@@ -844,8 +864,15 @@ void ArgumentParser::processConfigView()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/appmgr/config";
-	http_response response = requestHttp(methods::GET, restPath);
-	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+	http_response resp = requestHttp(methods::GET, restPath);
+	if (resp.status_code() == http::status_codes::OK)
+	{
+		std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	}
+	else
+	{
+		std::cout << resp.extract_utf8string().get() << std::endl;
+	}
 }
 
 void ArgumentParser::processChangePwd()
