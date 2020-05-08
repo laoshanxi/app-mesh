@@ -162,9 +162,9 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_Applications] = getApplicationJson(false);
 
 	// Global parameters
-	result[JSON_KEY_Description] = web::json::value::string(GET_STRING_T(m_hostDescription));
+	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
-	result[JSON_KEY_LogLevel] = web::json::value::string(GET_STRING_T(m_logLevel));
+	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
 
 	// REST
 	result[JSON_KEY_REST] = m_rest->AsJson();
@@ -177,6 +177,9 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 
 	// Consul
 	result[JSON_KEY_CONSULE] = m_consul->AsJson();
+
+	// Build version
+	result[JSON_KEY_VERSION] = web::json::value::string(__MICRO_VAR__(BUILD_TAG));
 
 	return result;
 }

@@ -184,6 +184,7 @@ public:
 #define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
 #define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
 #define JSON_KEY_CONSULE "Consul"
+#define JSON_KEY_VERSION "Version"
 #define JSON_KEY_CONSULE_URL "url"
 #define JSON_KEY_CONSULE_DOCKER_IMG "consul_docker_img"
 #define JSON_KEY_CONSULE_IS_MASTER "is_master"
