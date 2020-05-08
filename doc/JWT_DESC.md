@@ -53,10 +53,10 @@ The REST will response bellow json when authentication success:
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /appmgr/auth | curl -X POST -k -H "Authorization:Bearer \$jwt_token" https://127.0.0.1:6060/appmgr/auth | JWT token authenticate
+POST| /appmgr/auth | headers: <br> Authorization=Bearer token_str  <br> Optional: <br> auth_permission=permission-id | JWT token authenticate
 
 ```shell
-curl -s -X POST -k -H "Authorization:Bearer xxxx_token_xxxx" -H "auth_permission:app-view"  https://127.0.0.1:6060/appmgr/auth | python -m json.tool
+curl -s -X POST -k -H "Authorization:Bearer $jwt_token" -H "auth_permission:app-view"  https://127.0.0.1:6060/appmgr/auth | python -m json.tool
 ```
 The REST will response bellow json when authentication success:
 ```json
