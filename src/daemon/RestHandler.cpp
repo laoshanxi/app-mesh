@@ -96,8 +96,8 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	// 1. Authentication
 	// http://127.0.0.1:6060/login
 	bindRestMethod(web::http::methods::POST, "/appmgr/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/auth/admin
-	bindRestMethod(web::http::methods::POST, R"(/appmgr/auth/([^/\*]+))", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
+	// http://127.0.0.1:6060/auth
+	bindRestMethod(web::http::methods::POST, "/appmgr/auth", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
 
 
 	// 2. View Application
@@ -1020,6 +1020,8 @@ void RestHandler::apiAuth(const HttpRequest& message)
 	{
 		auto result = web::json::value::object();
 		result["user"] = web::json::value::string(getTokenUser(message));
+		result["success"] = web::json::value::boolean(true);
+		result["permission"] = web::json::value::string(permission);
 		message.reply(status_codes::OK, result);
 	}
 	else

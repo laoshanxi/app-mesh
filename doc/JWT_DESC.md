@@ -22,7 +22,7 @@ What is **not** supported:
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /login | username=base64(uname) <br> password=base64(passwd) <br> Optional: <br> expire_seconds=600 | JWT authenticate login, the max expire_seconds is 24h
+POST| /appmgr/login | username=base64(uname) <br> password=base64(passwd) <br> Optional: <br> expire_seconds=600 | JWT authenticate login, the max expire_seconds is 24h
 
 The REST will response bellow json when authentication success:
 
@@ -50,4 +50,4 @@ The REST will response bellow json when authentication success:
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /auth/$uname | curl -X POST -k -H "Authorization:Bearer \$jwt_token" https://127.0.0.1:6060/auth/admin | JWT token authenticate
+POST| /appmgr/auth | curl -X POST -k -H "Authorization:Bearer \$jwt_token" https://127.0.0.1:6060/appmgr/auth | JWT token authenticate

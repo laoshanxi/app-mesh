@@ -385,7 +385,7 @@ os_version=centos7.6
 Method | URI | Body/Headers | Desc
 ---|---|---|---
 POST| /appmgr/login | username=base64(uname) <br> password=base64(passwd) <br> Optional: <br> expire_seconds=600 | JWT authenticate login
-POST| /appmgr/auth/$uname | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/auth/admin <br> Optional: <br> auth_permission=permission_id | JWT token authenticate
+POST| /appmgr/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/appmgr/auth <br> Optional: <br> auth_permission=permission_id | JWT token authenticate
 GET | /appmgr/app/$app-name | | Get an application infomation
 GET | /appmgr/app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealth
 GET | /appmgr/app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
