@@ -176,13 +176,15 @@ void ApplicationShortRun::initTimer()
 	// 2. reg new timer
 	const auto now = std::chrono::system_clock::now();
 	int64_t firstSleepMilliseconds = 0;
-	if (this->getStartTime() > now)
+	auto appStartTime = this->getStartTime();
+	if (appStartTime == std::chrono::system_clock::time_point() || appStartTime == now)
+	{
+		// if not set start time, treat start time as now.
+		firstSleepMilliseconds = 0;
+	}
+	else if (appStartTime > now)
 	{
 		firstSleepMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(this->getStartTime() - now).count();
-	}
-	else if (this->getStartTime() == now)
-	{
-		firstSleepMilliseconds = 0;
 	}
 	else
 	{
