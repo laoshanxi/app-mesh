@@ -894,6 +894,7 @@ void ConsulConnection::initTimer()
 		//consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/security "/opt/appmanager/appc watch -t security"
 		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=key -key=appmgr/security 'sh /opt/appmanager/script/consul_watch.sh security'";
 		regWatchApp(securityApp, cmd, consulImg);
+		watchSecurity();
 	}
 	// topology watch app
 	const std::string topologyApp = "watch_topology";
