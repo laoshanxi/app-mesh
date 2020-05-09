@@ -36,6 +36,7 @@ private:
 	std::string m_key;
 	bool m_locked;
 	std::string m_name;
+	std::string m_metadata;
 	mutable std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
 };
