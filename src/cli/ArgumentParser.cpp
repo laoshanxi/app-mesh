@@ -345,8 +345,8 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("health_check"))jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
 	if (m_commandLineVariables.count("appuser")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["appuser"].as<std::string>());
 	if (m_commandLineVariables.count("stdout")) jsobObj[JSON_KEY_APP_stdout_file] = web::json::value::string(m_commandLineVariables["stdout"].as<std::string>());
-	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
-	jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
+	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
+	if (m_commandLineVariables.count("status")) jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata)) jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>());
 	if (m_commandLineVariables.count("docker_image")) jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
 	if (m_commandLineVariables.count("timezone")) jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
