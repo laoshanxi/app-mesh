@@ -121,7 +121,7 @@ public:
 	void dump();
 
 private:
-		void addApp2Map(std::shared_ptr<Application> app);
+	void addApp2Map(std::shared_ptr<Application> app);
 
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
@@ -130,7 +130,7 @@ private:
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonSecurity> m_security;
 	std::shared_ptr<JsonConsul> m_consul;
-	
+
 	std::string m_logLevel;
 
 	mutable std::recursive_mutex m_mutex;
