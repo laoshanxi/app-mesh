@@ -11,6 +11,7 @@
 > * Each user can define a password and some roles
 > * All the user/role/permission is defined in json file
 > * user/role configuration support dynamic update by `systemctl reload appmanager`
+> * User support metadata attributes for special usage
 
 ### What is **not** supported:
 > * The application managed in App Manager have no user ownership
