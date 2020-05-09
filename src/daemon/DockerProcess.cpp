@@ -92,7 +92,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 		m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile);
 		m_imagePullProc->regKillTimer(pullTimeout, fname);
 		this->attach(m_imagePullProc->getpid());
-		return m_imagePullProc->getpid();
+		return this->getpid();
 	}
 
 	// 2. build docker start command line
@@ -136,6 +136,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
+	bool startSucess = false;
 	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
@@ -145,6 +146,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	if (dockerProcess->return_value() == 0)
 	{
 		containerId = Utility::stdStringTrim(dockerProcess->fetchLine());
+		startSucess = true;
 	}
 	else
 	{
@@ -156,49 +158,50 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		m_containerId = containerId;
 	}
-	else
-	{
-		throw std::invalid_argument(std::string("Start docker container failed :").append(dockerCommand));
-	}
 
 	// 4. get docker root pid
-	dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
-	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
-	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
-	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
-	dockerProcess->runPipeReaderThread();
-	if (dockerProcess->return_value() == 0)
+	if (startSucess)
 	{
-		auto pidStr = Utility::stdStringTrim(dockerProcess->fetchLine());
-		if (Utility::isNumber(pidStr))
+		dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
+		dockerProcess = std::make_shared<MonitoredProcess>(32, false);
+		pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
+		dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
+		dockerProcess->runPipeReaderThread();
+		if (dockerProcess->return_value() == 0)
 		{
-			pid = std::stoi(pidStr);
-			if (pid > 1)
+			auto pidStr = Utility::stdStringTrim(dockerProcess->fetchLine());
+			if (Utility::isNumber(pidStr))
 			{
-				// Success
-				this->attach(pid);
-				std::lock_guard<std::recursive_mutex> guard(m_mutex);
-				m_containerId = containerId;
-				LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerId;
-				return pid;
+				pid = std::stoi(pidStr);
+				if (pid > 1)
+				{
+					// Success
+					this->attach(pid);
+					std::lock_guard<std::recursive_mutex> guard(m_mutex);
+					m_containerId = containerId;
+					LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerId;
+					return this->getpid();
+				}
+			}
+			else
+			{
+				LOG_WAR << fname << "can not get correct container pid :" << pidStr;
 			}
 		}
 		else
 		{
-			LOG_WAR << fname << "can not get correct container pid :" << pidStr;
+			LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << dockerProcess->fetchOutputMsg();
 		}
-	}
-	else
-	{
-		LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << dockerProcess->fetchOutputMsg();
 	}
 
 	// failed
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_containerId = containerId;
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_containerId = containerId;
+	}
 	this->detach();
 	killgroup();
-	return pid;
+	return this->getpid();
 }
 
 pid_t DockerProcess::getpid(void) const
