@@ -24,12 +24,8 @@ void DockerProcess::killgroup(int timerId)
 	const static char fname[] = "DockerProcess::killgroup() ";
 
 	// get and clean container id
-	std::string containerId;
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		containerId = m_containerId;
-		m_containerId.clear();
-	}
+	std::string containerId = this->containerId();
+	this->containerId("");
 
 	// clean docker container
 	if (!containerId.empty())
@@ -152,12 +148,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	{
 		LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << dockerProcess->fetchOutputMsg();
 	}
-	if (containerId.length())
-	{
-		// set container id here for future clean
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_containerId = containerId;
-	}
+	// set container id here for future clean
+	this->containerId(containerId);
 
 	// 4. get docker root pid
 	if (startSucess)
@@ -177,9 +169,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 				{
 					// Success
 					this->attach(pid);
-					std::lock_guard<std::recursive_mutex> guard(m_mutex);
-					m_containerId = containerId;
-					LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerId;
+					this->containerId(containerId);
+					LOG_INF << fname << "started pid <" << pid << "> for container :" << containerId;
 					return this->getpid();
 				}
 			}
@@ -195,10 +186,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 
 	// failed
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_containerId = containerId;
-	}
+	this->containerId(containerId);
 	this->detach();
 	killgroup();
 	return this->getpid();
