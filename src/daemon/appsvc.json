@@ -1,5 +1,5 @@
 {
-  "Description": "myhost",
+  "Description": "MYHOST",
   "ScheduleIntervalSeconds": 2,
   "LogLevel": "DEBUG",
   "REST": {

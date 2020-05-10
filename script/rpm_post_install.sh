@@ -31,6 +31,8 @@ fi
 if [[ ! "$APPMGR_FRESH_INSTALL" = "Y" ]] && [ -f "/opt/appmanager/.appsvc.json" ]; then
 	# restore previous configuration file
 	mv /opt/appmanager/.appsvc.json /opt/appmanager/appsvc.json
+else
+	sed -i "s/MYHOST/$(hostname -f)/g" /opt/appmanager/appsvc.json
 fi
 
 # create appc softlink
