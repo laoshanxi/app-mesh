@@ -35,6 +35,8 @@
 							m_hostname = m_commandLineVariables["host"].as<std::string>(); \
 							if (m_commandLineVariables.count("port")) m_listenPort = m_commandLineVariables["port"].as<int>();
 
+#define CHECK_RESPONSE_AND_THROW(resp) if (resp.status_code() != http::status_codes::OK) throw std::invalid_argument(resp.extract_utf8string().get());
+
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmgr_";
 static std::string m_jwtToken;
@@ -397,14 +399,8 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmgr/app/") + m_commandLineVariables["name"].as<std::string>();
 	auto resp = requestHttp(methods::PUT, restPath, jsobObj);
-	if (resp.status_code() == http::status_codes::OK)
-	{
-		std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
-	}
-	else
-	{
-		std::cout << resp.extract_utf8string().get() << std::endl;
-	}
+	CHECK_RESPONSE_AND_THROW(resp);
+	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
 void ArgumentParser::processUnReg()
@@ -440,6 +436,7 @@ void ArgumentParser::processUnReg()
 			}
 			std::string restPath = std::string("/appmgr/app/") + appName;
 			auto response = requestHttp(methods::DEL, restPath);
+			CHECK_RESPONSE_AND_THROW(response);
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 		}
 		else
@@ -471,14 +468,8 @@ void ArgumentParser::processView()
 			// view app info
 			std::string restPath = std::string("/appmgr/app/") + m_commandLineVariables["name"].as<std::string>();
 			auto resp = requestHttp(methods::GET, restPath);
-			if (resp.status_code() == http::status_codes::OK)
-			{
-				std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
-			}
-			else
-			{
-				std::cout << resp.extract_utf8string().get() << std::endl;
-			}
+			CHECK_RESPONSE_AND_THROW(resp);
+			std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 		}
 		else
 		{
@@ -493,6 +484,7 @@ void ArgumentParser::processView()
 	{
 		std::string restPath = "/appmgr/applications";
 		auto response = requestHttp(methods::GET, restPath);
+		CHECK_RESPONSE_AND_THROW(response);
 		printApps(response.extract_json(true).get(), reduce);
 	}
 }
@@ -509,14 +501,8 @@ void ArgumentParser::processResource()
 
 	std::string restPath = "/appmgr/resources";
 	auto resp = requestHttp(methods::GET, restPath);
-	if (resp.status_code() == http::status_codes::OK)
-	{
-		std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
-	}
-	else
-	{
-		std::cout << resp.extract_utf8string().get() << std::endl;
-	}
+	CHECK_RESPONSE_AND_THROW(resp);
+	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
 void ArgumentParser::processEnableDisable(bool start)
@@ -565,6 +551,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	{
 		std::string restPath = std::string("/appmgr/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(methods::POST, restPath);
+		CHECK_RESPONSE_AND_THROW(response);
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 	}
 	if (appList.size() == 0)
@@ -800,7 +787,8 @@ void ArgumentParser::processTags()
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			std::string restPath = std::string("/appmgr/label/").append(envVec.at(0));
-			requestHttp(methods::DEL, restPath);
+			auto resp = requestHttp(methods::DEL, restPath);
+			CHECK_RESPONSE_AND_THROW(resp);
 		}
 	}
 	else if (m_commandLineVariables.count("view") &&
@@ -816,7 +804,7 @@ void ArgumentParser::processTags()
 
 	std::string restPath = "/appmgr/labels";
 	http_response response = requestHttp(methods::GET, restPath);
-
+	CHECK_RESPONSE_AND_THROW(response);
 	// Finally print current
 	auto tags = response.extract_json().get().as_object();
 	for (auto tag : tags)
@@ -865,14 +853,8 @@ void ArgumentParser::processConfigView()
 
 	std::string restPath = "/appmgr/config";
 	http_response resp = requestHttp(methods::GET, restPath);
-	if (resp.status_code() == http::status_codes::OK)
-	{
-		std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
-	}
-	else
-	{
-		std::cout << resp.extract_utf8string().get() << std::endl;
-	}
+	CHECK_RESPONSE_AND_THROW(resp);
+	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
 void ArgumentParser::processChangePwd()
@@ -900,6 +882,7 @@ void ArgumentParser::processChangePwd()
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
 	http_response response = requestHttp(methods::POST, restPath, query, nullptr, &headers);
+	CHECK_RESPONSE_AND_THROW(response);
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -926,6 +909,7 @@ void ArgumentParser::processLockUser()
 
 	std::string restPath = std::string("/appmgr/user/") + user + (lock ? "/lock" : "/unlock");
 	http_response response = requestHttp(methods::POST, restPath);
+	CHECK_RESPONSE_AND_THROW(response);
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -974,6 +958,7 @@ void ArgumentParser::processWatch()
 
 	std::string restPath = std::string("/appmgr/watch/") + type;
 	http_response response = requestHttp(methods::POST, restPath);
+	CHECK_RESPONSE_AND_THROW(response);
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -1053,10 +1038,7 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	std::map<std::string, bool> apps;
 	std::string restPath = "/appmgr/applications";
 	auto response = requestHttp(methods::GET, restPath);
-	if (response.status_code() != status_codes::OK)
-	{
-		throw std::invalid_argument(response.extract_utf8string(true).get());
-	}
+	CHECK_RESPONSE_AND_THROW(response);
 	auto jsonValue = response.extract_json(true).get();
 	auto arr = jsonValue.as_array();
 	for (auto iter = arr.begin(); iter != arr.end(); iter++)
