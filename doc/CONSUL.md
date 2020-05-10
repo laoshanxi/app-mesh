@@ -24,8 +24,7 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 > * Schedule consider resource usage
 
 ### What is **not** supported:
-> * Consul connection ACL
-> * Consul watch does not support SSL
+> * Consul access ACL
 
 ### Consul configuration
 
@@ -36,8 +35,7 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
     "url": "http://localhost:8500",
     "datacenter": "dc1",
     "session_TTL": 30,
-    "enable_consul_security": false,
-    "consul_docker_img": "consul:latest"
+    "enable_consul_security": false
   }
 ```
 
