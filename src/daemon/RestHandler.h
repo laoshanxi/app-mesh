@@ -75,7 +75,6 @@ private:
 	void apiListPermissions(const HttpRequest& message);
 	void apiHealth(const HttpRequest& message);
 	void apiMetrics(const HttpRequest& message);
-	void apiPostWatch(const HttpRequest& message);
 
 private:
 	std::string m_listenAddress;

@@ -186,7 +186,6 @@ public:
 #define JSON_KEY_CONSULE "Consul"
 #define JSON_KEY_VERSION "Version"
 #define JSON_KEY_CONSULE_URL "url"
-#define JSON_KEY_CONSULE_DOCKER_IMG "consul_docker_img"
 #define JSON_KEY_CONSULE_IS_MASTER "is_master"
 #define JSON_KEY_CONSULE_IS_NODE "is_node"
 #define JSON_KEY_CONSULE_SESSION_NODE "session_node"
@@ -300,4 +299,3 @@ public:
 #define PERMISSION_KEY_role_delete  			"role-delete"
 #define PERMISSION_KEY_role_view 				"role-view"
 #define PERMISSION_KEY_permission_list			"permission-list"
-#define PERMISSION_KEY_consul_watch 			"consul-watch"

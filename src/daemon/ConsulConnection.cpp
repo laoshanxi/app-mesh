@@ -144,9 +144,9 @@ long long ConsulConnection::getModifyIndex(const std::string& path)
 	return -1;
 }
 
-void ConsulConnection::watchSchedule()
+void ConsulConnection::syncSchedule()
 {
-	const static char fname[] = "ConsulConnection::watchSchedule() ";
+	const static char fname[] = "ConsulConnection::syncSchedule() ";
 	LOG_DBG << fname;
 
 	try
@@ -178,9 +178,9 @@ void ConsulConnection::watchSchedule()
 	}
 }
 
-void ConsulConnection::watchSecurity()
+void ConsulConnection::syncSecurity()
 {
-	const static char fname[] = "ConsulConnection::watchSecurity() ";
+	const static char fname[] = "ConsulConnection::syncSecurity() ";
 
 	try
 	{
@@ -331,27 +331,9 @@ void ConsulConnection::doSchedule()
 	}
 }
 
-void ConsulConnection::regWatchApp(const std::string& name, const std::string& cmd, const std::string& dockerImg)
+void ConsulConnection::syncTopology()
 {
-	web::json::value jsonApp;
-	jsonApp[JSON_KEY_APP_name] = web::json::value::string(name);
-	jsonApp[JSON_KEY_APP_command] = web::json::value::string(cmd);
-	jsonApp[JSON_KEY_APP_metadata] = web::json::value::string(JSON_KEY_APP_SYSTEM_INTERNAL);
-	//jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(Application::STATUS::NOTAVIALABLE));
-	if (dockerImg.length())
-	{
-		jsonApp[JSON_KEY_APP_docker_image] = web::json::value::string(dockerImg);
-		web::json::value objEnvs = web::json::value::object();
-		objEnvs[ENV_APP_MANAGER_DOCKER_PARAMS] = web::json::value::string("-v /opt/appmanager:/opt/appmanager --net=host");
-		jsonApp[JSON_KEY_APP_env] = objEnvs;
-	}
-	jsonApp[JSON_KEY_APP_cache_lines] = web::json::value::number(100);
-	Configuration::instance()->addApp(jsonApp);
-}
-
-void ConsulConnection::watchTopology()
-{
-	const static char fname[] = "ConsulConnection::watchTopology() ";
+	const static char fname[] = "ConsulConnection::syncTopology() ";
 
 	auto currentAllApps = Configuration::instance()->getApps();
 	std::shared_ptr<ConsulTopology> newTopology;
@@ -886,33 +868,23 @@ void ConsulConnection::initTimer()
 
 	auto consulUrl = Configuration::instance()->getConsul()->m_consulUrl;
 	auto consulImg = Configuration::instance()->getConsul()->m_consulDockerImg;
-	// security watch app
-	const std::string securityApp = "watch_secucrity";
-	Configuration::instance()->removeApp(securityApp);
+	// security watch
 	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
-		//consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/security "/opt/appmanager/appc watch -t security"
-		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=key -key=appmgr/security 'sh /opt/appmanager/script/consul_watch.sh security'";
-		regWatchApp(securityApp, cmd, consulImg);
-		watchSecurity();
+		m_securityWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchSecurityThread, this));
+		m_securityWatch->detach();
 	}
-	// topology watch app
-	const std::string topologyApp = "watch_topology";
-	Configuration::instance()->removeApp(topologyApp);
+	// topology watch
 	if (Configuration::instance()->getConsul()->m_isNode)
 	{
-		//consul watch -http-addr=http://localhost:8500 -type=key -key=appmgr/topology/myhost "/opt/appmanager/appc watch -t topology"
-		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=key -key=appmgr/topology/" + MY_HOST_NAME + " 'sh /opt/appmanager/script/consul_watch.sh topology'";
-		regWatchApp(topologyApp, cmd, consulImg);
+		m_topologyWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchTopologyThread, this));
+		m_topologyWatch->detach();
 	}
-	// schedule nodes watch app
-	const std::string scheduleApp = "watch_schedule";
-	Configuration::instance()->removeApp(scheduleApp);
+	// schedule nodes watch
 	if (Configuration::instance()->getConsul()->m_isMaster)
 	{
-		//consul watch -http-addr=http://localhost:8500 -type=keyprefix -prefix=appmgr/cluster/nodes "/opt/appmanager/appc watch -t schedule"
-		auto cmd = std::string("consul watch") + " -http-addr=" + consulUrl + " -type=keyprefix -prefix=appmgr/cluster/ 'sh /opt/appmanager/script/consul_watch.sh schedule'";
-		regWatchApp(scheduleApp, cmd, consulImg);
+		m_scheduleWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchScheduleThread, this));
+		m_scheduleWatch->detach();
 	}
 }
 
@@ -924,7 +896,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
-	config.set_timeout(std::chrono::seconds(5));
+	//config.set_timeout(std::chrono::seconds(5));
 	config.set_validate_certificates(false);
 	web::http::client::http_client client(restURL, config);
 
@@ -966,3 +938,109 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	web::http::http_response response(web::http::status_codes::ResetContent);
 	return std::move(response);
 }
+
+long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long lastIndex)
+{
+	const static char fname[] = "ConsulConnection::requestLongPullWatch() ";
+
+	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
+
+	// Create http_client to send the request.
+	web::http::client::http_client_config config;
+	config.set_timeout(std::chrono::seconds(30));	// set block pull to 30s timeout
+	config.set_validate_certificates(false);
+	web::http::client::http_client client(restURL, config);
+
+	// Build request URI and start the request.
+	web::uri_builder builder(kvPath);
+	builder.append_query("index", std::to_string(lastIndex));
+
+	web::http::http_request request(web::http::methods::GET);
+	request.set_request_uri(builder.to_uri());
+	
+	try
+	{
+		web::http::http_response response = client.request(request).get();
+		if (response.status_code() == web::http::status_codes::OK)
+		{
+			return std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
+		}
+	}
+	catch (...)
+	{
+		// In case of REST server crash or block query timeout, will throw exception:
+		// "Failed to read HTTP status line"
+		// LOG_DBG << fname << " exception";
+	}
+	return 0;
+}
+
+void ConsulConnection::watchSecurityThread()
+{
+	const static char fname[] = "ConsulConnection::watchSecurityThread() ";
+	LOG_DBG << fname;
+
+	long long index = 0;
+	std::string path = std::string(CONSUL_BASE_PATH).append("security");
+	while (Configuration::instance()->getConsul()->consulSecurityEnabled())
+	{
+		auto lastIndex = requestLongPullWatch(path, index);
+		if (lastIndex > 0)
+		{
+			index = lastIndex;
+			this->syncSecurity();
+		}
+		else
+		{
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+	}
+	LOG_DBG << fname << "exit";
+}
+
+void ConsulConnection::watchTopologyThread()
+{
+	const static char fname[] = "ConsulConnection::watchTopologyThread() ";
+	LOG_DBG << fname;
+
+	long long index = 0;
+	auto path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
+	while (Configuration::instance()->getConsul()->m_isNode)
+	{
+		auto lastIndex = requestLongPullWatch(path, index);
+		if (lastIndex > 0)
+		{
+			index = lastIndex;
+			this->syncTopology();
+		}
+		else
+		{
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+	}
+	LOG_DBG << fname << "exit";
+}
+
+void ConsulConnection::watchScheduleThread()
+{
+	const static char fname[] = "ConsulConnection::watchScheduleThread() ";
+	LOG_DBG << fname;
+
+	long long index = 0;
+	auto path = std::string(CONSUL_BASE_PATH).append("cluster/");
+	while (Configuration::instance()->getConsul()->m_isMaster)
+	{
+		auto lastIndex = requestLongPullWatch(path, index);
+		if (lastIndex > 0)
+		{
+			index = lastIndex;
+			this->syncSchedule();
+		}
+		else
+		{
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+	}
+	LOG_DBG << fname << "exit";
+}
+

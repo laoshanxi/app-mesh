@@ -54,7 +54,6 @@ class Configuration
 		// TTL (string: "") - Specifies the number of seconds (between 10s and 86400s).
 		int m_ttl;
 		bool m_securitySync;
-		std::string m_consulDockerImg;
 	};
 public:
 	struct JsonSecurity {

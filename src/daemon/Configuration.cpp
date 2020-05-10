@@ -775,7 +775,6 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 {
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
-	consul->m_consulDockerImg = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_DOCKER_IMG);
 	consul->m_datacenter = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_DATACENTER);
 	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MASTER);
 	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
@@ -794,7 +793,6 @@ web::json::value Configuration::JsonConsul::AsJson() const
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_CONSULE_URL] = web::json::value::string(m_consulUrl);
-	result[JSON_KEY_CONSULE_DOCKER_IMG] = web::json::value::string(m_consulDockerImg);
 	result[JSON_KEY_CONSULE_DATACENTER] = web::json::value::string(m_datacenter);
 	result[JSON_KEY_CONSULE_IS_MASTER] = web::json::value::boolean(m_isMaster);
 	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);

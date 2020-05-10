@@ -21,15 +21,20 @@ public:
 	void initTimer();
 	void saveSecurity(bool checkExistance = false);
 
-	void watchSchedule();
-	void watchSecurity();
-	void watchTopology();
+	void syncSchedule();
+	void syncSecurity();
+	void syncTopology();
 
 private:
 	void reportNode();
 	long long getModifyIndex(const std::string& path);
 
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
+
+	long long requestLongPullWatch(std::string kvPath, long long lastIndex);
+	void watchSecurityThread();
+	void watchTopologyThread();
+	void watchScheduleThread();
 
 	void refreshSession(int timerId = 0);
 	std::string requestSessionId();
@@ -42,7 +47,6 @@ private:
 
 	bool registerService(const std::string& appName, int port);
 	bool deregisterService(const std::string appName);
-	void regWatchApp(const std::string& name, const std::string& cmd, const std::string& dockerImg);
 
 	void findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts);
 	std::map<std::string, std::shared_ptr<ConsulTopology>> scheduleTask(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology);
@@ -58,4 +62,8 @@ private:
 	std::string m_sessionId;
 	int m_ssnRenewTimerId;
 	bool m_leader;
+
+	std::shared_ptr<std::thread> m_securityWatch;
+	std::shared_ptr<std::thread> m_topologyWatch;
+	std::shared_ptr<std::thread> m_scheduleWatch;
 };

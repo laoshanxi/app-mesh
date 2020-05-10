@@ -155,10 +155,6 @@ void ArgumentParser::parse()
 	{
 		processEncryptUserPwd();
 	}
-	else if (cmd == "watch")
-	{
-		processWatch();
-	}
 	else
 	{
 		printMainHelp();
@@ -922,30 +918,6 @@ void ArgumentParser::processEncryptUserPwd()
 			std::cout << std::hash<std::string>()(optStr) << std::endl;
 		}
 	}
-}
-
-void ArgumentParser::processWatch()
-{
-	po::options_description desc("Post consul watch:");
-	desc.add_options()
-		COMMON_OPTIONS
-		("type,t", po::value<std::string>(), "consul watch type (security/topology/schedule)")
-		("help,h", "Prints command usage to stdout and exits")
-		;
-	shiftCommandLineArgs(desc);
-	HELP_ARG_CHECK_WITH_RETURN;
-
-	if (!m_commandLineVariables.count("type"))
-	{
-		std::cout << desc << std::endl;
-		return;
-	}
-
-	auto type = m_commandLineVariables["type"].as<std::string>();
-
-	std::string restPath = std::string("/appmgr/watch/") + type;
-	http_response response = requestHttp(methods::POST, restPath);
-	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
 bool ArgumentParser::confirmInput(const char* msg)
