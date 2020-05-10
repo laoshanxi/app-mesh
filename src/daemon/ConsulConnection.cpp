@@ -866,8 +866,6 @@ void ConsulConnection::initTimer()
 		);
 	}
 
-	auto consulUrl = Configuration::instance()->getConsul()->m_consulUrl;
-	auto consulImg = Configuration::instance()->getConsul()->m_consulDockerImg;
 	// security watch
 	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
