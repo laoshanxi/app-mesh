@@ -77,7 +77,7 @@ void ConsulConnection::reportNode()
 			}
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -115,7 +115,7 @@ void ConsulConnection::refreshSession(int timerId)
 		reportNode();
 		return;
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -127,11 +127,13 @@ void ConsulConnection::refreshSession(int timerId)
 	m_sessionId.clear();
 }
 
-long long ConsulConnection::getModifyIndex(const std::string& path)
+long long ConsulConnection::getModifyIndex(const std::string& path, bool recurse)
 {
 	const static char fname[] = "ConsulConnection::getModifyIndex() ";
 
-	auto resp = requestHttp(web::http::methods::GET, path, {}, {}, nullptr);
+	std::map<std::string, std::string> query;
+	if (recurse) query["recurse"] = "true";
+	auto resp = requestHttp(web::http::methods::GET, path, query, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		if (resp.headers().has("X-Consul-Index"))
@@ -168,7 +170,7 @@ void ConsulConnection::syncSchedule()
 			doSchedule();
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -211,7 +213,7 @@ void ConsulConnection::syncSecurity()
 			LOG_WAR << fname << "failed with return code : " << resp.status_code();
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -924,7 +926,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 		LOG_DBG << fname << mtd << " " << path << " return " << response.status_code();
 		return std::move(response);
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception& ex)
 	{
 		LOG_WAR << fname << path << " got exception: " << ex.what();
 	}
@@ -937,7 +939,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	return std::move(response);
 }
 
-long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long lastIndex)
+long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long lastIndex, bool watchPrefix)
 {
 	const static char fname[] = "ConsulConnection::requestLongPullWatch() ";
 
@@ -954,10 +956,14 @@ long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long l
 	web::uri_builder builder(GET_STRING_T(kvPath));
 	builder.append_query("index", std::to_string(lastIndex));
 	builder.append_query("wait", std::to_string(waitTimeout).append("s"));
+	if (watchPrefix)
+	{
+		builder.append_query("recurse", "true");
+	}
 
 	web::http::http_request request(web::http::methods::GET);
 	request.set_request_uri(builder.to_uri());
-	
+
 	try
 	{
 		web::http::http_response response = client.request(request).get();
@@ -1029,11 +1035,11 @@ void ConsulConnection::watchScheduleThread()
 	LOG_DBG << fname;
 
 	auto path = std::string(CONSUL_BASE_PATH).append("cluster/");
-	long long index = getModifyIndex(path);
+	long long index = getModifyIndex(path, true);
 	this->syncSchedule();
 	while (Configuration::instance()->getConsul()->m_isMaster)
 	{
-		auto lastIndex = requestLongPullWatch(path, index);
+		auto lastIndex = requestLongPullWatch(path, index, true);
 		if (lastIndex > 0)
 		{
 			index = lastIndex;
