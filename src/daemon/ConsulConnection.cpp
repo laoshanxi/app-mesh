@@ -971,7 +971,7 @@ long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long l
 		if (response.status_code() == web::http::status_codes::OK)
 		{
 			auto index = std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
-			LOG_DBG << fname << "returned : "<< index;
+			LOG_DBG << fname << kvPath << " returned : "<< index;
 			return index;
 		}
 	}
@@ -979,7 +979,7 @@ long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long l
 	{
 		// In case of REST server crash or block query timeout, will throw exception:
 		// "Failed to read HTTP status line"
-		LOG_DBG << fname << " exception";
+		// LOG_DBG << fname << " exception";
 	}
 	return 0;
 }
