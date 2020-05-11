@@ -939,9 +939,9 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	return std::move(response);
 }
 
-long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long lastIndex, bool watchPrefix)
+long long ConsulConnection::blockWatchKv(const std::string& kvPath, long long lastIndex, bool recurse)
 {
-	const static char fname[] = "ConsulConnection::requestLongPullWatch() ";
+	const static char fname[] = "ConsulConnection::blockWatchKv() ";
 
 	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
 
@@ -957,7 +957,7 @@ long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long l
 	builder.append_query("index", std::to_string(lastIndex));
 	builder.append_query("wait", std::to_string(waitTimeout * 1000).append("ms"));
 	builder.append_query("stale", "false");
-	if (watchPrefix)
+	if (recurse)
 	{
 		builder.append_query("recurse", "true");
 	}
@@ -994,7 +994,7 @@ void ConsulConnection::watchSecurityThread()
 	this->syncSecurity();
 	while (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
-		auto lastIndex = requestLongPullWatch(path, index);
+		auto lastIndex = blockWatchKv(path, index);
 		if (lastIndex > 0)
 		{
 			index = lastIndex;
@@ -1018,7 +1018,7 @@ void ConsulConnection::watchTopologyThread()
 	this->syncTopology();
 	while (Configuration::instance()->getConsul()->m_isNode)
 	{
-		auto lastIndex = requestLongPullWatch(path, index);
+		auto lastIndex = blockWatchKv(path, index);
 		if (lastIndex > 0)
 		{
 			index = lastIndex;
@@ -1042,7 +1042,7 @@ void ConsulConnection::watchScheduleThread()
 	this->syncSchedule();
 	while (Configuration::instance()->getConsul()->m_isMaster)
 	{
-		auto lastIndex = requestLongPullWatch(path, index, true);
+		auto lastIndex = blockWatchKv(path, index, true);
 		if (lastIndex > 0)
 		{
 			index = lastIndex;
