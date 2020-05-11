@@ -943,15 +943,17 @@ long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long l
 
 	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
 
+	int waitTimeout = 30;
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
-	config.set_timeout(std::chrono::seconds(30));	// set block pull to 30s timeout
+	config.set_timeout(std::chrono::seconds(waitTimeout));	// set block pull to 30s timeout
 	config.set_validate_certificates(false);
 	web::http::client::http_client client(restURL, config);
 
 	// Build request URI and start the request.
-	web::uri_builder builder(kvPath);
+	web::uri_builder builder(GET_STRING_T(kvPath));
 	builder.append_query("index", std::to_string(lastIndex));
+	builder.append_query("wait", std::to_string(waitTimeout).append("s"));
 
 	web::http::http_request request(web::http::methods::GET);
 	request.set_request_uri(builder.to_uri());
@@ -978,8 +980,9 @@ void ConsulConnection::watchSecurityThread()
 	const static char fname[] = "ConsulConnection::watchSecurityThread() ";
 	LOG_DBG << fname;
 
-	long long index = 0;
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
+	long long index = getModifyIndex(path);
+	this->syncSecurity();
 	while (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
 		auto lastIndex = requestLongPullWatch(path, index);
@@ -1001,8 +1004,9 @@ void ConsulConnection::watchTopologyThread()
 	const static char fname[] = "ConsulConnection::watchTopologyThread() ";
 	LOG_DBG << fname;
 
-	long long index = 0;
 	auto path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
+	long long index = getModifyIndex(path);
+	this->syncTopology();
 	while (Configuration::instance()->getConsul()->m_isNode)
 	{
 		auto lastIndex = requestLongPullWatch(path, index);
@@ -1024,8 +1028,9 @@ void ConsulConnection::watchScheduleThread()
 	const static char fname[] = "ConsulConnection::watchScheduleThread() ";
 	LOG_DBG << fname;
 
-	long long index = 0;
 	auto path = std::string(CONSUL_BASE_PATH).append("cluster/");
+	long long index = getModifyIndex(path);
+	this->syncSchedule();
 	while (Configuration::instance()->getConsul()->m_isMaster)
 	{
 		auto lastIndex = requestLongPullWatch(path, index);
