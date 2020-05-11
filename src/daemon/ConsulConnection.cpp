@@ -955,7 +955,8 @@ long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long l
 	// Build request URI and start the request.
 	web::uri_builder builder(GET_STRING_T(kvPath));
 	builder.append_query("index", std::to_string(lastIndex));
-	builder.append_query("wait", std::to_string(waitTimeout).append("s"));
+	builder.append_query("wait", std::to_string(waitTimeout * 1000).append("ms"));
+	builder.append_query("stale", "false");
 	if (watchPrefix)
 	{
 		builder.append_query("recurse", "true");
@@ -969,14 +970,16 @@ long long ConsulConnection::requestLongPullWatch(std::string kvPath, long long l
 		web::http::http_response response = client.request(request).get();
 		if (response.status_code() == web::http::status_codes::OK)
 		{
-			return std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
+			auto index = std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
+			LOG_DBG << fname << "returned : "<< index;
+			return index;
 		}
 	}
 	catch (...)
 	{
 		// In case of REST server crash or block query timeout, will throw exception:
 		// "Failed to read HTTP status line"
-		// LOG_DBG << fname << " exception";
+		LOG_DBG << fname << " exception";
 	}
 	return 0;
 }
