@@ -142,7 +142,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	if (dockerProcess->return_value() == 0)
 	{
 		containerId = Utility::stdStringTrim(dockerProcess->fetchLine());
-		startSucess = true;
+		startSucess = (containerId.length() > 0);
 	}
 	else
 	{
