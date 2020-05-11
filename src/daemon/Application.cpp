@@ -19,7 +19,7 @@
 Application::Application()
 	:m_status(STATUS::ENABLED), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID())
 	, m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
-	, m_metricStartCount(nullptr), m_metricMemory(nullptr)
+	, m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
