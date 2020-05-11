@@ -148,7 +148,6 @@ void MonitoredProcess::runPipeReaderThread()
 	// double check avoid wait hang
 	if (this->running())
 	{
-		LOG_WAR << fname << "process <" << this->getpid() << "> is still running, terminate before wait.";
 		this->killgroup();
 	}
 	ACE_Process::wait();	// if no wait, there will be no exit_code

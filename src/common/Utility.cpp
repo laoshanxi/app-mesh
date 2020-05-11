@@ -6,6 +6,7 @@
 #include <queue>
 #include <string>
 #include <sstream>
+#include <stdarg.h>
 
 #include <thread>
 #include <boost/archive/iterators/binary_from_base64.hpp>
@@ -596,7 +597,7 @@ std::string Utility::humanReadableSize(long double bytesSize)
 
 	size_t units = 0;
 	long double n = bytesSize;
-	while (n > base&& units + 1 < sizeof(fmt) / sizeof(*fmt))
+	while (n > base && units + 1 < sizeof(fmt) / sizeof(*fmt))
 	{
 		units++;
 		n /= base;
@@ -728,4 +729,25 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 std::string Utility::hash(const std::string& str)
 {
 	return std::move(std::to_string(std::hash<std::string>()(str)));
+}
+
+std::string Utility::stringFormat(const std::string fmt_str, ...)
+{
+	// https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
+	int final_n, n = ((int)fmt_str.size()) * 2; /* Reserve two times as much as the length of the fmt_str */
+	std::unique_ptr<char[]> formatted;
+	va_list ap;
+	while (true)
+	{
+		formatted.reset(new char[n]); /* Wrap the plain char array into the unique_ptr */
+		strcpy(&formatted[0], fmt_str.c_str());
+		va_start(ap, fmt_str);
+		final_n = vsnprintf(&formatted[0], n, fmt_str.c_str(), ap);
+		va_end(ap);
+		if (final_n < 0 || final_n >= n)
+			n += abs(final_n - n + 1);
+		else
+			break;
+	}
+	return std::string(formatted.get());
 }

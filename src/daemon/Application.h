@@ -1,5 +1,5 @@
 #pragma once
-
+#include <atomic>
 #include <memory>
 #include <string>
 #include <map>
@@ -114,4 +114,5 @@ protected:
 	// Prometheus
 	std::shared_ptr<CounterPtr> m_metricStartCount;
 	std::shared_ptr<GaugePtr> m_metricMemory;
+	std::atomic<int> m_continueFails;
 };

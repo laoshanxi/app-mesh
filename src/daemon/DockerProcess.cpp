@@ -58,13 +58,13 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	std::string containerName = m_appName;
 
 	// 0. clean old docker contianer (docker container will left when host restart)
-	std::string dockerCommand = "docker rm -f " + containerName;
+	std::string dockerCommand = Utility::stringFormat("docker rm -f %s", containerName.c_str());
 	AppProcess proc(0);
 	proc.spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
 	proc.wait();
 
 	// 1. check docker image
-	dockerCommand = "docker inspect -f '{{.Size}}' " + m_dockerImage;
+	dockerCommand = Utility::stringFormat("docker inspect -f '{{.Size}}' %s", m_dockerImage.c_str());
 	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
@@ -92,7 +92,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	}
 
 	// 2. build docker start command line
-	dockerCommand = std::string("docker run -d ") + "--name " + containerName;
+	dockerCommand = Utility::stringFormat("docker run -d --name %s ", containerName.c_str());
 	for (auto env : envMap)
 	{
 		if (env.first == ENV_APP_MANAGER_DOCKER_PARAMS)
@@ -154,7 +154,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	// 4. get docker root pid
 	if (startSucess)
 	{
-		dockerCommand = "docker inspect -f '{{.State.Pid}}' " + containerId;
+		dockerCommand = Utility::stringFormat("docker inspect -f '{{.State.Pid}}' %s", containerId.c_str());
 		dockerProcess = std::make_shared<MonitoredProcess>(32, false);
 		pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
 		dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);

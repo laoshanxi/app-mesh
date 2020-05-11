@@ -1,4 +1,3 @@
-#include <atomic>
 #include <chrono>
 #include <boost/algorithm/string_regex.hpp>
 #include <cpprest/filestream.h>
