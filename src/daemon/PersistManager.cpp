@@ -52,7 +52,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			}
 		}
 	}
-	snap->m_consulSessionId = ConsulConnection::instance()->getConsulSessionId();
+	snap->m_consulSessionId = ConsulConnection::instance()->consulSessionId();
 	return std::move(snap);
 }
 

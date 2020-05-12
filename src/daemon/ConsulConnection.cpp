@@ -39,7 +39,7 @@ void ConsulConnection::reportNode()
 {
 	const static char fname[] = "ConsulConnection::reportNode() ";
 
-	std::string sessionId = getSessionId();
+	std::string sessionId = consulSessionId();
 	if (sessionId.empty()) return;
 
 	// check feature enabled
@@ -98,7 +98,7 @@ void ConsulConnection::refreshSession(int timerId)
 
 		PerfLog perf(fname);
 		// get session id
-		std::string sessionId = getSessionId();
+		auto sessionId = this->consulSessionId();
 		if (sessionId.empty())
 		{
 			sessionId = requestSessionId();
@@ -107,11 +107,7 @@ void ConsulConnection::refreshSession(int timerId)
 		{
 			sessionId = renewSessionId();
 		}
-		// set session id
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			m_sessionId = sessionId;
-		}
+		this->consulSessionId(sessionId);
 		reportNode();
 		return;
 	}
@@ -123,8 +119,7 @@ void ConsulConnection::refreshSession(int timerId)
 	{
 		LOG_WAR << fname << " exception";
 	}
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_sessionId.clear();
+	this->consulSessionId("");
 }
 
 long long ConsulConnection::getModifyIndex(const std::string& path, bool recurse)
@@ -155,11 +150,7 @@ void ConsulConnection::syncSchedule()
 	{
 		// check feature enabled
 		if (!Configuration::instance()->getConsul()->consulEnabled()) return;
-		if (getSessionId().empty())
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			m_sessionId = requestSessionId();
-		}
+		if (consulSessionId().empty()) this->consulSessionId(requestSessionId());
 
 		PerfLog perf(fname);
 
@@ -265,7 +256,7 @@ std::string ConsulConnection::renewSessionId()
 {
 	const static char fname[] = "ConsulConnection::renewSessionId() ";
 
-	auto sessionId = getSessionId();
+	auto sessionId = consulSessionId();
 	if (sessionId.length())
 	{
 		auto resp = requestHttp(web::http::methods::PUT, std::string("/v1/session/renew/").append(sessionId), {}, {}, nullptr);
@@ -287,10 +278,16 @@ std::string ConsulConnection::renewSessionId()
 	return sessionId;
 }
 
-std::string ConsulConnection::getSessionId()
+std::string ConsulConnection::consulSessionId()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_sessionId;
+}
+
+void ConsulConnection::consulSessionId(const std::string& sessionId)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_sessionId = sessionId;
 }
 
 void ConsulConnection::doSchedule()
@@ -412,7 +409,7 @@ void ConsulConnection::syncTopology()
 bool ConsulConnection::eletionLeader()
 {
 	// get session id
-	std::string sessionId = getSessionId();
+	std::string sessionId = consulSessionId();
 	if (sessionId.empty()) return false;
 
 	// write hostname to leader path : /appmgr/leader
@@ -522,12 +519,6 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
 		}
 	}
-}
-
-const std::string ConsulConnection::getConsulSessionId()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_sessionId;
 }
 
 void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
@@ -882,9 +873,9 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 	}
 	else
 	{
-		releaseSessionId(this->getSessionId());
+		releaseSessionId(this->consulSessionId());
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_sessionId.clear();
+		this->consulSessionId("");
 	}
 
 	// security watch
