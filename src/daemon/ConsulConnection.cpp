@@ -435,6 +435,7 @@ bool ConsulConnection::eletionLeader()
 void ConsulConnection::offlineNode()
 {
 	const static char fname[] = "ConsulConnection::offlineNode() ";
+	LOG_DBG << fname;
 
 	auto path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
 	requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
@@ -713,11 +714,18 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 	//topology: /appmgr/topology/myhost
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
 	web::http::http_response resp;
-	web::json::value body;
-	if (topology && topology->m_apps.size()) body = topology->AsJson();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
-	LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
+	if (topology && topology->m_apps.size())
+	{
+		auto body = topology->AsJson();
+		resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
+		LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
+	}
+	else
+	{
+		resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, nullptr);
+		LOG_INF << fname << "clear <" << hostName << ">";
+	}
 
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
