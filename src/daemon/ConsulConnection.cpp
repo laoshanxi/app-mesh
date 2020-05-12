@@ -432,6 +432,28 @@ bool ConsulConnection::eletionLeader()
 	return m_leader;
 }
 
+void ConsulConnection::offlineNode()
+{
+	const static char fname[] = "ConsulConnection::offlineNode() ";
+
+	auto path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
+	requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
+	path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
+	requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
+
+	auto currentAllApps = Configuration::instance()->getApps();
+	for (const auto& currentApp : currentAllApps)
+	{
+		if (currentApp->isCloudApp())
+		{
+			// Remove no used topology
+			Configuration::instance()->removeApp(currentApp->getName());
+			LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+			deregisterService(currentApp->getName());
+		}
+	}
+}
+
 bool ConsulConnection::registerService(const std::string& appName, int port)
 {
 	const static char fname[] = "ConsulConnection::registerService() ";
@@ -691,18 +713,12 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 	//topology: /appmgr/topology/myhost
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
 	web::http::http_response resp;
-	if (topology && topology->m_apps.size())
-	{
-		auto body = topology->AsJson();
-		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-		resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
-		LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
-	}
-	else
-	{
-		resp = requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
-		LOG_INF << fname << "delete topology for <" << hostName << ">";
-	}
+	web::json::value body;
+	if (topology && topology->m_apps.size()) body = topology->AsJson();
+	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+	resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
+	LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
+
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
@@ -879,6 +895,10 @@ void ConsulConnection::initTimer()
 	{
 		m_topologyWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchTopologyThread, this));
 		m_topologyWatch->detach();
+	}
+	else
+	{
+		offlineNode();
 	}
 	// schedule nodes watch
 	if (Configuration::instance()->getConsul()->m_isMaster)

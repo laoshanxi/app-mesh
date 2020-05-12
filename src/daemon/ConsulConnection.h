@@ -44,6 +44,7 @@ private:
 
 	void doSchedule();
 	bool eletionLeader();
+	void offlineNode();
 
 	bool registerService(const std::string& appName, int port);
 	bool deregisterService(const std::string appName);
