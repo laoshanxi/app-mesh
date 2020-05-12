@@ -867,9 +867,8 @@ void ConsulConnection::initTimer()
 	const static char fname[] = "ConsulConnection::initTimer() ";
 	LOG_DBG << fname;
 
-	releaseSessionId();
-
 	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
+	if (!Configuration::instance()->getConsul()->m_isNode) offlineNode();
 
 	// session renew timer
 	this->cancleTimer(m_ssnRenewTimerId);
@@ -883,6 +882,10 @@ void ConsulConnection::initTimer()
 			__FUNCTION__
 		);
 	}
+	else
+	{
+		releaseSessionId();
+	}
 
 	// security watch
 	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
@@ -895,10 +898,6 @@ void ConsulConnection::initTimer()
 	{
 		m_topologyWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchTopologyThread, this));
 		m_topologyWatch->detach();
-	}
-	else
-	{
-		offlineNode();
 	}
 	// schedule nodes watch
 	if (Configuration::instance()->getConsul()->m_isMaster)
