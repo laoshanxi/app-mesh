@@ -30,7 +30,7 @@ void DockerProcess::killgroup(int timerId)
 	// clean docker container
 	if (!containerId.empty())
 	{
-		std::string cmd = "docker rm -f " + containerId;
+		auto cmd = Utility::stringFormat("docker rm -f %s", containerId.c_str());
 		AppProcess proc(0);
 		proc.spawnProcess(cmd, "", "", {}, nullptr, "");
 		if (proc.wait(ACE_Time_Value(3)) <= 0)
@@ -271,7 +271,7 @@ std::string DockerProcess::getOutputMsg()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_containerId.length())
 	{
-		std::string dockerCommand = "docker logs --tail " + std::to_string(m_cacheOutputLines) + " " + m_containerId;
+		auto dockerCommand = Utility::stringFormat("docker logs --tail %d %s", m_cacheOutputLines, m_containerId.c_str());
 		return Utility::runShellCommand(dockerCommand);
 	}
 	return std::string();
@@ -284,7 +284,7 @@ std::string DockerProcess::fetchOutputMsg()
 	{
 		//auto microsecondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
 		auto timeSince = Utility::getRfc3339Time(m_lastFetchTime);
-		std::string dockerCommand = "docker logs --since " + timeSince + " " + m_containerId;
+		auto dockerCommand = Utility::stringFormat("docker logs --since %s %s", timeSince.c_str(), m_containerId.c_str());
 		auto msg = Utility::runShellCommand(dockerCommand);
 		m_lastFetchTime = std::chrono::system_clock::now();
 		return std::move(msg);
