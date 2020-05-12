@@ -77,7 +77,7 @@ void ConsulConnection::reportNode()
 			}
 		}
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -115,7 +115,7 @@ void ConsulConnection::refreshSession(int timerId)
 		reportNode();
 		return;
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -170,7 +170,7 @@ void ConsulConnection::syncSchedule()
 			doSchedule();
 		}
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -213,7 +213,7 @@ void ConsulConnection::syncSecurity()
 			LOG_WAR << fname << "failed with return code : " << resp.status_code();
 		}
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -250,14 +250,11 @@ std::string ConsulConnection::requestSessionId()
 	return sessionId;
 }
 
-void ConsulConnection::releaseSessionId()
+void ConsulConnection::releaseSessionId(const std::string& sessionId)
 {
-	auto sessionId = this->getSessionId();
 	if (sessionId.length())
 	{
 		requestHttp(web::http::methods::PUT, std::string("/v1/session/destroy/").append(sessionId), {}, {}, nullptr);
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		m_sessionId.clear();
 	}
 }
 
@@ -532,6 +529,12 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 	}
 }
 
+const std::string ConsulConnection::getConsulSessionId()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_sessionId;
+}
+
 void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
 {
 	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
@@ -712,19 +715,11 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 
 	//topology: /appmgr/topology/myhost
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
-	web::http::http_response resp;
+	auto body = web::json::value::object();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	if (topology && topology->m_apps.size())
-	{
-		auto body = topology->AsJson();
-		resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
-		LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
-	}
-	else
-	{
-		resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, nullptr);
-		LOG_INF << fname << "clear <" << hostName << ">";
-	}
+	if (topology && topology->m_apps.size()) body = topology->AsJson();
+	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
+	LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
 
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
@@ -869,13 +864,14 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	return std::move(result);
 }
 
-void ConsulConnection::initTimer()
+void ConsulConnection::initTimer(std::string recoverSsnId)
 {
 	const static char fname[] = "ConsulConnection::initTimer() ";
 	LOG_DBG << fname;
 
 	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
 	if (!Configuration::instance()->getConsul()->m_isNode) offlineNode();
+	if (recoverSsnId.length()) releaseSessionId(recoverSsnId);
 
 	// session renew timer
 	this->cancleTimer(m_ssnRenewTimerId);
@@ -891,7 +887,9 @@ void ConsulConnection::initTimer()
 	}
 	else
 	{
-		releaseSessionId();
+		releaseSessionId(this->getSessionId());
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_sessionId.clear();
 	}
 
 	// security watch
@@ -952,7 +950,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 		LOG_DBG << fname << mtd << " " << path << " return " << response.status_code();
 		return std::move(response);
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception & ex)
 	{
 		LOG_WAR << fname << path << " got exception: " << ex.what();
 	}
@@ -997,7 +995,7 @@ long long ConsulConnection::blockWatchKv(const std::string& kvPath, long long la
 		if (response.status_code() == web::http::status_codes::OK)
 		{
 			auto index = std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
-			LOG_DBG << fname << kvPath << " returned : "<< index;
+			LOG_DBG << fname << kvPath << " returned : " << index;
 			return index;
 		}
 	}

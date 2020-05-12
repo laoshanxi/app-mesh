@@ -24,6 +24,7 @@ struct Snapshot
 	void persist();
 
 	std::map<std::string, AppSnap> m_apps;
+	std::string m_consulSessionId;
 };
 class PersistManager
 {

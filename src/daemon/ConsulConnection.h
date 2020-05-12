@@ -18,8 +18,9 @@ public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection>& instance();
-	void initTimer();
+	void initTimer(std::string recoverSsnId = "");
 	void saveSecurity(bool checkExistance = false);
+	const std::string getConsulSessionId();
 
 	void syncSchedule();
 	void syncSecurity();
@@ -40,7 +41,7 @@ private:
 	std::string requestSessionId();
 	std::string renewSessionId();
 	std::string getSessionId();
-	void releaseSessionId();
+	void releaseSessionId(const std::string& sessionId);
 
 	void doSchedule();
 	bool eletionLeader();

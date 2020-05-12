@@ -52,6 +52,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			}
 		}
 	}
+	snap->m_consulSessionId = ConsulConnection::instance()->getConsulSessionId();
 	return std::move(snap);
 }
 
@@ -92,6 +93,7 @@ std::unique_ptr<PersistManager>& PersistManager::instance()
 
 bool Snapshot::operator==(const Snapshot& snapshort) const
 {
+	if (snapshort.m_apps.size() != m_apps.size()) return false;
 	for (const auto& app : m_apps)
 	{
 		if (0 == snapshort.m_apps.count(app.first)) return false;
@@ -104,7 +106,7 @@ bool Snapshot::operator==(const Snapshot& snapshort) const
 			return false;
 		}
 	}
-	return snapshort.m_apps.size() == m_apps.size();
+	return snapshort.m_consulSessionId == m_consulSessionId;
 }
 
 web::json::value Snapshot::AsJson() const
@@ -120,6 +122,7 @@ web::json::value Snapshot::AsJson() const
 		apps[app.first] = std::move(json);
 	}
 	result["Applications"] = apps;
+	result["ConsulSessionId"] = web::json::value::string(m_consulSessionId);
 	return std::move(result);
 }
 
@@ -142,6 +145,7 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value& obj)
 						));
 				}
 			}
+		snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
 	}
 	return std::move(snap);
 }
