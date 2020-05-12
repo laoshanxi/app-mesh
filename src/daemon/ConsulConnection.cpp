@@ -420,14 +420,7 @@ bool ConsulConnection::eletionLeader()
 	auto body = web::json::value::string(MY_HOST_NAME);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
-	if (resp.status_code() == web::http::status_codes::OK)
-	{
-		m_leader = true;
-	}
-	else
-	{
-		m_leader = false;
-	}
+	m_leader = (resp.status_code() == web::http::status_codes::OK);
 	return m_leader;
 }
 
