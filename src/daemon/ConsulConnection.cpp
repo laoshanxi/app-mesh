@@ -252,9 +252,12 @@ std::string ConsulConnection::requestSessionId()
 
 void ConsulConnection::releaseSessionId(const std::string& sessionId)
 {
+	const static char fname[] = "ConsulConnection::releaseSessionId() ";
+	
 	if (sessionId.length())
 	{
 		requestHttp(web::http::methods::PUT, std::string("/v1/session/destroy/").append(sessionId), {}, {}, nullptr);
+		LOG_DBG << fname << "release session " << sessionId;
 	}
 }
 
@@ -419,8 +422,7 @@ bool ConsulConnection::eletionLeader()
 	auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		auto result = resp.extract_utf8string(true).get();
-		m_leader = (result == "true");
+		m_leader = true;
 	}
 	else
 	{
