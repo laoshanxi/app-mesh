@@ -426,8 +426,9 @@ void ConsulConnection::offlineNode()
 	const static char fname[] = "ConsulConnection::offlineNode() ";
 	LOG_DBG << fname;
 
-	writeTopology(MY_HOST_NAME, nullptr);
 	auto path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
+	requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
+	path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
 	requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
 
 	auto currentAllApps = Configuration::instance()->getApps();
