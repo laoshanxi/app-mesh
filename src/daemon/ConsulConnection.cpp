@@ -1035,7 +1035,8 @@ void ConsulConnection::watchTopologyThread()
 	this->syncTopology();
 	while (Configuration::instance()->getConsul()->m_isNode)
 	{
-		auto lastIndex = blockWatchKv(path, index);
+		int watchIndex = index < 0 ? 0 : index;
+		auto lastIndex = blockWatchKv(path, watchIndex);
 		if (lastIndex > 0)
 		{
 			// index updated
