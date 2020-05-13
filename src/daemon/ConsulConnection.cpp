@@ -985,6 +985,11 @@ long long ConsulConnection::blockWatchKv(const std::string& kvPath, long long la
 			LOG_DBG << fname << kvPath << " returned : " << index;
 			return index;
 		}
+		else
+		{
+			// no path, 404
+			return -1;
+		}
 	}
 	catch (...)
 	{
@@ -992,6 +997,7 @@ long long ConsulConnection::blockWatchKv(const std::string& kvPath, long long la
 		// "Failed to read HTTP status line"
 		// LOG_DBG << fname << " exception";
 	}
+	// timeout
 	return 0;
 }
 
@@ -1032,11 +1038,27 @@ void ConsulConnection::watchTopologyThread()
 		auto lastIndex = blockWatchKv(path, index);
 		if (lastIndex > 0)
 		{
+			// index updated
 			index = lastIndex;
 			this->syncTopology();
 		}
+		else if (lastIndex < 0)
+		{
+			if (index != lastIndex)
+			{
+				// become 404
+				index = lastIndex;
+				this->syncTopology();
+			}
+			else
+			{
+				// continue 404
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+			}
+		}
 		else
 		{
+			// no changed
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 	}
