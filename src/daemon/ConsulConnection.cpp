@@ -129,14 +129,11 @@ long long ConsulConnection::getModifyIndex(const std::string& path, bool recurse
 	std::map<std::string, std::string> query;
 	if (recurse) query["recurse"] = "true";
 	auto resp = requestHttp(web::http::methods::GET, path, query, {}, nullptr);
-	if (resp.status_code() == web::http::status_codes::OK)
+	if (resp.headers().has("X-Consul-Index"))
 	{
-		if (resp.headers().has("X-Consul-Index"))
-		{
-			auto index = std::atoll(resp.headers().find("X-Consul-Index")->second.c_str());
-			LOG_DBG << fname << path << " index : " << index;
-			return index;
-		}
+		auto index = std::atoll(resp.headers().find("X-Consul-Index")->second.c_str());
+		LOG_DBG << fname << path << " index : " << index;
+		return index;
 	}
 	return -1;
 }
@@ -950,7 +947,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	return std::move(response);
 }
 
-long long ConsulConnection::blockWatchKv(const std::string& kvPath, long long lastIndex, bool recurse)
+std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string& kvPath, long long lastIndex, bool recurse)
 {
 	const static char fname[] = "ConsulConnection::blockWatchKv() ";
 
@@ -973,23 +970,20 @@ long long ConsulConnection::blockWatchKv(const std::string& kvPath, long long la
 		builder.append_query("recurse", "true");
 	}
 
+	LOG_DBG << fname << "watch " << kvPath << " with timeout " << waitTimeout << " and index " << lastIndex;
 	web::http::http_request request(web::http::methods::GET);
 	request.set_request_uri(builder.to_uri());
 
 	try
 	{
 		web::http::http_response response = client.request(request).get();
-		if (response.status_code() == web::http::status_codes::OK)
+		long long index = 0;
+		if (response.headers().has("X-Consul-Index"))
 		{
-			auto index = std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
-			LOG_DBG << fname << kvPath << " returned : " << index;
-			return index;
+			index = std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
 		}
-		else
-		{
-			// no path, 404
-			return -1;
-		}
+		bool success = (response.status_code() == web::http::status_codes::OK);
+		return std::make_tuple(success, index);
 	}
 	catch (...)
 	{
@@ -998,7 +992,7 @@ long long ConsulConnection::blockWatchKv(const std::string& kvPath, long long la
 		// LOG_DBG << fname << " exception";
 	}
 	// timeout
-	return 0;
+	return std::make_tuple(false, 0);
 }
 
 void ConsulConnection::watchSecurityThread()
@@ -1011,10 +1005,11 @@ void ConsulConnection::watchSecurityThread()
 	this->syncSecurity();
 	while (Configuration::instance()->getConsul()->consulSecurityEnabled())
 	{
-		auto lastIndex = blockWatchKv(path, index);
-		if (lastIndex > 0)
+		auto result = blockWatchKv(path, index);
+		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))
 		{
-			index = lastIndex;
+			// watch success
+			index = std::get<1>(result);
 			this->syncSecurity();
 		}
 		else
@@ -1035,31 +1030,15 @@ void ConsulConnection::watchTopologyThread()
 	this->syncTopology();
 	while (Configuration::instance()->getConsul()->m_isNode)
 	{
-		int watchIndex = index < 0 ? 0 : index;
-		auto lastIndex = blockWatchKv(path, watchIndex);
-		if (lastIndex > 0)
+		auto result = blockWatchKv(path, index);
+		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))
 		{
-			// index updated
-			index = lastIndex;
+			// watch success
+			index = std::get<1>(result);
 			this->syncTopology();
-		}
-		else if (lastIndex < 0)
-		{
-			if (index != lastIndex)
-			{
-				// become 404
-				index = lastIndex;
-				this->syncTopology();
-			}
-			else
-			{
-				// continue 404
-				std::this_thread::sleep_for(std::chrono::seconds(1));
-			}
 		}
 		else
 		{
-			// no changed
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 	}
@@ -1076,10 +1055,11 @@ void ConsulConnection::watchScheduleThread()
 	this->syncSchedule();
 	while (Configuration::instance()->getConsul()->m_isMaster)
 	{
-		auto lastIndex = blockWatchKv(path, index, true);
-		if (lastIndex > 0)
+		auto result = blockWatchKv(path, index);
+		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))
 		{
-			index = lastIndex;
+			// watch success
+			index = std::get<1>(result);
 			this->syncSchedule();
 		}
 		else

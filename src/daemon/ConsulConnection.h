@@ -32,7 +32,7 @@ private:
 
 	web::http::http_response requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body);
 
-	long long blockWatchKv(const std::string& kvPath, long long lastIndex, bool recurse = false);
+	std::tuple<bool, long long> blockWatchKv(const std::string& kvPath, long long lastIndex, bool recurse = false);
 	void watchSecurityThread();
 	void watchTopologyThread();
 	void watchScheduleThread();
