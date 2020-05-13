@@ -565,6 +565,11 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::schedul
 			{
 				auto consulNode = taskDedicateHosts[oldHostName];
 				// found app running on old host still match
+				if (taskReplication <= 0)
+				{
+					LOG_DBG << fname << " task <" << taskName << "> over running";
+					break;
+				}
 				taskDedicateHosts.erase(oldHostName);
 				--taskReplication;
 
