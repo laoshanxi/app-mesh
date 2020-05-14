@@ -28,7 +28,7 @@ if [[ "$APPMGR_FRESH_INSTALL" = "Y" ]] || [[ ! -f "/opt/appmanager/ssl/server.pe
 	# ssl cert gernerate
 	cd /opt/appmanager/ssl/; sh /opt/appmanager/ssl/ssl_cert_generate.sh
 fi
-if [[ ! "$APPMGR_FRESH_INSTALL" = "Y" ]] && [ -f "/opt/appmanager/.appsvc.json" ]; then
+if [[ "$APPMGR_FRESH_INSTALL" != "Y" ]] && [ -f "/opt/appmanager/.appsvc.json" ]; then
 	# restore previous configuration file
 	mv /opt/appmanager/.appsvc.json /opt/appmanager/appsvc.json
 else
