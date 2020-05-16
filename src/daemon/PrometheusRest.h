@@ -118,12 +118,12 @@ public:
 // Prometheus scrap counter
 #define PROM_METRIC_NAME_appmgr_prom_scrape_count "appmgr_prom_scrape_count"
 #define PROM_METRIC_HELP_appmgr_prom_scrape_count "prometheus scrape count"
-// Appmanager alive
+// App Mesh alive
 #define PROM_METRIC_NAME_appmgr_prom_scrape_up "appmgr_prom_scrape_up"
 #define PROM_METRIC_HELP_appmgr_prom_scrape_up "prometheus scrape alive"
-// Appmanager HTTP request count
+// App Mesh HTTP request count
 #define PROM_METRIC_NAME_appmgr_http_request_count "appmgr_http_request_count"
-#define PROM_METRIC_HELP_appmgr_http_request_count "application manager http request count"
+#define PROM_METRIC_HELP_appmgr_http_request_count "app mesh http request count"
 // Application process start count
 #define PROM_METRIC_NAME_appmgr_prom_process_start_count "appmgr_prom_process_start_count"
 #define PROM_METRIC_HELP_appmgr_prom_process_start_count "application process spawn count"

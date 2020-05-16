@@ -20,7 +20,7 @@ appmgr_prom_scrape_count{host="appmgr",pid="10791"} 6.000000
 # TYPE appmgr_prom_process_start_count counter
 appmgr_prom_process_start_count{application="appweb",host="appmgr",pid="10791"} 1.000000
 appmgr_prom_process_start_count{application="timer",host="appmgr",pid="10791"} 0.000000
-# HELP appmgr_http_request_count application manager http request count
+# HELP appmgr_http_request_count app mesh http request count
 # TYPE appmgr_http_request_count counter
 appmgr_http_request_count{host="appmgr",method="POST",pid="10791"} 0.000000
 appmgr_http_request_count{host="appmgr",method="DELETE",pid="10791"} 0.000000

@@ -2,7 +2,7 @@
 
 [Unit]
 Description=App Mesh daemon service
-Documentation=https://github.com/laoshanxi/app-manager
+Documentation=https://github.com/laoshanxi/app-mesh
 After=network.target
 Wants=network.target
 

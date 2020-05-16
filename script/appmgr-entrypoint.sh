@@ -27,7 +27,7 @@ log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
 ##################################################################################
 pre_reg_app() {
 	if [[ $# -gt 0 ]]; then
-		# wait for app manager service ready
+		# wait for app mesh service ready
 		until [ $(curl -sL -k -w "%{http_code}" -o /dev/null https://localhost:6060/) -eq 200 ]; do sleep 0.25; done
 		/opt/appmesh/appc logon -u admin -x Admin123
 		if [ $1 = "appc" ]; then

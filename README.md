@@ -1,6 +1,6 @@
 ﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url]
 
-[Web UI for Applicaton Manager](https://github.com/laoshanxi/app-mesh-ui)
+[Web UI for App Mesh](https://github.com/laoshanxi/app-mesh-ui)
 
 # App Mesh
 
@@ -36,8 +36,8 @@ Note:
 ```text
 $ appc
 Commands:
-  logon       Log on to AppManager for a specific time period.
-  logoff      End a AppManager user session
+  logon       Log on to App Mesh for a specific time period.
+  logoff      End a App Mesh user session
   view        List application[s]
   resource    Display host resource usage
   label       Manage host labels
@@ -106,9 +106,9 @@ Register a new application:
   -b [ --host ] arg (=localhost) host name or ip address
   -B [ --port ] arg              port number
   -u [ --user ] arg              Specifies the name of the user to connect to 
-                                 AppManager for this command.
+                                 App Mesh for this command.
   -x [ --password ] arg          Specifies the user password to connect to 
-                                 AppManager for this command.
+                                 App Mesh for this command.
   -n [ --name ] arg              application name
   -g [ --metadata ] arg          application metadata string
   -a [ --appuser ] arg           application process running OS user name
@@ -366,7 +366,7 @@ os_version=centos7.6
 
 ---
 ### Usage scenarios
-1. Integrate rpm installation script and register rpm startup command to app manager automaticlly
+1. Integrate rpm installation script and register rpm startup command to app mesh automaticlly
 2. Remote async shell execute (can build-up web ssh)
 3. Host/app resource monitor
 4. Can be a standalone JWT server

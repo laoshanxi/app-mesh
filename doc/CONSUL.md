@@ -6,7 +6,7 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 - Stand-alone mode: The hosted applications are static and applications can only be managed by CLI or REST APIs.
 - Consul-cluster mode: The hosted applications are dynamic, The cluster will vote one leader node to do the Consul application schedule, and application will register to Consul for service discovery.
 
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/consul_arch.png" width=600 height=300 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/consul_arch.png" width=600 height=300 align=center /></div>
 
 ### What is supported:
 
@@ -14,7 +14,7 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 > * App Mesh only talks to Consul service by one way communication
 > * Each App Mesh node report status to Consul KV data
 > * App Mesh can be a cluster leader node or worker node
-> * Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
+> * Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any App Mesh Labels, regex is not supported)
 > * App Mesh Leader node schedule cluster applications and write schedule result to Consul KV data
 > * App Mesh worker node retrieve cluster applications (schedule result) and lanuch on worker node
 > * Cluster App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API

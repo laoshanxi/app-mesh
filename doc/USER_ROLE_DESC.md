@@ -77,30 +77,30 @@
 
 | REST method        |  PATH   |  Permission Key |
 | :--------:   | -----  | ----  |
-| GET     | /app/app-name |   `view-app`     |
-| GET        |   /app/app-name/output  |   `view-app-output`   |
-| GET     | /app-manager/applications |   `view-all-app`     |
-| GET     | /app-manager/resources |   `view-host-resource`     |
-| PUT     | /app/app-name |   `app-reg`     |
-| POST     | /app/appname/enable |   `app-control`     |
-| POST     | /app/appname/disable |   `app-control`     |
-| DEL     | /app/appname |   `app-delete`    |
-| POST     | /app/syncrun?timeout=5 | `run-app-sync`  |
-| POST     | /app/run?timeout=5 |   `run-app-async`  |
-| GET     | /app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
-| GET     | /download | `file-download`  |
-| POST     | /upload | `file-upload`  |
-| GET     | /labels | `label-view`  |
-| PUT     | /label/abc?value=123  | `label-set`  |
-| DEL     | /label/abc | `label-delete`  |
-| POST    | /app-manager/config | `config-view`  |
-| GET    | /app-manager/config | `config-set`  |
-| POST    | /user/admin/passwd | `change-passwd`  |
-| POST    | /user/usera/lock | `lock-user`  |
-| POST    | /user/usera/unlock | `unlock-user`  |
-| DEL    | /user/usera | `delete-user`  |
-| PUT    | /user/usera | `add-user`  |
-| GET    | /users | `get-users`  |
+| GET     | /appmgr/app/app-name |   `view-app`     |
+| GET     | /appmgr/app/app-name/output  |   `view-app-output`   |
+| GET     | /appmgr/applications |   `view-all-app`     |
+| GET     | /appmgr/resources |   `view-host-resource`     |
+| PUT     | /appmgr/app/app-name |   `app-reg`     |
+| POST    | /appmgr/app/appname/enable |   `app-control`     |
+| POST    | /appmgr/app/appname/disable |   `app-control`     |
+| DEL     | /appmgr/app/appname |   `app-delete`    |
+| POST    | /appmgr/app/syncrun?timeout=5 | `run-app-sync`  |
+| POST    | /appmgr/app/run?timeout=5 |   `run-app-async`  |
+| GET     | /appmgr/app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
+| GET     | /appmgr/download | `file-download`  |
+| POST    | /appmgr/upload | `file-upload`  |
+| GET     | /appmgr/labels | `label-view`  |
+| PUT     | /appmgr/label/abc?value=123  | `label-set`  |
+| DEL     | /appmgr/label/abc | `label-delete`  |
+| POST    | /appmgr/config | `config-view`  |
+| GET     | /appmgr/config | `config-set`  |
+| POST    | /appmgr/user/admin/passwd | `change-passwd`  |
+| POST    | /appmgr/user/usera/lock | `lock-user`  |
+| POST    | /appmgr/user/usera/unlock | `unlock-user`  |
+| DEL     | /appmgr/user/usera | `delete-user`  |
+| PUT     | /appmgr/user/usera | `add-user`  |
+| GET     | /appmgr/users | `get-users`  |
 
 
 ### Command line authentication

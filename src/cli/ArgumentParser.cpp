@@ -19,8 +19,8 @@
 #define OPTION_HOST_NAME	("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address") \
 							("port,B", po::value<int>(), "port number")
 #define COMMON_OPTIONS		OPTION_HOST_NAME \
-							("user,u", po::value<std::string>(), "Specifies the name of the user to connect to AppManager for this command.") \
-							("password,x", po::value<std::string>(), "Specifies the user password to connect to AppManager for this command.")
+							("user,u", po::value<std::string>(), "Specifies the name of the user to connect to App Mesh for this command.") \
+							("password,x", po::value<std::string>(), "Specifies the user password to connect to App Mesh for this command.")
 #define GET_USER_NAME_PASS	if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
 							{ \
 								m_username = m_commandLineVariables["user"].as<std::string>(); \
@@ -164,8 +164,8 @@ void ArgumentParser::parse()
 void ArgumentParser::printMainHelp()
 {
 	std::cout << "Commands:" << std::endl;
-	std::cout << "  logon       Log on to AppManager for a specific time period." << std::endl;
-	std::cout << "  logoff      End a AppManager user session" << std::endl;
+	std::cout << "  logon       Log on to App Mesh for a specific time period." << std::endl;
+	std::cout << "  logoff      End a App Mesh user session" << std::endl;
 
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
@@ -193,7 +193,7 @@ void ArgumentParser::printMainHelp()
 
 void ArgumentParser::processLogon()
 {
-	po::options_description desc("Log on to AppManager:");
+	po::options_description desc("Log on to App Mesh:");
 	desc.add_options()
 		COMMON_OPTIONS
 		("timeout,t", po::value<int>()->default_value(DEFAULT_TOKEN_EXPIRE_SECONDS), "Specifies the command session duration in minutes.")
@@ -254,7 +254,7 @@ void ArgumentParser::processLogon()
 
 void ArgumentParser::processLogoff()
 {
-	po::options_description desc("Log off to AppManager:");
+	po::options_description desc("Log off to App Mesh:");
 	desc.add_options()
 		OPTION_HOST_NAME
 		("help,h", "Prints command usage to stdout and exits")
