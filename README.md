@@ -1,21 +1,21 @@
 ﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url]
 
-[Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
+[Web UI for Applicaton Manager](https://github.com/laoshanxi/app-mesh-ui)
 
 # App Mesh
 
 ### Introduction
-App Mesh is a Cloud Native Microservice management middleware to manage different types of microservice applications, the application can be local or microservice cluster level [microservice cluster level app](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific micro service, the app-manager will make sure all defined applications running on-time with defined behavior. Provide REST APIs and command-line.
+App Mesh is a Cloud Native Microservice management middleware to manage different types of microservice applications, the application can be local or microservice cluster level [microservice cluster level app](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific micro service, the app-mesh will make sure all defined applications running on-time with defined behavior. Provide REST APIs and command-line.
 
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
 
 Features  | Behavior
 ---|---
 Basic applications | Long running <br> Short running <br> Periodic long running
-Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md) 
+Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md) 
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
-Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
-Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
+Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/master/doc/USER_ROLE_DESC.md)
+Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-mesh/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> Web GUI
 
 ### How to install
@@ -60,7 +60,7 @@ Use '-b $hostname','--port $port' to run remote command.
 Usage:  appc [COMMAND] [ARG...] [flags]
 ```
 ---
-## 1. Application Management
+## 1. App Management
 
 - List application[s]
 
@@ -378,7 +378,7 @@ os_version=centos7.6
 ### Development
 
 - Application state machine
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/state_machine.jpg" width=400 height=400 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/state_machine.jpg" width=400 height=400 align=center /></div>
 
 - REST APIs
 
@@ -433,16 +433,16 @@ GET | /appmgr/metrics | | Get Prometheus exporter metrics (this is not scrap url
 ---
 - Setup build environment on CentOS/Ubuntu/Debian
 ```text
-git clone https://github.com/laoshanxi/app-manager.git
-sudo sh app-manager/autogen.sh
+git clone https://github.com/laoshanxi/app-mesh.git
+sudo sh app-mesh/autogen.sh
 ```
 - Build App Mesh
 ```text
-cd app-manager
+cd app-mesh
 make
 ```
 - Thread model
-<div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/threadmodel.jpg" width=400 height=282 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/threadmodel.jpg" width=400 height=282 align=center /></div>
 
 
 
@@ -452,5 +452,5 @@ make
 [standard.url]:   https://en.wikipedia.org/wiki/C%2B%2B#Standardization
 [standard.badge]: https://img.shields.io/badge/C%2B%2B-11%2F14%2F17-blue.svg
 
-[release.url]:    https://github.com/laoshanxi/app-manager/releases
-[release.badge]:  https://img.shields.io/github/v/release/laoshanxi/app-manager.svg
+[release.url]:    https://github.com/laoshanxi/app-mesh/releases
+[release.badge]:  https://img.shields.io/github/v/release/laoshanxi/app-mesh.svg
