@@ -4,7 +4,7 @@
 
 ### What is supported:
 
-> * Application Manager provide a build-in Prometheus exporter
+> * App Mesh provide a build-in Prometheus exporter
 > * Prometheus exporter is a build-in REST server for Prometheus to scrap methics
 
 ### What is **not** supported:

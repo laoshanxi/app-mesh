@@ -6,7 +6,7 @@
 
 std::string LinuxCgroup::cgroupMemRootName;
 std::string LinuxCgroup::cgroupCpuRootName;
-const std::string LinuxCgroup::cgroupBaseDir = "/appmanager";
+const std::string LinuxCgroup::cgroupBaseDir = "/appmesh";
 LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long long cpuShares)
 	:m_memLimitMb(memLimitBytes), m_memSwapMb(memSwapBytes), m_cpuShares(cpuShares), m_pid(0), cgroupEnabled(false)
 {

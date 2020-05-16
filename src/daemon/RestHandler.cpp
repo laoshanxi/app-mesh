@@ -238,7 +238,7 @@ void RestHandler::handleRest(const http_request& message, const std::map<std::st
 
 	if (path == "/" || path.empty())
 	{
-		request.reply(status_codes::OK, "Application Manager");
+		request.reply(status_codes::OK, "App Mesh");
 		return;
 	}
 

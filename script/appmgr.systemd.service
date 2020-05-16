@@ -1,17 +1,17 @@
-#/lib/systemd/system/appmanager.service
+#/lib/systemd/system/appmesh.service
 
 [Unit]
-Description=Application Manager daemon service
+Description=App Mesh daemon service
 Documentation=https://github.com/laoshanxi/app-manager
 After=network.target
 Wants=network.target
 
 [Service]
 Type=simple
-Environment="LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64"
-WorkingDirectory=/opt/appmanager
-ExecStart=/opt/appmanager/appsvc
-ExecStop=/bin/killall /opt/appmanager/appsvc
+Environment="LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64"
+WorkingDirectory=/opt/appmesh
+ExecStart=/opt/appmesh/appsvc
+ExecStop=/bin/killall /opt/appmesh/appsvc
 Restart=on-failure
 RestartSec=2
 ExecReload=/bin/kill -HUP $MAINPID

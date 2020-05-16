@@ -20,9 +20,9 @@
 PROG="appsvc"
 PROG_WATCHDOG="appmgr-entrypoint.sh"
 PROGC="appc"
-PROG_PATH="/opt/appmanager" ## Not need, but sometimes helpful (if $PROG resides in /opt for example).
+PROG_PATH="/opt/appmesh" ## Not need, but sometimes helpful (if $PROG resides in /opt for example).
 PROG_ARGS="" 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmanager/lib64
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64
 
 log(){
 	logger "[`date`]""$1"

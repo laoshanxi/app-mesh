@@ -2,7 +2,7 @@
 
 ------
 
-Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
+App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 - Stand-alone mode: The hosted applications are static and applications can only be managed by CLI or REST APIs.
 - Consul-cluster mode: The hosted applications are dynamic, The cluster will vote one leader node to do the Consul application schedule, and application will register to Consul for service discovery.
 
@@ -10,16 +10,16 @@ Application Manager can work as *stand-alone* mode and *Consul-cluster* mode.
 
 ### What is supported:
 
-> * App Manager will keep connection(support SSL) to Consul Service as a consul session
-> * App Manager only talks to Consul service by one way communication
-> * Each App Manager node report status to Consul KV data
-> * App Manager can be a cluster leader node or worker node
+> * App Mesh will keep connection(support SSL) to Consul Service as a consul session
+> * App Mesh only talks to Consul service by one way communication
+> * Each App Mesh node report status to Consul KV data
+> * App Mesh can be a cluster leader node or worker node
 > * Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any AppManager Labels, regex is not supported)
-> * App Manager Leader node schedule cluster applications and write schedule result to Consul KV data
-> * App Manager worker node retrieve cluster applications (schedule result) and lanuch on worker node
+> * App Mesh Leader node schedule cluster applications and write schedule result to Consul KV data
+> * App Mesh worker node retrieve cluster applications (schedule result) and lanuch on worker node
 > * Cluster App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
 > * Consul session support HA recovery
-> * App Manager request Consul session with TTL and expire delete behavior
+> * App Mesh request Consul session with TTL and expire delete behavior
 > * Consul watch is supported for monitor consul schedule changes and security syncup
 > * Schedule consider resource usage
 
@@ -60,7 +60,7 @@ curl -s http://localhost:8500/v1/kv/appmgr/cluster/nodes/centos8?raw | python3 -
 
 - Consul application
  Consul application is cluster level application that defined in Consul with replication and node selector.
- App Manager leader node will get defined Consul application and current working nodes. schedule applications to working nodes and write schedule result to Consul.
+ App Mesh leader node will get defined Consul application and current working nodes. schedule applications to working nodes and write schedule result to Consul.
  Each working node will watch and get its Consul application.
  ```shell
  curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks?recurse | python3 -m json.tool
@@ -110,7 +110,7 @@ curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks/myapp?raw | python3 -m 
  ```
 
 - Consul topology
- Topology is Consul task schedule result, App Manager leader node will write this part.
+ Topology is Consul task schedule result, App Mesh leader node will write this part.
    For host dimension, each host is a key
    For task dimension, the result assemble to one key
 

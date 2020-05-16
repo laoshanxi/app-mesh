@@ -2,10 +2,10 @@
 
 [Web UI for Applicaton Manager](https://github.com/laoshanxi/app-manager-ui)
 
-# Application Manager
+# App Mesh
 
 ### Introduction
-Application Manager is a Cloud Native Microservice management middleware to manage different types of microservice applications, the application can be local or microservice cluster level [microservice cluster level app](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific micro service, the app-manager will make sure all defined applications running on-time with defined behavior. Provide REST APIs and command-line.
+App Mesh is a Cloud Native Microservice management middleware to manage different types of microservice applications, the application can be local or microservice cluster level [microservice cluster level app](https://github.com/laoshanxi/app-manager/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific micro service, the app-manager will make sure all defined applications running on-time with defined behavior. Provide REST APIs and command-line.
 
 <div align=center><img src="https://github.com/laoshanxi/app-manager/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
 
@@ -16,19 +16,19 @@ Microservice application | ⚡️ [Consul micro-service cluster management](http
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-manager/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-manager/blob/master/doc/USER_ROLE_DESC.md)
 Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-manager/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
-Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmanager` <br> Bash completion <br> Reverse proxy <br> Web GUI
+Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> Web GUI
 
 ### How to install
 **CentOS**:
 ```text
 # centos7
-yum install -y appmanager-1.8.1-1.x86_64.rpm
+yum install -y appmesh-1.8.1-1.x86_64.rpm
 
 # centos8
-rpm -ivh appmanager-1.8.1-1.x86_64.rpm --force
+rpm -ivh appmesh-1.8.1-1.x86_64.rpm --force
 ```
 Note:
-1. On windows WSL ubuntu, use `service appmanager start` to force service start, WSL VM does not have full init.d and systemd
+1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
 2. Use env `export APPMGR_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will not be refreshed)
 
 ### Command lines
@@ -335,13 +335,13 @@ id name        user  status   health pid    memory  return last_start_time     c
 
 - Download a file from server
 ```text
-$ # appc get -r /opt/appmanager/log/appsvc.log -l ./1.log
+$ # appc get -r /opt/appmesh/log/appsvc.log -l ./1.log
 file <./1.log> size <10.4 M>
 ```
 
 - Upload a local file to server
 ```text
-$ # appc put -r /opt/appmanager/log/appsvc.log -l ./1.log
+$ # appc put -r /opt/appmesh/log/appsvc.log -l ./1.log
 Success
 ```
 
@@ -436,7 +436,7 @@ GET | /appmgr/metrics | | Get Prometheus exporter metrics (this is not scrap url
 git clone https://github.com/laoshanxi/app-manager.git
 sudo sh app-manager/autogen.sh
 ```
-- Build Application Manager
+- Build App Mesh
 ```text
 cd app-manager
 make

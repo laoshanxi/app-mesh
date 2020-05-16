@@ -107,7 +107,7 @@ void PrometheusRest::handleRest(const http_request& message, const std::map<std:
 
 	if (path == "/" || path.empty())
 	{
-		request.reply(status_codes::OK, "Application Manager Prometheus Exporter");
+		request.reply(status_codes::OK, "App Mesh Prometheus Exporter");
 		return;
 	}
 

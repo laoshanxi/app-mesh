@@ -1,9 +1,9 @@
 FROM ubuntu:xenial
 
-ADD ./appmanager*.deb /opt
+ADD ./appmesh*.deb /opt
 
-RUN apt install /opt/appmanager*.deb -y
+RUN apt install /opt/appmesh*.deb -y
 
 EXPOSE 6060
 
-ENTRYPOINT ["/opt/appmanager/script/appmgr-entrypoint.sh"]
+ENTRYPOINT ["/opt/appmesh/script/appmgr-entrypoint.sh"]

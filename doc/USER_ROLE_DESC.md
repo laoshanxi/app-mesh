@@ -4,17 +4,17 @@
 
 ### What is supported:
 
-> * App Manager REST API have user permission control
-> * App Manager Command Line have user permission control
+> * App Mesh REST API have user permission control
+> * App Mesh Command Line have user permission control
 > * Each REST API have permission definition
 > * Role list is configurable 
 > * Each user can define a password and some roles
 > * All the user/role/permission is defined in json file
-> * user/role configuration support dynamic update by `systemctl reload appmanager`
+> * user/role configuration support dynamic update by `systemctl reload appmesh`
 > * User support metadata attributes for special usage
 
 ### What is **not** supported:
-> * The application managed in App Manager have no user ownership
+> * The application managed in App Mesh have no user ownership
 > * No data base introduced
 
 ### User and Role configure json sample
@@ -112,7 +112,7 @@ $ appc view
 login failed : Incorrect user password
 invalid token supplied
 ```
- - Use `appc logon` to authenticate from App Manager
+ - Use `appc logon` to authenticate from App Mesh
 
 ```shell
 $ appc logon
