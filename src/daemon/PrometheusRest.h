@@ -116,17 +116,17 @@ public:
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
 };
 // Prometheus scrap counter
-#define PROM_METRIC_NAME_appmgr_prom_scrape_count "appmgr_prom_scrape_count"
-#define PROM_METRIC_HELP_appmgr_prom_scrape_count "prometheus scrape count"
+#define PROM_METRIC_NAME_appmesh_prom_scrape_count "appmesh_prom_scrape_count"
+#define PROM_METRIC_HELP_appmesh_prom_scrape_count "prometheus scrape count"
 // App Mesh alive
-#define PROM_METRIC_NAME_appmgr_prom_scrape_up "appmgr_prom_scrape_up"
-#define PROM_METRIC_HELP_appmgr_prom_scrape_up "prometheus scrape alive"
+#define PROM_METRIC_NAME_appmesh_prom_scrape_up "appmesh_prom_scrape_up"
+#define PROM_METRIC_HELP_appmesh_prom_scrape_up "prometheus scrape alive"
 // App Mesh HTTP request count
-#define PROM_METRIC_NAME_appmgr_http_request_count "appmgr_http_request_count"
-#define PROM_METRIC_HELP_appmgr_http_request_count "app mesh http request count"
+#define PROM_METRIC_NAME_appmesh_http_request_count "appmesh_http_request_count"
+#define PROM_METRIC_HELP_appmesh_http_request_count "app mesh http request count"
 // Application process start count
-#define PROM_METRIC_NAME_appmgr_prom_process_start_count "appmgr_prom_process_start_count"
-#define PROM_METRIC_HELP_appmgr_prom_process_start_count "application process spawn count"
+#define PROM_METRIC_NAME_appmesh_prom_process_start_count "appmesh_prom_process_start_count"
+#define PROM_METRIC_HELP_appmesh_prom_process_start_count "application process spawn count"
 // Application process memory usage
-#define PROM_METRIC_NAME_appmgr_prom_process_memory_gauge "appmgr_prom_process_memory_gauge"
-#define PROM_METRIC_HELP_appmgr_prom_process_memory_gauge "application process memory bytes"
+#define PROM_METRIC_NAME_appmesh_prom_process_memory_gauge "appmesh_prom_process_memory_gauge"
+#define PROM_METRIC_HELP_appmesh_prom_process_memory_gauge "application process memory bytes"

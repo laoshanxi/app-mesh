@@ -93,74 +93,56 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	m_listener->support(methods::OPTIONS, std::bind(&RestHandler::handle_options, this, std::placeholders::_1));
 
 	// 1. Authentication
-	// http://127.0.0.1:6060/login
-	bindRestMethod(web::http::methods::POST, "/appmgr/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/auth
-	bindRestMethod(web::http::methods::POST, "/appmgr/auth", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/auth", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
 
 
 	// 2. View Application
-	// http://127.0.0.1:6060/app/app-name
-	bindRestMethod(web::http::methods::GET, R"(/appmgr/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/output
-	bindRestMethod(web::http::methods::GET, R"(/appmgr/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app-manager/applications
-	bindRestMethod(web::http::methods::GET, "/appmgr/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app-manager/resources
-	bindRestMethod(web::http::methods::GET, "/appmgr/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
 
 	// 3. Manage Application
-	// http://127.0.0.1:6060/app/app-name
-	bindRestMethod(web::http::methods::PUT, R"(/appmgr/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/appname/enable
-	bindRestMethod(web::http::methods::POST, R"(/appmgr/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/appname/disable
-	bindRestMethod(web::http::methods::POST, R"(/appmgr/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiDisableApp, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/appname
-	bindRestMethod(web::http::methods::DEL, R"(/appmgr/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiDisableApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
 	// 4. Operate Application
-	// http://127.0.0.1:6060/app/run?timeout=5
-	bindRestMethod(web::http::methods::POST, "/appmgr/app/run", std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/app-name/run/output?process_uuid=uuidabc
-	bindRestMethod(web::http::methods::GET, R"(/appmgr/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunAsyncOut, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/app/syncrun?timeout=5
-	bindRestMethod(web::http::methods::POST, "/appmgr/app/syncrun", std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/app/run", std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunAsyncOut, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/app/syncrun", std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
 
 	// 5. File Management
-	// http://127.0.0.1:6060/download
-	bindRestMethod(web::http::methods::GET, "/appmgr/file/download", std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/upload
-	bindRestMethod(web::http::methods::POST, "/appmgr/file/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/file/download", std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/file/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
 	// 6. Label Management
-	// http://127.0.0.1:6060/labels
-	bindRestMethod(web::http::methods::GET, "/appmgr/labels", std::bind(&RestHandler::apiGetLabels, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/label/abc?value=123
-	bindRestMethod(web::http::methods::PUT, R"(/appmgr/label/([^/\*]+))", std::bind(&RestHandler::apiAddLabel, this, std::placeholders::_1));
-	// http://127.0.0.1:6060/label/abc
-	bindRestMethod(web::http::methods::DEL, R"(/appmgr/label/([^/\*]+))", std::bind(&RestHandler::apiDeleteLabel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/labels", std::bind(&RestHandler::apiGetLabels, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiAddLabel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiDeleteLabel, this, std::placeholders::_1));
 
 	// 7. Log level
-	bindRestMethod(web::http::methods::GET, "/appmgr/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, "/appmgr/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
 	// 8. Security
-	bindRestMethod(web::http::methods::POST, R"(/appmgr/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiUserChangePwd, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, R"(/appmgr/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiUserLock, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, R"(/appmgr/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::PUT, R"(/appmgr/user/([^/\*]+))", std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, R"(/appmgr/user/([^/\*]+))", std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmgr/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmgr/roles", std::bind(&RestHandler::apiRoleView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, R"(/appmgr/role/([^/\*]+))", std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, R"(/appmgr/role/([^/\*]+))", std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmgr/user/permissions", std::bind(&RestHandler::apiGetUserPermissions, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmgr/permissions", std::bind(&RestHandler::apiListPermissions, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiUserChangePwd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiUserLock, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/appmesh/user/([^/\*]+))", std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/user/([^/\*]+))", std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/roles", std::bind(&RestHandler::apiRoleView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/role/([^/\*]+))", std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/role/([^/\*]+))", std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/user/permissions", std::bind(&RestHandler::apiGetUserPermissions, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/permissions", std::bind(&RestHandler::apiListPermissions, this, std::placeholders::_1));
 
 	// 9. metrics
-	bindRestMethod(web::http::methods::GET, R"(/appmgr/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmgr/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
 
 	this->open();
 
@@ -410,7 +392,7 @@ std::string RestHandler::createToken(const std::string& uname, const std::string
 	// https://thalhammer.it/projects/
 	// https://www.cnblogs.com/mantoudev/p/8994341.html
 	// 1. Header {"typ": "JWT","alg" : "HS256"}
-	// 2. Payload{"iss": "appmgr-auth0","name" : "u-name",}
+	// 2. Payload{"iss": "appmesh-auth0","name" : "u-name",}
 	// 3. Signature HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
 	// creating a token that will expire in one hour
 	auto token = jwt::create()
@@ -444,7 +426,7 @@ void RestHandler::apiEnableApp(const HttpRequest& message)
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/enable
-	std::string appName = path.substr(strlen("/appmgr/app/"));
+	std::string appName = path.substr(strlen("/appmesh/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
 	Configuration::instance()->enableApp(appName);
@@ -456,8 +438,8 @@ void RestHandler::apiDisableApp(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	// /appmgr/app/$app-name/disable
-	std::string appName = path.substr(strlen("/appmgr/app/"));
+	// /appmesh/app/$app-name/disable
+	std::string appName = path.substr(strlen("/appmesh/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
 	Configuration::instance()->disableApp(appName);
@@ -469,7 +451,7 @@ void RestHandler::apiDeleteApp(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_app_delete);
 	auto path = GET_STD_STRING(message.relative_uri().path());
 
-	std::string appName = path.substr(strlen("/appmgr/app/"));
+	std::string appName = path.substr(strlen("/appmesh/app/"));
 	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for internal and cluster application");
 	Configuration::instance()->removeApp(appName);
 	auto msg = std::string("application <") + appName + "> removed.";
@@ -678,7 +660,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest& message)
 	{
 		throw std::invalid_argument("user can only change its own password");
 	}
-	if (newPasswd.length() < APPMGR_PASSWD_MIN_LENGTH)
+	if (newPasswd.length() < APPMESH_PASSWD_MIN_LENGTH)
 	{
 		throw std::invalid_argument("password length should be greater than 3");
 	}
@@ -901,8 +883,8 @@ void RestHandler::apiListPermissions(const HttpRequest& message)
 void RestHandler::apiHealth(const HttpRequest& message)
 {
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	// /appmgr/app/$app-name/health
-	std::string appName = path.substr(strlen("/appmgr/app/"));
+	// /appmesh/app/$app-name/health
+	std::string appName = path.substr(strlen("/appmesh/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 	auto health = Configuration::instance()->getApp(appName)->getHealth();
 	http::status_code status = status_codes::OK;
@@ -1001,7 +983,7 @@ void RestHandler::apiGetApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	std::string app = path.substr(strlen("/appmgr/app/"));
+	std::string app = path.substr(strlen("/appmesh/app/"));
 	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->AsJson(true));
 }
 
@@ -1053,8 +1035,8 @@ void RestHandler::apiRunAsyncOut(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	// /appmgr/app/$app-name/run?timeout=5
-	std::string app = path.substr(strlen("/appmgr/app/"));
+	// /appmesh/app/$app-name/run?timeout=5
+	std::string app = path.substr(strlen("/appmesh/app/"));
 	app = app.substr(0, app.find_first_of('/'));
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
@@ -1094,7 +1076,7 @@ void RestHandler::apiGetAppOutput(const HttpRequest& message)
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
 	// /app/$app-name/output
-	std::string app = path.substr(strlen("/appmgr/app/"));
+	std::string app = path.substr(strlen("/appmesh/app/"));
 	app = app.substr(0, app.find_first_of('/'));
 	bool keepHis = getHttpQueryValue(message, HTTP_QUERY_KEY_keep_history, false, 0, 0);
 	auto output = Configuration::instance()->getApp(app)->getOutput(keepHis);
@@ -1155,19 +1137,19 @@ void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	if (prom)
 	{
 		m_restGetCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
 			{ {"method", "GET"}, {"listen", m_listenAddress} }
 		);
 		m_restPutCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
 			{ {"method", "PUT"}, { "listen", m_listenAddress } }
 		);
 		m_restDelCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
 			{ {"method", "DELETE"}, { "listen", m_listenAddress } }
 		);
 		m_restPostCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmgr_http_request_count, PROM_METRIC_HELP_appmgr_http_request_count,
+			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
 			{ {"method", "POST"}, { "listen", m_listenAddress } }
 		);
 	}

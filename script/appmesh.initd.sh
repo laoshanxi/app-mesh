@@ -18,7 +18,7 @@
 
 ## Fill in name of program here.
 PROG="appsvc"
-PROG_WATCHDOG="appmgr-entrypoint.sh"
+PROG_WATCHDOG="appmesh-entrypoint.sh"
 PROGC="appc"
 PROG_PATH="/opt/appmesh" ## Not need, but sometimes helpful (if $PROG resides in /opt for example).
 PROG_ARGS="" 

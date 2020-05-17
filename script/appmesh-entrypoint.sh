@@ -18,7 +18,7 @@ SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64
 
 # support override default listen port frmo env
-log "APPMGR_OVERRIDE_LISTEN_PORT from env:${APPMGR_OVERRIDE_LISTEN_PORT}"
+log "APPMESH_OVERRIDE_LISTEN_PORT from env:${APPMESH_OVERRIDE_LISTEN_PORT}"
 
 ##################################################################################
 # The script accept parameter as with bellow format:

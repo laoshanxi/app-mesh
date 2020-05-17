@@ -6,4 +6,4 @@ RUN apt install /opt/appmesh*.deb -y
 
 EXPOSE 6060
 
-ENTRYPOINT ["/opt/appmesh/script/appmgr-entrypoint.sh"]
+ENTRYPOINT ["/opt/appmesh/script/appmesh-entrypoint.sh"]

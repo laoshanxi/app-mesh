@@ -10,9 +10,9 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{7A1F9871-FD69-430B-A5B5-7D58A84720DA}"
 	ProjectSection(SolutionItems) = preProject
 		script\appc.sh = script\appc.sh
-		script\appmgr-entrypoint.sh = script\appmgr-entrypoint.sh
-		script\appmgr.initd.sh = script\appmgr.initd.sh
-		script\appmgr.systemd.service = script\appmgr.systemd.service
+		script\appmesh-entrypoint.sh = script\appmesh-entrypoint.sh
+		script\appmesh.initd.sh = script\appmesh.initd.sh
+		script\appmesh.systemd.service = script\appmesh.systemd.service
 		autogen.sh = autogen.sh
 		doc\CONSUL.md = doc\CONSUL.md
 		script\consul_watch.sh = script\consul_watch.sh

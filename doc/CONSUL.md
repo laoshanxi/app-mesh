@@ -43,10 +43,10 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 
 
 - Status report
- Each node will report to Consul KV path `appmgr/cluster/nodes/$host_name`
+ Each node will report to Consul KV path `appmesh/cluster/nodes/$host_name`
 
  ```shell
-curl -s http://localhost:8500/v1/kv/appmgr/cluster/nodes/centos8?raw | python3 -m json.tool
+curl -s http://localhost:8500/v1/kv/appmesh/cluster/nodes/centos8?raw | python3 -m json.tool
 `
 {
     "label": {
@@ -63,13 +63,13 @@ curl -s http://localhost:8500/v1/kv/appmgr/cluster/nodes/centos8?raw | python3 -
  App Mesh leader node will get defined Consul application and current working nodes. schedule applications to working nodes and write schedule result to Consul.
  Each working node will watch and get its Consul application.
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks?recurse | python3 -m json.tool
+ curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks?recurse | python3 -m json.tool
  `
  [
     {
         "CreateIndex": 22168,
         "Flags": 0,
-        "Key": "appmgr/cluster/tasks/",
+        "Key": "appmesh/cluster/tasks/",
         "LockIndex": 0,
         "ModifyIndex": 22168,
         "Value": null
@@ -77,7 +77,7 @@ curl -s http://localhost:8500/v1/kv/appmgr/cluster/nodes/centos8?raw | python3 -
     {
         "CreateIndex": 113084,
         "Flags": 0,
-        "Key": "appmgr/cluster/tasks/myapp",
+        "Key": "appmesh/cluster/tasks/myapp",
         "LockIndex": 0,
         "ModifyIndex": 237498,
         "Value": "ewoJCQkJInJlcGxpY2F0aW9uIjogMSwKICAgICAgICAicG9ydCI6NjY2NiwKCQkJCSJjb250ZW50IjogewoJCQkJCSJuYW1lIjogIm15YXBwIiwKCQkJCQkiY29tbWFuZCI6ICJzbGVlcCAzMCIKCQkJCX0sCiAgICAgICJjb25kaXRpb24iOiB7CiAgICAgICAgICAiYXJjaCI6ICJ4ODZfNjQiLAogICAgICAgICAgIm9zX3ZlcnNpb24iOiAiY2VudG9zNy42IgogICAgICB9Cn0="
@@ -85,14 +85,14 @@ curl -s http://localhost:8500/v1/kv/appmgr/cluster/nodes/centos8?raw | python3 -
     {
         "CreateIndex": 25051,
         "Flags": 0,
-        "Key": "appmgr/cluster/tasks/myapp2",
+        "Key": "appmesh/cluster/tasks/myapp2",
         "LockIndex": 0,
         "ModifyIndex": 241391,
         "Value": "ewoJCQkJInJlcGxpY2F0aW9uIjogMCwKICAgICAgICAicG9ydCI6NjY2NywKCQkJCSJjb250ZW50IjogewoJCQkJCSJuYW1lIjogIm15YXBwMiIsCgkJCQkJImNvbW1hbmQiOiAic2xlZXAgNjAiCgkJCQl9LAogICAgICAgICAiY29uZGl0aW9uIjogewoJICAgIAkJImFyY2giOiAieDg2XzY0IgoJICAgIAl9Cn0="
     }
 ]
  `
-curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks/myapp?raw | python3 -m json.tool
+curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m json.tool
 `
 {
     "replication": 1,
@@ -115,10 +115,10 @@ curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks/myapp?raw | python3 -m 
    For task dimension, the result assemble to one key
 
  ```shell
- curl -s http://localhost:8500/v1/kv/appmgr/cluster/topology?recurse | python -m json.tool | grep Key
-        "Key": "appmgr/cluster/topology/",
-        "Key": "appmgr/cluster/topology/cents",
- curl -s http://localhost:8500/v1/kv/appmgr/cluster/topology/myhost?raw | python -m json.tool  
+ curl -s http://localhost:8500/v1/kv/appmesh/cluster/topology?recurse | python -m json.tool | grep Key
+        "Key": "appmesh/cluster/topology/",
+        "Key": "appmesh/cluster/topology/cents",
+ curl -s http://localhost:8500/v1/kv/appmesh/cluster/topology/myhost?raw | python -m json.tool  
 [
     {
         "app": "myapp",
@@ -138,7 +138,7 @@ curl -s http://localhost:8500/v1/kv/appmgr/cluster/tasks/myapp?raw | python3 -m 
  ### Consul Key/Value organization
 ```json
 {
-	"appmgr": {
+	"appmesh": {
         "cluster": {
             "nodes": {
                 "host1": {

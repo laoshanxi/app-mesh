@@ -77,30 +77,30 @@
 
 | REST method        |  PATH   |  Permission Key |
 | :--------:   | -----  | ----  |
-| GET     | /appmgr/app/app-name |   `view-app`     |
-| GET     | /appmgr/app/app-name/output  |   `view-app-output`   |
-| GET     | /appmgr/applications |   `view-all-app`     |
-| GET     | /appmgr/resources |   `view-host-resource`     |
-| PUT     | /appmgr/app/app-name |   `app-reg`     |
-| POST    | /appmgr/app/appname/enable |   `app-control`     |
-| POST    | /appmgr/app/appname/disable |   `app-control`     |
-| DEL     | /appmgr/app/appname |   `app-delete`    |
-| POST    | /appmgr/app/syncrun?timeout=5 | `run-app-sync`  |
-| POST    | /appmgr/app/run?timeout=5 |   `run-app-async`  |
-| GET     | /appmgr/app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
-| GET     | /appmgr/download | `file-download`  |
-| POST    | /appmgr/upload | `file-upload`  |
-| GET     | /appmgr/labels | `label-view`  |
-| PUT     | /appmgr/label/abc?value=123  | `label-set`  |
-| DEL     | /appmgr/label/abc | `label-delete`  |
-| POST    | /appmgr/config | `config-view`  |
-| GET     | /appmgr/config | `config-set`  |
-| POST    | /appmgr/user/admin/passwd | `change-passwd`  |
-| POST    | /appmgr/user/usera/lock | `lock-user`  |
-| POST    | /appmgr/user/usera/unlock | `unlock-user`  |
-| DEL     | /appmgr/user/usera | `delete-user`  |
-| PUT     | /appmgr/user/usera | `add-user`  |
-| GET     | /appmgr/users | `get-users`  |
+| GET     | /appmesh/app/app-name |   `view-app`     |
+| GET     | /appmesh/app/app-name/output  |   `view-app-output`   |
+| GET     | /appmesh/applications |   `view-all-app`     |
+| GET     | /appmesh/resources |   `view-host-resource`     |
+| PUT     | /appmesh/app/app-name |   `app-reg`     |
+| POST    | /appmesh/app/appname/enable |   `app-control`     |
+| POST    | /appmesh/app/appname/disable |   `app-control`     |
+| DEL     | /appmesh/app/appname |   `app-delete`    |
+| POST    | /appmesh/app/syncrun?timeout=5 | `run-app-sync`  |
+| POST    | /appmesh/app/run?timeout=5 |   `run-app-async`  |
+| GET     | /appmesh/app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
+| GET     | /appmesh/download | `file-download`  |
+| POST    | /appmesh/upload | `file-upload`  |
+| GET     | /appmesh/labels | `label-view`  |
+| PUT     | /appmesh/label/abc?value=123  | `label-set`  |
+| DEL     | /appmesh/label/abc | `label-delete`  |
+| POST    | /appmesh/config | `config-view`  |
+| GET     | /appmesh/config | `config-set`  |
+| POST    | /appmesh/user/admin/passwd | `change-passwd`  |
+| POST    | /appmesh/user/usera/lock | `lock-user`  |
+| POST    | /appmesh/user/usera/unlock | `unlock-user`  |
+| DEL     | /appmesh/user/usera | `delete-user`  |
+| PUT     | /appmesh/user/usera | `add-user`  |
+| GET     | /appmesh/users | `get-users`  |
 
 
 ### Command line authentication

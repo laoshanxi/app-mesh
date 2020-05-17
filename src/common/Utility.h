@@ -74,7 +74,7 @@ namespace std
 #define JWT_USER_KEY "password"
 #define JWT_USER_NAME "user"
 #define JWT_ADMIN_NAME "admin"
-#define APPMGR_PASSWD_MIN_LENGTH 3
+#define APPMESH_PASSWD_MIN_LENGTH 3
 #define DEFAULT_RUN_APP_RETENTION_DURATION 10
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGH 2048
@@ -147,7 +147,7 @@ public:
 	static std::string runShellCommand(std::string cmd);
 	static void trimLineBreak(std::string& str);
 };
-#define ENV_APP_MANAGER_LISTEN_PORT "APPMGR_OVERRIDE_LISTEN_PORT"
+#define ENV_APP_MANAGER_LISTEN_PORT "APPMESH_OVERRIDE_LISTEN_PORT"
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"							// used to pass docker extra parameters to docker startup cmd
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT"	// app manager pull docker image timeout seconds
@@ -247,7 +247,7 @@ public:
 #define JSON_KEY_USER_metadata "metadata"
 
 #define HTTP_HEADER_JWT "JWT"
-#define HTTP_HEADER_JWT_ISSUER "appmgr-auth0"
+#define HTTP_HEADER_JWT_ISSUER "appmesh-auth0"
 #define HTTP_HEADER_JWT_name "name"
 #define HTTP_HEADER_JWT_Authorization "Authorization"
 #define HTTP_HEADER_JWT_Bearer "Bearer"

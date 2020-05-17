@@ -184,14 +184,14 @@ void PrometheusRest::initMetrics()
 {
 	// Prometheus
 	m_scrapeCounter = createPromCounter(
-		PROM_METRIC_NAME_appmgr_prom_scrape_count,
-		PROM_METRIC_HELP_appmgr_prom_scrape_count,
+		PROM_METRIC_NAME_appmesh_prom_scrape_count,
+		PROM_METRIC_HELP_appmesh_prom_scrape_count,
 		{}
 	);
 	// Const Gauge counter
 	m_promGauge = createPromGauge(
-		PROM_METRIC_NAME_appmgr_prom_scrape_up,
-		PROM_METRIC_HELP_appmgr_prom_scrape_up,
+		PROM_METRIC_NAME_appmesh_prom_scrape_up,
+		PROM_METRIC_HELP_appmesh_prom_scrape_up,
 		{}
 	);
 	if (m_promGauge) m_promGauge->metric().Set(1);

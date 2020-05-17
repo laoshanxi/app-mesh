@@ -20,6 +20,6 @@ fi
 
 rm -f /usr/share/bash-completion/completions/appc
 
-rm -rf ~/._appmgr_*
+rm -rf ~/._appmesh_*
 rm -f /usr/bin/appc
 #rm -rf /opt/appmesh

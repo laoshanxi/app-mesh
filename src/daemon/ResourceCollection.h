@@ -61,5 +61,5 @@ public:
 private:
 	HostResource m_resources;
 	std::recursive_mutex m_mutex;
-	const std::chrono::system_clock::time_point m_appmgrStartTime;
+	const std::chrono::system_clock::time_point m_appmeshStartTime;
 };

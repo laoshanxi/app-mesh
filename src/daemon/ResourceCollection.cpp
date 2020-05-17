@@ -8,7 +8,7 @@
 
 
 ResourceCollection::ResourceCollection()
-	: m_appmgrStartTime(std::chrono::system_clock::now())
+	: m_appmeshStartTime(std::chrono::system_clock::now())
 {
 }
 
@@ -197,7 +197,7 @@ web::json::value ResourceCollection::AsJson()
 
 	result[GET_STRING_T("fs")] = fsArr;
 	result[GET_STRING_T("systime")] = web::json::value::string(Utility::convertTime2Str(std::chrono::system_clock::now()));
-	result[GET_STRING_T("appmgr_start_time")] = web::json::value::string(Utility::convertTime2Str(m_appmgrStartTime));
+	result[GET_STRING_T("appmesh_start_time")] = web::json::value::string(Utility::convertTime2Str(m_appmeshStartTime));
 	result[GET_STRING_T("pid")] = web::json::value::number(getPid());
 	LOG_DBG << fname << "Exit";
 	return std::move(result);

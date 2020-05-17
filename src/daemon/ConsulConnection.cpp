@@ -12,7 +12,7 @@
 #include "../common/Utility.h"
 #include "../common/PerfLog.h"
 
-#define CONSUL_BASE_PATH  "/v1/kv/appmgr/"
+#define CONSUL_BASE_PATH  "/v1/kv/appmesh/"
 //extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
@@ -51,7 +51,7 @@ void ConsulConnection::reportNode()
 	PerfLog perf(fname);
 	try
 	{
-		//report resource: /appmgr/cluster/nodes/myhost
+		//report resource: /appmesh/cluster/nodes/myhost
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 
 		static long long lastIndex = 0;
@@ -220,7 +220,7 @@ std::string ConsulConnection::requestSessionId()
 
 	auto payload = web::json::value::object();
 	payload["LockDelay"] = web::json::value::string("15s");
-	payload["Name"] = web::json::value::string(std::string("appmgr-lock-") + MY_HOST_NAME);
+	payload["Name"] = web::json::value::string(std::string("appmesh-lock-") + MY_HOST_NAME);
 	payload["Behavior"] = web::json::value::string("delete");
 	payload["TTL"] = web::json::value::string(std::to_string(Configuration::instance()->getConsul()->m_ttl) + "s");
 
@@ -409,7 +409,7 @@ bool ConsulConnection::eletionLeader()
 	std::string sessionId = consulSessionId();
 	if (sessionId.empty()) return false;
 
-	// write hostname to leader path : /appmgr/leader
+	// write hostname to leader path : /appmesh/leader
 	std::string path = std::string(CONSUL_BASE_PATH).append("leader");
 	auto body = web::json::value::string(MY_HOST_NAME);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
@@ -498,7 +498,7 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 
 	if (!Configuration::instance()->getConsul()->consulSecurityEnabled()) return;
 
-	// /appmgr/security
+	// /appmesh/security
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
 	// if check exist and security KV already exist, do nothing
 	if (checkExistance && requestHttp(web::http::methods::GET, path, {}, {}, nullptr).status_code() == web::http::status_codes::OK)
@@ -702,7 +702,7 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 {
 	const static char fname[] = "ConsulConnection::writeTopology() ";
 
-	//topology: /appmgr/topology/myhost
+	//topology: /appmesh/topology/myhost
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
 	auto body = web::json::value::object();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
@@ -730,7 +730,7 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 	{
 		"CreateIndex": 22935,
 		"Flags": 0,
-		"Key": "appmgr/topology/",
+		"Key": "appmesh/topology/",
 		"LockIndex": 0,
 		"ModifyIndex": 22935,
 		"Value": null
@@ -738,7 +738,7 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 	{
 		"CreateIndex": 22942,
 		"Flags": 0,
-		"Key": "appmgr/topology/cents",
+		"Key": "appmesh/topology/cents",
 		"LockIndex": 0,
 		"ModifyIndex": 22942,
 		"Value": "WyJteWFwcCJd"
@@ -748,7 +748,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::retriev
 {
 	const static char fname[] = "ConsulConnection::retrieveTopology() ";
 
-	// /appmgr/topology/myhost
+	// /appmesh/topology/myhost
 	std::map<std::string, std::shared_ptr<ConsulTopology>> topology;
 	auto path = std::string(CONSUL_BASE_PATH).append("topology");
 	if (host.length()) path.append("/").append(host);
@@ -788,7 +788,7 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 	const static char fname[] = "ConsulConnection::retrieveTask() ";
 
 	std::map<std::string, std::shared_ptr<ConsulTask>> result;
-	// /appmgr/cluster/tasks/myapp
+	// /appmesh/cluster/tasks/myapp
 	std::string path = std::string(CONSUL_BASE_PATH).append("cluster/tasks");
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
@@ -798,7 +798,7 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 		{
 			for (const auto& section : json.as_array())
 			{
-				if (HAS_JSON_FIELD(section, "Value") && GET_JSON_STR_VALUE(section, "Key") != "appmgr/cluster/tasks")
+				if (HAS_JSON_FIELD(section, "Value") && GET_JSON_STR_VALUE(section, "Key") != "appmesh/cluster/tasks")
 				{
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
 					auto appJson = web::json::value::parse(appText);
@@ -818,7 +818,7 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 
 /*
 [
-	"appmgr/cluster/nodes/cents"
+	"appmesh/cluster/nodes/cents"
 ]
 */
 std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNode()
@@ -826,7 +826,7 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	const static char fname[] = "ConsulConnection::retrieveNode() ";
 
 	std::map<std::string, std::shared_ptr<ConsulNode>> result;
-	// /appmgr/cluster/nodes
+	// /appmesh/cluster/nodes
 	std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes");
 	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
@@ -839,9 +839,9 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
 					auto key = GET_JSON_STR_VALUE(section, "Key");
-					if (Utility::startWith(key, "appmgr/cluster/nodes/"))
+					if (Utility::startWith(key, "appmesh/cluster/nodes/"))
 					{
-						auto host = Utility::stringReplace(key, "appmgr/cluster/nodes/", "");
+						auto host = Utility::stringReplace(key, "appmesh/cluster/nodes/", "");
 						auto value = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
 						result[host] = ConsulNode::FromJson(value, host);
 					}

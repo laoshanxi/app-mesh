@@ -415,11 +415,11 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	{
 		// use uuid in label here to avoid same name app use the same metric cause issue
 		m_metricStartCount = prom->createPromCounter(
-			PROM_METRIC_NAME_appmgr_prom_process_start_count, PROM_METRIC_HELP_appmgr_prom_process_start_count,
+			PROM_METRIC_NAME_appmesh_prom_process_start_count, PROM_METRIC_HELP_appmesh_prom_process_start_count,
 			{ {"application", getName()}, {"id", m_appId} }
 		);
 		m_metricMemory = prom->createPromGauge(
-			PROM_METRIC_NAME_appmgr_prom_process_memory_gauge, PROM_METRIC_HELP_appmgr_prom_process_memory_gauge,
+			PROM_METRIC_NAME_appmesh_prom_process_memory_gauge, PROM_METRIC_HELP_appmesh_prom_process_memory_gauge,
 			{ {"application", getName()}, {"id", m_appId} }
 		);
 	}

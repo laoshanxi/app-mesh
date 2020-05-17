@@ -11,12 +11,12 @@ elif [[ -f "/lib/systemd/system/appmesh.service" ]] || [[ -f "/etc/init.d/appmes
 fi
 
 if [ -f "/usr/lib/systemd/systemd" ]; then
-	chmod 644 $INSTALL_DIR/script/appmgr.systemd.service
-	cp -f $INSTALL_DIR/script/appmgr.systemd.service /lib/systemd/system/appmesh.service
+	chmod 644 $INSTALL_DIR/script/appmesh.systemd.service
+	cp -f $INSTALL_DIR/script/appmesh.systemd.service /lib/systemd/system/appmesh.service
 	systemctl daemon-reload
 else
-	chmod 744 $INSTALL_DIR/script/appmgr.initd.sh
-	cp -f $INSTALL_DIR/script/appmgr.initd.sh /etc/init.d/appmesh
+	chmod 744 $INSTALL_DIR/script/appmesh.initd.sh
+	cp -f $INSTALL_DIR/script/appmesh.initd.sh /etc/init.d/appmesh
 fi
 
 # bash completion
@@ -24,11 +24,11 @@ if [ -d "/usr/share/bash-completion/completions" ]; then
 	cp -f $INSTALL_DIR/script/bash_completion.sh /usr/share/bash-completion/completions/appc
 fi
 
-if [[ "$APPMGR_FRESH_INSTALL" = "Y" ]] || [[ ! -f "/opt/appmesh/ssl/server.pem" ]]; then
+if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "/opt/appmesh/ssl/server.pem" ]]; then
 	# ssl cert gernerate
 	cd /opt/appmesh/ssl/; sh /opt/appmesh/ssl/ssl_cert_generate.sh
 fi
-if [[ "$APPMGR_FRESH_INSTALL" != "Y" ]] && [ -f "/opt/appmesh/.appsvc.json" ]; then
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "/opt/appmesh/.appsvc.json" ]; then
 	# restore previous configuration file
 	mv /opt/appmesh/.appsvc.json /opt/appmesh/appsvc.json
 else

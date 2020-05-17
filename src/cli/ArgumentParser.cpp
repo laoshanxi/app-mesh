@@ -36,7 +36,7 @@
 							if (m_commandLineVariables.count("port")) m_listenPort = m_commandLineVariables["port"].as<int>();
 
 // Each user should have its own token path
-const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmgr_";
+const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmesh_";
 static std::string m_jwtToken;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled)
@@ -391,7 +391,7 @@ void ArgumentParser::processReg()
 	}
 	if (m_commandLineVariables.count("cache_lines")) jsobObj[JSON_KEY_APP_cache_lines] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
 	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
-	std::string restPath = std::string("/appmgr/app/") + m_commandLineVariables["name"].as<std::string>();
+	std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
 	auto resp = requestHttp(methods::PUT, restPath, jsobObj);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
@@ -427,7 +427,7 @@ void ArgumentParser::processUnReg()
 					return;
 				}
 			}
-			std::string restPath = std::string("/appmgr/app/") + appName;
+			std::string restPath = std::string("/appmesh/app/") + appName;
 			auto response = requestHttp(methods::DEL, restPath);
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 		}
@@ -458,14 +458,14 @@ void ArgumentParser::processView()
 		if (!m_commandLineVariables.count("output"))
 		{
 			// view app info
-			std::string restPath = std::string("/appmgr/app/") + m_commandLineVariables["name"].as<std::string>();
+			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
 			auto resp = requestHttp(methods::GET, restPath);
 			std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 		}
 		else
 		{
 			// view app output
-			std::string restPath = std::string("/appmgr/app/") + m_commandLineVariables["name"].as<std::string>() + "/output";
+			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>() + "/output";
 			auto response = requestHttp(methods::GET, restPath);
 			auto bodyStr = response.extract_utf8string(true).get();
 			std::cout << bodyStr;
@@ -473,7 +473,7 @@ void ArgumentParser::processView()
 	}
 	else
 	{
-		std::string restPath = "/appmgr/applications";
+		std::string restPath = "/appmesh/applications";
 		auto response = requestHttp(methods::GET, restPath);
 		printApps(response.extract_json(true).get(), reduce);
 	}
@@ -489,7 +489,7 @@ void ArgumentParser::processResource()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/appmgr/resources";
+	std::string restPath = "/appmesh/resources";
 	auto resp = requestHttp(methods::GET, restPath);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
@@ -538,7 +538,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	}
 	for (auto app : appList)
 	{
-		std::string restPath = std::string("/appmgr/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
+		std::string restPath = std::string("/appmesh/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(methods::POST, restPath);
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 	}
@@ -602,7 +602,7 @@ void ArgumentParser::processRun()
 	{
 		// Use syncrun directly
 		// /app/syncrun?timeout=5
-		std::string restPath = "/appmgr/app/syncrun";
+		std::string restPath = "/appmesh/app/syncrun";
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
 
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
@@ -612,7 +612,7 @@ void ArgumentParser::processRun()
 		// Use run and output
 		// /app/run?timeout=5
 		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention)) query[HTTP_QUERY_KEY_retention] = std::to_string(m_commandLineVariables[HTTP_QUERY_KEY_retention].as<int>());
-		std::string restPath = "/appmgr/app/run";
+		std::string restPath = "/appmesh/app/run";
 		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
 		auto result = response.extract_json(true).get();
 		auto appName = result[JSON_KEY_APP_name].as_string();
@@ -620,7 +620,7 @@ void ArgumentParser::processRun()
 		while (process_uuid.length())
 		{
 			// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
-			restPath = std::string("/appmgr/app/").append(appName).append("/run/output");
+			restPath = std::string("/appmesh/app/").append(appName).append("/run/output");
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			response = requestHttp(methods::GET, restPath, query);
@@ -649,7 +649,7 @@ void ArgumentParser::processDownload()
 		return;
 	}
 
-	std::string restPath = "/appmgr/file/download";
+	std::string restPath = "/appmesh/file/download";
 	auto file = m_commandLineVariables["remote"].as<std::string>();
 	auto local = m_commandLineVariables["local"].as<std::string>();
 	std::map<std::string, std::string> query, headers;
@@ -713,7 +713,7 @@ void ArgumentParser::processUpload()
 	config.set_timeout(std::chrono::seconds(200));
 	config.set_validate_certificates(false);
 	http_client client(restURL, config);
-	std::string restPath = "/appmgr/file/upload";
+	std::string restPath = "/appmesh/file/upload";
 	http_request request = createRequest(methods::POST, restPath, query, &header);
 
 	request.set_body(fileStream, length);
@@ -756,7 +756,7 @@ void ArgumentParser::processTags()
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			if (envVec.size() == 2)
 			{
-				std::string restPath = std::string("/appmgr/label/").append(envVec.at(0));
+				std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
 				std::map<std::string, std::string> query = { {"value", envVec.at(1)} };
 				requestHttp(methods::PUT, restPath, query, nullptr, nullptr);
 			}
@@ -774,7 +774,7 @@ void ArgumentParser::processTags()
 		for (auto str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
-			std::string restPath = std::string("/appmgr/label/").append(envVec.at(0));
+			std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
 			auto resp = requestHttp(methods::DEL, restPath);
 		}
 	}
@@ -789,7 +789,7 @@ void ArgumentParser::processTags()
 		return;
 	}
 
-	std::string restPath = "/appmgr/labels";
+	std::string restPath = "/appmesh/labels";
 	http_response response = requestHttp(methods::GET, restPath);
 	// Finally print current
 	auto tags = response.extract_json().get().as_object();
@@ -821,7 +821,7 @@ void ArgumentParser::processLoglevel()
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_LogLevel] = web::json::value::string(level);
 	// /app-manager/config
-	auto restPath = std::string("/appmgr/config");
+	auto restPath = std::string("/appmesh/config");
 	auto response = requestHttp(methods::POST, restPath, jsobObj);
 	std::cout << "Log level set to : " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
 }
@@ -837,7 +837,7 @@ void ArgumentParser::processConfigView()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = "/appmgr/config";
+	std::string restPath = "/appmesh/config";
 	http_response resp = requestHttp(methods::GET, restPath);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
@@ -863,7 +863,7 @@ void ArgumentParser::processChangePwd()
 	auto user = m_commandLineVariables["target"].as<std::string>();
 	auto passwd = m_commandLineVariables["newpasswd"].as<std::string>();
 
-	std::string restPath = std::string("/appmgr/user/") + user + "/passwd";
+	std::string restPath = std::string("/appmesh/user/") + user + "/passwd";
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
 	http_response response = requestHttp(methods::POST, restPath, query, nullptr, &headers);
@@ -891,7 +891,7 @@ void ArgumentParser::processLockUser()
 	auto user = m_commandLineVariables["target"].as<std::string>();
 	auto lock = !m_commandLineVariables["lock"].as<bool>();
 
-	std::string restPath = std::string("/appmgr/user/") + user + (lock ? "/lock" : "/unlock");
+	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
 	http_response response = requestHttp(methods::POST, restPath);
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
@@ -994,7 +994,7 @@ bool ArgumentParser::isAppExist(const std::string& appName)
 std::map<std::string, bool> ArgumentParser::getAppList()
 {
 	std::map<std::string, bool> apps;
-	std::string restPath = "/appmgr/applications";
+	std::string restPath = "/appmesh/applications";
 	auto response = requestHttp(methods::GET, restPath);
 	auto jsonValue = response.extract_json(true).get();
 	auto arr = jsonValue.as_array();
@@ -1052,7 +1052,7 @@ std::string ArgumentParser::requestToken(const std::string& user, const std::str
 	config.set_validate_certificates(false);
 	http_client client(restURL, config);
 	http_request requestLogin(web::http::methods::POST);
-	uri_builder builder(GET_STRING_T("/appmgr/login"));
+	uri_builder builder(GET_STRING_T("/appmesh/login"));
 	requestLogin.set_request_uri(builder.to_uri());
 	requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(user));
 	requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(passwd));
