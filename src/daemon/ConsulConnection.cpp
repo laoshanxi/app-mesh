@@ -135,7 +135,7 @@ long long ConsulConnection::getModifyIndex(const std::string& path, bool recurse
 		LOG_DBG << fname << path << " index : " << index;
 		return index;
 	}
-	return -1;
+	return 0;
 }
 
 void ConsulConnection::syncSchedule()
