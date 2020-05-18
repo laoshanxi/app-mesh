@@ -1019,7 +1019,7 @@ void ConsulConnection::watchSecurityThread()
 		}
 		else
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(1));
+			std::this_thread::sleep_for(std::chrono::seconds(3));
 		}
 	}
 	LOG_DBG << fname << "exit";
@@ -1044,7 +1044,7 @@ void ConsulConnection::watchTopologyThread()
 		}
 		else
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(1));
+			std::this_thread::sleep_for(std::chrono::seconds(3));
 		}
 	}
 	LOG_DBG << fname << "exit";
@@ -1069,7 +1069,7 @@ void ConsulConnection::watchScheduleThread()
 		}
 		else
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(1));
+			std::this_thread::sleep_for(std::chrono::seconds(3));
 		}
 	}
 	LOG_DBG << fname << "exit";
