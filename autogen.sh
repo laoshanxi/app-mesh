@@ -48,9 +48,8 @@ fi
 #install fpm
 gem install fpm
 
-# build boost_1_69_0 on RHEL
-if [ -f "/usr/bin/yum" ]; then
-	# BOOST:
+# build boost_1_69_0
+if [ true ]; then
 	# https://www.cnblogs.com/eagle6688/p/5840773.html
 	yum install -y python2-devel
 	wget https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz
@@ -88,8 +87,8 @@ make install
 ls -al /usr/local/lib*/liblog4cpp.a
 cd $ROOTDIR
 	
-# build ACE on RHEL
-if [ -f "/usr/bin/yum" ]; then
+# build ACE
+if [ true ]; then
 	# ubuntu does not need build ACE
 	# ACE:
 	# https://www.cnblogs.com/tanzi-888/p/5342431.html
