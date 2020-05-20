@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <cpprest/json.h>
 
 class Application;
 class Label;

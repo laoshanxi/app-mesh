@@ -34,6 +34,7 @@ SRCS = \
 	PersistManager.cpp \
 	ConsulConnection.cpp \
 	ConsulEntity.cpp \
+	Scheduler.cpp \
 	TimerHandler.cpp
 		
 

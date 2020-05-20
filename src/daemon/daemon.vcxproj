@@ -93,6 +93,7 @@
     <ClCompile Include="ResourceLimitation.cpp" />
     <ClCompile Include="RestHandler.cpp" />
     <ClCompile Include="Role.cpp" />
+    <ClCompile Include="Scheduler.cpp" />
     <ClCompile Include="TimerHandler.cpp" />
     <ClCompile Include="User.cpp" />
   </ItemGroup>
@@ -132,6 +133,7 @@
     <ClInclude Include="ResourceLimitation.h" />
     <ClInclude Include="RestHandler.h" />
     <ClInclude Include="Role.h" />
+    <ClInclude Include="Scheduler.h" />
     <ClInclude Include="TimerHandler.h" />
     <ClInclude Include="User.h" />
   </ItemGroup>
