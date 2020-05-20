@@ -51,7 +51,11 @@ gem install fpm
 # build boost_1_69_0
 if [ true ]; then
 	# https://www.cnblogs.com/eagle6688/p/5840773.html
-	yum install -y python2-devel
+	if [ -f "/usr/bin/yum" ]; then
+		yum install -y python2-devel
+	elif [ -f "/usr/bin/apt" ]; then
+		apt install -y python-dev
+	fi
 	wget https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz
 	tar zxvf boost_1_69_0.tar.gz
 	cd ./boost_1_69_0
