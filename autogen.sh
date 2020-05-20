@@ -38,6 +38,7 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y rpm-build
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
+	apt-get update
 	apt install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
 	apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev

@@ -9,6 +9,7 @@ if [ -f "/usr/bin/yum" ]; then
   yum install -y openssl-devel gcc-c++ wget make perl
   yum install -y zlib zlib-devel
 elif [ -f "/usr/bin/apt" ]; then
+  apt-get update
   apt-get -y install libssl-dev wget g++ make perl
   apt-get -y install zlib1g zlib1g.dev
 fi
