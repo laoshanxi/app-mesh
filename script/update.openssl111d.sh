@@ -31,16 +31,13 @@ if [ -f "/usr/bin/yum" ]; then
   ln -s /usr/local/lib64/libssl.so.1.1 /usr/lib64/libssl.so.1.1
   ln -s /usr/local/lib64/libcrypto.so.1.1 /usr/lib64/libcrypto.so.1.1
 elif [ -f "/usr/bin/apt" ]; then
-  ln -s /usr/local/lib/libssl.so.1.1 /lib/x86_64-linux-gnu/libssl.so.1.1
-  ln -s /usr/local/lib/libcrypto.so.1.1 /lib/x86_64-linux-gnu/libcrypto.so.1.1
+  \cp /usr/local/lib/libssl.* /lib/x86_64-linux-gnu/
+  \cp /usr/local/lib/libcrypto.* /lib/x86_64-linux-gnu/
+  \cp /usr/local/lib/libssl.* /usr/lib/x86_64-linux-gnu/
+  \cp /usr/local/lib/libcrypto.* /usr/lib/x86_64-linux-gnu/
 
-  mv /usr/lib/x86_64-linux-gnu/libssl.a /usr/lib/x86_64-linux-gnu/libssl.a.bak
-  mv /usr/lib/x86_64-linux-gnu/libcrypto.a /usr/lib/x86_64-linux-gnu/libcrypto.a.bak
-  cp /usr/local/lib/libssl.a /usr/lib/x86_64-linux-gnu/libssl.a
-  cp /usr/local/lib/libcrypto.a /usr/lib/x86_64-linux-gnu/libcrypto.a
-
-  mv /lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /lib/x86_64-linux-gnu/libcrypto.so.1.0.0.bak
-  mv /lib/x86_64-linux-gnu/libssl.so.1.0.0 /lib/x86_64-linux-gnu/libssl.so.1.0.0.bak
+  rm -rf /lib/x86_64-linux-gnu/libcrypto.so.1.0.0
+  rm -rf /lib/x86_64-linux-gnu/libssl.so.1.0.0
   ln -s /usr/local/lib/libssl.so.1.1 /lib/x86_64-linux-gnu/libssl.so.1.0.0
   ln -s /usr/local/lib/libcrypto.so.1.1 /lib/x86_64-linux-gnu/libcrypto.so.1.0.0
 fi
