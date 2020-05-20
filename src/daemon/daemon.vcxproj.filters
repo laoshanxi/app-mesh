@@ -162,6 +162,12 @@
     <ClInclude Include="..\common\PerfLog.h">
       <Filter>common</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\wildcards\cx.hpp">
+      <Filter>common\wildcards</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\wildcards\wildcards.hpp">
+      <Filter>common\wildcards</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="appsvc.json" />
@@ -191,6 +197,9 @@
     </Filter>
     <Filter Include="rest">
       <UniqueIdentifier>{8f0dbe89-3202-4869-8127-341b235f31f0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\wildcards">
+      <UniqueIdentifier>{7a5abff0-367d-4ccd-94ec-b8ba33daced0}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

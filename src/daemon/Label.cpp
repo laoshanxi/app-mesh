@@ -1,5 +1,6 @@
 #include "Label.h"
 #include "../common/Utility.h"
+#include "../common/wildcards/wildcards.hpp"
 #include "ResourceCollection.h"
 
 Label::Label()
@@ -55,14 +56,14 @@ void Label::delLabel(const std::string& name)
 	if (m_labels.count(name)) m_labels.erase(name);
 }
 
-bool Label::match(const std::shared_ptr<Label>& label) const
+bool Label::match(const std::shared_ptr<Label>& condition) const
 {
-	if (!label) return false;
-	for (const auto& la : label->m_labels)
+	if (!condition) return false;
+	for (const auto& la : condition->m_labels)
 	{
 		const auto& key = la.first;
 		const auto& val = la.second;
-		if (!(m_labels.count(key) && m_labels.find(key)->second == val))
+		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))
 		{
 			return false;
 		}

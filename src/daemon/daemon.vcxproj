@@ -109,6 +109,8 @@
     <ClInclude Include="..\common\PerfLog.h" />
     <ClInclude Include="..\common\TimeZoneHelper.h" />
     <ClInclude Include="..\common\Utility.h" />
+    <ClInclude Include="..\common\wildcards\cx.hpp" />
+    <ClInclude Include="..\common\wildcards\wildcards.hpp" />
     <ClInclude Include="Application.h" />
     <ClInclude Include="ApplicationInitialize.h" />
     <ClInclude Include="ApplicationPeriodRun.h" />
