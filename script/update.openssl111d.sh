@@ -12,6 +12,8 @@ elif [ -f "/usr/bin/apt" ]; then
   apt-get update
   apt-get -y install libssl-dev wget g++ make perl
   apt-get -y install zlib1g zlib1g.dev
+  rm -rf /lib/x86_64-linux-gnu/libcrypto.so*
+  rm -rf /lib/x86_64-linux-gnu/libssl.so*
 fi
 wget https://www.openssl.org/source/openssl-1.1.1d.tar.gz
 
