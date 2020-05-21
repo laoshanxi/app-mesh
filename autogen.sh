@@ -15,7 +15,7 @@ fi
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
 	yum install -y epel-release
-	yum install -y https://centos7.iuscommunity.org/ius-release.rpm
+	yum install -y https://repo.ius.io/ius-release-el7.rpm
 
 	yum install -y git222 make cmake3 gcc-c++ libtool
 
