@@ -5,7 +5,7 @@ OEXT = o
 # https://blog.csdn.net/humadivinity/article/details/78890754
 # boost_thread is not needed, linked here is used to packed for cpprest 
 INCLUDES = -I/usr/local/include -I../prom_exporter
-DEP_LIBS = -L../common -lcommon -L../prom_exporter -lprom_exporter -L/usr/local/ace/lib/ -L/usr/local/lib64/boost -L/usr/local/lib64 -lpthread -lcrypto -lssl -lACE -lcpprest -lboost_thread -lboost_system -lboost_regex -Wl,-Bstatic -llog4cpp -Wl,-Bdynamic
+DEP_LIBS = -L../common -lcommon -L../prom_exporter -lprom_exporter -L/usr/local/ace/lib/ -L/usr/local/lib64/boost -L/usr/local/lib64 -lpthread -lcrypto -lssl -lACE -lcpprest -lboost_regex -lboost_thread -lboost_system -Wl,-Bstatic -llog4cpp -Wl,-Bdynamic
 
 all : $(TARGET) 
 
