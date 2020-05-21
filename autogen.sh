@@ -25,7 +25,7 @@ if [ -f "/usr/bin/yum" ]; then
 	fi
 	alias cp='cp -i'
 
-	yum install -y dos2unix openssl-devel wget which
+	yum install -y dos2unix wget which
 
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -39,7 +39,7 @@ if [ -f "/usr/bin/yum" ]; then
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	apt-get update
-	apt install -y dos2unix g++ git make zlib1g-dev libssl-dev cmake alien
+	apt install -y dos2unix g++ git make zlib1g-dev cmake alien
 	apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems

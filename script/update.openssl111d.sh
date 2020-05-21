@@ -10,22 +10,22 @@ if [ -f "/usr/bin/yum" ]; then
   yum install -y zlib zlib-devel
 elif [ -f "/usr/bin/apt" ]; then
   apt-get update
-  apt-get -y install libssl-dev wget g++ make perl
-  apt-get -y install zlib1g zlib1g.dev
+  apt-get remove -y openssl
+  apt-get -y install wget g++ make perl
+  apt-get -y install zlib1g zlib1g-dev
 fi
-wget https://www.openssl.org/source/openssl-1.1.1d.tar.gz
+wget https://www.openssl.org/source/openssl-1.1.1g.tar.gz
 
-tar zxvf openssl-1.1.1d.tar.gz
-cd openssl-1.1.1d/
+tar zxvf openssl-1.1.1g.tar.gz
+cd openssl-1.1.1g/
 
 ./config shared zlib
-#./config shared zlib --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl
-
 make; make install
 
 # include files
-mv /usr/include/openssl /usr/include/openssl.bak
-ln -s /usr/local/include/openssl  /usr/include/openssl
+rm -rf /usr/include/openssl
+ln -s /usr/local/include/openssl /usr/include/openssl
+\cp /usr/local/bin/openssl /usr/bin/
 
 if [ -f "/usr/bin/yum" ]; then
   ln -s /usr/local/lib64/libssl.so.1.1 /usr/lib64/libssl.so.1.1
@@ -33,13 +33,6 @@ if [ -f "/usr/bin/yum" ]; then
 elif [ -f "/usr/bin/apt" ]; then
   \cp /usr/local/lib/libssl.* /lib/x86_64-linux-gnu/
   \cp /usr/local/lib/libcrypto.* /lib/x86_64-linux-gnu/
-  \cp /usr/local/lib/libssl.* /usr/lib/x86_64-linux-gnu/
-  \cp /usr/local/lib/libcrypto.* /usr/lib/x86_64-linux-gnu/
-
-  rm -rf /lib/x86_64-linux-gnu/libcrypto.so.1.0.0
-  rm -rf /lib/x86_64-linux-gnu/libssl.so.1.0.0
-  ln -s /usr/local/lib/libssl.so.1.1 /lib/x86_64-linux-gnu/libssl.so.1.0.0
-  ln -s /usr/local/lib/libcrypto.so.1.1 /lib/x86_64-linux-gnu/libcrypto.so.1.0.0
 fi
 
 cd ..
