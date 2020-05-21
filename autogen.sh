@@ -40,7 +40,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	apt-get update
 	apt install -y dos2unix g++ git make zlib1g-dev cmake alien
-	apt install -y libboost-all-dev libace-dev
+	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 fi
