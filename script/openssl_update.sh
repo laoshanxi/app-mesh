@@ -44,6 +44,10 @@ if [ -f "/usr/bin/yum" ]; then
 elif [ -f "/usr/bin/apt" ]; then
   cd /lib/x86_64-linux-gnu/
 fi
+
+echo "/usr/local/ssl/lib" >> /etc/ld.so.conf
+ldconfig -v
+
 rm -f libssl.so
 ln -s libssl.so.1.1 libssl.so
 rm -f libcrypto.so
