@@ -28,7 +28,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		script\rpm_pre_uninstall.sh = script\rpm_pre_uninstall.sh
 		ssl\ssl_cert_generate.sh = ssl\ssl_cert_generate.sh
 		script\update.gcc83.sh = script\update.gcc83.sh
-		script\update.openssl111d.sh = script\update.openssl111d.sh
+		script\openssl_update.sh = script\openssl_update.sh
 		doc\USER_ROLE_DESC.md = doc\USER_ROLE_DESC.md
 	EndProjectSection
 EndProject

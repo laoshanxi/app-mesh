@@ -1,6 +1,7 @@
 #!/bin/sh
 ################################################################################
-## This Script file is used to update OS openssl version to 1.1.1d for CentOS 7.x
+## This Script file is used to update OS openssl version to 1.1.1g for
+## CentOS 7.x and Ubuntu 16.04
 ################################################################################
 set -x
 mkdir ssl_build
