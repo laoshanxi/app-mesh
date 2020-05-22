@@ -1,7 +1,10 @@
 #include "Label.h"
 #include "../common/Utility.h"
-#if (__GNUC__*10000 + __GNUC_MINOR__*100 + __GNUC_PATCHLEVEL__) > 50300
+#ifdef __GNUC__
+#include <features.h>
+#if __GNUC_PREREQ(5,4)
 #include "../common/wildcards/wildcards.hpp"
+#endif
 #endif
 #include "ResourceCollection.h"
 
@@ -65,15 +68,15 @@ bool Label::match(const std::shared_ptr<Label>& condition) const
 	{
 		const auto& key = la.first;
 		const auto& val = la.second;
-#if (__GNUC__*10000 + __GNUC_MINOR__*100 + __GNUC_PATCHLEVEL__) > 50300
-		// support wildcards for gcc version upper than 5.3.0
+#if __GNUC_PREREQ(5,4)
+		// support wildcards for gcc version upper than 5.4
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second)))
-#elif
+#else
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val)))
 #endif
 		{
 			return false;
-		}
 	}
+}
 	return true;
 }
