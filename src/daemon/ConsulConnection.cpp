@@ -471,7 +471,7 @@ bool ConsulConnection::registerService(const std::string& appName, int port)
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		LOG_DBG << fname << "service " << serviceId  << " for task <" << appName << "> registered";
-		return (result == "true");
+		return true;
 	}
 	return false;
 }
