@@ -451,9 +451,9 @@ bool ConsulConnection::registerService(const std::string& appName, int port)
 	//  http://127.0.0.1:8500/v1/catalog/register
 
 	if (port == 0) return false;
-
+	auto serviceId = MY_HOST_NAME + ":" + appName;
 	auto body = web::json::value();
-	body["ID"] = web::json::value::string(MY_HOST_NAME + ":" + appName);
+	body["ID"] = web::json::value::string(serviceId);
 	body["Name"] = web::json::value::string(appName);
 	body["Address"] = web::json::value::string(MY_HOST_NAME);
 	body["Port"] = web::json::value::number(port);
@@ -470,8 +470,7 @@ bool ConsulConnection::registerService(const std::string& appName, int port)
 	auto resp = requestHttp(web::http::methods::PUT, path, { {"replace-existing-checks","true"} }, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		auto result = resp.extract_utf8string(true).get();
-		LOG_DBG << fname << " service for task <" << appName << "> registered : " << result;
+		LOG_DBG << fname << "service " << serviceId  << " for task <" << appName << "> registered";
 		return (result == "true");
 	}
 	return false;
