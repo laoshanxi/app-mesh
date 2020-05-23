@@ -630,8 +630,9 @@ void RestHandler::apiGetBasicConfig(const HttpRequest& message)
 
 	auto config = Configuration::instance()->AsJson(false, getTokenUser(message));
 	if (HAS_JSON_FIELD(config, JSON_KEY_Security) && HAS_JSON_FIELD(config.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
+	{
 		config.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
-
+	}
 	message.reply(status_codes::OK, config);
 }
 
@@ -1109,7 +1110,7 @@ void RestHandler::apiGetApps(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	auto tokenUserName = getTokenUser(message);
-	message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true, tokenUserName));
+	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName));
 }
 
 void RestHandler::apiGetResources(const HttpRequest& message)

@@ -90,7 +90,7 @@
         ]
       },
       "user": {
-        "key": "password",
+        "key": "User123",
         "group": "user",
         "locked": false,
         "roles": [

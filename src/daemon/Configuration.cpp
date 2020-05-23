@@ -148,7 +148,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 	// Applications
-	result[JSON_KEY_Applications] = getApplicationJson(false, user);
+	result[JSON_KEY_Applications] = serializeApplication(false, user);
 
 	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
@@ -172,17 +172,6 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	result[JSON_KEY_VERSION] = web::json::value::string(__MICRO_VAR__(BUILD_TAG));
 
 	return result;
-}
-
-void Configuration::deSerializeApp(const web::json::value& jobj)
-{
-	auto& jArr = jobj.as_array();
-	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
-	{
-		auto jsonApp = *(iterB);
-		auto app = this->parseApp(jsonApp);
-		this->addApp2Map(app);
-	}
 }
 
 std::vector<std::shared_ptr<Application>> Configuration::getApps() const
@@ -265,7 +254,7 @@ const web::json::value Configuration::getSecureConfigJson()
 	return std::move(json);
 }
 
-web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo, const std::string& user) const
+web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string& user) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	std::vector<std::shared_ptr<Application>> apps;
@@ -285,6 +274,17 @@ web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo, const
 		result[i] = apps[i]->AsJson(returnRuntimeInfo);
 	}
 	return result;
+}
+
+void Configuration::deSerializeApp(const web::json::value& jobj)
+{
+	auto& jArr = jobj.as_array();
+	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
+	{
+		auto jsonApp = *(iterB);
+		auto app = this->parseApp(jsonApp);
+		this->addApp2Map(app);
+	}
 }
 
 void Configuration::disableApp(const std::string& appName)
@@ -339,7 +339,7 @@ const size_t Configuration::getThreadPoolSize() const
 	return m_rest->m_httpThreadPoolSize;
 }
 
-const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName)
+const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName) const
 {
 	return getSecurity()->m_jwtUsers->getUser(userName);
 }
@@ -401,10 +401,14 @@ bool Configuration::checkOwnerPermission(const std::string& user, const std::str
 	// if same user, return true
 	// if not defined permission, return true
 	// if no session user which is internal call, return true
-	if (user.empty() || appUser.empty() || user == appUser || appPermission == 0) return true;
+	// if user is admin, return true
+	if (user.empty() || appUser.empty() || user == appUser || appPermission == 0 || user == JWT_ADMIN_NAME)
+	{
+		return true;
+	}
 
-	auto userObj = getSecurity()->m_jwtUsers->getUser(user);
-	auto appUserObj = getSecurity()->m_jwtUsers->getUser(appUser);
+	auto userObj = getUserInfo(user);
+	auto appUserObj = getUserInfo(appUser);
 	if (userObj->getGroup() == appUserObj->getGroup())
 	{
 		auto groupPerm = appPermission / 1 % 10;

@@ -513,6 +513,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	LOG_DBG << fname << "m_user:" << m_user;
+	LOG_DBG << fname << "m_permission:" << m_permission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;

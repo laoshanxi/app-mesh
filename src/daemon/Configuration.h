@@ -91,7 +91,7 @@ public:
 	int getPromListenPort();
 	std::string getRestListenAddress();
 	const web::json::value getSecureConfigJson();
-	web::json::value getApplicationJson(bool returnRuntimeInfo, const std::string& user) const;
+	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string& user) const;
 	std::shared_ptr<Application> getApp(const std::string& appName) const noexcept(false);
 	bool isAppExist(const std::string& appName);
 	void disableApp(const std::string& appName);
@@ -110,7 +110,7 @@ public:
 	const size_t getThreadPoolSize() const;
 	const std::string getDescription() const { return m_hostDescription; }
 
-	const std::shared_ptr<User> getUserInfo(const std::string& userName);
+	const std::shared_ptr<User> getUserInfo(const std::string& userName) const;
 	std::set<std::string> getUserPermissions(const std::string& userName);
 	std::set<std::string> getAllPermissions();
 	const std::shared_ptr<Users> getUsers();

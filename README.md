@@ -5,7 +5,7 @@
 # App Mesh
 
 ### Introduction
-App Mesh is a Cloud Native Microservice management middleware to manage different types of microservice applications, the application can be local or microservice cluster level [microservice cluster level app](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific micro service, the app-mesh will make sure all defined applications running on-time with defined behavior. Provide REST APIs and command-line.
+App Mesh is a Multi-tenant Cloud Native Microservice management middleware to manage different types of microservice applications, the application can be local or microservice cluster level [microservice cluster level app](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md "microservice cluster level app") , each application can be a specific micro service, the app-mesh will make sure all defined applications running on-time with defined behavior. Provide REST APIs and command-line.
 
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
 
@@ -16,7 +16,7 @@ Microservice application | ⚡️ [Consul micro-service cluster management](http
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/master/doc/USER_ROLE_DESC.md)
 Cloud native | ⚡️ [Provide Prometheus Exporter](https://github.com/laoshanxi/app-mesh/blob/master/doc/PROMETHEUS.md) <br> REST service with IPv6 support
-Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> Web GUI
+Extra Features | Multi-tenant support <br> Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> Web GUI
 
 ### How to install
 **CentOS**:
@@ -30,6 +30,7 @@ rpm -ivh appmesh-1.8.1-1.x86_64.rpm --force
 Note:
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
 2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will not be refreshed)
+3. The installation will create `appmesh` Linux user for default app running
 
 ### Command lines
 

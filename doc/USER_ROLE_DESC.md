@@ -12,10 +12,11 @@
 > * All the user/role/permission is defined in json file
 > * user/role configuration support dynamic update by `systemctl reload appmesh`
 > * User support metadata attributes for special usage
+> * User have user group
+> * App ownership permission can define group permission and other group permission
 
 ### What is **not** supported:
-> * The application managed in App Mesh have no user ownership
-> * No data base introduced
+> * N/A
 
 ### User and Role configure json sample
 
@@ -24,50 +25,74 @@
     "Users": {
       "admin": {
         "key": "Admin123",
-        "roles": [ "manage", "view", "usermgr" ],
-        "locked": false
+        "group": "admin",
+        "locked": false,
+        "roles": [
+          "manage",
+          "view",
+          "usermgr"
+        ]
       },
       "user": {
-        "key": "password",
-        "roles": [ "view" ],
-        "locked": false
-      },
-      "test": {
-        "key": "test",
-        "roles": [],
-        "locked": true
+        "key": "User123",
+        "group": "user",
+        "locked": false,
+        "roles": [
+          "view",
+          "manage"
+        ]
       }
     },
     "Roles": {
       "manage": [
-        "app-reg",
+        "user-add",
         "app-control",
         "app-delete",
-        "app-run-async",
-        "app-run-sync",
+        "app-reg",
+        "passwd-change",
+        "config-set",
+        "config-view",
+        "user-delete",
         "file-download",
         "file-upload",
-        "label-view",
-        "label-set",
+        "user-list",
         "label-delete",
-        "config-set",
-        "passwd-change",
+        "label-set",
+        "label-view",
         "user-lock",
-        "user-unlock"
-      ],
-      "view": [
+        "permission-list",
+        "role-delete",
+        "role-set",
+        "role-view",
+        "app-run-async",
+        "app-run-async-output",
+        "app-run-sync",
+        "user-unlock",
+        "app-view-all",
         "app-view",
         "app-output-view",
-        "app-view-all",
-        "host-resource-view",
-        "app-run-async-output",
-        "label-view",
-        "config-view",
-		"user-list"
+        "host-resource-view"
       ],
       "usermgr": [
         "user-add",
-        "user-delete"
+        "passwd-change",
+        "user-delete",
+        "user-list",
+        "user-lock",
+        "permission-list",
+        "role-delete",
+        "role-set",
+        "role-view",
+        "user-unlock"
+      ],
+      "view": [
+        "config-view",
+        "label-view",
+        "role-view",
+        "app-view-all",
+        "app-view",
+        "app-output-view",
+        "host-resource-view"
       ]
     }
   }
