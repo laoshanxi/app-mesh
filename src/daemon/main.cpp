@@ -50,8 +50,14 @@ int main(int argc, char* argv[])
 		ResourceCollection::instance()->dump();
 
 		// get configuration
-		auto config = Configuration::FromJson(Configuration::readConfiguration());
+		const auto configTxt = Configuration::readConfiguration();
+		auto config = Configuration::FromJson(configTxt);
 		Configuration::instance(config);
+		auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
+		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))
+		{
+			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));
+		}
 
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());

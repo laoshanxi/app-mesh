@@ -2,6 +2,7 @@
   "Description": "MYHOST",
   "ScheduleIntervalSeconds": 2,
   "LogLevel": "DEBUG",
+  "DefaultAppUser": "root",
   "REST": {
     "RestEnabled": true,
     "HttpThreadPoolSize": 6,
@@ -72,6 +73,7 @@
     "Users": {
       "admin": {
         "key": "Admin123",
+        "group": "admin",
         "locked": false,
         "roles": [
           "manage",
@@ -81,6 +83,7 @@
       },
       "test": {
         "key": "123",
+        "group": "user",
         "locked": false,
         "roles": [
 
@@ -88,9 +91,11 @@
       },
       "user": {
         "key": "password",
+        "group": "user",
         "locked": false,
         "roles": [
-          "view"
+          "view",
+          "manage"
         ]
       }
     }

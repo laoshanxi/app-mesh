@@ -70,7 +70,7 @@ bool Label::match(const std::shared_ptr<Label>& condition) const
 		const auto& val = la.second;
 #if __GNUC_PREREQ(5,4)
 		// support wildcards for gcc version upper than 5.4
-		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second)))
+		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))
 #else
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val)))
 #endif

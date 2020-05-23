@@ -42,7 +42,7 @@ std::map<std::string, std::shared_ptr<User>> Users::getUsers()
 	return m_users;
 }
 
-std::shared_ptr<User> Users::getUser(std::string name)
+std::shared_ptr<User> Users::getUser(std::string name) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = m_users.find(name);
@@ -52,7 +52,7 @@ std::shared_ptr<User> Users::getUser(std::string name)
 	}
 	else
 	{
-		throw std::invalid_argument("no such user.");
+		throw std::invalid_argument(Utility::stringFormat("no such user <%s>", name.c_str()));
 	}
 }
 
@@ -113,6 +113,7 @@ web::json::value User::AsJson() const
 	web::json::value result = web::json::value::object();
 
 	result[JSON_KEY_USER_key] = web::json::value::string(m_key);
+	result[JSON_KEY_USER_group] = web::json::value::string(m_group);
 	result[JSON_KEY_USER_locked] = web::json::value::boolean(m_locked);
 	if (m_metadata.length()) result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
 	auto roles = web::json::value::array(m_roles.size());
@@ -136,6 +137,7 @@ std::shared_ptr<User> User::FromJson(std::string userName, const web::json::valu
 		}
 		result = std::make_shared<User>(userName);
 		result->m_key = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_key);
+		result->m_group = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_group);
 		result->m_metadata = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_metadata);
 		result->m_locked = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_locked);
 		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))

@@ -37,6 +37,7 @@ private:
 	std::string verifyToken(const HttpRequest& message);
 	std::string getTokenUser(const HttpRequest& message);
 	bool permissionCheck(const HttpRequest& message, const std::string& permission);
+	void checkAppAccessPermission(const HttpRequest& message, const std::string& appName, bool requestWrite);
 	std::string getTokenStr(const HttpRequest& message);
 	std::string createToken(const std::string& uname, const std::string& passwd, int timeoutSeconds);
 	int getHttpQueryValue(const HttpRequest& message, const std::string& key, int defaultValue, int min, int max) const;

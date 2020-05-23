@@ -29,6 +29,7 @@ public:
 	// get user info
 	bool locked() const;
 	const std::string getKey();
+	const std::string getGroup() const { return m_group; }
 	const std::set<std::shared_ptr<Role>> getRoles();
 	bool hasPermission(std::string permission);
 
@@ -36,6 +37,7 @@ private:
 	std::string m_key;
 	bool m_locked;
 	std::string m_name;
+	std::string m_group;
 	std::string m_metadata;
 	mutable std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
@@ -52,7 +54,7 @@ public:
 
 	// find user
 	std::map<std::string, std::shared_ptr<User>> getUsers();
-	std::shared_ptr<User> getUser(std::string name);
+	std::shared_ptr<User> getUser(std::string name) const;
 
 	// manage users
 	void addUsers(const web::json::value& obj, std::shared_ptr<Roles> roles);

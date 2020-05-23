@@ -43,3 +43,9 @@ chmod +x /opt/appmesh/script/appc.sh
 # start service directly
 systemctl enable appmesh
 systemctl start appmesh
+
+# add user appmesh
+id appmesh >& /dev/null
+if [ $? -ne 0 ]; then
+    useradd appmesh -s /usr/sbin/nologin --no-create-home
+fi

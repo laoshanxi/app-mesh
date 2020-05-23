@@ -23,3 +23,9 @@ rm -f /usr/share/bash-completion/completions/appc
 rm -rf ~/._appmesh_*
 rm -f /usr/bin/appc
 #rm -rf /opt/appmesh
+
+# clean user appmesh
+id appmesh >& /dev/null
+if [ $? -eq 0 ]; then
+    userdel -r appmesh
+fi

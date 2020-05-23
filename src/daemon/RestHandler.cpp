@@ -327,6 +327,8 @@ std::string RestHandler::verifyToken(const HttpRequest& message)
 
 std::string RestHandler::getTokenUser(const HttpRequest& message)
 {
+	if (!Configuration::instance()->getJwtEnabled()) return std::string();
+
 	auto token = getTokenStr(message);
 	auto decoded_token = jwt::decode(token);
 	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
@@ -364,6 +366,16 @@ bool RestHandler::permissionCheck(const HttpRequest& message, const std::string&
 	{
 		// JWT not enabled
 		return true;
+	}
+}
+
+void RestHandler::checkAppAccessPermission(const HttpRequest& message, const std::string& appName, bool requestWrite)
+{
+	auto tokenUserName = getTokenUser(message);
+	auto app = Configuration::instance()->getApp(appName);
+	if (!Configuration::instance()->checkOwnerPermission(tokenUserName, app->getOwner(), app->getPermission(), requestWrite))
+	{
+		throw std::invalid_argument(Utility::stringFormat("user <%s> is not allowed to modify app <%s>", tokenUserName.c_str(), appName.c_str()));
 	}
 }
 
@@ -453,6 +465,9 @@ void RestHandler::apiDeleteApp(const HttpRequest& message)
 
 	std::string appName = path.substr(strlen("/appmesh/app/"));
 	if (Configuration::instance()->isSystemInternalApp(appName)) throw std::invalid_argument("not allowed for internal and cluster application");
+	
+	checkAppAccessPermission(message, appName, true);
+
 	Configuration::instance()->removeApp(appName);
 	auto msg = std::string("application <") + appName + "> removed.";
 	message.reply(status_codes::OK, msg);
@@ -613,7 +628,7 @@ void RestHandler::apiGetBasicConfig(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
-	auto config = Configuration::instance()->AsJson(false);
+	auto config = Configuration::instance()->AsJson(false, getTokenUser(message));
 	if (HAS_JSON_FIELD(config, JSON_KEY_Security) && HAS_JSON_FIELD(config.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
 		config.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
 
@@ -913,7 +928,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 			// timeout should less than 24h for none-admin user
 			if (uname != JWT_ADMIN_NAME)
 			{
-				if (timeoutValue > MAX_TOKEN_EXPIRE_SECONDS)
+				if (timeoutValue <= MAX_TOKEN_EXPIRE_SECONDS)
 				{
 					timeoutSeconds = timeoutValue;
 					LOG_WAR << fname << "User <" << uname << "> login expire_seconds was set from " << timeout << "to " << timeoutValue;
@@ -983,8 +998,11 @@ void RestHandler::apiGetApp(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
-	std::string app = path.substr(strlen("/appmesh/app/"));
-	message.reply(status_codes::OK, Configuration::instance()->getApp(app)->AsJson(true));
+	std::string appName = path.substr(strlen("/appmesh/app/"));
+
+	checkAppAccessPermission(message, appName, false);
+
+	message.reply(status_codes::OK, Configuration::instance()->getApp(appName)->AsJson(true));
 }
 
 std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& message)
@@ -1077,8 +1095,11 @@ void RestHandler::apiGetAppOutput(const HttpRequest& message)
 
 	// /app/$app-name/output
 	std::string app = path.substr(strlen("/appmesh/app/"));
-	app = app.substr(0, app.find_first_of('/'));
+	auto appName = app.substr(0, app.find_first_of('/'));
 	bool keepHis = getHttpQueryValue(message, HTTP_QUERY_KEY_keep_history, false, 0, 0);
+
+	checkAppAccessPermission(message, appName, false);
+
 	auto output = Configuration::instance()->getApp(app)->getOutput(keepHis);
 	LOG_DBG << fname;// << output;
 	message.reply(status_codes::OK, output);
@@ -1087,7 +1108,8 @@ void RestHandler::apiGetAppOutput(const HttpRequest& message)
 void RestHandler::apiGetApps(const HttpRequest& message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
-	message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true));
+	auto tokenUserName = getTokenUser(message);
+	message.reply(status_codes::OK, Configuration::instance()->getApplicationJson(true, tokenUserName));
 }
 
 void RestHandler::apiGetResources(const HttpRequest& message)
@@ -1119,6 +1141,11 @@ void RestHandler::apiRegApp(const HttpRequest& message)
 	{
 		throw std::invalid_argument("not allowed for internal and cluster application");
 	}
+	if (Configuration::instance()->isAppExist(appName))
+	{
+		checkAppAccessPermission(message, appName, true);
+	}
+	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getTokenUser(message));
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, app->AsJson(false));
 }

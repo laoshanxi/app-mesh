@@ -53,7 +53,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(str));
 	}
-	catch (const std::exception & e)
+	catch (const std::exception& e)
 	{
 		LOG_ERR << "Failed to parse configuration file with error <" << e.what() << ">";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
@@ -67,6 +67,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 
 	// Global Prameters
 	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
+	config->m_defaultAppUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultAppUser);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
@@ -100,18 +101,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSULE));
 	}
 
-	// Applications
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications))
-	{
-		auto& jArr = jsonValue.at(JSON_KEY_Applications).as_array();
-		for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
-		{
-			auto jsonApp = *(iterB);
-			auto app = config->parseApp(jsonApp);
-			config->addApp2Map(app);
-		}
-	}
-
 	return config;
 }
 
@@ -132,7 +121,7 @@ void SigHupHandler(int signo)
 		{
 			config->hotUpdate(web::json::value::parse(Configuration::readConfiguration()));
 		}
-		catch (const std::exception & e)
+		catch (const std::exception& e)
 		{
 			LOG_ERR << fname << e.what();
 		}
@@ -154,15 +143,16 @@ void Configuration::handleReloadSignal()
 	}
 }
 
-web::json::value Configuration::AsJson(bool returnRuntimeInfo)
+web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string& user)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 	// Applications
-	result[JSON_KEY_Applications] = getApplicationJson(false);
+	result[JSON_KEY_Applications] = getApplicationJson(false, user);
 
 	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
+	result[JSON_KEY_DefaultAppUser] = web::json::value::string(m_defaultAppUser);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
 
@@ -182,6 +172,17 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_VERSION] = web::json::value::string(__MICRO_VAR__(BUILD_TAG));
 
 	return result;
+}
+
+void Configuration::deSerializeApp(const web::json::value& jobj)
+{
+	auto& jArr = jobj.as_array();
+	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
+	{
+		auto jsonApp = *(iterB);
+		auto app = this->parseApp(jsonApp);
+		this->addApp2Map(app);
+	}
 }
 
 std::vector<std::shared_ptr<Application>> Configuration::getApps() const
@@ -248,7 +249,7 @@ std::string Configuration::getRestListenAddress()
 
 const web::json::value Configuration::getSecureConfigJson()
 {
-	auto json = this->AsJson(false);
+	auto json = this->AsJson(false, "");
 	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
 	{
 		auto& users = json.at(JSON_KEY_Security).at(JSON_KEY_JWT_Users).as_object();
@@ -264,14 +265,17 @@ const web::json::value Configuration::getSecureConfigJson()
 	return std::move(json);
 }
 
-web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo) const
+web::json::value Configuration::getApplicationJson(bool returnRuntimeInfo, const std::string& user) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	std::vector<std::shared_ptr<Application>> apps;
 	for (auto app : m_apps)
 	{
 		// do not persist temp application
-		if (returnRuntimeInfo || app->isWorkingState()) apps.push_back(app);
+		if ((returnRuntimeInfo || app->isWorkingState()) && checkOwnerPermission(user, app->getOwner(), app->getPermission(), false))
+		{
+			apps.push_back(app);
+		}
 	}
 
 	// Build Json
@@ -379,7 +383,7 @@ const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() cons
 	return m_consul;
 }
 
-const std::shared_ptr<Configuration::JsonSecurity> Configuration::getSecurity()
+const std::shared_ptr<Configuration::JsonSecurity> Configuration::getSecurity() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_security;
@@ -389,6 +393,43 @@ void Configuration::updateSecurity(std::shared_ptr<Configuration::JsonSecurity> 
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_security = security;
+}
+
+bool Configuration::checkOwnerPermission(const std::string& user, const std::string& appUser, int appPermission, bool requestWrite) const
+{
+	// if app has not defined user, return true
+	// if same user, return true
+	// if not defined permission, return true
+	// if no session user which is internal call, return true
+	if (user.empty() || appUser.empty() || user == appUser || appPermission == 0) return true;
+
+	auto userObj = getSecurity()->m_jwtUsers->getUser(user);
+	auto appUserObj = getSecurity()->m_jwtUsers->getUser(appUser);
+	if (userObj->getGroup() == appUserObj->getGroup())
+	{
+		auto groupPerm = appPermission / 1 % 10;
+		if (groupPerm <= static_cast<int>(Application::PERMISSION::GROUP_DENY)) return false;
+		if (!requestWrite &&
+			(groupPerm == static_cast<int>(Application::PERMISSION::GROUP_READ) ||
+				groupPerm == static_cast<int>(Application::PERMISSION::GROUP_WRITE)))
+		{
+			return true;
+		}
+		if (requestWrite && groupPerm == static_cast<int>(Application::PERMISSION::GROUP_WRITE)) return true;
+	}
+	else
+	{
+		auto otherPerm = 10 * (appPermission / 10 % 10);
+		if (otherPerm <= static_cast<int>(Application::PERMISSION::OTHER_DENY)) return false;
+		if (!requestWrite &&
+			(otherPerm == static_cast<int>(Application::PERMISSION::OTHER_READ) ||
+				otherPerm == static_cast<int>(Application::PERMISSION::OTHER_WRITE)))
+		{
+			return true;
+		}
+		if (requestWrite && otherPerm == static_cast<int>(Application::PERMISSION::OTHER_WRITE)) return true;
+	}
+	return false;
 }
 
 void Configuration::dump()
@@ -469,7 +510,7 @@ void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = GET_STD_STRING(this->AsJson(false).serialize());
+	auto content = GET_STD_STRING(this->AsJson(false, "").serialize());
 	if (content.length())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -496,7 +537,7 @@ void Configuration::saveConfigToDisk()
 	}
 }
 
-void Configuration::hotUpdate(const web::json::value& config)
+void Configuration::hotUpdate(const web::json::value& jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
@@ -504,9 +545,6 @@ void Configuration::hotUpdate(const web::json::value& config)
 	bool consulUpdated = false;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		// not support update [Application] section
-		auto jsonValue = config;
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Applications)) jsonValue.erase(GET_STRING_T(JSON_KEY_Applications));
 
 		// parse
 		auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));

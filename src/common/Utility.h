@@ -152,7 +152,7 @@ public:
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"							// used to pass docker extra parameters to docker startup cmd
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT"	// app manager pull docker image timeout seconds
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS 3 * 3 *(60 * 60 * 8)	// default 3 days
+#define DEFAULT_TOKEN_EXPIRE_SECONDS 3 *(60 * 60 * 24)	// default 3 days
 #define MAX_TOKEN_EXPIRE_SECONDS 30 * (60 * 60 * 24) // max 30 days
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10		// run app default timeout
 #define MAX_APP_CACHED_LINES 1024
@@ -160,6 +160,7 @@ public:
 #define CONSUL_SESSION_DEFAULT_TTL 30
 
 #define JSON_KEY_Description "Description"
+#define JSON_KEY_DefaultAppUser "DefaultAppUser"
 
 #define JSON_KEY_REST "REST"
 #define JSON_KEY_RestEnabled "RestEnabled"
@@ -196,6 +197,8 @@ public:
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_user "user"
+#define JSON_KEY_APP_owner "owner"
+#define JSON_KEY_APP_owner_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
 #define JSON_KEY_APP_stdout_file "stdout_file"
 #define JSON_KEY_APP_command "command"
@@ -242,6 +245,7 @@ public:
 
 
 #define JSON_KEY_USER_key "key"
+#define JSON_KEY_USER_group "group"
 #define JSON_KEY_USER_roles "roles"
 #define JSON_KEY_USER_locked "locked"
 #define JSON_KEY_USER_metadata "metadata"

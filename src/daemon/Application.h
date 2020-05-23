@@ -28,6 +28,15 @@ public:
 		INITIALIZING,
 		UNINITIALIZING
 	};
+	enum class PERMISSION : int
+	{
+		GROUP_DENY = 1,
+		GROUP_READ = 2,
+		GROUP_WRITE = 3,
+		OTHER_DENY = 10,
+		OTHER_READ = 20,
+		OTHER_WRITE = 30
+	};
 	Application();
 	virtual ~Application();
 	virtual bool operator==(const std::shared_ptr<Application>& app);
@@ -37,7 +46,7 @@ public:
 	bool isEnabled() const;
 	bool isWorkingState() const;
 	bool attach(int pid);
-	
+
 	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
@@ -69,6 +78,8 @@ public:
 	void setVersion(int version);
 	const std::string getMetadata() const { return m_metadata; }
 	const std::string getInitCmd() const { return m_commandLineInit; }
+	const std::string getOwner() const { return m_owner; }
+	int getPermission() const { return m_permission; }
 	bool isCloudApp() const;
 
 protected:
@@ -88,6 +99,8 @@ protected:
 	std::string m_commandLineInit;
 	std::string m_commandLineFini;
 	std::string m_user;
+	std::string m_owner;
+	int m_permission;
 	std::string m_workdir;
 	std::string m_stdoutFile;
 	std::string m_metadata;

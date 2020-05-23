@@ -74,7 +74,8 @@ public:
 	static void handleReloadSignal();
 
 	static std::shared_ptr<Configuration> FromJson(const std::string& str) noexcept(false);
-	web::json::value AsJson(bool returnRuntimeInfo);
+	web::json::value AsJson(bool returnRuntimeInfo, const std::string& user);
+	void deSerializeApp(const web::json::value& jobj);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value& config);
 	void registerPrometheus();
@@ -90,7 +91,7 @@ public:
 	int getPromListenPort();
 	std::string getRestListenAddress();
 	const web::json::value getSecureConfigJson();
-	web::json::value getApplicationJson(bool returnRuntimeInfo) const;
+	web::json::value getApplicationJson(bool returnRuntimeInfo, const std::string& user) const;
 	std::shared_ptr<Application> getApp(const std::string& appName) const noexcept(false);
 	bool isAppExist(const std::string& appName);
 	void disableApp(const std::string& appName);
@@ -99,6 +100,7 @@ public:
 	std::shared_ptr<Label> getLabel() { return m_label; }
 
 	const std::string getLogLevel() const;
+	const std::string getDefaultAppUser() const { return m_defaultAppUser; };
 	bool getSslEnabled() const;
 	bool getEncryptKey();
 	std::string getSSLCertificateFile() const;
@@ -114,8 +116,9 @@ public:
 	const std::shared_ptr<Users> getUsers();
 	const std::shared_ptr<Roles> getRoles();
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
-	const std::shared_ptr<Configuration::JsonSecurity> getSecurity();
+	const std::shared_ptr<Configuration::JsonSecurity> getSecurity() const;
 	void updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security);
+	bool checkOwnerPermission(const std::string& user, const std::string& appUser, int appPermission, bool requestWrite) const;
 
 	void dump();
 
@@ -125,6 +128,7 @@ private:
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
 	std::string m_hostDescription;
+	std::string m_defaultAppUser;
 	int m_scheduleInterval;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonSecurity> m_security;
