@@ -12,6 +12,7 @@
 #include <cpprest/filestream.h>
 #include <cpprest/json.h>
 #include "ArgumentParser.h"
+#include "../common/jwt-cpp/jwt.h"
 #include "../common/Utility.h"
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
@@ -80,6 +81,10 @@ void ArgumentParser::parse()
 	else if (cmd == "logoff")
 	{
 		processLogoff();
+	}
+	else if (cmd == "loginfo")
+	{
+		processLoginfo();
 	}
 	else if (cmd == "reg")
 	{
@@ -166,6 +171,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  logon       Log on to App Mesh for a specific time period." << std::endl;
 	std::cout << "  logoff      End a App Mesh user session" << std::endl;
+	std::cout << "  loginfo     Print current logon user" << std::endl;
 
 	std::cout << "  view        List application[s]" << std::endl;
 	std::cout << "  resource    Display host resource usage" << std::endl;
@@ -254,7 +260,7 @@ void ArgumentParser::processLogon()
 
 void ArgumentParser::processLogoff()
 {
-	po::options_description desc("Log off to App Mesh:");
+	po::options_description desc("Logoff to App Mesh:");
 	desc.add_options()
 		OPTION_HOST_NAME
 		("help,h", "Prints command usage to stdout and exits")
@@ -269,6 +275,21 @@ void ArgumentParser::processLogoff()
 		ofs.close();
 	}
 	std::cout << "User logoff from " << m_hostname << " success." << std::endl;
+}
+
+void ArgumentParser::processLoginfo()
+{
+	auto token = getAuthenToken();
+	if (token.length())
+	{
+		auto decoded_token = jwt::decode(token);
+		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
+		{
+			// get user info
+			auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
+			std::cout << userName << std::endl;
+		}
+	}
 }
 
 // appName is null means this is a normal application (not a shell application)

@@ -28,6 +28,7 @@ private:
 	void printMainHelp();
 	void processLogon();
 	void processLogoff();
+	void processLoginfo();
 	void processReg();
 	void processUnReg();
 	void processView();
