@@ -1093,14 +1093,14 @@ void RestHandler::apiGetAppOutput(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
 
-	// /app/$app-name/output
+	// /appmesh/app/$app-name/output
 	std::string app = path.substr(strlen("/appmesh/app/"));
 	auto appName = app.substr(0, app.find_first_of('/'));
 	bool keepHis = getHttpQueryValue(message, HTTP_QUERY_KEY_keep_history, false, 0, 0);
 
 	checkAppAccessPermission(message, appName, false);
 
-	auto output = Configuration::instance()->getApp(app)->getOutput(keepHis);
+	auto output = Configuration::instance()->getApp(appName)->getOutput(keepHis);
 	LOG_DBG << fname;// << output;
 	message.reply(status_codes::OK, output);
 }
