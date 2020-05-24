@@ -22,7 +22,7 @@ std::shared_ptr<Role> Roles::getRole(const std::string& roleName)
 	}
 	else
 	{
-		throw std::invalid_argument("no such role");
+		throw std::invalid_argument(Utility::stringFormat("No such role <%s>", roleName.c_str()));
 	}
 }
 

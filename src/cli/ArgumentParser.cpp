@@ -464,7 +464,7 @@ void ArgumentParser::processUnReg()
 		}
 		else
 		{
-			throw std::invalid_argument(std::string("no such application : ") + appName);
+			throw std::invalid_argument(Utility::stringFormat("No such application <%s>", appName.c_str()));
 		}
 	}
 }
@@ -562,7 +562,7 @@ void ArgumentParser::processEnableDisable(bool start)
 		{
 			if (!isAppExist(appName))
 			{
-				throw std::invalid_argument("no such application");
+				throw std::invalid_argument(Utility::stringFormat("No such application <%s>", appName.c_str()));
 			}
 			appList.push_back(appName);
 		}
@@ -1091,7 +1091,7 @@ std::string ArgumentParser::requestToken(const std::string& user, const std::str
 	http_response response = client.request(requestLogin).get();
 	if (response.status_code() != status_codes::OK)
 	{
-		throw std::invalid_argument(std::string("Login failed ") + response.extract_utf8string(true).get());
+		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", response.extract_utf8string(true).get().c_str()));
 	}
 	else
 	{

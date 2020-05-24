@@ -309,7 +309,7 @@ std::string RestHandler::verifyToken(const HttpRequest& message)
 		auto userKey = userObj->getKey();
 
 		// check locked
-		if (userObj->locked()) throw std::invalid_argument("User was locked");
+		if (userObj->locked()) throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.c_str()));
 
 		// check user token
 		auto verifier = jwt::verify()
@@ -360,7 +360,7 @@ bool RestHandler::permissionCheck(const HttpRequest& message, const std::string&
 		else
 		{
 			LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-			throw std::invalid_argument(std::string("No such permission <") + permission + "> for user <" + userName + ">");
+			throw std::invalid_argument(Utility::stringFormat("No permission <%s> for user <%s>", permission.c_str(), userName.c_str()));
 		}
 	}
 	else
@@ -376,7 +376,7 @@ void RestHandler::checkAppAccessPermission(const HttpRequest& message, const std
 	auto app = Configuration::instance()->getApp(appName);
 	if (!Configuration::instance()->checkOwnerPermission(tokenUserName, app->getOwner(), app->getPermission(), requestWrite))
 	{
-		throw std::invalid_argument(Utility::stringFormat("user <%s> is not allowed to modify app <%s>", tokenUserName.c_str(), appName.c_str()));
+		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to modify app <%s>", tokenUserName.c_str(), appName.c_str()));
 	}
 }
 
@@ -667,7 +667,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 4)
 	{
-		throw std::invalid_argument("failed to get user name from path");
+		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
@@ -708,7 +708,7 @@ void RestHandler::apiUserLock(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 4)
 	{
-		throw std::invalid_argument("failed to get user name from path");
+		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
@@ -717,10 +717,6 @@ void RestHandler::apiUserLock(const HttpRequest& message)
 	{
 		throw std::invalid_argument("admin user can not be locked");
 	}
-	//if (tokenUserName != JWT_ADMIN_NAME)
-	//{
-	//	throw std::invalid_argument("only admin can lock/unlock users");
-	//}
 
 	Configuration::instance()->getUserInfo(pathUserName)->lock();
 
@@ -741,14 +737,10 @@ void RestHandler::apiUserUnlock(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 4)
 	{
-		throw std::invalid_argument("failed to get user name from path");
+		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
-	//if (tokenUserName != JWT_ADMIN_NAME)
-	//{
-	//	throw std::invalid_argument("only admin can lock/unlock users");
-	//}
 
 	Configuration::instance()->getUserInfo(pathUserName)->unlock();
 
@@ -769,7 +761,7 @@ void RestHandler::apiUserAdd(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 3)
 	{
-		throw std::invalid_argument("failed to get user name from path");
+		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
@@ -795,7 +787,7 @@ void RestHandler::apiUserDel(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 3)
 	{
-		throw std::invalid_argument("failed to get user name from path");
+		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
@@ -839,15 +831,10 @@ void RestHandler::apiRoleUpdate(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 3)
 	{
-		throw std::invalid_argument("failed to get role name from path");
+		throw std::invalid_argument(Utility::stringFormat("Failed to get role name from path: %s", path.c_str()));
 	}
 	auto pathRoleName = vec[2];
 	auto tokenUserName = getTokenUser(message);
-
-	//if (tokenUserName == JWT_ADMIN_NAME)
-	//{
-	//	throw std::invalid_argument("role can be only updated by admin");
-	//}
 
 	Configuration::instance()->getRoles()->addRole(message.extract_json(true).get(), pathRoleName);
 
@@ -868,15 +855,10 @@ void RestHandler::apiRoleDelete(const HttpRequest& message)
 	auto vec = Utility::splitString(path, "/");
 	if (vec.size() != 3)
 	{
-		throw std::invalid_argument("failed to get role name from path");
+		throw std::invalid_argument(Utility::stringFormat("Failed to get role name from path: %s", path.c_str()));
 	}
 	auto pathRoleName = vec[2];
 	auto tokenUserName = getTokenUser(message);
-
-	//if (tokenUserName == JWT_ADMIN_NAME)
-	//{
-	//	throw std::invalid_argument("role can be only updated by admin");
-	//}
 
 	Configuration::instance()->getRoles()->delRole(pathRoleName);
 

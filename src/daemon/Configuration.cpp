@@ -758,11 +758,11 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const w
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
 	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certFile))
 	{
-		throw std::invalid_argument("SSLCertificateFile not exist");
+		throw std::invalid_argument(Utility::stringFormat("SSLCertificateFile <%s> not exist", ssl->m_certFile.c_str()));
 	}
 	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certKeyFile))
 	{
-		throw std::invalid_argument("SSLCertificateKeyFile not exist");
+		throw std::invalid_argument(Utility::stringFormat("SSLCertificateKeyFile <%s> not exist", ssl->m_certKeyFile.c_str()));
 	}
 	return ssl;
 }
@@ -825,7 +825,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	const static boost::regex urlExrp("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
 	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExrp))
 	{
-		throw std::invalid_argument("consul URL is not correct");
+		throw std::invalid_argument(Utility::stringFormat("Consul url <%s> is not correct", consul->m_consulUrl.c_str()));
 	}
 	if (consul->m_ttl < 5) throw std::invalid_argument("session TTL should not less than 5s");
 	return consul;
