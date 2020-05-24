@@ -309,7 +309,7 @@ std::string RestHandler::verifyToken(const HttpRequest& message)
 		auto userKey = userObj->getKey();
 
 		// check locked
-		if (userObj->locked()) throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.c_str()));
+		if (userObj->locked()) throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.as_string().c_str()));
 
 		// check user token
 		auto verifier = jwt::verify()
