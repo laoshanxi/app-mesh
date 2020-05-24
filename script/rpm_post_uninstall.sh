@@ -27,5 +27,5 @@ rm -f /usr/bin/appc
 # clean user appmesh
 id appmesh >& /dev/null
 if [ $? -eq 0 ]; then
-    userdel -r appmesh
+    userdel -r appmesh || true
 fi

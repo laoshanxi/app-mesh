@@ -47,5 +47,5 @@ systemctl start appmesh
 # add user appmesh
 id appmesh >& /dev/null
 if [ $? -ne 0 ]; then
-    useradd appmesh -s /usr/sbin/nologin --no-create-home
+    useradd appmesh -s /usr/sbin/nologin --no-create-home  || true
 fi
