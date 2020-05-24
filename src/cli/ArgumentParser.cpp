@@ -279,6 +279,14 @@ void ArgumentParser::processLogoff()
 
 void ArgumentParser::processLoginfo()
 {
+	po::options_description desc("Print logon user:");
+	desc.add_options()
+		OPTION_HOST_NAME
+		("help,h", "Prints command usage to stdout and exits")
+		;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
 	auto token = getAuthenToken();
 	if (token.length())
 	{
