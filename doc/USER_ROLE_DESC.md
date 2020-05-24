@@ -178,3 +178,11 @@ HTTP/1.1 200 OK
 Content-Length: 7
 Content-Type: text/plain; charset=utf-8
 ```
+
+### Application permission
+Each application can define access permission for other users (option), by default, one registered application can be accessed by any user who has specific role permission, application permission is different with role permission, application permission define accessbility for the users who does not register the application.
+The permission is a two digital int value:
+- Unit Place : define the same group users permissions. 1=deny, 2=read, 3=write
+- Tenth Place : define the other group users permissions. 1=deny, 2=read, 3=write
+For example, 11 indicates all other user can not access this application, 21 indicates only same group users can read this application.
+

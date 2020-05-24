@@ -442,6 +442,8 @@ void RestHandler::apiEnableApp(const HttpRequest& message)
 	std::string appName = path.substr(strlen("/appmesh/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 
+	checkAppAccessPermission(message, appName, true);
+
 	Configuration::instance()->enableApp(appName);
 	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
 }
@@ -454,6 +456,8 @@ void RestHandler::apiDisableApp(const HttpRequest& message)
 	// /appmesh/app/$app-name/disable
 	std::string appName = path.substr(strlen("/appmesh/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
+
+	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->disableApp(appName);
 	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
