@@ -55,6 +55,7 @@ public:
 	// find user
 	std::map<std::string, std::shared_ptr<User>> getUsers();
 	std::shared_ptr<User> getUser(std::string name) const;
+	std::set<std::string> getGroups() const;
 
 	// manage users
 	void addUsers(const web::json::value& obj, std::shared_ptr<Roles> roles);

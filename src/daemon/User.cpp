@@ -56,6 +56,17 @@ std::shared_ptr<User> Users::getUser(std::string name) const
 	}
 }
 
+std::set<std::string> Users::getGroups() const
+{
+	std::set<std::string> result;
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	for (const auto& usr : m_users)
+	{
+		if (usr.second->getGroup().length()) result.insert(usr.second->getGroup());
+	}
+	return std::move(result);
+}
+
 void Users::addUsers(const web::json::value& obj, std::shared_ptr<Roles> roles)
 {
 	if (!obj.is_null() && obj.is_object())

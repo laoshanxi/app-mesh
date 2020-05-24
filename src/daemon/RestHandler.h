@@ -73,6 +73,7 @@ private:
 	void apiRoleView(const HttpRequest& message);
 	void apiRoleUpdate(const HttpRequest& message);
 	void apiRoleDelete(const HttpRequest& message);
+	void apiUserGroupsView(const HttpRequest& message);
 	void apiListPermissions(const HttpRequest& message);
 	void apiHealth(const HttpRequest& message);
 	void apiMetrics(const HttpRequest& message);

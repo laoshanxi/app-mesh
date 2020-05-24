@@ -139,6 +139,7 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 	bindRestMethod(web::http::methods::DEL, R"(/appmesh/role/([^/\*]+))", std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/user/permissions", std::bind(&RestHandler::apiGetUserPermissions, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/permissions", std::bind(&RestHandler::apiListPermissions, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/user/groups", std::bind(&RestHandler::apiUserGroupsView, this, std::placeholders::_1));
 
 	// 9. metrics
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
@@ -880,6 +881,18 @@ void RestHandler::apiRoleDelete(const HttpRequest& message)
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiUserGroupsView(const HttpRequest& message)
+{
+	auto groups = Configuration::instance()->getSecurity()->m_jwtUsers->getGroups();
+	auto json = web::json::value::array(groups.size());
+	int index = 0;
+	for (const auto& grp : groups)
+	{
+		json[index++] = web::json::value::string(grp);
+	}
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiListPermissions(const HttpRequest& message)

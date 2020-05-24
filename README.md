@@ -421,6 +421,7 @@ POST| /appmesh/role/roleA | | Update roleA with defined permissions
 DELETE| /appmesh/role/roleA | | Delete roleA
 GET | /appmesh/user/permissions |  | Get user self permissions, user token is required in header
 GET | /appmesh/permissions |  | Get all permissions
+GET | /appmesh/user/groups |  | Get all user groups
 GET | /appmesh/metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)
 
 ---
