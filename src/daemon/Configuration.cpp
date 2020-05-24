@@ -694,7 +694,7 @@ std::shared_ptr<Application> Configuration::getApp(const std::string& appName) c
 	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application>& app) { return app->getName() == appName; });
 	if (iter != apps.end()) return *iter;
 
-	throw std::invalid_argument("No such application found");
+	throw std::invalid_argument(Utility::stringFormat("No such application <%s> found", appName.c_str()));
 }
 
 bool Configuration::isAppExist(const std::string& appName)
