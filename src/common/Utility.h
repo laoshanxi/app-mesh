@@ -71,7 +71,7 @@ namespace std
 #define DEFAULT_SCHEDULE_INTERVAL 2
 #define DEFAULT_HTTP_THREAD_POOL_SIZE 6
 
-#define JWT_USER_KEY "password"
+#define JWT_USER_KEY "User123"
 #define JWT_USER_NAME "user"
 #define JWT_ADMIN_NAME "admin"
 #define APPMESH_PASSWD_MIN_LENGTH 3

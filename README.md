@@ -39,6 +39,7 @@ $ appc
 Commands:
   logon       Log on to App Mesh for a specific time period.
   logoff      End a App Mesh user session
+  loginfo     Print current logon user
   view        List application[s]
   resource    Display host resource usage
   label       Manage host labels
@@ -108,11 +109,12 @@ Register a new application:
   -B [ --port ] arg              port number
   -u [ --user ] arg              Specifies the name of the user to connect to 
                                  App Mesh for this command.
-  -x [ --password ] arg          Specifies the user password to connect to 
-                                 App Mesh for this command.
+  -x [ --password ] arg          Specifies the user password to connect to App 
+                                 Mesh for this command.
   -n [ --name ] arg              application name
   -g [ --metadata ] arg          application metadata string
-  -a [ --appuser ] arg           application process running OS user name
+  -a [ --run_user ] arg          application process running OS user name
+  --perm arg                     application owner permission
   -c [ --cmd ] arg               full command line with arguments
   -I [ --init ] arg              initial command line with arguments
   -F [ --fini ] arg              fini command line with arguments
@@ -120,7 +122,7 @@ Register a new application:
                                  host:port/health', return 0 is health)
   -d [ --docker_image ] arg      docker image which used to run command line 
                                  (this will enable docker)
-  -w [ --workdir ] arg           working directory (default /tmp)
+  -w [ --workdir ] arg           working directory
   -S [ --stdout ] arg            stdout file
   -s [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
