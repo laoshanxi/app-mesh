@@ -565,6 +565,7 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 			}
 		}
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultAppUser)) SET_COMPARE(this->m_defaultAppUser, newConfig->m_defaultAppUser);
 
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))

@@ -51,6 +51,8 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		this->m_commandLineInit == app->m_commandLineInit &&
 		this->m_commandLineFini == app->m_commandLineFini &&
 		this->m_user == app->m_user &&
+		this->m_owner == app->m_owner &&
+		this->m_permission == app->m_permission &&
 		this->m_dockerImage == app->m_dockerImage &&
 		this->m_version == app->m_version &&
 		this->m_cacheOutputLines == app->m_cacheOutputLines &&
@@ -513,6 +515,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	LOG_DBG << fname << "m_user:" << m_user;
+	LOG_DBG << fname << "m_owner:" << m_owner;
 	LOG_DBG << fname << "m_permission:" << m_permission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
