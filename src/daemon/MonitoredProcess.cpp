@@ -1,12 +1,12 @@
 #include <thread>
-#include <ace/Pipe.h>
 #include <ace/Process.h>
 #include "MonitoredProcess.h"
 #include "../common/Utility.h"
 #include "../common/HttpRequest.h"
 
 MonitoredProcess::MonitoredProcess(int cacheOutputLines, bool enableBuildinThread)
-	:AppProcess(cacheOutputLines), m_readPipeFile(0), m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
+	:AppProcess(cacheOutputLines), m_pipeHandler{ ACE_INVALID_HANDLE , ACE_INVALID_HANDLE }, 
+	m_readPipeFile(0), m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
 {
 }
 
@@ -14,9 +14,13 @@ MonitoredProcess::~MonitoredProcess()
 {
 	const static char fname[] = "MonitoredProcess::~MonitoredProcess() ";
 
-	// clean pipe handlers and file
-	if (m_pipe != nullptr) m_pipe->close();
-	if (m_readPipeFile != nullptr) ACE_OS::fclose(m_readPipeFile);
+	// clean pipe handlers
+	if (m_readPipeFile != nullptr && ACE_OS::fclose(m_readPipeFile) < 0)
+	{
+		LOG_WAR << fname << "close pipe read file failed with error : " << std::strerror(errno);
+	}
+	// not necessary
+	if (m_pipeHandler[0] != ACE_INVALID_HANDLE) ACE_OS::close(m_pipeHandler[0]);
 
 	std::unique_ptr<HttpRequest> response((HttpRequest*)m_httpRequest);
 	m_httpRequest = nullptr;
@@ -31,14 +35,12 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 {
 	const static char fname[] = "MonitoredProcess::spawn() ";
 
-	m_pipe = std::make_unique<ACE_Pipe>();
-	if (m_pipe->open(m_pipeHandler) < 0)
+	if (ACE_OS::pipe(m_pipeHandler) < 0)
 	{
 		LOG_ERR << fname << "Create pipe failed with error : " << std::strerror(errno);
 		return ACE_INVALID_PID;
 	}
-	m_readPipeFile = ACE_OS::fdopen(m_pipe->read_handle(), "r");
-	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
+	m_readPipeFile = ACE_OS::fdopen(m_pipeHandler[0], "r");
 	if (m_readPipeFile == nullptr)
 	{
 		LOG_ERR << fname << "Get file stream failed with error : " << std::strerror(errno);
@@ -46,19 +48,22 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 	}
 	else
 	{
-		dummy = ACE_OS::open("/dev/null", O_RDWR);
 		// release the handles if already set in process options
 		option.release_handles();
-		option.set_handles(dummy, m_pipe->write_handle(), m_pipe->write_handle());
+		option.set_handles(ACE_INVALID_HANDLE, m_pipeHandler[1], m_pipeHandler[1]);
 	}
 	auto rt = AppProcess::spawn(option);
 
 	// Start thread to read stdout/stderr stream
 	if (m_enableBuildinThread) m_thread = std::make_unique<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
 
-	// close write in parent side (write handler is used for child process in our case)
-	m_pipe->close_write();
-	if (dummy != ACE_INVALID_HANDLE) ACE_OS::close(dummy);
+	// close write in parent side (write handler is used for child process)
+	if (ACE_OS::close(m_pipeHandler[1]) < 0)
+	{
+		LOG_WAR << fname << "close write handler failed with error : " << std::strerror(errno);
+	}
+	m_pipeHandler[1] = ACE_INVALID_HANDLE;
+
 	return rt;
 }
 
@@ -129,19 +134,35 @@ void MonitoredProcess::runPipeReaderThread()
 
 	const int stdoutQueueMaxLineCount = m_cacheOutputLines;
 	const auto bufsize = 2048;
+	std::string lineTxt;
 	std::shared_ptr<char> buffer(new char[bufsize], std::default_delete<char[]>());
 	while (!feof(m_readPipeFile) && !ferror(m_readPipeFile))
 	{
 		char* result = fgets(buffer.get(), sizeof(buffer), m_readPipeFile);
 		if (result == nullptr) continue;
+
+		char* ptr = buffer.get() + ACE_OS::strlen(buffer.get()) - 1;
+		if (*ptr == '\n')
+		{
+			// found new line
+			//*ptr = '\0';
+			lineTxt.append(result);
+		}
+		else
+		{
+			lineTxt.append(result);
+			continue;
+		}
+
 		// build-in thread is used for monitor app, do not need write log
 		if (!m_enableBuildinThread)
 		{
-			LOG_DBG << fname << "Read line : " << result;
+			LOG_DBG << fname << "Read line : " << lineTxt;
 		}
 
 		std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
-		m_msgQueue.push(result);
+		m_msgQueue.push(lineTxt);
+		lineTxt.clear();
 		// Do not store too much in memory
 		if ((int)m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}

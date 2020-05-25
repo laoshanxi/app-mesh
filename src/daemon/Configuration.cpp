@@ -139,7 +139,7 @@ void SigHupHandler(int signo)
 	}
 }
 
-void Configuration::handleReloadSignal()
+void Configuration::handleSignal()
 {
 	static ACE_Sig_Action* sig_action = nullptr;
 	if (!sig_action)
@@ -147,6 +147,13 @@ void Configuration::handleReloadSignal()
 		sig_action = new ACE_Sig_Action();
 		sig_action->handler(SigHupHandler);
 		sig_action->register_action(SIGHUP);
+	}
+
+	static ACE_Sig_Action* sig_pipe = nullptr;
+	if (!sig_pipe)
+	{
+		sig_pipe = new ACE_Sig_Action((ACE_SignalHandler)SIG_IGN);
+		sig_pipe->register_action(SIGPIPE, 0);
 	}
 }
 

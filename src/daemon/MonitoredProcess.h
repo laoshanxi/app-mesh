@@ -7,7 +7,6 @@
 #include <mutex>
 #include "AppProcess.h"
 
-class ACE_Pipe;
 class ACE_Process_Options;
 //////////////////////////////////////////////////////////////////////////
 /// Monitored Process Object
@@ -31,8 +30,8 @@ public:
 	void runPipeReaderThread();
 	virtual bool complete() override { return m_buildinThreadFinished; }
 private:
-	ACE_HANDLE m_pipeHandler[2]; // 0 for read, 1 for write
-	std::unique_ptr<ACE_Pipe> m_pipe;
+	/// @brief 0 for parent read, 1 for child write
+	ACE_HANDLE m_pipeHandler[2];
 	FILE* m_readPipeFile;
 
 	std::queue<std::string> m_msgQueue;

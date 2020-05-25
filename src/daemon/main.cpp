@@ -43,7 +43,7 @@ int main(int argc, char* argv[])
 		Utility::initLogging();
 		
 		// catch SIGHUP for 'systemctl reload'
-		Configuration::handleReloadSignal();
+		Configuration::handleSignal();
 
 		// Resource init
 		ResourceCollection::instance()->getHostResource();

@@ -71,7 +71,7 @@ public:
 	static std::shared_ptr<Configuration> instance();
 	static void instance(std::shared_ptr<Configuration> config);
 	static std::string readConfiguration();
-	static void handleReloadSignal();
+	static void handleSignal();
 
 	static std::shared_ptr<Configuration> FromJson(const std::string& str) noexcept(false);
 	web::json::value AsJson(bool returnRuntimeInfo, const std::string& user);

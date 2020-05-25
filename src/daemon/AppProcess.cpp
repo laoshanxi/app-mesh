@@ -23,6 +23,8 @@ AppProcess::~AppProcess()
 		ACE_OS::close(m_stdoutHandler);
 		m_stdoutHandler = ACE_INVALID_HANDLE;
 	}
+	this->close_dup_handles();
+	this->close_passed_handles();
 }
 
 void AppProcess::attach(int pid)
