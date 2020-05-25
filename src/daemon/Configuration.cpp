@@ -67,7 +67,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 
 	// Global Prameters
 	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
-	config->m_defaultAppUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultAppUser);
+	config->m_defaultAppUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
@@ -152,7 +152,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 
 	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
-	result[JSON_KEY_DefaultAppUser] = web::json::value::string(m_defaultAppUser);
+	result[JSON_KEY_DefaultExecUser] = web::json::value::string(m_defaultAppUser);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
 
@@ -261,7 +261,7 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	for (auto app : m_apps)
 	{
 		// do not persist temp application
-		if ((returnRuntimeInfo || app->isWorkingState()) && checkOwnerPermission(user, app->getOwner(), app->getPermission(), false))
+		if ((returnRuntimeInfo || app->isWorkingState()) && checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false))
 		{
 			apps.push_back(app);
 		}
@@ -565,7 +565,7 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 			}
 		}
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultAppUser)) SET_COMPARE(this->m_defaultAppUser, newConfig->m_defaultAppUser);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser)) SET_COMPARE(this->m_defaultAppUser, newConfig->m_defaultAppUser);
 
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))

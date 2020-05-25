@@ -100,7 +100,7 @@ public:
 	std::shared_ptr<Label> getLabel() { return m_label; }
 
 	const std::string getLogLevel() const;
-	const std::string getDefaultAppUser() const { return m_defaultAppUser; };
+	const std::string getDefaultExecUser() const { return m_defaultAppUser; };
 	bool getSslEnabled() const;
 	bool getEncryptKey();
 	std::string getSSLCertificateFile() const;

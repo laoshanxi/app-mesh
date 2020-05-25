@@ -374,7 +374,7 @@ void RestHandler::checkAppAccessPermission(const HttpRequest& message, const std
 {
 	auto tokenUserName = getTokenUser(message);
 	auto app = Configuration::instance()->getApp(appName);
-	if (!Configuration::instance()->checkOwnerPermission(tokenUserName, app->getOwner(), app->getPermission(), requestWrite))
+	if (!Configuration::instance()->checkOwnerPermission(tokenUserName, app->getOwner(), app->getOwnerPermission(), requestWrite))
 	{
 		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to modify app <%s>", tokenUserName.c_str(), appName.c_str()));
 	}

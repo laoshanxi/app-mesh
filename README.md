@@ -81,7 +81,7 @@ $ appc reg -n ping -c 'ping www.baidu.com' -o 10
         "command" : "ping www.baidu.com",
         "name" : "ping",
         "status" : 1,
-        "user" : "root"
+        "exec_user" : "root"
 }
 
 $ appc view
@@ -162,7 +162,7 @@ y
    "name" : "ping",
    "pid" : -1,
    "return" : 0,
-   "user" : "kfc",
+   "exec_user" : "kfc",
    "working_dir" : "/opt"
 }
 
@@ -173,7 +173,7 @@ $ appc reg -n mydocker -c 'sleep 30' -d ubuntu
         "docker_image" : "ubuntu",
         "name" : "mydocker",
         "status" : 1,
-        "user" : "root"
+        "exec_user" : "root"
 }
 
 $ appc view
@@ -305,7 +305,7 @@ $ appc view -n ping
         "pid" : 8426,
         "return" : 0,
         "status" : 1,
-        "user" : "root"
+        "exec_user" : "root"
 }
 ```
 
@@ -392,12 +392,12 @@ POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://
 GET | /appmesh/app/$app-name | | Get an application infomation
 GET | /appmesh/app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealth
 GET | /appmesh/app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
-POST| /appmesh/app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
+POST| /appmesh/app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "exec_user": "root", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
 GET | /appmesh/app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
-POST| /appmesh/app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "user": "root", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
+POST| /appmesh/app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "exec_user": "root", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
 GET | /appmesh/applications | | Get all application infomation
 GET | /appmesh/resources | | Get host resource usage
-PUT | /appmesh/app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "user": "root", "working_dir": "/tmp" } | Register a new application
+PUT | /appmesh/app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "exec_user": "root", "working_dir": "/tmp" } | Register a new application
 POST| /appmesh/app/$app-name/enable | | Enable an application
 POST| /appmesh/app/$app-name/disable | | Disable an application
 DELETE| /appmesh/app/$app-name | | Unregister an application

@@ -160,7 +160,7 @@ public:
 #define CONSUL_SESSION_DEFAULT_TTL 30
 
 #define JSON_KEY_Description "Description"
-#define JSON_KEY_DefaultAppUser "DefaultAppUser"
+#define JSON_KEY_DefaultExecUser "DefaultExecUser"
 
 #define JSON_KEY_REST "REST"
 #define JSON_KEY_RestEnabled "RestEnabled"
@@ -196,7 +196,7 @@ public:
 #define JSON_KEY_CONSUL_SECURITY "enable_consul_security"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
-#define JSON_KEY_APP_user "user"
+#define JSON_KEY_APP_exec_user "exec_user"
 #define JSON_KEY_APP_owner "owner"
 #define JSON_KEY_APP_owner_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"

@@ -79,7 +79,7 @@ public:
 	const std::string getMetadata() const { return m_metadata; }
 	const std::string getInitCmd() const { return m_commandLineInit; }
 	const std::string getOwner() const { return m_owner; }
-	int getPermission() const { return m_permission; }
+	int getOwnerPermission() const { return m_ownerPermission; }
 	bool isCloudApp() const;
 
 protected:
@@ -98,9 +98,9 @@ protected:
 	std::string m_commandLine;
 	std::string m_commandLineInit;
 	std::string m_commandLineFini;
-	std::string m_user;
+	std::string m_execUser;
 	std::string m_owner;
-	int m_permission;
+	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;
 	std::string m_metadata;

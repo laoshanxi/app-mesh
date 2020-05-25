@@ -118,7 +118,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 		// Spawn new process
 		m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
-		m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+		m_pid = m_process->spawnProcess(m_commandLine, m_execUser, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(this->getStartInterval()));
 	}
 }

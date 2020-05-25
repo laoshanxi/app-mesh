@@ -17,7 +17,7 @@
 #include "../prom_exporter/gauge.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_permission(0), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID())
+	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID())
 	, m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
 {
@@ -50,9 +50,9 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		this->m_commandLine == app->m_commandLine &&
 		this->m_commandLineInit == app->m_commandLineInit &&
 		this->m_commandLineFini == app->m_commandLineFini &&
-		this->m_user == app->m_user &&
+		this->m_execUser == app->m_execUser &&
 		this->m_owner == app->m_owner &&
-		this->m_permission == app->m_permission &&
+		this->m_ownerPermission == app->m_ownerPermission &&
 		this->m_dockerImage == app->m_dockerImage &&
 		this->m_version == app->m_version &&
 		this->m_cacheOutputLines == app->m_cacheOutputLines &&
@@ -83,10 +83,10 @@ bool Application::isWorkingState() const
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::value& jobj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
-	app->m_user = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user));
-	if (app->m_user.empty()) app->m_user = Configuration::instance()->getDefaultAppUser();
+	app->m_execUser = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_exec_user));
+	if (app->m_execUser.empty()) app->m_execUser = Configuration::instance()->getDefaultExecUser();
 	app->m_owner = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner));
-	app->m_permission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
+	app->m_ownerPermission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
 	app->m_stdoutFile = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_stdout_file));
 	// Be noticed do not use multiple spaces between command arguments
@@ -210,7 +210,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
-				m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+				m_pid = m_process->spawnProcess(m_commandLine, m_execUser, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 				if (m_metricStartCount) m_metricStartCount->metric().Increment();
 			}
 		}
@@ -304,7 +304,7 @@ std::string Application::runApp(int timeoutSeconds)
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(m_commandLine, m_user, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+	m_pid = m_process->spawnProcess(m_commandLine, m_execUser, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 
 	if (m_metricStartCount) m_metricStartCount->metric().Increment();
 
@@ -452,9 +452,9 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
-	if (m_user.length()) result[JSON_KEY_APP_user] = web::json::value::string(GET_STRING_T(m_user));
+	if (m_execUser.length()) result[JSON_KEY_APP_exec_user] = web::json::value::string(GET_STRING_T(m_execUser));
 	if (m_owner.length()) result[JSON_KEY_APP_owner] = web::json::value::string(GET_STRING_T(m_owner));
-	if (m_permission) result[JSON_KEY_APP_owner_permission] = web::json::value::number(m_permission);
+	if (m_ownerPermission) result[JSON_KEY_APP_owner_permission] = web::json::value::number(m_ownerPermission);
 	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
 	if (m_commandLineInit.length()) result[GET_STRING_T(JSON_KEY_APP_init_command)] = web::json::value::string(GET_STRING_T(m_commandLineInit));
 	if (m_commandLineFini.length()) result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
@@ -514,9 +514,9 @@ void Application::dump()
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
-	LOG_DBG << fname << "m_user:" << m_user;
+	LOG_DBG << fname << "m_user:" << m_execUser;
 	LOG_DBG << fname << "m_owner:" << m_owner;
-	LOG_DBG << fname << "m_permission:" << m_permission;
+	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;

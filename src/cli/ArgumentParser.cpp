@@ -308,7 +308,7 @@ void ArgumentParser::processReg()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
 		("metadata,g", po::value<std::string>(), "application metadata string")
-		("run_user,a", po::value<std::string>(), "application process running OS user name")
+		("exec_user,a", po::value<std::string>(), "application process running OS user name")
 		("perm", po::value<int>(), "application owner permission")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("init,I", po::value<std::string>(), "initial command line with arguments")
@@ -369,7 +369,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("init"))jsobObj[JSON_KEY_APP_init_command] = web::json::value::string(m_commandLineVariables["init"].as<std::string>());
 	if (m_commandLineVariables.count("fini"))jsobObj[JSON_KEY_APP_fini_command] = web::json::value::string(m_commandLineVariables["fini"].as<std::string>());
 	if (m_commandLineVariables.count("health_check"))jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
-	if (m_commandLineVariables.count("appuser")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["appuser"].as<std::string>());
+	if (m_commandLineVariables.count("exec_user")) jsobObj[JSON_KEY_APP_exec_user] = web::json::value::string(m_commandLineVariables["exec_user"].as<std::string>());
 	if (m_commandLineVariables.count("perm")) jsobObj[JSON_KEY_APP_owner_permission] = web::json::value::number(m_commandLineVariables["perm"].as<int>());
 	if (m_commandLineVariables.count("stdout")) jsobObj[JSON_KEY_APP_stdout_file] = web::json::value::string(m_commandLineVariables["stdout"].as<std::string>());
 	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
@@ -585,7 +585,7 @@ void ArgumentParser::processRun()
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("run_user,a", po::value<std::string>(), "application process running OS user name")
+		("exec_user,a", po::value<std::string>(), "application process running OS user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("workdir,w", po::value<std::string>(), "working directory (default '/tmp')")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
@@ -607,7 +607,7 @@ void ArgumentParser::processRun()
 
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	if (m_commandLineVariables.count("appuser")) jsobObj[JSON_KEY_APP_user] = web::json::value::string(m_commandLineVariables["appuser"].as<std::string>());
+	if (m_commandLineVariables.count("exec_user")) jsobObj[JSON_KEY_APP_exec_user] = web::json::value::string(m_commandLineVariables["exec_user"].as<std::string>());
 	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
 	{
@@ -1107,7 +1107,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	std::cout
 		<< std::setw(3) << ("id")
 		<< std::setw(12) << (JSON_KEY_APP_name)
-		<< std::setw(6) << (JSON_KEY_APP_user)
+		<< std::setw(6) << (JSON_KEY_APP_exec_user)
 		<< std::setw(9) << (JSON_KEY_APP_status)
 		<< std::setw(7) << (JSON_KEY_APP_health)
 		<< std::setw(7) << (JSON_KEY_APP_pid)
@@ -1127,7 +1127,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		else if (name.length() >= 12) name += " ";
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
-		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_user), 6);
+		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_exec_user), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status));
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_health);
 		std::cout << std::setw(7);
