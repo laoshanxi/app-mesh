@@ -1107,7 +1107,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	std::cout
 		<< std::setw(3) << ("id")
 		<< std::setw(12) << (JSON_KEY_APP_name)
-		<< std::setw(6) << (JSON_KEY_APP_exec_user)
+		<< std::setw(6) << (JSON_KEY_APP_owner)
 		<< std::setw(9) << (JSON_KEY_APP_status)
 		<< std::setw(7) << (JSON_KEY_APP_health)
 		<< std::setw(7) << (JSON_KEY_APP_pid)
@@ -1127,7 +1127,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		else if (name.length() >= 12) name += " ";
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
-		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_exec_user), 6);
+		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status));
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_health);
 		std::cout << std::setw(7);
