@@ -67,9 +67,16 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 
 	// Global Prameters
 	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
-	config->m_defaultAppUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
+	config->m_defaultExecUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
+	if (config->m_defaultExecUser.empty()) config->m_defaultExecUser = DEFAULT_EXEC_USER;
+	unsigned int gid, uid;
+	if (!Utility::getUid(config->m_defaultExecUser, uid, gid))
+	{
+		LOG_ERR << "no such OS user : " << config->m_defaultExecUser;
+		throw std::invalid_argument(Utility::stringFormat("No such OS user found <%s>", config->m_defaultExecUser.c_str()));
+	}
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{
 		// Use default value instead
@@ -152,7 +159,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 
 	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
-	result[JSON_KEY_DefaultExecUser] = web::json::value::string(m_defaultAppUser);
+	result[JSON_KEY_DefaultExecUser] = web::json::value::string(m_defaultExecUser);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
 
@@ -565,7 +572,7 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 			}
 		}
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser)) SET_COMPARE(this->m_defaultAppUser, newConfig->m_defaultAppUser);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser)) SET_COMPARE(this->m_defaultExecUser, newConfig->m_defaultExecUser);
 
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))

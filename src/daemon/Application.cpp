@@ -84,7 +84,6 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
 	app->m_execUser = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_exec_user));
-	if (app->m_execUser.empty()) app->m_execUser = Configuration::instance()->getDefaultExecUser();
 	app->m_owner = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner));
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));

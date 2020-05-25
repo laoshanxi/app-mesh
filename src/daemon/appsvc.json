@@ -104,7 +104,7 @@
     {
       "command": "ping www.baidu.com -w 300",
       "name": "ping",
-      "user": "root",
+      "exec_user": "appmesh",
       "cache_lines": 30
     }
   ],

@@ -1,5 +1,6 @@
 #include <thread>
 #include "AppProcess.h"
+#include "Configuration.h"
 #include "../common/Utility.h"
 #include "../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
@@ -161,7 +162,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	ACE_Process_Options option(1, cmdLenth, totalEnvSize, totalEnvArgs);
 	option.command_line(cmd.c_str());
 	//option.avoid_zombies(1);
-	if (user.length())
+	if (user.empty()) user = Configuration::instance()->getDefaultExecUser();
 	{
 		unsigned int gid, uid;
 		if (Utility::getUid(user, uid, gid))

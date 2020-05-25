@@ -100,7 +100,7 @@ public:
 	std::shared_ptr<Label> getLabel() { return m_label; }
 
 	const std::string getLogLevel() const;
-	const std::string getDefaultExecUser() const { return m_defaultAppUser; };
+	const std::string getDefaultExecUser() const { return m_defaultExecUser; };
 	bool getSslEnabled() const;
 	bool getEncryptKey();
 	std::string getSSLCertificateFile() const;
@@ -128,7 +128,7 @@ private:
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
 	std::string m_hostDescription;
-	std::string m_defaultAppUser;
+	std::string m_defaultExecUser;
 	int m_scheduleInterval;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonSecurity> m_security;
