@@ -513,7 +513,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
-	LOG_DBG << fname << "m_user:" << m_execUser;
+	LOG_DBG << fname << "m_execUser:" << m_execUser;
 	LOG_DBG << fname << "m_owner:" << m_owner;
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);

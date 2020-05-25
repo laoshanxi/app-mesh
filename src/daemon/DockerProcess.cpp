@@ -32,7 +32,7 @@ void DockerProcess::killgroup(int timerId)
 	{
 		auto cmd = Utility::stringFormat("docker rm -f %s", containerId.c_str());
 		AppProcess proc(0);
-		proc.spawnProcess(cmd, "", "", {}, nullptr, "");
+		proc.spawnProcess(cmd, "root", "", {}, nullptr, "");
 		if (proc.wait(ACE_Time_Value(3)) <= 0)
 		{
 			LOG_ERR << fname << "cmd <" << cmd << "> killed due to timeout";
@@ -48,10 +48,11 @@ void DockerProcess::killgroup(int timerId)
 	this->detach();
 }
 
-int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
+int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
 {
 	const static char fname[] = "DockerProcess::syncSpawnProcess() ";
 
+	// always use root user to talk to start docker cli
 	killgroup();
 	int pid = ACE_INVALID_PID;
 	constexpr int dockerCliTimeoutSec = 5;
@@ -60,13 +61,13 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	// 0. clean old docker contianer (docker container will left when host restart)
 	std::string dockerCommand = Utility::stringFormat("docker rm -f %s", containerName.c_str());
 	AppProcess proc(0);
-	proc.spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
+	proc.spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 	proc.wait();
 
 	// 1. check docker image
 	dockerCommand = Utility::stringFormat("docker inspect -f '{{.Size}}' %s", m_dockerImage.c_str());
 	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
-	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
+	pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
 	auto imageSizeStr = Utility::stdStringTrim(dockerProcess->fetchLine());
@@ -128,13 +129,14 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 			dockerCommand.append(" --cpu-shares ").append(std::to_string(limit->m_cpuShares));
 		}
 	}
+	if (!execUser.empty()) dockerCommand.append(" --user ").append(execUser);
 	dockerCommand += " " + m_dockerImage;
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
 	bool startSucess = false;
 	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
-	pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
+	pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 	dockerProcess->runPipeReaderThread();
 
@@ -156,7 +158,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string user, std::stri
 	{
 		dockerCommand = Utility::stringFormat("docker inspect -f '{{.State.Pid}}' %s", containerId.c_str());
 		dockerProcess = std::make_shared<MonitoredProcess>(32, false);
-		pid = dockerProcess->spawnProcess(dockerCommand, "", "", {}, nullptr, stdoutFile);
+		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 		dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
 		dockerProcess->runPipeReaderThread();
 		if (dockerProcess->return_value() == 0)
@@ -212,7 +214,7 @@ void DockerProcess::containerId(std::string containerId)
 	m_containerId = containerId;
 }
 
-int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
+int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
 {
 	const static char fname[] = "DockerProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -222,7 +224,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	struct SpawnParams
 	{
 		std::string cmd;
-		std::string user;
+		std::string execUser;
 		std::string workDir;
 		std::map<std::string, std::string> envMap;
 		std::shared_ptr<ResourceLimitation> limit;
@@ -231,7 +233,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 	};
 	auto param = std::make_shared<SpawnParams>();
 	param->cmd = cmd;
-	param->user = user;
+	param->execUser = execUser;
 	param->workDir = workDir;
 	param->envMap = envMap;
 	param->limit = limit;
@@ -248,7 +250,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string user, std::string w
 			// use try catch to avoid throw from syncSpawnProcess crash
 			try
 			{
-				param->thisProc->syncSpawnProcess(param->cmd, param->user, param->workDir, param->envMap, param->limit, stdoutFile);
+				param->thisProc->syncSpawnProcess(param->cmd, param->execUser, param->workDir, param->envMap, param->limit, stdoutFile);
 			}
 			catch (...)
 			{

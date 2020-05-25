@@ -163,6 +163,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	option.command_line(cmd.c_str());
 	//option.avoid_zombies(1);
 	if (user.empty()) user = Configuration::instance()->getDefaultExecUser();
+	if (user != "root")
 	{
 		unsigned int gid, uid;
 		if (Utility::getUid(user, uid, gid))
