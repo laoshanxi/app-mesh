@@ -17,14 +17,16 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 		const auto& taskName = task.first;
 		auto& taskDedicateHosts = task.second->m_matchedHosts;
 		auto& taskReplication = task.second->m_replication;
+		auto& taskIndexDic = task.second->m_taskIndexDic;
 		if (taskReplication <= 0) continue;
 
 		for (const auto& oldHost : oldTopology)
 		{
 			auto& oldHostName = oldHost.first;
-			auto& oldTaskSet = oldHost.second->m_apps;
+			auto& oldTaskSet = oldHost.second->m_scheduleApps;
 			if (taskDedicateHosts.count(oldHostName) && oldTaskSet.count(taskName))
 			{
+				auto oldTaskIndex = oldTaskSet[taskName];
 				auto consulNode = taskDedicateHosts[oldHostName];
 				// found app running on old host still match
 				if (taskReplication <= 0)
@@ -33,6 +35,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 					break;
 				}
 				taskDedicateHosts.erase(oldHostName);
+				if (taskIndexDic.count(oldTaskIndex)) taskIndexDic.erase(oldTaskIndex);
 				--taskReplication;
 
 				LOG_DBG << fname << " task <" << taskName << "> already running on host <" << oldHostName << ">";
@@ -40,7 +43,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 				{
 					// save to topology
 					if (!newTopology.count(oldHostName)) newTopology[oldHostName] = std::make_shared<ConsulTopology>();
-					newTopology[oldHostName]->m_apps.insert(taskName);
+					newTopology[oldHostName]->m_scheduleApps[taskName] = oldTaskIndex;
 					consulNode->assignApp(task.second->m_app);
 				}
 			}
@@ -53,6 +56,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 		// get current task
 		const auto& taskDedicateHosts = task.second->m_matchedHosts;
 		auto& taskReplication = task.second->m_replication;
+		auto& taskIndexDic = task.second->m_taskIndexDic;
 		const auto& taskName = task.first;
 		std::vector<std::shared_ptr<ConsulNode>> taskDedicateHostsVec;
 
@@ -98,7 +102,13 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 				// save to topology
 				{
 					if (!newTopology.count(hostname)) newTopology[hostname] = std::make_shared<ConsulTopology>();
-					newTopology[hostname]->m_apps.insert(taskName);
+					int selectedIndex = -1;
+					if (taskIndexDic.size())
+					{
+						selectedIndex = *(taskIndexDic.begin());
+						taskIndexDic.erase(taskIndexDic.begin());
+					}
+					newTopology[hostname]->m_scheduleApps[taskName] = selectedIndex;
 					consulNode->assignApp(task.second->m_app);
 				}
 				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";

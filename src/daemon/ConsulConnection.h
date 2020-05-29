@@ -52,7 +52,7 @@ private:
 
 	void findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts);
 	void compareTopologyAndDispatch(const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldT, const std::map<std::string, std::shared_ptr<ConsulTopology>>& newT);
-
+	web::json::value getAppJsonWithIndexEnv(std::shared_ptr<Application> app, int index);
 	bool writeTopology(std::string hostName, const std::shared_ptr<ConsulTopology> topology);
 	// key: host name, value: topology
 	std::map<std::string, std::shared_ptr<ConsulTopology>> retrieveTopology(std::string host);

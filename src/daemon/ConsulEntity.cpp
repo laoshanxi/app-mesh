@@ -53,6 +53,10 @@ std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value& jobj)
 		{
 			consul->m_condition = Label::FromJson(jobj.at("condition"));
 		}
+		for (size_t i = 1; i <= consul->m_replication; i++)
+		{
+			consul->m_taskIndexDic.insert(i);
+		}
 	}
 	return consul;
 }
@@ -86,14 +90,7 @@ bool ConsulTask::operator==(const std::shared_ptr<ConsulTask>& task)
 		m_app->operator==(task->m_app) &&
 		m_condition->operator==(task->m_condition);
 }
-/*
-		"topology": {
-			"myhost": [
-				{"app": "myapp", "peer_hosts": ["hosts"] },
-				{"app": "myapp2" }],
-			"host2": ["myapp", "myapp2"]
-		}
-*/
+
 std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value& jobj, const std::string& hostName)
 {
 	auto topology = std::make_shared<ConsulTopology>();
@@ -103,7 +100,8 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value&
 		for (const auto& app : jobj.as_array())
 		{
 			auto appName = GET_JSON_STR_VALUE(app, "app");
-			topology->m_apps.insert(appName);
+			auto appIndex = GET_JSON_INT_VALUE(app, "index");
+			topology->m_scheduleApps[appName] = appIndex;
 		}
 	}
 	return std::move(topology);
@@ -111,12 +109,13 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value&
 
 web::json::value ConsulTopology::AsJson() const
 {
-	auto result = web::json::value::array(m_apps.size());
+	auto result = web::json::value::array(m_scheduleApps.size());
 	size_t appIndex = 0;
-	for (const auto& app : m_apps)
+	for (const auto& app : m_scheduleApps)
 	{
 		auto appJson = web::json::value::object();
-		appJson["app"] = web::json::value::string(app);
+		appJson["app"] = web::json::value::string(app.first);
+		appJson["index"] = web::json::value::number(app.second);
 		result[appIndex++] = appJson;
 	}
 	return std::move(result);
@@ -125,11 +124,11 @@ web::json::value ConsulTopology::AsJson() const
 bool ConsulTopology::operator==(const std::shared_ptr<ConsulTopology>& topology)
 {
 	if (!topology) return false;
-	if (m_apps.size() != topology->m_apps.size()) return false;
+	if (m_scheduleApps.size() != topology->m_scheduleApps.size()) return false;
 
-	for (const auto& app : m_apps)
+	for (const auto& app : m_scheduleApps)
 	{
-		if (topology->m_apps.count(app) == 0) return false;
+		if (topology->m_scheduleApps.count(app.first) == 0) return false;
 	}
 	return true;
 }
@@ -137,9 +136,9 @@ bool ConsulTopology::operator==(const std::shared_ptr<ConsulTopology>& topology)
 void ConsulTopology::dump()
 {
 	const static char fname[] = "ConsulTopology::dump() ";
-	for (const auto& app : m_apps)
+	for (const auto& app : m_scheduleApps)
 	{
-		LOG_DBG << fname << "app:" << app << " host:" << m_hostName;
+		LOG_DBG << fname << "app:" << app.first << " host:" << m_hostName << " with index:" << app.second;
 	}
 }
 

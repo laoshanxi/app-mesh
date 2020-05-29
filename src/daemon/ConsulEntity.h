@@ -18,8 +18,15 @@ struct ConsulStatus {
 struct ConsulNode {
 	ConsulNode();
 	static std::shared_ptr<ConsulNode> FromJson(const web::json::value& jobj, const std::string& hostName);
+
+	/// @brief For schedule sort
+	/// @param app 
 	void assignApp(const std::shared_ptr<Application>& app);
+	/// @brief For schedule sort
+	/// @return 
 	uint64_t getAssignedAppMem() const;
+
+
 	std::shared_ptr<Label> m_label;
 	// CPU
 	size_t m_cores;
@@ -49,6 +56,8 @@ struct ConsulTask {
 
 	// used for schedule fill
 	std::map<std::string, std::shared_ptr<ConsulNode>> m_matchedHosts;
+	/// @brief Used for schedule fill, store all index, index start from 1
+	std::set<int> m_taskIndexDic;
 };
 
 struct ConsulTopology {
@@ -57,7 +66,9 @@ struct ConsulTopology {
 	bool operator==(const std::shared_ptr<ConsulTopology>& topology);
 	void dump();
 
-	// key: application name
-	std::set<std::string> m_apps;
+	/// @brief Topology is organized by host for performance consideration
 	std::string m_hostName;
+	/// @brief Dispatched tasks on this host
+	/// key: app name. value: app index id to identify the unique instance index for one consul task
+	std::map<std::string, int> m_scheduleApps;
 };

@@ -341,9 +341,9 @@ void ConsulConnection::syncTopology()
 	if (newTopology)
 	{
 		auto task = retrieveTask();
-		for (const auto& hostApp : newTopology->m_apps)
+		for (const auto& hostApp : newTopology->m_scheduleApps)
 		{
-			const auto& appName = hostApp;
+			const auto& appName = hostApp.first;
 			if (task.count(appName))
 			{
 				auto& consulTask = task[appName];
@@ -357,7 +357,7 @@ void ConsulConnection::syncTopology()
 					auto& currentRunningApp = *it;
 					if (!currentRunningApp->operator==(topologyAppObj))
 					{
-						Configuration::instance()->addApp(topologyAppObj->AsJson(false));
+						Configuration::instance()->addApp(getAppJsonWithIndexEnv(currentRunningApp, hostApp.second));
 						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
 
 						registerService(appName, consulTask->m_consulServicePort);
@@ -366,7 +366,7 @@ void ConsulConnection::syncTopology()
 				else
 				{
 					// New add app
-					Configuration::instance()->addApp(topologyAppObj->AsJson(false));
+					Configuration::instance()->addApp(getAppJsonWithIndexEnv(topologyAppObj, hostApp.second));
 					LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
 
 					registerService(appName, consulTask->m_consulServicePort);
@@ -378,7 +378,7 @@ void ConsulConnection::syncTopology()
 		{
 			if (currentApp->isCloudApp())
 			{
-				if (!(newTopology && (newTopology->m_apps.count(currentApp->getName()))))
+				if (!(newTopology && (newTopology->m_scheduleApps.count(currentApp->getName()))))
 				{
 					// Remove no used topology
 					Configuration::instance()->removeApp(currentApp->getName());
@@ -548,11 +548,11 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 		if (oldT.count(newHost.first))
 		{
 			auto equal = true;
-			if (newHost.second->m_apps.size() == oldT.find(newHost.first)->second->m_apps.size())
+			if (newHost.second->m_scheduleApps.size() == oldT.find(newHost.first)->second->m_scheduleApps.size())
 			{
-				for (const auto& app : newHost.second->m_apps)
+				for (const auto& app : newHost.second->m_scheduleApps)
 				{
-					if (!oldT.find(newHost.first)->second->m_apps.count(app))
+					if (!oldT.find(newHost.first)->second->m_scheduleApps.count(app.first))
 					{
 						equal = false;
 						break;
@@ -587,6 +587,23 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 	}
 }
 
+web::json::value ConsulConnection::getAppJsonWithIndexEnv(std::shared_ptr<Application> app, int index)
+{
+	auto appJson = app->AsJson(false);
+	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_env))
+	{
+		web::json::value& envs = appJson.at(JSON_KEY_APP_env);
+		envs["APP_INDEX"] = web::json::value::string(std::to_string(index));
+	}
+	else
+	{
+		web::json::value envs = web::json::value::object();
+		envs["APP_INDEX"] = web::json::value::string(std::to_string(index));
+		appJson[JSON_KEY_APP_env] = envs;
+	}
+	return std::move(appJson);
+}
+
 bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr<ConsulTopology> topology)
 {
 	const static char fname[] = "ConsulConnection::writeTopology() ";
@@ -595,7 +612,7 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
 	auto body = web::json::value::object();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	if (topology && topology->m_apps.size()) body = topology->AsJson();
+	if (topology && topology->m_scheduleApps.size()) body = topology->AsJson();
 	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
 	LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
 
