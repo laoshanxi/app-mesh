@@ -179,7 +179,7 @@ void User::updateUser(std::shared_ptr<User> user)
 	this->m_execUser = user->m_execUser;
 	this->m_group = user->m_group;
 	this->m_metadata = user->m_metadata;
-	this->m_key = user->m_key;
+	//this->m_key = user->m_key;
 	this->m_locked = user->m_locked;
 }
 
