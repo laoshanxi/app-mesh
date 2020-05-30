@@ -197,7 +197,6 @@ public:
 #define JSON_KEY_CONSUL_SECURITY "enable_consul_security"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
-#define JSON_KEY_APP_exec_user "exec_user"
 #define JSON_KEY_APP_owner "owner"
 #define JSON_KEY_APP_owner_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
@@ -250,6 +249,7 @@ public:
 #define JSON_KEY_USER_roles "roles"
 #define JSON_KEY_USER_locked "locked"
 #define JSON_KEY_USER_metadata "metadata"
+#define JSON_KEY_USER_exec_user "exec_user"
 
 #define HTTP_HEADER_JWT "JWT"
 #define HTTP_HEADER_JWT_ISSUER "appmesh-auth0"

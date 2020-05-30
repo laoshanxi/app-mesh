@@ -8,6 +8,7 @@
 #include <cpprest/json.h>
 #include "TimerHandler.h"
 
+class User;
 class CounterPtr;
 class GaugePtr;
 class PrometheusRest;
@@ -76,9 +77,9 @@ public:
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();
 	void setVersion(int version);
-	const std::string getMetadata() const { return m_metadata; }
-	const std::string getInitCmd() const { return m_commandLineInit; }
-	const std::string getOwner() const { return m_owner; }
+	const std::string& getMetadata() const { return m_metadata; }
+	const std::string& getInitCmd() const { return m_commandLineInit; }
+	const std::shared_ptr<User>& getOwner() const { return m_owner; }
 	int getOwnerPermission() const { return m_ownerPermission; }
 	bool isCloudApp() const;
 
@@ -91,6 +92,7 @@ protected:
 	virtual void checkAndUpdateHealth();
 	std::string runApp(int timeoutSeconds) noexcept(false);
 	void handleEndTimer();
+	const std::string& getExecUser() const;
 
 protected:
 	STATUS m_status;
@@ -98,8 +100,8 @@ protected:
 	std::string m_commandLine;
 	std::string m_commandLineInit;
 	std::string m_commandLineFini;
-	std::string m_execUser;
-	std::string m_owner;
+	/// @brief TODO: when user is removed, need remove associated app, otherwise, app invoke will fail
+	std::shared_ptr<User> m_owner;
 	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;

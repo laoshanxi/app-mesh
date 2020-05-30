@@ -11,6 +11,7 @@
 #include "PrometheusRest.h"
 #include "ResourceCollection.h"
 #include "ResourceLimitation.h"
+#include "User.h"
 #include "../common/TimeZoneHelper.h"
 #include "../common/Utility.h"
 #include "../prom_exporter/counter.h"
@@ -50,7 +51,6 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		this->m_commandLine == app->m_commandLine &&
 		this->m_commandLineInit == app->m_commandLineInit &&
 		this->m_commandLineFini == app->m_commandLineFini &&
-		this->m_execUser == app->m_execUser &&
 		this->m_owner == app->m_owner &&
 		this->m_ownerPermission == app->m_ownerPermission &&
 		this->m_dockerImage == app->m_dockerImage &&
@@ -83,8 +83,8 @@ bool Application::isWorkingState() const
 void Application::FromJson(std::shared_ptr<Application>& app, const web::json::value& jobj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
-	app->m_execUser = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_exec_user));
-	app->m_owner = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner));
+	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner));
+	if (ownerStr.length()) app->m_owner = Configuration::instance()->getUserInfo(ownerStr);
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
 	app->m_stdoutFile = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_stdout_file));
@@ -209,7 +209,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
-				m_pid = m_process->spawnProcess(m_commandLine, m_execUser, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+				m_pid = m_process->spawnProcess(m_commandLine, getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 				if (m_metricStartCount) m_metricStartCount->metric().Increment();
 			}
 		}
@@ -303,7 +303,7 @@ std::string Application::runApp(int timeoutSeconds)
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(m_commandLine, m_execUser, m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+	m_pid = m_process->spawnProcess(m_commandLine, getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 
 	if (m_metricStartCount) m_metricStartCount->metric().Increment();
 
@@ -342,6 +342,18 @@ void Application::handleEndTimer()
 	else
 	{
 		LOG_WAR << fname << "end timer already exist for <" << m_name << ">.";
+	}
+}
+
+const std::string& Application::getExecUser() const
+{
+	if (m_owner)
+	{
+		return m_owner->getExecUser();
+	}
+	else
+	{
+		return Configuration::instance()->getDefaultExecUser();
 	}
 }
 
@@ -451,8 +463,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
-	if (m_execUser.length()) result[JSON_KEY_APP_exec_user] = web::json::value::string(GET_STRING_T(m_execUser));
-	if (m_owner.length()) result[JSON_KEY_APP_owner] = web::json::value::string(GET_STRING_T(m_owner));
+	if (m_owner) result[JSON_KEY_APP_owner] = web::json::value::string(m_owner->getName());
 	if (m_ownerPermission) result[JSON_KEY_APP_owner_permission] = web::json::value::number(m_ownerPermission);
 	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
 	if (m_commandLineInit.length()) result[GET_STRING_T(JSON_KEY_APP_init_command)] = web::json::value::string(GET_STRING_T(m_commandLineInit));
@@ -513,8 +524,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
-	LOG_DBG << fname << "m_execUser:" << m_execUser;
-	LOG_DBG << fname << "m_owner:" << m_owner;
+	if (m_owner) LOG_DBG << fname << "m_owner:" << m_owner->getName();
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;

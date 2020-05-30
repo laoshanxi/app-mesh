@@ -308,7 +308,6 @@ void ArgumentParser::processReg()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
 		("metadata,g", po::value<std::string>(), "application metadata string")
-		("exec_user,a", po::value<std::string>(), "application process running OS user name")
 		("perm", po::value<int>(), "application owner permission")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("init,I", po::value<std::string>(), "initial command line with arguments")
@@ -369,7 +368,6 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("init"))jsobObj[JSON_KEY_APP_init_command] = web::json::value::string(m_commandLineVariables["init"].as<std::string>());
 	if (m_commandLineVariables.count("fini"))jsobObj[JSON_KEY_APP_fini_command] = web::json::value::string(m_commandLineVariables["fini"].as<std::string>());
 	if (m_commandLineVariables.count("health_check"))jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
-	if (m_commandLineVariables.count("exec_user")) jsobObj[JSON_KEY_APP_exec_user] = web::json::value::string(m_commandLineVariables["exec_user"].as<std::string>());
 	if (m_commandLineVariables.count("perm")) jsobObj[JSON_KEY_APP_owner_permission] = web::json::value::number(m_commandLineVariables["perm"].as<int>());
 	if (m_commandLineVariables.count("stdout")) jsobObj[JSON_KEY_APP_stdout_file] = web::json::value::string(m_commandLineVariables["stdout"].as<std::string>());
 	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
@@ -607,7 +605,6 @@ void ArgumentParser::processRun()
 
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	if (m_commandLineVariables.count("exec_user")) jsobObj[JSON_KEY_APP_exec_user] = web::json::value::string(m_commandLineVariables["exec_user"].as<std::string>());
 	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
 	{

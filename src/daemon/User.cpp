@@ -90,7 +90,7 @@ std::shared_ptr<User> Users::addUser(const std::string userName, const web::json
 	if (m_users.count(userName))
 	{
 		// update
-		m_users[userName]->updateRoles(user->getRoles());
+		m_users[userName]->updateUser(user);
 	}
 	else
 	{
@@ -125,6 +125,7 @@ web::json::value User::AsJson() const
 
 	result[JSON_KEY_USER_key] = web::json::value::string(m_key);
 	result[JSON_KEY_USER_group] = web::json::value::string(m_group);
+	result[JSON_KEY_USER_exec_user] = web::json::value::string(m_execUser);
 	result[JSON_KEY_USER_locked] = web::json::value::boolean(m_locked);
 	if (m_metadata.length()) result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
 	auto roles = web::json::value::array(m_roles.size());
@@ -149,6 +150,7 @@ std::shared_ptr<User> User::FromJson(std::string userName, const web::json::valu
 		result = std::make_shared<User>(userName);
 		result->m_key = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_key);
 		result->m_group = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_group);
+		result->m_execUser = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_exec_user);
 		result->m_metadata = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_metadata);
 		result->m_locked = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_locked);
 		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
@@ -170,9 +172,15 @@ void User::unlock()
 	this->m_locked = false;
 }
 
-void User::updateRoles(std::set<std::shared_ptr<Role>> roles)
+void User::updateUser(std::shared_ptr<User> user)
 {
-	this->m_roles = roles;
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	this->m_roles = user->m_roles;
+	this->m_execUser = user->m_execUser;
+	this->m_group = user->m_group;
+	this->m_metadata = user->m_metadata;
+	this->m_key = user->m_key;
+	this->m_locked = user->m_locked;
 }
 
 void User::updateKey(std::string passswd)

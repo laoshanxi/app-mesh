@@ -409,21 +409,20 @@ void Configuration::updateSecurity(std::shared_ptr<Configuration::JsonSecurity> 
 	m_security = security;
 }
 
-bool Configuration::checkOwnerPermission(const std::string& user, const std::string& appUser, int appPermission, bool requestWrite) const
+bool Configuration::checkOwnerPermission(const std::string& user, const std::shared_ptr<User>& appOwner, int appPermission, bool requestWrite) const
 {
 	// if app has not defined user, return true
 	// if same user, return true
 	// if not defined permission, return true
 	// if no session user which is internal call, return true
 	// if user is admin, return true
-	if (user.empty() || appUser.empty() || user == appUser || appPermission == 0 || user == JWT_ADMIN_NAME)
+	if (user.empty() || appOwner == nullptr || user == appOwner->getName() || appPermission == 0 || user == JWT_ADMIN_NAME)
 	{
 		return true;
 	}
 
 	auto userObj = getUserInfo(user);
-	auto appUserObj = getUserInfo(appUser);
-	if (userObj->getGroup() == appUserObj->getGroup())
+	if (userObj->getGroup() == appOwner->getGroup())
 	{
 		auto groupPerm = appPermission / 1 % 10;
 		if (groupPerm <= static_cast<int>(Application::PERMISSION::GROUP_DENY)) return false;

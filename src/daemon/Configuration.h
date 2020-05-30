@@ -100,7 +100,7 @@ public:
 	std::shared_ptr<Label> getLabel() { return m_label; }
 
 	const std::string getLogLevel() const;
-	const std::string getDefaultExecUser() const { return m_defaultExecUser; };
+	const std::string& getDefaultExecUser() const { return m_defaultExecUser; };
 	bool getSslEnabled() const;
 	bool getEncryptKey();
 	std::string getSSLCertificateFile() const;
@@ -108,7 +108,7 @@ public:
 	bool getRestEnabled() const;
 	bool getJwtEnabled() const;
 	const size_t getThreadPoolSize() const;
-	const std::string getDescription() const { return m_hostDescription; }
+	const std::string& getDescription() const { return m_hostDescription; }
 
 	const std::shared_ptr<User> getUserInfo(const std::string& userName) const;
 	std::set<std::string> getUserPermissions(const std::string& userName);
@@ -118,7 +118,7 @@ public:
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
 	const std::shared_ptr<Configuration::JsonSecurity> getSecurity() const;
 	void updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security);
-	bool checkOwnerPermission(const std::string& user, const std::string& appUser, int appPermission, bool requestWrite) const;
+	bool checkOwnerPermission(const std::string& user, const std::shared_ptr<User>& appOwner, int appPermission, bool requestWrite) const;
 
 	void dump();
 

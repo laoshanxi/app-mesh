@@ -23,13 +23,15 @@ public:
 	// user update
 	void lock();
 	void unlock();
-	void updateRoles(std::set<std::shared_ptr<Role>> roles);
+	void updateUser(std::shared_ptr<User> user);
 	void updateKey(std::string passswd);
 
 	// get user info
 	bool locked() const;
 	const std::string getKey();
-	const std::string getGroup() const { return m_group; }
+	const std::string& getExecUser() const { std::lock_guard<std::recursive_mutex> guard(m_mutex); return m_execUser; }
+	const std::string& getGroup() const { std::lock_guard<std::recursive_mutex> guard(m_mutex); return m_group; }
+	const std::string& getName() const { std::lock_guard<std::recursive_mutex> guard(m_mutex); return m_name; }
 	const std::set<std::shared_ptr<Role>> getRoles();
 	bool hasPermission(std::string permission);
 
@@ -39,6 +41,7 @@ private:
 	std::string m_name;
 	std::string m_group;
 	std::string m_metadata;
+	std::string m_execUser;
 	mutable std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
 };
