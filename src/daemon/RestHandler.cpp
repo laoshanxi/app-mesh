@@ -1013,6 +1013,7 @@ std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& mess
 	jsonApp[JSON_KEY_APP_name] = web::json::value::string(appName);
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(Application::STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_cache_lines] = web::json::value::number(MAX_APP_CACHED_LINES);
+	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getTokenUser(message));
 	return Configuration::instance()->addApp(jsonApp);
 }
 
