@@ -129,7 +129,8 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 			dockerCommand.append(" --cpu-shares ").append(std::to_string(limit->m_cpuShares));
 		}
 	}
-	if (!execUser.empty()) dockerCommand.append(" --user ").append(execUser);
+	// Docker container does not restrict container user
+	//if (!execUser.empty()) dockerCommand.append(" --user ").append(execUser);
 	dockerCommand += " " + m_dockerImage;
 	dockerCommand += " " + cmd;
 
