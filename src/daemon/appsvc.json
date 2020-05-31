@@ -20,50 +20,35 @@
     "JWTEnabled": true,
     "Roles": {
       "manage": [
-        "user-add",
         "app-control",
         "app-delete",
         "app-reg",
-        "passwd-change",
         "config-set",
-        "config-view",
-        "user-delete",
         "file-download",
         "file-upload",
-        "user-list",
         "label-delete",
-        "label-set",
-        "label-view",
-        "user-lock",
-        "permission-list",
-        "role-delete",
-        "role-set",
-        "role-view",
-        "app-run-async",
-        "app-run-async-output",
-        "app-run-sync",
-        "user-unlock",
-        "app-view-all",
-        "app-view",
-        "app-output-view",
-        "host-resource-view"
+        "label-set"
       ],
       "usermgr": [
         "user-add",
         "passwd-change",
         "user-delete",
-        "user-list",
         "user-lock",
-        "permission-list",
         "role-delete",
         "role-set",
-        "role-view",
         "user-unlock"
+      ],
+      "shell": [
+        "app-run-async",
+        "app-run-async-output",
+        "app-run-sync"
       ],
       "view": [
         "config-view",
         "label-view",
         "role-view",
+        "user-list",
+        "permission-list",
         "app-view-all",
         "app-view",
         "app-output-view",
@@ -79,6 +64,7 @@
         "roles": [
           "manage",
           "view",
+          "shell",
           "usermgr"
         ]
       },
@@ -87,9 +73,7 @@
         "group": "user",
         "exec_user": "appmesh",
         "locked": false,
-        "roles": [
-
-        ]
+        "roles": []
       },
       "user": {
         "key": "User123",
@@ -98,7 +82,7 @@
         "locked": false,
         "roles": [
           "view",
-          "manage"
+          "shell"
         ]
       }
     }
