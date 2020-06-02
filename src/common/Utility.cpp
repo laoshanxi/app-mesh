@@ -21,6 +21,7 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/RollingFileAppender.hh>
 #include <log4cpp/OstreamAppender.hh>
+#include <ace/OS.h>
 #include <ace/UUID.h>
 
 #include "../common/Utility.h"
@@ -100,7 +101,7 @@ std::string Utility::getSelfFullPath()
 	size_t idx = 0;
 	while (buf[idx] != '\0')
 	{
-		if (buf[idx] == '.' && buff[idx + 1] == 'e' && buff[idx + 2] == 'x' && buff[idx + 3] == 'e')
+		if (buf[idx] == '.' && buf[idx + 1] == 'e' && buf[idx + 2] == 'x' && buf[idx + 3] == 'e')
 		{
 			buf[idx] = '\0';
 		}
@@ -344,7 +345,7 @@ std::string Utility::getSystemPosixTimeZone()
 	// https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
 	struct tm local_tm;
 	time_t cur_time = 0; // time(NULL);
-	localtime_r(&cur_time, &local_tm);
+	ACE_OS::localtime_r(&cur_time, &local_tm);
 
 	char buff[70] = { 0 };
 	strftime(buff, sizeof(buff), "%Z%z", &local_tm);
@@ -384,7 +385,7 @@ std::string Utility::formatTime(const std::chrono::system_clock::time_point& tim
 
 	struct tm localtime;
 	time_t timtt = std::chrono::system_clock::to_time_t(time);
-	localtime_r(&timtt, &localtime);
+	ACE_OS::localtime_r(&timtt, &localtime);
 
 	char buff[64] = { 0 };
 	if (!strftime(buff, sizeof(buff), fmt, &localtime))
@@ -556,7 +557,7 @@ bool Utility::startWith(const std::string& big, const std::string& small)
 	const std::string::size_type small_size = small.size();
 	const bool valid_ = (big_size >= small_size);
 	const bool starts_with_ = (big.compare(0, small_size, small) == 0);
-	return valid_ and starts_with_;
+	return valid_ && starts_with_;
 }
 
 bool Utility::endWith(const std::string& big, const std::string& small)
@@ -566,7 +567,7 @@ bool Utility::endWith(const std::string& big, const std::string& small)
 	const std::string::size_type small_size = small.size();
 	const bool valid_ = (big_size >= small_size);
 	const bool ends_with_ = (big.compare(big_size - small_size, small_size, small) == 0);
-	return valid_ and ends_with_;
+	return valid_ && ends_with_;
 }
 
 std::string Utility::stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst)
@@ -613,10 +614,10 @@ bool Utility::getUid(std::string userName, unsigned int& uid, unsigned int& grou
 	bool rt = false;
 	struct passwd pwd;
 	struct passwd* result = NULL;
-	static auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+	static auto bufsize = ACE_OS::sysconf(_SC_GETPW_R_SIZE_MAX);
 	if (bufsize == -1) bufsize = 16384;
 	std::shared_ptr<char> buff(new char[bufsize], std::default_delete<char[]>());
-	getpwnam_r(userName.c_str(), &pwd, buff.get(), bufsize, &result);
+	ACE_OS::getpwnam_r(userName.c_str(), &pwd, buff.get(), bufsize, &result);
 	if (result)
 	{
 		uid = pwd.pw_uid;

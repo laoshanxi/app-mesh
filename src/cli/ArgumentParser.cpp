@@ -1209,7 +1209,7 @@ void ArgumentParser::setStdinEcho(bool enable)
 #endif
 }
 
-ssize_t ArgumentParser::inputSecurePasswd(char** pw, size_t sz, int mask, FILE* fp)
+size_t ArgumentParser::inputSecurePasswd(char** pw, size_t sz, int mask, FILE* fp)
 {
 	if (!pw || !sz || !fp) return -1;       /* validate input   */
 #ifdef MAXPW
