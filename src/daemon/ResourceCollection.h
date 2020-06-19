@@ -22,9 +22,9 @@ struct HostResource
 	HostResource() :m_cores(0), m_sockets(0), m_processors(0), m_total_bytes(0), m_free_bytes(0), m_totalSwap_bytes(0), m_freeSwap_bytes(0) {}
 
 	// CPU
-	size_t m_cores;
-	size_t m_sockets;
-	size_t m_processors;
+	std::size_t m_cores;
+	std::size_t m_sockets;
+	std::size_t m_processors;
 	// MEM
 	uint64_t m_total_bytes;
 	uint64_t m_free_bytes;

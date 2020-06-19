@@ -501,7 +501,7 @@ void RestHandler::apiFileDownload(const HttpRequest& message)
 			// Get the content length, which is used to set the
 			// Content-Length property
 			fileStream.seek(0, std::ios::end);
-			auto length = static_cast<size_t>(fileStream.tell());
+			auto length = static_cast<std::size_t>(fileStream.tell());
 			fileStream.seek(0, std::ios::beg);
 
 			web::http::http_response resp(status_codes::OK);
@@ -545,7 +545,7 @@ void RestHandler::apiFileUpload(const HttpRequest& message)
 	concurrency::streams::file_stream<uint8_t>::open_ostream(file, std::ios::out | std::ios::binary | std::ios::trunc)
 		.then([=](concurrency::streams::ostream os)
 			{
-				message.body().read_to_end(os.streambuf()).then([=](pplx::task<size_t> t)
+				message.body().read_to_end(os.streambuf()).then([=](pplx::task<std::size_t> t)
 					{
 						os.close();
 						if (message.headers().has(HTTP_HEADER_KEY_file_mode))

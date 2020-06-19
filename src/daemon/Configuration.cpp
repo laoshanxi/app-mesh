@@ -199,7 +199,7 @@ void Configuration::addApp2Map(std::shared_ptr<Application> app)
 	const static char fname[] = "Configuration::addApp2Map() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	for (size_t i = 0; i < m_apps.size(); i++)
+	for (std::size_t i = 0; i < m_apps.size(); i++)
 	{
 		if (m_apps[i]->getName() == app->getName())
 		{
@@ -283,7 +283,7 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 
 	// Build Json
 	auto result = web::json::value::array(apps.size());
-	for (size_t i = 0; i < apps.size(); ++i)
+	for (std::size_t i = 0; i < apps.size(); ++i)
 	{
 		result[i] = apps[i]->AsJson(returnRuntimeInfo);
 	}
@@ -348,7 +348,7 @@ bool Configuration::getJwtEnabled() const
 	return m_rest->m_restEnabled;
 }
 
-const size_t Configuration::getThreadPoolSize() const
+const std::size_t Configuration::getThreadPoolSize() const
 {
 	return m_rest->m_httpThreadPoolSize;
 }

@@ -29,7 +29,7 @@ struct ConsulNode {
 
 	std::shared_ptr<Label> m_label;
 	// CPU
-	size_t m_cores;
+	std::size_t m_cores;
 	// MEM
 	uint64_t m_total_bytes;
 	uint64_t m_free_bytes;
@@ -44,7 +44,7 @@ struct ConsulTask {
 	void dump();
 	bool operator==(const std::shared_ptr<ConsulTask>& task);
 
-	size_t m_replication;
+	std::size_t m_replication;
 	std::shared_ptr<Application> m_app;
 
 	// schedule parameters

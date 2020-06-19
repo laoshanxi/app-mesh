@@ -727,7 +727,7 @@ void ArgumentParser::processUpload()
 	// Get the content length, which is used to set the
 	// Content-Length property
 	fileStream.seek(0, std::ios::end);
-	auto length = static_cast<size_t>(fileStream.tell());
+	auto length = static_cast<std::size_t>(fileStream.tell());
 	fileStream.seek(0, std::ios::beg);
 
 
@@ -1172,7 +1172,7 @@ void ArgumentParser::shiftCommandLineArgs(po::options_description& desc)
 
 std::string ArgumentParser::reduceStr(std::string source, int limit)
 {
-	if (source.length() >= (size_t)limit)
+	if (source.length() >= (std::size_t)limit)
 	{
 		return std::move(source.substr(0, limit - 2).append("*"));
 	}
@@ -1209,7 +1209,7 @@ void ArgumentParser::setStdinEcho(bool enable)
 #endif
 }
 
-size_t ArgumentParser::inputSecurePasswd(char** pw, size_t sz, int mask, FILE* fp)
+std::size_t ArgumentParser::inputSecurePasswd(char** pw, std::size_t sz, int mask, FILE* fp)
 {
 	if (!pw || !sz || !fp) return -1;       /* validate input   */
 #ifdef MAXPW
@@ -1224,7 +1224,7 @@ size_t ArgumentParser::inputSecurePasswd(char** pw, size_t sz, int mask, FILE* f
 		*pw = (char*)tmp;
 	}
 
-	size_t idx = 0;         /* index, number of chars in read   */
+	std::size_t idx = 0;         /* index, number of chars in read   */
 	int c = 0;
 
 	struct termios old_kbd_mode;    /* orig keyboard settings   */

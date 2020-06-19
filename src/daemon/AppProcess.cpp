@@ -95,7 +95,7 @@ const std::string AppProcess::getuuid() const
 	return m_uuid;
 }
 
-void AppProcess::regKillTimer(size_t timeout, const std::string from)
+void AppProcess::regKillTimer(std::size_t timeout, const std::string from)
 {
 	m_killTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
 }
@@ -106,7 +106,7 @@ std::tuple<std::string, std::string> AppProcess::extractCommand(const std::strin
 	std::unique_ptr<char[]> buff(new char[cmd.length() + 1]);
 
 	// find the string at the first blank not in a quote, quotes are removed
-	size_t idxSrc = 0, idxDst = 0;
+	std::size_t idxSrc = 0, idxDst = 0;
 	bool isInQuote = false;
 	while (cmd[idxSrc] != '\0')
 	{
@@ -157,7 +157,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	
 	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::formatTime(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
-	size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
+	std::size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
 	int totalEnvArgs = 0;
 	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);

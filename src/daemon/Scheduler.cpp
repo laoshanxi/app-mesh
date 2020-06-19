@@ -93,7 +93,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 			LOG_WAR << fname << taskName << " : Replication <" << taskReplication << "> Dedicate Host < " << taskDedicateHostsVec.size() << ">";
 		}
 		// assign host to task
-		for (size_t i = 0; i < taskReplication; i++)
+		for (std::size_t i = 0; i < taskReplication; i++)
 		{
 			if (i < taskDedicateHostsVec.size())
 			{

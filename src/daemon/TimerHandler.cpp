@@ -47,7 +47,7 @@ int TimerHandler::handle_timeout(const ACE_Time_Value& current_time, const void*
 	return 0;
 }
 
-int TimerHandler::registerTimer(long int delayMillisecond, size_t intervalSeconds, const std::function<void(int)>& handler, const std::string& from)
+int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)>& handler, const std::string& from)
 {
 	const static char fname[] = "TimerHandler::registerTimer() ";
 

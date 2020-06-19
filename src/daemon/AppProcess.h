@@ -22,7 +22,7 @@ public:
 	virtual void killgroup(int timerId = 0);
 	virtual void setCgroup(std::shared_ptr<ResourceLimitation>& limit);
 	const std::string getuuid() const;
-	void regKillTimer(size_t timeoutSec, const std::string from);
+	void regKillTimer(std::size_t timeoutSec, const std::string from);
 	virtual std::string containerId() { return std::string(); };
 	virtual void containerId(std::string containerId) {};
 

@@ -53,7 +53,7 @@ std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value& jobj)
 		{
 			consul->m_condition = Label::FromJson(jobj.at("condition"));
 		}
-		for (size_t i = 1; i <= consul->m_replication; i++)
+		for (std::size_t i = 1; i <= consul->m_replication; i++)
 		{
 			consul->m_taskIndexDic.insert(i);
 		}
@@ -110,7 +110,7 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value&
 web::json::value ConsulTopology::AsJson() const
 {
 	auto result = web::json::value::array(m_scheduleApps.size());
-	size_t appIndex = 0;
+	std::size_t appIndex = 0;
 	for (const auto& app : m_scheduleApps)
 	{
 		auto appJson = web::json::value::object();

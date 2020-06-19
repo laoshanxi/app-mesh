@@ -107,7 +107,7 @@ public:
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getJwtEnabled() const;
-	const size_t getThreadPoolSize() const;
+	const std::size_t getThreadPoolSize() const;
 	const std::string& getDescription() const { return m_hostDescription; }
 
 	const std::shared_ptr<User> getUserInfo(const std::string& userName) const;
