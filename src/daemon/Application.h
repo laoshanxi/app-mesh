@@ -20,6 +20,16 @@ class ResourceLimitation;
 //////////////////////////////////////////////////////////////////////////
 class Application : public TimerHandler
 {
+	struct ShellAppFileGen
+	{
+		explicit ShellAppFileGen(const std::string& name, const std::string& cmd, const std::string& workDir);
+		virtual ~ShellAppFileGen();
+		const std::string& getShellStartCmd() const;
+	private:
+		std::string m_cmd;
+		std::string m_shellCmd;
+		std::string m_fileName;
+	};
 public:
 	enum class STATUS : int
 	{
@@ -87,12 +97,13 @@ protected:
 	// Invoke immediately
 	virtual void invokeNow(int timerId);
 	virtual void refreshPid();
-	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, std::string dockerImage, std::string appName);
+	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName);
 	bool isInDailyTimeRange();
 	virtual void checkAndUpdateHealth();
 	std::string runApp(int timeoutSeconds) noexcept(false);
 	void handleEndTimer();
 	const std::string& getExecUser() const;
+	const std::string& getCmdLine() const;
 
 protected:
 	STATUS m_status;
@@ -106,6 +117,8 @@ protected:
 	std::string m_workdir;
 	std::string m_stdoutFile;
 	std::string m_metadata;
+	bool m_shellApp;
+	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	//the exit code of last instance
 	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;

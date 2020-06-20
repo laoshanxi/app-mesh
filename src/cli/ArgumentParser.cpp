@@ -310,12 +310,13 @@ void ArgumentParser::processReg()
 		("metadata,g", po::value<std::string>(), "application metadata string")
 		("perm", po::value<int>(), "application owner permission")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
+		("shell_mode,S", "command line will be executed in shell in this mode")
 		("init,I", po::value<std::string>(), "initial command line with arguments")
 		("fini,F", po::value<std::string>(), "fini command line with arguments")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>(), "working directory")
-		("stdout,S", po::value<std::string>(), "stdout file")
+		("stdout,O", po::value<std::string>(), "stdout file")
 		("status,s", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
 		("start_time,t", po::value<std::string>(), "start date time for app (e.g., '2018-01-01 09:00:00')")
 		("end_time,E", po::value<std::string>(), "end date time for app (e.g., '2018-01-01 09:00:00')")
@@ -329,7 +330,7 @@ void ArgumentParser::processReg()
 		("interval,i", po::value<int>(), "start interval seconds for short running app")
 		("extra_time,q", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
-		("keep_running,k", po::value<bool>()->default_value(false), "monitor and keep running for short running app in start interval")
+		("keep_running,k", "monitor and keep running for short running app in start interval")
 		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side (used for none-container app)")
 		("force,f", "force without confirm")
 		("help,h", "Prints command usage to stdout and exits");
@@ -365,6 +366,7 @@ void ArgumentParser::processReg()
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count("cmd"))jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	if (m_commandLineVariables.count("shell_mode"))jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("init"))jsobObj[JSON_KEY_APP_init_command] = web::json::value::string(m_commandLineVariables["init"].as<std::string>());
 	if (m_commandLineVariables.count("fini"))jsobObj[JSON_KEY_APP_fini_command] = web::json::value::string(m_commandLineVariables["fini"].as<std::string>());
 	if (m_commandLineVariables.count("health_check"))jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
@@ -379,7 +381,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("end_time")) jsobObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
 	if (m_commandLineVariables.count("interval")) jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
 	if (m_commandLineVariables.count("extra_time")) jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
-	if (m_commandLineVariables.count("keep_running")) jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(m_commandLineVariables["keep_running"].as<bool>());
+	if (m_commandLineVariables.count("keep_running")) jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
 		web::json::value objDailyLimitation = web::json::value::object();

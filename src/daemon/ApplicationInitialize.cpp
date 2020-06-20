@@ -95,7 +95,7 @@ void ApplicationInitialize::invoke()
 			LOG_INF << fname << "Starting initializing for application <" << m_name << ">.";
 			m_process = allocProcess(m_cacheOutputLines, "", m_name);
 			m_procStartTime = std::chrono::system_clock::now();
-			m_pid = m_process->spawnProcess(m_commandLine, getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+			m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 		}
 		else
 		{

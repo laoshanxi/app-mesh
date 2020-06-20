@@ -201,6 +201,7 @@ public:
 #define JSON_KEY_APP_owner_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
 #define JSON_KEY_APP_stdout_file "stdout_file"
+#define JSON_KEY_APP_shell_mode "shell_mode"
 #define JSON_KEY_APP_command "command"
 #define JSON_KEY_APP_init_command "init_command"
 #define JSON_KEY_APP_fini_command "fini_command"

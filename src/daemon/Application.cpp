@@ -18,8 +18,8 @@
 #include "../prom_exporter/gauge.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID())
-	, m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
+	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_endTimerId(0), m_health(true)
+	, m_appId(Utility::createUUID()), m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
 {
 	const static char fname[] = "Application::Application() ";
@@ -86,6 +86,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner));
 	if (ownerStr.length()) app->m_owner = Configuration::instance()->getUserInfo(ownerStr);
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
+	app->m_shellApp = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_APP_shell_mode);
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
 	app->m_stdoutFile = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_stdout_file));
 	// Be noticed do not use multiple spaces between command arguments
@@ -209,7 +210,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
-				m_pid = m_process->spawnProcess(m_commandLine, getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 				if (m_metricStartCount) m_metricStartCount->metric().Increment();
 			}
 		}
@@ -256,7 +257,7 @@ void Application::enable()
 	}
 	else if (!isWorkingState())
 	{
-		LOG_WAR << fname << "Application <" << m_name << "> is <" << GET_STATUS_STR(static_cast<int>(m_status))  << "> status, enable is forbidden.";
+		LOG_WAR << fname << "Application <" << m_name << "> is <" << GET_STATUS_STR(static_cast<int>(m_status)) << "> status, enable is forbidden.";
 	}
 }
 
@@ -303,7 +304,7 @@ std::string Application::runApp(int timeoutSeconds)
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(m_commandLine, getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 
 	if (m_metricStartCount) m_metricStartCount->metric().Increment();
 
@@ -355,6 +356,12 @@ const std::string& Application::getExecUser() const
 	{
 		return Configuration::instance()->getDefaultExecUser();
 	}
+}
+
+const std::string& Application::getCmdLine() const
+{
+	if (m_shellAppFile != nullptr) return m_shellAppFile->getShellStartCmd();
+	return m_commandLine;
 }
 
 std::string Application::getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished)
@@ -465,6 +472,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
 	if (m_owner) result[JSON_KEY_APP_owner] = web::json::value::string(m_owner->getName());
 	if (m_ownerPermission) result[JSON_KEY_APP_owner_permission] = web::json::value::number(m_ownerPermission);
+	if (m_shellApp) result[JSON_KEY_APP_shell_mode] = web::json::value::boolean(m_shellApp);
 	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
 	if (m_commandLineInit.length()) result[GET_STRING_T(JSON_KEY_APP_init_command)] = web::json::value::string(GET_STRING_T(m_commandLineInit));
 	if (m_commandLineFini.length()) result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
@@ -523,6 +531,7 @@ void Application::dump()
 
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
+	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	if (m_owner) LOG_DBG << fname << "m_owner:" << m_owner->getName();
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
@@ -538,7 +547,7 @@ void Application::dump()
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
 }
 
-std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, std::string dockerImage, std::string appName)
+std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName)
 {
 	std::shared_ptr<AppProcess> process;
 	if (dockerImage.length())
@@ -554,6 +563,10 @@ std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, std:
 	}
 	else
 	{
+		if (m_shellApp && m_shellAppFile == nullptr)
+		{
+			m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, m_workdir);
+		}
 		if (cacheOutputLines > 0)
 		{
 			process.reset(new MonitoredProcess(cacheOutputLines));
@@ -625,7 +638,7 @@ void Application::onEndEvent(int timerId)
 	const static char fname[] = "Application::onEndEvent() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	
+
 	// reset timer id
 	assert(m_endTimerId == timerId);
 	m_endTimerId = 0;
@@ -636,3 +649,42 @@ void Application::onEndEvent(int timerId)
 	LOG_DBG << fname << "Application <" << m_name << "> is end finished";
 }
 
+Application::ShellAppFileGen::ShellAppFileGen(const std::string& name, const std::string& cmd, const std::string& workDir)
+{
+	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
+
+	auto fileName = Utility::stringFormat("/tmp/.appmesh.%s.sh", name.c_str());
+	std::ofstream shellFile(fileName, ios::out | ios::trunc);
+	if (shellFile.is_open() && shellFile.good())
+	{
+		shellFile << "#!/bin/sh" << std::endl;
+		shellFile << "#application<" << name << ">" << std::endl;
+		if (workDir.length()) shellFile << "cd " << workDir << std::endl;
+		shellFile << cmd << std::endl;
+		shellFile.close();
+		m_fileName = fileName;
+		m_shellCmd = Utility::stringFormat("sh %s", m_fileName.c_str());
+
+		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> run in shell mode";
+	}
+	else
+	{
+		m_shellCmd = cmd;
+		LOG_WAR << fname << "create shell file <" << fileName << "> failed with error: " << std::strerror(errno);
+	}
+}
+
+Application::ShellAppFileGen::~ShellAppFileGen()
+{
+	const static char fname[] = "ShellAppFileGen::~ShellAppFileGen() ";
+
+	if (m_fileName.size() && ACE_OS::unlink(m_fileName.c_str()) != 0)
+	{
+		LOG_WAR << fname << "removed temporary file <" << m_fileName << "> failed with error: " << std::strerror(errno);
+	}
+}
+
+const std::string& Application::ShellAppFileGen::getShellStartCmd() const
+{
+	return m_shellCmd;
+}
