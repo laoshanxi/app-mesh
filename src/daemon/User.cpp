@@ -138,7 +138,7 @@ web::json::value User::AsJson() const
 	return result;
 }
 
-std::shared_ptr<User> User::FromJson(const std::string userName&, const web::json::value& obj, const std::shared_ptr<Roles> roles)
+std::shared_ptr<User> User::FromJson(const std::string& userName, const web::json::value& obj, const std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<User> result;
 	if (!obj.is_null())
