@@ -189,7 +189,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	else
 	{
-		option.working_directory(Configuration::instance()->getDefaultWorkDir());	// set default working dir
+		option.working_directory(Configuration::instance()->getDefaultWorkDir().c_str());	// set default working dir
 	}
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string>& pair)
 	{
