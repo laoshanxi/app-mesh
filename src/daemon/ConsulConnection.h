@@ -48,7 +48,7 @@ private:
 	void offlineNode();
 
 	bool registerService(const std::string& appName, int port);
-	bool deregisterService(const std::string appName);
+	bool deregisterService(const std::string& appName);
 
 	void findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& task, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts);
 	void compareTopologyAndDispatch(const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldT, const std::map<std::string, std::shared_ptr<ConsulTopology>>& newT);

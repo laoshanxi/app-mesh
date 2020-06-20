@@ -12,7 +12,7 @@ class MonitoredProcess;
 class DockerProcess :public AppProcess
 {
 public:
-	DockerProcess(int cacheOutputLines, std::string dockerImage, std::string appName);
+	DockerProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName);
 	virtual ~DockerProcess();
 
 	// override with docker behavior

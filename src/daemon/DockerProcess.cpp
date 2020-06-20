@@ -7,7 +7,7 @@
 #include "MonitoredProcess.h"
 #include "ResourceLimitation.h"
 
-DockerProcess::DockerProcess(int cacheOutputLines, std::string dockerImage, std::string appName)
+DockerProcess::DockerProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName)
 	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage),
 	m_appName(appName), m_lastFetchTime(std::chrono::system_clock::now())
 {

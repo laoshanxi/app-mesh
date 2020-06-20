@@ -100,7 +100,7 @@ std::shared_ptr<User> Users::addUser(const std::string userName, const web::json
 	return user;
 }
 
-void Users::delUser(std::string name)
+void Users::delUser(const std::string& name)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	getUser(name);
@@ -110,7 +110,7 @@ void Users::delUser(std::string name)
 //////////////////////////////////////////////////////////////////////
 /// User
 //////////////////////////////////////////////////////////////////////
-User::User(std::string name) :m_locked(false), m_name(name)
+User::User(const std::string& name) :m_locked(false), m_name(name)
 {
 }
 
@@ -138,7 +138,7 @@ web::json::value User::AsJson() const
 	return result;
 }
 
-std::shared_ptr<User> User::FromJson(std::string userName, const web::json::value& obj, const std::shared_ptr<Roles> roles)
+std::shared_ptr<User> User::FromJson(const std::string userName&, const web::json::value& obj, const std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<User> result;
 	if (!obj.is_null())
@@ -183,7 +183,7 @@ void User::updateUser(std::shared_ptr<User> user)
 	this->m_locked = user->m_locked;
 }
 
-void User::updateKey(std::string passswd)
+void User::updateKey(const std::string& passswd)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_key = passswd;
@@ -206,7 +206,7 @@ const std::set<std::shared_ptr<Role>> User::getRoles()
 	return m_roles;
 }
 
-bool User::hasPermission(std::string permission)
+bool User::hasPermission(const std::string& permission)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	for (auto role : m_roles)

@@ -22,7 +22,7 @@ MonitoredProcess::~MonitoredProcess()
 	// not necessary
 	if (m_pipeHandler[0] != ACE_INVALID_HANDLE) ACE_OS::close(m_pipeHandler[0]);
 
-	std::unique_ptr<HttpRequest> response((HttpRequest*)m_httpRequest);
+	std::unique_ptr<HttpRequest> response(static_cast<HttpRequest*>(m_httpRequest));
 	m_httpRequest = nullptr;
 
 	std::lock_guard<std::recursive_mutex> guard(m_queueMutex);
@@ -181,7 +181,7 @@ void MonitoredProcess::runPipeReaderThread()
 			web::http::http_response resp(web::http::status_codes::OK);
 			resp.set_body(this->fetchOutputMsg());
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->return_value());
-			std::unique_ptr<HttpRequest> response((HttpRequest*)m_httpRequest);
+			std::unique_ptr<HttpRequest> response(static_cast<HttpRequest*>(m_httpRequest));
 			m_httpRequest = nullptr;
 			if (nullptr != response)
 			{

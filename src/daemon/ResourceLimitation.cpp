@@ -39,7 +39,7 @@ web::json::value ResourceLimitation::AsJson()
 	return result;
 }
 
-std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json::value& jobj, std::string appName)
+std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json::value& jobj, const std::string& appName)
 {
 	std::shared_ptr<ResourceLimitation> result;
 	if (!jobj.is_null())

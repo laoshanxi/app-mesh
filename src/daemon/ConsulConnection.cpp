@@ -476,7 +476,7 @@ bool ConsulConnection::registerService(const std::string& appName, int port)
 	return false;
 }
 
-bool ConsulConnection::deregisterService(const std::string appName)
+bool ConsulConnection::deregisterService(const std::string& appName)
 {
 	const static char fname[] = "ConsulConnection::deregisterService() ";
 
