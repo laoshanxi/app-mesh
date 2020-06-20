@@ -101,6 +101,7 @@ public:
 
 	const std::string getLogLevel() const;
 	const std::string& getDefaultExecUser() const { return m_defaultExecUser; };
+	const std::string getDefaultWorkDir() const;
 	bool getSslEnabled() const;
 	bool getEncryptKey();
 	std::string getSSLCertificateFile() const;
@@ -129,6 +130,7 @@ private:
 	std::vector<std::shared_ptr<Application>> m_apps;
 	std::string m_hostDescription;
 	std::string m_defaultExecUser;
+	std::string m_defaultWorkDir;
 	int m_scheduleInterval;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonSecurity> m_security;

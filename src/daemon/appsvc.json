@@ -3,6 +3,7 @@
   "ScheduleIntervalSeconds": 2,
   "LogLevel": "DEBUG",
   "DefaultExecUser": "root",
+  "WorkingDirectory": "",
   "REST": {
     "RestEnabled": true,
     "HttpThreadPoolSize": 6,

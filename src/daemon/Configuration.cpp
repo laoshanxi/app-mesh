@@ -68,6 +68,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	// Global Prameters
 	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
 	config->m_defaultExecUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
+	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
 	if (config->m_defaultExecUser.empty()) config->m_defaultExecUser = DEFAULT_EXEC_USER;
@@ -167,6 +168,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
 	result[JSON_KEY_DefaultExecUser] = web::json::value::string(m_defaultExecUser);
+	result[JSON_KEY_WorkingDirectory] = web::json::value::string(m_defaultWorkDir);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
 
@@ -316,6 +318,14 @@ void Configuration::enableApp(const std::string& appName)
 const std::string Configuration::getLogLevel() const
 {
 	return m_logLevel;
+}
+
+const std::string Configuration::getDefaultWorkDir() const
+{
+	if (m_defaultWorkDir.length())
+		return m_defaultWorkDir;
+	else
+		return DEFAULT_WORKING_DIR;
 }
 
 bool Configuration::getSslEnabled() const
@@ -579,7 +589,7 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 		}
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser)) SET_COMPARE(this->m_defaultExecUser, newConfig->m_defaultExecUser);
-
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_WorkingDirectory)) SET_COMPARE(this->m_defaultWorkDir, newConfig->m_defaultWorkDir);
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 		{

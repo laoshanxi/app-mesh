@@ -81,6 +81,7 @@ namespace std
 
 #define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
+#define DEFAULT_WORKING_DIR "/opt/appmesh/work"
 
 const char* GET_STATUS_STR(unsigned int status);
 
@@ -162,6 +163,7 @@ public:
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
+#define JSON_KEY_WorkingDirectory "WorkingDirectory"
 
 #define JSON_KEY_REST "REST"
 #define JSON_KEY_RestEnabled "RestEnabled"
