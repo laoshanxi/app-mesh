@@ -587,7 +587,7 @@ void ArgumentParser::processRun()
 		COMMON_OPTIONS
 		("exec_user,a", po::value<std::string>(), "application process running OS user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/tmp')")
+		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work')")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,t", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
 		("retention,r", po::value<int>()->default_value(DEFAULT_RUN_APP_RETENTION_DURATION), "retention duration after run finished (default 10s)")
