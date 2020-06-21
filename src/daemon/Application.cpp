@@ -658,7 +658,7 @@ Application::ShellAppFileGen::ShellAppFileGen(const std::string& name, const std
 	if (shellFile.is_open() && shellFile.good())
 	{
 		shellFile << "#!/bin/sh" << std::endl;
-		shellFile << "#application<" << name << ">" << std::endl;
+		shellFile << "#application <" << name << ">" << std::endl;
 		if (workDir.length()) shellFile << "cd " << workDir << std::endl;
 		shellFile << cmd << std::endl;
 		shellFile.close();
@@ -678,10 +678,18 @@ Application::ShellAppFileGen::~ShellAppFileGen()
 {
 	const static char fname[] = "ShellAppFileGen::~ShellAppFileGen() ";
 
-	if (m_fileName.size() && ACE_OS::unlink(m_fileName.c_str()) != 0)
+	if (m_fileName.size())
 	{
-		LOG_WAR << fname << "removed temporary file <" << m_fileName << "> failed with error: " << std::strerror(errno);
+		if (ACE_OS::unlink(m_fileName.c_str()) != 0)
+		{
+			LOG_WAR << fname << "removed temporary file <" << m_fileName << "> failed with error: " << std::strerror(errno);
+		}
+		else
+		{
+			LOG_DBG << fname << "file  <" << m_fileName << "> removed";
+		}
 	}
+	
 }
 
 const std::string& Application::ShellAppFileGen::getShellStartCmd() const
