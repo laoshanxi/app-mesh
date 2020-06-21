@@ -24,7 +24,8 @@ class Application : public TimerHandler
 	{
 		explicit ShellAppFileGen(const std::string& name, const std::string& cmd, const std::string& workDir);
 		virtual ~ShellAppFileGen();
-		const std::string& getShellStartCmd() const;
+		const std::string& getShellStartCmd() const { return m_shellCmd; };
+		const std::string& getShellFileName() const { return m_fileName; };
 	private:
 		std::string m_cmd;
 		std::string m_shellCmd;

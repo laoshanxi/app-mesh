@@ -202,6 +202,23 @@ bool Utility::removeDir(const std::string& path)
 	return true;
 }
 
+void Utility::removeFile(const std::string& path)
+{
+	const static char fname[] = "Utility::removeFile() ";
+
+	if (path.length() && isFileExist(path))
+	{
+		if (ACE_OS::unlink(path.c_str()) != 0)
+		{
+			LOG_WAR << fname << "removed stdout file <" << path << "> failed with error: " << std::strerror(errno);
+		}
+		else
+		{
+			LOG_DBG << fname << "file  <" << path << "> removed";
+		}
+	}
+}
+
 void Utility::initLogging()
 {
 	using namespace log4cpp;

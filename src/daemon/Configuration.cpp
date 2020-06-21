@@ -160,10 +160,11 @@ void Configuration::handleSignal()
 
 web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string& user)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
 	// Applications
 	result[JSON_KEY_Applications] = serializeApplication(false, user);
+
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
 	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
@@ -192,7 +193,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 
 std::vector<std::shared_ptr<Application>> Configuration::getApps() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	return m_apps;
 }
 
@@ -200,7 +201,7 @@ void Configuration::addApp2Map(std::shared_ptr<Application> app)
 {
 	const static char fname[] = "Configuration::addApp2Map() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	for (std::size_t i = 0; i < m_apps.size(); i++)
 	{
 		if (m_apps[i]->getName() == app->getName())
@@ -214,6 +215,7 @@ void Configuration::addApp2Map(std::shared_ptr<Application> app)
 
 int Configuration::getScheduleInterval()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_scheduleInterval;
 }
 
@@ -239,16 +241,19 @@ int Configuration::getRestListenPort()
 			}
 		}
 	}
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restListenPort;
 }
 
 int Configuration::getPromListenPort()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_promListenPort;
 }
 
 std::string Configuration::getRestListenAddress()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restListenAddress;
 }
 
@@ -272,7 +277,7 @@ const web::json::value Configuration::getSecureConfigJson()
 
 web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string& user) const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
 	for (auto app : m_apps)
 	{
@@ -317,11 +322,19 @@ void Configuration::enableApp(const std::string& appName)
 
 const std::string Configuration::getLogLevel() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_logLevel;
+}
+
+const std::string Configuration::getDefaultExecUser() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_defaultExecUser;
 }
 
 const std::string Configuration::getDefaultWorkDir() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	if (m_defaultWorkDir.length())
 		return m_defaultWorkDir;
 	else
@@ -330,37 +343,50 @@ const std::string Configuration::getDefaultWorkDir() const
 
 bool Configuration::getSslEnabled() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_sslEnabled;
 }
 
 bool Configuration::getEncryptKey()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return getSecurity()->m_encryptKey;
 }
 
 std::string Configuration::getSSLCertificateFile() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_certFile;
 }
 
 std::string Configuration::getSSLCertificateKeyFile() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_ssl->m_certKeyFile;
 }
 
 bool Configuration::getRestEnabled() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restEnabled;
 }
 
 bool Configuration::getJwtEnabled() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restEnabled;
 }
 
 const std::size_t Configuration::getThreadPoolSize() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_httpThreadPoolSize;
+}
+
+const std::string Configuration::getDescription() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_hostDescription;
 }
 
 const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName) const
@@ -404,18 +430,19 @@ const std::shared_ptr<Roles> Configuration::getRoles()
 
 const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
 {
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_consul;
 }
 
 const std::shared_ptr<Configuration::JsonSecurity> Configuration::getSecurity() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_security;
 }
 
 void Configuration::updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	m_security = security;
 }
 
@@ -476,7 +503,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 {
 	auto app = parseApp(jsonApp);
 	bool update = false;
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application>& mapApp)
 		{
 			if (mapApp->getName() == app->getName())
@@ -513,7 +540,7 @@ void Configuration::removeApp(const std::string& appName)
 
 	LOG_DBG << fname << appName;
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// Update in-memory app
 	for (auto iterA = m_apps.begin(); iterA != m_apps.end();)
 	{
@@ -540,7 +567,7 @@ void Configuration::saveConfigToDisk()
 	auto content = GET_STD_STRING(this->AsJson(false, "").serialize());
 	if (content.length())
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 		auto tmpFile = m_jsonFilePath + "." + std::to_string(Utility::getThreadId());
 		std::ofstream ofs(tmpFile, ios::trunc);
 		if (ofs.is_open())
@@ -571,7 +598,7 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 	LOG_DBG << fname << "Entered";
 	bool consulUpdated = false;
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
 		// parse
 		auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));
@@ -646,7 +673,7 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 
 void Configuration::registerPrometheus()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p)
 		{
 			p->initMetrics(PrometheusRest::instance());

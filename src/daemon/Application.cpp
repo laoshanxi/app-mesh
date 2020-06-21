@@ -30,7 +30,8 @@ Application::Application()
 Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
-	LOG_DBG << fname << "Entered.";
+	LOG_DBG << fname << "Entered. Application: " << m_name;
+	Utility::removeFile(m_stdoutFile);
 }
 
 bool Application::operator==(const std::shared_ptr<Application>& app)
@@ -216,7 +217,7 @@ void Application::invoke()
 		}
 		else if (m_process->running())
 		{
-			LOG_INF << fname << "Application <" << m_name << "> was not in daily start time";
+			LOG_INF << fname << "Application <" << m_name << "> was not in start time";
 			m_process->killgroup();
 		}
 	}
@@ -563,8 +564,9 @@ std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, cons
 	}
 	else
 	{
-		if (m_shellApp && m_shellAppFile == nullptr)
+		if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 		{
+			m_shellAppFile = nullptr;
 			m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, m_workdir);
 		}
 		if (cacheOutputLines > 0)
@@ -653,7 +655,7 @@ Application::ShellAppFileGen::ShellAppFileGen(const std::string& name, const std
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
-	auto fileName = Utility::stringFormat(".appmesh.%s.sh", name.c_str());
+	auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", Configuration::instance()->getDefaultWorkDir().c_str(), name.c_str());
 	std::ofstream shellFile(fileName, ios::out | ios::trunc);
 	if (shellFile.is_open() && shellFile.good())
 	{
@@ -677,22 +679,5 @@ Application::ShellAppFileGen::ShellAppFileGen(const std::string& name, const std
 Application::ShellAppFileGen::~ShellAppFileGen()
 {
 	const static char fname[] = "ShellAppFileGen::~ShellAppFileGen() ";
-
-	if (m_fileName.size())
-	{
-		if (ACE_OS::unlink(m_fileName.c_str()) != 0)
-		{
-			LOG_WAR << fname << "removed temporary file <" << m_fileName << "> failed with error: " << std::strerror(errno);
-		}
-		else
-		{
-			LOG_DBG << fname << "file  <" << m_fileName << "> removed";
-		}
-	}
-	
-}
-
-const std::string& Application::ShellAppFileGen::getShellStartCmd() const
-{
-	return m_shellCmd;
+	Utility::removeFile(m_fileName);
 }

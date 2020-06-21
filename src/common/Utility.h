@@ -102,6 +102,7 @@ public:
 	static bool createDirectory(const std::string& path, mode_t mode = 0775);
 	static bool createRecursiveDirectory(const std::string& path, mode_t mode = 0775);
 	static bool removeDir(const std::string& path);
+	static void removeFile(const std::string& path);
 
 	// String related
 	static bool isNumber(std::string s);
