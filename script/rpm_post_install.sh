@@ -49,8 +49,3 @@ id appmesh >& /dev/null
 if [ $? -ne 0 ]; then
     useradd appmesh -s /usr/sbin/nologin --no-create-home  || true
 fi
-
-# create work dir
-if [ ! -d $INSTALL_DIR/work ]; then
-	mkdir $INSTALL_DIR/work
-fi

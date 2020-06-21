@@ -653,7 +653,7 @@ Application::ShellAppFileGen::ShellAppFileGen(const std::string& name, const std
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
-	auto fileName = Utility::stringFormat("/tmp/.appmesh.%s.sh", name.c_str());
+	auto fileName = Utility::stringFormat(".appmesh.%s.sh", name.c_str());
 	std::ofstream shellFile(fileName, ios::out | ios::trunc);
 	if (shellFile.is_open() && shellFile.good())
 	{

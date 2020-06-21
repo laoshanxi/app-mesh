@@ -57,8 +57,8 @@ std::string Utility::stdStringTrim(const std::string& str)
 {
 	char* line = const_cast <char*> (str.c_str());
 	// trim the line on the left and on the right
-	size_t len = str.length();
-	size_t start = 0;
+	std::size_t len = str.length();
+	std::size_t start = 0;
 	while (isspace(*line))
 	{
 		++line;
@@ -76,8 +76,8 @@ std::string Utility::stdStringTrim(const std::string& str, char trimChar, bool t
 {
 	char* line = const_cast <char*> (str.c_str());
 	// trim the line on the left and on the right
-	size_t len = str.length();
-	size_t start = 0;
+	std::size_t len = str.length();
+	std::size_t start = 0;
 	while (trimStart && trimChar == (*line))
 	{
 		++line;
@@ -98,7 +98,7 @@ std::string Utility::getSelfFullPath()
 	char buf[MAX_PATH] = { 0 };
 	::GetModuleFileNameA(NULL, buf, MAX_PATH);
 	// Remove ".exe"
-	size_t idx = 0;
+	std::size_t idx = 0;
 	while (buf[idx] != '\0')
 	{
 		if (buf[idx] == '.' && buf[idx + 1] == 'e' && buf[idx + 2] == 'x' && buf[idx + 3] == 'e')
@@ -206,18 +206,18 @@ void Utility::initLogging()
 {
 	using namespace log4cpp;
 
-	createDirectory("./log", 00655);
+	createDirectory("../log", 00655);
 	auto consoleLayout = new PatternLayout();
 	consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
 	auto consoleAppender = new OstreamAppender("console", &std::cout);
 	consoleAppender->setLayout(consoleLayout);
 
 	//RollingFileAppender(const std::string&name, const std::string&fileName,
-	//	size_tmaxFileSize = 10 * 1024 * 1024, unsigned intmaxBackupIndex = 1,
+	//	std::size_tmaxFileSize = 10 * 1024 * 1024, unsigned intmaxBackupIndex = 1,
 	//	boolappend = true, mode_t mode = 00644);
 	auto rollingFileAppender = new RollingFileAppender(
 		"rollingFileAppender",
-		"log/appsvc.log",
+		"../log/appsvc.log",
 		20 * 1024 * 1024,
 		5,
 		true,
@@ -280,7 +280,7 @@ std::chrono::system_clock::time_point Utility::convertStr2Time(const std::string
 {
 	// compatibility with rfc3339 date format
 	std::string time = strTime;
-	for (size_t i = 0; i < time.length(); i++)
+	for (std::size_t i = 0; i < time.length(); i++)
 	{
 		if ('T' == time[i]) time[i] = ' ';
 	}
@@ -354,7 +354,7 @@ std::string Utility::getSystemPosixTimeZone()
 	// remove un-used zero post-fix : 
 	// CST+0800  => CST+08
 	auto len = str.length();
-	for (size_t i = len - 1; i > 0; i--)
+	for (std::size_t i = len - 1; i > 0; i--)
 	{
 		if (str[i] == '0')
 		{
@@ -433,7 +433,7 @@ std::string Utility::readFile(const std::string& path)
 	std::string result;
 
 	while (true) {
-		size_t read = ::fread(buffer, 1, BUFSIZ, file);
+		std::size_t read = ::fread(buffer, 1, BUFSIZ, file);
 
 		if (::ferror(file)) {
 			// NOTE: ferror() will not modify errno if the stream
@@ -596,7 +596,7 @@ std::string Utility::humanReadableSize(long double bytesSize)
 		return "0";
 	}
 
-	size_t units = 0;
+	std::size_t units = 0;
 	long double n = bytesSize;
 	while (n > base && units + 1 < sizeof(fmt) / sizeof(*fmt))
 	{
@@ -661,7 +661,7 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 	stream << jsonStr;
 
 	const char ident = '\t';
-	size_t level = 0;
+	std::size_t level = 0;
 	char c;
 	bool ignore_next = false, in_string = false;
 
@@ -676,7 +676,7 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 			{
 				++level;
 				result << ('\n');
-				for (size_t i = 0; i < level; i++)
+				for (std::size_t i = 0; i < level; i++)
 					result << (ident);
 			}
 			break;
@@ -687,7 +687,7 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 				if (level != 0)
 					level--;
 				result << ('\n');
-				for (size_t i = 0; i < level; i++)
+				for (std::size_t i = 0; i < level; i++)
 					result << (ident);
 			}
 			result << (c);
@@ -696,7 +696,7 @@ std::string Utility::prettyJson(const std::string& jsonStr)
 			result << (c);
 			if (!in_string) {
 				result << ('\n');
-				for (size_t i = 0; i < level; i++)
+				for (std::size_t i = 0; i < level; i++)
 					result << (ident);
 			}
 			break;

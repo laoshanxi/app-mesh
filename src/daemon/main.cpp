@@ -36,11 +36,13 @@ int main(int argc, char* argv[])
 		ACE::init();
 
 		// set working dir
-		ACE_OS::chdir(Utility::getSelfDir().c_str());
-		LOG_INF << fname << "Entered working dir: " << getcwd(NULL, 0);
+		const auto workDir = Utility::stringFormat("%s/%s", Utility::getSelfDir().c_str(), "work");
+		Utility::createDirectory("./work", 00655);
+		ACE_OS::chdir(workDir.c_str());
 
 		// init log
 		Utility::initLogging();
+		LOG_INF << fname << "Entered working dir: " << getcwd(NULL, 0);
 		
 		// catch SIGHUP for 'systemctl reload'
 		Configuration::handleSignal();
