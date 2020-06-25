@@ -8,7 +8,7 @@
 #include "ResourceLimitation.h"
 
 AppProcess::AppProcess()
-	:m_usePipeHandler(false), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
+	:m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
 {
 }
 
@@ -23,6 +23,10 @@ AppProcess::~AppProcess()
 	{
 		ACE_OS::close(m_stdoutHandler);
 		m_stdoutHandler = ACE_INVALID_HANDLE;
+	}
+	if (m_inFile && m_inFile->is_open())
+	{
+		m_inFile->close();
 	}
 	this->close_dup_handles();
 	this->close_passed_handles();
@@ -204,13 +208,13 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		m_stdoutHandler = ACE_INVALID_HANDLE;
 	}
 	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
-	if (stdoutFile.length() && !m_usePipeHandler)
+	if (stdoutFile.length())
 	{
 		dummy = ACE_OS::open("/dev/null", O_RDWR);
 		m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
 		option.set_handles(dummy, m_stdoutHandler, m_stdoutHandler);
-		m_pipeDupFileName = stdoutFile;
 	}
+	m_stdoutFileName = stdoutFile;
 	// do not inherit LD_LIBRARY_PATH to child
 	static const std::string ldEnv = ::getenv("LD_LIBRARY_PATH");
 	if (!ldEnv.empty())
@@ -237,9 +241,9 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 std::string AppProcess::getOutputMsg()
 {
-	if (Utility::isFileExist(m_pipeDupFileName))
+	if (Utility::isFileExist(m_stdoutFileName))
 	{
-		std::ifstream inFile(m_pipeDupFileName, ios::in);
+		std::ifstream inFile(m_stdoutFileName, ios::in);
 		if (inFile.is_open())
 		{
 			// TODO: consider large file
@@ -255,7 +259,7 @@ std::string AppProcess::getOutputMsg()
 std::string AppProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_pipeDupFileName, ios::in);
+	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
 	if (m_inFile->is_open() && m_inFile->good())
 	{
 		std::stringstream buffer;
@@ -270,7 +274,7 @@ std::string AppProcess::fetchLine()
 	std::string lineData;
 	char buffer[512] = { 0 };
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_pipeDupFileName, ios::in);
+	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
 	if (m_inFile->is_open() && m_inFile->good())
 	{
 		m_inFile->getline(buffer, sizeof(buffer));

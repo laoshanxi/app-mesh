@@ -294,3 +294,17 @@ std::string DockerProcess::fetchOutputMsg()
 	}
 	return std::string();
 }
+
+std::string DockerProcess::fetchLine()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	auto msg = fetchOutputMsg();
+	for (std::size_t i = 0; i < msg.length(); i++)
+	{
+		if (i > 0 && msg[i] == '\n')
+		{
+			return msg.substr(0, i - 1);
+		}
+	}
+	return std::move(msg);
+}
