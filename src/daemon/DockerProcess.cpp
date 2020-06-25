@@ -7,8 +7,8 @@
 #include "MonitoredProcess.h"
 #include "ResourceLimitation.h"
 
-DockerProcess::DockerProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName)
-	: AppProcess(cacheOutputLines), m_dockerImage(dockerImage),
+DockerProcess::DockerProcess(const std::string& dockerImage, const std::string& appName)
+	: m_dockerImage(dockerImage),
 	m_appName(appName), m_lastFetchTime(std::chrono::system_clock::now())
 {
 }
@@ -31,7 +31,7 @@ void DockerProcess::killgroup(int timerId)
 	if (!containerId.empty())
 	{
 		auto cmd = Utility::stringFormat("docker rm -f %s", containerId.c_str());
-		AppProcess proc(0);
+		AppProcess proc;
 		proc.spawnProcess(cmd, "root", "", {}, nullptr, "");
 		if (proc.wait(ACE_Time_Value(3)) <= 0)
 		{
@@ -60,16 +60,16 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 
 	// 0. clean old docker contianer (docker container will left when host restart)
 	std::string dockerCommand = Utility::stringFormat("docker rm -f %s", containerName.c_str());
-	AppProcess proc(0);
+	AppProcess proc;
 	proc.spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 	proc.wait();
 
 	// 1. check docker image
 	dockerCommand = Utility::stringFormat("docker inspect -f '{{.Size}}' %s", m_dockerImage.c_str());
-	auto dockerProcess = std::make_shared<MonitoredProcess>(32, false);
+	auto dockerProcess = std::make_shared<AppProcess>();
 	pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
-	dockerProcess->runPipeReaderThread();
+	dockerProcess->wait();
 	auto imageSizeStr = Utility::stdStringTrim(dockerProcess->fetchLine());
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 	{
@@ -85,7 +85,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		{
 			LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
 		}
-		m_imagePullProc = std::make_shared<MonitoredProcess>(m_cacheOutputLines);
+		m_imagePullProc = std::make_shared<AppProcess>();
 		m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile);
 		m_imagePullProc->regKillTimer(pullTimeout, fname);
 		this->attach(m_imagePullProc->getpid());
@@ -136,10 +136,10 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 
 	// 3. start docker container
 	bool startSucess = false;
-	dockerProcess = std::make_shared<MonitoredProcess>(32, false);
+	dockerProcess = std::make_shared<AppProcess>();
 	pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
-	dockerProcess->runPipeReaderThread();
+	dockerProcess->wait();
 
 	std::string containerId;
 	if (dockerProcess->return_value() == 0)
@@ -158,10 +158,10 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	if (startSucess)
 	{
 		dockerCommand = Utility::stringFormat("docker inspect -f '{{.State.Pid}}' %s", containerId.c_str());
-		dockerProcess = std::make_shared<MonitoredProcess>(32, false);
+		dockerProcess = std::make_shared<AppProcess>();
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 		dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
-		dockerProcess->runPipeReaderThread();
+		dockerProcess->wait();
 		if (dockerProcess->return_value() == 0)
 		{
 			auto pidStr = Utility::stdStringTrim(dockerProcess->fetchLine());
@@ -274,7 +274,7 @@ std::string DockerProcess::getOutputMsg()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_containerId.length())
 	{
-		auto dockerCommand = Utility::stringFormat("docker logs --tail %d %s", m_cacheOutputLines, m_containerId.c_str());
+		auto dockerCommand = Utility::stringFormat("docker logs --tail %d %s", MAX_APP_CACHED_LINES, m_containerId.c_str());
 		return Utility::runShellCommand(dockerCommand);
 	}
 	return std::string();

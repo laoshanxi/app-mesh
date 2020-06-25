@@ -19,7 +19,7 @@
 
 Application::Application()
 	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_endTimerId(0), m_health(true)
-	, m_appId(Utility::createUUID()), m_version(0), m_cacheOutputLines(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
+	, m_appId(Utility::createUUID()), m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
 {
 	const static char fname[] = "Application::Application() ";
@@ -56,7 +56,6 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		this->m_ownerPermission == app->m_ownerPermission &&
 		this->m_dockerImage == app->m_dockerImage &&
 		this->m_version == app->m_version &&
-		this->m_cacheOutputLines == app->m_cacheOutputLines &&
 		this->m_healthCheckCmd == app->m_healthCheckCmd &&
 		this->m_posixTimeZone == app->m_posixTimeZone &&
 		this->m_startTime == app->m_startTime &&
@@ -124,7 +123,6 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 		app->m_dailyLimit->m_startTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_startTime, app->m_posixTimeZone);
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
-	app->m_cacheOutputLines = std::min(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_cache_lines), MAX_APP_CACHED_LINES);
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid)) app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_version)) SET_JSON_INT_VALUE(jobj, JSON_KEY_APP_version, app->m_version);
@@ -207,7 +205,7 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
-				m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
+				m_process = allocProcess(0, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 				if (m_metricStartCount) m_metricStartCount->metric().Increment();
@@ -265,7 +263,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 	const static char fname[] = "Application::runSyncrize() ";
 	LOG_DBG << fname << " Entered.";
 
-	m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
+	m_process = allocProcess(0, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
 }
 
@@ -275,12 +273,7 @@ std::string Application::runSyncrize(int timeoutSeconds, void* asyncHttpRequest)
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_cacheOutputLines <= 0)
-	{
-		LOG_ERR << fname << " m_cacheOutputLines is zero, force set to default value for MonitoredProcess";
-		m_cacheOutputLines = MAX_APP_CACHED_LINES;
-	}
-	m_process = allocProcess(m_cacheOutputLines, m_dockerImage, m_name);
+	m_process = allocProcess(MAX_APP_CACHED_LINES, m_dockerImage, m_name);
 	auto monitProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
 	assert(monitProc != nullptr);
 	monitProc->setAsyncHttpRequest(asyncHttpRequest);
@@ -511,7 +504,6 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[JSON_KEY_APP_env] = envs;
 	}
 	if (m_posixTimeZone.length()) result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
-	if (m_cacheOutputLines) result[JSON_KEY_APP_cache_lines] = web::json::value::number(m_cacheOutputLines);
 	if (m_dockerImage.length()) result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
 	if (m_version) result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 
@@ -539,7 +531,6 @@ void Application::dump()
 	LOG_DBG << fname << "m_startTime:" << Utility::convertTime2Str(m_startTime);
 	LOG_DBG << fname << "m_endTime:" << Utility::convertTime2Str(m_endTime);
 	LOG_DBG << fname << "m_regTime:" << Utility::convertTime2Str(m_regTime);
-	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	LOG_DBG << fname << "m_version:" << m_version;
@@ -552,14 +543,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, cons
 	std::shared_ptr<AppProcess> process;
 	if (dockerImage.length())
 	{
-		if (cacheOutputLines > 0)
-		{
-			process.reset(new DockerProcess(cacheOutputLines, dockerImage, appName));
-		}
-		else
-		{
-			process.reset(new DockerProcess(256, dockerImage, appName));
-		}
+		process.reset(new DockerProcess(dockerImage, appName));
 	}
 	else
 	{
@@ -574,7 +558,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, cons
 		}
 		else
 		{
-			process.reset(new AppProcess(cacheOutputLines));
+			process.reset(new AppProcess());
 		}
 	}
 	return std::move(process);

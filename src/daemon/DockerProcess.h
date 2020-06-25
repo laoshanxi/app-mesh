@@ -12,7 +12,7 @@ class MonitoredProcess;
 class DockerProcess :public AppProcess
 {
 public:
-	DockerProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName);
+	DockerProcess(const std::string& dockerImage, const std::string& appName);
 	virtual ~DockerProcess();
 
 	// override with docker behavior
@@ -32,7 +32,7 @@ private:
 	std::string m_containerId;
 	std::string m_appName;
 	std::shared_ptr<std::thread> m_spawnThread;
-	std::shared_ptr<MonitoredProcess> m_imagePullProc;
+	std::shared_ptr<AppProcess> m_imagePullProc;
 	std::recursive_mutex m_mutex;
 
 	std::chrono::system_clock::time_point m_lastFetchTime;

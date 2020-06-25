@@ -29,7 +29,9 @@ public:
 	std::string fetchLine();
 	void runPipeReaderThread();
 	virtual bool complete() override { return m_buildinThreadFinished; }
+
 private:
+	const int m_cacheOutputLines;
 	/// @brief 0 for parent read, 1 for child write
 	ACE_HANDLE m_pipeHandler[2];
 	FILE* m_readPipeFile;

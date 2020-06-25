@@ -330,7 +330,6 @@ void ArgumentParser::processReg()
 		("extra_time,q", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", "monitor and keep running for short running app in start interval")
-		("cache_lines,o", po::value<int>()->default_value(0), "number of output lines will be cached in server side (used for none-container app)")
 		("force,f", "force without confirm")
 		("help,h", "Prints command usage to stdout and exits");
 
@@ -418,7 +417,6 @@ void ArgumentParser::processReg()
 			jsobObj[JSON_KEY_APP_env] = objEnvs;
 		}
 	}
-	if (m_commandLineVariables.count("cache_lines")) jsobObj[JSON_KEY_APP_cache_lines] = web::json::value::number(m_commandLineVariables["cache_lines"].as<int>());
 	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
 	auto resp = requestHttp(methods::PUT, restPath, jsobObj);

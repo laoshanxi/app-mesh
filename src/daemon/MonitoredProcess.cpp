@@ -6,7 +6,7 @@
 #include "../common/HttpRequest.h"
 
 MonitoredProcess::MonitoredProcess(int cacheOutputLines, bool enableBuildinThread)
-	:AppProcess(cacheOutputLines), m_pipeHandler{ ACE_INVALID_HANDLE , ACE_INVALID_HANDLE }, 
+	:m_cacheOutputLines(cacheOutputLines), m_pipeHandler{ ACE_INVALID_HANDLE , ACE_INVALID_HANDLE },
 	m_readPipeFile(0), m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
 {
 	m_usePipeHandler = true;
@@ -42,6 +42,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
 		LOG_ERR << fname << "Create pipe failed with error : " << std::strerror(errno);
 		return ACE_INVALID_PID;
 	}
+	// TODO: no need pipe if all use stdout file
 	m_readPipeFile = ACE_OS::fdopen(m_pipeHandler[0], "r");
 	if (m_readPipeFile == nullptr)
 	{

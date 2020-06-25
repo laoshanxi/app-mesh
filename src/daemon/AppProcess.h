@@ -2,6 +2,7 @@
 
 #include <map>
 #include <string>
+#include <fstream>
 #include <ace/Process.h>
 #include "TimerHandler.h"
 
@@ -13,7 +14,7 @@ class ResourceLimitation;
 class AppProcess :public ACE_Process, public TimerHandler
 {
 public:
-	explicit AppProcess(int cacheOutputLines = 256);
+	AppProcess();
 	virtual ~AppProcess();
 
 	void attach(int pid);
@@ -34,10 +35,10 @@ public:
 
 	virtual std::string getOutputMsg();
 	virtual std::string fetchOutputMsg();
+	virtual std::string fetchLine();
 	virtual bool complete() { return true; }
 
 protected:
-	const int m_cacheOutputLines;
 	std::shared_ptr<int> m_returnCode;
 	/// @brief use pipe handler or file handler
 	bool m_usePipeHandler;
@@ -47,4 +48,6 @@ private:
 	int m_killTimerId;
 	ACE_HANDLE m_stdoutHandler;
 	std::string m_uuid;
+	mutable std::recursive_mutex m_outFileMutex;
+	std::shared_ptr<std::ifstream> m_inFile;
 };

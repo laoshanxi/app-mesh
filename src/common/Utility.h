@@ -217,7 +217,6 @@ public:
 #define JSON_KEY_APP_resource_limit "resource_limit"
 #define JSON_KEY_APP_env "env"
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
-#define JSON_KEY_APP_cache_lines "cache_lines"
 #define JSON_KEY_APP_docker_image "docker_image"
 // runtime attr
 #define JSON_KEY_APP_pid "pid"

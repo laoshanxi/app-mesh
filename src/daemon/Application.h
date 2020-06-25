@@ -131,7 +131,6 @@ protected:
 	std::string m_healthCheckCmd;
 	const std::string m_appId;
 	unsigned int m_version;
-	int m_cacheOutputLines;
 	std::shared_ptr<AppProcess> m_process;
 	int m_pid;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;

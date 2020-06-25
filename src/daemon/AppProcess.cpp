@@ -1,4 +1,5 @@
 #include <thread>
+#include <fstream>
 #include "AppProcess.h"
 #include "Configuration.h"
 #include "../common/Utility.h"
@@ -6,8 +7,8 @@
 #include "LinuxCgroup.h"
 #include "ResourceLimitation.h"
 
-AppProcess::AppProcess(int cacheOutputLines)
-	:m_cacheOutputLines(cacheOutputLines), m_usePipeHandler(false), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
+AppProcess::AppProcess()
+	:m_usePipeHandler(false), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
 {
 }
 
@@ -206,11 +207,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (stdoutFile.length() && !m_usePipeHandler)
 	{
 		dummy = ACE_OS::open("/dev/null", O_RDWR);
-		m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND);
+		m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
 		option.set_handles(dummy, m_stdoutHandler, m_stdoutHandler);
-	}
-	else
-	{
 		m_pipeDupFileName = stdoutFile;
 	}
 	// do not inherit LD_LIBRARY_PATH to child
@@ -239,11 +237,44 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 std::string AppProcess::getOutputMsg()
 {
+	if (Utility::isFileExist(m_pipeDupFileName))
+	{
+		std::ifstream inFile(m_pipeDupFileName, ios::in);
+		if (inFile.is_open())
+		{
+			// TODO: consider large file
+			std::stringstream buffer;
+			buffer << inFile.rdbuf();
+			inFile.close();
+			return std::move(buffer.str());
+		}
+	}
 	return std::string();
 }
 
 std::string AppProcess::fetchOutputMsg()
 {
+	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
+	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_pipeDupFileName, ios::in);
+	if (m_inFile->is_open() && m_inFile->good())
+	{
+		std::stringstream buffer;
+		buffer << m_inFile->rdbuf();
+		return std::move(buffer.str());
+	}
 	return std::string();
+}
+
+std::string AppProcess::fetchLine()
+{
+	std::string lineData;
+	char buffer[512] = { 0 };
+	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
+	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_pipeDupFileName, ios::in);
+	if (m_inFile->is_open() && m_inFile->good())
+	{
+		m_inFile->getline(buffer, sizeof(buffer));
+	}
+	return buffer;
 }
 
