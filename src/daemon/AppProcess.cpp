@@ -7,7 +7,7 @@
 #include "ResourceLimitation.h"
 
 AppProcess::AppProcess(int cacheOutputLines)
-	:m_cacheOutputLines(cacheOutputLines), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
+	:m_cacheOutputLines(cacheOutputLines), m_usePipeHandler(false), m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
 {
 }
 
@@ -203,11 +203,15 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		m_stdoutHandler = ACE_INVALID_HANDLE;
 	}
 	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
-	if (stdoutFile.length())
+	if (stdoutFile.length() && !m_usePipeHandler)
 	{
 		dummy = ACE_OS::open("/dev/null", O_RDWR);
 		m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND);
 		option.set_handles(dummy, m_stdoutHandler, m_stdoutHandler);
+	}
+	else
+	{
+		m_pipeDupFileName = stdoutFile;
 	}
 	// do not inherit LD_LIBRARY_PATH to child
 	static const std::string ldEnv = ::getenv("LD_LIBRARY_PATH");

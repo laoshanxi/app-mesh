@@ -103,7 +103,7 @@ protected:
 	virtual void checkAndUpdateHealth();
 	std::string runApp(int timeoutSeconds) noexcept(false);
 	void handleEndTimer();
-	const std::string& getExecUser() const;
+	const std::string getExecUser() const;
 	const std::string& getCmdLine() const;
 
 protected:

@@ -89,11 +89,9 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_APP_shell_mode);
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
-	app->m_stdoutFile = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_stdout_file));
-	// Be noticed do not use multiple spaces between command arguments
-	// "ping www.baidu.com    123" equals
-	// "ping www.baidu.com 123"
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
+	// TODO: consider i18n and  legal file name 
+	app->m_stdoutFile = Utility::stringFormat("%s.out", app->m_name.c_str());
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
 	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_init_command));
 	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_fini_command));
@@ -347,7 +345,7 @@ void Application::handleEndTimer()
 	}
 }
 
-const std::string& Application::getExecUser() const
+const std::string Application::getExecUser() const
 {
 	if (m_owner)
 	{
@@ -479,7 +477,6 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_commandLineFini.length()) result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
 	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
-	if (m_stdoutFile.length()) result[JSON_KEY_APP_stdout_file] = web::json::value::string(GET_STRING_T(m_stdoutFile));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
 	if (m_metadata.length()) result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
 	if (returnRuntimeInfo)
@@ -541,8 +538,10 @@ void Application::dump()
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_startTime:" << Utility::convertTime2Str(m_startTime);
 	LOG_DBG << fname << "m_endTime:" << Utility::convertTime2Str(m_endTime);
+	LOG_DBG << fname << "m_regTime:" << Utility::convertTime2Str(m_regTime);
 	LOG_DBG << fname << "m_cacheOutputLines:" << m_cacheOutputLines;
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
+	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	LOG_DBG << fname << "m_version:" << m_version;
 	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
@@ -678,6 +677,5 @@ Application::ShellAppFileGen::ShellAppFileGen(const std::string& name, const std
 
 Application::ShellAppFileGen::~ShellAppFileGen()
 {
-	const static char fname[] = "ShellAppFileGen::~ShellAppFileGen() ";
 	Utility::removeFile(m_fileName);
 }

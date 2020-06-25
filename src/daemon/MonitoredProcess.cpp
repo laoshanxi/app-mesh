@@ -1,4 +1,5 @@
 #include <thread>
+#include <fstream>
 #include <ace/Process.h>
 #include "MonitoredProcess.h"
 #include "../common/Utility.h"
@@ -8,6 +9,7 @@ MonitoredProcess::MonitoredProcess(int cacheOutputLines, bool enableBuildinThrea
 	:AppProcess(cacheOutputLines), m_pipeHandler{ ACE_INVALID_HANDLE , ACE_INVALID_HANDLE }, 
 	m_readPipeFile(0), m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
 {
+	m_usePipeHandler = true;
 }
 
 MonitoredProcess::~MonitoredProcess()
@@ -136,11 +138,15 @@ void MonitoredProcess::runPipeReaderThread()
 	const auto bufsize = 2048;
 	std::string lineTxt;
 	std::shared_ptr<char> buffer(new char[bufsize], std::default_delete<char[]>());
+	std::ofstream outputFile;
+	if (m_pipeDupFileName.length()) outputFile.open(m_pipeDupFileName, ios::ate | ios::out);
+	bool fileOpened = outputFile.is_open();
 	while (!feof(m_readPipeFile) && !ferror(m_readPipeFile))
 	{
 		char* result = fgets(buffer.get(), sizeof(buffer), m_readPipeFile);
 		if (result == nullptr) continue;
 
+		if (fileOpened) outputFile << buffer.get();
 		char* ptr = buffer.get() + ACE_OS::strlen(buffer.get()) - 1;
 		if (*ptr == '\n')
 		{
@@ -166,6 +172,7 @@ void MonitoredProcess::runPipeReaderThread()
 		// Do not store too much in memory
 		if ((int)m_msgQueue.size() > stdoutQueueMaxLineCount) m_msgQueue.pop();
 	}
+	if (fileOpened) outputFile.close();
 	// double check avoid wait hang
 	if (this->running())
 	{

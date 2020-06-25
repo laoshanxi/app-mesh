@@ -39,7 +39,9 @@ public:
 protected:
 	const int m_cacheOutputLines;
 	std::shared_ptr<int> m_returnCode;
-
+	/// @brief use pipe handler or file handler
+	bool m_usePipeHandler;
+	std::string m_pipeDupFileName;
 private:
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	int m_killTimerId;
