@@ -271,7 +271,6 @@ std::string AppProcess::fetchOutputMsg()
 
 std::string AppProcess::fetchLine()
 {
-	std::string lineData;
 	char buffer[512] = { 0 };
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
 	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);

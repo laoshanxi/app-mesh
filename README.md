@@ -433,7 +433,7 @@ GET | /appmesh/metrics | | Get Prometheus exporter metrics (this is not scrap ur
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
-
+- [zemasoft/wildcards ](https://github.com/zemasoft/wildcards)
 ---
 - Setup build environment on CentOS/Ubuntu/Debian
 ```text
@@ -443,7 +443,8 @@ sudo sh app-mesh/autogen.sh
 - Build App Mesh
 ```text
 cd app-mesh
-make
+#make
+mkdir build; cd build; cmake ..; make; make install;
 ```
 - Thread model
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/threadmodel.jpg" width=400 height=282 align=center /></div>
