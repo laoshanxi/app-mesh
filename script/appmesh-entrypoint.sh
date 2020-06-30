@@ -12,7 +12,10 @@ log(){
 	echo $1
 }
 
-cd /opt/appmesh/
+if [ ! -d "/opt/appmesh/work" ]; then
+    mkdir /opt/appmesh/work
+fi
+cd /opt/appmesh/work
 
 SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64

@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include <ace/Init_ACE.h>
+#include <ace/OS.h>
 #include <pplx/threadpool.h>
 
 #include "Application.h"
@@ -35,11 +36,6 @@ int main(int argc, char* argv[])
 	{
 		ACE::init();
 
-		// set working dir
-		const auto workDir = Utility::stringFormat("%s/%s", Utility::getSelfDir().c_str(), "work");
-		Utility::createDirectory("./work", 00655);
-		ACE_OS::chdir(workDir.c_str());
-
 		// init log
 		Utility::initLogging();
 		LOG_INF << fname << "Entered working dir: " << getcwd(NULL, 0);
@@ -60,6 +56,10 @@ int main(int argc, char* argv[])
 		{
 			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));
 		}
+
+		// working dir
+		Utility::createDirectory(config->getDefaultWorkDir(), 00655);
+		ACE_OS::chdir(config->getDefaultWorkDir().c_str());
 
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());

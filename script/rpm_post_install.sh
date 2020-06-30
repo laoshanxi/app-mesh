@@ -40,6 +40,9 @@ fi
 rm -rf /usr/bin/appc
 ln -s /opt/appmesh/script/appc.sh /usr/bin/appc
 chmod +x /opt/appmesh/script/appc.sh
+if [ ! -d "/opt/appmesh/work" ]; then
+    mkdir /opt/appmesh/work
+fi
 
 # start service directly
 systemctl enable appmesh

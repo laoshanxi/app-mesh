@@ -223,7 +223,8 @@ void Utility::initLogging()
 {
 	using namespace log4cpp;
 
-	createDirectory("../log", 00655);
+	auto logDir = Utility::stringFormat("%s/%s", Utility::getSelfDir().c_str(), "log");
+	createDirectory(logDir, 00655);
 	auto consoleLayout = new PatternLayout();
 	consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
 	auto consoleAppender = new OstreamAppender("console", &std::cout);
@@ -234,7 +235,7 @@ void Utility::initLogging()
 	//	boolappend = true, mode_t mode = 00644);
 	auto rollingFileAppender = new RollingFileAppender(
 		"rollingFileAppender",
-		"../log/appsvc.log",
+		logDir.append("/appsvc.log"),
 		20 * 1024 * 1024,
 		5,
 		true,

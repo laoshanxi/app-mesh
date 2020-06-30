@@ -90,7 +90,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
 	// TODO: consider i18n and  legal file name 
-	app->m_stdoutFile = Utility::stringFormat("%s.out", app->m_name.c_str());
+	app->m_stdoutFile = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
 	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_init_command));
 	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_fini_command));

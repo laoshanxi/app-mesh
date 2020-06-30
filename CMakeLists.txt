@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.8)
+cmake_minimum_required(VERSION 2.8.11)
 
 ##########################################################################
 # project
@@ -12,6 +12,7 @@ project(appmesh LANGUAGES CXX VERSION 1.8.3)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+add_compile_options(-DBUILD_TAG=${PROJECT_NAME}-${CMAKE_PROJECT_VERSION})
 
 ##########################################################################
 # debug / release
