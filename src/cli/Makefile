@@ -3,7 +3,7 @@ TARGET = appc
 OEXT = o
 
 INCLUDES = -I/usr/local/include
-DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib64/boost -L/usr/local/lib64 -lpthread -lssl -lcrypto -lcpprest -lboost_system -lboost_program_options -lACE -Wl,-Bstatic -llog4cpp -Wl,-Bdynamic
+DEP_LIBS = -L/usr/local/ace/lib/ -L/usr/local/lib64/boost -L/usr/local/lib64 -lpthread -lssl -lcrypto -lcpprest -lboost_system -lboost_program_options -lACE -llog4cpp
 
 all : $(TARGET) 
 

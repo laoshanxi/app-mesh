@@ -2,7 +2,8 @@
 ################################################################################
 ## This Script file is used to build rpm/deb package and launched by cmake cmd
 ################################################################################
-
+rm -rf *.rpm
+rm -rf *.deb
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script
@@ -30,7 +31,8 @@ ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep log4cpp | awk '{cmd="cp "$3" $
 rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appc
 rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc
 
-fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,libicu,net-tools' --vendor github --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
+# libnsl is depend by log4cpp
+fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,libicu,net-tools,libnsl' --vendor github --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
   --before-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_pre_uninstall.sh --after-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_uninstall.sh -C ${CMAKE_CURRENT_BINARY_DIR}/bin
 fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools' --vendor github --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
   --before-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_pre_uninstall.sh --after-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_uninstall.sh -C ${CMAKE_CURRENT_BINARY_DIR}/bin

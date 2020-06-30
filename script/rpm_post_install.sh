@@ -33,6 +33,7 @@ if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "/opt/appmesh/.appsvc.json" ]; 
 	mv /opt/appmesh/.appsvc.json /opt/appmesh/appsvc.json
 else
 	sed -i "s/MYHOST/$(hostname -f)/g" /opt/appmesh/appsvc.json
+	rm -rf /opt/appmesh/work
 fi
 
 # create appc softlink
