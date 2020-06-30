@@ -602,6 +602,7 @@ void ArgumentParser::processRun()
 	if (m_commandLineVariables.count("timeout")) query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
 
 	web::json::value jsobObj;
+	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
