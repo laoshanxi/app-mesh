@@ -29,6 +29,7 @@ set(SRC_LIST
     TimerHandler.cpp
 )
 add_executable(appsvc ${SRC_LIST})
+add_executable(${PROJECT_NAME}::appsvc ALIAS appsvc)
 
 ##########################################################################
 # Link

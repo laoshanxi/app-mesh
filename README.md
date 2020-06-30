@@ -444,7 +444,7 @@ sudo sh app-mesh/autogen.sh
 ```text
 cd app-mesh
 #make
-mkdir build; cd build; cmake ..; make; make install;
+mkdir build; cd build; cmake ..; make; make pack;
 ```
 - Thread model
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/threadmodel.jpg" width=400 height=282 align=center /></div>
