@@ -89,3 +89,11 @@ add_custom_target(pack
     COMMAND ${CMAKE_COMMAND} -E env PROJECT_NAME=${PROJECT_NAME} PROJECT_VERSION=${PROJECT_VERSION} CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} CMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} sh ${CMAKE_CURRENT_SOURCE_DIR}/script/build_package.sh
     WORKING_DIRECTORY ${CMAKE_PROJECT_DIR}
 )
+
+##########################################################################
+# cppcheck
+##########################################################################
+add_custom_target(cppcheck
+    COMMENT "code static check ${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMAND cppcheck --enable=all --quiet --std=c++11 --platform=native ${CMAKE_CURRENT_SOURCE_DIR}
+)

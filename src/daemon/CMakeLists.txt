@@ -43,7 +43,6 @@ target_link_libraries(appsvc
     boost_regex boost_thread boost_system
     cpprest
     ACE
-    log4cpp
     common
     prometheus
 )

@@ -15,7 +15,6 @@ target_link_libraries(appc
     boost_system boost_program_options
     cpprest
     ACE
-    log4cpp
     common
 )
 

@@ -12,5 +12,5 @@ target_link_libraries(common
   PRIVATE
     cpprest
     ACE
-    log4cpp
+    /usr/local/lib/liblog4cpp.a
 )
