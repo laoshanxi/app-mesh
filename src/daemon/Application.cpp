@@ -49,6 +49,7 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		return false;
 
 	return (this->m_name == app->m_name &&
+		this->m_shellApp == app->m_shellApp &&
 		this->m_commandLine == app->m_commandLine &&
 		this->m_commandLineInit == app->m_commandLineInit &&
 		this->m_commandLineFini == app->m_commandLineFini &&
@@ -56,6 +57,8 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		this->m_ownerPermission == app->m_ownerPermission &&
 		this->m_dockerImage == app->m_dockerImage &&
 		this->m_version == app->m_version &&
+		this->m_workdir == app->m_workdir &&
+		this->m_stdoutFile == app->m_stdoutFile &&
 		this->m_healthCheckCmd == app->m_healthCheckCmd &&
 		this->m_posixTimeZone == app->m_posixTimeZone &&
 		this->m_startTime == app->m_startTime &&
