@@ -1,7 +1,7 @@
 #include <algorithm>
 #include "Scheduler.h"
 #include "../common/Utility.h"
-#include "ConsulEntity.h"
+#include "rest/ConsulEntity.h"
 
 std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldTopology)
 {

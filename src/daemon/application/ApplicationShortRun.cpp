@@ -1,8 +1,8 @@
 #include "ApplicationShortRun.h"
-#include "AppProcess.h"
-#include "Configuration.h"
-#include "../common/Utility.h"
-#include "../common/TimeZoneHelper.h"
+#include "../process/AppProcess.h"
+#include "../Configuration.h"
+#include "../../common/Utility.h"
+#include "../../common/TimeZoneHelper.h"
 
 ApplicationShortRun::ApplicationShortRun()
 	:m_startInterval(0), m_bufferTime(0), m_timerId(0)

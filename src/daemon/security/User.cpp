@@ -1,6 +1,5 @@
 #include "User.h"
-#include "../common/Utility.h"
-
+#include "../../common/Utility.h"
 
 //////////////////////////////////////////////////////////////////////
 /// Users

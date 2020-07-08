@@ -2,17 +2,17 @@
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
 
-#include "Application.h"
-#include "ApplicationInitialize.h"
-#include "ApplicationUnInitia.h"
-#include "ApplicationPeriodRun.h"
+#include "application/Application.h"
+#include "application/ApplicationInitialize.h"
+#include "application/ApplicationUnInitia.h"
+#include "application/ApplicationPeriodRun.h"
 #include "Configuration.h"
-#include "ConsulConnection.h"
+#include "rest/ConsulConnection.h"
 #include "Label.h"
 #include "ResourceCollection.h"
-#include "PrometheusRest.h"
-#include "RestHandler.h"
-#include "User.h"
+#include "rest/PrometheusRest.h"
+#include "rest/RestHandler.h"
+#include "security/User.h"
 
 #include "../common/Utility.h"
 

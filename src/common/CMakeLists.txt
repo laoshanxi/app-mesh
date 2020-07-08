@@ -10,7 +10,5 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 ##########################################################################
 target_link_libraries(common
   PRIVATE
-    cpprest
-    ACE
     /usr/local/lib/liblog4cpp.a
 )

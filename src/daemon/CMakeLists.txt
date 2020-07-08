@@ -1,41 +1,21 @@
 ##########################################################################
+# sub dir
+##########################################################################
+add_subdirectory(application)
+add_subdirectory(process)
+add_subdirectory(rest)
+add_subdirectory(security)
+
+##########################################################################
 # appsvc
 ##########################################################################
-set(SRC_LIST 
-    main.cpp
-    Application.cpp
-    ApplicationShortRun.cpp
-    ApplicationInitialize.cpp
-    ApplicationUnInitia.cpp
-    ApplicationPeriodRun.cpp
-    Configuration.cpp
-    RestHandler.cpp
-    PrometheusRest.cpp
-    AppProcess.cpp
-    DockerProcess.cpp
-    MonitoredProcess.cpp
-    DailyLimitation.cpp
-    ResourceLimitation.cpp
-    ResourceCollection.cpp
-    LinuxCgroup.cpp
-    User.cpp
-    Role.cpp
-    Label.cpp
-    HealthCheckTask.cpp
-    PersistManager.cpp
-    ConsulConnection.cpp
-    ConsulEntity.cpp
-    Scheduler.cpp
-    TimerHandler.cpp
-)
+aux_source_directory(. SRC_LIST)
 add_executable(appsvc ${SRC_LIST})
 add_executable(${PROJECT_NAME}::appsvc ALIAS appsvc)
 
 ##########################################################################
 # Link
 ##########################################################################
-target_link_libraries(appsvc PUBLIC )
-
 target_link_libraries(appsvc
   PRIVATE
     Threads::Threads
@@ -43,8 +23,12 @@ target_link_libraries(appsvc
     boost_regex boost_thread boost_system
     cpprest
     ACE
-    common
+    rest
+    security
+    application
+    process
     prometheus
+    common
 )
 
 ##########################################################################

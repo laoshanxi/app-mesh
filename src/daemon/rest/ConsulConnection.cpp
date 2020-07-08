@@ -3,15 +3,15 @@
 #include <cpprest/json.h>
 #include <thread>
 
-#include "Application.h"
-#include "Configuration.h"
+#include "../application/Application.h"
+#include "../Configuration.h"
 #include "ConsulConnection.h"
-#include "ResourceCollection.h"
-#include "Scheduler.h"
-#include "User.h"
+#include "../ResourceCollection.h"
+#include "../Scheduler.h"
+#include "../security/User.h"
 
-#include "../common/Utility.h"
-#include "../common/PerfLog.h"
+#include "../../common/Utility.h"
+#include "../../common/PerfLog.h"
 
 #define CONSUL_BASE_PATH  "/v1/kv/appmesh/"
 //extern ACE_Reactor* m_timerReactor;

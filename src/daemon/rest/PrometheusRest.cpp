@@ -1,10 +1,10 @@
 #include <boost/algorithm/string_regex.hpp>
 #include "PrometheusRest.h"
-#include "../prom_exporter/counter.h"
-#include "../prom_exporter/registry.h"
-#include "ResourceCollection.h"
-#include "../common/Utility.h"
-#include "../prom_exporter/text_serializer.h"
+#include "../../prom_exporter/counter.h"
+#include "../../prom_exporter/registry.h"
+#include "../../prom_exporter/text_serializer.h"
+#include "../ResourceCollection.h"
+#include "../../common/Utility.h"
 
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 

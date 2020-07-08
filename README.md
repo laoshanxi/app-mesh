@@ -438,6 +438,7 @@ GET | /appmesh/metrics | | Get Prometheus exporter metrics (this is not scrap ur
 - Setup build environment on CentOS/Ubuntu/Debian
 ```text
 git clone https://github.com/laoshanxi/app-mesh.git
+sudo sh app-mesh/script/openssl_update.sh
 sudo sh app-mesh/autogen.sh
 ```
 - Build App Mesh

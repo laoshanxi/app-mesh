@@ -1,5 +1,5 @@
-#include "Application.h"
-#include "AppProcess.h"
+#include "application/Application.h"
+#include "process/AppProcess.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "../common/Utility.h"

@@ -3,19 +3,19 @@
 #include <algorithm>
 
 #include "Application.h"
-#include "AppProcess.h"
-#include "Configuration.h"
-#include "DailyLimitation.h"
-#include "DockerProcess.h"
-#include "MonitoredProcess.h"
-#include "PrometheusRest.h"
-#include "ResourceCollection.h"
-#include "ResourceLimitation.h"
-#include "User.h"
-#include "../common/TimeZoneHelper.h"
-#include "../common/Utility.h"
-#include "../prom_exporter/counter.h"
-#include "../prom_exporter/gauge.h"
+#include "../process/AppProcess.h"
+#include "../Configuration.h"
+#include "../DailyLimitation.h"
+#include "../process/DockerProcess.h"
+#include "../process/MonitoredProcess.h"
+#include "../rest/PrometheusRest.h"
+#include "../ResourceCollection.h"
+#include "../ResourceLimitation.h"
+#include "../security/User.h"
+#include "../../common/TimeZoneHelper.h"
+#include "../../common/Utility.h"
+#include "../../prom_exporter/counter.h"
+#include "../../prom_exporter/gauge.h"
 
 Application::Application()
 	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_endTimerId(0), m_health(true)

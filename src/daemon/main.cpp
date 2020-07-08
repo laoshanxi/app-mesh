@@ -11,15 +11,15 @@
 #include <ace/OS.h>
 #include <pplx/threadpool.h>
 
-#include "Application.h"
-#include "AppProcess.h"
+#include "application/Application.h"
+#include "process/AppProcess.h"
 #include "Configuration.h"
-#include "ConsulConnection.h"
+#include "rest/ConsulConnection.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
-#include "PrometheusRest.h"
+#include "rest/PrometheusRest.h"
 #include "ResourceCollection.h"
-#include "RestHandler.h"
+#include "rest/RestHandler.h"
 #include "TimerHandler.h"
 #include "../common/os/linux.hpp"
 #include "../common/Utility.h"

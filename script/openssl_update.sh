@@ -11,12 +11,13 @@ if [ -f "/usr/bin/yum" ]; then
   yum install -y zlib zlib-devel
 elif [ -f "/usr/bin/apt" ]; then
   apt-get update
-  apt-get remove -y openssl
   apt-get -y install wget g++ make perl
   apt-get -y install zlib1g zlib1g-dev
 fi
-wget https://www.openssl.org/source/openssl-1.1.1g.tar.gz
-
+wget --no-check-certificate https://www.openssl.org/source/openssl-1.1.1g.tar.gz
+if [ -f "/usr/bin/apt" ]; then
+    apt-get remove -y openssl
+fi
 tar zxvf openssl-1.1.1g.tar.gz
 cd openssl-1.1.1g/
 

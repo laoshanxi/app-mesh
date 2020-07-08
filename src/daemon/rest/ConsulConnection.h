@@ -7,10 +7,10 @@
 #include <thread>
 #include <cpprest/http_msg.h>
 #include <cpprest/json.h>
-#include "Label.h"
-#include "TimerHandler.h"
+#include "../Label.h"
+#include "../TimerHandler.h"
 #include "ConsulEntity.h"
-#include "AppProcess.h"
+#include "../process/AppProcess.h"
 
 class ConsulConnection :public TimerHandler
 {

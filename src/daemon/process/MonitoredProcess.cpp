@@ -2,8 +2,8 @@
 #include <fstream>
 #include <ace/Process.h>
 #include "MonitoredProcess.h"
-#include "../common/Utility.h"
-#include "../common/HttpRequest.h"
+#include "../../common/Utility.h"
+#include "../../common/HttpRequest.h"
 
 MonitoredProcess::MonitoredProcess(bool enableBuildinThread)
 	:m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)

@@ -4,8 +4,8 @@
 #include <assert.h>
 #include <functional>
 #include <cpprest/http_listener.h> // HTTP server 
-#include "../common/HttpRequest.h"
-#include "../prom_exporter/family.h"
+#include "../../common/HttpRequest.h"
+#include "../../prom_exporter/family.h"
 
 namespace prometheus
 {

@@ -1,9 +1,9 @@
 #include "PersistManager.h"
 #include "Configuration.h"
-#include "AppProcess.h"
+#include "process/AppProcess.h"
 #include <fstream>
-#include "Application.h"
-#include "ConsulConnection.h"
+#include "application/Application.h"
+#include "rest/ConsulConnection.h"
 #include "../common/os/linux.hpp"
 
 #define SNAPSHOT_JSON_KEY_pid "pid"

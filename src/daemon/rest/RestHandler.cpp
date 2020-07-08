@@ -4,26 +4,23 @@
 #include <cpprest/http_listener.h> // HTTP server 
 #include <cpprest/http_client.h>
 
-#include "Application.h"
-#include "Configuration.h"
+#include "../application/Application.h"
+#include "../Configuration.h"
 #include "ConsulConnection.h"
 #include "RestHandler.h"
 #include "PrometheusRest.h"
-#include "ResourceCollection.h"
-#include "User.h"
-#include "Label.h"
+#include "../ResourceCollection.h"
+#include "../security/User.h"
+#include "../Label.h"
 
-#include "../common/Utility.h"
-#include "../prom_exporter/counter.h"
-#include "../prom_exporter/gauge.h"
-#include "../common/HttpRequest.h"
-#include "../common/Utility.h"
-#include "../common/jwt-cpp/jwt.h"
-#include "../common/os/linux.hpp"
-#include "../common/os/chown.hpp"
-#include "../common/HttpRequest.h"
-#include "../prom_exporter/text_serializer.h"
-
+#include "../../prom_exporter/counter.h"
+#include "../../prom_exporter/gauge.h"
+#include "../../prom_exporter/text_serializer.h"
+#include "../../common/HttpRequest.h"
+#include "../../common/Utility.h"
+#include "../../common/jwt-cpp/jwt.h"
+#include "../../common/os/linux.hpp"
+#include "../../common/os/chown.hpp"
 
 RestHandler::RestHandler(const std::string& ipaddress, int port)
 	:m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : ipaddress)

@@ -1,8 +1,0 @@
-VERSION=1.8.2
-PACKAGE_NAME=appmesh
-BUILD_DATE=$(shell date "+%Y%m%d%H%M")
-BUILD_TAG=${PACKAGE_NAME}-${VERSION}-${BUILD_DATE}
-VENDER=github
-
-CXX = g++
-CXXFLAGS = -std=c++11 -ggdb3 -Wall -O2

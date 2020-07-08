@@ -1,11 +1,11 @@
 #include <thread>
 #include <fstream>
 #include "AppProcess.h"
-#include "Configuration.h"
-#include "../common/Utility.h"
-#include "../common/os/pstree.hpp"
+#include "../Configuration.h"
+#include "../../common/Utility.h"
+#include "../../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
-#include "ResourceLimitation.h"
+#include "../ResourceLimitation.h"
 
 AppProcess::AppProcess()
 	:m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())

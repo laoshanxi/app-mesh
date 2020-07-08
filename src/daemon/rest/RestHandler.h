@@ -3,7 +3,7 @@
 #include <memory>
 #include <functional>
 #include <cpprest/http_listener.h> // HTTP server 
-#include "../common/HttpRequest.h"
+#include "../../common/HttpRequest.h"
 
 class CounterPtr;
 class PrometheusRest;

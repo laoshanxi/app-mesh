@@ -1,7 +1,7 @@
 #include "ApplicationPeriodRun.h"
-#include "AppProcess.h"
-#include "Configuration.h"
-#include  "../common/Utility.h"
+#include "../process/AppProcess.h"
+#include "../Configuration.h"
+#include  "../../common/Utility.h"
 
 ApplicationPeriodRun::ApplicationPeriodRun()
 {
