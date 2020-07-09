@@ -369,13 +369,13 @@ os_version=centos7.6
 
 ---
 ### Usage scenarios
-1. Integrate rpm installation script and register rpm startup command to app mesh automaticlly
-2. Remote async shell execute (can build-up web ssh)
+1. Integrate with rpm installation script and register rpm startup behavior to appmesh
+2. Remote sync/async shell execute (web ssh)
 3. Host/app resource monitor
-4. Can be a standalone JWT server
+4. Run as a standalone JWT server
 5. File server
 6. Microservice management
-
+7. Cluster application deployment
 ---
 
 ### Development

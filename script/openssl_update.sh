@@ -15,9 +15,6 @@ elif [ -f "/usr/bin/apt" ]; then
   apt-get -y install zlib1g zlib1g-dev
 fi
 wget --no-check-certificate https://www.openssl.org/source/openssl-1.1.1g.tar.gz
-if [ -f "/usr/bin/apt" ]; then
-    apt-get remove -y openssl
-fi
 tar zxvf openssl-1.1.1g.tar.gz
 cd openssl-1.1.1g/
 

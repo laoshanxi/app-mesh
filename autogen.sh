@@ -56,7 +56,7 @@ if [ true ]; then
 	elif [ -f "/usr/bin/apt" ]; then
 		apt install -y python-dev
 	fi
-	wget https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz
+	wget --no-check-certificate https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz
 	tar zxvf boost_1_69_0.tar.gz
 	cd ./boost_1_69_0
 	./bootstrap.sh
@@ -81,7 +81,7 @@ cd $ROOTDIR
 
 # build log4cpp:
 # https://my.oschina.net/u/1983790/blog/1587568
-wget https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
+wget --no-check-certificate https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
 tar zxvf log4cpp-1.1.3.tar.gz
 cd log4cpp/
 ./autogen.sh
@@ -115,11 +115,11 @@ fi
 # https://www.cnblogs.com/fanqisoft/p/10765038.html
 # https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
 cd $ROOTDIR
-wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
 chmod +x cfssl_linux-amd64
-wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
 chmod +x cfssljson_linux-amd64
-wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
 chmod +x cfssl-certinfo_linux-amd64
 mv cfssl_linux-amd64 /usr/local/bin/cfssl
 mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
