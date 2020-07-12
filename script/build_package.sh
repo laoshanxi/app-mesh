@@ -32,7 +32,7 @@ rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appc
 rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc
 
 # libnsl is depend by log4cpp
-fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools,libicu' --vendor github --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
+fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools' --vendor github --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
   --before-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_pre_uninstall.sh --after-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_uninstall.sh -C ${CMAKE_CURRENT_BINARY_DIR}/bin
-fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools,libicu' --vendor github --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
+fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools' --vendor github --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
   --before-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_pre_uninstall.sh --after-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_uninstall.sh -C ${CMAKE_CURRENT_BINARY_DIR}/bin
