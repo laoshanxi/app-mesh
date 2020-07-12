@@ -643,7 +643,7 @@ namespace os {
 		FILE* mountTable = setmntent("/etc/mtab", "r");
 		while (true)
 		{
-			const char* device;
+			const char* device = NULL;
 			const char* mountPoint;
 			if (mountTable)
 			{
@@ -673,7 +673,8 @@ namespace os {
 			ignoreMap.insert("romfs");
 			ignoreMap.insert("ramfs");
 			ignoreMap.insert("devtmpfs");
-			if (ignoreMap.count(device) == 0)
+			// ignore 'overlay' device
+			if (device && strlen(device) && ignoreMap.count(device) == 0 && device[0] == '/')
 			{
 				points[mountPoint] = device;
 			}

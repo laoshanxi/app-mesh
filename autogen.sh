@@ -97,7 +97,7 @@ if [ true ]; then
 	# ACE:
 	# https://www.cnblogs.com/tanzi-888/p/5342431.html
 	# http://download.dre.vanderbilt.edu/
-	wget --no-check-certificate https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_9/ACE-6.5.9.tar.gz
+	wget --no-check-certificate https://download.dre.vanderbilt.edu/previous_versions/ACE-6.5.9.tar.gz
 	tar zxvf ACE-6.5.9.tar.gz
 	cd ACE_wrappers
 	export ACE_ROOT=`pwd`

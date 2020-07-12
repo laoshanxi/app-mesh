@@ -261,3 +261,5 @@ __pycache__/
 *.pyc
 *.diff
 *.zip
+
+.vscode
