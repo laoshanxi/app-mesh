@@ -14,7 +14,7 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/appsvc.json ${CMAKE_CURRENT_BINARY_DIR
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/app*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/rpm*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.service ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
-cp ${CMAKE_CURRENT_SOURCE_DIR}/ssl/*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/script/ssl_cert_generate.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/bash_completion.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp /usr/local/bin/cfssl ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 cp /usr/local/bin/cfssljson ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/

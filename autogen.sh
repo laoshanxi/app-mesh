@@ -17,13 +17,8 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y epel-release
 	yum install -y https://repo.ius.io/ius-release-el7.rpm
 
+	yum remove git -y
 	yum install -y git222 make cmake3 gcc-c++ libtool
-
-	unalias cp
-	if [[ -f "/usr/bin/cmake3" ]]; then
-		cp /usr/bin/cmake3 /usr/bin/cmake
-	fi
-	alias cp='cp -i'
 
 	yum install -y dos2unix wget which
 
@@ -72,7 +67,11 @@ git clone -b v2.10.16 https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
+if [[ -f "/usr/bin/cmake3" ]]; then
+	cmake3 .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
+else
+	cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
+fi
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so

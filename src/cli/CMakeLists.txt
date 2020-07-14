@@ -14,8 +14,8 @@ target_link_libraries(appc
     ${OPENSSL_LIBRARIES}
     boost_system boost_program_options
     cpprest
-    ACE
     common
+    ACE
 )
 
 ##########################################################################

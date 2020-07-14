@@ -635,7 +635,7 @@ namespace os {
 
 	inline std::map<std::string, std::string> getMoundPoints()
 	{
-		//const static char fname[] = "getMoundPoints() ";
+		const static char fname[] = "getMoundPoints() ";
 		std::map<std::string, std::string> points;
 		struct mntent* mountEntryPtr;
 		struct mntent mountEntry;
@@ -666,16 +666,10 @@ namespace os {
 				continue;
 			}
 
-			//LOG_DBG << fname << "device:" << device << " mountPoint:" << mountPoint;
-
-			std::set<std::string> ignoreMap;
-			ignoreMap.insert("tmpfs");
-			ignoreMap.insert("romfs");
-			ignoreMap.insert("ramfs");
-			ignoreMap.insert("devtmpfs");
-			// ignore 'overlay' device
+			std::set<std::string> ignoreMap = {"tmpfs", "romfs", "ramfs", "devtmpfs", "overlay"};
 			if (device && strlen(device) && ignoreMap.count(device) == 0 && device[0] == '/')
 			{
+				LOG_DBG << fname << "device:" << device << " mountPoint:" << mountPoint;
 				points[mountPoint] = device;
 			}
 		}

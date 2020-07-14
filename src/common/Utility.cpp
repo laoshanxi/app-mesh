@@ -325,7 +325,8 @@ std::string Utility::convertTime2Str(const std::chrono::system_clock::time_point
 	char buff[70] = { 0 };
 	// put_time is not ready when gcc version < 5
 	auto timet = std::chrono::system_clock::to_time_t(time);
-	std::tm timetm = *std::localtime(&timet);
+	std::tm timetm;
+	::localtime_r(&timet, &timetm);
 	strftime(buff, sizeof(buff), DATE_TIME_FORMAT, &timetm);
 	return std::string(buff);
 }
@@ -353,7 +354,8 @@ std::string Utility::convertDayTime2Str(const std::chrono::system_clock::time_po
 	char buff[70] = { 0 };
 	// put_time is not ready when gcc version < 5
 	auto timet = std::chrono::system_clock::to_time_t(time);
-	std::tm timetm = *std::localtime(&timet);
+	std::tm timetm;
+	::localtime_r(&timet, &timetm);
 	strftime(buff, sizeof(buff), "%H:%M:%S", &timetm);
 	return std::string(buff);
 }
