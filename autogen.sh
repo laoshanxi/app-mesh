@@ -19,7 +19,10 @@ if [ -f "/usr/bin/yum" ]; then
 
 	yum remove git -y
 	yum install -y git222 make cmake3 gcc-c++ libtool
-
+	if [[ -f "/usr/bin/cmake3" ]]; then
+		rm -f /usr/bin/cmake
+		cp /usr/bin/cmake3 /usr/bin/cmake
+	fi
 	yum install -y dos2unix wget which
 
 	#yum install -y boost169-devel boost169-static
