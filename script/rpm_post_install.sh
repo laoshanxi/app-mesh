@@ -3,16 +3,17 @@
 ## RPM post installation script file, will be executed while installation
 ################################################################################
 INSTALL_DIR=/opt/appmesh
+SYSTEMD_FILE=/etc/systemd/system/appmesh.service
 if [ ! -d $INSTALL_DIR ]; then
 	mkdir -p $INSTALL_DIR
-elif [[ -f "/lib/systemd/system/appmesh.service" ]] || [[ -f "/etc/init.d/appmesh" ]]; then
+elif [[ -f $SYSTEMD_FILE ]] || [[ -f "/etc/init.d/appmesh" ]]; then
 	systemctl stop appmesh
 	sleep 1
 fi
 
-if [ -f "/usr/lib/systemd/systemd" ]; then
+if [ -d "/etc/systemd/system/" ]; then
 	chmod 644 $INSTALL_DIR/script/appmesh.systemd.service
-	cp -f $INSTALL_DIR/script/appmesh.systemd.service /lib/systemd/system/appmesh.service
+	cp -f $INSTALL_DIR/script/appmesh.systemd.service $SYSTEMD_FILE
 	systemctl daemon-reload
 else
 	chmod 744 $INSTALL_DIR/script/appmesh.initd.sh

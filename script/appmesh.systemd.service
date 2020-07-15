@@ -1,4 +1,4 @@
-#/lib/systemd/system/appmesh.service
+#/etc/systemd/system/appmesh.service
 
 [Unit]
 Description=App Mesh daemon service
