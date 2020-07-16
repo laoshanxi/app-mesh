@@ -19,11 +19,11 @@ add_executable(${PROJECT_NAME}::appsvc ALIAS appsvc)
 target_link_libraries(appsvc
   PRIVATE
     Threads::Threads
-    ${OPENSSL_LIBRARIES}
     boost_regex boost_thread boost_system
     cpprest
     ACE
     rest
+    ${OPENSSL_LIBRARIES}
     security
     application
     process

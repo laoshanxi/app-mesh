@@ -167,7 +167,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	int totalEnvArgs = 0;
 	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);
 	ACE_Process_Options option(1, cmdLenth, totalEnvSize, totalEnvArgs);
-	option.command_line(cmd.c_str());
+	option.command_line("%s", cmd.c_str());
 	//option.avoid_zombies(1);
 	if (user.empty()) user = Configuration::instance()->getDefaultExecUser();
 	if (user != "root")
