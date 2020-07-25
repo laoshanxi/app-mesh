@@ -56,7 +56,7 @@ public:
 	pid_t getpid() const;
 
 	// get normal stdout for running app
-	std::string getOutput(bool keepHistory);
+	std::string getOutput(bool keepHistory, int index = 0);
 
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();

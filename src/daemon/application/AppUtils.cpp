@@ -120,3 +120,12 @@ int LogFileQueue::size()
 {
 	return m_fileQueue.size();
 }
+
+const std::string LogFileQueue::getFileName(int index)
+{
+	if (index <= size() - 1)
+	{
+		return m_fileQueue[index]->getFileName();
+	}
+	throw std::invalid_argument(Utility::stringFormat("no such index <%d> of stdout file exist", index));
+}

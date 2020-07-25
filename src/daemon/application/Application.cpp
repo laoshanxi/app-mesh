@@ -92,7 +92,8 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
 	// TODO: consider i18n and  legal file name 
 	app->m_stdoutFile = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
-	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, 2);// app->m_stdoutCacheSize);
+	app->m_stdoutCacheSize = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_stdout_cache_size);
+	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheSize);
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
 	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_init_command));
 	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_fini_command));
@@ -403,20 +404,18 @@ pid_t Application::getpid() const
 	return m_pid;
 }
 
-std::string Application::getOutput(bool keepHistory)
+std::string Application::getOutput(bool keepHistory, int index)
 {
-	if (m_process != nullptr)
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (m_process != nullptr && index == 0 && !keepHistory)
 	{
-		if (keepHistory)
-		{
-			return m_process->getOutputMsg();
-		}
-		else
-		{
-			return m_process->fetchOutputMsg();
-		}
+		// get from last FILE handler position
+		// return m_process->getOutputMsg();
+		return m_process->fetchOutputMsg();
 	}
-	return std::string();
+	auto file = m_stdoutFileQueue->getFileName(index);
+	// TODO: limit read file buffer size, or return stream
+	return std::move(Utility::readFile(file));
 }
 
 void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
@@ -472,6 +471,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
+	result[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(static_cast<int>(m_stdoutCacheSize));
 	if (m_metadata.length()) result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
 	if (returnRuntimeInfo)
 	{

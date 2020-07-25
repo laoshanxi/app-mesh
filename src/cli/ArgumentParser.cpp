@@ -323,6 +323,7 @@ void ArgumentParser::processReg()
 		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
 		("pid,p", po::value<int>(), "process id used to attach")
+		("stdout_cache_size,O", po::value<int>(), "stdout file cache number")
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
@@ -378,6 +379,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("end_time")) jsobObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
 	if (m_commandLineVariables.count("interval")) jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
 	if (m_commandLineVariables.count("extra_time")) jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
+	if (m_commandLineVariables.count("stdout_cache_size")) jsobObj[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_commandLineVariables["stdout_cache_size"].as<int>());
 	if (m_commandLineVariables.count("keep_running")) jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
@@ -474,6 +476,7 @@ void ArgumentParser::processView()
 		("name,n", po::value<std::string>(), "view application by name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
+		("stdout_index,O", po::value<int>(), "application output index")
 		;
 
 	shiftCommandLineArgs(desc);
@@ -492,8 +495,17 @@ void ArgumentParser::processView()
 		else
 		{
 			// view app output
+			int index = 0;
+			bool keepHis = false;
 			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>() + "/output";
-			auto response = requestHttp(methods::GET, restPath);
+			if (m_commandLineVariables.count("stdout_index"))
+			{
+				index = m_commandLineVariables["stdout_index"].as<int>();
+			}
+			std::map<std::string, std::string> query;
+			query["keep_history"] = std::to_string(keepHis);
+			query["stdout_index"] = std::to_string(index);
+			auto response = requestHttp(methods::GET, restPath, query);
 			auto bodyStr = response.extract_utf8string(true).get();
 			std::cout << bodyStr;
 		}
@@ -586,7 +598,7 @@ void ArgumentParser::processRun()
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work')")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,t", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
-		("retention,r", po::value<int>()->default_value(DEFAULT_RUN_APP_RETENTION_DURATION), "retention duration after run finished (default 10s)")
+		("retention,r", po::value<int>()->default_value(DEFAULT_RUN_APP_RETENTION_DURATION), "retention duration after run finished (default 10s), app will be cleaned after the retention period")
 		;
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;

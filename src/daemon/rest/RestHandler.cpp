@@ -373,7 +373,7 @@ void RestHandler::checkAppAccessPermission(const HttpRequest& message, const std
 	auto app = Configuration::instance()->getApp(appName);
 	if (!Configuration::instance()->checkOwnerPermission(tokenUserName, app->getOwner(), app->getOwnerPermission(), requestWrite))
 	{
-		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to modify app <%s>", tokenUserName.c_str(), appName.c_str()));
+		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to <%s> app <%s>", tokenUserName.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
 	}
 }
 
@@ -424,7 +424,7 @@ int RestHandler::getHttpQueryValue(const HttpRequest& message, const std::string
 	if (querymap.find(U(key)) != querymap.end())
 	{
 		rt = std::stoi(GET_STD_STRING(querymap.find(U(key))->second));
-		if (min < max && (rt < min || rt > max)) rt = DEFAULT_RUN_APP_RETENTION_DURATION;
+		if (min < max && (rt < min || rt > max)) rt = defaultValue;
 	}
 	LOG_DBG << fname << key << "=" << rt;
 	return rt;
@@ -1093,11 +1093,13 @@ void RestHandler::apiGetAppOutput(const HttpRequest& message)
 	// /appmesh/app/$app-name/output
 	std::string app = path.substr(strlen("/appmesh/app/"));
 	auto appName = app.substr(0, app.find_first_of('/'));
+
 	bool keepHis = getHttpQueryValue(message, HTTP_QUERY_KEY_keep_history, false, 0, 0);
+	int index = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
 
 	checkAppAccessPermission(message, appName, false);
 
-	auto output = Configuration::instance()->getApp(appName)->getOutput(keepHis);
+	auto output = Configuration::instance()->getApp(appName)->getOutput(keepHis, index);
 	LOG_DBG << fname;// << output;
 	message.reply(status_codes::OK, output);
 }

@@ -394,6 +394,7 @@ POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://
 GET | /appmesh/app/$app-name | | Get an application infomation
 GET | /appmesh/app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealth
 GET | /appmesh/app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
+GET | /appmesh/app/$app-name/output/2 | | Get app output with cached index
 POST| /appmesh/app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "exec_user": "root", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
 GET | /appmesh/app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 POST| /appmesh/app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "exec_user": "root", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.

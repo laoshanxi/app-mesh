@@ -36,6 +36,7 @@ public:
 	virtual ~LogFileQueue();
 	void enqueue();
 	int size();
+	const std::string getFileName(int index);
 private:
 	std::vector<std::shared_ptr<AppLogFile>> m_fileQueue;
 	const std::string baseFileName;
