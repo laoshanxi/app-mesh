@@ -1008,7 +1008,7 @@ std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest& mess
 	// force specify a UUID app name
 	auto appName = Utility::createUUID();
 	jsonApp[JSON_KEY_APP_name] = web::json::value::string(appName);
-	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(Application::STATUS::NOTAVIALABLE));
+	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getTokenUser(message));
 	return Configuration::instance()->addApp(jsonApp);
 }

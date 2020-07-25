@@ -6,6 +6,7 @@
 #include <mutex>
 #include <chrono>
 #include <cpprest/json.h>
+#include "AppUtils.h"
 #include "../TimerHandler.h"
 
 class User;
@@ -20,35 +21,7 @@ class ResourceLimitation;
 //////////////////////////////////////////////////////////////////////////
 class Application : public TimerHandler
 {
-	struct ShellAppFileGen
-	{
-		explicit ShellAppFileGen(const std::string& name, const std::string& cmd, const std::string& workDir);
-		virtual ~ShellAppFileGen();
-		const std::string& getShellStartCmd() const { return m_shellCmd; };
-		const std::string& getShellFileName() const { return m_fileName; };
-	private:
-		std::string m_cmd;
-		std::string m_shellCmd;
-		std::string m_fileName;
-	};
 public:
-	enum class STATUS : int
-	{
-		DISABLED,
-		ENABLED,
-		NOTAVIALABLE,	// used for temp app from RestHandler::apiRunParseApp and destroyed app
-		INITIALIZING,
-		UNINITIALIZING
-	};
-	enum class PERMISSION : int
-	{
-		GROUP_DENY = 1,
-		GROUP_READ = 2,
-		GROUP_WRITE = 3,
-		OTHER_DENY = 10,
-		OTHER_READ = 20,
-		OTHER_WRITE = 30
-	};
 	Application();
 	virtual ~Application();
 	virtual bool operator==(const std::shared_ptr<Application>& app);
@@ -119,7 +92,9 @@ protected:
 	std::string m_stdoutFile;
 	std::string m_metadata;
 	bool m_shellApp;
+	int m_stdoutCacheSize;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
+	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
 	//the exit code of last instance
 	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;
