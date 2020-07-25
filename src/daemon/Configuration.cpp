@@ -462,26 +462,26 @@ bool Configuration::checkOwnerPermission(const std::string& user, const std::sha
 	if (userObj->getGroup() == appOwner->getGroup())
 	{
 		auto groupPerm = appPermission / 1 % 10;
-		if (groupPerm <= static_cast<int>(Application::PERMISSION::GROUP_DENY)) return false;
+		if (groupPerm <= static_cast<int>(PERMISSION::GROUP_DENY)) return false;
 		if (!requestWrite &&
-			(groupPerm == static_cast<int>(Application::PERMISSION::GROUP_READ) ||
-				groupPerm == static_cast<int>(Application::PERMISSION::GROUP_WRITE)))
+			(groupPerm == static_cast<int>(PERMISSION::GROUP_READ) ||
+				groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE)))
 		{
 			return true;
 		}
-		if (requestWrite && groupPerm == static_cast<int>(Application::PERMISSION::GROUP_WRITE)) return true;
+		if (requestWrite && groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE)) return true;
 	}
 	else
 	{
 		auto otherPerm = 10 * (appPermission / 10 % 10);
-		if (otherPerm <= static_cast<int>(Application::PERMISSION::OTHER_DENY)) return false;
+		if (otherPerm <= static_cast<int>(PERMISSION::OTHER_DENY)) return false;
 		if (!requestWrite &&
-			(otherPerm == static_cast<int>(Application::PERMISSION::OTHER_READ) ||
-				otherPerm == static_cast<int>(Application::PERMISSION::OTHER_WRITE)))
+			(otherPerm == static_cast<int>(PERMISSION::OTHER_READ) ||
+				otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)))
 		{
 			return true;
 		}
-		if (requestWrite && otherPerm == static_cast<int>(Application::PERMISSION::OTHER_WRITE)) return true;
+		if (requestWrite && otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)) return true;
 	}
 	return false;
 }

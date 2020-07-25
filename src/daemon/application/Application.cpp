@@ -1,5 +1,4 @@
 #include <assert.h>
-
 #include <algorithm>
 
 #include "Application.h"
@@ -18,7 +17,7 @@
 #include "../../prom_exporter/gauge.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_endTimerId(0), m_health(true)
+	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheSize(0), m_endTimerId(0), m_health(true)
 	, m_appId(Utility::createUUID()), m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
 	, m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
 {
@@ -31,7 +30,6 @@ Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
 	LOG_DBG << fname << "Entered. Application: " << m_name;
-	Utility::removeFile(m_stdoutFile);
 }
 
 bool Application::operator==(const std::shared_ptr<Application>& app)
@@ -94,6 +92,7 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
 	// TODO: consider i18n and  legal file name 
 	app->m_stdoutFile = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
+	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, 2);// app->m_stdoutCacheSize);
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
 	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_init_command));
 	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_fini_command));
@@ -297,7 +296,6 @@ std::string Application::runApp(int timeoutSeconds)
 	assert(m_status != STATUS::ENABLED);
 
 	LOG_INF << fname << "Running application <" << m_name << ">.";
-
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 
@@ -544,6 +542,7 @@ void Application::dump()
 std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName)
 {
 	std::shared_ptr<AppProcess> process;
+	m_stdoutFileQueue->enqueue();
 	if (dockerImage.length())
 	{
 		process.reset(new DockerProcess(dockerImage, appName));
@@ -635,34 +634,4 @@ void Application::onEndEvent(int timerId)
 	this->m_status = STATUS::NOTAVIALABLE;
 
 	LOG_DBG << fname << "Application <" << m_name << "> is end finished";
-}
-
-Application::ShellAppFileGen::ShellAppFileGen(const std::string& name, const std::string& cmd, const std::string& workDir)
-{
-	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
-
-	auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", Configuration::instance()->getDefaultWorkDir().c_str(), name.c_str());
-	std::ofstream shellFile(fileName, ios::out | ios::trunc);
-	if (shellFile.is_open() && shellFile.good())
-	{
-		shellFile << "#!/bin/sh" << std::endl;
-		shellFile << "#application <" << name << ">" << std::endl;
-		if (workDir.length()) shellFile << "cd " << workDir << std::endl;
-		shellFile << cmd << std::endl;
-		shellFile.close();
-		m_fileName = fileName;
-		m_shellCmd = Utility::stringFormat("sh %s", m_fileName.c_str());
-
-		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> run in shell mode";
-	}
-	else
-	{
-		m_shellCmd = cmd;
-		LOG_WAR << fname << "create shell file <" << fileName << "> failed with error: " << std::strerror(errno);
-	}
-}
-
-Application::ShellAppFileGen::~ShellAppFileGen()
-{
-	Utility::removeFile(m_fileName);
 }
