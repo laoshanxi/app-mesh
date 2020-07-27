@@ -192,7 +192,7 @@ public:
 #define JSON_KEY_CONSULE "Consul"
 #define JSON_KEY_VERSION "Version"
 #define JSON_KEY_CONSULE_URL "url"
-#define JSON_KEY_CONSULE_IS_MASTER "is_master"
+#define JSON_KEY_CONSULE_IS_MAIN "is_main"
 #define JSON_KEY_CONSULE_IS_NODE "is_node"
 #define JSON_KEY_CONSULE_SESSION_NODE "session_node"
 #define JSON_KEY_CONSULE_DATACENTER "datacenter"

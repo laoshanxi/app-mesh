@@ -96,7 +96,7 @@
     }
   ],
   "Consul": {
-    "is_master": true,
+    "is_main": true,
     "is_node": true,
     "url": null,
     "url_example": "http://localhost:8500",

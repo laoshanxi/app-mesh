@@ -30,7 +30,7 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 
 ```json
   "Consul": {
-    "is_master": true,
+    "is_main": true,
     "is_node": true,
     "url": "http://localhost:8500",
     "datacenter": "dc1",

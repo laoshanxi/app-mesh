@@ -869,7 +869,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
 	consul->m_datacenter = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_DATACENTER);
-	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MASTER);
+	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MAIN);
 	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
 	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
@@ -887,7 +887,7 @@ web::json::value Configuration::JsonConsul::AsJson() const
 	auto result = web::json::value::object();
 	result[JSON_KEY_CONSULE_URL] = web::json::value::string(m_consulUrl);
 	result[JSON_KEY_CONSULE_DATACENTER] = web::json::value::string(m_datacenter);
-	result[JSON_KEY_CONSULE_IS_MASTER] = web::json::value::boolean(m_isMaster);
+	result[JSON_KEY_CONSULE_IS_MAIN] = web::json::value::boolean(m_isMaster);
 	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
