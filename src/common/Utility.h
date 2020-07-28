@@ -208,6 +208,7 @@ public:
 #define JSON_KEY_APP_init_command "init_command"
 #define JSON_KEY_APP_fini_command "fini_command"
 #define JSON_KEY_APP_stdout_cache_size "stdout_cache_size"
+#define JSON_KEY_APP_stdout_cache_num "stdout_cache_num"
 #define JSON_KEY_APP_initial_application_only "initial_application_only"
 #define JSON_KEY_APP_onetime_application_only "onetime_application_only"
 #define JSON_KEY_APP_health_check_cmd "health_check_cmd"
