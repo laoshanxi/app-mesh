@@ -1,4 +1,8 @@
 ﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url]
+<a href="https://scan.coverity.com/projects/laoshanxi-app-mesh">
+  <img alt="Coverity Scan Build Status"
+       src="https://img.shields.io/coverity/scan/21528.svg"/>
+</a>
 
 [Web UI for App Mesh](https://github.com/laoshanxi/app-mesh-ui)
 
