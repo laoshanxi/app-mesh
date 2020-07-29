@@ -64,7 +64,7 @@ namespace net {
 	{
 		const static char fname[] = "net::getAddressStr() ";
 
-		char buffer[MAXHOSTNAMELEN] = { 0 };
+		char buffer[NI_MAXHOST] = { 0 };
 		socklen_t length;
 
 		if (storage->sa_family == AF_INET) {

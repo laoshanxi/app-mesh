@@ -54,7 +54,14 @@ PrometheusRest::~PrometheusRest()
 {
 	const static char fname[] = "PrometheusRest::~PrometheusRest() ";
 	LOG_INF << fname << "Entered";
-	this->close();
+	try
+	{
+		this->close();
+	}
+	catch (...)
+	{
+		LOG_WAR << fname << "failed";
+	}
 }
 
 void PrometheusRest::open()

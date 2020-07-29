@@ -1110,6 +1110,7 @@ std::string ArgumentParser::requestToken(const std::string& user, const std::str
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)
 {
+	StreamState stdoutState(std::cout);
 	// Title:
 	std::cout << std::left;
 	std::cout

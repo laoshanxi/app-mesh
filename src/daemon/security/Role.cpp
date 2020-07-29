@@ -64,7 +64,6 @@ void Roles::addRole(const web::json::value& obj, std::string name)
 		{
 			m_roles.erase(role.first);
 		}
-		break;
 	}
 }
 

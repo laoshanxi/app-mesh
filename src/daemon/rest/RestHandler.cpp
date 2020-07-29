@@ -41,40 +41,45 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 		}
 		// Support SSL
 		uri.set_scheme("https");
-		auto server_config = new web::http::experimental::listener::http_listener_config();
-		server_config->set_ssl_context_callback(
-			[&](boost::asio::ssl::context& ctx) {
-				boost::system::error_code ec;
+		static bool sslContextCreated = false;
+		static auto server_config = new web::http::experimental::listener::http_listener_config();
+		if (!sslContextCreated)
+		{
+			sslContextCreated = true;
+			server_config->set_ssl_context_callback(
+				[&](boost::asio::ssl::context& ctx) {
+					boost::system::error_code ec;
 
-				ctx.set_options(boost::asio::ssl::context::default_workarounds |
-					boost::asio::ssl::context::no_sslv2 |
-					boost::asio::ssl::context::no_sslv3 |
-					boost::asio::ssl::context::no_tlsv1 |
-					boost::asio::ssl::context::no_tlsv1_1 |
-					boost::asio::ssl::context::single_dh_use,
-					ec);
-				// LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
+					ctx.set_options(boost::asio::ssl::context::default_workarounds |
+						boost::asio::ssl::context::no_sslv2 |
+						boost::asio::ssl::context::no_sslv3 |
+						boost::asio::ssl::context::no_tlsv1 |
+						boost::asio::ssl::context::no_tlsv1_1 |
+						boost::asio::ssl::context::single_dh_use,
+						ec);
+					// LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
 
-				ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
-				// LOG_DBG << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
+					ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
+					// LOG_DBG << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
 
-				ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
-				// LOG_DBG << "lambda::use_private_key " << ec.value() << " " << ec.message();
+					ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
+					// LOG_DBG << "lambda::use_private_key " << ec.value() << " " << ec.message();
 
-				// Enable ECDH cipher
-				if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
-				{
-					LOG_WAR << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
-				}
-				// auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
-				auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
-				if (!SSL_CTX_set_cipher_list(ctx.native_handle(), ciphers))
-				{
-					LOG_WAR << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
-				}
-				SSL_CTX_clear_options(ctx.native_handle(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
+					// Enable ECDH cipher
+					if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
+					{
+						LOG_WAR << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
+					}
+					// auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
+					auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
+					if (!SSL_CTX_set_cipher_list(ctx.native_handle(), ciphers))
+					{
+						LOG_WAR << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
+					}
+					SSL_CTX_clear_options(ctx.native_handle(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
-			});
+				});
+		}
 		m_listener = std::make_unique<web::http::experimental::listener::http_listener>(uri.to_uri(), *server_config);
 	}
 	else
@@ -149,7 +154,16 @@ RestHandler::RestHandler(const std::string& ipaddress, int port)
 
 RestHandler::~RestHandler()
 {
-	this->close();
+	const static char fname[] = "RestHandler::~RestHandler() ";
+	LOG_INF << fname << "Entered";
+	try
+	{
+		this->close();
+	}
+	catch (...)
+	{
+		LOG_WAR << fname << "failed";
+	}
 }
 
 void RestHandler::open()

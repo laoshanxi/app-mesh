@@ -262,7 +262,10 @@ namespace os {
 			LOG_WAR << fname << "Failed to read/parse:" << path;
 			return nullptr;
 		}
-
+		if (comm.length() > MAX_COMMAND_LINE_LENGH) {
+			LOG_WAR << fname << "invalid length of process command";
+			return nullptr;
+		}
 		// Remove the parentheses that is wrapped around 'comm' (when
 		// printing out the process in a process tree we use parentheses to
 		// indicate "zombie" processes).

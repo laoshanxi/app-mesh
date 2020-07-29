@@ -113,6 +113,7 @@ std::string Utility::getSelfFullPath()
 	if (count < 0 || count >= MAX_PATH)
 	{
 		LOG_ERR << fname << "unknown exception";
+		buf[0] = '\0';
 	}
 	else
 	{

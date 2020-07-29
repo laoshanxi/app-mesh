@@ -611,7 +611,20 @@ void Application::destroy()
 
 void Application::onSuicideEvent(int timerId)
 {
-	Configuration::instance()->removeApp(m_name);
+	const static char fname[] = "Application::onSuicideEvent() ";
+
+	try
+	{
+		Configuration::instance()->removeApp(m_name);
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERR << fname << e.what();
+	}
+	catch (...)
+	{
+		LOG_ERR << fname << "unknown exception";
+	}
 }
 
 void Application::onFinishEvent(int timerId)
