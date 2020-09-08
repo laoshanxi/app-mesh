@@ -33,13 +33,17 @@
 		LOG_INF << fname << "Configuration value updated : " << #x ; \
 	}
 
+#define REST_HEADER_PRINT \
+	for (auto it = message.headers().begin(); it != message.headers().end(); it++) \
+		LOG_DBG << "Header: " << it->first << " = " << it->second;
 #define REST_INFO_PRINT \
 	LOG_DBG \
 	<< " fname: " << __FUNCTION__  \
 	<< " Method: " << message.method() \
 	<< " URI: " << http::uri::decode(message.relative_uri().path()) \
 	<< " Query: " << http::uri::decode(message.relative_uri().query()) \
-	<< " Remote: " << message.remote_address(); // for new version of cpprestsdk
+	<< " Remote: " << message.remote_address(); \
+	REST_HEADER_PRINT
 
 // make_unique implementation for C++11, C++14 already support
 #if (__cplusplus <= 201103L)
