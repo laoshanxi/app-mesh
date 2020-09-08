@@ -153,8 +153,9 @@ public:
 class StreamState
 {
 public:
-	StreamState(std::ostream& out)
+	explicit StreamState(std::ostream& out)
 		: m_out(out), m_fmt(out.flags()), m_prec(out.precision())
+		, m_width(out.width()), m_fill(out.fill())
 	{
 	}
 
@@ -162,12 +163,16 @@ public:
 	{
 		m_out.precision(m_prec);
 		m_out.flags(m_fmt);
+		m_out.fill(m_fill);
+		m_out.width(m_width);
 	}
 
 private:
 	std::ostream& m_out;
 	std::ios_base::fmtflags m_fmt;
 	std::streamsize m_prec;
+	std::streamsize m_width;
+	char m_fill;
 };
 
 #define ENV_APP_MANAGER_LISTEN_PORT "APPMESH_OVERRIDE_LISTEN_PORT"
