@@ -493,12 +493,12 @@ void RestHandler::apiFileDownload(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiFileDownload() ";
 	permissionCheck(message, PERMISSION_KEY_file_download);
-	if (!message.headers().has(U(HTTP_HEADER_KEY_file_path)))
+	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
 		return;
 	}
-	auto file = GET_STD_STRING(message.headers().find(U(HTTP_HEADER_KEY_file_path))->second);
+	auto file = GET_STD_STRING(message.headers().find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
 		message.reply(status_codes::NotAcceptable, "file not found");
@@ -539,7 +539,7 @@ void RestHandler::apiFileUpload(const HttpRequest& message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
 	permissionCheck(message, PERMISSION_KEY_file_upload);
-	if (!message.headers().has(U(HTTP_HEADER_KEY_file_path)))
+	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
 		message.reply(status_codes::BadRequest, "file_path header not found");
 		return;
@@ -682,7 +682,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest& message)
 	}
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
-	if (!message.headers().has(HTTP_HEADER_JWT_new_password))
+	if (!(message.headers().has(HTTP_HEADER_JWT_new_password)))
 	{
 		throw std::invalid_argument("can not find new password from header");
 	}
