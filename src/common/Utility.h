@@ -42,8 +42,7 @@
 	<< " Method: " << message.method() \
 	<< " URI: " << http::uri::decode(message.relative_uri().path()) \
 	<< " Query: " << http::uri::decode(message.relative_uri().query()) \
-	<< " Remote: " << message.remote_address(); \
-	REST_HEADER_PRINT
+	<< " Remote: " << message.remote_address();
 
 // make_unique implementation for C++11, C++14 already support
 #if (__cplusplus <= 201103L)
