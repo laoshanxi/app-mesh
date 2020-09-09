@@ -8,6 +8,7 @@
 #include <thread>
 #include <chrono>
 #include <functional>
+#include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <cpprest/filestream.h>
 #include <cpprest/json.h>
@@ -1110,7 +1111,7 @@ std::string ArgumentParser::requestToken(const std::string& user, const std::str
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)
 {
-	StreamState stdoutState(std::cout);
+	boost::io::ios_all_saver guard(std::cout);
 	// Title:
 	std::cout << std::left;
 	std::cout
@@ -1288,3 +1289,4 @@ std::size_t ArgumentParser::inputSecurePasswd(char** pw, std::size_t sz, int mas
 
 	return idx; /* number of chars in passwd    */
 }
+
