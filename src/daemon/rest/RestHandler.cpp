@@ -495,7 +495,7 @@ void RestHandler::apiFileDownload(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "file_path header not found");
+		message.reply(status_codes::BadRequest, "FilePath header not found");
 		return;
 	}
 	auto file = GET_STD_STRING(message.headers().find(HTTP_HEADER_KEY_file_path)->second);
@@ -541,7 +541,7 @@ void RestHandler::apiFileUpload(const HttpRequest& message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "file_path header not found");
+		message.reply(status_codes::BadRequest, "FilePath header not found");
 		return;
 	}
 	auto file = GET_STD_STRING(message.headers().find(U(HTTP_HEADER_KEY_file_path))->second);
@@ -942,11 +942,11 @@ void RestHandler::apiLogin(const HttpRequest& message)
 				if (timeoutValue <= MAX_TOKEN_EXPIRE_SECONDS)
 				{
 					timeoutSeconds = timeoutValue;
-					LOG_WAR << fname << "User <" << uname << "> login expire_seconds was set from " << timeout << "to " << timeoutValue;
+					LOG_WAR << fname << "User <" << uname << "> login ExpireSeconds was set from " << timeout << "to " << timeoutValue;
 				}
 				else
 				{
-					throw std::invalid_argument("expire_seconds should less than 30 days");
+					throw std::invalid_argument("ExpireSeconds should less than 30 days");
 				}
 			}
 		}
@@ -977,7 +977,7 @@ void RestHandler::apiLogin(const HttpRequest& message)
 	}
 	else
 	{
-		message.reply(status_codes::NetworkAuthenticationRequired, "username or password missing");
+		message.reply(status_codes::NetworkAuthenticationRequired, "UserName or Password missing");
 	}
 }
 
@@ -1087,7 +1087,7 @@ void RestHandler::apiRunAsyncOut(const HttpRequest& message)
 			if (!appObj->isWorkingState()) Configuration::instance()->removeApp(app);
 		}
 
-		LOG_DBG << fname << "Use process uuid :" << uuid << " exit_code:" << exitCode;
+		LOG_DBG << fname << "Use process uuid :" << uuid << " ExitCode:" << exitCode;
 		message.reply(resp);
 	}
 	else

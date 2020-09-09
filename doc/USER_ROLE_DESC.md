@@ -166,8 +166,8 @@ invalid token supplied
  - Get token from API  `/login`
 
 ```shell
-$ curl -X POST -k https://127.0.0.1:6060/login -H "username:`echo -n admin | base64`" -H "password:`echo -n Admin123$ | base64`"
-{"access_token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NzA3MDc3NzYsImlhdCI6MTU3MDcwNzE3NiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.CF_jXy4IrGpl0HKvM8Vh_T7LsGTGO-K73OkRxQ-BFF8","expire_time":1570707176508714400,"profile":{"auth_time":1570707176508711100,"name":"admin"},"token_type":"Bearer"}
+$ curl -X POST -k https://127.0.0.1:6060/login -H "UserName:`echo -n admin | base64`" -H "Password:`echo -n Admin123$ | base64`"
+{"AccessToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NzA3MDc3NzYsImlhdCI6MTU3MDcwNzE3NiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.CF_jXy4IrGpl0HKvM8Vh_T7LsGTGO-K73OkRxQ-BFF8","expire_time":1570707176508714400,"profile":{"auth_time":1570707176508711100,"name":"admin"},"token_type":"Bearer"}
 ```
 
  - All other API should add token in header `Authorization:Bearer xxx`

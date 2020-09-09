@@ -393,8 +393,8 @@ os_version=centos7.6
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /appmesh/login | username=base64(uname) <br> password=base64(passwd) <br> Optional: <br> expire_seconds=600 | JWT authenticate login
-POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> auth_permission=permission_id | JWT token authenticate
+POST| /appmesh/login | UserName=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> ExpireSeconds=600 | JWT authenticate login
+POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> AuthPermission=permission_id | JWT token authenticate
 GET | /appmesh/app/$app-name | | Get an application infomation
 GET | /appmesh/app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealth
 GET | /appmesh/app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
@@ -408,8 +408,8 @@ PUT | /appmesh/app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "exe
 POST| /appmesh/app/$app-name/enable | | Enable an application
 POST| /appmesh/app/$app-name/disable | | Disable an application
 DELETE| /appmesh/app/$app-name | | Unregister an application
-GET | /appmesh/file/download | Header: <br> file_path=/opt/remote/filename | Download a file from REST server and grant permission
-POST| /appmesh/file/upload | Header: <br> file_path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
+GET | /appmesh/file/download | Header: <br> FilePath=/opt/remote/filename | Download a file from REST server and grant permission
+POST| /appmesh/file/upload | Header: <br> FilePath=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
 GET | /appmesh/labels | { "os": "linux","arch": "x86_64" } | Get labels
 POST| /appmesh/labels | { "os": "linux","arch": "x86_64" } | Update labels
 PUT | /appmesh/label/abc?value=123 |  | Set a label
@@ -417,7 +417,7 @@ DELETE| /appmesh/label/abc |  | Delete a label
 POST| /appmesh/loglevel?level=DEBUG | level=DEBUG/INFO/NOTICE/WARN/ERROR | Set log level
 GET | /appmesh/config |  | Get basic configurations
 POST| /appmesh/config |  | Set basic configurations
-POST| /appmesh/user/admin/passwd | new_password=base64(passwd) | Change user password
+POST| /appmesh/user/admin/passwd | NewPassword=base64(passwd) | Change user password
 POST| /appmesh/user/user/lock | | admin user to lock a user
 POST| /appmesh/user/user/unlock | | admin user to unlock a user
 PUT | /appmesh/user/usera | | Add usera to Users
