@@ -92,7 +92,7 @@ LogFileQueue::LogFileQueue(std::string baseFileName, int queueSize)
 LogFileQueue::~LogFileQueue()
 {
 	// double check and remove file
-	for (size_t i = 0; i < m_ququeSize; i++)
+	for (int i = 0; i < m_ququeSize; i++)
 	{
 		AppLogFile autoDeleteFile(baseFileName, i);
 	}
