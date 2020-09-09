@@ -25,9 +25,10 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 {
 	auto snap = std::make_shared<Snapshot>();
 	auto apps = Configuration::instance()->getApps();
-	for (auto& app : apps)
+	for (auto &app : apps)
 	{
-		if (!app->isEnabled()) continue;
+		if (!app->isEnabled())
+			continue;
 
 		auto pid = app->getpid();
 		auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
@@ -36,8 +37,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			// if application does not changed pid, do not need call stat
 			snap->m_apps.insert(std::pair<std::string, AppSnap>(
 				app->getName(),
-				AppSnap(snapAppIter->second.m_pid, snapAppIter->second.m_startTime))
-			);
+				AppSnap(snapAppIter->second.m_pid, snapAppIter->second.m_startTime)));
 		}
 		else
 		{
@@ -47,8 +47,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			{
 				snap->m_apps.insert(std::pair<std::string, AppSnap>(
 					app->getName(),
-					AppSnap(pid, (int64_t)stat->starttime))
-				);
+					AppSnap(pid, (int64_t)stat->starttime)));
 			}
 		}
 	}
@@ -72,9 +71,8 @@ void PersistManager::persistSnapshot()
 			m_persistedSnapshot = snapshot;
 			m_persistedSnapshot->persist();
 		}
-
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -82,21 +80,22 @@ void PersistManager::persistSnapshot()
 	{
 		LOG_WAR << fname << " exception";
 	}
-
 }
 
-std::unique_ptr<PersistManager>& PersistManager::instance()
+std::unique_ptr<PersistManager> &PersistManager::instance()
 {
 	static auto singleton = std::make_unique<PersistManager>();
 	return singleton;
 }
 
-bool Snapshot::operator==(const Snapshot& snapshort) const
+bool Snapshot::operator==(const Snapshot &snapshort) const
 {
-	if (snapshort.m_apps.size() != m_apps.size()) return false;
-	for (const auto& app : m_apps)
+	if (snapshort.m_apps.size() != m_apps.size())
+		return false;
+	for (const auto &app : m_apps)
 	{
-		if (0 == snapshort.m_apps.count(app.first)) return false;
+		if (0 == snapshort.m_apps.count(app.first))
+			return false;
 		if (app.second == snapshort.m_apps.find(app.first)->second)
 		{
 			// continue;
@@ -114,7 +113,7 @@ web::json::value Snapshot::AsJson() const
 	web::json::value result = web::json::value::object();
 	// Applications
 	web::json::value apps = web::json::value::object();
-	for (const auto& app : m_apps)
+	for (const auto &app : m_apps)
 	{
 		auto json = web::json::value::object();
 		json[SNAPSHOT_JSON_KEY_pid] = web::json::value::number(app.second.m_pid);
@@ -126,7 +125,7 @@ web::json::value Snapshot::AsJson() const
 	return std::move(result);
 }
 
-std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value& obj)
+std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value &obj)
 {
 	auto snap = std::make_shared<Snapshot>();
 	if (!obj.is_null() && obj.is_object())
@@ -141,8 +140,7 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value& obj)
 						app.first,
 						AppSnap(
 							GET_JSON_INT_VALUE(app.second, SNAPSHOT_JSON_KEY_pid),
-							GET_JSON_NUMBER_VALUE(app.second, SNAPSHOT_JSON_KEY_starttime))
-						));
+							GET_JSON_NUMBER_VALUE(app.second, SNAPSHOT_JSON_KEY_starttime))));
 				}
 			}
 		snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
@@ -168,11 +166,11 @@ void Snapshot::persist()
 }
 
 AppSnap::AppSnap(pid_t pid, int64_t starttime)
-	:m_pid(pid), m_startTime(starttime)
+	: m_pid(pid), m_startTime(starttime)
 {
 }
 
-bool AppSnap::operator==(const AppSnap& snapshort) const
+bool AppSnap::operator==(const AppSnap &snapshort) const
 {
 	return (m_startTime == snapshort.m_startTime && m_pid == snapshort.m_pid);
 }

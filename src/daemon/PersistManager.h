@@ -11,16 +11,16 @@
 struct AppSnap
 {
 	explicit AppSnap(pid_t pid, int64_t starttime);
-	bool operator==(const AppSnap& snapshort) const;
+	bool operator==(const AppSnap &snapshort) const;
 	pid_t m_pid;
 	int64_t m_startTime;
 };
 
 struct Snapshot
 {
-	bool operator==(const Snapshot& snapshort) const;
+	bool operator==(const Snapshot &snapshort) const;
 	web::json::value AsJson() const;
-	static std::shared_ptr<Snapshot> FromJson(const web::json::value& obj);
+	static std::shared_ptr<Snapshot> FromJson(const web::json::value &obj);
 	void persist();
 
 	std::map<std::string, AppSnap> m_apps;
@@ -33,7 +33,7 @@ public:
 	virtual ~PersistManager();
 
 	void persistSnapshot();
-	static std::unique_ptr<PersistManager>& instance();
+	static std::unique_ptr<PersistManager> &instance();
 
 private:
 	std::shared_ptr<Snapshot> captureSnapshot();
@@ -41,4 +41,3 @@ private:
 private:
 	std::shared_ptr<Snapshot> m_persistedSnapshot;
 };
-

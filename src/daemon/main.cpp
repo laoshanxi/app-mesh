@@ -27,7 +27,7 @@
 
 std::set<std::shared_ptr<RestHandler>> m_restList;
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
 	const static char fname[] = "main() ";
 	PRINT_VERSION();
@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
 		// init log
 		Utility::initLogging();
 		LOG_INF << fname << "Entered working dir: " << getcwd(NULL, 0);
-		
+
 		// catch SIGHUP for 'systemctl reload'
 		Configuration::handleSignal();
 
@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
 					httpServerIp6 = std::make_shared<RestHandler>(MY_HOST_NAME, config->getRestListenPort());
 					m_restList.insert(httpServerIp6);
 				}
-				catch (const std::exception & e)
+				catch (const std::exception &e)
 				{
 					LOG_ERR << fname << e.what();
 				}
@@ -116,16 +116,15 @@ int main(int argc, char* argv[])
 		{
 			LOG_ERR << "recover snapshot failed with error " << std::strerror(errno);
 		}
-		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p)
+		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p) {
+			if (snap && snap->m_apps.count(p->getName()))
 			{
-				if (snap && snap->m_apps.count(p->getName()))
-				{
-					auto& appSnapshot = snap->m_apps.find(p->getName())->second;
-					auto stat = os::status(appSnapshot.m_pid);
-					if (stat && appSnapshot.m_startTime == (int64_t)stat->starttime) p->attach(appSnapshot.m_pid);
-				}
-				
-			});
+				auto &appSnapshot = snap->m_apps.find(p->getName())->second;
+				auto stat = os::status(appSnapshot.m_pid);
+				if (stat && appSnapshot.m_startTime == (int64_t)stat->starttime)
+					p->attach(appSnapshot.m_pid);
+			}
+		});
 		// reg prometheus
 		config->registerPrometheus();
 
@@ -148,7 +147,7 @@ int main(int argc, char* argv[])
 
 			// monitor application
 			auto allApp = Configuration::instance()->getApps();
-			for (const auto& app : allApp)
+			for (const auto &app : allApp)
 			{
 				app->invoke();
 			}
@@ -156,7 +155,7 @@ int main(int argc, char* argv[])
 			PersistManager::instance()->persistSnapshot();
 		}
 	}
-	catch (const std::exception & e)
+	catch (const std::exception &e)
 	{
 		LOG_ERR << fname << e.what();
 	}

@@ -19,7 +19,7 @@ struct HostNetInterface
 //////////////////////////////////////////////////////////////////////////
 struct HostResource
 {
-	HostResource() :m_cores(0), m_sockets(0), m_processors(0), m_total_bytes(0), m_free_bytes(0), m_totalSwap_bytes(0), m_freeSwap_bytes(0) {}
+	HostResource() : m_cores(0), m_sockets(0), m_processors(0), m_total_bytes(0), m_free_bytes(0), m_totalSwap_bytes(0), m_freeSwap_bytes(0) {}
 
 	// CPU
 	std::size_t m_cores;
@@ -45,10 +45,10 @@ public:
 	ResourceCollection();
 	virtual ~ResourceCollection();
 	// Internal Singleton.
-	static std::unique_ptr<ResourceCollection>& instance();
+	static std::unique_ptr<ResourceCollection> &instance();
 
 	std::string getHostName(bool refresh = false);
-	const HostResource& getHostResource();
+	const HostResource &getHostResource();
 	const pid_t getPid();
 
 	uint64_t getRssMemory(pid_t pid = getpid());

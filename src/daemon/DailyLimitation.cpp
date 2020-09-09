@@ -5,14 +5,14 @@ DailyLimitation::DailyLimitation()
 {
 }
 
-
 DailyLimitation::~DailyLimitation()
 {
 }
 
-bool DailyLimitation::operator==(const std::shared_ptr<DailyLimitation>& obj) const
+bool DailyLimitation::operator==(const std::shared_ptr<DailyLimitation> &obj) const
 {
-	if (obj == nullptr) return false;
+	if (obj == nullptr)
+		return false;
 	return (m_startTime == obj->m_startTime && m_endTime == obj->m_endTime);
 }
 
@@ -33,7 +33,7 @@ web::json::value DailyLimitation::AsJson() const
 	return result;
 }
 
-std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::value& jobj)
+std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::value &jobj)
 {
 	std::shared_ptr<DailyLimitation> result;
 	if (!jobj.is_null())

@@ -2,22 +2,22 @@
 #include "../common/Utility.h"
 
 ResourceLimitation::ResourceLimitation()
-	:m_memoryMb(0), m_memoryVirtMb(0), m_cpuShares(0), m_index(0)
+	: m_memoryMb(0), m_memoryVirtMb(0), m_cpuShares(0), m_index(0)
 {
 }
-
 
 ResourceLimitation::~ResourceLimitation()
 {
 }
 
-bool ResourceLimitation::operator==(const std::shared_ptr<ResourceLimitation>& obj) const
+bool ResourceLimitation::operator==(const std::shared_ptr<ResourceLimitation> &obj) const
 {
-	if (obj == nullptr) return false;
+	if (obj == nullptr)
+		return false;
 	return (m_cpuShares == obj->m_cpuShares &&
-		m_memoryMb == obj->m_memoryMb &&
-		m_memoryVirtMb == obj->m_memoryVirtMb &&
-		m_name == obj->m_name);
+			m_memoryMb == obj->m_memoryMb &&
+			m_memoryVirtMb == obj->m_memoryVirtMb &&
+			m_name == obj->m_name);
 }
 
 void ResourceLimitation::dump()
@@ -39,7 +39,7 @@ web::json::value ResourceLimitation::AsJson()
 	return result;
 }
 
-std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json::value& jobj, const std::string& appName)
+std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json::value &jobj, const std::string &appName)
 {
 	std::shared_ptr<ResourceLimitation> result;
 	if (!jobj.is_null())

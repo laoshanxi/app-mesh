@@ -13,11 +13,11 @@ class DailyLimitation
 public:
 	DailyLimitation();
 	virtual ~DailyLimitation();
-	bool operator==(const std::shared_ptr<DailyLimitation>& obj) const;
+	bool operator==(const std::shared_ptr<DailyLimitation> &obj) const;
 	void dump();
 
 	web::json::value AsJson() const;
-	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value& obj) noexcept(false);
+	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value &obj) noexcept(false);
 
 	std::chrono::system_clock::time_point m_startTime;
 	std::chrono::system_clock::time_point m_endTime;

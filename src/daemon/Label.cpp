@@ -2,7 +2,7 @@
 #include "../common/Utility.h"
 #ifdef __GNUC__
 #include <features.h>
-#if __GNUC_PREREQ(5,4)
+#if __GNUC_PREREQ(5, 4)
 #include "../common/wildcards/wildcards.hpp"
 #endif
 #endif
@@ -27,7 +27,7 @@ web::json::value Label::AsJson() const
 	return tags;
 }
 
-const std::shared_ptr<Label> Label::FromJson(const web::json::value& obj)
+const std::shared_ptr<Label> Label::FromJson(const web::json::value &obj)
 {
 	std::shared_ptr<Label> label = std::make_shared<Label>();
 	if (!obj.is_null() && obj.is_object())
@@ -42,33 +42,37 @@ const std::shared_ptr<Label> Label::FromJson(const web::json::value& obj)
 	return label;
 }
 
-bool Label::operator==(const std::shared_ptr<Label>& label)
+bool Label::operator==(const std::shared_ptr<Label> &label)
 {
-	if (!label)	return false;
-	if (m_labels.size() != label->m_labels.size()) return false;
+	if (!label)
+		return false;
+	if (m_labels.size() != label->m_labels.size())
+		return false;
 	return this->match(label);
 }
 
-void Label::addLabel(const std::string& name, const std::string& value)
+void Label::addLabel(const std::string &name, const std::string &value)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_labels[name] = value;
 }
 
-void Label::delLabel(const std::string& name)
+void Label::delLabel(const std::string &name)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_labels.count(name)) m_labels.erase(name);
+	if (m_labels.count(name))
+		m_labels.erase(name);
 }
 
-bool Label::match(const std::shared_ptr<Label>& condition) const
+bool Label::match(const std::shared_ptr<Label> &condition) const
 {
-	if (!condition) return false;
-	for (const auto& la : condition->m_labels)
+	if (!condition)
+		return false;
+	for (const auto &la : condition->m_labels)
 	{
-		const auto& key = la.first;
-		const auto& val = la.second;
-#if __GNUC_PREREQ(5,4)
+		const auto &key = la.first;
+		const auto &val = la.second;
+#if __GNUC_PREREQ(5, 4)
 		// support wildcards for gcc version upper than 5.4
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))
 #else
@@ -76,7 +80,7 @@ bool Label::match(const std::shared_ptr<Label>& condition) const
 #endif
 		{
 			return false;
+		}
 	}
-}
 	return true;
 }

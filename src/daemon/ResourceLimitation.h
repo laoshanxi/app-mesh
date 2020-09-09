@@ -11,11 +11,11 @@ class ResourceLimitation
 public:
 	ResourceLimitation();
 	virtual ~ResourceLimitation();
-	bool operator==(const std::shared_ptr<ResourceLimitation>& obj) const;
+	bool operator==(const std::shared_ptr<ResourceLimitation> &obj) const;
 	void dump();
 
 	virtual web::json::value AsJson();
-	static std::shared_ptr<ResourceLimitation> FromJson(const web::json::value& jobj, const std::string& appName) noexcept(false);
+	static std::shared_ptr<ResourceLimitation> FromJson(const web::json::value &jobj, const std::string &appName) noexcept(false);
 
 	int m_memoryMb;
 	int m_memoryVirtMb;

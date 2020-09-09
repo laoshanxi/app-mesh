@@ -6,7 +6,6 @@
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
 
-
 ResourceCollection::ResourceCollection()
 	: m_appmeshStartTime(std::chrono::system_clock::now())
 {
@@ -16,7 +15,7 @@ ResourceCollection::~ResourceCollection()
 {
 }
 
-std::unique_ptr<ResourceCollection>& ResourceCollection::instance()
+std::unique_ptr<ResourceCollection> &ResourceCollection::instance()
 {
 	static auto singleton = std::make_unique<ResourceCollection>();
 	return singleton;
@@ -27,14 +26,14 @@ std::string ResourceCollection::getHostName(bool refresh)
 	static std::string hostname;
 	if (hostname.empty() || refresh)
 	{
-		char buffer[1024] = { 0 };
+		char buffer[1024] = {0};
 		ACE_OS::hostname(buffer, sizeof(buffer));
 		hostname = buffer;
 	}
 	return hostname;
 }
 
-const HostResource& ResourceCollection::getHostResource()
+const HostResource &ResourceCollection::getHostResource()
 {
 	static auto cpus = os::cpus();
 	auto nets = net::links();
@@ -118,7 +117,7 @@ void ResourceCollection::dump()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	LOG_DBG << fname << "host_name:" << getHostName();
-	for (auto& pair : m_resources.m_ipaddress)
+	for (auto &pair : m_resources.m_ipaddress)
 	{
 		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv4 << "," << pair.address;
 	}
@@ -129,7 +128,6 @@ void ResourceCollection::dump()
 	LOG_DBG << fname << "m_free_bytes:" << m_resources.m_free_bytes;
 	LOG_DBG << fname << "m_totalSwap_bytes:" << m_resources.m_totalSwap_bytes;
 	LOG_DBG << fname << "m_freeSwap_bytes:" << m_resources.m_freeSwap_bytes;
-
 }
 
 web::json::value ResourceCollection::AsJson()
@@ -145,14 +143,13 @@ web::json::value ResourceCollection::AsJson()
 	result[GET_STRING_T("host_description")] = web::json::value::string(Configuration::instance()->getDescription());
 	auto arr = web::json::value::array(m_resources.m_ipaddress.size());
 	int idx = 0;
-	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const  HostNetInterface& pair)
-		{
-			web::json::value net_detail = web::json::value::object();
-			net_detail["name"] = web::json::value::string(pair.name);
-			net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
-			net_detail["address"] = web::json::value::string(pair.address);
-			arr[idx++] = net_detail;
-		});
+	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const HostNetInterface &pair) {
+		web::json::value net_detail = web::json::value::object();
+		net_detail["name"] = web::json::value::string(pair.name);
+		net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
+		net_detail["address"] = web::json::value::string(pair.address);
+		arr[idx++] = net_detail;
+	});
 	result[GET_STRING_T("net")] = arr;
 	result[GET_STRING_T("cpu_cores")] = web::json::value::number(m_resources.m_cores);
 	result[GET_STRING_T("cpu_sockets")] = web::json::value::number(m_resources.m_sockets);
@@ -180,20 +177,19 @@ web::json::value ResourceCollection::AsJson()
 	auto mountPoints = os::getMoundPoints();
 	auto fsArr = web::json::value::array(mountPoints.size());
 	idx = 0;
-	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr, &idx](const std::pair<std::string, std::string>& pair)
+	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr, &idx](const std::pair<std::string, std::string> &pair) {
+		auto usage = os::df(pair.first);
+		if (usage != nullptr)
 		{
-			auto usage = os::df(pair.first);
-			if (usage != nullptr)
-			{
-				web::json::value fs = web::json::value::object();
-				fs["size"] = web::json::value::number(usage->size);
-				fs["used"] = web::json::value::number(usage->used);
-				fs["usage"] = web::json::value::number(usage->usage);
-				fs["device"] = web::json::value::string(pair.second);
-				fs["mount_point"] = web::json::value::string(pair.first);
-				fsArr[idx++] = fs;
-			}
-		});
+			web::json::value fs = web::json::value::object();
+			fs["size"] = web::json::value::number(usage->size);
+			fs["used"] = web::json::value::number(usage->used);
+			fs["usage"] = web::json::value::number(usage->usage);
+			fs["device"] = web::json::value::string(pair.second);
+			fs["mount_point"] = web::json::value::string(pair.first);
+			fsArr[idx++] = fs;
+		}
+	});
 
 	result[GET_STRING_T("fs")] = fsArr;
 	result[GET_STRING_T("systime")] = web::json::value::string(Utility::convertTime2Str(std::chrono::system_clock::now()));

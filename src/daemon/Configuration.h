@@ -19,16 +19,18 @@ class Application;
 //////////////////////////////////////////////////////////////////////////
 class Configuration
 {
-	struct JsonSsl {
-		static std::shared_ptr<JsonSsl> FromJson(const web::json::value& jobj);
+	struct JsonSsl
+	{
+		static std::shared_ptr<JsonSsl> FromJson(const web::json::value &jobj);
 		web::json::value AsJson() const;
 		bool m_sslEnabled;
 		std::string m_certFile;
 		std::string m_certKeyFile;
 		JsonSsl();
 	};
-	struct JsonRest {
-		static std::shared_ptr<JsonRest> FromJson(const web::json::value& jobj);
+	struct JsonRest
+	{
+		static std::shared_ptr<JsonRest> FromJson(const web::json::value &jobj);
 		web::json::value AsJson() const;
 
 		bool m_restEnabled;
@@ -39,9 +41,10 @@ class Configuration
 		std::shared_ptr<JsonSsl> m_ssl;
 		JsonRest();
 	};
-	struct JsonConsul {
+	struct JsonConsul
+	{
 		JsonConsul();
-		static std::shared_ptr<JsonConsul> FromJson(const web::json::value& jobj);
+		static std::shared_ptr<JsonConsul> FromJson(const web::json::value &jobj);
 		web::json::value AsJson() const;
 		bool consulEnabled() const;
 		bool consulSecurityEnabled() const;
@@ -55,9 +58,11 @@ class Configuration
 		int m_ttl;
 		bool m_securitySync;
 	};
+
 public:
-	struct JsonSecurity {
-		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value& jobj);
+	struct JsonSecurity
+	{
+		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value &jobj);
 		web::json::value AsJson(bool returnRuntimeInfo);
 		bool m_jwtEnabled;
 		bool m_encryptKey;
@@ -73,29 +78,29 @@ public:
 	static std::string readConfiguration();
 	static void handleSignal();
 
-	static std::shared_ptr<Configuration> FromJson(const std::string& str) noexcept(false);
-	web::json::value AsJson(bool returnRuntimeInfo, const std::string& user);
-	void deSerializeApp(const web::json::value& jobj);
+	static std::shared_ptr<Configuration> FromJson(const std::string &str) noexcept(false);
+	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user);
+	void deSerializeApp(const web::json::value &jobj);
 	void saveConfigToDisk();
-	void hotUpdate(const web::json::value& config);
+	void hotUpdate(const web::json::value &config);
 	void registerPrometheus();
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const web::json::value& jsonApp);
-	void removeApp(const std::string& appName);
-	std::shared_ptr<Application> parseApp(const web::json::value& jsonApp);
-	bool isSystemInternalApp(const std::string& appName) const;
+	std::shared_ptr<Application> addApp(const web::json::value &jsonApp);
+	void removeApp(const std::string &appName);
+	std::shared_ptr<Application> parseApp(const web::json::value &jsonApp);
+	bool isSystemInternalApp(const std::string &appName) const;
 
 	int getScheduleInterval();
 	int getRestListenPort();
 	int getPromListenPort();
 	std::string getRestListenAddress();
 	const web::json::value getSecureConfigJson();
-	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string& user) const;
-	std::shared_ptr<Application> getApp(const std::string& appName) const noexcept(false);
-	bool isAppExist(const std::string& appName);
-	void disableApp(const std::string& appName);
-	void enableApp(const std::string& appName);
+	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user) const;
+	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
+	bool isAppExist(const std::string &appName);
+	void disableApp(const std::string &appName);
+	void enableApp(const std::string &appName);
 
 	std::shared_ptr<Label> getLabel() { return m_label; }
 
@@ -111,15 +116,15 @@ public:
 	const std::size_t getThreadPoolSize() const;
 	const std::string getDescription() const;
 
-	const std::shared_ptr<User> getUserInfo(const std::string& userName) const;
-	std::set<std::string> getUserPermissions(const std::string& userName);
+	const std::shared_ptr<User> getUserInfo(const std::string &userName) const;
+	std::set<std::string> getUserPermissions(const std::string &userName);
 	std::set<std::string> getAllPermissions();
 	const std::shared_ptr<Users> getUsers();
 	const std::shared_ptr<Roles> getRoles();
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
 	const std::shared_ptr<Configuration::JsonSecurity> getSecurity() const;
 	void updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security);
-	bool checkOwnerPermission(const std::string& user, const std::shared_ptr<User>& appOwner, int appPermission, bool requestWrite) const;
+	bool checkOwnerPermission(const std::string &user, const std::shared_ptr<User> &appOwner, int appPermission, bool requestWrite) const;
 
 	void dump();
 
