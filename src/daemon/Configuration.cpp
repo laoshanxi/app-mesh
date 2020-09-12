@@ -21,7 +21,7 @@ extern std::set<std::shared_ptr<RestHandler>> m_restList;
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
-	:m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL)
+	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL)
 {
 	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
 	m_label = std::make_unique<Label>();
@@ -30,7 +30,6 @@ Configuration::Configuration()
 	m_consul = std::make_shared<JsonConsul>();
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
 }
-
 
 Configuration::~Configuration()
 {
@@ -46,14 +45,14 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 	m_instance = config;
 }
 
-std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
+std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str)
 {
 	web::json::value jsonValue;
 	try
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(str));
 	}
-	catch (const std::exception& e)
+	catch (const std::exception &e)
 	{
 		LOG_ERR << "Failed to parse configuration file with error <" << e.what() << ">";
 		throw std::invalid_argument("Failed to parse configuration file, please check json configuration file format");
@@ -71,7 +70,8 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
-	if (config->m_defaultExecUser.empty()) config->m_defaultExecUser = DEFAULT_EXEC_USER;
+	if (config->m_defaultExecUser.empty())
+		config->m_defaultExecUser = DEFAULT_EXEC_USER;
 	unsigned int gid, uid;
 	if (!Utility::getUid(config->m_defaultExecUser, uid, gid))
 	{
@@ -96,7 +96,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string& str)
 	{
 		config->m_security = JsonSecurity::FromJson(jsonValue.at(JSON_KEY_Security));
 	}
-	// Labels	
+	// Labels
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
 	{
 		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
@@ -129,7 +129,7 @@ void SigHupHandler(int signo)
 		{
 			config->hotUpdate(web::json::value::parse(Configuration::readConfiguration()));
 		}
-		catch (const std::exception& e)
+		catch (const std::exception &e)
 		{
 			LOG_ERR << fname << e.what();
 		}
@@ -142,7 +142,7 @@ void SigHupHandler(int signo)
 
 void Configuration::handleSignal()
 {
-	static ACE_Sig_Action* sig_action = nullptr;
+	static ACE_Sig_Action *sig_action = nullptr;
 	if (!sig_action)
 	{
 		sig_action = new ACE_Sig_Action();
@@ -150,7 +150,7 @@ void Configuration::handleSignal()
 		sig_action->register_action(SIGHUP);
 	}
 
-	static ACE_Sig_Action* sig_pipe = nullptr;
+	static ACE_Sig_Action *sig_pipe = nullptr;
 	if (!sig_pipe)
 	{
 		sig_pipe = new ACE_Sig_Action((ACE_SignalHandler)SIG_IGN);
@@ -158,7 +158,7 @@ void Configuration::handleSignal()
 	}
 }
 
-web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string& user)
+web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string &user)
 {
 	web::json::value result = web::json::value::object();
 	// Applications
@@ -262,8 +262,8 @@ const web::json::value Configuration::getSecureConfigJson()
 	auto json = this->AsJson(false, "");
 	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
 	{
-		auto& users = json.at(JSON_KEY_Security).at(JSON_KEY_JWT_Users).as_object();
-		for (auto& user : users)
+		auto &users = json.at(JSON_KEY_Security).at(JSON_KEY_JWT_Users).as_object();
+		for (auto &user : users)
 		{
 			if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
 			{
@@ -275,7 +275,7 @@ const web::json::value Configuration::getSecureConfigJson()
 	return std::move(json);
 }
 
-web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string& user) const
+web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
@@ -297,9 +297,9 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	return result;
 }
 
-void Configuration::deSerializeApp(const web::json::value& jobj)
+void Configuration::deSerializeApp(const web::json::value &jobj)
 {
-	auto& jArr = jobj.as_array();
+	auto &jArr = jobj.as_array();
 	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
 	{
 		auto jsonApp = *(iterB);
@@ -308,12 +308,12 @@ void Configuration::deSerializeApp(const web::json::value& jobj)
 	}
 }
 
-void Configuration::disableApp(const std::string& appName)
+void Configuration::disableApp(const std::string &appName)
 {
 	getApp(appName)->disable();
 	saveConfigToDisk();
 }
-void Configuration::enableApp(const std::string& appName)
+void Configuration::enableApp(const std::string &appName)
 {
 	auto app = getApp(appName);
 	app->enable();
@@ -389,18 +389,19 @@ const std::string Configuration::getDescription() const
 	return m_hostDescription;
 }
 
-const std::shared_ptr<User> Configuration::getUserInfo(const std::string& userName) const
+const std::shared_ptr<User> Configuration::getUserInfo(const std::string &userName) const
 {
 	return getSecurity()->m_jwtUsers->getUser(userName);
 }
 
-std::set<std::string> Configuration::getUserPermissions(const std::string& userName)
+std::set<std::string> Configuration::getUserPermissions(const std::string &userName)
 {
 	std::set<std::string> permissionSet;
 	auto user = getUserInfo(userName);
 	for (auto role : user->getRoles())
 	{
-		for (auto perm : role->getPermissions()) permissionSet.insert(perm);
+		for (auto perm : role->getPermissions())
+			permissionSet.insert(perm);
 	}
 	return std::move(permissionSet);
 }
@@ -412,7 +413,8 @@ std::set<std::string> Configuration::getAllPermissions()
 	{
 		for (auto role : user.second->getRoles())
 		{
-			for (auto perm : role->getPermissions()) permissionSet.insert(perm);
+			for (auto perm : role->getPermissions())
+				permissionSet.insert(perm);
 		}
 	}
 	return std::move(permissionSet);
@@ -446,7 +448,7 @@ void Configuration::updateSecurity(std::shared_ptr<Configuration::JsonSecurity> 
 	m_security = security;
 }
 
-bool Configuration::checkOwnerPermission(const std::string& user, const std::shared_ptr<User>& appOwner, int appPermission, bool requestWrite) const
+bool Configuration::checkOwnerPermission(const std::string &user, const std::shared_ptr<User> &appOwner, int appPermission, bool requestWrite) const
 {
 	// if app has not defined user, return true
 	// if same user, return true
@@ -462,26 +464,30 @@ bool Configuration::checkOwnerPermission(const std::string& user, const std::sha
 	if (userObj->getGroup() == appOwner->getGroup())
 	{
 		auto groupPerm = appPermission / 1 % 10;
-		if (groupPerm <= static_cast<int>(PERMISSION::GROUP_DENY)) return false;
+		if (groupPerm <= static_cast<int>(PERMISSION::GROUP_DENY))
+			return false;
 		if (!requestWrite &&
 			(groupPerm == static_cast<int>(PERMISSION::GROUP_READ) ||
-				groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE)))
+			 groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE)))
 		{
 			return true;
 		}
-		if (requestWrite && groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE)) return true;
+		if (requestWrite && groupPerm == static_cast<int>(PERMISSION::GROUP_WRITE))
+			return true;
 	}
 	else
 	{
 		auto otherPerm = 10 * (appPermission / 10 % 10);
-		if (otherPerm <= static_cast<int>(PERMISSION::OTHER_DENY)) return false;
+		if (otherPerm <= static_cast<int>(PERMISSION::OTHER_DENY))
+			return false;
 		if (!requestWrite &&
 			(otherPerm == static_cast<int>(PERMISSION::OTHER_READ) ||
-				otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)))
+			 otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)))
 		{
 			return true;
 		}
-		if (requestWrite && otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE)) return true;
+		if (requestWrite && otherPerm == static_cast<int>(PERMISSION::OTHER_WRITE))
+			return true;
 	}
 	return false;
 }
@@ -490,7 +496,8 @@ void Configuration::dump()
 {
 	const static char fname[] = "Configuration::dump() ";
 
-	LOG_DBG << fname << '\n' << Utility::prettyJson(this->getSecureConfigJson().serialize());
+	LOG_DBG << fname << '\n'
+			<< Utility::prettyJson(this->getSecureConfigJson().serialize());
 
 	auto apps = getApps();
 	for (auto app : apps)
@@ -499,22 +506,21 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonApp)
+std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonApp)
 {
 	auto app = parseApp(jsonApp);
 	bool update = false;
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application>& mapApp)
+	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application> &mapApp) {
+		if (mapApp->getName() == app->getName())
 		{
-			if (mapApp->getName() == app->getName())
-			{
-				// Stop existing app and replace
-				mapApp->disable();
-				mapApp = app;
-				update = true;
-				return;
-			}
-		});
+			// Stop existing app and replace
+			mapApp->disable();
+			mapApp = app;
+			update = true;
+			return;
+		}
+	});
 
 	if (!update)
 	{
@@ -534,7 +540,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value& jsonA
 	return std::move(app);
 }
 
-void Configuration::removeApp(const std::string& appName)
+void Configuration::removeApp(const std::string &appName)
 {
 	const static char fname[] = "Configuration::removeApp() ";
 
@@ -550,7 +556,8 @@ void Configuration::removeApp(const std::string& appName)
 			(*iterA)->destroy();
 			iterA = m_apps.erase(iterA);
 			// Write to disk
-			if (needPersist) saveConfigToDisk();
+			if (needPersist)
+				saveConfigToDisk();
 			LOG_DBG << fname << "removed " << appName;
 		}
 		else
@@ -577,7 +584,8 @@ void Configuration::saveConfigToDisk()
 			ofs.close();
 			if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
 			{
-				LOG_DBG << fname << '\n' << formatJson;
+				LOG_DBG << fname << '\n'
+						<< formatJson;
 			}
 			else
 			{
@@ -591,7 +599,7 @@ void Configuration::saveConfigToDisk()
 	}
 }
 
-void Configuration::hotUpdate(const web::json::value& jsonValue)
+void Configuration::hotUpdate(const web::json::value &jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
@@ -614,17 +622,24 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 				SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
 			}
 		}
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds)) SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser)) SET_COMPARE(this->m_defaultExecUser, newConfig->m_defaultExecUser);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_WorkingDirectory)) SET_COMPARE(this->m_defaultWorkDir, newConfig->m_defaultWorkDir);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds))
+			SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser))
+			SET_COMPARE(this->m_defaultExecUser, newConfig->m_defaultExecUser);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_WorkingDirectory))
+			SET_COMPARE(this->m_defaultWorkDir, newConfig->m_defaultWorkDir);
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 		{
 			auto rest = jsonValue.at(JSON_KEY_REST);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled)) SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort)) SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress)) SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize)) SET_COMPARE(this->m_rest->m_httpThreadPoolSize, newConfig->m_rest->m_httpThreadPoolSize);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RestEnabled))
+				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
+				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
+				SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize))
+				SET_COMPARE(this->m_rest->m_httpThreadPoolSize, newConfig->m_rest->m_httpThreadPoolSize);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort) && (this->m_rest->m_promListenPort != newConfig->m_rest->m_promListenPort))
 			{
 				SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
@@ -636,9 +651,12 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
 			{
 				auto ssl = rest.at(JSON_KEY_SSL);
-				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateFile)) SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
-				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile)) SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
-				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled)) SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateFile))
+					SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile))
+					SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled))
+					SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
 			}
 		}
 
@@ -646,15 +664,19 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
 		{
 			auto sec = jsonValue.at(JSON_KEY_Security);
-			if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled)) SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
-			if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users)) SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
+			if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled))
+				SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
+			if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users))
+				SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
 
 			// Roles
-			if (HAS_JSON_FIELD(sec, JSON_KEY_Roles)) SET_COMPARE(this->m_security->m_roles, newConfig->m_security->m_roles);
+			if (HAS_JSON_FIELD(sec, JSON_KEY_Roles))
+				SET_COMPARE(this->m_security->m_roles, newConfig->m_security->m_roles);
 		}
 
 		// Labels
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels)) SET_COMPARE(this->m_label, newConfig->m_label);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
+			SET_COMPARE(this->m_label, newConfig->m_label);
 
 		// Consul
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
@@ -664,7 +686,8 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 		}
 	}
 	// do not hold Configuration lock to access timer, timer lock is higher level
-	if (consulUpdated) ConsulConnection::instance()->initTimer();
+	if (consulUpdated)
+		ConsulConnection::instance()->initTimer();
 	ResourceCollection::instance()->getHostName(true);
 
 	this->dump();
@@ -674,17 +697,16 @@ void Configuration::hotUpdate(const web::json::value& jsonValue)
 void Configuration::registerPrometheus()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p)
-		{
-			p->initMetrics(PrometheusRest::instance());
-		});
+	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p) {
+		p->initMetrics(PrometheusRest::instance());
+	});
 	for (auto rest : m_restList)
 	{
 		rest->initMetrics(PrometheusRest::instance());
 	}
 }
 
-std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jsonApp)
+std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jsonApp)
 {
 	std::shared_ptr<Application> app;
 
@@ -705,7 +727,7 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 		return app;
 	}
 
-	if (GET_JSON_INT_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds) > 0)
+	if (GET_JSON_STR_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds).length())
 	{
 		// Consider as short running application
 		std::shared_ptr<ApplicationShortRun> shortApp;
@@ -719,7 +741,6 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 		{
 			shortApp.reset(new ApplicationShortRun());
 			ApplicationShortRun::FromJson(shortApp, jsonApp);
-
 		}
 		shortApp->initTimer();
 		app = shortApp;
@@ -733,28 +754,29 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value& jso
 	return app;
 }
 
-bool Configuration::isSystemInternalApp(const std::string& appName) const
+bool Configuration::isSystemInternalApp(const std::string &appName) const
 {
 	const auto metadata = getApp(appName)->getMetadata();
 	return (metadata == JSON_KEY_APP_SYSTEM_INTERNAL || metadata == JSON_KEY_APP_CLOUD_APP);
 }
 
-std::shared_ptr<Application> Configuration::getApp(const std::string& appName) const
+std::shared_ptr<Application> Configuration::getApp(const std::string &appName) const
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();
-	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application>& app) { return app->getName() == appName; });
-	if (iter != apps.end()) return *iter;
+	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app) { return app->getName() == appName; });
+	if (iter != apps.end())
+		return *iter;
 
 	throw std::invalid_argument(Utility::stringFormat("No such application <%s> found", appName.c_str()));
 }
 
-bool Configuration::isAppExist(const std::string& appName)
+bool Configuration::isAppExist(const std::string &appName)
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();
-	return std::any_of(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application>& app) { return app->getName() == appName; });
+	return std::any_of(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app) { return app->getName() == appName; });
 }
 
-std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value& jsonValue)
+std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value &jsonValue)
 {
 	const static char fname[] = "Configuration::JsonRest::FromJson() ";
 
@@ -795,13 +817,13 @@ web::json::value Configuration::JsonRest::AsJson() const
 }
 
 Configuration::JsonRest::JsonRest()
-	:m_restEnabled(false), m_httpThreadPoolSize(DEFAULT_HTTP_THREAD_POOL_SIZE),
-	m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT)
+	: m_restEnabled(false), m_httpThreadPoolSize(DEFAULT_HTTP_THREAD_POOL_SIZE),
+	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 }
 
-std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const web::json::value& jsonValue)
+std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const web::json::value &jsonValue)
 {
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, ssl->m_sslEnabled);
@@ -828,18 +850,20 @@ web::json::value Configuration::JsonSsl::AsJson() const
 }
 
 Configuration::JsonSsl::JsonSsl()
-	:m_sslEnabled(false)
+	: m_sslEnabled(false)
 {
 }
 
-std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJson(const web::json::value& jsonValue)
+std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJson(const web::json::value &jsonValue)
 {
 	auto security = std::make_shared<Configuration::JsonSecurity>();
 	// Roles
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles)) security->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))
+		security->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SECURITY_EncryptKey, security->m_encryptKey);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users)) security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), security->m_roles);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users))
+		security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), security->m_roles);
 	return security;
 }
 
@@ -858,13 +882,13 @@ web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
 }
 
 Configuration::JsonSecurity::JsonSecurity()
-	:m_jwtEnabled(true), m_encryptKey(false)
+	: m_jwtEnabled(true), m_encryptKey(false)
 {
 	m_roles = std::make_shared<Roles>();
 	m_jwtUsers = std::make_shared<Users>();
 }
 
-std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value& jobj)
+std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jobj)
 {
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
@@ -878,7 +902,8 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	{
 		throw std::invalid_argument(Utility::stringFormat("Consul url <%s> is not correct", consul->m_consulUrl.c_str()));
 	}
-	if (consul->m_ttl < 5) throw std::invalid_argument("session TTL should not less than 5s");
+	if (consul->m_ttl < 5)
+		throw std::invalid_argument("session TTL should not less than 5s");
 	return consul;
 }
 
@@ -905,6 +930,6 @@ bool Configuration::JsonConsul::consulSecurityEnabled() const
 }
 
 Configuration::JsonConsul::JsonConsul()
-	:m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_securitySync(false)
+	: m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_securitySync(false)
 {
 }

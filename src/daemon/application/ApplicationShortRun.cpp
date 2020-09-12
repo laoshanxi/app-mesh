@@ -1,6 +1,7 @@
 #include "ApplicationShortRun.h"
 #include "../process/AppProcess.h"
 #include "../Configuration.h"
+#include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
 #include "../../common/TimeZoneHelper.h"
 
@@ -22,7 +23,9 @@ void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, co
 {
 	std::shared_ptr<Application> fatherApp = app;
 	Application::FromJson(fatherApp, jobj);
-	app->m_startInterval = GET_JSON_INT_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_seconds);
+	app->m_startIntervalValue = GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_seconds);
+	DurationParse duration;
+	app->m_startInterval = duration.parse(app->m_startIntervalValue);
 	assert(app->m_startInterval > 0);
 }
 
@@ -130,7 +133,7 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	web::json::value result = Application::AsJson(returnRuntimeInfo);
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_startInterval);
+	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_startIntervalValue);
 	if (m_bufferTime) result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
 	if (returnRuntimeInfo)
 	{

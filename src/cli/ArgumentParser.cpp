@@ -328,7 +328,7 @@ void ArgumentParser::processReg()
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
-		("interval,i", po::value<int>(), "start interval seconds for short running app")
+		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
 		("extra_time,q", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", "monitor and keep running for short running app in start interval")
@@ -378,7 +378,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("timezone")) jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
 	if (m_commandLineVariables.count("start_time")) jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
 	if (m_commandLineVariables.count("end_time")) jsobObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
-	if (m_commandLineVariables.count("interval")) jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::number(m_commandLineVariables["interval"].as<int>());
+	if (m_commandLineVariables.count("interval")) jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
 	if (m_commandLineVariables.count("extra_time")) jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
 	if (m_commandLineVariables.count("stdout_cache_size")) jsobObj[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_commandLineVariables["stdout_cache_size"].as<int>());
 	if (m_commandLineVariables.count("keep_running")) jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
