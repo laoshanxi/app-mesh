@@ -26,11 +26,11 @@ Extra Features | Collect host/app resource usage <br> Remote run shell commands 
 **CentOS**:
 ```text
 # centos7
-sudo yum install appmesh-1.8.3-1.x86_64.rpm
+sudo yum install appmesh-1.8.4-1.x86_64.rpm
 # ubuntu
-sudo apt-get install appmesh_1.8.3_amd64.deb
+sudo apt-get install appmesh_1.8.4_amd64.deb
 # SUSE
-sudo zypper install appmesh-1.8.3-1.x86_64.rpm
+sudo zypper install appmesh-1.8.4-1.x86_64.rpm
 ```
 Note:
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd

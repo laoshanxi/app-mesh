@@ -14,14 +14,26 @@ int DurationParse::parse(const std::string &duration)
 {
     const static char fname[] = "DurationParse::parse ";
     LOG_DBG << fname << duration;
-
-    std::cout << duration << std::endl;
     int totalSeconds = 0;
+
+    // return imediate number
+    if (Utility::isNumber(duration))
+    {
+        totalSeconds = std::stoi(duration);
+        LOG_DBG << fname << "number duration: " << duration << "=" << totalSeconds;
+        return totalSeconds;
+    }
+
+    // regex parse
     boost::cmatch what;
     if (boost::regex_match(duration.c_str(), what, boost::regex(DURATION_WEEK)))
     {
         if (what.size() > 1)
-            return this->parsePart("week", what[1]);
+        {
+            totalSeconds = this->parsePart("week", what[1]);
+            LOG_DBG << fname << "week duration: " << duration << "=" << totalSeconds;
+            return totalSeconds;
+        }
     }
     else if (boost::regex_match(duration.c_str(), what, boost::regex(DURATION_DATE_TIME)))
     {
@@ -57,6 +69,7 @@ int DurationParse::parse(const std::string &duration)
             if (i == 8)
                 totalSeconds += this->parsePart("time", what[i]);
         }
+        LOG_DBG << fname << "date time duration: " << duration << "=" << totalSeconds;
         return totalSeconds;
     }
     throw std::invalid_argument(Utility::stringFormat("Invalid duration %s", duration.c_str()));
@@ -101,7 +114,7 @@ int DurationParse::parsePart(const std::string &mode, const std::string &regexPa
     if (id == "time H")
         return n * 60 * 60;
     if (id == "date D")
-        return n * 24 * 60 * 60;;
+        return n * 24 * 60 * 60;
     if (id == "date M")
         throw std::invalid_argument("ISO8601 months is not supported");
     if (id == "date Y")

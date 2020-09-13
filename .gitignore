@@ -263,4 +263,7 @@ __pycache__/
 *.diff
 *.zip
 
+# cmake build dir
+build/
+
 .vscode

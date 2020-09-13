@@ -34,6 +34,7 @@ protected:
 
 protected:
 	std::unique_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
+	std::string m_startIntervalValue;
 	int m_startInterval;
 	int m_bufferTime;
 	int m_timerId;
