@@ -5,8 +5,7 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 
-
-ShellAppFileGen::ShellAppFileGen(const std::string& name, const std::string& cmd, const std::string& workDir)
+ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &workDir)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
@@ -16,7 +15,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string& name, const std::string& cmd
 	{
 		shellFile << "#!/bin/sh" << std::endl;
 		shellFile << "#application <" << name << ">" << std::endl;
-		if (workDir.length()) shellFile << "cd " << workDir << std::endl;
+		//if (workDir.length()) shellFile << "cd " << workDir << std::endl;
 		shellFile << cmd << std::endl;
 		shellFile.close();
 		m_fileName = fileName;
@@ -36,9 +35,8 @@ ShellAppFileGen::~ShellAppFileGen()
 	Utility::removeFile(m_fileName);
 }
 
-
-AppLogFile::AppLogFile(const std::string& appName, int index = 0)
-	:m_fileName(appName), m_index(index)
+AppLogFile::AppLogFile(const std::string &appName, int index = 0)
+	: m_fileName(appName), m_index(index)
 {
 }
 
@@ -54,7 +52,8 @@ void AppLogFile::increaseIndex()
 	auto oldFile = getFileName();
 	m_index++;
 	auto newFile = getFileName();
-	if (Utility::isFileExist(newFile)) Utility::removeFile(newFile);
+	if (Utility::isFileExist(newFile))
+		Utility::removeFile(newFile);
 	if (Utility::isFileExist(oldFile) && 0 != ACE_OS::rename(oldFile.c_str(), newFile.c_str()))
 	{
 		LOG_ERR << fname << "Rename file <" << oldFile << "> failed with error: " << std::strerror(errno);
@@ -75,7 +74,8 @@ const std::string AppLogFile::getFileName() const
 	if (m_index)
 	{
 		std::string file = m_fileName;
-		if (m_index) file = Utility::stringFormat("%s.%d", m_fileName.c_str(), m_index);
+		if (m_index)
+			file = Utility::stringFormat("%s.%d", m_fileName.c_str(), m_index);
 		return file;
 	}
 	else
@@ -85,7 +85,7 @@ const std::string AppLogFile::getFileName() const
 }
 
 LogFileQueue::LogFileQueue(std::string baseFileName, int queueSize)
-	:baseFileName(baseFileName), m_ququeSize(queueSize)
+	: baseFileName(baseFileName), m_ququeSize(queueSize)
 {
 }
 
@@ -100,7 +100,8 @@ LogFileQueue::~LogFileQueue()
 
 void LogFileQueue::enqueue()
 {
-	if (0 == m_ququeSize) return;
+	if (0 == m_ququeSize)
+		return;
 	// rename all with reverse order
 	for (auto it = m_fileQueue.rbegin(); it != m_fileQueue.rend(); it++)
 	{

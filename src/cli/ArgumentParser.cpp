@@ -40,6 +40,7 @@
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmesh_";
 static std::string m_jwtToken;
+extern char ** environ;
 
 ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled)
 	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
@@ -129,6 +130,10 @@ void ArgumentParser::parse()
 	{
 		processRun();
 	}
+	else if (cmd == "exec")
+	{
+		processExec();
+	}
 	else if (cmd == "get")
 	{
 		processDownload();
@@ -183,6 +188,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  run         Run application and get output" << std::endl;
+	std::cout << "  exec        Run current cmd by appmesh and impersonate context" << std::endl;
 	std::cout << "  get         Download remote file to local" << std::endl;
 	std::cout << "  put         Upload file to server" << std::endl;
 	std::cout << "  config      Manage basic configurations" << std::endl;
@@ -594,7 +600,6 @@ void ArgumentParser::processRun()
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("exec_user,a", po::value<std::string>(), "application process running OS user name")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work')")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
@@ -668,6 +673,80 @@ void ArgumentParser::processRun()
 			if (response.status_code() != http::status_codes::OK) break;
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
+	}
+}
+
+void ArgumentParser::processExec()
+{
+	po::options_description desc("Backend execute:");
+	desc.add_options()
+		("help,h", "Prints command usage to stdout and exits")
+		COMMON_OPTIONS
+		;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	// Get current user name
+	std::string userName;
+	struct passwd *pw_ptr;
+	if ((pw_ptr = getpwuid(getuid())) != NULL)
+	{
+		userName = pw_ptr->pw_name;
+	}
+	else
+	{
+		throw std::runtime_error("Failed to get current user name");
+	}
+
+	// Get current command line
+	std::string cmd;
+	for (size_t i = 1; i < m_pasrsedOptions.size(); i++)
+	{
+		for (auto opt : m_pasrsedOptions[i].value)
+		{
+			cmd.append(opt).append(" ");
+		}
+	}
+	
+	// Get current ENV
+	web::json::value objEnvs = web::json::value::object();
+    for (char **var = environ; *var != NULL; var++)
+    {
+		std::string e = *var;
+		auto vec = Utility::splitString(e, "=");
+		if (vec.size() > 0)
+		{
+			objEnvs[vec[0]] = web::json::value::string(vec.size() > 1 ? vec[1] : std::string());
+		}
+	}
+
+	char buff[MAX_COMMAND_LINE_LENGH] = { 0 };
+	web::json::value jsobObj;
+	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
+	jsobObj[JSON_KEY_APP_command] = web::json::value::string(cmd);
+	jsobObj[JSON_KEY_APP_env] = objEnvs;
+	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(getcwd(buff, sizeof(buff)));
+
+	// disable timeout
+	std::map<std::string, std::string> query;
+	query[HTTP_QUERY_KEY_timeout] = std::to_string(-1);
+
+	std::string restPath = "/appmesh/app/run";
+	std::cout << jsobObj.serialize() << std::endl;
+	auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
+	auto result = response.extract_json(true).get();
+	auto appName = result[JSON_KEY_APP_name].as_string();
+	auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
+	while (process_uuid.length())
+	{
+		// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
+		restPath = std::string("/appmesh/app/").append(appName).append("/run/output");
+		query.clear();
+		query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
+		response = requestHttp(methods::GET, restPath, query);
+		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
+		if (response.status_code() != http::status_codes::OK) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 }
 

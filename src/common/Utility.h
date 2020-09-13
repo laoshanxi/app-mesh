@@ -160,8 +160,9 @@ public:
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT"	// app manager pull docker image timeout seconds
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS 3 *(60 * 60 * 24)	// default 3 days
-#define MAX_TOKEN_EXPIRE_SECONDS 30 * (60 * 60 * 24) // max 30 days
-#define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10		// run app default timeout
+#define MAX_TOKEN_EXPIRE_SECONDS 30 * (60 * 60 * 24) 	// max 30 days
+#define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10				// run app default timeout
+#define MAX_RUN_APP_TIMEOUT_SECONDS 3 * (60 * 60 * 24)	// run app max timeout 3 days
 #define MAX_APP_CACHED_LINES 1024
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30

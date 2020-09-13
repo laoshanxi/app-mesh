@@ -35,6 +35,7 @@ private:
 	void processResource();
 	void processEnableDisable(bool start);
 	void processRun();
+	void processExec();
 	void processDownload();
 	void processUpload();
 	void processTags();
