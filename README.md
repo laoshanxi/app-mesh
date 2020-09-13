@@ -119,9 +119,10 @@ Register a new application:
                                  Mesh for this command.
   -n [ --name ] arg              application name
   -g [ --metadata ] arg          application metadata string
-  -a [ --run_user ] arg          application process running OS user name
   --perm arg                     application owner permission
   -c [ --cmd ] arg               full command line with arguments
+  -S [ --shell_mode ]            command line will be executed in shell in this
+                                 mode
   -I [ --init ] arg              initial command line with arguments
   -F [ --fini ] arg              fini command line with arguments
   -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl
@@ -129,7 +130,6 @@ Register a new application:
   -d [ --docker_image ] arg      docker image which used to run command line 
                                  (this will enable docker)
   -w [ --workdir ] arg           working directory
-  -S [ --stdout ] arg            stdout file
   -s [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
   -t [ --start_time ] arg        start date time for app (e.g., '2018-01-01 
@@ -140,21 +140,22 @@ Register a new application:
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
   -p [ --pid ] arg               process id used to attach
+  -O [ --stdout_cache_size ] arg stdout file cache number
   -v [ --virtual_memory ] arg    virtual memory limit in MByte
   -r [ --cpu_shares ] arg        CPU shares (relative weight)
   -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e
                                  env2=value2, APP_DOCKER_OPTS is used to input 
                                  docker parameters)
-  -i [ --interval ] arg          start interval seconds for short running app
+  -i [ --interval ] arg          start interval seconds for short running app, 
+                                 support ISO 8601 durations (e.g., 
+                                 'P1Y2M3DT4H5M6S' 'P5W')
   -q [ --extra_time ] arg        extra timeout for short running app,the value 
                                  must less than interval  (default 0)
   -z [ --timezone ] arg          posix timezone for the application, reflect 
                                  [start_time|daily_start|daily_end] (e.g., 
                                  'WST+08:00' is Australia Standard Time)
-  -k [ --keep_running ] arg (=0) monitor and keep running for short running app
+  -k [ --keep_running ]          monitor and keep running for short running app
                                  in start interval
-  -o [ --cache_lines ] arg (=0)  number of output lines will be cached in 
-                                 server side (used for none-container app)
   -f [ --force ]                 force without confirm
   -h [ --help ]                  Prints command usage to stdout and exits
 
