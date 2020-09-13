@@ -732,7 +732,6 @@ void ArgumentParser::processExec()
 	query[HTTP_QUERY_KEY_timeout] = std::to_string(-1);
 
 	std::string restPath = "/appmesh/app/run";
-	std::cout << jsobObj.serialize() << std::endl;
 	auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
 	auto result = response.extract_json(true).get();
 	auto appName = result[JSON_KEY_APP_name].as_string();
