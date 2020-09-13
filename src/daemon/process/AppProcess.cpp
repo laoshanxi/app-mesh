@@ -8,10 +8,9 @@
 #include "../ResourceLimitation.h"
 
 AppProcess::AppProcess()
-	:m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
+	: m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
 {
 }
-
 
 AppProcess::~AppProcess()
 {
@@ -68,7 +67,7 @@ void AppProcess::killgroup(int timerId)
 	{
 		ACE_OS::kill(-(this->getpid()), 9);
 		this->terminate();
-		if (this->wait() < 0 && errno != 10)	// 10 is ECHILD:No child processes
+		if (this->wait() < 0 && errno != 10) // 10 is ECHILD:No child processes
 		{
 			//avoid  zombie process (Interrupted system call)
 			LOG_WAR << fname << "Wait process <" << getpid() << "> to exit failed with error : " << std::strerror(errno);
@@ -85,7 +84,7 @@ void AppProcess::killgroup(int timerId)
 	}
 }
 
-void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation>& limit)
+void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
 {
 	// https://blog.csdn.net/u011547375/article/details/9851455
 	if (limit != nullptr)
@@ -106,7 +105,7 @@ void AppProcess::regKillTimer(std::size_t timeout, const std::string from)
 }
 
 // tuple: 1 cmdRoot, 2 parameters
-std::tuple<std::string, std::string> AppProcess::extractCommand(const std::string& cmd)
+std::tuple<std::string, std::string> AppProcess::extractCommand(const std::string &cmd)
 {
 	std::unique_ptr<char[]> buff(new char[cmd.length() + 1]);
 
@@ -160,7 +159,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		LOG_WAR << fname << "command file <" << cmdRoot << "> does not have execution permission";
 		return ACE_INVALID_PID;
 	}
-	
+
 	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::formatTime(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
 	std::size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
@@ -169,7 +168,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	ACE_Process_Options option(1, cmdLenth, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	//option.avoid_zombies(1);
-	if (user.empty()) user = Configuration::instance()->getDefaultExecUser();
+	if (user.empty())
+		user = Configuration::instance()->getDefaultExecUser();
 	if (user != "root")
 	{
 		unsigned int gid, uid;
@@ -185,7 +185,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			return ACE_INVALID_PID;
 		}
 	}
-	option.setgroup(0);	// set group id with the process id, used to kill process group
+	option.setgroup(0); // set group id with the process id, used to kill process group
 	option.inherit_environment(true);
 	option.handle_inheritance(0);
 	if (workDir.length())
@@ -194,10 +194,9 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	else
 	{
-		option.working_directory(Configuration::instance()->getDefaultWorkDir().c_str());	// set default working dir
+		option.working_directory(Configuration::instance()->getDefaultWorkDir().c_str()); // set default working dir
 	}
-	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string>& pair)
-	{
+	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair) {
 		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
 		LOG_DBG << "spawnProcess env: " << pair.first.c_str() << "=" << pair.second.c_str();
 	});
@@ -235,7 +234,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		pid = -1;
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << std::strerror(errno);
 	}
-	if (dummy != ACE_INVALID_HANDLE) ACE_OS::close(dummy);
+	if (dummy != ACE_INVALID_HANDLE)
+		ACE_OS::close(dummy);
 	return pid;
 }
 
@@ -259,7 +259,8 @@ std::string AppProcess::getOutputMsg()
 std::string AppProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
+	if (m_inFile == nullptr)
+		m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
 	if (m_inFile->is_open() && m_inFile->good())
 	{
 		std::stringstream buffer;
@@ -271,13 +272,13 @@ std::string AppProcess::fetchOutputMsg()
 
 std::string AppProcess::fetchLine()
 {
-	char buffer[512] = { 0 };
+	char buffer[512] = {0};
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_inFile == nullptr) m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
+	if (m_inFile == nullptr)
+		m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
 	if (m_inFile->is_open() && m_inFile->good())
 	{
 		m_inFile->getline(buffer, sizeof(buffer));
 	}
 	return buffer;
 }
-

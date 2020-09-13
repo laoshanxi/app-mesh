@@ -23,7 +23,7 @@ web::json::value Users::AsJson() const
 	return std::move(result);
 }
 
-std::shared_ptr<Users> Users::FromJson(const web::json::value& obj, std::shared_ptr<Roles> roles)
+std::shared_ptr<Users> Users::FromJson(const web::json::value &obj, std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<Users> users = std::make_shared<Users>();
 	auto jsonOj = obj.as_object();
@@ -59,14 +59,15 @@ std::set<std::string> Users::getGroups() const
 {
 	std::set<std::string> result;
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	for (const auto& usr : m_users)
+	for (const auto &usr : m_users)
 	{
-		if (usr.second->getGroup().length()) result.insert(usr.second->getGroup());
+		if (usr.second->getGroup().length())
+			result.insert(usr.second->getGroup());
 	}
 	return std::move(result);
 }
 
-void Users::addUsers(const web::json::value& obj, std::shared_ptr<Roles> roles)
+void Users::addUsers(const web::json::value &obj, std::shared_ptr<Roles> roles)
 {
 	if (!obj.is_null() && obj.is_object())
 	{
@@ -82,7 +83,7 @@ void Users::addUsers(const web::json::value& obj, std::shared_ptr<Roles> roles)
 	}
 }
 
-std::shared_ptr<User> Users::addUser(const std::string userName, const web::json::value& userJson, std::shared_ptr<Roles> roles)
+std::shared_ptr<User> Users::addUser(const std::string userName, const web::json::value &userJson, std::shared_ptr<Roles> roles)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = User::FromJson(userName, userJson, roles);
@@ -99,7 +100,7 @@ std::shared_ptr<User> Users::addUser(const std::string userName, const web::json
 	return user;
 }
 
-void Users::delUser(const std::string& name)
+void Users::delUser(const std::string &name)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	getUser(name);
@@ -109,7 +110,7 @@ void Users::delUser(const std::string& name)
 //////////////////////////////////////////////////////////////////////
 /// User
 //////////////////////////////////////////////////////////////////////
-User::User(const std::string& name) :m_locked(false), m_name(name)
+User::User(const std::string &name) : m_locked(false), m_name(name)
 {
 }
 
@@ -126,7 +127,8 @@ web::json::value User::AsJson() const
 	result[JSON_KEY_USER_group] = web::json::value::string(m_group);
 	result[JSON_KEY_USER_exec_user] = web::json::value::string(m_execUser);
 	result[JSON_KEY_USER_locked] = web::json::value::boolean(m_locked);
-	if (m_metadata.length()) result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
+	if (m_metadata.length())
+		result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
 	auto roles = web::json::value::array(m_roles.size());
 	int i = 0;
 	for (auto role : m_roles)
@@ -137,7 +139,7 @@ web::json::value User::AsJson() const
 	return result;
 }
 
-std::shared_ptr<User> User::FromJson(const std::string& userName, const web::json::value& obj, const std::shared_ptr<Roles> roles)
+std::shared_ptr<User> User::FromJson(const std::string &userName, const web::json::value &obj, const std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<User> result;
 	if (!obj.is_null())
@@ -155,7 +157,8 @@ std::shared_ptr<User> User::FromJson(const std::string& userName, const web::jso
 		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
 		{
 			auto arr = obj.at(JSON_KEY_USER_roles).as_array();
-			for (auto jsonRole : arr) result->m_roles.insert(roles->getRole(jsonRole.as_string()));
+			for (auto jsonRole : arr)
+				result->m_roles.insert(roles->getRole(jsonRole.as_string()));
 		}
 	}
 	return result;
@@ -182,7 +185,7 @@ void User::updateUser(std::shared_ptr<User> user)
 	this->m_locked = user->m_locked;
 }
 
-void User::updateKey(const std::string& passswd)
+void User::updateKey(const std::string &passswd)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_key = passswd;
@@ -205,13 +208,13 @@ const std::set<std::shared_ptr<Role>> User::getRoles()
 	return m_roles;
 }
 
-bool User::hasPermission(const std::string& permission)
+bool User::hasPermission(const std::string &permission)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	for (auto role : m_roles)
 	{
-		if (role->hasPermission(permission)) return true;
+		if (role->hasPermission(permission))
+			return true;
 	}
 	return false;
 }
-

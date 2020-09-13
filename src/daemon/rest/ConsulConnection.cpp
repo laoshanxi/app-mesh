@@ -13,11 +13,11 @@
 #include "../../common/Utility.h"
 #include "../../common/PerfLog.h"
 
-#define CONSUL_BASE_PATH  "/v1/kv/appmesh/"
+#define CONSUL_BASE_PATH "/v1/kv/appmesh/"
 //extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
-	:m_ssnRenewTimerId(0), m_leader(0)
+	: m_ssnRenewTimerId(0), m_leader(0)
 {
 	// override default reactor here
 	// m_reactor = m_timerReactor;
@@ -28,7 +28,7 @@ ConsulConnection::~ConsulConnection()
 	this->cancleTimer(m_ssnRenewTimerId);
 }
 
-std::shared_ptr<ConsulConnection>& ConsulConnection::instance()
+std::shared_ptr<ConsulConnection> &ConsulConnection::instance()
 {
 	static auto singleton = std::make_shared<ConsulConnection>();
 	return singleton;
@@ -41,13 +41,16 @@ void ConsulConnection::reportNode()
 	const static char fname[] = "ConsulConnection::reportNode() ";
 
 	std::string sessionId = consulSessionId();
-	if (sessionId.empty()) return;
+	if (sessionId.empty())
+		return;
 
 	// check feature enabled
-	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
+	if (!Configuration::instance()->getConsul()->consulEnabled())
+		return;
 
 	// Only node need report status for node (master does not need report)
-	if (!Configuration::instance()->getConsul()->m_isNode) return;
+	if (!Configuration::instance()->getConsul()->m_isNode)
+		return;
 
 	PerfLog perf(fname);
 	try
@@ -57,20 +60,22 @@ void ConsulConnection::reportNode()
 
 		static long long lastIndex = 0;
 		auto currentIndex = getModifyIndex(path);
-		if (currentIndex == lastIndex) return;
+		if (currentIndex == lastIndex)
+			return;
 
 		web::json::value body = web::json::value::object();
 		body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-		auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
+		auto resp = requestHttp(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto result = resp.extract_utf8string(true).get();
 			if (result == "true")
 			{
 				auto index = getModifyIndex(path);
-				if (index > 0) lastIndex = index;
+				if (index > 0)
+					lastIndex = index;
 			}
 			else
 			{
@@ -78,7 +83,7 @@ void ConsulConnection::reportNode()
 			}
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -95,7 +100,8 @@ void ConsulConnection::refreshSession(int timerId)
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->consulEnabled()) return;
+		if (!Configuration::instance()->getConsul()->consulEnabled())
+			return;
 
 		PerfLog perf(fname);
 		// get session id
@@ -112,7 +118,7 @@ void ConsulConnection::refreshSession(int timerId)
 		reportNode();
 		return;
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -123,12 +129,13 @@ void ConsulConnection::refreshSession(int timerId)
 	this->consulSessionId("");
 }
 
-long long ConsulConnection::getModifyIndex(const std::string& path, bool recurse)
+long long ConsulConnection::getModifyIndex(const std::string &path, bool recurse)
 {
 	const static char fname[] = "ConsulConnection::getModifyIndex() ";
 
 	std::map<std::string, std::string> query;
-	if (recurse) query["recurse"] = "true";
+	if (recurse)
+		query["recurse"] = "true";
 	auto resp = requestHttp(web::http::methods::GET, path, query, {}, nullptr);
 	if (resp.headers().has("X-Consul-Index"))
 	{
@@ -147,8 +154,10 @@ void ConsulConnection::syncSchedule()
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->consulEnabled()) return;
-		if (consulSessionId().empty()) this->consulSessionId(requestSessionId());
+		if (!Configuration::instance()->getConsul()->consulEnabled())
+			return;
+		if (consulSessionId().empty())
+			this->consulSessionId(requestSessionId());
 
 		PerfLog perf(fname);
 
@@ -159,7 +168,7 @@ void ConsulConnection::syncSchedule()
 			doSchedule();
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -176,7 +185,8 @@ void ConsulConnection::syncSecurity()
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->consulSecurityEnabled()) return;
+		if (!Configuration::instance()->getConsul()->consulSecurityEnabled())
+			return;
 
 		PerfLog perf(fname);
 
@@ -185,9 +195,11 @@ void ConsulConnection::syncSecurity()
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			auto respJson = resp.extract_json(true).get();
-			if (!respJson.is_array() || respJson.as_array().size() == 0) return;
+			if (!respJson.is_array() || respJson.as_array().size() == 0)
+				return;
 			auto securityJson = respJson.as_array().at(0);
-			if (!HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value")) return;
+			if (!HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value"))
+				return;
 
 			auto security = web::json::value::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
 			auto securityObj = Configuration::JsonSecurity::FromJson(security);
@@ -202,7 +214,7 @@ void ConsulConnection::syncSecurity()
 			LOG_WAR << fname << "failed with return code : " << resp.status_code();
 		}
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << " got exception: " << ex.what();
 	}
@@ -239,10 +251,10 @@ std::string ConsulConnection::requestSessionId()
 	return sessionId;
 }
 
-void ConsulConnection::releaseSessionId(const std::string& sessionId)
+void ConsulConnection::releaseSessionId(const std::string &sessionId)
 {
 	const static char fname[] = "ConsulConnection::releaseSessionId() ";
-	
+
 	if (sessionId.length())
 	{
 		requestHttp(web::http::methods::PUT, std::string("/v1/session/destroy/").append(sessionId), {}, {}, nullptr);
@@ -282,7 +294,7 @@ std::string ConsulConnection::consulSessionId()
 	return m_sessionId;
 }
 
-void ConsulConnection::consulSessionId(const std::string& sessionId)
+void ConsulConnection::consulSessionId(const std::string &sessionId)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_sessionId = sessionId;
@@ -316,7 +328,7 @@ void ConsulConnection::doSchedule()
 	else
 	{
 		std::string path = std::string(CONSUL_BASE_PATH).append("leader");
-		auto resp = requestHttp(web::http::methods::GET, path, { {"raw", "true"} }, {}, nullptr);
+		auto resp = requestHttp(web::http::methods::GET, path, {{"raw", "true"}}, {}, nullptr);
 		if (resp.status_code() == web::http::status_codes::OK)
 		{
 			LOG_DBG << fname << MY_HOST_NAME << " is not leader, leader is : " << resp.extract_utf8string().get();
@@ -336,25 +348,26 @@ void ConsulConnection::syncTopology()
 	std::shared_ptr<ConsulTopology> newTopology;
 	auto topology = retrieveTopology(MY_HOST_NAME);
 	auto hostTopologyIt = topology.find(MY_HOST_NAME);
-	if (hostTopologyIt != topology.end()) newTopology = hostTopologyIt->second;
+	if (hostTopologyIt != topology.end())
+		newTopology = hostTopologyIt->second;
 
 	if (newTopology)
 	{
 		auto task = retrieveTask();
-		for (const auto& hostApp : newTopology->m_scheduleApps)
+		for (const auto &hostApp : newTopology->m_scheduleApps)
 		{
-			const auto& appName = hostApp.first;
+			const auto &appName = hostApp.first;
 			if (task.count(appName))
 			{
-				auto& consulTask = task[appName];
+				auto &consulTask = task[appName];
 				std::shared_ptr<Application> topologyAppObj = consulTask->m_app;
-				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&appName](std::shared_ptr<Application> const& obj) {
+				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&appName](std::shared_ptr<Application> const &obj) {
 					return obj->getName() == appName;
-					});
+				});
 				if (it != currentAllApps.end())
 				{
 					// Update app
-					auto& currentRunningApp = *it;
+					auto &currentRunningApp = *it;
 					if (!currentRunningApp->operator==(topologyAppObj))
 					{
 						Configuration::instance()->addApp(getAppJsonWithIndexEnv(currentRunningApp, hostApp.second));
@@ -374,7 +387,7 @@ void ConsulConnection::syncTopology()
 			}
 		}
 
-		for (const auto& currentApp : currentAllApps)
+		for (const auto &currentApp : currentAllApps)
 		{
 			if (currentApp->isCloudApp())
 			{
@@ -391,7 +404,7 @@ void ConsulConnection::syncTopology()
 	else
 	{
 		// retrieveTopology will throw if connection was not reached
-		for (const auto& currentApp : currentAllApps)
+		for (const auto &currentApp : currentAllApps)
 		{
 			if (currentApp->isCloudApp())
 			{
@@ -408,13 +421,14 @@ bool ConsulConnection::eletionLeader()
 {
 	// get session id
 	std::string sessionId = consulSessionId();
-	if (sessionId.empty()) return false;
+	if (sessionId.empty())
+		return false;
 
 	// write hostname to leader path : /appmesh/leader
 	std::string path = std::string(CONSUL_BASE_PATH).append("leader");
 	auto body = web::json::value::string(MY_HOST_NAME);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	auto resp = requestHttp(web::http::methods::PUT, path, { {"acquire", sessionId}, {"flags", timestamp} }, {}, &body);
+	auto resp = requestHttp(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 	m_leader = (resp.status_code() == web::http::status_codes::OK);
 	return m_leader;
 }
@@ -430,7 +444,7 @@ void ConsulConnection::offlineNode()
 	requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
 
 	auto currentAllApps = Configuration::instance()->getApps();
-	for (const auto& currentApp : currentAllApps)
+	for (const auto &currentApp : currentAllApps)
 	{
 		if (currentApp->isCloudApp())
 		{
@@ -442,15 +456,16 @@ void ConsulConnection::offlineNode()
 	}
 }
 
-bool ConsulConnection::registerService(const std::string& appName, int port)
+bool ConsulConnection::registerService(const std::string &appName, int port)
 {
 	const static char fname[] = "ConsulConnection::registerService() ";
 	// https://www.hashicorp.com/blog/consul-and-external-services/
-	//curl -X PUT -d 
+	//curl -X PUT -d
 	//  '{"Node": "myhost", "Address": "myhost","Service": {"Service": "mysql", "tags": ["master","v1"], "Port": 3306}}'
 	//  http://127.0.0.1:8500/v1/catalog/register
 
-	if (port == 0) return false;
+	if (port == 0)
+		return false;
 	auto serviceId = MY_HOST_NAME + ":" + appName;
 	auto body = web::json::value();
 	body["ID"] = web::json::value::string(serviceId);
@@ -467,16 +482,16 @@ bool ConsulConnection::registerService(const std::string& appName, int port)
 	body["Check"] = check;
 
 	std::string path = "/v1/agent/service/register";
-	auto resp = requestHttp(web::http::methods::PUT, path, { {"replace-existing-checks","true"} }, {}, &body);
+	auto resp = requestHttp(web::http::methods::PUT, path, {{"replace-existing-checks", "true"}}, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		LOG_DBG << fname << "service " << serviceId  << " for task <" << appName << "> registered";
+		LOG_DBG << fname << "service " << serviceId << " for task <" << appName << "> registered";
 		return true;
 	}
 	return false;
 }
 
-bool ConsulConnection::deregisterService(const std::string& appName)
+bool ConsulConnection::deregisterService(const std::string &appName)
 {
 	const static char fname[] = "ConsulConnection::deregisterService() ";
 
@@ -496,7 +511,8 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 {
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
 
-	if (!Configuration::instance()->getConsul()->consulSecurityEnabled()) return;
+	if (!Configuration::instance()->getConsul()->consulSecurityEnabled())
+		return;
 
 	// /appmesh/security
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
@@ -508,7 +524,7 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 	}
 	auto body = Configuration::instance()->getSecurity()->AsJson(false);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
+	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, {{"flags", timestamp}}, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
@@ -519,19 +535,19 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 	}
 }
 
-void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>>& taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>>& hosts)
+void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>> &taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>> &hosts)
 {
 	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
 
-	for (const auto& task : taskMap)
+	for (const auto &task : taskMap)
 	{
 		auto taskName = task.first;
 		task.second->m_matchedHosts.clear();
-		for (const auto& host : hosts)
+		for (const auto &host : hosts)
 		{
-			auto& hostName = host.first;
-			auto& consulHost = host.second;
-			auto& taskCondition = task.second->m_condition;
+			auto &hostName = host.first;
+			auto &consulHost = host.second;
+			auto &taskCondition = task.second->m_condition;
 			if (consulHost->m_label->match(taskCondition))
 			{
 				task.second->m_matchedHosts[hostName] = consulHost;
@@ -541,16 +557,16 @@ void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::sh
 	}
 }
 
-void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, std::shared_ptr<ConsulTopology>>& oldT, const std::map<std::string, std::shared_ptr<ConsulTopology>>& newT)
+void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, std::shared_ptr<ConsulTopology>> &oldT, const std::map<std::string, std::shared_ptr<ConsulTopology>> &newT)
 {
-	for (const auto& newHost : newT)
+	for (const auto &newHost : newT)
 	{
 		if (oldT.count(newHost.first))
 		{
 			auto equal = true;
 			if (newHost.second->m_scheduleApps.size() == oldT.find(newHost.first)->second->m_scheduleApps.size())
 			{
-				for (const auto& app : newHost.second->m_scheduleApps)
+				for (const auto &app : newHost.second->m_scheduleApps)
 				{
 					if (!oldT.find(newHost.first)->second->m_scheduleApps.count(app.first))
 					{
@@ -577,7 +593,7 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 		}
 	}
 
-	for (const auto& oldHost : oldT)
+	for (const auto &oldHost : oldT)
 	{
 		if (!newT.count(oldHost.first))
 		{
@@ -592,7 +608,7 @@ web::json::value ConsulConnection::getAppJsonWithIndexEnv(std::shared_ptr<Applic
 	auto appJson = app->AsJson(false);
 	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_env))
 	{
-		web::json::value& envs = appJson.at(JSON_KEY_APP_env);
+		web::json::value &envs = appJson.at(JSON_KEY_APP_env);
 		envs["APP_INDEX"] = web::json::value::string(std::to_string(index));
 	}
 	else
@@ -612,8 +628,9 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
 	auto body = web::json::value::object();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	if (topology && topology->m_scheduleApps.size()) body = topology->AsJson();
-	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, { {"flags", timestamp} }, {}, &body);
+	if (topology && topology->m_scheduleApps.size())
+		body = topology->AsJson();
+	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, {{"flags", timestamp}}, {}, &body);
 	LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
 
 	if (resp.status_code() == web::http::status_codes::OK)
@@ -657,20 +674,22 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::retriev
 	// /appmesh/topology/myhost
 	std::map<std::string, std::shared_ptr<ConsulTopology>> topology;
 	auto path = std::string(CONSUL_BASE_PATH).append("topology");
-	if (host.length()) path.append("/").append(host);
-	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
+	if (host.length())
+		path.append("/").append(host);
+	auto resp = requestHttp(web::http::methods::GET, path, {{"recurse", "true"}}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (const auto& section : json.as_array())
+			for (const auto &section : json.as_array())
 			{
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
 					// int consulIndex = GET_JSON_INT_VALUE(section, "ModifyIndex");
 					auto hostText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
-					if (hostText.empty()) continue;
+					if (hostText.empty())
+						continue;
 					auto consulKey = GET_JSON_STR_VALUE(section, "Key");
 					auto vec = Utility::splitString(consulKey, "/");
 					auto hostName = vec[vec.size() - 1];
@@ -696,13 +715,13 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 	std::map<std::string, std::shared_ptr<ConsulTask>> result;
 	// /appmesh/cluster/tasks/myapp
 	std::string path = std::string(CONSUL_BASE_PATH).append("cluster/tasks");
-	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
+	auto resp = requestHttp(web::http::methods::GET, path, {{"recurse", "true"}}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (const auto& section : json.as_array())
+			for (const auto &section : json.as_array())
 			{
 				if (HAS_JSON_FIELD(section, "Value") && GET_JSON_STR_VALUE(section, "Key") != "appmesh/cluster/tasks")
 				{
@@ -734,13 +753,13 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	std::map<std::string, std::shared_ptr<ConsulNode>> result;
 	// /appmesh/cluster/nodes
 	std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes");
-	auto resp = requestHttp(web::http::methods::GET, path, { {"recurse","true"} }, {}, nullptr);
+	auto resp = requestHttp(web::http::methods::GET, path, {{"recurse", "true"}}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto json = resp.extract_json(true).get();
 		if (json.is_array())
 		{
-			for (const auto& section : json.as_array())
+			for (const auto &section : json.as_array())
 			{
 				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
 				{
@@ -764,9 +783,12 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 	const static char fname[] = "ConsulConnection::initTimer() ";
 	LOG_DBG << fname;
 
-	if (!Configuration::instance()->getConsul()->consulEnabled()) return;
-	if (!Configuration::instance()->getConsul()->m_isNode) offlineNode();
-	if (recoverSsnId.length()) releaseSessionId(recoverSsnId);
+	if (!Configuration::instance()->getConsul()->consulEnabled())
+		return;
+	if (!Configuration::instance()->getConsul()->m_isNode)
+		offlineNode();
+	if (recoverSsnId.length())
+		releaseSessionId(recoverSsnId);
 
 	// session renew timer
 	this->cancleTimer(m_ssnRenewTimerId);
@@ -777,8 +799,7 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 			0,
 			Configuration::instance()->getConsul()->m_ttl - 3,
 			std::bind(&ConsulConnection::refreshSession, this, std::placeholders::_1),
-			__FUNCTION__
-		);
+			__FUNCTION__);
 	}
 	else
 	{
@@ -807,7 +828,7 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 	}
 }
 
-web::http::http_response ConsulConnection::requestHttp(const web::http::method& mtd, const std::string& path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value* body)
+web::http::http_response ConsulConnection::requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
 {
 	const static char fname[] = "ConsulConnection::requestHttp() ";
 
@@ -821,13 +842,12 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 
 	// Build request URI and start the request.
 	web::uri_builder builder(GET_STRING_T(path));
-	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
-		{
-			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
-		});
+	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair) {
+		builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
+	});
 
 	web::http::http_request request(mtd);
-	for (const auto& h : header)
+	for (const auto &h : header)
 	{
 		request.headers().add(h.first, h.second);
 	}
@@ -845,7 +865,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 		LOG_DBG << fname << mtd << " " << path << " return " << response.status_code();
 		return std::move(response);
 	}
-	catch (const std::exception & ex)
+	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << path << " got exception: " << ex.what();
 	}
@@ -858,7 +878,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method& 
 	return std::move(response);
 }
 
-std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string& kvPath, long long lastIndex, bool recurse)
+std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse)
 {
 	const static char fname[] = "ConsulConnection::blockWatchKv() ";
 
@@ -867,7 +887,7 @@ std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string& kv
 	int waitTimeout = 30;
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
-	config.set_timeout(std::chrono::seconds(waitTimeout));	// set block pull to 30s timeout
+	config.set_timeout(std::chrono::seconds(waitTimeout)); // set block pull to 30s timeout
 	config.set_validate_certificates(false);
 	web::http::client::http_client client(restURL, config);
 
@@ -980,4 +1000,3 @@ void ConsulConnection::watchScheduleThread()
 	}
 	LOG_DBG << fname << "exit";
 }
-

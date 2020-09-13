@@ -6,12 +6,11 @@
 #include "../../common/TimeZoneHelper.h"
 
 ApplicationShortRun::ApplicationShortRun()
-	:m_startInterval(0), m_bufferTime(0), m_timerId(0)
+	: m_startInterval(0), m_bufferTime(0), m_timerId(0)
 {
 	const static char fname[] = "ApplicationShortRun::ApplicationShortRun() ";
 	LOG_DBG << fname << "Entered.";
 }
-
 
 ApplicationShortRun::~ApplicationShortRun()
 {
@@ -19,7 +18,7 @@ ApplicationShortRun::~ApplicationShortRun()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, const web::json::value& jobj)
+void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun> &app, const web::json::value &jobj)
 {
 	std::shared_ptr<Application> fatherApp = app;
 	Application::FromJson(fatherApp, jobj);
@@ -28,7 +27,6 @@ void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun>& app, co
 	app->m_startInterval = duration.parse(app->m_startIntervalValue);
 	assert(app->m_startInterval > 0);
 }
-
 
 void ApplicationShortRun::refreshPid()
 {
@@ -97,7 +95,8 @@ void ApplicationShortRun::invokeNow(int timerId)
 		this->cancleTimer(timerId);
 		return;
 	}
-	if (!isWorkingState()) return;
+	if (!isWorkingState())
+		return;
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// clean old process
 	if (m_process->running())
@@ -114,7 +113,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 			m_process->killgroup();
 		}
 	}
-	
+
 	// check status and daily range
 	if (this->avialable())
 	{
@@ -134,10 +133,12 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_startIntervalValue);
-	if (m_bufferTime) result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
+	if (m_bufferTime)
+		result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_bufferTime);
 	if (returnRuntimeInfo)
 	{
-		if (m_nextLaunchTime != nullptr) result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(Utility::convertTime2Str(*m_nextLaunchTime));
+		if (m_nextLaunchTime != nullptr)
+			result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(Utility::convertTime2Str(*m_nextLaunchTime));
 	}
 	return result;
 }
@@ -192,14 +193,14 @@ void ApplicationShortRun::initTimer()
 	else
 	{
 		const auto timeDiffMilliSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->getStartTime()).count();
-		const int64_t startIntervalMiliseconds = 1000L * this->getStartInterval();	// convert to milliseconds
+		const int64_t startIntervalMiliseconds = 1000L * this->getStartInterval(); // convert to milliseconds
 		firstSleepMilliseconds = startIntervalMiliseconds - (timeDiffMilliSeconds % startIntervalMiliseconds);
 		assert(firstSleepMilliseconds > 0);
 	}
-	firstSleepMilliseconds += 2;	// add 2 miliseconds buffer to avoid 59:59
+	firstSleepMilliseconds += 2; // add 2 miliseconds buffer to avoid 59:59
 	m_timerId = this->registerTimer(firstSleepMilliseconds, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
 	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(now + std::chrono::milliseconds(firstSleepMilliseconds));
-	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::convertTime2Str(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds/1000 << " seconds";
+	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::convertTime2Str(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds / 1000 << " seconds";
 }
 
 int ApplicationShortRun::getStartInterval()
@@ -227,5 +228,6 @@ void ApplicationShortRun::dump()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
-	if (m_nextLaunchTime != nullptr) LOG_DBG << fname << "m_nextLaunchTime:" << Utility::convertTime2Str(*m_nextLaunchTime);
+	if (m_nextLaunchTime != nullptr)
+		LOG_DBG << fname << "m_nextLaunchTime:" << Utility::convertTime2Str(*m_nextLaunchTime);
 }

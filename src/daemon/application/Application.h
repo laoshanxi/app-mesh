@@ -24,7 +24,7 @@ class Application : public TimerHandler
 public:
 	Application();
 	virtual ~Application();
-	virtual bool operator==(const std::shared_ptr<Application>& app);
+	virtual bool operator==(const std::shared_ptr<Application> &app);
 
 	virtual bool avialable();
 	const std::string getName() const;
@@ -32,7 +32,7 @@ public:
 	bool isWorkingState() const;
 	bool attach(int pid);
 
-	static void FromJson(std::shared_ptr<Application>& app, const web::json::value& obj) noexcept(false);
+	static void FromJson(std::shared_ptr<Application> &app, const web::json::value &obj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
 
@@ -46,12 +46,12 @@ public:
 	void onEndEvent(int timerId = 0);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
-	std::string runSyncrize(int timeoutSeconds, void* asyncHttpRequest) noexcept(false);
-	std::string getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished) noexcept(false);
+	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
+	std::string getAsyncRunOutput(const std::string &processUuid, int &exitCode, bool &finished) noexcept(false);
 
 	// health: 0-health, 1-unhealth
 	void setHealth(bool health) { m_health = health; }
-	const std::string& getHealthCheck() { return m_healthCheckCmd; }
+	const std::string &getHealthCheck() { return m_healthCheckCmd; }
 	int getHealth() { return 1 - m_health; }
 	pid_t getpid() const;
 
@@ -61,9 +61,9 @@ public:
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();
 	void setVersion(int version);
-	const std::string& getMetadata() const { return m_metadata; }
-	const std::string& getInitCmd() const { return m_commandLineInit; }
-	const std::shared_ptr<User>& getOwner() const { return m_owner; }
+	const std::string &getMetadata() const { return m_metadata; }
+	const std::string &getInitCmd() const { return m_commandLineInit; }
+	const std::shared_ptr<User> &getOwner() const { return m_owner; }
 	int getOwnerPermission() const { return m_ownerPermission; }
 	bool isCloudApp() const;
 
@@ -71,13 +71,13 @@ protected:
 	// Invoke immediately
 	virtual void invokeNow(int timerId);
 	virtual void refreshPid();
-	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName);
+	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, const std::string &dockerImage, const std::string &appName);
 	bool isInDailyTimeRange();
 	virtual void checkAndUpdateHealth();
 	std::string runApp(int timeoutSeconds) noexcept(false);
 	void handleEndTimer();
 	const std::string getExecUser() const;
-	const std::string& getCmdLine() const;
+	const std::string &getCmdLine() const;
 
 protected:
 	STATUS m_status;

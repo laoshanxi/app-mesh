@@ -1,14 +1,13 @@
 #include "ApplicationPeriodRun.h"
 #include "../process/AppProcess.h"
 #include "../Configuration.h"
-#include  "../../common/Utility.h"
+#include "../../common/Utility.h"
 
 ApplicationPeriodRun::ApplicationPeriodRun()
 {
 	const static char fname[] = "ApplicationPeriodRun::ApplicationPeriodRun() ";
 	LOG_DBG << fname << "Entered.";
 }
-
 
 ApplicationPeriodRun::~ApplicationPeriodRun()
 {
@@ -35,7 +34,7 @@ void ApplicationPeriodRun::checkAndUpdateHealth()
 	Application::checkAndUpdateHealth();
 }
 
-void ApplicationPeriodRun::FromJson(std::shared_ptr<ApplicationPeriodRun>& app, const web::json::value& jobj)
+void ApplicationPeriodRun::FromJson(std::shared_ptr<ApplicationPeriodRun> &app, const web::json::value &jobj)
 {
 	std::shared_ptr<ApplicationShortRun> fatherApp = app;
 	ApplicationShortRun::FromJson(fatherApp, jobj);
@@ -56,7 +55,6 @@ void ApplicationPeriodRun::dump()
 	const static char fname[] = "ApplicationPeriodRun::dump() ";
 
 	ApplicationShortRun::dump();
-	LOG_INF << fname << "keep_running:" << "true";
+	LOG_INF << fname << "keep_running:"
+			<< "true";
 }
-
-

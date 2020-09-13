@@ -11,9 +11,9 @@
 #include "../common/Utility.h"
 
 namespace po = boost::program_options;
-void getListenPort(int& port, bool& sslEnabled);
+void getListenPort(int &port, bool &sslEnabled);
 
-int main(int argc, const char* argv[])
+int main(int argc, const char *argv[])
 {
 	PRINT_VERSION();
 	try
@@ -25,7 +25,7 @@ int main(int argc, const char* argv[])
 		ArgumentParser parser(argc, argv, port, ssl);
 		parser.parse();
 	}
-	catch (const std::exception & e)
+	catch (const std::exception &e)
 	{
 		std::cout << e.what() << std::endl;
 		return -1;
@@ -33,7 +33,7 @@ int main(int argc, const char* argv[])
 	return 0;
 }
 
-void getListenPort(int& port, bool& sslEnabled)
+void getListenPort(int &port, bool &sslEnabled)
 {
 	// Get listen port
 	web::json::value jsonValue;

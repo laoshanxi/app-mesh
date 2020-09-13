@@ -4,12 +4,11 @@
 #include "../../common/Utility.h"
 
 ApplicationUnInitia::ApplicationUnInitia()
-	:m_executed(false)
+	: m_executed(false)
 {
 	const static char fname[] = "ApplicationUnInitia::ApplicationUnInitia() ";
 	LOG_DBG << fname << "Entered.";
 }
-
 
 ApplicationUnInitia::~ApplicationUnInitia()
 {
@@ -17,7 +16,7 @@ ApplicationUnInitia::~ApplicationUnInitia()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationUnInitia::FromJson(std::shared_ptr<ApplicationUnInitia>& app, const web::json::value& jobj)
+void ApplicationUnInitia::FromJson(std::shared_ptr<ApplicationUnInitia> &app, const web::json::value &jobj)
 {
 	const static char fname[] = "ApplicationUnInitia::FromJson() ";
 	LOG_DBG << fname << "Entered.";
@@ -39,10 +38,10 @@ web::json::value ApplicationUnInitia::AsJson(bool returnRuntimeInfo)
 {
 	const static char fname[] = "ApplicationUnInitia::AsJson() ";
 	LOG_DBG << fname << "Entered.";
-	
+
 	// get runtime info
 	auto result = Application::AsJson(returnRuntimeInfo);
-	
+
 	// restore original basic info
 	for (auto obj : m_application.as_object())
 	{

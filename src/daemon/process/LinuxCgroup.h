@@ -10,14 +10,14 @@ class LinuxCgroup
 public:
 	explicit LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long long cpuShares);
 	virtual ~LinuxCgroup();
-	void setCgroup(const std::string& appName, int pid, int index);
+	void setCgroup(const std::string &appName, int pid, int index);
 
 private:
 	void retrieveCgroupHeirarchy();
-	void setPhysicalMemory(const std::string& cgroupPath, long long memLimitBytes);
-	void setSwapMemory(const std::string& cgroupPath, long long memSwapBytes);
-	void setCpuShares(const std::string& cgroupPath, long long cpuShares);
-	void writeFile(const std::string& cgroupPath, long long value);
+	void setPhysicalMemory(const std::string &cgroupPath, long long memLimitBytes);
+	void setSwapMemory(const std::string &cgroupPath, long long memSwapBytes);
+	void setCpuShares(const std::string &cgroupPath, long long cpuShares);
+	void writeFile(const std::string &cgroupPath, long long value);
 
 private:
 	long long m_memLimitMb;

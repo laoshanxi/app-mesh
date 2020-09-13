@@ -9,10 +9,10 @@
 #include "../ResourceCollection.h"
 #include "../../common/Utility.h"
 
-std::shared_ptr<ConsulStatus> ConsulStatus::FromJson(const web::json::value& json)
+std::shared_ptr<ConsulStatus> ConsulStatus::FromJson(const web::json::value &json)
 {
 	auto consul = std::make_shared<ConsulStatus>();
-	for (const auto& app : json.as_object())
+	for (const auto &app : json.as_object())
 	{
 		consul->m_apps[GET_STD_STRING(app.first)] = app.second;
 	}
@@ -22,7 +22,7 @@ std::shared_ptr<ConsulStatus> ConsulStatus::FromJson(const web::json::value& jso
 web::json::value ConsulStatus::AsJson() const
 {
 	auto result = web::json::value::object();
-	for (const auto& app : m_apps)
+	for (const auto &app : m_apps)
 	{
 		result[app.first] = app.second;
 	}
@@ -30,12 +30,12 @@ web::json::value ConsulStatus::AsJson() const
 }
 
 ConsulTask::ConsulTask()
-	:m_replication(0), m_priority(0), m_consulServicePort(0)
+	: m_replication(0), m_priority(0), m_consulServicePort(0)
 {
 	m_condition = std::make_shared<Label>();
 }
 
-std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value& jobj)
+std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value &jobj)
 {
 	auto consul = std::make_shared<ConsulTask>();
 	if (HAS_JSON_FIELD(jobj, "content") && HAS_JSON_FIELD(jobj, "replication") &&
@@ -68,7 +68,8 @@ web::json::value ConsulTask::AsJson() const
 	result["priority"] = web::json::value::number(m_priority);
 	result["port"] = web::json::value::number(m_consulServicePort);
 	result["content"] = m_app->AsJson(false);
-	if (m_condition != nullptr) result["condition"] = m_condition->AsJson();
+	if (m_condition != nullptr)
+		result["condition"] = m_condition->AsJson();
 	return result;
 }
 
@@ -81,23 +82,24 @@ void ConsulTask::dump()
 	m_app->dump();
 }
 
-bool ConsulTask::operator==(const std::shared_ptr<ConsulTask>& task)
+bool ConsulTask::operator==(const std::shared_ptr<ConsulTask> &task)
 {
-	if (!task) return false;
+	if (!task)
+		return false;
 	return m_replication == task->m_replication &&
-		m_priority == task->m_priority &&
-		m_consulServicePort == task->m_consulServicePort &&
-		m_app->operator==(task->m_app) &&
-		m_condition->operator==(task->m_condition);
+		   m_priority == task->m_priority &&
+		   m_consulServicePort == task->m_consulServicePort &&
+		   m_app->operator==(task->m_app) &&
+		   m_condition->operator==(task->m_condition);
 }
 
-std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value& jobj, const std::string& hostName)
+std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value &jobj, const std::string &hostName)
 {
 	auto topology = std::make_shared<ConsulTopology>();
 	topology->m_hostName = hostName;
 	if (jobj.is_array())
 	{
-		for (const auto& app : jobj.as_array())
+		for (const auto &app : jobj.as_array())
 		{
 			auto appName = GET_JSON_STR_VALUE(app, "app");
 			auto appIndex = GET_JSON_INT_VALUE(app, "index");
@@ -111,7 +113,7 @@ web::json::value ConsulTopology::AsJson() const
 {
 	auto result = web::json::value::array(m_scheduleApps.size());
 	std::size_t appIndex = 0;
-	for (const auto& app : m_scheduleApps)
+	for (const auto &app : m_scheduleApps)
 	{
 		auto appJson = web::json::value::object();
 		appJson["app"] = web::json::value::string(app.first);
@@ -121,14 +123,17 @@ web::json::value ConsulTopology::AsJson() const
 	return std::move(result);
 }
 
-bool ConsulTopology::operator==(const std::shared_ptr<ConsulTopology>& topology)
+bool ConsulTopology::operator==(const std::shared_ptr<ConsulTopology> &topology)
 {
-	if (!topology) return false;
-	if (m_scheduleApps.size() != topology->m_scheduleApps.size()) return false;
+	if (!topology)
+		return false;
+	if (m_scheduleApps.size() != topology->m_scheduleApps.size())
+		return false;
 
-	for (const auto& app : m_scheduleApps)
+	for (const auto &app : m_scheduleApps)
 	{
-		if (topology->m_scheduleApps.count(app.first) == 0) return false;
+		if (topology->m_scheduleApps.count(app.first) == 0)
+			return false;
 	}
 	return true;
 }
@@ -136,18 +141,18 @@ bool ConsulTopology::operator==(const std::shared_ptr<ConsulTopology>& topology)
 void ConsulTopology::dump()
 {
 	const static char fname[] = "ConsulTopology::dump() ";
-	for (const auto& app : m_scheduleApps)
+	for (const auto &app : m_scheduleApps)
 	{
 		LOG_DBG << fname << "app:" << app.first << " host:" << m_hostName << " with index:" << app.second;
 	}
 }
 
 ConsulNode::ConsulNode()
-	:m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_free_bytes(0)
+	: m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_free_bytes(0)
 {
 }
 
-std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value& jobj, const std::string& hostName)
+std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value &jobj, const std::string &hostName)
 {
 	auto node = std::make_shared<ConsulNode>();
 	node->m_hostName = hostName;
@@ -170,7 +175,7 @@ std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value& jobj, c
 	return node;
 }
 
-void ConsulNode::assignApp(const std::shared_ptr<Application>& app)
+void ConsulNode::assignApp(const std::shared_ptr<Application> &app)
 {
 	m_assignedApps[app->getName()] = app;
 }

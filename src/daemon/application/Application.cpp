@@ -17,9 +17,7 @@
 #include "../../prom_exporter/gauge.h"
 
 Application::Application()
-	:m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheSize(0), m_endTimerId(0), m_health(true)
-	, m_appId(Utility::createUUID()), m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID)
-	, m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
+	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheSize(0), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID()), m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -32,7 +30,7 @@ Application::~Application()
 	LOG_DBG << fname << "Entered. Application: " << m_name;
 }
 
-bool Application::operator==(const std::shared_ptr<Application>& app)
+bool Application::operator==(const std::shared_ptr<Application> &app)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
@@ -47,21 +45,21 @@ bool Application::operator==(const std::shared_ptr<Application>& app)
 		return false;
 
 	return (this->m_name == app->m_name &&
-		this->m_shellApp == app->m_shellApp &&
-		this->m_commandLine == app->m_commandLine &&
-		this->m_commandLineInit == app->m_commandLineInit &&
-		this->m_commandLineFini == app->m_commandLineFini &&
-		this->m_owner == app->m_owner &&
-		this->m_ownerPermission == app->m_ownerPermission &&
-		this->m_dockerImage == app->m_dockerImage &&
-		this->m_version == app->m_version &&
-		this->m_workdir == app->m_workdir &&
-		this->m_stdoutFile == app->m_stdoutFile &&
-		this->m_healthCheckCmd == app->m_healthCheckCmd &&
-		this->m_posixTimeZone == app->m_posixTimeZone &&
-		this->m_startTime == app->m_startTime &&
-		this->m_endTime == app->m_endTime &&
-		this->m_status == app->m_status);
+			this->m_shellApp == app->m_shellApp &&
+			this->m_commandLine == app->m_commandLine &&
+			this->m_commandLineInit == app->m_commandLineInit &&
+			this->m_commandLineFini == app->m_commandLineFini &&
+			this->m_owner == app->m_owner &&
+			this->m_ownerPermission == app->m_ownerPermission &&
+			this->m_dockerImage == app->m_dockerImage &&
+			this->m_version == app->m_version &&
+			this->m_workdir == app->m_workdir &&
+			this->m_stdoutFile == app->m_stdoutFile &&
+			this->m_healthCheckCmd == app->m_healthCheckCmd &&
+			this->m_posixTimeZone == app->m_posixTimeZone &&
+			this->m_startTime == app->m_startTime &&
+			this->m_endTime == app->m_endTime &&
+			this->m_status == app->m_status);
 }
 
 const std::string Application::getName() const
@@ -81,28 +79,31 @@ bool Application::isWorkingState() const
 	return (m_status == STATUS::ENABLED || m_status == STATUS::DISABLED);
 }
 
-void Application::FromJson(std::shared_ptr<Application>& app, const web::json::value& jobj)
+void Application::FromJson(std::shared_ptr<Application> &app, const web::json::value &jobj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
 	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner));
-	if (ownerStr.length()) app->m_owner = Configuration::instance()->getUserInfo(ownerStr);
+	if (ownerStr.length())
+		app->m_owner = Configuration::instance()->getUserInfo(ownerStr);
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_APP_shell_mode);
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
-	// TODO: consider i18n and  legal file name 
+	// TODO: consider i18n and  legal file name
 	app->m_stdoutFile = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
 	app->m_stdoutCacheSize = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_stdout_cache_size);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheSize);
-	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("command line lengh should less than 2048");
+	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH)
+		throw std::invalid_argument("command line lengh should less than 2048");
 	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_init_command));
 	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_fini_command));
 	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_health_check_cmd));
-	if (app->m_healthCheckCmd.length() >= MAX_COMMAND_LINE_LENGH) throw std::invalid_argument("health check lengh should less than 2048");
+	if (app->m_healthCheckCmd.length() >= MAX_COMMAND_LINE_LENGH)
+		throw std::invalid_argument("health check lengh should less than 2048");
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_working_dir));
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_status))
 	{
-		app->m_status = static_cast<STATUS>GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status);
+		app->m_status = static_cast<STATUS> GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status);
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_daily_limitation))
 	{
@@ -127,9 +128,12 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
 	}
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid)) app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_version)) SET_JSON_INT_VALUE(jobj, JSON_KEY_APP_version, app->m_version);
-	if (app->m_dockerImage.length() == 0 && app->m_commandLine.length() == 0) throw std::invalid_argument("no command line provide");
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
+		app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
+	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_version))
+		SET_JSON_INT_VALUE(jobj, JSON_KEY_APP_version, app->m_version);
+	if (app->m_dockerImage.length() == 0 && app->m_commandLine.length() == 0)
+		throw std::invalid_argument("no command line provide");
 
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time))
 	{
@@ -149,7 +153,8 @@ void Application::FromJson(std::shared_ptr<Application>& app, const web::json::v
 	}
 	if (app->m_endTime.time_since_epoch().count())
 	{
-		if (app->m_startTime > app->m_endTime) throw std::invalid_argument("end_time should greater than the start_time");
+		if (app->m_startTime > app->m_endTime)
+			throw std::invalid_argument("end_time should greater than the start_time");
 		app->handleEndTimer();
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_REG_TIME))
@@ -183,7 +188,8 @@ void Application::refreshPid()
 		}
 		checkAndUpdateHealth();
 	}
-	if (m_metricMemory) m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
+	if (m_metricMemory)
+		m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
 }
 
 bool Application::attach(int pid)
@@ -211,7 +217,8 @@ void Application::invoke()
 				m_process = allocProcess(0, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
-				if (m_metricStartCount) m_metricStartCount->metric().Increment();
+				if (m_metricStartCount)
+					m_metricStartCount->metric().Increment();
 			}
 		}
 		else if (m_process->running())
@@ -239,8 +246,10 @@ void Application::disable()
 		m_return = nullptr;
 		LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	}
-	if (m_process != nullptr) m_process->killgroup();
-	if (m_endTimerId) this->cancleTimer(m_endTimerId);
+	if (m_process != nullptr)
+		m_process->killgroup();
+	if (m_endTimerId)
+		this->cancleTimer(m_endTimerId);
 }
 
 void Application::enable()
@@ -270,7 +279,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 	return runApp(timeoutSeconds);
 }
 
-std::string Application::runSyncrize(int timeoutSeconds, void* asyncHttpRequest)
+std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 {
 	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << " Entered.";
@@ -300,11 +309,13 @@ std::string Application::runApp(int timeoutSeconds)
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
 
-	if (m_metricStartCount) m_metricStartCount->metric().Increment();
+	if (m_metricStartCount)
+		m_metricStartCount->metric().Increment();
 
 	if (m_pid > 0)
 	{
-		if (timeoutSeconds > 0) m_process->regKillTimer(timeoutSeconds, __FUNCTION__);
+		if (timeoutSeconds > 0)
+			m_process->regKillTimer(timeoutSeconds, __FUNCTION__);
 	}
 	else
 	{
@@ -326,7 +337,7 @@ void Application::handleEndTimer()
 		if (m_endTime > now)
 		{
 			m_endTimerId = this->registerTimer(std::chrono::duration_cast<std::chrono::milliseconds>(m_endTime - now).count(),
-				0, std::bind(&Application::onEndEvent, this, std::placeholders::_1), fname);
+											   0, std::bind(&Application::onEndEvent, this, std::placeholders::_1), fname);
 		}
 		else if (m_endTime.time_since_epoch().count())
 		{
@@ -352,13 +363,14 @@ const std::string Application::getExecUser() const
 	}
 }
 
-const std::string& Application::getCmdLine() const
+const std::string &Application::getCmdLine() const
 {
-	if (m_shellAppFile != nullptr) return m_shellAppFile->getShellStartCmd();
+	if (m_shellAppFile != nullptr)
+		return m_shellAppFile->getShellStartCmd();
 	return m_commandLine;
 }
 
-std::string Application::getAsyncRunOutput(const std::string& processUuid, int& exitCode, bool& finished)
+std::string Application::getAsyncRunOutput(const std::string &processUuid, int &exitCode, bool &finished)
 {
 	const static char fname[] = "Application::getAsyncRunOutput() ";
 	finished = false;
@@ -430,12 +442,10 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 		// use uuid in label here to avoid same name app use the same metric cause issue
 		m_metricStartCount = prom->createPromCounter(
 			PROM_METRIC_NAME_appmesh_prom_process_start_count, PROM_METRIC_HELP_appmesh_prom_process_start_count,
-			{ {"application", getName()}, {"id", m_appId} }
-		);
+			{{"application", getName()}, {"id", m_appId}});
 		m_metricMemory = prom->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_memory_gauge, PROM_METRIC_HELP_appmesh_prom_process_memory_gauge,
-			{ {"application", getName()}, {"id", m_appId} }
-		);
+			{{"application", getName()}, {"id", m_appId}});
 	}
 }
 
@@ -462,22 +472,34 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
-	if (m_owner) result[JSON_KEY_APP_owner] = web::json::value::string(m_owner->getName());
-	if (m_ownerPermission) result[JSON_KEY_APP_owner_permission] = web::json::value::number(m_ownerPermission);
-	if (m_shellApp) result[JSON_KEY_APP_shell_mode] = web::json::value::boolean(m_shellApp);
-	if (m_commandLine.length()) result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
-	if (m_commandLineInit.length()) result[GET_STRING_T(JSON_KEY_APP_init_command)] = web::json::value::string(GET_STRING_T(m_commandLineInit));
-	if (m_commandLineFini.length()) result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
-	if (m_healthCheckCmd.length()) result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
-	if (m_workdir.length()) result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
+	if (m_owner)
+		result[JSON_KEY_APP_owner] = web::json::value::string(m_owner->getName());
+	if (m_ownerPermission)
+		result[JSON_KEY_APP_owner_permission] = web::json::value::number(m_ownerPermission);
+	if (m_shellApp)
+		result[JSON_KEY_APP_shell_mode] = web::json::value::boolean(m_shellApp);
+	if (m_commandLine.length())
+		result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
+	if (m_commandLineInit.length())
+		result[GET_STRING_T(JSON_KEY_APP_init_command)] = web::json::value::string(GET_STRING_T(m_commandLineInit));
+	if (m_commandLineFini.length())
+		result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
+	if (m_healthCheckCmd.length())
+		result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
+	if (m_workdir.length())
+		result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
 	result[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(static_cast<int>(m_stdoutCacheSize));
-	if (m_metadata.length()) result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
+	if (m_metadata.length())
+		result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
 	if (returnRuntimeInfo)
 	{
-		if (m_pid > 0) result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
-		if (m_return != nullptr) result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
-		if (m_pid > 0) result[JSON_KEY_APP_memory] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
+		if (m_pid > 0)
+			result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
+		if (m_return != nullptr)
+			result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
+		if (m_pid > 0)
+			result[JSON_KEY_APP_memory] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[JSON_KEY_APP_last_start] = web::json::value::string(Utility::convertTime2Str(m_procStartTime));
 		if (!m_process->containerId().empty())
@@ -499,18 +521,22 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_envMap.size())
 	{
 		web::json::value envs = web::json::value::object();
-		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string>& pair)
-			{
-				envs[GET_STRING_T(pair.first)] = web::json::value::string(GET_STRING_T(pair.second));
-			});
+		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string> &pair) {
+			envs[GET_STRING_T(pair.first)] = web::json::value::string(GET_STRING_T(pair.second));
+		});
 		result[JSON_KEY_APP_env] = envs;
 	}
-	if (m_posixTimeZone.length()) result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
-	if (m_dockerImage.length()) result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
-	if (m_version) result[JSON_KEY_APP_version] = web::json::value::number(m_version);
+	if (m_posixTimeZone.length())
+		result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
+	if (m_dockerImage.length())
+		result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
+	if (m_version)
+		result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 
-	if (m_startTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::convertTime2Str(m_startTime));
-	if (m_endTime.time_since_epoch().count()) result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::convertTime2Str(m_endTime));
+	if (m_startTime.time_since_epoch().count())
+		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::convertTime2Str(m_startTime));
+	if (m_endTime.time_since_epoch().count())
+		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::convertTime2Str(m_endTime));
 	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(Utility::convertTime2Str(m_regTime));
 	return result;
 }
@@ -525,7 +551,8 @@ void Application::dump()
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
-	if (m_owner) LOG_DBG << fname << "m_owner:" << m_owner->getName();
+	if (m_owner)
+		LOG_DBG << fname << "m_owner:" << m_owner->getName();
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
@@ -536,11 +563,13 @@ void Application::dump()
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	LOG_DBG << fname << "m_version:" << m_version;
-	if (m_dailyLimit != nullptr) m_dailyLimit->dump();
-	if (m_resourceLimit != nullptr) m_resourceLimit->dump();
+	if (m_dailyLimit != nullptr)
+		m_dailyLimit->dump();
+	if (m_resourceLimit != nullptr)
+		m_resourceLimit->dump();
 }
 
-std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, const std::string& dockerImage, const std::string& appName)
+std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, const std::string &dockerImage, const std::string &appName)
 {
 	std::shared_ptr<AppProcess> process;
 	m_stdoutFileQueue->enqueue();
@@ -571,8 +600,10 @@ bool Application::isInDailyTimeRange()
 {
 	auto nowClock = std::chrono::system_clock::now();
 	// 1. check date range
-	if (nowClock < m_startTime) return false;
-	if (m_endTime.time_since_epoch().count() && nowClock > m_endTime) return false;
+	if (nowClock < m_startTime)
+		return false;
+	if (m_endTime.time_since_epoch().count() && nowClock > m_endTime)
+		return false;
 	// 2. check daily range
 	if (m_dailyLimit != nullptr)
 	{
@@ -617,7 +648,7 @@ void Application::onSuicideEvent(int timerId)
 	{
 		Configuration::instance()->removeApp(m_name);
 	}
-	catch (const std::exception& e)
+	catch (const std::exception &e)
 	{
 		LOG_ERR << fname << e.what();
 	}

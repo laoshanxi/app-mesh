@@ -11,7 +11,7 @@ class ResourceLimitation;
 //////////////////////////////////////////////////////////////////////////
 /// Process Object
 //////////////////////////////////////////////////////////////////////////
-class AppProcess :public ACE_Process, public TimerHandler
+class AppProcess : public ACE_Process, public TimerHandler
 {
 public:
 	AppProcess();
@@ -21,17 +21,17 @@ public:
 	void detach();
 	virtual pid_t getpid(void) const;
 	virtual void killgroup(int timerId = 0);
-	virtual void setCgroup(std::shared_ptr<ResourceLimitation>& limit);
+	virtual void setCgroup(std::shared_ptr<ResourceLimitation> &limit);
 	const std::string getuuid() const;
 	void regKillTimer(std::size_t timeoutSec, const std::string from);
 	virtual std::string containerId() { return std::string(); };
-	virtual void containerId(std::string containerId) {};
+	virtual void containerId(std::string containerId){};
 
-	std::tuple<std::string, std::string> extractCommand(const std::string& cmd);
+	std::tuple<std::string, std::string> extractCommand(const std::string &cmd);
 
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
-		std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-		std::string stdoutFile);
+							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+							 std::string stdoutFile);
 
 	virtual std::string getOutputMsg();
 	virtual std::string fetchOutputMsg();
@@ -41,6 +41,7 @@ public:
 protected:
 	std::shared_ptr<int> m_returnCode;
 	std::string m_stdoutFileName;
+
 private:
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	int m_killTimerId;

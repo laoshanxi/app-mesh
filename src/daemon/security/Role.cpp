@@ -12,7 +12,7 @@ Roles::~Roles()
 {
 }
 
-std::shared_ptr<Role> Roles::getRole(const std::string& roleName)
+std::shared_ptr<Role> Roles::getRole(const std::string &roleName)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto role = m_roles.find(roleName);
@@ -37,7 +37,7 @@ web::json::value Roles::AsJson() const
 	return result;
 }
 
-const std::shared_ptr<Roles> Roles::FromJson(const web::json::value& obj)
+const std::shared_ptr<Roles> Roles::FromJson(const web::json::value &obj)
 {
 	std::shared_ptr<Roles> roles = std::make_shared<Roles>();
 	auto rolesJson = obj.as_object();
@@ -50,7 +50,7 @@ const std::shared_ptr<Roles> Roles::FromJson(const web::json::value& obj)
 	return roles;
 }
 
-void Roles::addRole(const web::json::value& obj, std::string name)
+void Roles::addRole(const web::json::value &obj, std::string name)
 {
 	web::json::value result = web::json::value::object();
 	result[name] = obj;
@@ -77,7 +77,7 @@ void Roles::delRole(std::string name)
 //////////////////////////////////////////////////////////////////////
 /// Role
 //////////////////////////////////////////////////////////////////////
-Role::Role(const std::string& name) :m_name(name)
+Role::Role(const std::string &name) : m_name(name)
 {
 }
 
@@ -98,14 +98,15 @@ web::json::value Role::AsJson() const
 	return rolePermissions;
 }
 
-std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value& obj)
+std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value &obj)
 {
 	auto role = std::make_shared<Role>(roleName);
 	auto permissions = obj.as_array();
 	for (auto permmisionJson : permissions)
 	{
 		auto perm = permmisionJson.as_string();
-		if (perm.length()) role->m_permissions.insert(perm);
+		if (perm.length())
+			role->m_permissions.insert(perm);
 	}
 	return role;
 }

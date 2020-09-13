@@ -7,12 +7,11 @@
 #include "MonitoredProcess.h"
 #include "../ResourceLimitation.h"
 
-DockerProcess::DockerProcess(const std::string& dockerImage, const std::string& appName)
+DockerProcess::DockerProcess(const std::string &dockerImage, const std::string &appName)
 	: m_dockerImage(dockerImage),
-	m_appName(appName), m_lastFetchTime(std::chrono::system_clock::now())
+	  m_appName(appName), m_lastFetchTime(std::chrono::system_clock::now())
 {
 }
-
 
 DockerProcess::~DockerProcess()
 {
@@ -109,9 +108,11 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 			dockerCommand += " -e ";
 			dockerCommand += env.first;
 			dockerCommand += "=";
-			if (containSpace) dockerCommand.append("'");
+			if (containSpace)
+				dockerCommand.append("'");
 			dockerCommand += env.second;
-			if (containSpace) dockerCommand.append("'");
+			if (containSpace)
+				dockerCommand.append("'");
 		}
 	}
 	if (limit != nullptr)
@@ -220,7 +221,8 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 	const static char fname[] = "DockerProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	if (m_spawnThread != nullptr) return ACE_INVALID_PID;
+	if (m_spawnThread != nullptr)
+		return ACE_INVALID_PID;
 
 	struct SpawnParams
 	{
@@ -242,11 +244,10 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 	param->thisProc = std::dynamic_pointer_cast<DockerProcess>(this->shared_from_this());
 
 	m_spawnThread = std::make_shared<std::thread>(
-		[param, stdoutFile]()
-		{
+		[param, stdoutFile]() {
 			const static char fname[] = "DockerProcess::m_spawnThread() ";
 			LOG_DBG << fname << "Entered";
-			param->barrier->wait();	// wait here for m_spawnThread->detach() finished
+			param->barrier->wait(); // wait here for m_spawnThread->detach() finished
 
 			// use try catch to avoid throw from syncSpawnProcess crash
 			try
@@ -260,8 +261,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 			param->thisProc->m_spawnThread = nullptr;
 			param->thisProc = nullptr;
 			LOG_DBG << fname << "Exited";
-		}
-	);
+		});
 	m_spawnThread->detach();
 	param->barrier->wait();
 	// TBD: Docker app should not support short running here, since short running have kill and bellow attach is not real pid

@@ -9,7 +9,7 @@
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest(std::string ipaddress, int port)
-	:m_promEnabled(false), m_scrapeCounter(0)
+	: m_promEnabled(false), m_scrapeCounter(0)
 {
 	const static char fname[] = "PrometheusRest::PrometheusRest() ";
 	m_promRegistry = std::make_shared<prometheus::Registry>();
@@ -71,43 +71,44 @@ void PrometheusRest::open()
 
 void PrometheusRest::close()
 {
-	if (m_listener != nullptr) m_listener->close().wait();
+	if (m_listener != nullptr)
+		m_listener->close().wait();
 }
 
-void PrometheusRest::handle_get(const HttpRequest& message)
+void PrometheusRest::handle_get(const HttpRequest &message)
 {
 	REST_INFO_PRINT;
 	handleRest(message, m_restGetFunctions);
 }
 
-void PrometheusRest::handle_put(const HttpRequest& message)
+void PrometheusRest::handle_put(const HttpRequest &message)
 {
 	REST_INFO_PRINT;
 	handleRest(message, m_restPutFunctions);
 }
 
-void PrometheusRest::handle_post(const HttpRequest& message)
+void PrometheusRest::handle_post(const HttpRequest &message)
 {
 	REST_INFO_PRINT;
 	handleRest(message, m_restPstFunctions);
 }
 
-void PrometheusRest::handle_delete(const HttpRequest& message)
+void PrometheusRest::handle_delete(const HttpRequest &message)
 {
 	REST_INFO_PRINT;
 	handleRest(message, m_restDelFunctions);
 }
 
-void PrometheusRest::handle_options(const HttpRequest& message)
+void PrometheusRest::handle_options(const HttpRequest &message)
 {
 	message.reply(status_codes::OK);
 }
 
-void PrometheusRest::handleRest(const http_request& message, const std::map<std::string, std::function<void(const HttpRequest&)>>& restFunctions)
+void PrometheusRest::handleRest(const http_request &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
 {
 	static char fname[] = "PrometheusRest::handle_rest() ";
 
-	std::function<void(const HttpRequest&)> stdFunction;
+	std::function<void(const HttpRequest &)> stdFunction;
 	auto path = Utility::stringReplace(GET_STD_STRING(message.relative_uri().path()), "//", "/");
 
 	const auto request = std::move(HttpRequest(message));
@@ -119,7 +120,7 @@ void PrometheusRest::handleRest(const http_request& message, const std::map<std:
 	}
 
 	bool findRest = false;
-	for (const auto& kvp : restFunctions)
+	for (const auto &kvp : restFunctions)
 	{
 		if (path == kvp.first || boost::regex_match(path, boost::regex(kvp.first)))
 		{
@@ -138,7 +139,7 @@ void PrometheusRest::handleRest(const http_request& message, const std::map<std:
 	{
 		stdFunction(request);
 	}
-	catch (const std::exception& e)
+	catch (const std::exception &e)
 	{
 		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
 		request.reply(web::http::status_codes::BadRequest, e.what());
@@ -150,7 +151,7 @@ void PrometheusRest::handleRest(const http_request& message, const std::map<std:
 	}
 }
 
-void PrometheusRest::bindRestMethod(web::http::method method, std::string path, std::function< void(const HttpRequest&)> func)
+void PrometheusRest::bindRestMethod(web::http::method method, std::string path, std::function<void(const HttpRequest &)> func)
 {
 	static char fname[] = "PrometheusRest::bindRest() ";
 
@@ -169,7 +170,7 @@ void PrometheusRest::bindRestMethod(web::http::method method, std::string path, 
 		LOG_ERR << fname << GET_STD_STRING(method).c_str() << " not supported.";
 }
 
-void PrometheusRest::handle_error(pplx::task<void>& t)
+void PrometheusRest::handle_error(pplx::task<void> &t)
 {
 	const static char fname[] = "PrometheusRest::handle_error() ";
 
@@ -177,7 +178,7 @@ void PrometheusRest::handle_error(pplx::task<void>& t)
 	{
 		t.get();
 	}
-	catch (const std::exception& e)
+	catch (const std::exception &e)
 	{
 		LOG_ERR << fname << e.what();
 	}
@@ -193,28 +194,27 @@ void PrometheusRest::initMetrics()
 	m_scrapeCounter = createPromCounter(
 		PROM_METRIC_NAME_appmesh_prom_scrape_count,
 		PROM_METRIC_HELP_appmesh_prom_scrape_count,
-		{}
-	);
+		{});
 	// Const Gauge counter
 	m_promGauge = createPromGauge(
 		PROM_METRIC_NAME_appmesh_prom_scrape_up,
 		PROM_METRIC_HELP_appmesh_prom_scrape_up,
-		{}
-	);
-	if (m_promGauge) m_promGauge->metric().Set(1);
+		{});
+	if (m_promGauge)
+		m_promGauge->metric().Set(1);
 }
 
-
-
-std::shared_ptr<CounterPtr> PrometheusRest::createPromCounter(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
+std::shared_ptr<CounterPtr> PrometheusRest::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
 {
-	if (!m_promEnabled) return nullptr;
+	if (!m_promEnabled)
+		return nullptr;
 	return std::make_shared<CounterPtr>(m_promRegistry, metricName, metricHelp, labels);
 }
 
-std::shared_ptr<GaugePtr> PrometheusRest::createPromGauge(const std::string& metricName, const std::string& metricHelp, const std::map<std::string, std::string>& labels)
+std::shared_ptr<GaugePtr> PrometheusRest::createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
 {
-	if (!m_promEnabled) return nullptr;
+	if (!m_promEnabled)
+		return nullptr;
 	return std::make_shared<GaugePtr>(m_promRegistry, metricName, metricHelp, labels);
 }
 
@@ -225,28 +225,29 @@ const std::string PrometheusRest::collectData()
 	return std::move(promSerializer->Serialize(m_promRegistry->Collect()));
 }
 
-void PrometheusRest::apiMetrics(const HttpRequest& message)
+void PrometheusRest::apiMetrics(const HttpRequest &message)
 {
 	const static char fname[] = "PrometheusRest::apiMetrics() ";
 	LOG_DBG << fname << "Entered";
 
-	if (m_scrapeCounter) m_scrapeCounter->metric().Increment();
+	if (m_scrapeCounter)
+		m_scrapeCounter->metric().Increment();
 
 	message.reply(status_codes::OK, collectData(), "text/plain; version=0.0.4");
 }
 
-CounterPtr::CounterPtr(std::shared_ptr<prometheus::Registry> retistry, const std::string& name, const std::string& help, std::map<std::string, std::string> label)
-	:m_metric(nullptr), m_family(nullptr), m_promRegistry(retistry), m_name(name), m_help(help), m_label(label)
+CounterPtr::CounterPtr(std::shared_ptr<prometheus::Registry> retistry, const std::string &name, const std::string &help, std::map<std::string, std::string> label)
+	: m_metric(nullptr), m_family(nullptr), m_promRegistry(retistry), m_name(name), m_help(help), m_label(label)
 {
 	const static char fname[] = "CounterPtr::CounterPtr() ";
 
-	std::map<std::string, std::string> commonLabels = { {"host", MY_HOST_NAME}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
+	std::map<std::string, std::string> commonLabels = {{"host", MY_HOST_NAME}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}};
 	commonLabels.insert(label.begin(), label.end());
 
-	auto& family = prometheus::BuildCounter()
-		.Name(m_name)
-		.Help(help)
-		.Register(*m_promRegistry);
+	auto &family = prometheus::BuildCounter()
+					   .Name(m_name)
+					   .Help(help)
+					   .Register(*m_promRegistry);
 	m_family = &family;
 	m_metric = &((family.Add(commonLabels)));
 
@@ -260,23 +261,23 @@ CounterPtr::~CounterPtr()
 	LOG_DBG << fname << "metric " << m_name << " removed";
 }
 
-prometheus::Counter& CounterPtr::metric()
+prometheus::Counter &CounterPtr::metric()
 {
 	return *m_metric;
 }
 
-GaugePtr::GaugePtr(std::shared_ptr<prometheus::Registry> retistry, const std::string& name, const std::string& help, std::map<std::string, std::string> label)
-	:m_metric(nullptr), m_family(nullptr), m_promRegistry(retistry), m_name(name), m_help(help), m_label(label)
+GaugePtr::GaugePtr(std::shared_ptr<prometheus::Registry> retistry, const std::string &name, const std::string &help, std::map<std::string, std::string> label)
+	: m_metric(nullptr), m_family(nullptr), m_promRegistry(retistry), m_name(name), m_help(help), m_label(label)
 {
 	const static char fname[] = "GaugePtr::GaugePtr() ";
 
-	std::map<std::string, std::string> commonLabels = { {"host", MY_HOST_NAME}, {"pid", std::to_string(ResourceCollection::instance()->getPid())} };
+	std::map<std::string, std::string> commonLabels = {{"host", MY_HOST_NAME}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}};
 	commonLabels.insert(label.begin(), label.end());
 
-	auto& family = prometheus::BuildGauge()
-		.Name(m_name)
-		.Help(help)
-		.Register(*m_promRegistry);
+	auto &family = prometheus::BuildGauge()
+					   .Name(m_name)
+					   .Help(help)
+					   .Register(*m_promRegistry);
 	m_family = &family;
 	m_metric = &((family.Add(commonLabels)));
 
@@ -290,7 +291,7 @@ GaugePtr::~GaugePtr()
 	LOG_DBG << fname << "metric " << m_name << " removed";
 }
 
-prometheus::Gauge& GaugePtr::metric()
+prometheus::Gauge &GaugePtr::metric()
 {
 	return *m_metric;
 }

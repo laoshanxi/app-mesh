@@ -6,7 +6,7 @@
 #include "../common/PerfLog.h"
 
 HealthCheckTask::HealthCheckTask()
-	:m_timerId(0)
+	: m_timerId(0)
 {
 }
 
@@ -22,8 +22,7 @@ void HealthCheckTask::initTimer()
 		1000L * 2,
 		DEFAULT_HEALTH_CHECK_INTERVAL,
 		std::bind(&HealthCheckTask::healthCheckTimer, this, std::placeholders::_1),
-		__FUNCTION__
-	);
+		__FUNCTION__);
 }
 
 void HealthCheckTask::healthCheckTimer(int timerId)
@@ -31,9 +30,10 @@ void HealthCheckTask::healthCheckTimer(int timerId)
 	const static char fname[] = "HealthCheckTask::healthCheckTimer() ";
 	PerfLog perf(fname);
 	auto apps = Configuration::instance()->getApps();
-	for (auto& app : apps)
+	for (auto &app : apps)
 	{
-		if (app->getHealthCheck().empty()) continue;
+		if (app->getHealthCheck().empty())
+			continue;
 		try
 		{
 			if (app->avialable())
@@ -52,7 +52,7 @@ void HealthCheckTask::healthCheckTimer(int timerId)
 				app->setHealth(false);
 			}
 		}
-		catch (const std::exception & ex)
+		catch (const std::exception &ex)
 		{
 			LOG_WAR << fname << app->getName() << "check got exception: " << ex.what();
 		}
@@ -63,7 +63,7 @@ void HealthCheckTask::healthCheckTimer(int timerId)
 	}
 }
 
-std::shared_ptr<HealthCheckTask>& HealthCheckTask::instance()
+std::shared_ptr<HealthCheckTask> &HealthCheckTask::instance()
 {
 	static auto singleton = std::make_shared<HealthCheckTask>();
 	return singleton;

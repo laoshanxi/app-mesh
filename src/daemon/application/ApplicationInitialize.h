@@ -14,7 +14,7 @@ public:
 	ApplicationInitialize();
 	virtual ~ApplicationInitialize();
 
-	static void FromJson(std::shared_ptr<ApplicationInitialize>& app, const web::json::value& jobj) noexcept(false);
+	static void FromJson(std::shared_ptr<ApplicationInitialize> &app, const web::json::value &jobj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	virtual void dump() override;
 

@@ -9,10 +9,10 @@ class MonitoredProcess;
 //////////////////////////////////////////////////////////////////////////
 /// Docker Process Object
 //////////////////////////////////////////////////////////////////////////
-class DockerProcess :public AppProcess
+class DockerProcess : public AppProcess
 {
 public:
-	DockerProcess(const std::string& dockerImage, const std::string& appName);
+	DockerProcess(const std::string &dockerImage, const std::string &appName);
 	virtual ~DockerProcess();
 
 	// override with docker behavior

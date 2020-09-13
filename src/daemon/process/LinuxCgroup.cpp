@@ -3,12 +3,11 @@
 #include <mntent.h>
 #include "../../common/Utility.h"
 
-
 std::string LinuxCgroup::cgroupMemRootName;
 std::string LinuxCgroup::cgroupCpuRootName;
 const std::string LinuxCgroup::cgroupBaseDir = "/appmesh";
 LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long long cpuShares)
-	:m_memLimitMb(memLimitBytes), m_memSwapMb(memSwapBytes), m_cpuShares(cpuShares), m_pid(0), cgroupEnabled(false)
+	: m_memLimitMb(memLimitBytes), m_memSwapMb(memSwapBytes), m_cpuShares(cpuShares), m_pid(0), cgroupEnabled(false)
 {
 	const static char fname[] = "LinuxCgroup::LinuxCgroup() ";
 
@@ -41,7 +40,10 @@ LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long l
 		cgroupMemRootName += cgroupBaseDir;
 		cgroupCpuRootName += cgroupBaseDir;
 	}
-	if (!swapLimitSupport) { m_memSwapMb = 0; }
+	if (!swapLimitSupport)
+	{
+		m_memSwapMb = 0;
+	}
 }
 
 LinuxCgroup::~LinuxCgroup()
@@ -59,9 +61,10 @@ LinuxCgroup::~LinuxCgroup()
 	}
 }
 
-void LinuxCgroup::setCgroup(const std::string& appName, int pid, int index)
+void LinuxCgroup::setCgroup(const std::string &appName, int pid, int index)
 {
-	if (!cgroupEnabled) return;
+	if (!cgroupEnabled)
+		return;
 
 	m_pid = pid;
 	cgroupMemoryPath = cgroupMemRootName + "/" + appName + "/" + std::to_string(index);
@@ -88,16 +91,16 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 	const static char fname[] = "LinuxCgroup::retrieveCgroupHeirarchy() ";
 
 	// mount -t cgroup
-	FILE* fp = fopen("/proc/mounts", "r");
+	FILE *fp = fopen("/proc/mounts", "r");
 	if (nullptr == fp)
 	{
 		LOG_ERR << fname << "Get file stream failed with error : " << std::strerror(errno);
 		return;
 	}
 
-	struct mntent* entPtr = nullptr;
+	struct mntent *entPtr = nullptr;
 	struct mntent entObj;
-	char buffer[4094] = { 0 };
+	char buffer[4094] = {0};
 	while (nullptr != (entPtr = getmntent_r(fp, &entObj, buffer, sizeof(buffer))))
 	{
 		if (std::string("cgroup") != entObj.mnt_type)
@@ -128,10 +131,11 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 			LOG_DBG << fname << "Get cpu hierarchy dir : " << cgroupCpuRootName;
 		}
 	}
-	if (fp)	fclose(fp);
+	if (fp)
+		fclose(fp);
 }
 
-void LinuxCgroup::setPhysicalMemory(const std::string& cgroupPath, long long memLimitBytes)
+void LinuxCgroup::setPhysicalMemory(const std::string &cgroupPath, long long memLimitBytes)
 {
 	std::string specifiedHeirarchy = cgroupPath + "/" + "memory.limit_in_bytes";
 	writeFile(specifiedHeirarchy, memLimitBytes);
@@ -140,7 +144,7 @@ void LinuxCgroup::setPhysicalMemory(const std::string& cgroupPath, long long mem
 	writeFile(tasksHeirarchy, m_pid);
 }
 
-void LinuxCgroup::setSwapMemory(const std::string& cgroupPath, long long memSwapBytes)
+void LinuxCgroup::setSwapMemory(const std::string &cgroupPath, long long memSwapBytes)
 {
 	std::string specifiedHeirarchy = cgroupPath + "/" + "memory.memsw.limit_in_bytes";
 	writeFile(specifiedHeirarchy, memSwapBytes);
@@ -149,7 +153,7 @@ void LinuxCgroup::setSwapMemory(const std::string& cgroupPath, long long memSwap
 	writeFile(tasksHeirarchy, m_pid);
 }
 
-void LinuxCgroup::setCpuShares(const std::string& cgroupPath, long long cpuShares)
+void LinuxCgroup::setCpuShares(const std::string &cgroupPath, long long cpuShares)
 {
 	std::string specifiedHeirarchy = cgroupPath + "/" + "cpu.shares";
 	writeFile(specifiedHeirarchy, cpuShares);
@@ -158,11 +162,11 @@ void LinuxCgroup::setCpuShares(const std::string& cgroupPath, long long cpuShare
 	writeFile(tasksHeirarchy, m_pid);
 }
 
-void LinuxCgroup::writeFile(const std::string& cgroupPath, long long value)
+void LinuxCgroup::writeFile(const std::string &cgroupPath, long long value)
 {
 	const static char fname[] = "LinuxCgroup::writeFile() ";
 
-	FILE* fp = fopen(cgroupPath.c_str(), "w+");
+	FILE *fp = fopen(cgroupPath.c_str(), "w+");
 	if (fp)
 	{
 		if (fprintf(fp, "%lld", value))

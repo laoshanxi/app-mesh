@@ -6,7 +6,7 @@
 #include "../../common/HttpRequest.h"
 
 MonitoredProcess::MonitoredProcess(bool enableBuildinThread)
-	:m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
+	: m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
 {
 }
 
@@ -16,20 +16,22 @@ MonitoredProcess::~MonitoredProcess()
 
 	if (m_httpRequest)
 	{
-		std::unique_ptr<HttpRequest> response(static_cast<HttpRequest*>(m_httpRequest));
+		std::unique_ptr<HttpRequest> response(static_cast<HttpRequest *>(m_httpRequest));
 		m_httpRequest = nullptr;
 	}
-	if (m_thread != nullptr) m_thread->join();
+	if (m_thread != nullptr)
+		m_thread->join();
 
 	LOG_DBG << fname << "Process <" << this->getpid() << "> released";
 }
 
-pid_t MonitoredProcess::spawn(ACE_Process_Options & option)
+pid_t MonitoredProcess::spawn(ACE_Process_Options &option)
 {
 	auto rt = AppProcess::spawn(option);
 
 	// Start thread to read stdout/stderr stream
-	if (m_enableBuildinThread) m_thread = std::make_unique<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
+	if (m_enableBuildinThread)
+		m_thread = std::make_unique<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
 
 	return rt;
 }
@@ -64,7 +66,7 @@ void MonitoredProcess::runPipeReaderThread()
 			web::http::http_response resp(web::http::status_codes::OK);
 			resp.set_body(this->fetchOutputMsg());
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->return_value());
-			std::unique_ptr<HttpRequest> response(static_cast<HttpRequest*>(m_httpRequest));
+			std::unique_ptr<HttpRequest> response(static_cast<HttpRequest *>(m_httpRequest));
 			m_httpRequest = nullptr;
 			if (nullptr != response)
 			{

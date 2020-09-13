@@ -15,7 +15,7 @@ public:
 	ApplicationShortRun();
 	virtual ~ApplicationShortRun();
 
-	static void FromJson(std::shared_ptr<ApplicationShortRun>& app, const web::json::value& jobj) noexcept(false);
+	static void FromJson(std::shared_ptr<ApplicationShortRun> &app, const web::json::value &jobj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	virtual void dump() override;
 

@@ -8,24 +8,25 @@
 
 class Application;
 class Label;
-struct ConsulStatus {
-	static std::shared_ptr<ConsulStatus> FromJson(const web::json::value& json);
+struct ConsulStatus
+{
+	static std::shared_ptr<ConsulStatus> FromJson(const web::json::value &json);
 	web::json::value AsJson() const;
 
 	std::map<std::string, web::json::value> m_apps;
 };
 
-struct ConsulNode {
+struct ConsulNode
+{
 	ConsulNode();
-	static std::shared_ptr<ConsulNode> FromJson(const web::json::value& jobj, const std::string& hostName);
+	static std::shared_ptr<ConsulNode> FromJson(const web::json::value &jobj, const std::string &hostName);
 
 	/// @brief For schedule sort
-	/// @param app 
-	void assignApp(const std::shared_ptr<Application>& app);
+	/// @param app
+	void assignApp(const std::shared_ptr<Application> &app);
 	/// @brief For schedule sort
-	/// @return 
+	/// @return
 	uint64_t getAssignedAppMem() const;
-
 
 	std::shared_ptr<Label> m_label;
 	// CPU
@@ -37,12 +38,13 @@ struct ConsulNode {
 	std::map<std::string, std::shared_ptr<Application>> m_assignedApps;
 };
 
-struct ConsulTask {
+struct ConsulTask
+{
 	ConsulTask();
-	static std::shared_ptr<ConsulTask> FromJson(const web::json::value& jobj);
+	static std::shared_ptr<ConsulTask> FromJson(const web::json::value &jobj);
 	web::json::value AsJson() const;
 	void dump();
-	bool operator==(const std::shared_ptr<ConsulTask>& task);
+	bool operator==(const std::shared_ptr<ConsulTask> &task);
 
 	std::size_t m_replication;
 	std::shared_ptr<Application> m_app;
@@ -60,10 +62,11 @@ struct ConsulTask {
 	std::set<int> m_taskIndexDic;
 };
 
-struct ConsulTopology {
-	static std::shared_ptr<ConsulTopology> FromJson(const web::json::value& jobj, const std::string& hostName);
+struct ConsulTopology
+{
+	static std::shared_ptr<ConsulTopology> FromJson(const web::json::value &jobj, const std::string &hostName);
 	web::json::value AsJson() const;
-	bool operator==(const std::shared_ptr<ConsulTopology>& topology);
+	bool operator==(const std::shared_ptr<ConsulTopology> &topology);
 	void dump();
 
 	/// @brief Topology is organized by host for performance consideration
