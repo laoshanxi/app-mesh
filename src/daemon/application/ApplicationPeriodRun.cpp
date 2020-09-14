@@ -55,6 +55,5 @@ void ApplicationPeriodRun::dump()
 	const static char fname[] = "ApplicationPeriodRun::dump() ";
 
 	ApplicationShortRun::dump();
-	LOG_INF << fname << "keep_running:"
-			<< "true";
+	LOG_DBG << fname << "keep_running:true";
 }
