@@ -12,6 +12,7 @@ using namespace web::http::client;	  // HTTP client features
 using namespace concurrency::streams; // Asynchronous streams
 
 namespace po = boost::program_options;
+class ACE_Sig_Action;
 
 //////////////////////////////////////////////////////////////////////////
 // Command Line arguments parse and request/print
@@ -45,12 +46,16 @@ private:
 	void processLockUser();
 	void processEncryptUserPwd();
 
-	http_response requestHttp(const method &mtd, const std::string &path);
-	http_response requestHttp(const method &mtd, const std::string &path, web::json::value &body);
-	http_response requestHttp(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body = nullptr, std::map<std::string, std::string> *header = nullptr);
+public:
+	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path);
+	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value &body);
+	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body = nullptr, std::map<std::string, std::string> *header = nullptr);
 	http_request createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> *header);
 
+private:
 	std::string getAuthenToken();
+	std::string getAuthenUser();
+	std::string getOsUser();
 	std::string readAuthenToken();
 	std::string requestToken(const std::string &user, const std::string &passwd);
 
@@ -63,6 +68,8 @@ private:
 	void setStdinEcho(bool enable = true);
 	bool confirmInput(const char *msg);
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
+	void regSignal();
+	void unregSignal();
 
 private:
 	po::variables_map m_commandLineVariables;
@@ -73,4 +80,5 @@ private:
 	std::string m_hostname;
 	std::string m_username;
 	std::string m_userpwd;
+	std::shared_ptr<ACE_Sig_Action> m_sigAction;
 };

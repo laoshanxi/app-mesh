@@ -30,42 +30,47 @@
 #include "process.hpp"
 #include "../../common//Utility.h"
 
+namespace os
+{
 
-namespace os {
-
-	inline std::list<std::string> ls(const std::string& directory)
+	inline std::list<std::string> ls(const std::string &directory)
 	{
 		const static char fname[] = "os::ls() ";
 
-		DIR* dir = opendir(directory.c_str());
+		DIR *dir = opendir(directory.c_str());
 
-		if (dir == nullptr) {
+		if (dir == nullptr)
+		{
 			LOG_WAR << fname << "Failed to opendir:" << directory;
 			return std::list<std::string>();
 		}
 
 		std::list<std::string> result;
-		struct dirent* entry;
+		struct dirent *entry;
 
 		// Zero `errno` before starting to call `readdir`. This is necessary
 		// to allow us to determine when `readdir` returns an error.
 		errno = 0;
 
-		while ((entry = readdir(dir)) != nullptr) {
-			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+		while ((entry = readdir(dir)) != nullptr)
+		{
+			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			{
 				continue;
 			}
 			result.push_back(entry->d_name);
 		}
 
-		if (errno != 0) {
+		if (errno != 0)
+		{
 			// Preserve `readdir` error.
 			LOG_WAR << fname << "Failed to read directory:" << directory;
 			closedir(dir);
 			return std::list<std::string>();
 		}
 
-		if (closedir(dir) == -1) {
+		if (closedir(dir) == -1)
+		{
 			LOG_WAR << fname << "Failed to read close:" << directory;
 		}
 
@@ -80,7 +85,7 @@ namespace os {
 	{
 		ProcessStatus(
 			pid_t _pid,
-			const std::string& _comm,
+			const std::string &_comm,
 			char _state,
 			pid_t _ppid,
 			pid_t _pgrp,
@@ -115,40 +120,40 @@ namespace os {
 			unsigned long _nswap,
 			unsigned long _cnswap)
 			: pid(_pid),
-			comm(_comm),
-			state(_state),
-			ppid(_ppid),
-			pgrp(_pgrp),
-			session(_session),
-			tty_nr(_tty_nr),
-			tpgid(_tpgid),
-			flags(_flags),
-			minflt(_minflt),
-			cminflt(_cminflt),
-			majflt(_majflt),
-			cmajflt(_cmajflt),
-			utime(_utime),
-			stime(_stime),
-			cutime(_cutime),
-			cstime(_cstime),
-			priority(_priority),
-			nice(_nice),
-			num_threads(_num_threads),
-			itrealvalue(_itrealvalue),
-			starttime(_starttime),
-			vsize(_vsize),
-			rss(_rss),
-			rsslim(_rsslim),
-			startcode(_startcode),
-			endcode(_endcode),
-			startstack(_startstack),
-			kstkeip(_kstkeip),
-			signal(_signal),
-			blocked(_blocked),
-			sigcatch(_sigcatch),
-			wchan(_wchan),
-			nswap(_nswap),
-			cnswap(_cnswap) {}
+			  comm(_comm),
+			  state(_state),
+			  ppid(_ppid),
+			  pgrp(_pgrp),
+			  session(_session),
+			  tty_nr(_tty_nr),
+			  tpgid(_tpgid),
+			  flags(_flags),
+			  minflt(_minflt),
+			  cminflt(_cminflt),
+			  majflt(_majflt),
+			  cmajflt(_cmajflt),
+			  utime(_utime),
+			  stime(_stime),
+			  cutime(_cutime),
+			  cstime(_cstime),
+			  priority(_priority),
+			  nice(_nice),
+			  num_threads(_num_threads),
+			  itrealvalue(_itrealvalue),
+			  starttime(_starttime),
+			  vsize(_vsize),
+			  rss(_rss),
+			  rsslim(_rsslim),
+			  startcode(_startcode),
+			  endcode(_endcode),
+			  startstack(_startstack),
+			  kstkeip(_kstkeip),
+			  signal(_signal),
+			  blocked(_blocked),
+			  sigcatch(_sigcatch),
+			  wchan(_wchan),
+			  nswap(_nswap),
+			  cnswap(_cnswap) {}
 
 		const pid_t pid;
 		const std::string comm;
@@ -187,17 +192,18 @@ namespace os {
 		const unsigned long cnswap;
 	};
 
-
 	// Returns the process statistics from /proc/[pid]/stat.
 	// The return value is None if the process does not exist.
 	inline std::shared_ptr<ProcessStatus> status(pid_t pid)
 	{
 		const static char fname[] = "proc::status() ";
-		if (pid <= 0) return nullptr;
+		if (pid <= 0)
+			return nullptr;
 		std::string path = "/proc/" + std::to_string(pid) + "/stat";
 
 		std::string read = Utility::readFile(path);
-		if (read.length() == 0) {
+		if (read.length() == 0)
+		{
 			return nullptr;
 		}
 
@@ -249,20 +255,17 @@ namespace os {
 
 		std::string _; // For ignoring fields.
 
-					   // Parse all fields from stat.
-		data >> _ >> comm >> state >> ppid >> pgrp >> session >> tty_nr
-			>> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt
-			>> utime >> stime >> cutime >> cstime >> priority >> nice
-			>> num_threads >> itrealvalue >> starttime >> vsize >> rss
-			>> rsslim >> startcode >> endcode >> startstack >> kstkeip
-			>> signal >> blocked >> sigcatch >> wchan >> nswap >> cnswap;
+		// Parse all fields from stat.
+		data >> _ >> comm >> state >> ppid >> pgrp >> session >> tty_nr >> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >> stime >> cutime >> cstime >> priority >> nice >> num_threads >> itrealvalue >> starttime >> vsize >> rss >> rsslim >> startcode >> endcode >> startstack >> kstkeip >> signal >> blocked >> sigcatch >> wchan >> nswap >> cnswap;
 
 		// Check for any read/parse errors.
-		if (data.fail() && !data.eof()) {
+		if (data.fail() && !data.eof())
+		{
 			LOG_WAR << fname << "Failed to read/parse:" << path;
 			return nullptr;
 		}
-		if (comm.length() > MAX_COMMAND_LINE_LENGH) {
+		if (comm.length() > MAX_COMMAND_LINE_LENGH)
+		{
 			LOG_WAR << fname << "invalid length of process command";
 			return nullptr;
 		}
@@ -273,29 +276,30 @@ namespace os {
 		comm = Utility::stdStringTrim(comm, ')', false, true);
 
 		return std::make_shared<ProcessStatus>(pid, comm, state, ppid, pgrp, session, tty_nr,
-			tpgid, flags, minflt, cminflt, majflt, cmajflt,
-			utime, stime, cutime, cstime, priority, nice,
-			num_threads, itrealvalue, starttime, vsize, rss,
-			rsslim, startcode, endcode, startstack, kstkeip,
-			signal, blocked, sigcatch, wchan, nswap, cnswap);
+											   tpgid, flags, minflt, cminflt, majflt, cmajflt,
+											   utime, stime, cutime, cstime, priority, nice,
+											   num_threads, itrealvalue, starttime, vsize, rss,
+											   rsslim, startcode, endcode, startstack, kstkeip,
+											   signal, blocked, sigcatch, wchan, nswap, cnswap);
 	}
 
-
-	inline std::string cmdline(const pid_t& pid = 0)
+	inline std::string cmdline(const pid_t &pid = 0)
 	{
 		const static char fname[] = "proc::cmdline() ";
 
 		const std::string path = pid > 0
-			? "/proc/" + std::to_string(pid) + "/cmdline"
-			: "/proc/cmdline";
+									 ? "/proc/" + std::to_string(pid) + "/cmdline"
+									 : "/proc/cmdline";
 
 		std::ifstream file(path.c_str());
 
-		if (!file.is_open()) {
+		if (!file.is_open())
+		{
 			// Need to check if file exists AFTER we open it to guarantee
 			// process hasn't terminated (or if it has, we at least have a
 			// file which the kernel _should_ respect until a close).
-			if (!Utility::isFileExist(path)) {
+			if (!Utility::isFileExist(path))
+			{
 				LOG_WAR << fname << "process already exit, failed to open:" << path;
 				return "";
 			}
@@ -305,25 +309,27 @@ namespace os {
 
 		std::stringbuf buffer;
 
-		do {
+		do
+		{
 			// Read each argument in "argv", separated by null bytes.
 			file.get(buffer, '\0');
 
 			// Check for any read errors.
-			if (file.fail() && !file.eof()) {
+			if (file.fail() && !file.eof())
+			{
 				// TODO:
 				// LOG_DBG << fname << "Failed to read:" << path;
 				return "";
 			}
-			else if (!file.eof()) {
-				file.get(); // Read the null byte.
+			else if (!file.eof())
+			{
+				file.get();		   // Read the null byte.
 				buffer.sputc(' '); // Put a space between each command line argument.
 			}
 		} while (!file.eof());
 
 		return buffer.str();
 	}
-
 
 	// Reads from /proc and returns a list of all running processes.
 	inline std::set<pid_t> pids()
@@ -333,18 +339,22 @@ namespace os {
 		std::set<pid_t> pids;
 
 		std::list<std::string> entries = os::ls("/proc");
-		if (entries.size() == 0) {
+		if (entries.size() == 0)
+		{
 			LOG_ERR << fname << "Failed to list files in /proc with error: " << std::strerror(errno);
 			return std::set<pid_t>();
 		}
 
-		for (const std::string& entry : entries) {
-			if (Utility::isNumber(entry)) {
+		for (const std::string &entry : entries)
+		{
+			if (Utility::isNumber(entry))
+			{
 				pids.insert(std::stoi(entry)); // Ignore entries that can't be numified.
 			}
 		}
 
-		if (pids.empty()) {
+		if (pids.empty())
+		{
 			LOG_ERR << fname << "Failed to determine pids from /proc" << std::strerror(errno);
 		}
 		return pids;
@@ -354,19 +364,19 @@ namespace os {
 	// and free memory.
 	struct Memory
 	{
-		Memory() :total_bytes(0), free_bytes(0), totalSwap_bytes(0), freeSwap_bytes(0) {}
+		Memory() : total_bytes(0), free_bytes(0), totalSwap_bytes(0), freeSwap_bytes(0) {}
 		uint64_t total_bytes;
 		uint64_t free_bytes;
 		uint64_t totalSwap_bytes;
 		uint64_t freeSwap_bytes;
 	};
 
-	inline std::ostream& operator<<(std::ostream& stream, const Memory& mem)
+	inline std::ostream &operator<<(std::ostream &stream, const Memory &mem)
 	{
 		return stream << "Memory [total_bytes <" << mem.total_bytes << "> "
-			<< "free_bytes <" << mem.free_bytes << "> "
-			<< "totalSwap_bytes <" << mem.totalSwap_bytes << "> "
-			<< "freeSwap_bytes <" << mem.freeSwap_bytes << ">]";
+					  << "free_bytes <" << mem.free_bytes << "> "
+					  << "totalSwap_bytes <" << mem.totalSwap_bytes << "> "
+					  << "freeSwap_bytes <" << mem.freeSwap_bytes << ">]";
 	}
 
 	// The alternative `getpagesize()` is not defined by POSIX.
@@ -387,14 +397,16 @@ namespace os {
 
 		// Number of clock ticks per second, used for cpu accounting.
 		static const long ticks = sysconf(_SC_CLK_TCK);
-		if (ticks <= 0) {
+		if (ticks <= 0)
+		{
 			LOG_ERR << fname << "Failed to get sysconf(_SC_CLK_TCK)";
 			return nullptr;
 		}
 
 		const std::shared_ptr<os::ProcessStatus> processStatus = os::status(pid);
 
-		if (nullptr == processStatus) {
+		if (nullptr == processStatus)
+		{
 			return nullptr;
 		}
 
@@ -424,7 +436,8 @@ namespace os {
 		Memory memory;
 
 		struct sysinfo info;
-		if (sysinfo(&info) != 0) {
+		if (sysinfo(&info) != 0)
+		{
 			return nullptr;
 		}
 
@@ -443,36 +456,33 @@ namespace os {
 		return std::make_shared<Memory>(memory);
 	}
 
-
-
 	inline std::list<Process> processes()
 	{
 		const std::set<pid_t> pidList = os::pids();
 
 		std::list<Process> result;
-		for (pid_t pid : pidList) {
+		for (pid_t pid : pidList)
+		{
 			auto processPtr = os::process(pid);
 
 			// Ignore any processes that disappear between enumeration and now.
-			if (processPtr != nullptr) {
+			if (processPtr != nullptr)
+			{
 				result.push_back(*(processPtr.get()));
 			}
 		}
 		return result;
 	}
 
-
 	inline std::shared_ptr<Process> process(
 		pid_t pid,
-		const std::list<Process>& processes)
+		const std::list<Process> &processes)
 	{
-		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process& p) { return p.pid == pid; });
-		if (iter != processes.end()) return std::make_shared<Process>(*iter);
+		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p) { return p.pid == pid; });
+		if (iter != processes.end())
+			return std::make_shared<Process>(*iter);
 		return nullptr;
 	}
-
-
-
 
 	//************************CPU****************************************
 	// Representation of a processor (really an execution unit since this
@@ -483,19 +493,17 @@ namespace os {
 			: id(_id), core(_core), socket(_socket) {}
 
 		// These are non-const because we need the default assignment operator.
-		unsigned int id; // "processor"
-		unsigned int core; // "core id"
+		unsigned int id;	 // "processor"
+		unsigned int core;	 // "core id"
 		unsigned int socket; // "physical id"
 	};
 
-
-	inline std::ostream& operator<<(std::ostream& stream, const CPU& cpu)
+	inline std::ostream &operator<<(std::ostream &stream, const CPU &cpu)
 	{
 		return stream << "CPU [id <" << cpu.id << "> "
-			<< "core <" << cpu.core << "> "
-			<< "socket <" << cpu.socket << ">]";
+					  << "core <" << cpu.core << "> "
+					  << "socket <" << cpu.socket << ">]";
 	}
-
 
 	// lscpu | grep -E '^Thread|^Core|^Socket|^CPU\('
 	// Reads from /proc/cpuinfo and returns a list of CPUs.
@@ -507,7 +515,8 @@ namespace os {
 
 		std::ifstream file("/proc/cpuinfo");
 
-		if (!file.is_open()) {
+		if (!file.is_open())
+		{
 			LOG_ERR << fname << "Failed to open /proc/cpuinfo";
 			return results;
 		}
@@ -518,14 +527,17 @@ namespace os {
 		int socket = -1;
 
 		std::string line;
-		while (std::getline(file, line)) {
+		while (std::getline(file, line))
+		{
 			if (line.find("processor") == 0 ||
 				line.find("physical id") == 0 ||
-				line.find("core id") == 0) {
+				line.find("core id") == 0)
+			{
 				// Get out and parse the value.
 				std::vector<std::string> tokens = Utility::splitString(line, ": ");
 
-				if (tokens.size() < 2) {
+				if (tokens.size() < 2)
+				{
 					LOG_ERR << fname << "Unexpected format in /proc/cpuinfo : " << line;
 					return std::list<CPU>();
 				}
@@ -538,22 +550,28 @@ namespace os {
 				unsigned int value = std::stoi(tokens.back());
 
 				// Now save the value.
-				if (line.find("processor") == 0) {
-					if (id >= 0) {
+				if (line.find("processor") == 0)
+				{
+					if (id >= 0)
+					{
 						// The physical id and core id are not present in this case.
 						results.push_back(CPU(id, 0, 0));
 					}
 					id = value;
 				}
-				else if (line.find("physical id") == 0) {
-					if (socket >= 0) {
+				else if (line.find("physical id") == 0)
+				{
+					if (socket >= 0)
+					{
 						LOG_ERR << fname << "Unexpected format in /proc/cpuinfo  : " << line;
 						return std::list<CPU>();
 					}
 					socket = value;
 				}
-				else if (line.find("core id") == 0) {
-					if (core >= 0) {
+				else if (line.find("core id") == 0)
+				{
+					if (core >= 0)
+					{
 						LOG_ERR << fname << "Unexpected format in /proc/cpuinfo  : " << line;
 						return std::list<CPU>();
 					}
@@ -561,7 +579,8 @@ namespace os {
 				}
 
 				// And finally create a CPU if we have all the information.
-				if (id >= 0 && core >= 0 && socket >= 0) {
+				if (id >= 0 && core >= 0 && socket >= 0)
+				{
 					results.push_back(CPU(id, core, socket));
 					id = -1;
 					core = -1;
@@ -571,12 +590,14 @@ namespace os {
 		}
 
 		// Add the last processor if the physical id and core id were not present.
-		if (id >= 0) {
+		if (id >= 0)
+		{
 			// The physical id and core id are not present.
 			results.push_back(CPU(id, 0, 0));
 		}
 
-		if (file.fail() && !file.eof()) {
+		if (file.fail() && !file.eof())
+		{
 			LOG_ERR << fname << "Failed to read /proc/cpuinfo";
 			return std::list<CPU>();
 		}
@@ -587,7 +608,8 @@ namespace os {
 
 	// Structure returned by loadavg(). Encodes system load average
 	// for the last 1, 5 and 15 minutes.
-	struct Load {
+	struct Load
+	{
 		double one;
 		double five;
 		double fifteen;
@@ -601,7 +623,8 @@ namespace os {
 		const static char fname[] = "loadavg() ";
 
 		double loadArray[3];
-		if (getloadavg(loadArray, 3) == -1) {
+		if (getloadavg(loadArray, 3) == -1)
+		{
 			LOG_ERR << fname << "Failed to determine system load averages";
 			return nullptr;
 		}
@@ -613,13 +636,14 @@ namespace os {
 		return load;
 	}
 
-	struct FSusage {
+	struct FSusage
+	{
 		unsigned long size;
 		unsigned long used;
 		double usage;
 	};
 
-	inline std::shared_ptr<FSusage> df(const std::string& path = "/")
+	inline std::shared_ptr<FSusage> df(const std::string &path = "/")
 	{
 		const static char fname[] = "df() ";
 
@@ -640,14 +664,14 @@ namespace os {
 	{
 		const static char fname[] = "getMoundPoints() ";
 		std::map<std::string, std::string> points;
-		struct mntent* mountEntryPtr;
+		struct mntent *mountEntryPtr;
 		struct mntent mountEntry;
-		char buffer[4094] = { 0 };
-		FILE* mountTable = setmntent("/etc/mtab", "r");
+		char buffer[4094] = {0};
+		FILE *mountTable = setmntent("/etc/mtab", "r");
 		while (true)
 		{
-			const char* device = NULL;
-			const char* mountPoint;
+			const char *device = NULL;
+			const char *mountPoint;
 			if (mountTable)
 			{
 				if (nullptr == (mountEntryPtr = getmntent_r(mountTable, &mountEntry, buffer, sizeof(buffer))))
@@ -679,7 +703,7 @@ namespace os {
 		return std::move(points);
 	}
 
-	inline int fileStat(const std::string& path)
+	inline int fileStat(const std::string &path)
 	{
 		const static char fname[] = "fileStat() ";
 
@@ -695,7 +719,7 @@ namespace os {
 		}
 	}
 
-	inline std::string fileUser(const std::string& path)
+	inline std::string fileUser(const std::string &path)
 	{
 		const static char fname[] = "fileUser() ";
 
@@ -720,11 +744,12 @@ namespace os {
 		return "";
 	}
 
-	inline bool fileChmod(const std::string& path, int mode)
+	inline bool fileChmod(const std::string &path, __mode_t mode)
 	{
 		const static char fname[] = "fileChmod() ";
 
-		if (mode <= 0) return false;
+		if (mode <= 0)
+			return false;
 
 		if (::chmod(path.c_str(), mode) >= 0)
 		{
@@ -737,4 +762,22 @@ namespace os {
 		}
 	}
 
-} // namespace os {
+	// chmod with such 755, 777
+	inline bool chmod(const std::string &path, int mode)
+	{
+		const static char fname[] = "chmod() ";
+
+		if ((mode > 777) || (mode < 0))
+		{
+			LOG_WAR << fname << "Failed chmod <" << path << "> invlid mode value : " << mode;
+			return false;
+		}
+		int mode_u, mode_g, mode_o;
+		mode_u = mode / 100;
+		mode_g = mode / 10 % 10;
+		mode_o = mode % 10;
+		mode = (mode_u * 8 * 8) + (mode_g * 8) + mode_o;
+		return fileChmod(path, mode);
+	}
+
+} // namespace os

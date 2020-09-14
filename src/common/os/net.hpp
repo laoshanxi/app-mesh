@@ -83,7 +83,7 @@ namespace net
 		int error = getaddrinfo(host, nullptr, &hints, &result);
 		if (error != 0)
 		{
-			throw std::invalid_argument(Utility::stringFormat("getaddrinfo() failed with error: ", gai_strerror(error)));
+			throw std::invalid_argument(Utility::stringFormat("getaddrinfo() failed with error: %s", gai_strerror(error)));
 		}
 
 		std::string hostname = result->ai_canonname;

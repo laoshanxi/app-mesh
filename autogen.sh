@@ -34,6 +34,12 @@ if [ -f "/usr/bin/yum" ]; then
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
 	yum install -y ruby rubygems ruby-devel
 	yum install -y rpm-build
+
+	# check libssl in case of openssl_update.sh not executed
+	if [ [ ! -f "/usr/include/openssl/ssl.h" ] || [ ! -f "/usr/local/include/openssl/ssl.h" ] ]; then
+	else
+		yum install -y openssl-devel
+	fi
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	export DEBIAN_FRONTEND=noninteractive

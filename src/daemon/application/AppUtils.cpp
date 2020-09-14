@@ -3,6 +3,7 @@
 #include <ace/OS.h>
 #include "AppUtils.h"
 #include "../../common/Utility.h"
+#include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 
 ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &workDir)
@@ -15,11 +16,12 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	{
 		shellFile << "#!/bin/sh" << std::endl;
 		shellFile << "#application <" << name << ">" << std::endl;
-		//if (workDir.length()) shellFile << "cd " << workDir << std::endl;
+		if (workDir.length()) shellFile << "cd " << workDir << std::endl;
 		shellFile << cmd << std::endl;
 		shellFile.close();
+		os::chmod(fileName, 755);
 		m_fileName = fileName;
-		m_shellCmd = Utility::stringFormat("sh %s", m_fileName.c_str());
+		m_shellCmd = Utility::stringFormat("sh -l %s", m_fileName.c_str());
 
 		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> run in shell mode";
 	}

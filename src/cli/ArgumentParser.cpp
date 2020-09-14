@@ -4,6 +4,7 @@
 #include <termios.h>
 #include <unistd.h>
 #endif
+#include <ace/Signal.h>
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -42,9 +43,15 @@ const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv
 static std::string m_jwtToken;
 extern char ** environ;
 
-ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, bool sslEnabled)
-	:m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
+// Global variable for appc exec
+static bool SIGINIT_BREAKING = false;
+static std::string APPC_EXEC_APP_NAME;
+static ArgumentParser *WORK_PARSE = nullptr;
+
+ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, bool sslEnabled)
+	: m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
 {
+	WORK_PARSE = this;
 	po::options_description global("Global options");
 	global.add_options()
 		("command", po::value<std::string>(), "command to execute")
@@ -64,6 +71,8 @@ ArgumentParser::ArgumentParser(int argc, const char* argv[], int listenPort, boo
 
 ArgumentParser::~ArgumentParser()
 {
+	unregSignal();
+	WORK_PARSE = nullptr;
 }
 
 void ArgumentParser::parse()
@@ -428,7 +437,7 @@ void ArgumentParser::processReg()
 	}
 	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
-	auto resp = requestHttp(methods::PUT, restPath, jsobObj);
+	auto resp = requestHttp(true, methods::PUT, restPath, jsobObj);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
@@ -464,7 +473,7 @@ void ArgumentParser::processUnReg()
 				}
 			}
 			std::string restPath = std::string("/appmesh/app/") + appName;
-			auto response = requestHttp(methods::DEL, restPath);
+			auto response = requestHttp(true, methods::DEL, restPath);
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 		}
 		else
@@ -496,7 +505,7 @@ void ArgumentParser::processView()
 		{
 			// view app info
 			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
-			auto resp = requestHttp(methods::GET, restPath);
+			auto resp = requestHttp(true, methods::GET, restPath);
 			std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 		}
 		else
@@ -512,7 +521,7 @@ void ArgumentParser::processView()
 			std::map<std::string, std::string> query;
 			query["keep_history"] = std::to_string(keepHis);
 			query["stdout_index"] = std::to_string(index);
-			auto response = requestHttp(methods::GET, restPath, query);
+			auto response = requestHttp(true, methods::GET, restPath, query);
 			auto bodyStr = response.extract_utf8string(true).get();
 			std::cout << bodyStr;
 		}
@@ -520,7 +529,7 @@ void ArgumentParser::processView()
 	else
 	{
 		std::string restPath = "/appmesh/applications";
-		auto response = requestHttp(methods::GET, restPath);
+		auto response = requestHttp(true, methods::GET, restPath);
 		printApps(response.extract_json(true).get(), reduce);
 	}
 }
@@ -536,7 +545,7 @@ void ArgumentParser::processResource()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/appmesh/resources";
-	auto resp = requestHttp(methods::GET, restPath);
+	auto resp = requestHttp(true, methods::GET, restPath);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
@@ -585,7 +594,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	for (auto app : appList)
 	{
 		std::string restPath = std::string("/appmesh/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
-		auto response = requestHttp(methods::POST, restPath);
+		auto response = requestHttp(true, methods::POST, restPath);
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 	}
 	if (appList.size() == 0)
@@ -648,7 +657,7 @@ void ArgumentParser::processRun()
 		// Use syncrun directly
 		// /app/syncrun?timeout=5
 		std::string restPath = "/appmesh/app/syncrun";
-		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
+		auto response = requestHttp(true, methods::POST, restPath, query, &jsobObj);
 
 		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 	}
@@ -658,7 +667,7 @@ void ArgumentParser::processRun()
 		// /app/run?timeout=5
 		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention)) query[HTTP_QUERY_KEY_retention] = std::to_string(m_commandLineVariables[HTTP_QUERY_KEY_retention].as<int>());
 		std::string restPath = "/appmesh/app/run";
-		auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
+		auto response = requestHttp(true, methods::POST, restPath, query, &jsobObj);
 		auto result = response.extract_json(true).get();
 		auto appName = result[JSON_KEY_APP_name].as_string();
 		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
@@ -668,12 +677,51 @@ void ArgumentParser::processRun()
 			restPath = std::string("/appmesh/app/").append(appName).append("/run/output");
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
-			response = requestHttp(methods::GET, restPath, query);
+			response = requestHttp(true, methods::GET, restPath, query);
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
 			if (response.status_code() != http::status_codes::OK) break;
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
 	}
+}
+
+void SIGINT_Handler(int signo)
+{
+	// make sure we only process SIGINT here
+	// SIGINT 	ctrl - c
+	assert(signo == SIGINT);
+	if (SIGINIT_BREAKING)
+	{
+		//std::cout << "You pressed SIGINT(Ctrl+C) twice, session will exit." << std::endl;
+		auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
+		auto response = WORK_PARSE->requestHttp(false, methods::DEL, restPath);
+		if (response.status_code() != status_codes::OK)
+		{
+			std::cout << response.extract_utf8string(true).get() << std::endl;
+		}
+		// if ctrl+c typed twice, just exit current 
+		ACE_OS::_exit(SIGINT);
+	}
+	else
+	{
+		//std::cout << "You pressed SIGINT(Ctrl+C)" << std::endl;
+		SIGINIT_BREAKING = true;
+		auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME).append("/disable");
+		auto response = WORK_PARSE->requestHttp(false, methods::POST, restPath);
+	}
+}
+
+void ArgumentParser::regSignal()
+{
+	m_sigAction = std::make_shared<ACE_Sig_Action>();
+	m_sigAction->handler(SIGINT_Handler);
+	m_sigAction->register_action(SIGINT);
+}
+
+void ArgumentParser::unregSignal()
+{
+	if (m_sigAction)
+		m_sigAction = nullptr;
 }
 
 void ArgumentParser::processExec()
@@ -686,32 +734,27 @@ void ArgumentParser::processExec()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
+	// Get current session id (bash pid)
+	auto bashId = getppid();
+	// Get appmesh user
+	auto appmeshUser = getAuthenUser();
 	// Get current user name
-	std::string userName;
-	struct passwd *pw_ptr;
-	if ((pw_ptr = getpwuid(getuid())) != NULL)
-	{
-		userName = pw_ptr->pw_name;
-	}
-	else
-	{
-		throw std::runtime_error("Failed to get current user name");
-	}
+	auto osUser = getOsUser();
+	// Unique session id as appname
+	APPC_EXEC_APP_NAME = appmeshUser + "_" + osUser + "_" + std::to_string(bashId);
 
 	// Get current command line
-	std::string cmd;
+	std::string initialCmd;
 	for (size_t i = 1; i < m_pasrsedOptions.size(); i++)
 	{
-		for (auto opt : m_pasrsedOptions[i].value)
-		{
-			cmd.append(opt).append(" ");
-		}
+		for (auto optValue : m_pasrsedOptions[i].value)
+			initialCmd.append(optValue).append(" ");
 	}
-	
+
 	// Get current ENV
 	web::json::value objEnvs = web::json::value::object();
-    for (char **var = environ; *var != NULL; var++)
-    {
+	for (char **var = environ; *var != NULL; var++)
+	{
 		std::string e = *var;
 		auto vec = Utility::splitString(e, "=");
 		if (vec.size() > 0)
@@ -722,30 +765,86 @@ void ArgumentParser::processExec()
 
 	char buff[MAX_COMMAND_LINE_LENGH] = { 0 };
 	web::json::value jsobObj;
+	jsobObj[JSON_KEY_APP_name] = web::json::value::string(APPC_EXEC_APP_NAME); // option, if not provide, UUID will be created
 	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
-	jsobObj[JSON_KEY_APP_command] = web::json::value::string(cmd);
+	jsobObj[JSON_KEY_APP_command] = web::json::value::string(initialCmd);
 	jsobObj[JSON_KEY_APP_env] = objEnvs;
 	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(getcwd(buff, sizeof(buff)));
 
-	// disable timeout
-	std::map<std::string, std::string> query;
-	query[HTTP_QUERY_KEY_timeout] = std::to_string(-1);
-
-	std::string restPath = "/appmesh/app/run";
-	auto response = requestHttp(methods::POST, restPath, query, &jsobObj);
-	auto result = response.extract_json(true).get();
-	auto appName = result[JSON_KEY_APP_name].as_string();
-	auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
-	while (process_uuid.length())
+	std::string process_uuid;
+	bool currentRunFinished = true;	// one submitted run finished
+	bool runOnce = false;			// if appc exec specify one cmd, then just run once
+	SIGINIT_BREAKING = false;		// if ctrl + c is triggered, stop run and start read input from stdin
+	if (initialCmd.length())
 	{
-		// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
-		restPath = std::string("/appmesh/app/").append(appName).append("/run/output");
-		query.clear();
-		query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
-		response = requestHttp(methods::GET, restPath, query);
-		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
-		if (response.status_code() != http::status_codes::OK) break;
-		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		runOnce = true;
+		std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
+		std::string restPath = "/appmesh/app/run";
+		auto response = requestHttp(false, methods::POST, restPath, query, &jsobObj);
+		if (response.status_code() == http::status_codes::OK)
+		{
+			auto result = response.extract_json(true).get();
+			process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
+			currentRunFinished = false;
+		}
+		else
+		{
+			std::cout << response.extract_utf8string(true).get() << std::endl;
+		}
+	}
+	else
+	{
+		// only capture SIGINT in continues mode
+		this->regSignal();
+		runOnce = false;
+	}
+	
+	while (true)
+	{
+		// no need read stdin when run for once
+		if (!runOnce && (SIGINIT_BREAKING || currentRunFinished))
+		{
+			SIGINIT_BREAKING = false;
+			std::string input;
+			while (std::getline(std::cin, input) && input.length() > 0)
+			{
+				process_uuid.clear();
+				jsobObj[JSON_KEY_APP_command] = web::json::value::string(input);
+				std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
+				std::string restPath = "/appmesh/app/run";
+				auto response = requestHttp(false, methods::POST, restPath, query, &jsobObj);
+				if (response.status_code() == http::status_codes::OK)
+				{
+					auto result = response.extract_json(true).get();
+					process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
+					currentRunFinished = false;
+				}
+				else
+				{
+					std::cout << response.extract_utf8string(true).get() << std::endl;
+					currentRunFinished = true;
+					process_uuid.clear();
+				}
+				// always exit loop when get one input
+				break;
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(150));
+		// Process Read
+		if (!process_uuid.empty())
+		{
+			std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_process_uuid, process_uuid}};
+			auto restPath = Utility::stringFormat("/appmesh/app/%s/run/output", APPC_EXEC_APP_NAME.c_str());
+			auto response = requestHttp(false, methods::GET, restPath, query);
+			std::cout << response.extract_utf8string(true).get();
+			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
+			{
+				currentRunFinished = true;
+				process_uuid.clear();
+				if (runOnce) { break; }
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(150));
 	}
 }
 
@@ -772,7 +871,7 @@ void ArgumentParser::processDownload()
 	auto local = m_commandLineVariables["local"].as<std::string>();
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_KEY_file_path] = file;
-	auto response = requestHttp(methods::GET, restPath, query, nullptr, &headers);
+	auto response = requestHttp(true, methods::GET, restPath, query, nullptr, &headers);
 
 	auto stream = concurrency::streams::file_stream<uint8_t>::open_ostream(local, std::ios_base::trunc | std::ios_base::binary).get();
 	response.body().read_to_end(stream.streambuf()).wait();
@@ -876,7 +975,7 @@ void ArgumentParser::processTags()
 			{
 				std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
 				std::map<std::string, std::string> query = { {"value", envVec.at(1)} };
-				requestHttp(methods::PUT, restPath, query, nullptr, nullptr);
+				requestHttp(true, methods::PUT, restPath, query, nullptr, nullptr);
 			}
 		}
 	}
@@ -893,7 +992,7 @@ void ArgumentParser::processTags()
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
-			auto resp = requestHttp(methods::DEL, restPath);
+			auto resp = requestHttp(true, methods::DEL, restPath);
 		}
 	}
 	else if (m_commandLineVariables.count("view") &&
@@ -908,7 +1007,7 @@ void ArgumentParser::processTags()
 	}
 
 	std::string restPath = "/appmesh/labels";
-	http_response response = requestHttp(methods::GET, restPath);
+	http_response response = requestHttp(true, methods::GET, restPath);
 	// Finally print current
 	auto tags = response.extract_json().get().as_object();
 	for (auto tag : tags)
@@ -940,7 +1039,7 @@ void ArgumentParser::processLoglevel()
 	jsobObj[JSON_KEY_LogLevel] = web::json::value::string(level);
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
-	auto response = requestHttp(methods::POST, restPath, jsobObj);
+	auto response = requestHttp(true, methods::POST, restPath, jsobObj);
 	std::cout << "Log level set to : " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
 }
 
@@ -956,7 +1055,7 @@ void ArgumentParser::processConfigView()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/appmesh/config";
-	http_response resp = requestHttp(methods::GET, restPath);
+	http_response resp = requestHttp(true, methods::GET, restPath);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
@@ -984,7 +1083,7 @@ void ArgumentParser::processChangePwd()
 	std::string restPath = std::string("/appmesh/user/") + user + "/passwd";
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
-	http_response response = requestHttp(methods::POST, restPath, query, nullptr, &headers);
+	http_response response = requestHttp(true, methods::POST, restPath, query, nullptr, &headers);
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -1010,7 +1109,7 @@ void ArgumentParser::processLockUser()
 	auto lock = !m_commandLineVariables["lock"].as<bool>();
 
 	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
-	http_response response = requestHttp(methods::POST, restPath);
+	http_response response = requestHttp(true, methods::POST, restPath);
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
 }
 
@@ -1046,19 +1145,19 @@ bool ArgumentParser::confirmInput(const char* msg)
 	return result == "y";
 }
 
-http_response ArgumentParser::requestHttp(const method& mtd, const std::string& path)
+http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path)
 {
 	std::map<std::string, std::string> query;
-	return std::move(requestHttp(mtd, path, query));
+	return std::move(requestHttp(throwAble, mtd, path, query));
 }
 
-http_response ArgumentParser::requestHttp(const method& mtd, const std::string& path, web::json::value& body)
+http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value &body)
 {
 	std::map<std::string, std::string> query;
-	return std::move(requestHttp(mtd, path, query, &body));
+	return std::move(requestHttp(throwAble, mtd, path, query, &body));
 }
 
-http_response ArgumentParser::requestHttp(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, web::json::value* body, std::map<std::string, std::string>* header)
+http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body, std::map<std::string, std::string> *header)
 {
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
 	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
@@ -1073,7 +1172,7 @@ http_response ArgumentParser::requestHttp(const method& mtd, const std::string& 
 		request.set_body(*body);
 	}
 	http_response response = client.request(request).get();
-	if (response.status_code() != status_codes::OK)
+	if (throwAble && response.status_code() != status_codes::OK)
 	{
 		throw std::invalid_argument(response.extract_utf8string(true).get());
 	}
@@ -1113,7 +1212,7 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 {
 	std::map<std::string, bool> apps;
 	std::string restPath = "/appmesh/applications";
-	auto response = requestHttp(methods::GET, restPath);
+	auto response = requestHttp(true, methods::GET, restPath);
 	auto jsonValue = response.extract_json(true).get();
 	auto arr = jsonValue.as_array();
 	for (auto iter = arr.begin(); iter != arr.end(); iter++)
@@ -1144,6 +1243,49 @@ std::string ArgumentParser::getAuthenToken()
 		}
 	}
 	return token;
+}
+
+std::string ArgumentParser::getAuthenUser()
+{
+	std::string token;
+	// 1. try to get from REST
+	if (m_username.length())
+	{
+		return m_username;
+	}
+	else
+	{
+		// 2. try to read from token file
+		token = readAuthenToken();
+		// 3. try to get get default token from REST
+		if (token.empty())
+		{
+			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY));
+		}
+		auto decoded_token = jwt::decode(token);
+		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
+		{
+			// get user info
+			auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
+			return userName;
+		}
+		throw std::invalid_argument("Failed to get token");
+	}
+}
+
+std::string ArgumentParser::getOsUser()
+{
+	std::string userName;
+	struct passwd *pw_ptr;
+	if ((pw_ptr = getpwuid(getuid())) != NULL)
+	{
+		userName = pw_ptr->pw_name;
+	}
+	else
+	{
+		throw std::runtime_error("Failed to get current user name");
+	}
+	return userName;
 }
 
 std::string ArgumentParser::readAuthenToken()
@@ -1367,4 +1509,3 @@ std::size_t ArgumentParser::inputSecurePasswd(char** pw, std::size_t sz, int mas
 
 	return idx; /* number of chars in passwd    */
 }
-

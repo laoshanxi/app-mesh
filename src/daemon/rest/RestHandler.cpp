@@ -436,15 +436,19 @@ std::string RestHandler::createToken(const std::string &uname, const std::string
 
 int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, int defaultValue, int min, int max) const
 {
-	const static char fname[] = "RestHandler::getQueryValue() ";
+	const static char fname[] = "RestHandler::getHttpQueryValue() ";
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
 	int rt = defaultValue;
 	if (querymap.find(U(key)) != querymap.end())
 	{
 		rt = std::stoi(GET_STD_STRING(querymap.find(U(key))->second));
-		if (min < max && (rt < min || rt > max))
-			rt = defaultValue;
+		if (rt > 0)
+		{
+			if (min < max && (rt < min || rt > max))
+				rt = defaultValue;
+		}
+		// if rt less than zero, do not update here.
 	}
 	LOG_DBG << fname << key << "=" << rt;
 	return rt;
@@ -1028,9 +1032,23 @@ void RestHandler::apiGetApp(const HttpRequest &message)
 std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest &message)
 {
 	auto jsonApp = const_cast<HttpRequest *>(&message)->extract_json(true).get();
-	// force specify a UUID app name
-	auto appName = Utility::createUUID();
-	jsonApp[JSON_KEY_APP_name] = web::json::value::string(appName);
+	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
+	if (clientProvideAppName.empty())
+	{
+		// specify a UUID app name
+		auto appName = Utility::createUUID();
+		jsonApp[JSON_KEY_APP_name] = web::json::value::string(appName);
+	}
+	else
+	{
+		// check whether this is normal app, do not broken working app
+		if (Configuration::instance()->isAppExist(clientProvideAppName))
+		{
+			auto app = Configuration::instance()->getApp(clientProvideAppName);
+			if (app->isWorkingState())
+				throw std::invalid_argument("should not override a working app");
+		}
+	}
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getTokenUser(message));
 	return Configuration::instance()->addApp(jsonApp);
