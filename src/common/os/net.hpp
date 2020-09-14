@@ -11,7 +11,8 @@
 
 #include "../../common/Utility.h"
 
-namespace net {
+namespace net
+{
 
 	struct NetInterface
 	{
@@ -31,24 +32,25 @@ namespace net {
 		return addr;
 	}
 
-
 	// Returns a Try of the IP for the provided hostname or an error if no IP is
 	// obtained.
-	inline std::shared_ptr<sockaddr> getIP(const std::string& hostname, int family = AF_UNSPEC)
+	inline std::shared_ptr<sockaddr> getIP(const std::string &hostname, int family = AF_UNSPEC)
 	{
 		const static char fname[] = "net::getIP() ";
 
 		struct addrinfo hints = createAddrInfo(SOCK_STREAM, family, 0);
-		struct addrinfo* result = nullptr;
+		struct addrinfo *result = nullptr;
 
 		int error = getaddrinfo(hostname.c_str(), nullptr, &hints, &result);
 
-		if (error != 0) {
+		if (error != 0)
+		{
 			LOG_ERR << fname << "getaddrinfo failed with error :" << std::strerror(errno);
 			return nullptr;
 		}
 
-		if (result->ai_addr == nullptr) {
+		if (result->ai_addr == nullptr)
+		{
 			freeaddrinfo(result);
 			LOG_WAR << fname << "No addresses found";
 			return nullptr;
@@ -60,33 +62,68 @@ namespace net {
 		return ip;
 	}
 
-	inline std::string getAddressStr(const struct sockaddr* storage)
+	/**
+	 * Get hostname with FQDN
+	 * https://stackoverflow.com/questions/504810/how-do-i-find-the-current-machines-full-hostname-in-c-hostname-and-domain-info
+	 * @return {std::string}  : 
+	 */
+	inline std::string hostname()
+	{
+		const static char fname[] = "net::hostname() ";
+		char host[512];
+
+		if (gethostname(host, sizeof(host)) < 0)
+		{
+			LOG_WAR << fname << "Failed to call gethostname()";
+		}
+
+		struct addrinfo hints = createAddrInfo(SOCK_STREAM, AF_UNSPEC, AI_CANONNAME);
+		struct addrinfo *result = nullptr;
+
+		int error = getaddrinfo(host, nullptr, &hints, &result);
+		if (error != 0)
+		{
+			throw std::invalid_argument(Utility::stringFormat("getaddrinfo() failed with error: ", gai_strerror(error)));
+		}
+
+		std::string hostname = result->ai_canonname;
+		freeaddrinfo(result);
+
+		return hostname;
+	}
+
+	inline std::string getAddressStr(const struct sockaddr *storage)
 	{
 		const static char fname[] = "net::getAddressStr() ";
 
-		char buffer[NI_MAXHOST] = { 0 };
+		char buffer[NI_MAXHOST] = {0};
 		socklen_t length;
 
-		if (storage->sa_family == AF_INET) {
+		if (storage->sa_family == AF_INET)
+		{
 			length = sizeof(struct sockaddr_in);
 		}
-		else if (storage->sa_family == AF_INET6) {
+		else if (storage->sa_family == AF_INET6)
+		{
 			length = sizeof(struct sockaddr_in6);
 		}
-		else {
+		else
+		{
 			LOG_WAR << fname << "Unsupported family :" << storage->sa_family;
 			return "";
 		}
 
 		int error = getnameinfo(storage, length, buffer, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
 
-		if (error != 0) {
+		if (error != 0)
+		{
 			LOG_ERR << fname << "getnameinfo failed, error :" << std::strerror(errno);
 			return "";
 		}
 
 		// remove % from ipv6 address (fe80::bacd:a28c:186c:a9cd%enp0s3)
-		if (storage->sa_family == AF_INET6 && strchr(buffer, '%') > 0) {
+		if (storage->sa_family == AF_INET6 && strchr(buffer, '%') > 0)
+		{
 			*(strchr(buffer, '%')) = '\0';
 		}
 
@@ -98,15 +135,18 @@ namespace net {
 	{
 		const static char fname[] = "net::links() ";
 
-		struct ifaddrs* ifaddr = nullptr;
-		if (getifaddrs(&ifaddr) == -1) {
+		struct ifaddrs *ifaddr = nullptr;
+		if (getifaddrs(&ifaddr) == -1)
+		{
 			LOG_ERR << fname << "getifaddrs failed, error :" << std::strerror(errno);
 			return std::list<NetInterface>();
 		}
 
 		std::list<NetInterface> names;
-		for (struct ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-			if (ifa->ifa_name != nullptr && (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6)) {
+		for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
+		{
+			if (ifa->ifa_name != nullptr && (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6))
+			{
 				NetInterface mi;
 				mi.name = ifa->ifa_name;
 				mi.ipv4 = (AF_INET == ifa->ifa_addr->sa_family);
@@ -119,5 +159,4 @@ namespace net {
 		return names;
 	}
 
-
-} // namespace net {
+} // namespace net

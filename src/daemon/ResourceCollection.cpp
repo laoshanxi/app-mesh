@@ -26,9 +26,7 @@ std::string ResourceCollection::getHostName(bool refresh)
 	static std::string hostname;
 	if (hostname.empty() || refresh)
 	{
-		char buffer[1024] = {0};
-		ACE_OS::hostname(buffer, sizeof(buffer));
-		hostname = buffer;
+		hostname = net::hostname();
 	}
 	return hostname;
 }
