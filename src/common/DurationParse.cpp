@@ -17,6 +17,10 @@ int DurationParse::parse(const std::string &duration)
     int totalSeconds = 0;
 
     // return imediate number
+    if (duration.empty())
+    {
+        return 0;
+    }
     if (Utility::isNumber(duration))
     {
         totalSeconds = std::stoi(duration);

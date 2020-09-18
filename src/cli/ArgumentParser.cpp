@@ -14,6 +14,7 @@
 #include <cpprest/filestream.h>
 #include <cpprest/json.h>
 #include "ArgumentParser.h"
+#include "../common/DurationParse.h"
 #include "../common/jwt-cpp/jwt.h"
 #include "../common/Utility.h"
 #include "../common/os/linux.hpp"
@@ -218,13 +219,13 @@ void ArgumentParser::processLogon()
 	po::options_description desc("Log on to App Mesh:");
 	desc.add_options()
 		COMMON_OPTIONS
-		("timeout,t", po::value<int>()->default_value(DEFAULT_TOKEN_EXPIRE_SECONDS), "Specifies the command session duration in minutes.")
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in minutes.")
 		("help,h", "Prints command usage to stdout and exits")
 		;
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	m_tokenTimeoutSeconds = m_commandLineVariables["timeout"].as<int>();
+	m_tokenTimeoutSeconds = DurationParse().parse(m_commandLineVariables["timeout"].as<std::string>());
 	if (!m_commandLineVariables.count("user"))
 	{
 		std::cout << "User: ";
@@ -344,7 +345,7 @@ void ArgumentParser::processReg()
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
-		("extra_time,q", po::value<int>(), "extra timeout for short running app,the value must less than interval  (default 0)")
+		("extra_time,q", po::value<std::string>(), "extra timeout for short running app,the value must less than interval  (default 0), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", "monitor and keep running for short running app in start interval")
 		("force,f", "force without confirm")
@@ -361,7 +362,8 @@ void ArgumentParser::processReg()
 
 	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("extra_time") > 0)
 	{
-		if (m_commandLineVariables["interval"].as<int>() <= m_commandLineVariables["extra_time"].as<int>())
+		if (DurationParse().parse(m_commandLineVariables["interval"].as<std::string>()) <= 
+			DurationParse().parse(m_commandLineVariables["extra_time"].as<std::string>()))
 		{
 			std::cout << "The extra_time seconds must less than interval." << std::endl;
 			return;
@@ -394,7 +396,7 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("start_time")) jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
 	if (m_commandLineVariables.count("end_time")) jsobObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
 	if (m_commandLineVariables.count("interval")) jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
-	if (m_commandLineVariables.count("extra_time")) jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::number(m_commandLineVariables["extra_time"].as<int>());
+	if (m_commandLineVariables.count("extra_time")) jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::string(m_commandLineVariables["extra_time"].as<std::string>());
 	if (m_commandLineVariables.count("stdout_cache_size")) jsobObj[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_commandLineVariables["stdout_cache_size"].as<int>());
 	if (m_commandLineVariables.count("keep_running")) jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
@@ -612,8 +614,8 @@ void ArgumentParser::processRun()
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work')")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("timeout,t", po::value<int>()->default_value(DEFAULT_RUN_APP_TIMEOUT_SECONDS), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited.")
-		("retention,r", po::value<int>()->default_value(DEFAULT_RUN_APP_RETENTION_DURATION), "retention duration after run finished (default 10s), app will be cleaned after the retention period")
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 		;
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -625,7 +627,7 @@ void ArgumentParser::processRun()
 	}
 
 	std::map<std::string, std::string> query;
-	int timeout = m_commandLineVariables["timeout"].as<int>();
+	int timeout = DurationParse().parse(m_commandLineVariables["timeout"].as<std::string>());
 	if (m_commandLineVariables.count("timeout")) query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
 
 	web::json::value jsobObj;
@@ -665,7 +667,7 @@ void ArgumentParser::processRun()
 	{
 		// Use run and output
 		// /app/run?timeout=5
-		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention)) query[HTTP_QUERY_KEY_retention] = std::to_string(m_commandLineVariables[HTTP_QUERY_KEY_retention].as<int>());
+		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention)) query[HTTP_QUERY_KEY_retention] = m_commandLineVariables[HTTP_QUERY_KEY_retention].as<std::string>();
 		std::string restPath = "/appmesh/app/run";
 		auto response = requestHttp(true, methods::POST, restPath, query, &jsobObj);
 		auto result = response.extract_json(true).get();
@@ -679,7 +681,10 @@ void ArgumentParser::processRun()
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			response = requestHttp(true, methods::GET, restPath, query);
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
-			if (response.status_code() != http::status_codes::OK) break;
+			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
+			{
+				break;
+			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
 	}

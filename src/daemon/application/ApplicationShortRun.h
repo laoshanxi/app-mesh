@@ -36,6 +36,7 @@ protected:
 	std::unique_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	std::string m_startIntervalValue;
 	int m_startInterval;
+	std::string m_bufferTimeValue;
 	int m_bufferTime;
 	int m_timerId;
 	std::shared_ptr<AppProcess> m_bufferProcess;

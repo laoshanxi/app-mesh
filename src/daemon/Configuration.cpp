@@ -14,6 +14,7 @@
 #include "rest/RestHandler.h"
 #include "security/User.h"
 
+#include "../common/DurationParse.h"
 #include "../common/Utility.h"
 
 // from main.cpp
@@ -727,7 +728,7 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jso
 		return app;
 	}
 
-	if (GET_JSON_STR_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds).length())
+	if (DurationParse().parse(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds)) > 0)
 	{
 		// Consider as short running application
 		std::shared_ptr<ApplicationShortRun> shortApp;

@@ -16,6 +16,7 @@
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/gauge.h"
 #include "../../prom_exporter/text_serializer.h"
+#include "../../common/DurationParse.h"
 #include "../../common/HttpRequest.h"
 #include "../../common/Utility.h"
 #include "../../common/jwt-cpp/jwt.h"
@@ -442,7 +443,8 @@ int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string
 	int rt = defaultValue;
 	if (querymap.find(U(key)) != querymap.end())
 	{
-		rt = std::stoi(GET_STD_STRING(querymap.find(U(key))->second));
+		auto value = querymap.find(U(key))->second;
+		rt = DurationParse().parse(value);
 		if (rt > 0)
 		{
 			if (min < max && (rt < min || rt > max))
