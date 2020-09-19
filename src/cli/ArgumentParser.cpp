@@ -20,29 +20,31 @@
 #include "../common/os/linux.hpp"
 #include "../common/os/chown.hpp"
 
-#define OPTION_HOST_NAME	("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address") \
-							("port,B", po::value<int>(), "port number")
-#define COMMON_OPTIONS		OPTION_HOST_NAME \
-							("user,u", po::value<std::string>(), "Specifies the name of the user to connect to App Mesh for this command.") \
-							("password,x", po::value<std::string>(), "Specifies the user password to connect to App Mesh for this command.")
-#define GET_USER_NAME_PASS	if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
-							{ \
-								m_username = m_commandLineVariables["user"].as<std::string>(); \
-								m_userpwd = m_commandLineVariables["password"].as<std::string>(); \
-							}
-#define HELP_ARG_CHECK_WITH_RETURN GET_USER_NAME_PASS \
-							if (m_commandLineVariables.count("help") > 0) \
-							{ \
-								std::cout << desc << std::endl; \
-								return; \
-							} \
-							m_hostname = m_commandLineVariables["host"].as<std::string>(); \
-							if (m_commandLineVariables.count("port")) m_listenPort = m_commandLineVariables["port"].as<int>();
+#define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")("port,B", po::value<int>(), "port number")
+#define COMMON_OPTIONS                                                                                                              \
+	OPTION_HOST_NAME("user,u", po::value<std::string>(), "Specifies the name of the user to connect to App Mesh for this command.") \
+	("password,x", po::value<std::string>(), "Specifies the user password to connect to App Mesh for this command.")
+#define GET_USER_NAME_PASS                                                                \
+	if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
+	{                                                                                     \
+		m_username = m_commandLineVariables["user"].as<std::string>();                    \
+		m_userpwd = m_commandLineVariables["password"].as<std::string>();                 \
+	}
+#define HELP_ARG_CHECK_WITH_RETURN                                 \
+	GET_USER_NAME_PASS                                             \
+	if (m_commandLineVariables.count("help") > 0)                  \
+	{                                                              \
+		std::cout << desc << std::endl;                            \
+		return;                                                    \
+	}                                                              \
+	m_hostname = m_commandLineVariables["host"].as<std::string>(); \
+	if (m_commandLineVariables.count("port"))                      \
+		m_listenPort = m_commandLineVariables["port"].as<int>();
 
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmesh_";
 static std::string m_jwtToken;
-extern char ** environ;
+extern char **environ;
 
 // Global variable for appc exec
 static bool SIGINIT_BREAKING = false;
@@ -55,12 +57,11 @@ ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, boo
 	WORK_PARSE = this;
 	po::options_description global("Global options");
 	global.add_options()
-		("command", po::value<std::string>(), "command to execute")
-		("subargs", po::value<std::vector<std::string> >(), "arguments for command");
+	("command", po::value<std::string>(), "command to execute")
+	("subargs", po::value<std::vector<std::string>>(), "arguments for command");
 
 	po::positional_options_description pos;
-	pos.add("command", 1).
-		add("subargs", -1);
+	pos.add("command", 1).add("subargs", -1);
 
 	// parse [command] and all other arguments in [subargs]
 	auto parsed = po::command_line_parser(argc, argv).options(global).positional(pos).allow_unregistered().run();
@@ -68,7 +69,6 @@ ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, boo
 	po::store(parsed, m_commandLineVariables);
 	po::notify(m_commandLineVariables);
 }
-
 
 ArgumentParser::~ArgumentParser()
 {
@@ -83,7 +83,6 @@ void ArgumentParser::parse()
 		printMainHelp();
 		return;
 	}
-
 
 	std::string cmd = m_commandLineVariables["command"].as<std::string>();
 	if (cmd == "logon")
@@ -220,8 +219,7 @@ void ArgumentParser::processLogon()
 	desc.add_options()
 		COMMON_OPTIONS
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in minutes.")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -240,9 +238,9 @@ void ArgumentParser::processLogon()
 			std::cin.ignore(1024, '\n');
 		}
 		std::cout << "Password: ";
-		char buffer[256] = { 0 };
-		char* str = buffer;
-		FILE* fp = stdin;
+		char buffer[256] = {0};
+		char *str = buffer;
+		FILE *fp = stdin;
 		inputSecurePasswd(&str, sizeof(buffer), '*', fp);
 		m_userpwd = buffer;
 		std::cout << std::endl;
@@ -280,8 +278,7 @@ void ArgumentParser::processLogoff()
 	po::options_description desc("Logoff to App Mesh:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -299,8 +296,7 @@ void ArgumentParser::processLoginfo()
 	po::options_description desc("Print logon user:");
 	desc.add_options()
 		OPTION_HOST_NAME
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -362,7 +358,7 @@ void ArgumentParser::processReg()
 
 	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("extra_time") > 0)
 	{
-		if (DurationParse().parse(m_commandLineVariables["interval"].as<std::string>()) <= 
+		if (DurationParse().parse(m_commandLineVariables["interval"].as<std::string>()) <=
 			DurationParse().parse(m_commandLineVariables["extra_time"].as<std::string>()))
 		{
 			std::cout << "The extra_time seconds must less than interval." << std::endl;
@@ -382,23 +378,40 @@ void ArgumentParser::processReg()
 	}
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
-	if (m_commandLineVariables.count("cmd"))jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	if (m_commandLineVariables.count("shell_mode"))jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
-	if (m_commandLineVariables.count("init"))jsobObj[JSON_KEY_APP_init_command] = web::json::value::string(m_commandLineVariables["init"].as<std::string>());
-	if (m_commandLineVariables.count("fini"))jsobObj[JSON_KEY_APP_fini_command] = web::json::value::string(m_commandLineVariables["fini"].as<std::string>());
-	if (m_commandLineVariables.count("health_check"))jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
-	if (m_commandLineVariables.count("perm")) jsobObj[JSON_KEY_APP_owner_permission] = web::json::value::number(m_commandLineVariables["perm"].as<int>());
-	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
-	if (m_commandLineVariables.count("status")) jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
-	if (m_commandLineVariables.count(JSON_KEY_APP_metadata)) jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>());
-	if (m_commandLineVariables.count("docker_image")) jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
-	if (m_commandLineVariables.count("timezone")) jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
-	if (m_commandLineVariables.count("start_time")) jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
-	if (m_commandLineVariables.count("end_time")) jsobObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
-	if (m_commandLineVariables.count("interval")) jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
-	if (m_commandLineVariables.count("extra_time")) jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::string(m_commandLineVariables["extra_time"].as<std::string>());
-	if (m_commandLineVariables.count("stdout_cache_size")) jsobObj[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_commandLineVariables["stdout_cache_size"].as<int>());
-	if (m_commandLineVariables.count("keep_running")) jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
+	if (m_commandLineVariables.count("cmd"))
+		jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	if (m_commandLineVariables.count("shell_mode"))
+		jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
+	if (m_commandLineVariables.count("init"))
+		jsobObj[JSON_KEY_APP_init_command] = web::json::value::string(m_commandLineVariables["init"].as<std::string>());
+	if (m_commandLineVariables.count("fini"))
+		jsobObj[JSON_KEY_APP_fini_command] = web::json::value::string(m_commandLineVariables["fini"].as<std::string>());
+	if (m_commandLineVariables.count("health_check"))
+		jsobObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
+	if (m_commandLineVariables.count("perm"))
+		jsobObj[JSON_KEY_APP_owner_permission] = web::json::value::number(m_commandLineVariables["perm"].as<int>());
+	if (m_commandLineVariables.count("workdir"))
+		jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
+	if (m_commandLineVariables.count("status"))
+		jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
+	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
+		jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>());
+	if (m_commandLineVariables.count("docker_image"))
+		jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
+	if (m_commandLineVariables.count("timezone"))
+		jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
+	if (m_commandLineVariables.count("start_time"))
+		jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
+	if (m_commandLineVariables.count("end_time"))
+		jsobObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
+	if (m_commandLineVariables.count("interval"))
+		jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
+	if (m_commandLineVariables.count("extra_time"))
+		jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::string(m_commandLineVariables["extra_time"].as<std::string>());
+	if (m_commandLineVariables.count("stdout_cache_size"))
+		jsobObj[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_commandLineVariables["stdout_cache_size"].as<int>());
+	if (m_commandLineVariables.count("keep_running"))
+		jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
 		web::json::value objDailyLimitation = web::json::value::object();
@@ -411,12 +424,14 @@ void ArgumentParser::processReg()
 		m_commandLineVariables.count("cpu_shares"))
 	{
 		web::json::value objResourceLimitation = web::json::value::object();
-		if (m_commandLineVariables.count("memory")) objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_mb] = web::json::value::number(m_commandLineVariables["memory"].as<int>());
-		if (m_commandLineVariables.count("virtual_memory")) objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb] = web::json::value::number(m_commandLineVariables["virtual_memory"].as<int>());
-		if (m_commandLineVariables.count("cpu_shares")) objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_cpu_shares] = web::json::value::number(m_commandLineVariables["cpu_shares"].as<int>());
+		if (m_commandLineVariables.count("memory"))
+			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_mb] = web::json::value::number(m_commandLineVariables["memory"].as<int>());
+		if (m_commandLineVariables.count("virtual_memory"))
+			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb] = web::json::value::number(m_commandLineVariables["virtual_memory"].as<int>());
+		if (m_commandLineVariables.count("cpu_shares"))
+			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_cpu_shares] = web::json::value::number(m_commandLineVariables["cpu_shares"].as<int>());
 		jsobObj[JSON_KEY_APP_resource_limit] = objResourceLimitation;
 	}
-
 
 	if (m_commandLineVariables.count("env"))
 	{
@@ -437,7 +452,8 @@ void ArgumentParser::processReg()
 			jsobObj[JSON_KEY_APP_env] = objEnvs;
 		}
 	}
-	if (m_commandLineVariables.count("pid")) jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
+	if (m_commandLineVariables.count("pid"))
+		jsobObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
 	auto resp = requestHttp(true, methods::PUT, restPath, jsobObj);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
@@ -494,8 +510,7 @@ void ArgumentParser::processView()
 		("name,n", po::value<std::string>(), "view application by name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
-		("stdout_index,O", po::value<int>(), "application output index")
-		;
+		("stdout_index,O", po::value<int>(), "application output index");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -541,8 +556,7 @@ void ArgumentParser::processResource()
 	po::options_description desc("View host resource usage:");
 	desc.add_options()
 		COMMON_OPTIONS
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -558,8 +572,7 @@ void ArgumentParser::processEnableDisable(bool start)
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
 		("all,a", "action for all applications")
-		("name,n", po::value<std::vector<std::string>>(), "enable/disable application by name.")
-		;
+		("name,n", po::value<std::vector<std::string>>(), "enable/disable application by name.");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -573,13 +586,12 @@ void ArgumentParser::processEnableDisable(bool start)
 	if (all)
 	{
 		auto appMap = this->getAppList();
-		std::for_each(appMap.begin(), appMap.end(), [&appList, &start](const std::pair<std::string, bool>& pair)
+		std::for_each(appMap.begin(), appMap.end(), [&appList, &start](const std::pair<std::string, bool> &pair) {
+			if (start != pair.second)
 			{
-				if (start != pair.second)
-				{
-					appList.push_back(pair.first);
-				}
-			});
+				appList.push_back(pair.first);
+			}
+		});
 	}
 	else
 	{
@@ -615,8 +627,7 @@ void ArgumentParser::processRun()
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work')")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		;
+		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -628,12 +639,14 @@ void ArgumentParser::processRun()
 
 	std::map<std::string, std::string> query;
 	int timeout = DurationParse().parse(m_commandLineVariables["timeout"].as<std::string>());
-	if (m_commandLineVariables.count("timeout")) query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
+	if (m_commandLineVariables.count("timeout"))
+		query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
 
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	if (m_commandLineVariables.count("workdir")) jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
+	if (m_commandLineVariables.count("workdir"))
+		jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
 	{
 		std::vector<std::string> envs = m_commandLineVariables["env"].as<std::vector<std::string>>();
@@ -667,7 +680,8 @@ void ArgumentParser::processRun()
 	{
 		// Use run and output
 		// /app/run?timeout=5
-		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention)) query[HTTP_QUERY_KEY_retention] = m_commandLineVariables[HTTP_QUERY_KEY_retention].as<std::string>();
+		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention))
+			query[HTTP_QUERY_KEY_retention] = m_commandLineVariables[HTTP_QUERY_KEY_retention].as<std::string>();
 		std::string restPath = "/appmesh/app/run";
 		auto response = requestHttp(true, methods::POST, restPath, query, &jsobObj);
 		auto result = response.extract_json(true).get();
@@ -704,7 +718,7 @@ void SIGINT_Handler(int signo)
 		{
 			std::cout << response.extract_utf8string(true).get() << std::endl;
 		}
-		// if ctrl+c typed twice, just exit current 
+		// if ctrl+c typed twice, just exit current
 		ACE_OS::_exit(SIGINT);
 	}
 	else
@@ -734,8 +748,7 @@ void ArgumentParser::processExec()
 	po::options_description desc("Backend execute:");
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
-		COMMON_OPTIONS
-		;
+		COMMON_OPTIONS;
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -768,7 +781,7 @@ void ArgumentParser::processExec()
 		}
 	}
 
-	char buff[MAX_COMMAND_LINE_LENGH] = { 0 };
+	char buff[MAX_COMMAND_LINE_LENGH] = {0};
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_name] = web::json::value::string(APPC_EXEC_APP_NAME); // option, if not provide, UUID will be created
 	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
@@ -777,7 +790,7 @@ void ArgumentParser::processExec()
 	jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(getcwd(buff, sizeof(buff)));
 
 	std::string process_uuid;
-	bool currentRunFinished = true;	// one submitted run finished
+	bool currentRunFinished = true; // one submitted run finished
 	bool runOnce = false;			// if appc exec specify one cmd, then just run once
 	SIGINIT_BREAKING = false;		// if ctrl + c is triggered, stop run and start read input from stdin
 	if (initialCmd.length())
@@ -803,7 +816,7 @@ void ArgumentParser::processExec()
 		this->regSignal();
 		runOnce = false;
 	}
-	
+
 	while (true)
 	{
 		// no need read stdin when run for once
@@ -846,7 +859,10 @@ void ArgumentParser::processExec()
 			{
 				currentRunFinished = true;
 				process_uuid.clear();
-				if (runOnce) { break; }
+				if (runOnce)
+				{
+					break;
+				}
 			}
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(150));
@@ -860,8 +876,7 @@ void ArgumentParser::processDownload()
 		COMMON_OPTIONS
 		("remote,r", po::value<std::string>(), "remote file path")
 		("local,l", po::value<std::string>(), "save to local file path")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -896,8 +911,7 @@ void ArgumentParser::processUpload()
 		COMMON_OPTIONS
 		("remote,r", po::value<std::string>(), "save to remote file path")
 		("local,l", po::value<std::string>(), "local file path")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -923,7 +937,6 @@ void ArgumentParser::processUpload()
 	fileStream.seek(0, std::ios::end);
 	auto length = static_cast<std::size_t>(fileStream.tell());
 	fileStream.seek(0, std::ios::beg);
-
 
 	std::map<std::string, std::string> query, header;
 	header[HTTP_HEADER_KEY_file_path] = file;
@@ -955,14 +968,13 @@ void ArgumentParser::processTags()
 		("add,a", "add labels")
 		("remove,r", "remove labels")
 		("label,l", po::value<std::vector<std::string>>(), "labels (e.g., -l os=linux -t arch=arm64)")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-
 	std::vector<std::string> inputTags;
-	if (m_commandLineVariables.count("label")) inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
+	if (m_commandLineVariables.count("label"))
+		inputTags = m_commandLineVariables["label"].as<std::vector<std::string>>();
 
 	if (m_commandLineVariables.count("add") &&
 		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("view"))
@@ -979,13 +991,13 @@ void ArgumentParser::processTags()
 			if (envVec.size() == 2)
 			{
 				std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
-				std::map<std::string, std::string> query = { {"value", envVec.at(1)} };
+				std::map<std::string, std::string> query = {{"value", envVec.at(1)}};
 				requestHttp(true, methods::PUT, restPath, query, nullptr, nullptr);
 			}
 		}
 	}
 	else if (m_commandLineVariables.count("remove") &&
-		!m_commandLineVariables.count("add") && !m_commandLineVariables.count("view"))
+			 !m_commandLineVariables.count("add") && !m_commandLineVariables.count("view"))
 	{
 		// Process remove
 		if (inputTags.empty())
@@ -1001,7 +1013,7 @@ void ArgumentParser::processTags()
 		}
 	}
 	else if (m_commandLineVariables.count("view") &&
-		!m_commandLineVariables.count("remove") && !m_commandLineVariables.count("add"))
+			 !m_commandLineVariables.count("remove") && !m_commandLineVariables.count("add"))
 	{
 		// view
 	}
@@ -1027,8 +1039,7 @@ void ArgumentParser::processLoglevel()
 	desc.add_options()
 		COMMON_OPTIONS
 		("level,l", po::value<std::string>(), "log level (e.g., DEBUG,INFO,NOTICE,WARN,ERROR)")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1054,8 +1065,7 @@ void ArgumentParser::processConfigView()
 	desc.add_options()
 		COMMON_OPTIONS
 		("view,v", "view basic configurations")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1071,8 +1081,7 @@ void ArgumentParser::processChangePwd()
 		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user to change passwd")
 		("newpasswd,p", po::value<std::string>(), "new password")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1099,8 +1108,7 @@ void ArgumentParser::processLockUser()
 		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user")
 		("unlock,k", po::value<bool>(), "lock or unlock user")
-		("help,h", "Prints command usage to stdout and exits")
-		;
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1121,7 +1129,8 @@ void ArgumentParser::processLockUser()
 void ArgumentParser::processEncryptUserPwd()
 {
 	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
-	if (opts.size()) opts.erase(opts.begin());
+	if (opts.size())
+		opts.erase(opts.begin());
 
 	std::string str;
 	if (opts.size() == 0)
@@ -1142,7 +1151,7 @@ void ArgumentParser::processEncryptUserPwd()
 	}
 }
 
-bool ArgumentParser::confirmInput(const char* msg)
+bool ArgumentParser::confirmInput(const char *msg)
 {
 	std::cout << msg << ":";
 	std::string result;
@@ -1184,14 +1193,13 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 	return std::move(response);
 }
 
-http_request ArgumentParser::createRequest(const method& mtd, const std::string& path, std::map<std::string, std::string>& query, std::map<std::string, std::string>* header)
+http_request ArgumentParser::createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> *header)
 {
 	// Build request URI and start the request.
 	uri_builder builder(GET_STRING_T(path));
-	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string>& pair)
-		{
-			builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
-		});
+	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair) {
+		builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
+	});
 
 	http_request request(mtd);
 	if (header)
@@ -1207,7 +1215,7 @@ http_request ArgumentParser::createRequest(const method& mtd, const std::string&
 	return std::move(request);
 }
 
-bool ArgumentParser::isAppExist(const std::string& appName)
+bool ArgumentParser::isAppExist(const std::string &appName)
 {
 	static auto apps = getAppList();
 	return apps.find(appName) != apps.end();
@@ -1309,7 +1317,7 @@ std::string ArgumentParser::readAuthenToken()
 	return std::move(jwtToken);
 }
 
-std::string ArgumentParser::requestToken(const std::string& user, const std::string& passwd)
+std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd)
 {
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
 	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
@@ -1321,7 +1329,8 @@ std::string ArgumentParser::requestToken(const std::string& user, const std::str
 	requestLogin.set_request_uri(builder.to_uri());
 	requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(user));
 	requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(passwd));
-	if (m_tokenTimeoutSeconds) requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
+	if (m_tokenTimeoutSeconds)
+		requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
 	http_response response = client.request(requestLogin).get();
 	if (response.status_code() != status_codes::OK)
 	{
@@ -1355,11 +1364,13 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	int index = 1;
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
-	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value& jobj) {
-		const char* slash = "-";
+	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value &jobj) {
+		const char *slash = "-";
 		auto name = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name);
-		if (reduce) name = reduceFunc(name, 12);
-		else if (name.length() >= 12) name += " ";
+		if (reduce)
+			name = reduceFunc(name, 12);
+		else if (name.length() >= 12)
+			name += " ";
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner), 6);
@@ -1395,15 +1406,16 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		}
 		std::cout << GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command);
 		std::cout << std::endl;
-		});
+	});
 }
 
-void ArgumentParser::shiftCommandLineArgs(po::options_description& desc)
+void ArgumentParser::shiftCommandLineArgs(po::options_description &desc)
 {
 	m_commandLineVariables.clear();
 	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
 	// remove [command] option and parse all others in m_commandLineVariables
-	if (opts.size()) opts.erase(opts.begin());
+	if (opts.size())
+		opts.erase(opts.begin());
 	po::store(po::command_line_parser(opts).options(desc).run(), m_commandLineVariables);
 	po::notify(m_commandLineVariables);
 }
@@ -1420,79 +1432,64 @@ std::string ArgumentParser::reduceStr(std::string source, int limit)
 	}
 }
 
-void ArgumentParser::setStdinEcho(bool enable)
+std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mask, FILE *fp)
 {
-	// https://stackoverflow.com/questions/1413445/reading-a-password-from-stdcin
-#ifdef WIN32
-	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
-	DWORD mode;
-	GetConsoleMode(hStdin, &mode);
-
-	if (!enable)
-		mode &= ~ENABLE_ECHO_INPUT;
-	else
-		mode |= ENABLE_ECHO_INPUT;
-
-	SetConsoleMode(hStdin, mode);
-
-#else
-	struct termios tty;
-	tcgetattr(STDIN_FILENO, &tty);
-	if (!enable)
-		tty.c_lflag &= ~ECHO;
-	else
-		tty.c_lflag |= ECHO;
-
-	(void)tcsetattr(STDIN_FILENO, TCSANOW, &tty);
-#endif
-}
-
-std::size_t ArgumentParser::inputSecurePasswd(char** pw, std::size_t sz, int mask, FILE* fp)
-{
-	if (!pw || !sz || !fp) return -1;       /* validate input   */
+	if (!pw || !sz || !fp)
+		return -1; /* validate input   */
 #ifdef MAXPW
-	if (sz > MAXPW) sz = MAXPW;
+	if (sz > MAXPW)
+		sz = MAXPW;
 #endif
 
-	if (*pw == NULL) {              /* reallocate if no address */
-		void* tmp = realloc(*pw, sz * sizeof * *pw);
+	if (*pw == NULL)
+	{
+		/* reallocate if no address */
+		void *tmp = realloc(*pw, sz * sizeof **pw);
 		if (!tmp)
 			return -1;
-		memset(tmp, 0, sz);    /* initialize memory to 0   */
-		*pw = (char*)tmp;
+		memset(tmp, 0, sz); /* initialize memory to 0   */
+		*pw = (char *)tmp;
 	}
 
-	std::size_t idx = 0;         /* index, number of chars in read   */
+	std::size_t idx = 0; /* index, number of chars in read   */
 	int c = 0;
 
-	struct termios old_kbd_mode;    /* orig keyboard settings   */
+	struct termios old_kbd_mode; /* orig keyboard settings   */
 	struct termios new_kbd_mode;
 
-	if (tcgetattr(0, &old_kbd_mode)) { /* save orig settings   */
+	if (tcgetattr(0, &old_kbd_mode))
+	{
+		/* save orig settings   */
 		fprintf(stderr, "%s() error: tcgetattr failed.\n", __func__);
 		return -1;
-	}   /* copy old to new */
+	}
+	/* copy old to new */
 	memcpy(&new_kbd_mode, &old_kbd_mode, sizeof(struct termios));
 
-	new_kbd_mode.c_lflag &= ~(ICANON | ECHO);  /* new kbd flags */
+	new_kbd_mode.c_lflag &= ~(ICANON | ECHO); /* new kbd flags */
 	new_kbd_mode.c_cc[VTIME] = 0;
 	new_kbd_mode.c_cc[VMIN] = 1;
-	if (tcsetattr(0, TCSANOW, &new_kbd_mode)) {
+	if (tcsetattr(0, TCSANOW, &new_kbd_mode))
+	{
 		fprintf(stderr, "%s() error: tcsetattr failed.\n", __func__);
 		return -1;
 	}
 
 	/* read chars from fp, mask if valid char specified */
 	while (((c = fgetc(fp)) != '\n' && c != EOF && idx < sz - 1) ||
-		(idx == sz - 1 && c == 127))
+		   (idx == sz - 1 && c == 127))
 	{
-		if (c != 127) {
-			if (31 < mask && mask < 127)    /* valid ascii char */
+		if (c != 127)
+		{
+			if (31 < mask && mask < 127) /* valid ascii char */
 				fputc(mask, stdout);
 			(*pw)[idx++] = c;
 		}
-		else if (idx > 0) {         /* handle backspace (del)   */
-			if (31 < mask && mask < 127) {
+		else if (idx > 0)
+		{
+			/* handle backspace (del)   */
+			if (31 < mask && mask < 127)
+			{
 				fputc(0x8, stdout);
 				fputc(' ', stdout);
 				fputc(0x8, stdout);
@@ -1502,15 +1499,16 @@ std::size_t ArgumentParser::inputSecurePasswd(char** pw, std::size_t sz, int mas
 	}
 	(*pw)[idx] = 0; /* null-terminate   */
 
-					/* reset original keyboard  */
-	if (tcsetattr(0, TCSANOW, &old_kbd_mode)) {
+	/* reset original keyboard  */
+	if (tcsetattr(0, TCSANOW, &old_kbd_mode))
+	{
 		fprintf(stderr, "%s() error: tcsetattr failed.\n", __func__);
 		return -1;
 	}
 
 	if (idx == sz - 1 && c != '\n') /* warn if pw truncated */
 		fprintf(stderr, " (%s() warning: truncated at %zu chars.)\n",
-			__func__, sz - 1);
+				__func__, sz - 1);
 
 	return idx; /* number of chars in passwd    */
 }

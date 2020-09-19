@@ -24,7 +24,6 @@ public:
 	virtual void containerId(std::string containerId) override;
 
 	// docker logs
-	virtual std::string getOutputMsg() override;
 	virtual std::string fetchOutputMsg() override;
 	virtual std::string fetchLine() override;
 

@@ -239,23 +239,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	return pid;
 }
 
-std::string AppProcess::getOutputMsg()
-{
-	if (Utility::isFileExist(m_stdoutFileName))
-	{
-		std::ifstream inFile(m_stdoutFileName, ios::in);
-		if (inFile.is_open())
-		{
-			// TODO: consider large file
-			std::stringstream buffer;
-			buffer << inFile.rdbuf();
-			inFile.close();
-			return std::move(buffer.str());
-		}
-	}
-	return std::string();
-}
-
 std::string AppProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);

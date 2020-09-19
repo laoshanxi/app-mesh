@@ -269,17 +269,6 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 	return 1;
 }
 
-std::string DockerProcess::getOutputMsg()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (m_containerId.length())
-	{
-		auto dockerCommand = Utility::stringFormat("docker logs --tail %d %s", MAX_APP_CACHED_LINES, m_containerId.c_str());
-		return Utility::runShellCommand(dockerCommand);
-	}
-	return std::string();
-}
-
 std::string DockerProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);

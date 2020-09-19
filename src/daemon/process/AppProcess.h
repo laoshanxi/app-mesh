@@ -33,7 +33,6 @@ public:
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							 std::string stdoutFile);
 
-	virtual std::string getOutputMsg();
 	virtual std::string fetchOutputMsg();
 	virtual std::string fetchLine();
 	virtual bool complete() { return true; }

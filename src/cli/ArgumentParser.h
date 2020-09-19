@@ -65,7 +65,6 @@ private:
 	void printApps(web::json::value json, bool reduce);
 	void shiftCommandLineArgs(po::options_description &desc);
 	std::string reduceStr(std::string source, int limit);
-	void setStdinEcho(bool enable = true);
 	bool confirmInput(const char *msg);
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();

@@ -12,48 +12,53 @@
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
-#define LOG_DBG    log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG 
-#define LOG_INF    log4cpp::Category::getRoot() << log4cpp::Priority::INFO
-#define LOG_WAR    log4cpp::Category::getRoot() << log4cpp::Priority::WARN
-#define LOG_ERR    log4cpp::Category::getRoot() << log4cpp::Priority::ERROR
+#define LOG_DBG log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG
+#define LOG_INF log4cpp::Category::getRoot() << log4cpp::Priority::INFO
+#define LOG_WAR log4cpp::Category::getRoot() << log4cpp::Priority::WARN
+#define LOG_ERR log4cpp::Category::getRoot() << log4cpp::Priority::ERROR
 
 // Expand micro viriable (microkey=microvalue)
-#define __MICRO_KEY__(str) #str                // No expand micro
-#define __MICRO_VAR__(str) __MICRO_KEY__(str)  // Expand micro
+#define __MICRO_KEY__(str) #str				  // No expand micro
+#define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
-#define PRINT_VERSION() if (argc >= 2 && (std::string("version") == argv[1] || std::string("-v") == argv[1] || std::string("-V") == argv[1])) \
-                        { std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl; return 0; }
-
-#define GET_STRING_T(sstr) utility::conversions::to_string_t(std::string(sstr))
-#define GET_STD_STRING(sstr)  utility::conversions::to_utf8string(sstr)
-
-#define SET_COMPARE(x, y) if ((x) != (y)) \
-	{ \
-		(x) = (y); \
-		LOG_INF << fname << "Configuration value updated : " << #x ; \
+#define PRINT_VERSION()                                                                                                   \
+	if (argc >= 2 && (std::string("version") == argv[1] || std::string("-v") == argv[1] || std::string("-V") == argv[1])) \
+	{                                                                                                                     \
+		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                  \
+		return 0;                                                                                                         \
 	}
 
-#define REST_HEADER_PRINT \
+#define GET_STRING_T(sstr) utility::conversions::to_string_t(std::string(sstr))
+#define GET_STD_STRING(sstr) utility::conversions::to_utf8string(sstr)
+
+#define SET_COMPARE(x, y)                                           \
+	if ((x) != (y))                                                 \
+	{                                                               \
+		(x) = (y);                                                  \
+		LOG_INF << fname << "Configuration value updated : " << #x; \
+	}
+
+#define REST_HEADER_PRINT                                                          \
 	for (auto it = message.headers().begin(); it != message.headers().end(); it++) \
 		LOG_DBG << "Header: " << it->first << " = " << it->second;
-#define REST_INFO_PRINT \
-	LOG_DBG \
-	<< " fname: " << __FUNCTION__  \
-	<< " Method: " << message.method() \
-	<< " URI: " << http::uri::decode(message.relative_uri().path()) \
-	<< " Query: " << http::uri::decode(message.relative_uri().query()) \
-	<< " Remote: " << message.remote_address();
+#define REST_INFO_PRINT                                                    \
+	LOG_DBG                                                                \
+		<< " fname: " << __FUNCTION__                                      \
+		<< " Method: " << message.method()                                 \
+		<< " URI: " << http::uri::decode(message.relative_uri().path())    \
+		<< " Query: " << http::uri::decode(message.relative_uri().query()) \
+		<< " Remote: " << message.remote_address();
 
 // make_unique implementation for C++11, C++14 already support
 #if (__cplusplus <= 201103L)
 namespace std
 {
-	template<typename T, typename... Args>
-	std::unique_ptr<T> make_unique(Args&&... args)
+	template <typename T, typename... Args>
+	std::unique_ptr<T> make_unique(Args &&... args)
 	{
 		return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 	}
-}
+} // namespace std
 #endif
 
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
@@ -63,11 +68,19 @@ namespace std
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))
 #define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_integer() : 0)
 #define GET_JSON_NUMBER_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_number().to_int64() : 0L)
-#define SET_JSON_INT_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_INT_VALUE(jsonObj, key);
+#define SET_JSON_INT_VALUE(jsonObj, key, value) \
+	if (HAS_JSON_FIELD(jsonObj, key))           \
+		value = GET_JSON_INT_VALUE(jsonObj, key);
 #define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_bool() : false)
-#define SET_JSON_BOOL_VALUE(jsonObj, key, value) if (HAS_JSON_FIELD(jsonObj, key)) value = GET_JSON_BOOL_VALUE(jsonObj, key);
+#define SET_JSON_BOOL_VALUE(jsonObj, key, value) \
+	if (HAS_JSON_FIELD(jsonObj, key))            \
+		value = GET_JSON_BOOL_VALUE(jsonObj, key);
 #define HAS_JSON_FIELD(jsonObj, key) (jsonObj.has_field(GET_STRING_T(key)) && !jsonObj.at(GET_STRING_T(key)).is_null())
-#define ERASE_JSON_FIELD(jsonObj, key) if (HAS_JSON_FIELD(jsonObj, key)) { jsonObj.erase(GET_STRING_T(key)); }
+#define ERASE_JSON_FIELD(jsonObj, key)    \
+	if (HAS_JSON_FIELD(jsonObj, key))     \
+	{                                     \
+		jsonObj.erase(GET_STRING_T(key)); \
+	}
 
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
@@ -86,7 +99,7 @@ namespace std
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define DEFAULT_WORKING_DIR "/opt/appmesh/work"
 
-const char* GET_STATUS_STR(unsigned int status);
+const char *GET_STATUS_STR(unsigned int status);
 
 //////////////////////////////////////////////////////////////////////////
 /// All common functions
@@ -102,65 +115,63 @@ public:
 	static std::string getSelfDir();
 	static bool isDirExist(std::string path);
 	static bool isFileExist(std::string path);
-	static bool createDirectory(const std::string& path, mode_t mode = 0775);
-	static bool createRecursiveDirectory(const std::string& path, mode_t mode = 0775);
-	static bool removeDir(const std::string& path);
-	static void removeFile(const std::string& path);
+	static bool createDirectory(const std::string &path, mode_t mode = 0775);
+	static bool createRecursiveDirectory(const std::string &path, mode_t mode = 0775);
+	static bool removeDir(const std::string &path);
+	static void removeFile(const std::string &path);
 
 	// String related
 	static bool isNumber(std::string s);
-	static std::string stdStringTrim(const std::string& str);
-	static std::string stdStringTrim(const std::string& str, char trimChar, bool trimStart = true, bool trimEnd = true);
-	static std::vector<std::string> splitString(const std::string& s, const std::string& c);
-	static bool startWith(const std::string& str, const std::string& head);
-	static bool endWith(const std::string& str, const std::string& end);
-	static std::string stringReplace(const std::string& strBase, const std::string& strSrc, const std::string& strDst);
+	static std::string stdStringTrim(const std::string &str);
+	static std::string stdStringTrim(const std::string &str, char trimChar, bool trimStart = true, bool trimEnd = true);
+	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
+	static bool startWith(const std::string &str, const std::string &head);
+	static bool endWith(const std::string &str, const std::string &end);
+	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst);
 	static std::string humanReadableSize(long double bytesSize);
-	static std::string prettyJson(const std::string& jsonStr);
-	static std::string hash(const std::string& str);
+	static std::string prettyJson(const std::string &jsonStr);
+	static std::string hash(const std::string &str);
 	static std::string stringFormat(const std::string fmt_str, ...);
 
 	static void initLogging();
-	static bool setLogLevel(const std::string& level);
+	static bool setLogLevel(const std::string &level);
 
 	static unsigned long long getThreadId();
-	static bool getUid(std::string userName, unsigned int& uid, unsigned int& groupid);
+	static bool getUid(std::string userName, unsigned int &uid, unsigned int &groupid);
 
-	static void getEnvironmentSize(const std::map<std::string, std::string>& envMap, int& totalEnvSize, int& totalEnvArgs);
+	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 
 	// %Y-%m-%d %H:%M:%S
-	static std::chrono::system_clock::time_point convertStr2Time(const std::string& strTime);
-	static std::string convertTime2Str(const std::chrono::system_clock::time_point& time);
+	static std::chrono::system_clock::time_point convertStr2Time(const std::string &strTime);
+	static std::string convertTime2Str(const std::chrono::system_clock::time_point &time);
 	// %H:%M:%S
-	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string& strTime);
-	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point& time);
+	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string &strTime);
+	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point &time);
 	// Timezone
 	static std::string getSystemPosixTimeZone();
 	// rfc3339 time
-	static std::string getRfc3339Time(const std::chrono::system_clock::time_point& time);
-	static std::string formatTime(const std::chrono::system_clock::time_point& time, const char* fmt);
+	static std::string getRfc3339Time(const std::chrono::system_clock::time_point &time);
+	static std::string formatTime(const std::chrono::system_clock::time_point &time, const char *fmt);
 
 	// Base64
-	static std::string encode64(const std::string& val);
-	static std::string decode64(const std::string& val);
+	static std::string encode64(const std::string &val);
+	static std::string decode64(const std::string &val);
 
 	// Read file to string
-	static std::string readFile(const std::string& path);
-	static std::string readFileCpp(const std::string& path);
+	static std::string readFile(const std::string &path);
+	static std::string readFileCpp(const std::string &path);
 
 	static std::string createUUID();
 	static std::string runShellCommand(std::string cmd);
-	static void trimLineBreak(std::string& str);
 };
-
 
 #define ENV_APP_MANAGER_LISTEN_PORT "APPMESH_OVERRIDE_LISTEN_PORT"
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
-#define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"							// used to pass docker extra parameters to docker startup cmd
-#define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT"	// app manager pull docker image timeout seconds
+#define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
+#define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS 7 *(60 * 60 * 24)	// default 7 days
-#define MAX_TOKEN_EXPIRE_SECONDS 30 * (60 * 60 * 24) 	// max 30 days
+#define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
+#define MAX_TOKEN_EXPIRE_SECONDS 30 * (60 * 60 * 24)	// max 30 days
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10				// run app default timeout
 #define MAX_RUN_APP_TIMEOUT_SECONDS 3 * (60 * 60 * 24)	// run app max timeout 3 days
 #define MAX_APP_CACHED_LINES 1024
@@ -253,7 +264,6 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb "memory_virt_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
 
-
 #define JSON_KEY_USER_key "key"
 #define JSON_KEY_USER_group "group"
 #define JSON_KEY_USER_roles "roles"
@@ -288,31 +298,31 @@ public:
 #define HTTP_QUERY_KEY_label_value "value"
 #define HTTP_QUERY_KEY_retention "retention" // for async run, the output hold timeout in sever side
 
-#define PERMISSION_KEY_view_app 				"app-view"
-#define PERMISSION_KEY_view_app_output			"app-output-view"
-#define PERMISSION_KEY_view_all_app 			"app-view-all"
-#define PERMISSION_KEY_view_host_resource		"host-resource-view"
-#define PERMISSION_KEY_app_reg					"app-reg"
-#define PERMISSION_KEY_app_control				"app-control"
-#define PERMISSION_KEY_app_delete				"app-delete"
-#define PERMISSION_KEY_run_app_async			"app-run-async"
-#define PERMISSION_KEY_run_app_sync				"app-run-sync"
-#define PERMISSION_KEY_run_app_async_output		"app-run-async-output"
-#define PERMISSION_KEY_file_download			"file-download"
-#define PERMISSION_KEY_file_upload				"file-upload"
-#define PERMISSION_KEY_label_view				"label-view"
-#define PERMISSION_KEY_label_set				"label-set"
-#define PERMISSION_KEY_label_delete				"label-delete"
-#define PERMISSION_KEY_loglevel  				"log-level"
-#define PERMISSION_KEY_config_view  			"config-view"
-#define PERMISSION_KEY_config_set	  			"config-set"
-#define PERMISSION_KEY_change_passwd  			"passwd-change"
-#define PERMISSION_KEY_lock_user  				"user-lock"
-#define PERMISSION_KEY_unlock_user  			"user-unlock"
-#define PERMISSION_KEY_add_user  				"user-add"
-#define PERMISSION_KEY_delete_user  			"user-delete"
-#define PERMISSION_KEY_get_users  				"user-list"
-#define PERMISSION_KEY_role_update  			"role-set"
-#define PERMISSION_KEY_role_delete  			"role-delete"
-#define PERMISSION_KEY_role_view 				"role-view"
-#define PERMISSION_KEY_permission_list			"permission-list"
+#define PERMISSION_KEY_view_app "app-view"
+#define PERMISSION_KEY_view_app_output "app-output-view"
+#define PERMISSION_KEY_view_all_app "app-view-all"
+#define PERMISSION_KEY_view_host_resource "host-resource-view"
+#define PERMISSION_KEY_app_reg "app-reg"
+#define PERMISSION_KEY_app_control "app-control"
+#define PERMISSION_KEY_app_delete "app-delete"
+#define PERMISSION_KEY_run_app_async "app-run-async"
+#define PERMISSION_KEY_run_app_sync "app-run-sync"
+#define PERMISSION_KEY_run_app_async_output "app-run-async-output"
+#define PERMISSION_KEY_file_download "file-download"
+#define PERMISSION_KEY_file_upload "file-upload"
+#define PERMISSION_KEY_label_view "label-view"
+#define PERMISSION_KEY_label_set "label-set"
+#define PERMISSION_KEY_label_delete "label-delete"
+#define PERMISSION_KEY_loglevel "log-level"
+#define PERMISSION_KEY_config_view "config-view"
+#define PERMISSION_KEY_config_set "config-set"
+#define PERMISSION_KEY_change_passwd "passwd-change"
+#define PERMISSION_KEY_lock_user "user-lock"
+#define PERMISSION_KEY_unlock_user "user-unlock"
+#define PERMISSION_KEY_add_user "user-add"
+#define PERMISSION_KEY_delete_user "user-delete"
+#define PERMISSION_KEY_get_users "user-list"
+#define PERMISSION_KEY_role_update "role-set"
+#define PERMISSION_KEY_role_delete "role-delete"
+#define PERMISSION_KEY_role_view "role-view"
+#define PERMISSION_KEY_permission_list "permission-list"
