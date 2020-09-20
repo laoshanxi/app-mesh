@@ -107,7 +107,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str)
 	// Consul
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
 	{
-		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSULE));
+		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSULE), config->getRestListenPort(), config->getSslEnabled());
 	}
 
 	return config;
@@ -889,11 +889,12 @@ Configuration::JsonSecurity::JsonSecurity()
 	m_jwtUsers = std::make_shared<Users>();
 }
 
-std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jobj)
+std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jobj, int appmeshRestPort, bool sslEnabled)
 {
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
 	consul->m_datacenter = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_DATACENTER);
+	consul->m_proxyUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
 	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MAIN);
 	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
 	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
@@ -905,6 +906,12 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	}
 	if (consul->m_ttl < 5)
 		throw std::invalid_argument("session TTL should not less than 5s");
+
+	{
+		auto hostname = ResourceCollection::instance()->getHostName();
+		auto protocol = sslEnabled ? "https" : "http";
+		consul->m_defaultProxyUrl = Utility::stringFormat("%s://%s:%d", protocol, hostname.c_str(), appmeshRestPort);
+	}
 	return consul;
 }
 
@@ -917,6 +924,7 @@ web::json::value Configuration::JsonConsul::AsJson() const
 	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);
 	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
+	result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_proxyUrl);
 	return result;
 }
 
@@ -928,6 +936,14 @@ bool Configuration::JsonConsul::consulEnabled() const
 bool Configuration::JsonConsul::consulSecurityEnabled() const
 {
 	return !m_consulUrl.empty() && m_securitySync;
+}
+
+const std::string Configuration::JsonConsul::appmeshUrl() const
+{
+	if (m_proxyUrl.empty())
+		return m_defaultProxyUrl;
+	else
+		return m_proxyUrl;
 }
 
 Configuration::JsonConsul::JsonConsul()

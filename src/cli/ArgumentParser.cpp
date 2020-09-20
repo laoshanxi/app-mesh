@@ -321,7 +321,7 @@ void ArgumentParser::processReg()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
 		("metadata,g", po::value<std::string>(), "application metadata string")
-		("perm", po::value<int>(), "application owner permission")
+		("perm", po::value<int>(), "application user permission, value = [group & other], each can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("shell_mode,S", "command line will be executed in shell in this mode")
 		("init,I", po::value<std::string>(), "initial command line with arguments")

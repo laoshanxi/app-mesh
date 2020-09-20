@@ -35,7 +35,8 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
     "url": "http://localhost:8500",
     "datacenter": "dc1",
     "session_TTL": 30,
-    "enable_consul_security": false
+    "enable_consul_security": false,
+    "appmesh_proxy_url": null
   }
 ```
 
@@ -53,7 +54,8 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/nodes/centos8?raw | python3 
         "HOST_NAME": "centos8",
         "arch": "x86_64",
         "os_version": "centos7.6"
-    }
+    },
+    "appmesh": "https://myhost.com:6060"
 }
 `
  ```

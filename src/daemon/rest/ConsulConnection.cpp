@@ -66,6 +66,7 @@ void ConsulConnection::reportNode()
 		web::json::value body = web::json::value::object();
 		body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
+		body["appmesh"] = web::json::value::string(Configuration::instance()->getConsul()->appmeshUrl());
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 		auto resp = requestHttp(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)

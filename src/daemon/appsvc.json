@@ -100,6 +100,7 @@
     "is_node": true,
     "url": null,
     "url_example": "http://localhost:8500",
+    "appmesh_proxy_url": null,
     "datacenter": "dc1",
     "session_TTL": 30,
     "enable_consul_security": false

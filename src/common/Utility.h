@@ -121,7 +121,7 @@ public:
 	static void removeFile(const std::string &path);
 
 	// String related
-	static bool isNumber(std::string s);
+	static bool isNumber(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
 	static std::string stdStringTrim(const std::string &str, char trimChar, bool trimStart = true, bool trimEnd = true);
 	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
@@ -215,6 +215,7 @@ public:
 #define JSON_KEY_CONSULE_DATACENTER "datacenter"
 #define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSUL_SECURITY "enable_consul_security"
+#define JSON_KEY_CONSUL_APPMESH_PROXY_URL "appmesh_proxy_url"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_owner "owner"

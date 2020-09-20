@@ -44,16 +44,21 @@ class Configuration
 	struct JsonConsul
 	{
 		JsonConsul();
-		static std::shared_ptr<JsonConsul> FromJson(const web::json::value &jobj);
+		static std::shared_ptr<JsonConsul> FromJson(const web::json::value &jobj, int appmeshRestPort, bool sslEnabled);
 		web::json::value AsJson() const;
 		bool consulEnabled() const;
 		bool consulSecurityEnabled() const;
+		const std::string appmeshUrl() const;
 
 		bool m_isMaster;
 		bool m_isNode;
 		std::string m_datacenter;
 		// http://consul.service.consul:8500
 		std::string m_consulUrl;
+		// appmesh proxy url, used to report to Consul to expose local appmesh listen port address
+		std::string m_proxyUrl;
+		// in case of not set m_proxyUrl, use default dynamic value https://localhost:6060
+		std::string m_defaultProxyUrl;
 		// TTL (string: "") - Specifies the number of seconds (between 10s and 86400s).
 		int m_ttl;
 		bool m_securitySync;

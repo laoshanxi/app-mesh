@@ -489,7 +489,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_workdir.length())
 		result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
-	result[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(static_cast<int>(m_stdoutCacheSize));
+	if (m_stdoutCacheSize)
+		result[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(static_cast<int>(m_stdoutCacheSize));
 	if (m_metadata.length())
 		result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
 	if (returnRuntimeInfo)
@@ -507,7 +508,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
 		}
 		result[JSON_KEY_APP_health] = web::json::value::number(this->getHealth());
-		result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_stdoutFileQueue->size());
+		if (m_stdoutFileQueue->size())
+			result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_stdoutFileQueue->size());
 		//result[JSON_KEY_APP_id] = web::json::value::string(m_appId);
 	}
 	if (m_dailyLimit != nullptr)

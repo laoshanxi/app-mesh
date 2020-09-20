@@ -49,6 +49,12 @@ std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json
 		result->m_memoryVirtMb = GET_JSON_INT_VALUE(jobj, JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb);
 		result->m_cpuShares = GET_JSON_INT_VALUE(jobj, JSON_KEY_RESOURCE_LIMITATION_cpu_shares);
 		result->m_name = appName;
+		if (0 == result->m_memoryMb &&
+			0 == result->m_memoryVirtMb &&
+			0 == result->m_cpuShares)
+		{
+			return nullptr;
+		}
 	}
 	return result;
 }

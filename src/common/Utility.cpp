@@ -47,8 +47,14 @@ Utility::~Utility()
 {
 }
 
-bool Utility::isNumber(std::string s)
+bool Utility::isNumber(const std::string &str)
 {
+	std::string s = str;
+	// if the number is -123, just remove the first char to check left
+	if (s.length() && s[0] == '-')
+	{
+		s = s.substr(1);
+	}
 	return !s.empty() && std::find_if(s.begin(), s.end(), [](char c) { return !std::isdigit(c); }) == s.end();
 }
 
