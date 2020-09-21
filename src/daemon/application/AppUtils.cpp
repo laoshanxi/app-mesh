@@ -37,7 +37,7 @@ ShellAppFileGen::~ShellAppFileGen()
 	Utility::removeFile(m_fileName);
 }
 
-AppLogFile::AppLogFile(const std::string &appName, int index = 0)
+AppLogFile::AppLogFile(const std::string &appName, int index)
 	: m_fileName(appName), m_index(index)
 {
 }
@@ -87,7 +87,7 @@ const std::string AppLogFile::getFileName() const
 }
 
 LogFileQueue::LogFileQueue(std::string baseFileName, int queueSize)
-	: baseFileName(baseFileName), m_ququeSize(queueSize)
+	: baseFileName(baseFileName), m_ququeSize(queueSize + 1)
 {
 }
 
@@ -102,8 +102,6 @@ LogFileQueue::~LogFileQueue()
 
 void LogFileQueue::enqueue()
 {
-	if (0 == m_ququeSize)
-		return;
 	// rename all with reverse order
 	for (auto it = m_fileQueue.rbegin(); it != m_fileQueue.rend(); it++)
 	{

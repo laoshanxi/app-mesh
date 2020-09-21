@@ -44,6 +44,7 @@ public:
 	void onSuicideEvent(int timerId = 0);
 	void onFinishEvent(int timerId = 0);
 	void onEndEvent(int timerId = 0);
+	void regSuicideTimer(int timeoutSeconds);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
@@ -108,6 +109,7 @@ protected:
 	unsigned int m_version;
 	std::shared_ptr<AppProcess> m_process;
 	int m_pid;
+	int m_suicideTimerId;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;

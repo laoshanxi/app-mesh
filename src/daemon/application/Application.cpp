@@ -17,7 +17,10 @@
 #include "../../prom_exporter/gauge.h"
 
 Application::Application()
-	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheSize(0), m_endTimerId(0), m_health(true), m_appId(Utility::createUUID()), m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
+	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheSize(0),
+	  m_endTimerId(0), m_health(true), m_appId(Utility::createUUID()),
+	  m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID),
+	  m_suicideTimerId(0), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -633,12 +636,19 @@ bool Application::avialable()
 
 void Application::destroy()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	this->disable();
-	this->m_status = STATUS::NOTAVIALABLE;
-	if (m_commandLineFini.length())
 	{
-		this->registerTimer(0, 0, std::bind(&Application::onFinishEvent, this, std::placeholders::_1), __FUNCTION__);
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		this->disable();
+		this->m_status = STATUS::NOTAVIALABLE;
+		if (m_commandLineFini.length())
+		{
+			this->registerTimer(0, 0, std::bind(&Application::onFinishEvent, this, std::placeholders::_1), __FUNCTION__);
+		}
+	}
+	if (m_suicideTimerId)
+	{
+		this->cancleTimer(m_suicideTimerId);
+		m_suicideTimerId = 0;
 	}
 }
 
@@ -681,4 +691,11 @@ void Application::onEndEvent(int timerId)
 	this->m_status = STATUS::NOTAVIALABLE;
 
 	LOG_DBG << fname << "Application <" << m_name << "> is end finished";
+}
+
+void Application::regSuicideTimer(int timeoutSeconds)
+{
+	const static char fname[] = "Application::regSuicideTimer() ";
+
+	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicideEvent, this, std::placeholders::_1), fname);
 }

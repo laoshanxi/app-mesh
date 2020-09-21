@@ -73,6 +73,8 @@ private:
 private:
 	po::variables_map m_commandLineVariables;
 	std::vector<po::option> m_pasrsedOptions;
+	const char **m_argv;
+	const int m_argc;
 	int m_listenPort;
 	bool m_sslEnabled;
 	int m_tokenTimeoutSeconds;

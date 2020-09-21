@@ -52,7 +52,7 @@ static std::string APPC_EXEC_APP_NAME;
 static ArgumentParser *WORK_PARSE = nullptr;
 
 ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, bool sslEnabled)
-	: m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
+	: m_argc(argc), m_argv(argv), m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
 {
 	WORK_PARSE = this;
 	po::options_description global("Global options");
@@ -745,13 +745,7 @@ void ArgumentParser::unregSignal()
 
 void ArgumentParser::processExec()
 {
-	po::options_description desc("Backend execute:");
-	desc.add_options()
-		("help,h", "Prints command usage to stdout and exits")
-		COMMON_OPTIONS;
-	shiftCommandLineArgs(desc);
-	HELP_ARG_CHECK_WITH_RETURN;
-
+	m_hostname = "localhost";
 	// Get current session id (bash pid)
 	auto bashId = getppid();
 	// Get appmesh user
@@ -761,12 +755,11 @@ void ArgumentParser::processExec()
 	// Unique session id as appname
 	APPC_EXEC_APP_NAME = appmeshUser + "_" + osUser + "_" + std::to_string(bashId);
 
-	// Get current command line
+	// Get current command line, use raw argv here
 	std::string initialCmd;
-	for (size_t i = 1; i < m_pasrsedOptions.size(); i++)
+	for (size_t i = 1; i < m_argc; i++)
 	{
-		for (auto optValue : m_pasrsedOptions[i].value)
-			initialCmd.append(optValue).append(" ");
+		initialCmd.append(m_argv[i]).append(" ");
 	}
 
 	// Get current ENV

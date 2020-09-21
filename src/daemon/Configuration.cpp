@@ -546,25 +546,31 @@ void Configuration::removeApp(const std::string &appName)
 	const static char fname[] = "Configuration::removeApp() ";
 
 	LOG_DBG << fname << appName;
-
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	// Update in-memory app
-	for (auto iterA = m_apps.begin(); iterA != m_apps.end();)
+	std::shared_ptr<Application> app;
 	{
-		if ((*iterA)->getName() == appName)
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		// Update in-memory app
+		for (auto iterA = m_apps.begin(); iterA != m_apps.end();)
 		{
-			bool needPersist = (*iterA)->isWorkingState();
-			(*iterA)->destroy();
-			iterA = m_apps.erase(iterA);
-			// Write to disk
-			if (needPersist)
-				saveConfigToDisk();
-			LOG_DBG << fname << "removed " << appName;
+			if ((*iterA)->getName() == appName)
+			{
+				app = (*iterA);
+				bool needPersist = app->isWorkingState();
+				iterA = m_apps.erase(iterA);
+				// Write to disk
+				if (needPersist)
+					saveConfigToDisk();
+				LOG_DBG << fname << "removed " << appName;
+			}
+			else
+			{
+				iterA++;
+			}
 		}
-		else
-		{
-			iterA++;
-		}
+	}
+	if (app)
+	{
+		app->destroy();
 	}
 }
 

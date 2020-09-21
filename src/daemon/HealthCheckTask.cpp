@@ -6,28 +6,16 @@
 #include "../common/PerfLog.h"
 
 HealthCheckTask::HealthCheckTask()
-	: m_timerId(0)
 {
 }
 
 HealthCheckTask::~HealthCheckTask()
 {
-	this->cancleTimer(m_timerId);
 }
 
-void HealthCheckTask::initTimer()
+void HealthCheckTask::doHealthCheck()
 {
-	this->cancleTimer(m_timerId);
-	m_timerId = this->registerTimer(
-		1000L * 2,
-		DEFAULT_HEALTH_CHECK_INTERVAL,
-		std::bind(&HealthCheckTask::healthCheckTimer, this, std::placeholders::_1),
-		__FUNCTION__);
-}
-
-void HealthCheckTask::healthCheckTimer(int timerId)
-{
-	const static char fname[] = "HealthCheckTask::healthCheckTimer() ";
+	const static char fname[] = "HealthCheckTask::doHealthCheck() ";
 	PerfLog perf(fname);
 	auto apps = Configuration::instance()->getApps();
 	for (auto &app : apps)

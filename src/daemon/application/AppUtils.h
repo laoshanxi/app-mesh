@@ -19,8 +19,8 @@ private:
 struct AppLogFile
 {
 public:
-	explicit AppLogFile(const std::string &appName, int index);
-	~AppLogFile();
+	explicit AppLogFile(const std::string &appName, int index = 0);
+	virtual ~AppLogFile();
 	void increaseIndex();
 	int index();
 	const std::string getFileName() const;

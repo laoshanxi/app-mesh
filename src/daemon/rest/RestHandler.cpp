@@ -1074,7 +1074,7 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 	message.reply(status_codes::OK, result);
 
 	// clean reference from timer
-	appObj->registerTimer(1000L * (timeout + retention), 0, std::bind(&Application::onSuicideEvent, appObj, std::placeholders::_1), fname);
+	appObj->regSuicideTimer(timeout + retention);
 }
 
 void RestHandler::apiRunSync(const HttpRequest &message)

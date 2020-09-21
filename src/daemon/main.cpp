@@ -136,8 +136,6 @@ int main(int argc, char *argv[])
 		// init consul
 		std::string recoverConsulSsnId = snap ? snap->m_consulSessionId : "";
 		ConsulConnection::instance()->initTimer(recoverConsulSsnId);
-		// init health-check
-		HealthCheckTask::instance()->initTimer();
 
 		// monitor applications
 		while (true)
@@ -153,6 +151,8 @@ int main(int argc, char *argv[])
 			}
 
 			PersistManager::instance()->persistSnapshot();
+			// health-check
+			HealthCheckTask::instance()->doHealthCheck();
 		}
 	}
 	catch (const std::exception &e)
