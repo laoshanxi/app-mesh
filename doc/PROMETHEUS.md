@@ -1,5 +1,9 @@
 # Prometheus Exporter
 
+Prometheus, a Cloud Native Computing Foundation project, is a systems and service monitoring system. It collects metrics from configured targets at given intervals, evaluates rule expressions, displays the results, and can trigger alerts if some condition is observed to be true.
+
+![Architecture](https://prometheus.io/assets/architecture.png)
+
 ------
 
 ### What is supported:
@@ -9,6 +13,19 @@
 
 ### What is **not** supported:
 > * Exporter SSL is not supported as community
+
+### start Grafana, Prommetheus
+```
+cd /opt/appmesh/script
+docker-compose -f docker-compose.yaml up -d
+```
+
+### Configure Grafana
+1. Access Prometheus 9090 UI (http://prom_node:9090/) to verify
+2. Open Grafana on 3000 port (http://grafana_node:3000/)
+3. Add DataSource: Loki
+4. Input Loki address: http://script_prometheus_1:9090 (this address is Grafana access Loki docker container name)
+5. Select Explore -> Metrics
 
 ### Defined Metrics
 http://127.0.0.1:6061/metrics
@@ -34,3 +51,6 @@ appmesh_prom_scrape_up{host="appmesh",pid="10791"} 1.000000
 appmesh_prom_process_memory_gauge{application="appweb",host="appmesh",pid="10791"} 3268759.000000
 appmesh_prom_process_memory_gauge{application="timer",host="appmesh",pid="10791"} 0.000000
 ```
+
+![Prometheus Configuration](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Configuration.png)
+![Prometheus Targets](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Targets.png)

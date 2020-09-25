@@ -1,0 +1,45 @@
+version: "3"
+
+networks:
+  loki:
+
+services:
+  loki:
+    restart: always
+    image: grafana/loki:1.6.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - loki
+
+  promtail:
+    restart: always
+    image: grafana/promtail:1.6.0
+    volumes:
+      - /var/log:/var/log
+      - /opt/appmesh/:/opt/appmesh/
+    # override default container config: /etc/promtail/config.yml
+    command: -config.file=/opt/appmesh/script/promtail.yml
+    networks:
+      - loki
+
+  grafana:
+    restart: always
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    networks:
+      - loki
+
+  # Prometheus, use host mode to scrap from other nodes
+  prometheus:
+    restart: always
+    image: prom/prometheus
+    privileged: true
+    user: root
+    volumes:
+      - /opt/appmesh/script/prometheus.yml:/etc/prometheus/prometheus.yml
+    #ports:
+    #  - "9090:9090"
+    network_mode: host
