@@ -7,7 +7,6 @@ Prometheus, a Cloud Native Computing Foundation project, is a systems and servic
 ------
 
 ### What is supported:
-
 > * App Mesh provide a build-in Prometheus exporter
 > * Prometheus exporter is a build-in REST server for Prometheus to scrap methics
 
@@ -26,6 +25,10 @@ docker-compose -f docker-compose.yaml up -d
 3. Add DataSource: Loki
 4. Input Loki address: http://script_prometheus_1:9090 (this address is Grafana access Loki docker container name)
 5. Select Explore -> Metrics
+
+## Design
+`Prometheus` is monitoring system and time series database, every metric (unique by lable) will be a time seris data in DB, and use pull way to scrap data from Server to Client, client provide a exporter service listen on a local port, the exporter is build with Application together to read metric data from memory. appmesh provide a exporter service listen at 6061 by default. The exporter run build-in with appmesh and no need extra process.
+In order to collect node metrics, an extra node-exporter can be started on each node and listen on 9100 to provide node metrics service.
 
 ### Defined Metrics
 http://127.0.0.1:6061/metrics
