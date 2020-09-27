@@ -20,11 +20,12 @@ add_compile_options(-DBUILD_TAG=${PROJECT_NAME}-${CMAKE_PROJECT_VERSION}-${APPME
 ##########################################################################
 if (CMAKE_BUILD_TYPE MATCHES "Debug" OR CMAKE_BUILD_TYPE MATCHES "DEBUG")
     message("Debug mode")
-    set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb")
+    set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb3")
 else()
     message("Release mode")
-    set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
+    set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall -ggdb3")
 endif()
+message("COMPILE_OPTIONS: ${COMPILE_OPTIONS}")
 
 ##########################################################################
 # boost
