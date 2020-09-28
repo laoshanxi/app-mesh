@@ -13,7 +13,8 @@ sudo chmod +x /usr/local/bin/docker-compose
 
 ## Start Loki, Grafana, Promtail
 ```
-cd /opt/appmesh/script
+git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
+cd app-mesh/script
 docker-compose -f docker-compose.yaml up -d
 ```
 
@@ -25,9 +26,9 @@ docker-compose -f docker-compose.yaml up -d
 
 ## Stop and clean
 ```
-cd /opt/appmesh/script
-docker-compose stop
-docker-compose rm -f
+cd app-mesh/script
+docker-compose -f docker-compose.yaml stop
+docker-compose -f docker-compose.yaml rm -f
 ```
 
 ## Design
@@ -43,3 +44,5 @@ So override promtail configuration (/etc/promtail/config.yml) to combine the 3 l
 - [Docker compose](https://github.com/grafana/loki/tree/master/production)
 - [Loki / Promtail / Grafana vs EFK](https://grafana.com/docs/loki/latest/overview/comparisons/)
 - [Labels in Loki](https://grafana.com/blog/2020/04/21/how-labels-in-loki-can-make-log-queries-faster-and-easier/)
+- [Docker log driver](https://grafana.com/docs/loki/latest/clients/docker-driver/)
+

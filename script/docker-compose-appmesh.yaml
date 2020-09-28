@@ -1,0 +1,49 @@
+version: "3"
+
+services:
+  # Consul
+  consul:
+    restart: always
+    image: docker.io/consul
+    # https://www.consul.io/docs/agent/options
+    command: consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 --bind=0.0.0.0 -bootstrap-expect=1 -ui
+    volumes:
+      - /etc/hosts:/etc/hosts
+    #environment:
+    #  CONSUL_BIND_INTERFACE: enp1s0
+    ports:
+      # https://www.consul.io/docs/install/ports
+      - "8500:8500"
+      - "8600:8600"
+      - "8301:8301"
+      - "8302:8302"
+      - "8300:8300"
+
+  # appmesh, container docker use host docker engine
+  appmesh:
+    restart: always
+    image: laoshanxi/appmesh
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/appmesh/work:/opt/appmesh/work
+      - /opt/appmesh/log:/opt/appmesh/log
+      # mount this to enable configuration persist
+      #- /opt/appmesh/appsvc.json:/opt/appmesh/appsvc.json
+    privileged: true
+    user: root
+    network_mode: host
+    #ports:
+    #  - "6060:6060" # App Mesh Engine
+    #  - "6061:6061" # Prometheus Exporter
+    depends_on:
+      - consul
+
+  # appmesh UI, use host mode (port 443) to support reverse nginx proxy to Consul ad App Mesh
+  appmesh-ui:
+    restart: always
+    image: laoshanxi/appmesh-ui
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: host
+    depends_on:
+      - appmesh

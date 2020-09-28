@@ -6,7 +6,7 @@ networks:
 services:
   loki:
     restart: always
-    image: grafana/loki:1.6.0
+    image: grafana/loki:latest
     ports:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
@@ -15,7 +15,7 @@ services:
 
   promtail:
     restart: always
-    image: grafana/promtail:1.6.0
+    image: grafana/promtail:latest
     volumes:
       - /var/log:/var/log
       - /opt/appmesh/:/opt/appmesh/
@@ -23,34 +23,37 @@ services:
     command: -config.file=/opt/appmesh/script/promtail.yml
     networks:
       - loki
+    depends_on:
+      - loki
 
   grafana:
     restart: always
     image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    networks:
-      - loki
+    #ports:
+    #  - "3000:3000"
+    network_mode: host
 
   # Prometheus, use host mode to scrap from other nodes
   prometheus:
     restart: always
-    image: prom/prometheus
+    image: prom/prometheus:latest
     privileged: true
     user: root
     volumes:
-      - /opt/appmesh/script/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
     #ports:
     #  - "9090:9090"
     network_mode: host
 
+  # https://www.cnblogs.com/weifeng1463/p/12828961.html
   node_exporter:
     restart: always
-    image: prom/node-exporter
+    image: prom/node-exporter:latest
+    command: --path.procfs=/host/proc --path.rootfs=/rootfs --path.sysfs=/host/sys --collector.filesystem.ignored-mount-points='^/(sys|proc|dev|host|etc)($$|/)'
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
     #ports:
     #  - "9100:9100"
-    network_mode: host
+

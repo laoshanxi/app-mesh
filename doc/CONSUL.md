@@ -3,7 +3,7 @@
 ------
 
 App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
-- Stand-alone mode: The hosted applications are static and applications can only be managed by CLI or REST APIs.
+- Stand-alone mode: The hosted applications are static and applications can only be managed by CLI or Web UI.
 - Consul-cluster mode: The hosted applications are dynamic, The cluster will vote one leader node to do the Consul application schedule, and application will register to Consul for service discovery.
 
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/consul_arch.png" width=600 height=300 align=center /></div>
@@ -44,7 +44,7 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 
 
 - Status report
- Each node will report to Consul KV path `appmesh/cluster/nodes/$host_name`
+ Each node will report node info to Consul KV path `appmesh/cluster/nodes/$host_name`
 
  ```shell
 curl -s http://localhost:8500/v1/kv/appmesh/cluster/nodes/centos8?raw | python3 -m json.tool
@@ -112,7 +112,7 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m
  ```
 
 - Consul topology
- Topology is Consul task schedule result, App Mesh leader node will write this part.
+ Topology is Consul task schedule result, App Mesh leader node will write this dir.
    For host dimension, each host is a key
    For task dimension, the result assemble to one key
 

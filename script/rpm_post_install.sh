@@ -46,8 +46,8 @@ if [ ! -d "/opt/appmesh/work" ]; then
 fi
 
 # start service directly
-systemctl enable appmesh
-systemctl start appmesh
+# systemctl enable appmesh
+# systemctl start appmesh
 
 # add user appmesh
 id appmesh >& /dev/null

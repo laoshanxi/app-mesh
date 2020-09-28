@@ -9,7 +9,7 @@
     "HttpThreadPoolSize": 6,
     "RestListenPort": 6060,
     "RestListenAddress": "0.0.0.0",
-    "PrometheusExporterListenPort": 0,
+    "PrometheusExporterListenPort": 6061,
     "SSL": {
       "SSLEnabled": true,
       "SSLCertificateFile": "/opt/appmesh/ssl/server.pem",
@@ -98,7 +98,7 @@
   "Consul": {
     "is_main": true,
     "is_node": true,
-    "url": null,
+    "url": "https://127.0.0.1",
     "url_example": "http://localhost:8500",
     "appmesh_proxy_url": null,
     "datacenter": "dc1",
@@ -110,3 +110,4 @@
     "arch": "x86_64"
   }
 }
+

@@ -1,10 +1,8 @@
-﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![docker.badge]][docker.url]
+﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
 <a href="https://scan.coverity.com/projects/laoshanxi-app-mesh">
   <img alt="Coverity Scan Build Status"
        src="https://img.shields.io/coverity/scan/21528.svg"/>
 </a>
-
-[Web UI for App Mesh](https://github.com/laoshanxi/app-mesh-ui)
 
 # App Mesh
 
@@ -51,5 +49,8 @@ to install App Mesh via Docker images, Docker Compose, and native way.
 [standard.badge]: https://img.shields.io/badge/C%2B%2B-11%2F14%2F17-blue.svg
 [release.url]:    https://github.com/laoshanxi/app-mesh/releases
 [release.badge]:  https://img.shields.io/github/v/release/laoshanxi/app-mesh.svg
-[docker.url]:    https://hub.docker.com/repository/docker/laoshanxi/appmesh
-[docker.badge]:  https://img.shields.io/docker/pulls/laoshanxi/appmesh.svg
+[docker.url]:     https://hub.docker.com/repository/docker/laoshanxi/appmesh
+[docker.badge]:   https://img.shields.io/docker/pulls/laoshanxi/appmesh.svg
+[cockpit.url]:    https://github.com/laoshanxi/app-mesh-ui
+[cockpit.badge]:  https://img.shields.io/badge/Cockpit-app--mesh--ui-blue?logo=appveyor
+
