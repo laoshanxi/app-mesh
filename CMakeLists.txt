@@ -5,7 +5,7 @@ string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M")
 # project
 ##########################################################################
 cmake_policy(SET CMP0048 NEW)
-project(appmesh LANGUAGES CXX VERSION 1.8.4)
+project(appmesh LANGUAGES CXX VERSION 1.8.5)
 
 ##########################################################################
 # C++ flag
@@ -20,10 +20,10 @@ add_compile_options(-DBUILD_TAG=${PROJECT_NAME}-${CMAKE_PROJECT_VERSION}-${APPME
 ##########################################################################
 if (CMAKE_BUILD_TYPE MATCHES "Debug" OR CMAKE_BUILD_TYPE MATCHES "DEBUG")
     message("Debug mode")
-    set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb3")
+    set(CMAKE_CXX_FLAGS_DEBUG   "$ENV{CXXFLAGS} -Wall -ggdb3 -O0 -g")
 else()
     message("Release mode")
-    set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall -ggdb3")
+    set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Wall -ggdb3 -O2")
 endif()
 message("COMPILE_OPTIONS: ${COMPILE_OPTIONS}")
 

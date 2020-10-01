@@ -66,7 +66,7 @@ void ApplicationInitialize::disable()
 	LOG_WAR << fname << "Application is in initialize status, disable is not supported";
 }
 
-bool ApplicationInitialize::avialable()
+bool ApplicationInitialize::available()
 {
 	return true;
 }

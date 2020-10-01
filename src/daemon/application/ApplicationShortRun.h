@@ -22,7 +22,7 @@ public:
 	virtual void invoke() override;
 	virtual void enable() override;
 	virtual void disable() override;
-	virtual bool avialable() override;
+	virtual bool available() override;
 	void initTimer();
 
 protected:

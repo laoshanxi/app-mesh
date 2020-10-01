@@ -14,7 +14,7 @@ What is supported:
 > * Support centerized  user & role DB server by Consul
 
 What is **not** supported:
-> * Redirect authentication to another JWT server is not suported
+> * Redirect authentication to another JWT server is not supported
 > * LDAP is not supported
 
 

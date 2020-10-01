@@ -17,7 +17,7 @@
 #define LOG_WAR log4cpp::Category::getRoot() << log4cpp::Priority::WARN
 #define LOG_ERR log4cpp::Category::getRoot() << log4cpp::Priority::ERROR
 
-// Expand micro viriable (microkey=microvalue)
+// Expand micro variable (microkey=microvalue)
 #define __MICRO_KEY__(str) #str				  // No expand micro
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
@@ -120,14 +120,14 @@ public:
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 
-	// String related
+	// String functions
 	static bool isNumber(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
 	static std::string stdStringTrim(const std::string &str, char trimChar, bool trimStart = true, bool trimEnd = true);
 	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
 	static bool startWith(const std::string &str, const std::string &head);
 	static bool endWith(const std::string &str, const std::string &end);
-	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst);
+	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
 	static std::string humanReadableSize(long double bytesSize);
 	static std::string prettyJson(const std::string &jsonStr);
 	static std::string hash(const std::string &str);
@@ -141,17 +141,17 @@ public:
 
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 
-	// %Y-%m-%d %H:%M:%S
-	static std::chrono::system_clock::time_point convertStr2Time(const std::string &strTime);
-	static std::string convertTime2Str(const std::chrono::system_clock::time_point &time);
 	// %H:%M:%S
 	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string &strTime);
 	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point &time);
-	// Timezone
-	static std::string getSystemPosixTimeZone();
-	// rfc3339 time
-	static std::string getRfc3339Time(const std::chrono::system_clock::time_point &time);
-	static std::string formatTime(const std::chrono::system_clock::time_point &time, const char *fmt);
+	// +08:00:00
+	const static std::string getLocalUtcOffset();
+	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime);
+	// output like 2017-09-11T21:52:13+00:00 in local time with offset
+	static std::string formatISO8601Time(const std::chrono::system_clock::time_point &time);
+	// output like 2019-01-23T10:18:32.079Z in UTC
+	static std::string formatRFC3339Time(const std::chrono::system_clock::time_point &time);
+	static std::string formatLocalTime(const std::chrono::system_clock::time_point &time, const char *fmt);
 
 	// Base64
 	static std::string encode64(const std::string &val);
@@ -169,7 +169,7 @@ public:
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
-#define DATE_TIME_FORMAT "%Y-%m-%d %H:%M:%S"
+#define DATE_TIME_FORMAT "%Y-%m-%dT%H:%M:%S"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
 #define MAX_TOKEN_EXPIRE_SECONDS 30 * (60 * 60 * 24)	// max 30 days
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10				// run app default timeout
@@ -206,14 +206,14 @@ public:
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
 #define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
-#define JSON_KEY_CONSULE "Consul"
+#define JSON_KEY_CONSUL "Consul"
 #define JSON_KEY_VERSION "Version"
-#define JSON_KEY_CONSULE_URL "url"
-#define JSON_KEY_CONSULE_IS_MAIN "is_main"
-#define JSON_KEY_CONSULE_IS_NODE "is_node"
-#define JSON_KEY_CONSULE_SESSION_NODE "session_node"
-#define JSON_KEY_CONSULE_DATACENTER "datacenter"
-#define JSON_KEY_CONSULE_SESSION_TTL "session_TTL"
+#define JSON_KEY_CONSUL_URL "url"
+#define JSON_KEY_CONSUL_IS_MAIN "is_main"
+#define JSON_KEY_CONSUL_IS_NODE "is_node"
+#define JSON_KEY_CONSUL_SESSION_NODE "session_node"
+#define JSON_KEY_CONSUL_DATACENTER "datacenter"
+#define JSON_KEY_CONSUL_SESSION_TTL "session_TTL"
 #define JSON_KEY_CONSUL_SECURITY "enable_consul_security"
 #define JSON_KEY_CONSUL_APPMESH_PROXY_URL "appmesh_proxy_url"
 #define JSON_KEY_JWT_Users "Users"
@@ -236,7 +236,6 @@ public:
 #define JSON_KEY_APP_daily_limitation "daily_limitation"
 #define JSON_KEY_APP_resource_limit "resource_limit"
 #define JSON_KEY_APP_env "env"
-#define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
 // runtime attr
 #define JSON_KEY_APP_pid "pid"

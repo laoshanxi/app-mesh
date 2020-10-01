@@ -26,7 +26,7 @@ public:
 	virtual ~Application();
 	virtual bool operator==(const std::shared_ptr<Application> &app);
 
-	virtual bool avialable();
+	virtual bool available();
 	const std::string getName() const;
 	bool isEnabled() const;
 	bool isWorkingState() const;
@@ -98,7 +98,6 @@ protected:
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
 	//the exit code of last instance
 	std::shared_ptr<int> m_return;
-	std::string m_posixTimeZone;
 	std::chrono::system_clock::time_point m_startTime;
 	std::chrono::system_clock::time_point m_endTime;
 	std::chrono::system_clock::time_point m_regTime;

@@ -78,7 +78,8 @@ Register a new application:
                                  Mesh for this command.
   -n [ --name ] arg              application name
   -g [ --metadata ] arg          application metadata string
-  --perm arg                     application owner permission
+  --perm arg                     application user permission, value = [group & 
+                                 other], each can be deny:1, read:2, write: 3.
   -c [ --cmd ] arg               full command line with arguments
   -S [ --shell_mode ]            command line will be executed in shell in this
                                  mode
@@ -91,10 +92,10 @@ Register a new application:
   -w [ --workdir ] arg           working directory
   -s [ --status ] arg (=1)       application status status (start is true, stop
                                  is false)
-  -t [ --start_time ] arg        start date time for app (e.g., '2018-01-01 
-                                 09:00:00')
-  -E [ --end_time ] arg          end date time for app (e.g., '2018-01-01 
-                                 09:00:00')
+  -t [ --start_time ] arg        start date time for app (ISO8601 time format, 
+                                 e.g., '2020-10-11T09:22:05+08:00')
+  -E [ --end_time ] arg          end date time for app (ISO8601 time format, 
+                                 e.g., '2020-10-11T09:22:05+08:00')
   -j [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
@@ -109,10 +110,9 @@ Register a new application:
                                  support ISO 8601 durations (e.g., 
                                  'P1Y2M3DT4H5M6S' 'P5W')
   -q [ --extra_time ] arg        extra timeout for short running app,the value 
-                                 must less than interval  (default 0)
-  -z [ --timezone ] arg          posix timezone for the application, reflect 
-                                 [start_time|daily_start|daily_end] (e.g., 
-                                 'WST+08:00' is Australia Standard Time)
+                                 must less than interval  (default 0), support 
+                                 ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 
+                                 'P5W')
   -k [ --keep_running ]          monitor and keep running for short running app
                                  in start interval
   -f [ --force ]                 force without confirm

@@ -3,7 +3,6 @@
 #include "../Configuration.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
-#include "../../common/TimeZoneHelper.h"
 
 ApplicationShortRun::ApplicationShortRun()
 	: m_startInterval(0), m_bufferTime(0), m_timerId(0)
@@ -79,7 +78,7 @@ void ApplicationShortRun::invoke()
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
 		// 1. kill unexpected process
-		if (!this->avialable() && m_process->running())
+		if (!this->available() && m_process->running())
 		{
 			LOG_INF << fname << "Application <" << m_name << "> was not in daily start time";
 			m_process->killgroup();
@@ -94,7 +93,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	// Check app existance
 	if (timerId > 0 && !this->isEnabled())
 	{
-		this->cancleTimer(timerId);
+		this->cancelTimer(timerId);
 		return;
 	}
 	if (!isWorkingState())
@@ -117,7 +116,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	}
 
 	// check status and daily range
-	if (this->avialable())
+	if (this->available())
 	{
 		// Spawn new process
 		m_process = allocProcess(0, m_dockerImage, m_name);
@@ -140,7 +139,7 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	if (returnRuntimeInfo)
 	{
 		if (m_nextLaunchTime != nullptr)
-			result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(Utility::convertTime2Str(*m_nextLaunchTime));
+			result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(Utility::formatISO8601Time(*m_nextLaunchTime));
 	}
 	return result;
 }
@@ -165,7 +164,7 @@ void ApplicationShortRun::disable()
 	// clean old timer
 	if (m_timerId)
 	{
-		this->cancleTimer(m_timerId);
+		this->cancelTimer(m_timerId);
 	}
 	m_nextLaunchTime = nullptr;
 }
@@ -177,7 +176,7 @@ void ApplicationShortRun::initTimer()
 
 	// std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	// 1. clean old timer
-	this->cancleTimer(m_timerId);
+	this->cancelTimer(m_timerId);
 
 	// 2. reg new timer
 	const auto now = std::chrono::system_clock::now();
@@ -202,7 +201,7 @@ void ApplicationShortRun::initTimer()
 	firstSleepMilliseconds += 2; // add 2 miliseconds buffer to avoid 59:59
 	m_timerId = this->registerTimer(firstSleepMilliseconds, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
 	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(now + std::chrono::milliseconds(firstSleepMilliseconds));
-	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::convertTime2Str(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds / 1000 << " seconds";
+	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::formatISO8601Time(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds / 1000 << " seconds";
 }
 
 int ApplicationShortRun::getStartInterval()
@@ -217,9 +216,9 @@ std::chrono::system_clock::time_point ApplicationShortRun::getStartTime()
 	return m_startTime;
 }
 
-bool ApplicationShortRun::avialable()
+bool ApplicationShortRun::available()
 {
-	return (Application::avialable() && std::chrono::system_clock::now() > getStartTime());
+	return (Application::available() && std::chrono::system_clock::now() > getStartTime());
 }
 
 void ApplicationShortRun::dump()
@@ -231,5 +230,5 @@ void ApplicationShortRun::dump()
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
 	if (m_nextLaunchTime != nullptr)
-		LOG_DBG << fname << "m_nextLaunchTime:" << Utility::convertTime2Str(*m_nextLaunchTime);
+		LOG_DBG << fname << "m_nextLaunchTime:" << Utility::formatISO8601Time(*m_nextLaunchTime);
 }

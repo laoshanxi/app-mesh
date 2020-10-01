@@ -330,8 +330,8 @@ void ArgumentParser::processReg()
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
 		("workdir,w", po::value<std::string>(), "working directory")
 		("status,s", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
-		("start_time,t", po::value<std::string>(), "start date time for app (e.g., '2018-01-01 09:00:00')")
-		("end_time,E", po::value<std::string>(), "end date time for app (e.g., '2018-01-01 09:00:00')")
+		("start_time,t", po::value<std::string>(), "start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05+08:00')")
+		("end_time,E", po::value<std::string>(), "end date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05+08:00')")
 		("daily_start,j", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
 		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
@@ -342,7 +342,6 @@ void ArgumentParser::processReg()
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
 		("extra_time,q", po::value<std::string>(), "extra timeout for short running app,the value must less than interval  (default 0), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
-		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'WST+08:00' is Australia Standard Time)")
 		("keep_running,k", "monitor and keep running for short running app in start interval")
 		("force,f", "force without confirm")
 		("help,h", "Prints command usage to stdout and exits");
@@ -365,7 +364,7 @@ void ArgumentParser::processReg()
 			return;
 		}
 	}
-	// Shell app does not need check app existance
+	// Shell app does not need check app existence
 	if (isAppExist(m_commandLineVariables["name"].as<std::string>()))
 	{
 		if (m_commandLineVariables.count("force") == 0)
@@ -398,8 +397,6 @@ void ArgumentParser::processReg()
 		jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>());
 	if (m_commandLineVariables.count("docker_image"))
 		jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
-	if (m_commandLineVariables.count("timezone"))
-		jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
 	if (m_commandLineVariables.count("start_time"))
 		jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
 	if (m_commandLineVariables.count("end_time"))
@@ -1350,7 +1347,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(7) << (JSON_KEY_APP_pid)
 		<< std::setw(8) << (JSON_KEY_APP_memory)
 		<< std::setw(7) << (JSON_KEY_APP_return)
-		<< std::setw(20) << (JSON_KEY_APP_last_start)
+		<< std::setw(27) << (JSON_KEY_APP_last_start)
 		<< (JSON_KEY_APP_command)
 		<< std::endl;
 
@@ -1390,7 +1387,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 			else
 				std::cout << slash;
 		}
-		std::cout << std::setw(20);
+		std::cout << std::setw(27);
 		{
 			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_last_start))
 				std::cout << GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_last_start);

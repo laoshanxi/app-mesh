@@ -13,6 +13,7 @@
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 #include <log4cpp/Category.hh>
 #include <log4cpp/Appender.hh>
@@ -24,7 +25,7 @@
 #include <ace/OS.h>
 #include <ace/UUID.h>
 
-#include "../common/Utility.h"
+#include "Utility.h"
 
 const char *GET_STATUS_STR(unsigned int status)
 {
@@ -302,42 +303,51 @@ unsigned long long Utility::getThreadId()
 	return std::stoull(stid);
 }
 
-std::chrono::system_clock::time_point Utility::convertStr2Time(const std::string &strTime)
+std::chrono::system_clock::time_point Utility::parseISO8601DateTime(const std::string &strTime)
 {
-	// compatibility with rfc3339 date format
-	std::string time = strTime;
-	for (std::size_t i = 0; i < time.length(); i++)
+	// https://stackoverflow.com/questions/10484232/how-to-get-boostposix-timeptime-from-formatted-string
+	boost::posix_time::ptime ptime;
+	boost::posix_time::time_input_facet *format = new boost::posix_time::time_input_facet();
+	format->set_iso_extended_format();
+	std::istringstream iss(strTime);
+	iss.imbue(std::locale(std::locale::classic(), format));
+	if ((iss >> ptime))
 	{
-		if ('T' == time[i])
-			time[i] = ' ';
+		auto timeTm = boost::posix_time::to_tm(ptime);
+		auto time_point = std::chrono::system_clock::from_time_t(std::mktime(&timeTm));
+
+		const auto idxPlus = strTime.find("+");
+		const auto idxMinus = strTime.find("-");
+		if (idxPlus != std::string::npos || idxMinus != std::string::npos)
+		{
+			// target offset
+			// "%H:%M:%S"
+			std::string posixTimezone;
+			int offsetSeconds = 0;
+			if (idxPlus)
+			{
+				posixTimezone = strTime.substr(idxPlus + 1);
+				// TODO: use duration return type to avoid huge day time here
+				offsetSeconds = std::chrono::system_clock::to_time_t(convertStr2DayTime(posixTimezone));
+			}
+			else
+			{
+				posixTimezone = strTime.substr(idxMinus + 1);
+				offsetSeconds = -std::chrono::system_clock::to_time_t(convertStr2DayTime(posixTimezone));
+			}
+			// get local offset
+			const static auto currentOffsetTime = getLocalUtcOffset().substr(1, 1024);
+			const static auto currentOffsetTimeSeconds = std::chrono::system_clock::to_time_t(convertStr2DayTime(currentOffsetTime));
+			std::chrono::duration<int> durationSeconds(currentOffsetTimeSeconds - offsetSeconds);
+			// use minutes duration to adjust offset
+			time_point -= std::chrono::duration_cast<std::chrono::minutes>(durationSeconds);
+		}
+		return time_point;
 	}
-
-	struct tm tm_ = {0};
-	int year, month, day, hour, minute, second;
-	month = day = 1;
-	hour = minute = second = 0;
-	// "%Y-%m-%d %H:%M:%S"
-	sscanf(time.c_str(), "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second);
-	tm_.tm_year = year - 1900;
-	tm_.tm_mon = month - 1;
-	tm_.tm_mday = day;
-	tm_.tm_hour = hour;
-	tm_.tm_min = minute;
-	tm_.tm_sec = second;
-	tm_.tm_isdst = -1;
-
-	return std::chrono::system_clock::from_time_t(std::mktime(&tm_));
-}
-
-std::string Utility::convertTime2Str(const std::chrono::system_clock::time_point &time)
-{
-	char buff[70] = {0};
-	// put_time is not ready when gcc version < 5
-	auto timet = std::chrono::system_clock::to_time_t(time);
-	std::tm timetm;
-	::localtime_r(&timet, &timetm);
-	strftime(buff, sizeof(buff), DATE_TIME_FORMAT, &timetm);
-	return std::string(buff);
+	else
+	{
+		throw std::invalid_argument(stringFormat("invalid ISO8601 string: %s", strTime.c_str()));
+	}
 }
 
 std::chrono::system_clock::time_point Utility::convertStr2DayTime(const std::string &strTime)
@@ -345,12 +355,12 @@ std::chrono::system_clock::time_point Utility::convertStr2DayTime(const std::str
 	struct tm tm_ = {0};
 
 	char *str = (char *)strTime.data();
-	int hour, minute, second;
+	int hour = 0, minute = 0, second = 0;
 	// "%H:%M:%S"
 	sscanf(str, "%d:%d:%d", &hour, &minute, &second);
-	tm_.tm_year = 2000 - 1900;
+	tm_.tm_year = 1970;
 	tm_.tm_mon = 1;
-	tm_.tm_mday = 17;
+	tm_.tm_mday = 1;
 	tm_.tm_hour = hour;
 	tm_.tm_min = minute;
 	tm_.tm_sec = second;
@@ -363,58 +373,63 @@ std::string Utility::convertDayTime2Str(const std::chrono::system_clock::time_po
 	char buff[70] = {0};
 	// put_time is not ready when gcc version < 5
 	auto timet = std::chrono::system_clock::to_time_t(time);
-	std::tm timetm;
-	::localtime_r(&timet, &timetm);
-	strftime(buff, sizeof(buff), "%H:%M:%S", &timetm);
+	std::tm local_tm;
+	ACE_OS::localtime_r(&timet, &local_tm);
+	strftime(buff, sizeof(buff), "%H:%M:%S", &local_tm);
 	return std::string(buff);
 }
 
-std::string Utility::getSystemPosixTimeZone()
+const std::string Utility::getLocalUtcOffset()
 {
-	// https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
-	struct tm local_tm;
-	time_t cur_time = 0; // time(NULL);
-	ACE_OS::localtime_r(&cur_time, &local_tm);
-
-	char buff[70] = {0};
-	strftime(buff, sizeof(buff), "%Z%z", &local_tm);
-	std::string str = buff;
-
-	// remove un-used zero post-fix :
-	// CST+0800  => CST+08
-	auto len = str.length();
-	for (std::size_t i = len - 1; i > 0; i--)
-	{
-		if (str[i] == '0')
-		{
-			str[i] = '\0';
-		}
-		else
-		{
-			str = str.c_str();
-			break;
-		}
-	}
-	return str;
-}
-
-std::string Utility::getRfc3339Time(const std::chrono::system_clock::time_point &time)
-{
-	// https://blog.csdn.net/qq_27274871/article/details/83414306
-	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
-	const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()).count() % 1000;
-	std::stringstream ss;
-	ss << formatTime(time, "%FT%T") << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';
+	std::string offset;
+	// option: https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
+	boost::posix_time::ptime local = boost::posix_time::second_clock::local_time();
+	boost::posix_time::ptime utc = boost::posix_time::second_clock::universal_time();
+	boost::posix_time::time_duration tz_offset = (local - utc);
+	// assert(!tz_offset.is_negative());
+	std::ostringstream ss;
+	ss << (tz_offset.is_negative() ? "" : "+");
+	ss << tz_offset;
 	return ss.str();
 }
 
-std::string Utility::formatTime(const std::chrono::system_clock::time_point &time, const char *fmt)
+std::string Utility::formatISO8601Time(const std::chrono::system_clock::time_point &time)
 {
-	const static char fname[] = "Utility::getFmtTimeSeconds() ";
+	auto offset = getLocalUtcOffset();
+	if (endWith(offset, ":00"))
+	{
+		offset = offset.substr(0, offset.length() - 3);
+	}
+	std::stringstream ss;
+	ss << formatLocalTime(time, "%FT%T") << offset;
+	return ss.str();
+}
+
+std::string Utility::formatRFC3339Time(const std::chrono::system_clock::time_point &time)
+{
+	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
+	const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()).count() % 1000;
+	const auto timeT = std::chrono::system_clock::to_time_t(time);
+	struct tm timeTm;
+	std::stringstream ss;
+	// https://stackoverflow.com/questions/37421747/is-there-a-builtin-alternative-to-stdput-time-for-gcc-5
+	// use put_time can replace bellow 4 lines
+	// ss << std::put_time(gmtime_r(&timeT, &timeTm), "%FT%T") << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';
+	char buff[70] = {0};
+	ACE_OS::localtime_r(&timeT, &timeTm);
+	ACE_OS::strftime(buff, sizeof(buff), "%FT%T", &timeTm);
+	ss << buff << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';
+
+	return ss.str();
+}
+
+std::string Utility::formatLocalTime(const std::chrono::system_clock::time_point &time, const char *fmt)
+{
+	const static char fname[] = "Utility::formatLocalTime() ";
 
 	struct tm localtime;
-	time_t timtt = std::chrono::system_clock::to_time_t(time);
-	ACE_OS::localtime_r(&timtt, &localtime);
+	time_t timet = std::chrono::system_clock::to_time_t(time);
+	ACE_OS::localtime_r(&timet, &localtime);
 
 	char buff[64] = {0};
 	if (!strftime(buff, sizeof(buff), fmt, &localtime))
@@ -601,10 +616,10 @@ bool Utility::endWith(const std::string &big, const std::string &small)
 	return valid_ && ends_with_;
 }
 
-std::string Utility::stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst)
+std::string Utility::stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos)
 {
 	std::string str = strBase;
-	std::string::size_type position = 0;
+	std::string::size_type position = startPos;
 	std::string::size_type srcLen = strSrc.size();
 	std::string::size_type dstLen = strDst.size();
 

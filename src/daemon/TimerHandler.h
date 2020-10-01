@@ -47,11 +47,11 @@ public:
 	/// <return>Timer unique ID.</return>
 	int registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from);
 	/// <summary>
-	/// Cancle a timer
+	/// Cancel a timer
 	/// </summary>
 	/// <param name="timerId">Timer unique ID.</param>
 	/// <return>Cancel success or not.</return>
-	bool cancleTimer(int &timerId);
+	bool cancelTimer(int &timerId);
 
 	/// <summary>
 	/// Use ACE_Reactor for timer event, block function, should used in a thread

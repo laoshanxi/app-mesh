@@ -11,7 +11,6 @@
 #include "../ResourceCollection.h"
 #include "../ResourceLimitation.h"
 #include "../security/User.h"
-#include "../../common/TimeZoneHelper.h"
 #include "../../common/Utility.h"
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/gauge.h"
@@ -59,7 +58,6 @@ bool Application::operator==(const std::shared_ptr<Application> &app)
 			this->m_workdir == app->m_workdir &&
 			this->m_stdoutFile == app->m_stdoutFile &&
 			this->m_healthCheckCmd == app->m_healthCheckCmd &&
-			this->m_posixTimeZone == app->m_posixTimeZone &&
 			this->m_startTime == app->m_startTime &&
 			this->m_endTime == app->m_endTime &&
 			this->m_status == app->m_status);
@@ -124,12 +122,7 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 			app->m_envMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
 		}
 	}
-	app->m_posixTimeZone = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_posix_timezone);
-	if (app->m_posixTimeZone.length() && app->m_dailyLimit != nullptr)
-	{
-		app->m_dailyLimit->m_startTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_startTime, app->m_posixTimeZone);
-		app->m_dailyLimit->m_endTime = TimeZoneHelper::convert2tzTime(app->m_dailyLimit->m_endTime, app->m_posixTimeZone);
-	}
+
 	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
 		app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
@@ -140,19 +133,11 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time))
 	{
-		app->m_startTime = Utility::convertStr2Time(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_time));
-		if (app->m_posixTimeZone.length())
-		{
-			app->m_startTime = TimeZoneHelper::convert2tzTime(app->m_startTime, app->m_posixTimeZone);
-		}
+		app->m_startTime = Utility::parseISO8601DateTime(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_time));
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_end_time))
 	{
-		app->m_endTime = Utility::convertStr2Time(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_end_time));
-		if (app->m_posixTimeZone.length())
-		{
-			app->m_endTime = TimeZoneHelper::convert2tzTime(app->m_endTime, app->m_posixTimeZone);
-		}
+		app->m_endTime = Utility::parseISO8601DateTime(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_end_time));
 	}
 	if (app->m_endTime.time_since_epoch().count())
 	{
@@ -162,7 +147,7 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 	}
 	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_REG_TIME))
 	{
-		app->m_regTime = Utility::convertStr2Time(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_REG_TIME));
+		app->m_regTime = Utility::parseISO8601DateTime(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_REG_TIME));
 	}
 }
 
@@ -212,7 +197,7 @@ void Application::invoke()
 	if (isWorkingState())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		if (this->avialable())
+		if (this->available())
 		{
 			if (!m_process->running())
 			{
@@ -252,7 +237,7 @@ void Application::disable()
 	if (m_process != nullptr)
 		m_process->killgroup();
 	if (m_endTimerId)
-		this->cancleTimer(m_endTimerId);
+		this->cancelTimer(m_endTimerId);
 }
 
 void Application::enable()
@@ -505,7 +490,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		if (m_pid > 0)
 			result[JSON_KEY_APP_memory] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[JSON_KEY_APP_last_start] = web::json::value::string(Utility::convertTime2Str(m_procStartTime));
+			result[JSON_KEY_APP_last_start] = web::json::value::string(Utility::formatISO8601Time(m_procStartTime));
 		if (!m_process->containerId().empty())
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
@@ -531,18 +516,16 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		});
 		result[JSON_KEY_APP_env] = envs;
 	}
-	if (m_posixTimeZone.length())
-		result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
 	if (m_dockerImage.length())
 		result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
 	if (m_version)
 		result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 
 	if (m_startTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::convertTime2Str(m_startTime));
+		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::formatISO8601Time(m_startTime));
 	if (m_endTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::convertTime2Str(m_endTime));
-	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(Utility::convertTime2Str(m_regTime));
+		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::formatISO8601Time(m_endTime));
+	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(Utility::formatISO8601Time(m_regTime));
 	return result;
 }
 
@@ -561,10 +544,9 @@ void Application::dump()
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
-	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
-	LOG_DBG << fname << "m_startTime:" << Utility::convertTime2Str(m_startTime);
-	LOG_DBG << fname << "m_endTime:" << Utility::convertTime2Str(m_endTime);
-	LOG_DBG << fname << "m_regTime:" << Utility::convertTime2Str(m_regTime);
+	LOG_DBG << fname << "m_startTime:" << Utility::formatISO8601Time(m_startTime);
+	LOG_DBG << fname << "m_endTime:" << Utility::formatISO8601Time(m_endTime);
+	LOG_DBG << fname << "m_regTime:" << Utility::formatISO8601Time(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	LOG_DBG << fname << "m_version:" << m_version;
@@ -629,7 +611,7 @@ bool Application::isInDailyTimeRange()
 	return true;
 }
 
-bool Application::avialable()
+bool Application::available()
 {
 	return (this->isEnabled() && this->isInDailyTimeRange());
 }
@@ -647,7 +629,7 @@ void Application::destroy()
 	}
 	if (m_suicideTimerId)
 	{
-		this->cancleTimer(m_suicideTimerId);
+		this->cancelTimer(m_suicideTimerId);
 		m_suicideTimerId = 0;
 	}
 }

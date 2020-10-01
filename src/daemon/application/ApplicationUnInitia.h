@@ -20,7 +20,7 @@ public:
 
 	virtual void enable() override;
 	virtual void disable() override;
-	virtual bool avialable() override;
+	virtual bool available() override;
 	virtual void invoke() override;
 
 protected:

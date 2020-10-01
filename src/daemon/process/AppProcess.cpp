@@ -54,8 +54,8 @@ void AppProcess::killgroup(int timerId)
 
 	if (timerId == 0)
 	{
-		// killed before timer event, cancle timer event
-		this->cancleTimer(m_killTimerId);
+		// killed before timer event, cancel timer event
+		this->cancelTimer(m_killTimerId);
 	}
 	if (m_killTimerId > 0 && m_killTimerId == timerId)
 	{
@@ -142,7 +142,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 	int pid = -1;
 
-	// check command file existance & permission
+	// check command file existence & permission
 	auto cmdRoot = std::get<1>(extractCommand(cmd));
 	bool checkCmd = true;
 	if (cmdRoot.rfind('/') == std::string::npos && cmdRoot.rfind('\\') == std::string::npos)
@@ -160,12 +160,12 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		return ACE_INVALID_PID;
 	}
 
-	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::formatTime(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
-	std::size_t cmdLenth = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
+	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::formatLocalTime(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
+	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
 	int totalEnvArgs = 0;
 	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);
-	ACE_Process_Options option(1, cmdLenth, totalEnvSize, totalEnvArgs);
+	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	//option.avoid_zombies(1);
 	if (user.empty())

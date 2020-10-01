@@ -25,7 +25,7 @@ ConsulConnection::ConsulConnection()
 
 ConsulConnection::~ConsulConnection()
 {
-	this->cancleTimer(m_ssnRenewTimerId);
+	this->cancelTimer(m_ssnRenewTimerId);
 }
 
 std::shared_ptr<ConsulConnection> &ConsulConnection::instance()
@@ -792,7 +792,7 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 		releaseSessionId(recoverSsnId);
 
 	// session renew timer
-	this->cancleTimer(m_ssnRenewTimerId);
+	this->cancelTimer(m_ssnRenewTimerId);
 	if (Configuration::instance()->getConsul()->m_ttl > 10 &&
 		(Configuration::instance()->getConsul()->m_isMaster || Configuration::instance()->getConsul()->m_isNode))
 	{

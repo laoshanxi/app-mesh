@@ -24,7 +24,7 @@ void HealthCheckTask::doHealthCheck()
 			continue;
 		try
 		{
-			if (app->avialable())
+			if (app->available())
 			{
 				auto proc = std::make_shared<AppProcess>();
 				proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr, "");

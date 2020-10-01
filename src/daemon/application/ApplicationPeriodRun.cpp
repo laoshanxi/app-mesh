@@ -22,7 +22,7 @@ void ApplicationPeriodRun::refreshPid()
 
 	// 2. Start again when the short running app exited
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	if (this->avialable() && !m_process->running())
+	if (this->available() && !m_process->running())
 	{
 		this->invokeNow(0);
 	}

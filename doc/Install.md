@@ -7,11 +7,11 @@ Install App Mesh as standalone mode on local node without GUI service by release
 
 ```text
 # centos
-sudo yum install appmesh-1.8.4-1.x86_64.rpm
+sudo yum install appmesh-1.8.5-1.x86_64.rpm
 # ubuntu
-sudo apt-get install appmesh_1.8.4_amd64.deb
+sudo apt-get install appmesh_1.8.5_amd64.deb
 # SUSE
-sudo zypper install appmesh-1.8.4-1.x86_64.rpm
+sudo zypper install appmesh-1.8.5-1.x86_64.rpm
 ```
 
 Start service:
@@ -51,7 +51,7 @@ sudo curl -L "https://github.com/docker/compose/releases/download/1.27.4/docker-
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-Get integrated docker compolse file [docker-compose-appmesh.yaml](https://github.com/laoshanxi/app-mesh/raw/master/script/docker-compose-appmesh.yaml) and configure correct Consul bind IP address and network device name.
+Get integrated docker compose file [docker-compose-appmesh.yaml](https://github.com/laoshanxi/app-mesh/raw/master/script/docker-compose-appmesh.yaml) and configure correct Consul bind IP address and network device name.
 ```
 $ mkdir appmesh
 $ cd appmesh
@@ -74,7 +74,7 @@ By default, App Mesh will connect to local Consul URL with "https://127.0.0.1:44
 
 App Mesh UI is listen at `443` port with SSL protocol, open `https://appmesh_node` to access with `admin` user and Admin123 for initial password.
 
-For production environment, Consul is better to be a cluster with 3+ server agent, one Consul agent is used for test senario.
+For production environment, Consul is better to be a cluster with 3+ server agent, one Consul agent is used for test scenario.
 
 ### Join a App Mesh node to a Consul cluster
 
@@ -85,7 +85,7 @@ When installed a new App Mesh node and want to connect to existing cluster, just
     "url": "https://192.168.3.1",
   }
 ```
-If App Mesh is running in Docker container, need mount `/opt/appmesh/appsvc.json` out of container to persist the configuration. After configuration change, just restart App Mesh conainer. 
+If App Mesh is running in Docker container, need mount `/opt/appmesh/appsvc.json` out of container to persist the configuration. After configuration change, just restart App Mesh container. 
 
 #### Option 2: Update from UI
 All configuration update from UI support hot-update, no need restart App Mesh process to take effect. Click `Configuration` -> `Consul` and set `Consul URL`, Click `Submit` to take effect.

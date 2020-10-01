@@ -105,9 +105,9 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str)
 		config->m_label->addLabel(DEFAULT_LABLE_HOST_NAME, MY_HOST_NAME);
 	}
 	// Consul
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSUL))
 	{
-		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSULE), config->getRestListenPort(), config->getSslEnabled());
+		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSUL), config->getRestListenPort(), config->getSslEnabled());
 	}
 
 	return config;
@@ -184,7 +184,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	result[JSON_KEY_Security] = m_security->AsJson(returnRuntimeInfo);
 
 	// Consul
-	result[JSON_KEY_CONSULE] = m_consul->AsJson();
+	result[JSON_KEY_CONSUL] = m_consul->AsJson();
 
 	// Build version
 	result[JSON_KEY_VERSION] = web::json::value::string(__MICRO_VAR__(BUILD_TAG));
@@ -686,7 +686,7 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 			SET_COMPARE(this->m_label, newConfig->m_label);
 
 		// Consul
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSULE))
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSUL))
 		{
 			SET_COMPARE(this->m_consul, newConfig->m_consul);
 			consulUpdated = true;
@@ -898,12 +898,12 @@ Configuration::JsonSecurity::JsonSecurity()
 std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jobj, int appmeshRestPort, bool sslEnabled)
 {
 	auto consul = std::make_shared<JsonConsul>();
-	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_URL);
-	consul->m_datacenter = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSULE_DATACENTER);
+	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSUL_URL);
+	consul->m_datacenter = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSUL_DATACENTER);
 	consul->m_proxyUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
-	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_MAIN);
-	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSULE_IS_NODE);
-	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSULE_SESSION_TTL, consul->m_ttl);
+	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_IS_MAIN);
+	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_IS_NODE);
+	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSUL_SESSION_TTL, consul->m_ttl);
 	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
 	const static boost::regex urlExrp("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
 	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExrp))
@@ -924,11 +924,11 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 web::json::value Configuration::JsonConsul::AsJson() const
 {
 	auto result = web::json::value::object();
-	result[JSON_KEY_CONSULE_URL] = web::json::value::string(m_consulUrl);
-	result[JSON_KEY_CONSULE_DATACENTER] = web::json::value::string(m_datacenter);
-	result[JSON_KEY_CONSULE_IS_MAIN] = web::json::value::boolean(m_isMaster);
-	result[JSON_KEY_CONSULE_IS_NODE] = web::json::value::boolean(m_isNode);
-	result[JSON_KEY_CONSULE_SESSION_TTL] = web::json::value::number(m_ttl);
+	result[JSON_KEY_CONSUL_URL] = web::json::value::string(m_consulUrl);
+	result[JSON_KEY_CONSUL_DATACENTER] = web::json::value::string(m_datacenter);
+	result[JSON_KEY_CONSUL_IS_MAIN] = web::json::value::boolean(m_isMaster);
+	result[JSON_KEY_CONSUL_IS_NODE] = web::json::value::boolean(m_isNode);
+	result[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
 	result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_proxyUrl);
 	return result;

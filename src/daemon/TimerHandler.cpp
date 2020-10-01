@@ -70,9 +70,9 @@ int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalS
 	return *timerIdPtr;
 }
 
-bool TimerHandler::cancleTimer(int &timerId)
+bool TimerHandler::cancelTimer(int &timerId)
 {
-	const static char fname[] = "TimerHandler::cancleTimer() ";
+	const static char fname[] = "TimerHandler::cancelTimer() ";
 
 	if (0 == timerId)
 		return false;

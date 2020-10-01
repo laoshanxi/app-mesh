@@ -16,7 +16,7 @@ int DurationParse::parse(const std::string &duration)
     LOG_DBG << fname << duration;
     int totalSeconds = 0;
 
-    // return imediate number
+    // return 0 for empty input
     if (duration.empty())
     {
         return 0;

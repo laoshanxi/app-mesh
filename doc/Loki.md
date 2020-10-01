@@ -32,7 +32,7 @@ docker-compose -f docker-compose.yaml rm -f
 ```
 
 ## Design
-Loki is a log aggregation system, component `loki` run as Server and `promtail` run as log connect and push agent. `promtail` is always run as daemonset on each log collection node. For appmesh node, bellow logs need to be collected together:
+Loki is a log aggregation system, component `loki` run as Server and `promtail` run as log connect and push agent. `promtail` is always run as daemon-set on each log collection node. For appmesh node, bellow logs need to be collected together:
 1. Default system log in /var/log
 2. appmesh service log in /opt/appmesh/log/appsvc.log
 3. Managed application output log in /opt/appmesh/work/*.log
