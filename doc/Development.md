@@ -1,4 +1,4 @@
-### Development
+## Development
 
 - Application state machine
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/state_machine.jpg" width=400 height=400 align=center /></div>
@@ -45,18 +45,9 @@ GET | /appmesh/permissions |  | Get all permissions
 GET | /appmesh/user/groups |  | Get all user groups
 GET | /appmesh/metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)
 
+- How to build App Mesh
 
-- Setup build environment on CentOS/Ubuntu/Debian
-```text
-git clone https://github.com/laoshanxi/app-mesh.git
-sudo sh app-mesh/script/openssl_update.sh
-sudo sh app-mesh/autogen.sh
-```
-- Build App Mesh
-```text
-cd app-mesh
-#make
-mkdir build; cd build; cmake ..; make; make pack;
-```
+See document [Build App Mesh guidance](https://github.com/laoshanxi/app-mesh/blob/master/doc/Build.md).
+
 - Thread model
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/threadmodel.jpg" width=400 height=282 align=center /></div>

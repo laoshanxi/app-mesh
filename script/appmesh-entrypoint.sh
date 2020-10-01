@@ -38,7 +38,7 @@ pre_reg_app() {
 			/bin/sh -c "$*"
 		else
 			# if arguments start with command, then reg as long running application
-			!/opt/appmesh/appc unreg -n ping -f
+			/opt/appmesh/appc unreg -n ping -f || true
 			/opt/appmesh/appc reg -n start_app -c "$*" -f
 		fi
 	fi

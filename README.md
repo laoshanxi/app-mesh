@@ -6,34 +6,34 @@
 
 # App Mesh
 
-App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` management platform, used to on-board, schedule and monitor applications. Each app can be a specific micro service for service discover or normal app with replication, the app-mesh will make sure all defined applications running on-time with defined behavior and resources. The platform can run as standalone mode and cluster mode, provide REST APIs, command-line and UI interface.
+App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application management platform, used to on-board, schedule, start and monitor applications. Each app can be a specific micro service for service discover or normal app with replication, the app-mesh will guarantee all defined applications running on-time with defined behavior and resources. The platform can run as standalone or cluster mode, provide REST APIs, command-line and web-ui.
 
 App Mesh is silimar with Kubernetes but much light weight, support both container app and native app.
 
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
 
-### Features
-Features  | Behavior
+## Features
+Scope  | Behavior
 ---|---
-Basic applications | Long running <br> Short running <br> Periodic long running
-Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md) 
+Support applications | Long running <br> Short running <br> Periodic long running
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
-Security |  SSL support (ECDH and secure ciphers) <br> ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/master/doc/USER_ROLE_DESC.md) <br> Multi-tenant support 
-Cloud native | ⚡️ [Prometheus Exporter](https://github.com/laoshanxi/app-mesh/blob/master/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/master/doc/Loki.md) <br> REST service with IPv6 support 
-Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
+Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/master/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) <br> Multi-tenant support 
+Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/master/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/master/doc/Loki.md) <br> REST service with IPv6 support 
+Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md) 
+Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32 <br> ARM64
 
-### Getting started
-The [Installation docs](https://github.com/laoshanxi/app-mesh/blob/master/doc/Install.md) have instructions on how
-to install App Mesh via Docker images, Docker Compose, and native way.
+## Getting started
+The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/master/doc/Install.md) introduce how
+to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
-### Documentation
-- [Command Lines](https://github.com/laoshanxi/app-mesh/blob/master/doc/CLI.md) for CLI.
-- [Development](https://github.com/laoshanxi/app-mesh/blob/master/doc/Development.md) for REST API and build steps.
+## Documentation
+- [Command Lines](https://github.com/laoshanxi/app-mesh/blob/master/doc/CLI.md) provide all the interfaces to manage App Mesh.
+- [Development](https://github.com/laoshanxi/app-mesh/blob/master/doc/Development.md) define REST APIs and show how to build App Mesh.
 
 ---
 
-### 3rd party deependencies
+## 3rd party deependencies
 - [C++11](http://www.cplusplus.com/articles/cpp11)
 - [ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Microsoft/cpprestsdk](https://github.com/Microsoft/cpprestsdk)
