@@ -16,14 +16,14 @@ ApplicationInitialize::~ApplicationInitialize()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationInitialize::FromJson(std::shared_ptr<ApplicationInitialize> &app, const web::json::value &jobj)
+void ApplicationInitialize::FromJson(std::shared_ptr<ApplicationInitialize> &app, const web::json::value &jsonObj)
 {
 	const static char fname[] = "ApplicationInitialize::FromJson() ";
 	LOG_DBG << fname << "Entered.";
 
 	std::shared_ptr<Application> fatherApp = app;
-	Application::FromJson(fatherApp, jobj);
-	app->m_application = jobj;
+	Application::FromJson(fatherApp, jsonObj);
+	app->m_application = jsonObj;
 	app->m_commandLine = app->m_commandLineInit;
 	// clean initia flag
 	if (HAS_JSON_FIELD(app->m_application, JSON_KEY_APP_initial_application_only))
@@ -51,7 +51,7 @@ web::json::value ApplicationInitialize::AsJson(bool returnRuntimeInfo)
 	{
 		result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::INITIALIZING));
 	}
-	return std::move(result);
+	return result;
 }
 
 void ApplicationInitialize::enable()

@@ -20,7 +20,7 @@ web::json::value Users::AsJson() const
 	{
 		result[user.first] = user.second->AsJson();
 	}
-	return std::move(result);
+	return result;
 }
 
 std::shared_ptr<Users> Users::FromJson(const web::json::value &obj, std::shared_ptr<Roles> roles)
@@ -64,7 +64,7 @@ std::set<std::string> Users::getGroups() const
 		if (usr.second->getGroup().length())
 			result.insert(usr.second->getGroup());
 	}
-	return std::move(result);
+	return result;
 }
 
 void Users::addUsers(const web::json::value &obj, std::shared_ptr<Roles> roles)

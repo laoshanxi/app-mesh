@@ -19,7 +19,10 @@ add_executable(${PROJECT_NAME}::appsvc ALIAS appsvc)
 target_link_libraries(appsvc
   PRIVATE
     Threads::Threads
-    boost_regex boost_thread boost_system
+    boost_regex
+    boost_thread
+    boost_system
+    boost_date_time
     cpprest
     ACE
     rest

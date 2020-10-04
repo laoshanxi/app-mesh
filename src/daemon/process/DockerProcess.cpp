@@ -2,6 +2,7 @@
 #include <ace/Barrier.h>
 #include "DockerProcess.h"
 #include "../../common/Utility.h"
+#include "../../common/DateTime.h"
 #include "../../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
 #include "MonitoredProcess.h"
@@ -275,11 +276,11 @@ std::string DockerProcess::fetchOutputMsg()
 	if (m_containerId.length())
 	{
 		//auto microsecondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
-		auto timeSince = Utility::formatRFC3339Time(m_lastFetchTime);
+		auto timeSince = DateTime::formatRFC3339Time(m_lastFetchTime);
 		auto dockerCommand = Utility::stringFormat("docker logs --since %s %s", timeSince.c_str(), m_containerId.c_str());
 		auto msg = Utility::runShellCommand(dockerCommand);
 		m_lastFetchTime = std::chrono::system_clock::now();
-		return std::move(msg);
+		return msg;
 	}
 	return std::string();
 }
@@ -295,5 +296,5 @@ std::string DockerProcess::fetchLine()
 			return msg.substr(0, i - 1);
 		}
 	}
-	return std::move(msg);
+	return msg;
 }

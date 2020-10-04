@@ -32,8 +32,8 @@ const std::shared_ptr<Label> Label::FromJson(const web::json::value &obj)
 	std::shared_ptr<Label> label = std::make_shared<Label>();
 	if (!obj.is_null() && obj.is_object())
 	{
-		auto jobj = obj.as_object();
-		for (auto lblJson : jobj)
+		auto jsonObj = obj.as_object();
+		for (auto lblJson : jsonObj)
 		{
 			std::string lableKey = GET_STD_STRING(lblJson.first);
 			label->m_labels[lableKey] = GET_STD_STRING(lblJson.second.as_string());

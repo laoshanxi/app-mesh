@@ -3,6 +3,8 @@
 #include <string>
 #include <chrono>
 #include <memory>
+
+#include <boost/date_time/posix_time/posix_time.hpp>
 #include <cpprest/json.h>
 
 //////////////////////////////////////////////////////////////////////////
@@ -17,8 +19,8 @@ public:
 	void dump();
 
 	web::json::value AsJson() const;
-	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value &obj) noexcept(false);
+	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value &obj, const std::string &posixTimeZone) noexcept(false);
 
-	std::chrono::system_clock::time_point m_startTime;
-	std::chrono::system_clock::time_point m_endTime;
+	boost::posix_time::time_duration m_startTime;
+	boost::posix_time::time_duration m_endTime;
 };

@@ -3,6 +3,7 @@
 #include "AppProcess.h"
 #include "../Configuration.h"
 #include "../../common/Utility.h"
+#include "../../common/DateTime.h"
 #include "../../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
 #include "../ResourceLimitation.h"
@@ -160,7 +161,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		return ACE_INVALID_PID;
 	}
 
-	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = Utility::formatLocalTime(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
+	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = DateTime::formatLocalTime(std::chrono::system_clock::now(), DATE_TIME_FORMAT);
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
 	int totalEnvArgs = 0;
@@ -215,7 +216,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	m_stdoutFileName = stdoutFile;
 	// do not inherit LD_LIBRARY_PATH to child
-	static const std::string ldEnv = ::getenv("LD_LIBRARY_PATH");
+	static const std::string ldEnv = ACE_OS::getenv("LD_LIBRARY_PATH") ? ACE_OS::getenv("LD_LIBRARY_PATH") : "";
 	if (!ldEnv.empty())
 	{
 		std::string env = ldEnv;

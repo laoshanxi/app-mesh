@@ -16,11 +16,11 @@ ApplicationUnInitia::~ApplicationUnInitia()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationUnInitia::FromJson(std::shared_ptr<ApplicationUnInitia> &app, const web::json::value &jobj)
+void ApplicationUnInitia::FromJson(std::shared_ptr<ApplicationUnInitia> &app, const web::json::value &jsonObj)
 {
 	const static char fname[] = "ApplicationUnInitia::FromJson() ";
 	LOG_DBG << fname << "Entered.";
-	auto jsonApp = jobj;
+	auto jsonApp = jsonObj;
 	std::shared_ptr<Application> fatherApp = app;
 	Application::FromJson(fatherApp, jsonApp);
 	app->m_application = jsonApp;
@@ -53,7 +53,7 @@ web::json::value ApplicationUnInitia::AsJson(bool returnRuntimeInfo)
 	{
 		result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::UNINITIALIZING));
 	}
-	return std::move(result);
+	return result;
 }
 
 void ApplicationUnInitia::enable()

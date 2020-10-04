@@ -21,7 +21,7 @@ class Configuration
 {
 	struct JsonSsl
 	{
-		static std::shared_ptr<JsonSsl> FromJson(const web::json::value &jobj);
+		static std::shared_ptr<JsonSsl> FromJson(const web::json::value &jsonObj);
 		web::json::value AsJson() const;
 		bool m_sslEnabled;
 		std::string m_certFile;
@@ -30,7 +30,7 @@ class Configuration
 	};
 	struct JsonRest
 	{
-		static std::shared_ptr<JsonRest> FromJson(const web::json::value &jobj);
+		static std::shared_ptr<JsonRest> FromJson(const web::json::value &jsonObj);
 		web::json::value AsJson() const;
 
 		bool m_restEnabled;
@@ -44,7 +44,7 @@ class Configuration
 	struct JsonConsul
 	{
 		JsonConsul();
-		static std::shared_ptr<JsonConsul> FromJson(const web::json::value &jobj, int appmeshRestPort, bool sslEnabled);
+		static std::shared_ptr<JsonConsul> FromJson(const web::json::value &jsonObj, int appmeshRestPort, bool sslEnabled);
 		web::json::value AsJson() const;
 		bool consulEnabled() const;
 		bool consulSecurityEnabled() const;
@@ -67,7 +67,7 @@ class Configuration
 public:
 	struct JsonSecurity
 	{
-		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value &jobj);
+		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value &jsonObj);
 		web::json::value AsJson(bool returnRuntimeInfo);
 		bool m_jwtEnabled;
 		bool m_encryptKey;
@@ -85,7 +85,7 @@ public:
 
 	static std::shared_ptr<Configuration> FromJson(const std::string &str) noexcept(false);
 	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user);
-	void deSerializeApp(const web::json::value &jobj);
+	void deSerializeApp(const web::json::value &jsonObj);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value &config);
 	void registerPrometheus();

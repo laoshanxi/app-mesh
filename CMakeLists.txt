@@ -39,6 +39,7 @@ find_package(Boost REQUIRED COMPONENTS
     regex
     thread
     program_options
+    date_time
 )
 if (Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIR})

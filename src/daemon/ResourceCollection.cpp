@@ -2,6 +2,7 @@
 #include <ace/OS.h>
 #include "ResourceCollection.h"
 #include "../common/Utility.h"
+#include "../common/DateTime.h"
 #include "../common/os/net.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
@@ -190,11 +191,11 @@ web::json::value ResourceCollection::AsJson()
 	});
 
 	result[GET_STRING_T("fs")] = fsArr;
-	result[GET_STRING_T("systime")] = web::json::value::string(Utility::formatISO8601Time(std::chrono::system_clock::now()));
-	result[GET_STRING_T("appmesh_start_time")] = web::json::value::string(Utility::formatISO8601Time(m_appmeshStartTime));
+	result[GET_STRING_T("systime")] = web::json::value::string(DateTime::formatISO8601Time(std::chrono::system_clock::now()));
+	result[GET_STRING_T("appmesh_start_time")] = web::json::value::string(DateTime::formatISO8601Time(m_appmeshStartTime));
 	result[GET_STRING_T("pid")] = web::json::value::number(getPid());
 	LOG_DBG << fname << "Exit";
-	return std::move(result);
+	return result;
 }
 
 web::json::value ResourceCollection::getConsulJson()
@@ -209,5 +210,5 @@ web::json::value ResourceCollection::getConsulJson()
 	//result[GET_STRING_T("mem_totalSwap_bytes")] = web::json::value::number(mem->totalSwap_bytes);
 	//result[GET_STRING_T("mem_freeSwap_bytes")] = web::json::value::number(mem->freeSwap_bytes);
 
-	return std::move(result);
+	return result;
 }

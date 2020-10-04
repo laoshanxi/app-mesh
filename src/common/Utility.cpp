@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <chrono>
-#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <queue>
@@ -13,7 +11,6 @@
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
 
 #include <log4cpp/Category.hh>
 #include <log4cpp/Appender.hh>
@@ -303,142 +300,6 @@ unsigned long long Utility::getThreadId()
 	return std::stoull(stid);
 }
 
-std::chrono::system_clock::time_point Utility::parseISO8601DateTime(const std::string &strTime)
-{
-	// https://stackoverflow.com/questions/10484232/how-to-get-boostposix-timeptime-from-formatted-string
-	boost::posix_time::ptime ptime;
-	boost::posix_time::time_input_facet *format = new boost::posix_time::time_input_facet();
-	format->set_iso_extended_format();
-	std::istringstream iss(strTime);
-	iss.imbue(std::locale(std::locale::classic(), format));
-	if ((iss >> ptime))
-	{
-		auto timeTm = boost::posix_time::to_tm(ptime);
-		auto time_point = std::chrono::system_clock::from_time_t(std::mktime(&timeTm));
-
-		const auto idxPlus = strTime.find("+");
-		const auto idxMinus = strTime.find("-");
-		if (idxPlus != std::string::npos || idxMinus != std::string::npos)
-		{
-			// target offset
-			// "%H:%M:%S"
-			std::string posixTimezone;
-			int offsetSeconds = 0;
-			if (idxPlus)
-			{
-				posixTimezone = strTime.substr(idxPlus + 1);
-				// TODO: use duration return type to avoid huge day time here
-				offsetSeconds = std::chrono::system_clock::to_time_t(convertStr2DayTime(posixTimezone));
-			}
-			else
-			{
-				posixTimezone = strTime.substr(idxMinus + 1);
-				offsetSeconds = -std::chrono::system_clock::to_time_t(convertStr2DayTime(posixTimezone));
-			}
-			// get local offset
-			const static auto currentOffsetTime = getLocalUtcOffset().substr(1, 1024);
-			const static auto currentOffsetTimeSeconds = std::chrono::system_clock::to_time_t(convertStr2DayTime(currentOffsetTime));
-			std::chrono::duration<int> durationSeconds(currentOffsetTimeSeconds - offsetSeconds);
-			// use minutes duration to adjust offset
-			time_point -= std::chrono::duration_cast<std::chrono::minutes>(durationSeconds);
-		}
-		return time_point;
-	}
-	else
-	{
-		throw std::invalid_argument(stringFormat("invalid ISO8601 string: %s", strTime.c_str()));
-	}
-}
-
-std::chrono::system_clock::time_point Utility::convertStr2DayTime(const std::string &strTime)
-{
-	struct tm tm_ = {0};
-
-	char *str = (char *)strTime.data();
-	int hour = 0, minute = 0, second = 0;
-	// "%H:%M:%S"
-	sscanf(str, "%d:%d:%d", &hour, &minute, &second);
-	tm_.tm_year = 1970;
-	tm_.tm_mon = 1;
-	tm_.tm_mday = 1;
-	tm_.tm_hour = hour;
-	tm_.tm_min = minute;
-	tm_.tm_sec = second;
-	tm_.tm_isdst = -1;
-	return std::chrono::system_clock::from_time_t(std::mktime(&tm_));
-}
-
-std::string Utility::convertDayTime2Str(const std::chrono::system_clock::time_point &time)
-{
-	char buff[70] = {0};
-	// put_time is not ready when gcc version < 5
-	auto timet = std::chrono::system_clock::to_time_t(time);
-	std::tm local_tm;
-	ACE_OS::localtime_r(&timet, &local_tm);
-	strftime(buff, sizeof(buff), "%H:%M:%S", &local_tm);
-	return std::string(buff);
-}
-
-const std::string Utility::getLocalUtcOffset()
-{
-	std::string offset;
-	// option: https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
-	boost::posix_time::ptime local = boost::posix_time::second_clock::local_time();
-	boost::posix_time::ptime utc = boost::posix_time::second_clock::universal_time();
-	boost::posix_time::time_duration tz_offset = (local - utc);
-	// assert(!tz_offset.is_negative());
-	std::ostringstream ss;
-	ss << (tz_offset.is_negative() ? "" : "+");
-	ss << tz_offset;
-	return ss.str();
-}
-
-std::string Utility::formatISO8601Time(const std::chrono::system_clock::time_point &time)
-{
-	auto offset = getLocalUtcOffset();
-	if (endWith(offset, ":00"))
-	{
-		offset = offset.substr(0, offset.length() - 3);
-	}
-	std::stringstream ss;
-	ss << formatLocalTime(time, "%FT%T") << offset;
-	return ss.str();
-}
-
-std::string Utility::formatRFC3339Time(const std::chrono::system_clock::time_point &time)
-{
-	// https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
-	const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()).count() % 1000;
-	const auto timeT = std::chrono::system_clock::to_time_t(time);
-	struct tm timeTm;
-	std::stringstream ss;
-	// https://stackoverflow.com/questions/37421747/is-there-a-builtin-alternative-to-stdput-time-for-gcc-5
-	// use put_time can replace bellow 4 lines
-	// ss << std::put_time(gmtime_r(&timeT, &timeTm), "%FT%T") << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';
-	char buff[70] = {0};
-	ACE_OS::localtime_r(&timeT, &timeTm);
-	ACE_OS::strftime(buff, sizeof(buff), "%FT%T", &timeTm);
-	ss << buff << '.' << std::setfill('0') << std::setw(3) << millis << 'Z';
-
-	return ss.str();
-}
-
-std::string Utility::formatLocalTime(const std::chrono::system_clock::time_point &time, const char *fmt)
-{
-	const static char fname[] = "Utility::formatLocalTime() ";
-
-	struct tm localtime;
-	time_t timet = std::chrono::system_clock::to_time_t(time);
-	ACE_OS::localtime_r(&timet, &localtime);
-
-	char buff[64] = {0};
-	if (!strftime(buff, sizeof(buff), fmt, &localtime))
-	{
-		LOG_ERR << fname << "strftime failed with error : " << std::strerror(errno);
-	}
-	return buff;
-}
-
 std::string Utility::encode64(const std::string &val)
 {
 	using namespace boost::archive::iterators;
@@ -522,7 +383,7 @@ std::string Utility::readFileCpp(const std::string &path)
 	}
 	std::string str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 	file.close();
-	return std::move(str);
+	return str;
 }
 
 std::string Utility::createUUID()
@@ -536,7 +397,7 @@ std::string Utility::createUUID()
 	ACE_Utils::UUID uuid;
 	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
 	auto str = std::string(uuid.to_string()->c_str());
-	return std::move(str);
+	return str;
 }
 
 std::string Utility::runShellCommand(std::string cmd)
@@ -566,7 +427,7 @@ std::string Utility::runShellCommand(std::string cmd)
 		}
 	}
 	auto str = std::string(stdoutMsg.str());
-	return std::move(str);
+	return str;
 }
 
 std::vector<std::string> Utility::splitString(const std::string &source, const std::string &splitFlag)
@@ -590,7 +451,7 @@ std::vector<std::string> Utility::splitString(const std::string &source, const s
 		if (str.length() > 0)
 			result.push_back(str);
 	}
-	return std::move(result);
+	return result;
 }
 
 bool Utility::startWith(const std::string &big, const std::string &small)
@@ -628,7 +489,7 @@ std::string Utility::stringReplace(const std::string &strBase, const std::string
 		str.replace(position, srcLen, strDst);
 		position += dstLen;
 	}
-	return std::move(str);
+	return str;
 }
 
 std::string Utility::humanReadableSize(long double bytesSize)

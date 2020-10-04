@@ -34,7 +34,7 @@ pplx::task<void> HttpRequest::reply(http::status_code status, const json::value&
 pplx::task<void> HttpRequest::reply(http::status_code status, utf8string&& body_data, const utf8string& content_type) const
 {
 	http_response response(status);
-	response.set_body(std::move(body_data), content_type);
+	response.set_body(body_data, content_type);
 	return reply(response);
 }
 

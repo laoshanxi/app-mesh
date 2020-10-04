@@ -102,7 +102,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str)
 	{
 		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
 		// add default label here
-		config->m_label->addLabel(DEFAULT_LABLE_HOST_NAME, MY_HOST_NAME);
+		config->m_label->addLabel(DEFAULT_LABEL_HOST_NAME, MY_HOST_NAME);
 	}
 	// Consul
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSUL))
@@ -273,7 +273,7 @@ const web::json::value Configuration::getSecureConfigJson()
 		}
 	}
 
-	return std::move(json);
+	return json;
 }
 
 web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user) const
@@ -298,9 +298,9 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	return result;
 }
 
-void Configuration::deSerializeApp(const web::json::value &jobj)
+void Configuration::deSerializeApp(const web::json::value &jsonObj)
 {
-	auto &jArr = jobj.as_array();
+	auto &jArr = jsonObj.as_array();
 	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
 	{
 		auto jsonApp = *(iterB);
@@ -404,7 +404,7 @@ std::set<std::string> Configuration::getUserPermissions(const std::string &userN
 		for (auto perm : role->getPermissions())
 			permissionSet.insert(perm);
 	}
-	return std::move(permissionSet);
+	return permissionSet;
 }
 
 std::set<std::string> Configuration::getAllPermissions()
@@ -418,7 +418,7 @@ std::set<std::string> Configuration::getAllPermissions()
 				permissionSet.insert(perm);
 		}
 	}
-	return std::move(permissionSet);
+	return permissionSet;
 }
 
 const std::shared_ptr<Users> Configuration::getUsers()
@@ -538,7 +538,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 		saveConfigToDisk();
 	}
 	app->dump();
-	return std::move(app);
+	return app;
 }
 
 void Configuration::removeApp(const std::string &appName)
@@ -734,7 +734,7 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jso
 		return app;
 	}
 
-	if (DurationParse().parse(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds)) > 0)
+	if (DurationParse::parse(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds)) > 0)
 	{
 		// Consider as short running application
 		std::shared_ptr<ApplicationShortRun> shortApp;
@@ -895,16 +895,16 @@ Configuration::JsonSecurity::JsonSecurity()
 	m_jwtUsers = std::make_shared<Users>();
 }
 
-std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jobj, int appmeshRestPort, bool sslEnabled)
+std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jsonObj, int appmeshRestPort, bool sslEnabled)
 {
 	auto consul = std::make_shared<JsonConsul>();
-	consul->m_consulUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSUL_URL);
-	consul->m_datacenter = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSUL_DATACENTER);
-	consul->m_proxyUrl = GET_JSON_STR_VALUE(jobj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
-	consul->m_isMaster = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_IS_MAIN);
-	consul->m_isNode = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_IS_NODE);
-	SET_JSON_INT_VALUE(jobj, JSON_KEY_CONSUL_SESSION_TTL, consul->m_ttl);
-	SET_JSON_BOOL_VALUE(jobj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
+	consul->m_consulUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_URL);
+	consul->m_datacenter = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_DATACENTER);
+	consul->m_proxyUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
+	consul->m_isMaster = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_MAIN);
+	consul->m_isNode = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_NODE);
+	SET_JSON_INT_VALUE(jsonObj, JSON_KEY_CONSUL_SESSION_TTL, consul->m_ttl);
+	SET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
 	const static boost::regex urlExrp("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
 	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExrp))
 	{

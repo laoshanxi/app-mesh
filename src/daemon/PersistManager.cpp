@@ -52,7 +52,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 		}
 	}
 	snap->m_consulSessionId = ConsulConnection::instance()->consulSessionId();
-	return std::move(snap);
+	return snap;
 }
 
 void PersistManager::persistSnapshot()
@@ -118,11 +118,11 @@ web::json::value Snapshot::AsJson() const
 		auto json = web::json::value::object();
 		json[SNAPSHOT_JSON_KEY_pid] = web::json::value::number(app.second.m_pid);
 		json[SNAPSHOT_JSON_KEY_starttime] = web::json::value::number(app.second.m_startTime);
-		apps[app.first] = std::move(json);
+		apps[app.first] = json;
 	}
 	result["Applications"] = apps;
 	result["ConsulSessionId"] = web::json::value::string(m_consulSessionId);
-	return std::move(result);
+	return result;
 }
 
 std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value &obj)
@@ -145,7 +145,7 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value &obj)
 			}
 		snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
 	}
-	return std::move(snap);
+	return snap;
 }
 
 void Snapshot::persist()

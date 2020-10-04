@@ -12,6 +12,7 @@
 #include "../ResourceLimitation.h"
 #include "../security/User.h"
 #include "../../common/Utility.h"
+#include "../../common/DateTime.h"
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/gauge.h"
 
@@ -24,6 +25,7 @@ Application::Application()
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
 	m_regTime = std::chrono::system_clock::now();
+	m_posixTimeZone = DateTime::getLocalUtcOffset();
 }
 
 Application::~Application()
@@ -80,64 +82,61 @@ bool Application::isWorkingState() const
 	return (m_status == STATUS::ENABLED || m_status == STATUS::DISABLED);
 }
 
-void Application::FromJson(std::shared_ptr<Application> &app, const web::json::value &jobj)
+void Application::FromJson(std::shared_ptr<Application> &app, const web::json::value &jsonObj)
 {
-	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name));
-	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner));
+	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
+	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner));
 	if (ownerStr.length())
 		app->m_owner = Configuration::instance()->getUserInfo(ownerStr);
-	app->m_ownerPermission = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_owner_permission);
-	app->m_shellApp = GET_JSON_BOOL_VALUE(jobj, JSON_KEY_APP_shell_mode);
-	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_metadata));
-	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command));
+	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
+	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
+	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_metadata));
+	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	// TODO: consider i18n and  legal file name
 	app->m_stdoutFile = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
-	app->m_stdoutCacheSize = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_stdout_cache_size);
+	app->m_stdoutCacheSize = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_size);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheSize);
-	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGH)
-		throw std::invalid_argument("command line lengh should less than 2048");
-	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_init_command));
-	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_fini_command));
-	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_health_check_cmd));
-	if (app->m_healthCheckCmd.length() >= MAX_COMMAND_LINE_LENGH)
-		throw std::invalid_argument("health check lengh should less than 2048");
-	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_working_dir));
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_status))
+	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)
+		throw std::invalid_argument("command line length should less than 2048");
+	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_init_command));
+	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_fini_command));
+	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_health_check_cmd));
+	if (app->m_healthCheckCmd.length() >= MAX_COMMAND_LINE_LENGTH)
+		throw std::invalid_argument("health check length should less than 2048");
+	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_working_dir));
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_status))
 	{
-		app->m_status = static_cast<STATUS> GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status);
+		app->m_status = static_cast<STATUS> GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status);
 	}
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_daily_limitation))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_resource_limit))
 	{
-		app->m_dailyLimit = DailyLimitation::FromJson(jobj.at(JSON_KEY_APP_daily_limitation));
+		app->m_resourceLimit = ResourceLimitation::FromJson(jsonObj.at(JSON_KEY_APP_resource_limit), app->m_name);
 	}
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_resource_limit))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_env))
 	{
-		app->m_resourceLimit = ResourceLimitation::FromJson(jobj.at(JSON_KEY_APP_resource_limit), app->m_name);
-	}
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_env))
-	{
-		auto envs = jobj.at(JSON_KEY_APP_env).as_object();
+		auto envs = jsonObj.at(JSON_KEY_APP_env).as_object();
 		for (auto env : envs)
 		{
 			app->m_envMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
 		}
 	}
 
-	app->m_dockerImage = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_docker_image);
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
-		app->attach(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid));
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_version))
-		SET_JSON_INT_VALUE(jobj, JSON_KEY_APP_version, app->m_version);
+	app->m_dockerImage = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image);
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
+		app->attach(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid));
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_version))
+		SET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_version, app->m_version);
+	app->m_posixTimeZone = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_posix_timezone);
 	if (app->m_dockerImage.length() == 0 && app->m_commandLine.length() == 0)
 		throw std::invalid_argument("no command line provide");
 
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_start_time))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
 	{
-		app->m_startTime = Utility::parseISO8601DateTime(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_time));
+		app->m_startTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time), app->m_posixTimeZone);
 	}
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_SHORT_APP_end_time))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_end_time))
 	{
-		app->m_endTime = Utility::parseISO8601DateTime(GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_end_time));
+		app->m_endTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_end_time), app->m_posixTimeZone);
 	}
 	if (app->m_endTime.time_since_epoch().count())
 	{
@@ -145,9 +144,13 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 			throw std::invalid_argument("end_time should greater than the start_time");
 		app->handleEndTimer();
 	}
-	if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_REG_TIME))
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_daily_limitation))
 	{
-		app->m_regTime = Utility::parseISO8601DateTime(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_REG_TIME));
+		app->m_dailyLimit = DailyLimitation::FromJson(jsonObj.at(JSON_KEY_APP_daily_limitation), app->m_posixTimeZone);
+	}
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
+	{
+		app->m_regTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME));
 	}
 }
 
@@ -373,7 +376,7 @@ std::string Application::getAsyncRunOutput(const std::string &processUuid, int &
 			return std::string();
 		}
 
-		return std::move(output);
+		return output;
 	}
 	else
 	{
@@ -490,7 +493,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		if (m_pid > 0)
 			result[JSON_KEY_APP_memory] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[JSON_KEY_APP_last_start] = web::json::value::string(Utility::formatISO8601Time(m_procStartTime));
+			result[JSON_KEY_APP_last_start] = web::json::value::string(DateTime::formatISO8601Time(m_procStartTime));
 		if (!m_process->containerId().empty())
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
@@ -516,16 +519,18 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		});
 		result[JSON_KEY_APP_env] = envs;
 	}
+	if (m_posixTimeZone.length() && m_posixTimeZone != DateTime::getLocalUtcOffset())
+		result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
 	if (m_dockerImage.length())
 		result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
 	if (m_version)
 		result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 
 	if (m_startTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(Utility::formatISO8601Time(m_startTime));
+		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(DateTime::formatISO8601Time(m_startTime));
 	if (m_endTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(Utility::formatISO8601Time(m_endTime));
-	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(Utility::formatISO8601Time(m_regTime));
+		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(DateTime::formatISO8601Time(m_endTime));
+	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(DateTime::formatISO8601Time(m_regTime));
 	return result;
 }
 
@@ -544,9 +549,10 @@ void Application::dump()
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
-	LOG_DBG << fname << "m_startTime:" << Utility::formatISO8601Time(m_startTime);
-	LOG_DBG << fname << "m_endTime:" << Utility::formatISO8601Time(m_endTime);
-	LOG_DBG << fname << "m_regTime:" << Utility::formatISO8601Time(m_regTime);
+	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
+	LOG_DBG << fname << "m_startTime:" << DateTime::formatISO8601Time(m_startTime);
+	LOG_DBG << fname << "m_endTime:" << DateTime::formatISO8601Time(m_endTime);
+	LOG_DBG << fname << "m_regTime:" << DateTime::formatISO8601Time(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	LOG_DBG << fname << "m_version:" << m_version;
@@ -580,7 +586,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, cons
 			process.reset(new AppProcess());
 		}
 	}
-	return std::move(process);
+	return process;
 }
 
 bool Application::isInDailyTimeRange()
@@ -595,7 +601,7 @@ bool Application::isInDailyTimeRange()
 	if (m_dailyLimit != nullptr)
 	{
 		// Convert now to day time [%H:%M:%S], less than 24h
-		auto now = Utility::convertStr2DayTime(Utility::convertDayTime2Str(nowClock));
+		auto now = DateTime::getDayTimeDuration(nowClock);
 
 		if (m_dailyLimit->m_startTime < m_dailyLimit->m_endTime)
 		{

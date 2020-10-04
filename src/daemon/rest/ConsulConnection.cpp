@@ -618,7 +618,7 @@ web::json::value ConsulConnection::getAppJsonWithIndexEnv(std::shared_ptr<Applic
 		envs["APP_INDEX"] = web::json::value::string(std::to_string(index));
 		appJson[JSON_KEY_APP_env] = envs;
 	}
-	return std::move(appJson);
+	return appJson;
 }
 
 bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr<ConsulTopology> topology)
@@ -706,7 +706,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::retriev
 	}
 
 	LOG_DBG << fname << "get topology size : " << topology.size();
-	return std::move(topology);
+	return topology;
 }
 
 std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTask()
@@ -739,7 +739,7 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 		}
 	}
 	LOG_DBG << fname << "get tasks size : " << result.size();
-	return std::move(result);
+	return result;
 }
 
 /*
@@ -776,7 +776,7 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 		}
 	}
 	LOG_DBG << fname << "get nodes size : " << result.size();
-	return std::move(result);
+	return result;
 }
 
 void ConsulConnection::initTimer(std::string recoverSsnId)
@@ -864,7 +864,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method &
 		// "Failed to read HTTP status line"
 		web::http::http_response response = client.request(request).get();
 		LOG_DBG << fname << mtd << " " << path << " return " << response.status_code();
-		return std::move(response);
+		return response;
 	}
 	catch (const std::exception &ex)
 	{
@@ -876,7 +876,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method &
 	}
 
 	web::http::http_response response(web::http::status_codes::ResetContent);
-	return std::move(response);
+	return response;
 }
 
 std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse)

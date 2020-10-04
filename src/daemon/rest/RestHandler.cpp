@@ -353,7 +353,7 @@ std::string RestHandler::getTokenUser(const HttpRequest &message)
 	{
 		// get user info
 		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
-		return std::move(userName);
+		return userName;
 	}
 	else
 	{
@@ -409,7 +409,7 @@ std::string RestHandler::getTokenStr(const HttpRequest &message)
 			token = token.substr(bearerFlag.length());
 		}
 	}
-	return std::move(token);
+	return token;
 }
 
 std::string RestHandler::createToken(const std::string &uname, const std::string &passwd, int timeoutSeconds)
@@ -432,7 +432,7 @@ std::string RestHandler::createToken(const std::string &uname, const std::string
 					 .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
 					 .set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
 					 .sign(jwt::algorithm::hs256{passwd});
-	return std::move(token);
+	return token;
 }
 
 int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, int defaultValue, int min, int max) const
@@ -444,7 +444,7 @@ int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string
 	if (querymap.find(U(key)) != querymap.end())
 	{
 		auto value = querymap.find(U(key))->second;
-		rt = DurationParse().parse(value);
+		rt = DurationParse::parse(value);
 		if (rt > 0)
 		{
 			if (min < max && (rt < min || rt > max))
@@ -1058,7 +1058,6 @@ std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest &mess
 
 void RestHandler::apiRunAsync(const HttpRequest &message)
 {
-	const static char fname[] = "RestHandler::apiAsyncRun() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
 	int retention = getHttpQueryValue(message, HTTP_QUERY_KEY_retention, DEFAULT_RUN_APP_RETENTION_DURATION, 1, 60 * 60 * 24);

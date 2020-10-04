@@ -3,6 +3,7 @@
 #include "../Configuration.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
+#include "../../common/DateTime.h"
 
 ApplicationShortRun::ApplicationShortRun()
 	: m_startInterval(0), m_bufferTime(0), m_timerId(0)
@@ -17,14 +18,14 @@ ApplicationShortRun::~ApplicationShortRun()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun> &app, const web::json::value &jobj)
+void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun> &app, const web::json::value &jsonObj)
 {
 	DurationParse duration;
 	std::shared_ptr<Application> fatherApp = app;
-	Application::FromJson(fatherApp, jobj);
-	app->m_startIntervalValue = GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_seconds);
+	Application::FromJson(fatherApp, jsonObj);
+	app->m_startIntervalValue = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds);
 	app->m_startInterval = duration.parse(app->m_startIntervalValue);
-	app->m_bufferTimeValue = GET_JSON_STR_VALUE(jobj, JSON_KEY_SHORT_APP_start_interval_timeout);
+	app->m_bufferTimeValue = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_interval_timeout);
 	app->m_bufferTime = duration.parse(app->m_bufferTimeValue);
 	assert(app->m_startInterval > 0);
 }
@@ -139,7 +140,7 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	if (returnRuntimeInfo)
 	{
 		if (m_nextLaunchTime != nullptr)
-			result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(Utility::formatISO8601Time(*m_nextLaunchTime));
+			result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(DateTime::formatISO8601Time(*m_nextLaunchTime));
 	}
 	return result;
 }
@@ -201,7 +202,7 @@ void ApplicationShortRun::initTimer()
 	firstSleepMilliseconds += 2; // add 2 miliseconds buffer to avoid 59:59
 	m_timerId = this->registerTimer(firstSleepMilliseconds, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
 	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(now + std::chrono::milliseconds(firstSleepMilliseconds));
-	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << Utility::formatISO8601Time(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds / 1000 << " seconds";
+	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << DateTime::formatISO8601Time(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds / 1000 << " seconds";
 }
 
 int ApplicationShortRun::getStartInterval()
@@ -230,5 +231,5 @@ void ApplicationShortRun::dump()
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
 	if (m_nextLaunchTime != nullptr)
-		LOG_DBG << fname << "m_nextLaunchTime:" << Utility::formatISO8601Time(*m_nextLaunchTime);
+		LOG_DBG << fname << "m_nextLaunchTime:" << DateTime::formatISO8601Time(*m_nextLaunchTime);
 }

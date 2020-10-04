@@ -6,9 +6,6 @@
 #define DURATION_WEEK R"(^P([0-9]+W)$)"
 #define DURATION_DATE_TIME R"(^P(([0-9]+Y)?([0-9]+M)?([0-9]+D)?)?(T([0-9]+H)?([0-9]+M)?([0-9]+S)?)?$)"
 
-DurationParse::DurationParse(){};
-DurationParse::~DurationParse(){};
-
 // https://github.com/ChannelMeter/iso8601duration/blob/master/duration.go
 int DurationParse::parse(const std::string &duration)
 {
@@ -34,7 +31,7 @@ int DurationParse::parse(const std::string &duration)
     {
         if (what.size() > 1)
         {
-            totalSeconds = this->parsePart("week", what[1]);
+            totalSeconds = parsePart("week", what[1]);
             LOG_DBG << fname << "week duration: " << duration << "=" << totalSeconds;
             return totalSeconds;
         }
@@ -42,7 +39,7 @@ int DurationParse::parse(const std::string &duration)
     else if (boost::regex_match(duration.c_str(), what, boost::regex(DURATION_DATE_TIME)))
     {
         /*
-        * note that the index position is depend on reges expression
+        // note that the index position is depend on reges expression
         for (size_t i = 0; i < what.size(); i++)
         {
             std::cout << "DURATION_DATE_TIME: " << i << " str:" << what[i].str() << std::endl;
@@ -60,18 +57,18 @@ int DurationParse::parse(const std::string &duration)
         for (size_t i = 0; i < what.size(); i++)
         {
             if (i == 2)
-                totalSeconds += this->parsePart("date", what[i]);
+                totalSeconds += parsePart("date", what[i]);
             if (i == 3)
-                totalSeconds += this->parsePart("date", what[i]);
+                totalSeconds += parsePart("date", what[i]);
             if (i == 4)
-                totalSeconds += this->parsePart("date", what[i]);
+                totalSeconds += parsePart("date", what[i]);
 
             if (i == 6)
-                totalSeconds += this->parsePart("time", what[i]);
+                totalSeconds += parsePart("time", what[i]);
             if (i == 7)
-                totalSeconds += this->parsePart("time", what[i]);
+                totalSeconds += parsePart("time", what[i]);
             if (i == 8)
-                totalSeconds += this->parsePart("time", what[i]);
+                totalSeconds += parsePart("time", what[i]);
         }
         LOG_DBG << fname << "date time duration: " << duration << "=" << totalSeconds;
         return totalSeconds;

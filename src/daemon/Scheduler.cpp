@@ -123,5 +123,5 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 		}
 	}
 
-	return std::move(newTopology);
+	return newTopology;
 }

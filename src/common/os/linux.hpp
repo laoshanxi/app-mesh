@@ -264,7 +264,7 @@ namespace os
 			LOG_WAR << fname << "Failed to read/parse:" << path;
 			return nullptr;
 		}
-		if (comm.length() > MAX_COMMAND_LINE_LENGH)
+		if (comm.length() > MAX_COMMAND_LINE_LENGTH)
 		{
 			LOG_WAR << fname << "invalid length of process command";
 			return nullptr;
@@ -700,7 +700,7 @@ namespace os
 				points[mountPoint] = device;
 			}
 		}
-		return std::move(points);
+		return points;
 	}
 
 	inline int fileStat(const std::string &path)

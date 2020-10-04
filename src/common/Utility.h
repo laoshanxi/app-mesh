@@ -93,9 +93,9 @@ namespace std
 #define APPMESH_PASSWD_MIN_LENGTH 3
 #define DEFAULT_RUN_APP_RETENTION_DURATION 10
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
-#define MAX_COMMAND_LINE_LENGH 2048
+#define MAX_COMMAND_LINE_LENGTH 2048
 
-#define DEFAULT_LABLE_HOST_NAME "HOST_NAME"
+#define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define DEFAULT_WORKING_DIR "/opt/appmesh/work"
 
@@ -136,22 +136,10 @@ public:
 	static void initLogging();
 	static bool setLogLevel(const std::string &level);
 
+	// OS related
 	static unsigned long long getThreadId();
 	static bool getUid(std::string userName, unsigned int &uid, unsigned int &groupid);
-
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
-
-	// %H:%M:%S
-	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string &strTime);
-	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point &time);
-	// +08:00:00
-	const static std::string getLocalUtcOffset();
-	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime);
-	// output like 2017-09-11T21:52:13+00:00 in local time with offset
-	static std::string formatISO8601Time(const std::chrono::system_clock::time_point &time);
-	// output like 2019-01-23T10:18:32.079Z in UTC
-	static std::string formatRFC3339Time(const std::chrono::system_clock::time_point &time);
-	static std::string formatLocalTime(const std::chrono::system_clock::time_point &time, const char *fmt);
 
 	// Base64
 	static std::string encode64(const std::string &val);
@@ -236,6 +224,7 @@ public:
 #define JSON_KEY_APP_daily_limitation "daily_limitation"
 #define JSON_KEY_APP_resource_limit "resource_limit"
 #define JSON_KEY_APP_env "env"
+#define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
 // runtime attr
 #define JSON_KEY_APP_pid "pid"

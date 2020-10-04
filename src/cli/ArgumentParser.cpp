@@ -223,7 +223,7 @@ void ArgumentParser::processLogon()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	m_tokenTimeoutSeconds = DurationParse().parse(m_commandLineVariables["timeout"].as<std::string>());
+	m_tokenTimeoutSeconds = DurationParse::parse(m_commandLineVariables["timeout"].as<std::string>());
 	if (!m_commandLineVariables.count("user"))
 	{
 		std::cout << "User: ";
@@ -342,6 +342,7 @@ void ArgumentParser::processReg()
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
 		("extra_time,q", po::value<std::string>(), "extra timeout for short running app,the value must less than interval  (default 0), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
+		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing Time)")
 		("keep_running,k", "monitor and keep running for short running app in start interval")
 		("force,f", "force without confirm")
 		("help,h", "Prints command usage to stdout and exits");
@@ -357,8 +358,8 @@ void ArgumentParser::processReg()
 
 	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("extra_time") > 0)
 	{
-		if (DurationParse().parse(m_commandLineVariables["interval"].as<std::string>()) <=
-			DurationParse().parse(m_commandLineVariables["extra_time"].as<std::string>()))
+		if (DurationParse::parse(m_commandLineVariables["interval"].as<std::string>()) <=
+			DurationParse::parse(m_commandLineVariables["extra_time"].as<std::string>()))
 		{
 			std::cout << "The extra_time seconds must less than interval." << std::endl;
 			return;
@@ -397,6 +398,8 @@ void ArgumentParser::processReg()
 		jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>());
 	if (m_commandLineVariables.count("docker_image"))
 		jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
+	if (m_commandLineVariables.count("timezone"))
+		jsobObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
 	if (m_commandLineVariables.count("start_time"))
 		jsobObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
 	if (m_commandLineVariables.count("end_time"))
@@ -635,7 +638,7 @@ void ArgumentParser::processRun()
 	}
 
 	std::map<std::string, std::string> query;
-	int timeout = DurationParse().parse(m_commandLineVariables["timeout"].as<std::string>());
+	int timeout = DurationParse::parse(m_commandLineVariables["timeout"].as<std::string>());
 	if (m_commandLineVariables.count("timeout"))
 		query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
 
@@ -754,7 +757,7 @@ void ArgumentParser::processExec()
 
 	// Get current command line, use raw argv here
 	std::string initialCmd;
-	for (size_t i = 1; i < m_argc; i++)
+	for (int i = 1; i < m_argc; i++)
 	{
 		initialCmd.append(m_argv[i]).append(" ");
 	}
@@ -771,7 +774,7 @@ void ArgumentParser::processExec()
 		}
 	}
 
-	char buff[MAX_COMMAND_LINE_LENGH] = {0};
+	char buff[MAX_COMMAND_LINE_LENGTH] = {0};
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_name] = web::json::value::string(APPC_EXEC_APP_NAME); // option, if not provide, UUID will be created
 	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
@@ -1180,7 +1183,7 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 	{
 		throw std::invalid_argument(response.extract_utf8string(true).get());
 	}
-	return std::move(response);
+	return response;
 }
 
 http_request ArgumentParser::createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> *header)
@@ -1202,7 +1205,7 @@ http_request ArgumentParser::createRequest(const method &mtd, const std::string 
 	auto jwtToken = getAuthenToken();
 	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + jwtToken);
 	request.set_request_uri(builder.to_uri());
-	return std::move(request);
+	return request;
 }
 
 bool ArgumentParser::isAppExist(const std::string &appName)
@@ -1220,8 +1223,8 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	auto arr = jsonValue.as_array();
 	for (auto iter = arr.begin(); iter != arr.end(); iter++)
 	{
-		auto jobj = *iter;
-		apps[GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name)] = GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status) == 1;
+		auto jsonObj = *iter;
+		apps[GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name)] = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status) == 1;
 	}
 	return apps;
 }
@@ -1304,7 +1307,7 @@ std::string ArgumentParser::readAuthenToken()
 			ifs.close();
 		}
 	}
-	return std::move(jwtToken);
+	return jwtToken;
 }
 
 std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd)
@@ -1347,54 +1350,54 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(7) << (JSON_KEY_APP_pid)
 		<< std::setw(8) << (JSON_KEY_APP_memory)
 		<< std::setw(7) << (JSON_KEY_APP_return)
-		<< std::setw(27) << (JSON_KEY_APP_last_start)
+		<< std::setw(24) << (JSON_KEY_APP_last_start)
 		<< (JSON_KEY_APP_command)
 		<< std::endl;
 
 	int index = 1;
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
-	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value &jobj) {
+	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value &jsonObj) {
 		const char *slash = "-";
-		auto name = GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_name);
+		auto name = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
 		if (reduce)
 			name = reduceFunc(name, 12);
 		else if (name.length() >= 12)
 			name += " ";
 		std::cout << std::setw(3) << index++;
 		std::cout << std::setw(12) << name;
-		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_owner), 6);
-		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_status));
-		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_health);
+		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
+		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
+		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);
 		std::cout << std::setw(7);
 		{
-			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_pid))
-				std::cout << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_pid);
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
+				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);
 			else
 				std::cout << slash;
 		}
 		std::cout << std::setw(8);
 		{
-			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_memory))
-				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_memory));
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
+				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_memory));
 			else
 				std::cout << slash;
 		}
 		std::cout << std::setw(7);
 		{
-			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_return))
-				std::cout << GET_JSON_INT_VALUE(jobj, JSON_KEY_APP_return);
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_return))
+				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_return);
 			else
 				std::cout << slash;
 		}
-		std::cout << std::setw(27);
+		std::cout << std::setw(24);
 		{
-			if (HAS_JSON_FIELD(jobj, JSON_KEY_APP_last_start))
-				std::cout << GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_last_start);
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start))
+				std::cout << GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start);
 			else
 				std::cout << slash;
 		}
-		std::cout << GET_JSON_STR_VALUE(jobj, JSON_KEY_APP_command);
+		std::cout << GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
 		std::cout << std::endl;
 	});
 }
@@ -1414,7 +1417,7 @@ std::string ArgumentParser::reduceStr(std::string source, int limit)
 {
 	if (source.length() >= (std::size_t)limit)
 	{
-		return std::move(source.substr(0, limit - 2).append("*"));
+		return source.substr(0, limit - 2).append("*");
 	}
 	else
 	{
