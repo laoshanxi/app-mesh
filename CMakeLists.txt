@@ -82,6 +82,7 @@ link_directories(
 # sub dir
 ##########################################################################
 add_subdirectory(src)
+add_subdirectory(test)
 
 ##########################################################################
 # package [make pack]
@@ -99,4 +100,13 @@ add_custom_target(pack
 add_custom_target(cppcheck
     COMMENT "code static check ${CMAKE_CURRENT_SOURCE_DIR}"
     COMMAND cppcheck --enable=all --quiet --std=c++11 --platform=native ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+##########################################################################
+# test
+##########################################################################
+add_custom_target(test
+    COMMENT "run unit test ${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/ CMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_BINARY_DIR}/test/unittest
+    DEPENDS unittest
 )

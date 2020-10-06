@@ -90,7 +90,7 @@ std::chrono::system_clock::time_point DateTime::convertStr2DayTime(const std::st
 	const static char fname[] = "DateTime::convertStr2DayTime() ";
 	std::string isoDateTime = Utility::stringFormat("2000-01-01T%s%s", strTime.c_str(), zone.c_str());
 	auto timePoint = parseISO8601DateTime(isoDateTime, zone);
-	LOG_DBG << fname << "strTime: " << strTime << " zone: " << zone << " coverted to: " << formatISO8601Time(timePoint);
+	LOG_DBG << fname << "strTime: <" << strTime << "> zone: <" << zone << "> coverted to: <" << formatISO8601Time(timePoint) << ">";
 	return timePoint;
 }
 

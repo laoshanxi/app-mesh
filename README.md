@@ -1,4 +1,4 @@
-﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
+﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
 <a href="https://scan.coverity.com/projects/laoshanxi-app-mesh">
   <img alt="Coverity Scan Build Status"
        src="https://img.shields.io/coverity/scan/21528.svg"/>
@@ -21,7 +21,7 @@ Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/bl
 Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/master/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/master/doc/Loki.md) <br> REST service with IPv6 support 
 Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Platform support | X86_64 <br> ARM32 <br> ARM64
+Platform support | X86_64 <br> ARM32/64
 
 ## Getting started
 The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/master/doc/Install.md) introduce how
@@ -53,4 +53,6 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 [docker.badge]:   https://img.shields.io/docker/pulls/laoshanxi/appmesh.svg
 [cockpit.url]:    https://github.com/laoshanxi/app-mesh-ui
 [cockpit.badge]:  https://img.shields.io/badge/Cockpit-app--mesh--ui-blue?logo=appveyor
+[unittest.url]:   https://github.com/catchorg/Catch2
+[unittest.badge]: https://img.shields.io/github/release/catchorg/catch2.svg
 

@@ -14,14 +14,14 @@ $ sudo sh app-mesh/autogen.sh
 After environment was setup with above steps, use bellow steps to build App Mesh.
 ```shell
 $ cd app-mesh
-$ mkdir build; cd build; cmake ..; make; make pack;
+$ mkdir build; cd build; cmake ..; make; make pack; make test
 ```
 
 ### Option 2: Build from docker image
 The simple way is use docker container which already have compiler and dependencies, pull image `docker.pkg.github.com/laoshanxi/app-mesh/centos7_build` for the build docker image and use bellow steps to build App Mesh directly.
 ```shell
 $ cd app-mesh
-$ docker run --rm -v $(pwd):$(pwd) -w $(pwd) docker.pkg.github.com/laoshanxi/app-mesh/centos7_build sh -c "mkdir build;cd build;cmake ..;make;make pack"
+$ docker run --rm -v $(pwd):$(pwd) -w $(pwd) docker.pkg.github.com/laoshanxi/app-mesh/centos7_build sh -c "mkdir build;cd build;cmake ..;make;make pack;make test"
 ```
 
 BTW, This docker image was built with bellow steps
