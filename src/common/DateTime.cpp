@@ -85,25 +85,6 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	}
 }
 
-std::chrono::system_clock::time_point DateTime::convertStr2DayTime(const std::string &strTime, const std::string &zone)
-{
-	const static char fname[] = "DateTime::convertStr2DayTime() ";
-	std::string isoDateTime = Utility::stringFormat("2000-01-01T%s%s", strTime.c_str(), zone.c_str());
-	auto timePoint = parseISO8601DateTime(isoDateTime, zone);
-	LOG_DBG << fname << "strTime: <" << strTime << "> zone: <" << zone << "> coverted to: <" << formatISO8601Time(timePoint) << ">";
-	return timePoint;
-}
-
-std::chrono::system_clock::time_point DateTime::convertStr2DayTime(const std::string &strTime)
-{
-	return convertStr2DayTime(strTime, "");
-}
-
-std::string DateTime::convertDayTime2Str(const std::chrono::system_clock::time_point &time)
-{
-	return formatLocalTime(time, "%H:%M:%S");
-}
-
 const std::string DateTime::getLocalUtcOffset()
 {
 	// option: https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
@@ -192,15 +173,15 @@ std::chrono::system_clock::time_point DateTime::convertToZoneTime(boost::posix_t
 
 		// 2. Convert time to current host time zone
 		const static boost::local_time::time_zone_ptr local_zone(new machine_time_zone());
-		auto local_time = target_local_time.local_time_in(local_zone);
+		auto target_time = target_local_time.local_time_in(local_zone);
 		//std::cout << target_time.to_string() << std::endl;
 
 		// 3. Convert local_date_time to time_point
 		// https://stackoverflow.com/questions/4910373/interoperability-between-boostdate-time-and-stdchrono
-		auto timepoint = std::chrono::system_clock::from_time_t(boost::posix_time::to_time_t(local_time.utc_time()));
+		auto timepoint = std::chrono::system_clock::from_time_t(boost::posix_time::to_time_t(target_time.utc_time()));
 
-		LOG_DBG << fname << "time <" << boost::posix_time::to_iso_string(localTime) << "> with timezone <" << posixTimezone
-				<< "> was convert system time <" << formatISO8601Time(timepoint) << "> from timezone <" << local_zone << ">.";
+		LOG_DBG << fname << "local time <" << boost::posix_time::to_iso_extended_string(localTime) << "> with zone <" << local_zone->to_posix_string()
+				<< "> convert to target time <" << target_time.to_string() << "> with zone <" << posixTimezone << ">.";
 		return timepoint;
 	}
 	catch (...)

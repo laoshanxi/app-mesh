@@ -8,14 +8,9 @@
 class DateTime
 {
 public:
-	// %H:%M:%S, empty zone is UTC time
-	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string &strTime, const std::string &zone);
-	static std::chrono::system_clock::time_point convertStr2DayTime(const std::string &strTime);
-	static std::string convertDayTime2Str(const std::chrono::system_clock::time_point &time);
 	// +08:00:00
 	static const std::string getLocalUtcOffset();
 	// compared with local host
-	static std::chrono::seconds getPosixZoneDiff(const std::string &targetZone, const std::string &hostZone);
 	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime);
 	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone);
 	// output 2017-09-11T21:52:13+00:00 in local time with offset

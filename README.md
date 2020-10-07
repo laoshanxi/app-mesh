@@ -54,5 +54,5 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 [cockpit.url]:    https://github.com/laoshanxi/app-mesh-ui
 [cockpit.badge]:  https://img.shields.io/badge/Cockpit-app--mesh--ui-blue?logo=appveyor
 [unittest.url]:   https://github.com/catchorg/Catch2
-[unittest.badge]: https://img.shields.io/github/release/catchorg/catch2.svg
+[unittest.badge]: https://img.shields.io/badge/UnitTest-Catch2-blue?logo=appveyor
 
