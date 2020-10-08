@@ -19,72 +19,76 @@
 #include "../src/common/DateTime.h"
 #include "../src/common/Utility.h"
 
-void init_logging()
+void init()
 {
-    using namespace log4cpp;
-    auto logDir = Utility::stringFormat("%s", Utility::getSelfDir().c_str());
-    auto consoleLayout = new PatternLayout();
-    consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
-    auto consoleAppender = new OstreamAppender("console", &std::cout);
-    consoleAppender->setLayout(consoleLayout);
+    static bool initialized = false;
+    if (!initialized)
+    {
+        initialized = true;
+        ACE::init();
+        using namespace log4cpp;
+        auto logDir = Utility::stringFormat("%s", Utility::getSelfDir().c_str());
+        auto consoleLayout = new PatternLayout();
+        consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
+        auto consoleAppender = new OstreamAppender("console", &std::cout);
+        consoleAppender->setLayout(consoleLayout);
 
-    auto rollingFileAppender = new RollingFileAppender(
-        "rollingFileAppender",
-        logDir.append("/unittest.log"),
-        20 * 1024 * 1024,
-        5,
-        true,
-        00664);
+        auto rollingFileAppender = new RollingFileAppender(
+            "rollingFileAppender",
+            logDir.append("/unittest.log"),
+            20 * 1024 * 1024,
+            5,
+            true,
+            00664);
 
-    auto pLayout = new PatternLayout();
-    pLayout->setConversionPattern("%d [%t] %p %c: %m%n");
-    rollingFileAppender->setLayout(pLayout);
+        auto pLayout = new PatternLayout();
+        pLayout->setConversionPattern("%d [%t] %p %c: %m%n");
+        rollingFileAppender->setLayout(pLayout);
 
-    Category &root = Category::getRoot();
-    root.addAppender(rollingFileAppender);
-    root.addAppender(consoleAppender);
+        Category &root = Category::getRoot();
+        root.addAppender(rollingFileAppender);
+        root.addAppender(consoleAppender);
 
-    // Log level
-    Utility::setLogLevel("DEBUG");
+        // Log level
+        Utility::setLogLevel("DEBUG");
 
-    LOG_INF << "Logging process ID:" << getpid();
+        LOG_INF << "Logging process ID:" << getpid();
+    }
 }
 
 TEST_CASE("DateTime Class Test", "[DateTime]")
 {
-    ACE::init();
-    init_logging();
-    REQUIRE_FALSE(false);
+    init();
 
-    char *tz = strdup("TZ=GMT-08:00");
-    putenv(tz);
+    setenv("TZ", "GMT-8", 1);
     tzset();
 
     // covert now to seconds
     auto now = std::chrono::system_clock::now();
+    LOG_DBG << DateTime::formatISO8601Time(DateTime::parseISO8601DateTime("2020-10-08T14:14:00+08", ""));
     auto localTime = std::chrono::system_clock::from_time_t(std::chrono::system_clock::to_time_t(now));
-    REQUIRE(localTime == DateTime::parseISO8601DateTime(DateTime::formatISO8601Time(localTime)));
+    LOG_DBG << DateTime::formatISO8601Time(localTime);
+    REQUIRE(localTime == DateTime::parseISO8601DateTime(DateTime::formatISO8601Time(localTime), ""));
 
     // parseISO8601DateTime
     auto iso8601 = "2020-10-07T21:19:00+08";
-    auto iso8601TimePoint = DateTime::parseISO8601DateTime(iso8601);
-    REQUIRE(iso8601TimePoint == DateTime::parseISO8601DateTime("2020-10-07T21:19:00+8"));
-    REQUIRE_FALSE(DateTime::parseISO8601DateTime("2020-10-07T21:19:00") == DateTime::parseISO8601DateTime("2020-10-07T21:19:00+08"));
+    auto iso8601TimePoint = DateTime::parseISO8601DateTime(iso8601, "");
+    REQUIRE(iso8601TimePoint == DateTime::parseISO8601DateTime("2020-10-07T21:19:00+8", ""));
+    REQUIRE_FALSE(DateTime::parseISO8601DateTime("2020-10-07T21:19:00", "") == DateTime::parseISO8601DateTime("2020-10-07T21:19:00+07", ""));
 
     // formatRFC3339Time
-    auto rfc3339 = "2020-10-07T21:19:00.000Z";
+    auto rfc3339 = "2020-10-07T13:19:00Z";
     LOG_DBG << DateTime::formatRFC3339Time(iso8601TimePoint);
     REQUIRE(DateTime::formatRFC3339Time(iso8601TimePoint) == rfc3339);
 
     // getLocalUtcOffset
     REQUIRE(DateTime::getLocalUtcOffset() == "+08:00:00");
+}
 
-    // convertToZoneTime
-    boost::posix_time::ptime ptime;
-    boost::posix_time::time_input_facet *format = new boost::posix_time::time_input_facet();
-    format->set_iso_extended_format();
-    std::istringstream iss(iso8601);
-    iss.imbue(std::locale(std::locale::classic(), format));
-    (iss >> ptime);
-    REQUIRE(DateTime::convertToZoneTime(ptime, "CST+08") == iso8601TimePoint);
+TEST_CASE("Boost Date Time Test", "[Boost]")
+{
+    init();
+
+    LOG_DBG << "get_std_zone_abbrev: " << machine_time_zone::get_std_zone_abbrev();
+    LOG_DBG << "get_utc_offset: " << machine_time_zone::get_utc_offset();
 }

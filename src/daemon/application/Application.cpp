@@ -150,7 +150,7 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
 	{
-		app->m_regTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME));
+		app->m_regTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME), "");
 	}
 }
 
