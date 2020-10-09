@@ -159,56 +159,28 @@ std::string DateTime::getISO8601TimeZone(const std::string &strTime)
 	return std::string();
 }
 
-boost::posix_time::time_duration DateTime::getDayTimeDuration(const std::chrono::system_clock::time_point &time)
+boost::posix_time::time_duration DateTime::getDayTimeUtcDuration(const std::chrono::system_clock::time_point &time)
 {
-	const std::time_t timeT = std::chrono::system_clock::to_time_t(time);
-	struct tm localTm = {0};
-	ACE_OS::localtime_r(&timeT, &localTm);
-	//boost::gregorian::date local_date(local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
-	return std::move(boost::posix_time::time_duration(localTm.tm_hour, localTm.tm_min, localTm.tm_sec));
+	const auto ptime = boost::posix_time::from_time_t(std::chrono::system_clock::to_time_t(time));
+	return std::move(ptime.time_of_day());
 }
 
-boost::posix_time::time_duration DateTime::parseDayTimeDuration(const std::string &strTime, const std::string &posixTimezone)
+boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(const std::string &strTime, const std::string &posixTimezone)
 {
-	// 1. parse time to target local_date_time
-	const boost::gregorian::date fakeDate(2000, 1, 1);
-	const boost::posix_time::time_duration day_duration = boost::posix_time::duration_from_string(strTime);
-	boost::local_time::time_zone_ptr targetZone;
-	if (posixTimezone.length())
-	{
-		targetZone = boost::local_time::time_zone_ptr(new boost::local_time::posix_time_zone(posixTimezone));
-	}
-	boost::local_time::local_date_time targetLocalTime(fakeDate, day_duration, targetZone, boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
+	const static char fname[] = "DateTime::parseDayTimeUtcDuration() ";
 
-	// 2. Convert time to current host time zone
-	const static boost::local_time::time_zone_ptr localZone(new machine_time_zone());
-	auto target_local_time = targetLocalTime.local_time_in(localZone);
-
-	// 3. Construct a local zero time
-	const boost::posix_time::time_duration zero_day_duration = boost::posix_time::duration_from_string("00:00:00");
-	boost::local_time::local_date_time zero_local_time(fakeDate, zero_day_duration, localZone, boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
-
-	// 4. return diff
-	auto result = (target_local_time - zero_local_time);
-
-	// 5. handle range over than one day
-	auto one_day_seconds = (24 * 60 * 60);
-	auto one_day_duration = boost::posix_time::time_duration(24, 0, 0);
-	while (result.total_seconds() > one_day_seconds)
-	{
-		result.operator-=(one_day_duration);
-	}
-
-	while (result.total_seconds() < -one_day_seconds)
-	{
-		result.operator+=(one_day_duration);
-	}
-	return result;
+	// re-format to accept [%H:%M] and [%H], duration parse need provide [%H:%M:%S] for parseISO8601DateTime
+	auto duration = boost::posix_time::duration_from_string(strTime);
+	std::string fakeDate = Utility::stringFormat("2000-01-01T%02d:%02d:%02d", duration.hours(), duration.minutes(), duration.seconds());
+	auto timePoint = parseISO8601DateTime(fakeDate, posixTimezone);
+	duration = getDayTimeUtcDuration(timePoint);
+	LOG_DBG << fname << "parse <" << fakeDate << "> with zone <" << posixTimezone << "> to <" << formatISO8601Time(timePoint) << "> with duration: " << duration;
+	return duration;
 }
 
 std::string DateTime::reducePosixZone(const std::string &strTime)
 {
-	const char* reduceStr = ":00";
+	const char *reduceStr = ":00";
 	while (Utility::endWith(strTime, reduceStr))
 	{
 		return strTime.substr(0, strTime.length() - strlen(reduceStr));

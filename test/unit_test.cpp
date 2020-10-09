@@ -83,6 +83,8 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
 
     // getLocalUtcOffset
     REQUIRE(DateTime::getLocalUtcOffset() == "+08:00:00");
+
+    REQUIRE(boost::posix_time::to_simple_string(DateTime::parseDayTimeUtcDuration("20:33:00", "+08")) == "12:33:00");
 }
 
 TEST_CASE("Boost Date Time Test", "[Boost]")

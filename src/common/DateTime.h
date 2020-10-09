@@ -36,8 +36,10 @@ public:
 	// +08:00
 	static std::string getISO8601TimeZone(const std::string &strTime);
 
-	static boost::posix_time::time_duration getDayTimeDuration(const std::chrono::system_clock::time_point &time);
-	static boost::posix_time::time_duration parseDayTimeDuration(const std::string &strTime, const std::string &posixTimezone);
+	// UTC time
+	static boost::posix_time::time_duration getDayTimeUtcDuration(const std::chrono::system_clock::time_point &time);
+	// UTC time, need provide [%H:%M:%S] full format
+	static boost::posix_time::time_duration parseDayTimeUtcDuration(const std::string &strTime, const std::string &posixTimezone);
 
 	// +08:00:00 -> +08
 	static std::string reducePosixZone(const std::string &timeStr);

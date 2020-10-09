@@ -256,7 +256,7 @@ void Utility::initLogging()
 	root.addAppender(consoleAppender);
 
 	// Log level
-	std::string levelEnv = "INFO";
+	std::string levelEnv = "DEBUG";
 	auto env = getenv("LOG_LEVEL");
 	if (env != nullptr)
 		levelEnv = env;

@@ -591,6 +591,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, cons
 
 bool Application::isInDailyTimeRange()
 {
+	//const static char fname[] = "Application::isInDailyTimeRange() ";
 	auto nowClock = std::chrono::system_clock::now();
 	// 1. check date range
 	if (nowClock < m_startTime)
@@ -601,17 +602,17 @@ bool Application::isInDailyTimeRange()
 	if (m_dailyLimit != nullptr)
 	{
 		// Convert now to day time [%H:%M:%S], less than 24h
-		auto now = DateTime::getDayTimeDuration(nowClock);
-
-		if (m_dailyLimit->m_startTime < m_dailyLimit->m_endTime)
+		auto now = DateTime::getDayTimeUtcDuration(nowClock);
+		//LOG_DBG << fname << "now: " << now << ", startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue;
+		if (m_dailyLimit->m_startTimeValue < m_dailyLimit->m_endTimeValue)
 		{
 			// Start less than End means valid range should between start and end.
-			return (now >= m_dailyLimit->m_startTime && now < m_dailyLimit->m_endTime);
+			return (now >= m_dailyLimit->m_startTimeValue && now < m_dailyLimit->m_endTimeValue);
 		}
-		else if (m_dailyLimit->m_startTime > m_dailyLimit->m_endTime)
+		else if (m_dailyLimit->m_startTimeValue > m_dailyLimit->m_endTimeValue)
 		{
 			// Start greater than End means from end to start is invalid range (the valid range is across 0:00).
-			return !(now >= m_dailyLimit->m_endTime && now < m_dailyLimit->m_startTime);
+			return !(now >= m_dailyLimit->m_endTimeValue && now < m_dailyLimit->m_startTimeValue);
 		}
 	}
 	return true;
