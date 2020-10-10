@@ -60,14 +60,12 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
 {
     init();
 
-    setenv("TZ", "GMT-8", 1);
-    tzset();
-
     // covert now to seconds
     auto now = std::chrono::system_clock::now();
-    LOG_DBG << DateTime::formatISO8601Time(DateTime::parseISO8601DateTime("2020-10-08T14:14:00+08", ""));
+    std::string timeStr = "2020-10-08T14:14:00+08";
+    LOG_DBG << timeStr << " is " << DateTime::formatISO8601Time(DateTime::parseISO8601DateTime(timeStr, ""));
     auto localTime = std::chrono::system_clock::from_time_t(std::chrono::system_clock::to_time_t(now));
-    LOG_DBG << DateTime::formatISO8601Time(localTime);
+    LOG_DBG << "now: " << DateTime::formatISO8601Time(localTime);
     REQUIRE(localTime == DateTime::parseISO8601DateTime(DateTime::formatISO8601Time(localTime), ""));
 
     // parseISO8601DateTime
@@ -82,8 +80,7 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
     REQUIRE(DateTime::formatRFC3339Time(iso8601TimePoint) == rfc3339);
 
     // getLocalUtcOffset
-    REQUIRE(DateTime::getLocalUtcOffset() == "+08:00:00");
-
+    LOG_DBG << DateTime::getLocalUtcOffset();
     REQUIRE(boost::posix_time::to_simple_string(DateTime::parseDayTimeUtcDuration("20:33:00", "+08")) == "12:33:00");
 }
 
@@ -93,4 +90,6 @@ TEST_CASE("Boost Date Time Test", "[Boost]")
 
     LOG_DBG << "get_std_zone_abbrev: " << machine_time_zone::get_std_zone_abbrev();
     LOG_DBG << "get_utc_offset: " << machine_time_zone::get_utc_offset();
+    REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("-08:00")) == "-08:00:00");
+    REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("08:00")) == "08:00:00");
 }

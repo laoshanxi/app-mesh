@@ -147,6 +147,7 @@ private:
 	std::shared_ptr<JsonConsul> m_consul;
 
 	std::string m_logLevel;
+	std::string m_formatPosixZone;
 
 	mutable std::recursive_mutex m_appMutex;
 	mutable std::recursive_mutex m_hotupdateMutex;

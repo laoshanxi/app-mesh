@@ -91,7 +91,7 @@ void ApplicationShortRun::invoke()
 
 void ApplicationShortRun::invokeNow(int timerId)
 {
-	// Check app existance
+	// Check app existence
 	if (timerId > 0 && !this->isEnabled())
 	{
 		this->cancelTimer(timerId);
@@ -214,7 +214,7 @@ int ApplicationShortRun::getStartInterval()
 std::chrono::system_clock::time_point ApplicationShortRun::getStartTime()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_startTime;
+	return m_startTimeValue;
 }
 
 bool ApplicationShortRun::available()

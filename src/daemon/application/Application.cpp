@@ -132,15 +132,17 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
 	{
-		app->m_startTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time), app->m_posixTimeZone);
+		app->m_startTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time);
+		app->m_startTimeValue = DateTime::parseISO8601DateTime(app->m_startTime, app->m_posixTimeZone);
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_end_time))
 	{
-		app->m_endTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_end_time), app->m_posixTimeZone);
+		app->m_endTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_end_time);
+		app->m_endTimeValue = DateTime::parseISO8601DateTime(app->m_endTime, app->m_posixTimeZone);
 	}
-	if (app->m_endTime.time_since_epoch().count())
+	if (app->m_endTimeValue.time_since_epoch().count())
 	{
-		if (app->m_startTime > app->m_endTime)
+		if (app->m_startTimeValue > app->m_endTimeValue)
 			throw std::invalid_argument("end_time should greater than the start_time");
 		app->handleEndTimer();
 	}
@@ -325,12 +327,12 @@ void Application::handleEndTimer()
 	{
 		// reg finish timer
 		auto now = std::chrono::system_clock::now();
-		if (m_endTime > now)
+		if (m_endTimeValue > now)
 		{
-			m_endTimerId = this->registerTimer(std::chrono::duration_cast<std::chrono::milliseconds>(m_endTime - now).count(),
+			m_endTimerId = this->registerTimer(std::chrono::duration_cast<std::chrono::milliseconds>(m_endTimeValue - now).count(),
 											   0, std::bind(&Application::onEndEvent, this, std::placeholders::_1), fname);
 		}
-		else if (m_endTime.time_since_epoch().count())
+		else if (m_endTimeValue.time_since_epoch().count())
 		{
 			LOG_WAR << fname << "end time for <" << m_name << "> was set and expired, set application to end finished.";
 			onEndEvent();
@@ -526,10 +528,10 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_version)
 		result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 
-	if (m_startTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(DateTime::formatISO8601Time(m_startTime));
-	if (m_endTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(DateTime::formatISO8601Time(m_endTime));
+	if (m_startTimeValue.time_since_epoch().count())
+		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_startTime);
+	if (m_endTimeValue.time_since_epoch().count())
+		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_endTime);
 	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(DateTime::formatISO8601Time(m_regTime));
 	return result;
 }
@@ -550,8 +552,10 @@ void Application::dump()
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
-	LOG_DBG << fname << "m_startTime:" << DateTime::formatISO8601Time(m_startTime);
-	LOG_DBG << fname << "m_endTime:" << DateTime::formatISO8601Time(m_endTime);
+	LOG_DBG << fname << "m_startTime:" << m_startTime;
+	LOG_DBG << fname << "m_endTime:" << m_endTime;
+	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatISO8601Time(m_startTimeValue);
+	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatISO8601Time(m_endTimeValue);
 	LOG_DBG << fname << "m_regTime:" << DateTime::formatISO8601Time(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
@@ -594,9 +598,9 @@ bool Application::isInDailyTimeRange()
 	//const static char fname[] = "Application::isInDailyTimeRange() ";
 	auto nowClock = std::chrono::system_clock::now();
 	// 1. check date range
-	if (nowClock < m_startTime)
+	if (nowClock < m_startTimeValue)
 		return false;
-	if (m_endTime.time_since_epoch().count() && nowClock > m_endTime)
+	if (m_endTimeValue.time_since_epoch().count() && nowClock > m_endTimeValue)
 		return false;
 	// 2. check daily range
 	if (m_dailyLimit != nullptr)

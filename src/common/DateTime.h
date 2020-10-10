@@ -22,8 +22,11 @@ public:
 class DateTime
 {
 public:
-	// +08:00:00
+	// [%H:%M:%S] +08:00:00
 	static const std::string getLocalUtcOffset();
+	// [%H:%M:%S] +08:00:00
+	static void setTimeFormatPosixZone(const std::string &posixZone);
+
 	// "2005-10-15 13:12:11-07:00"
 	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone);
 

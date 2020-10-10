@@ -27,7 +27,7 @@ void ApplicationUnInitia::FromJson(std::shared_ptr<ApplicationUnInitia> &app, co
 	app->m_commandLine = app->m_commandLineFini;
 	// avoid fini app re-fini again
 	app->m_commandLineFini.clear();
-	// clean uninitia flag
+	// clean un-initial flag
 	if (HAS_JSON_FIELD(app->m_application, JSON_KEY_APP_onetime_application_only))
 	{
 		app->m_application.erase(JSON_KEY_APP_onetime_application_only);
@@ -93,7 +93,7 @@ void ApplicationUnInitia::invoke()
 		m_executed = true;
 		if (!m_process->running())
 		{
-			LOG_INF << fname << "Starting uninitializing for application <" << m_name << ">.";
+			LOG_INF << fname << "Starting un-initializing for application <" << m_name << ">.";
 			m_process = allocProcess(0, "", m_name);
 			m_procStartTime = std::chrono::system_clock::now();
 			m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);

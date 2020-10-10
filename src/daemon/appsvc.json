@@ -4,6 +4,7 @@
   "LogLevel": "DEBUG",
   "DefaultExecUser": "root",
   "WorkingDirectory": "",
+  "TimeFormatPosixZone": null,
   "REST": {
     "RestEnabled": true,
     "HttpThreadPoolSize": 6,

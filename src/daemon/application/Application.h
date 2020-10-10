@@ -99,8 +99,10 @@ protected:
 	//the exit code of last instance
 	std::shared_ptr<int> m_return;
 	std::string m_posixTimeZone;
-	std::chrono::system_clock::time_point m_startTime;
-	std::chrono::system_clock::time_point m_endTime;
+	std::string m_startTime;
+	std::string m_endTime;
+	std::chrono::system_clock::time_point m_startTimeValue;
+	std::chrono::system_clock::time_point m_endTimeValue;
 	std::chrono::system_clock::time_point m_regTime;
 	int m_endTimerId;
 	bool m_health;
