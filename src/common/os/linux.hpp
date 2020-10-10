@@ -693,8 +693,8 @@ namespace os
 				continue;
 			}
 
-			std::set<std::string> ignoreMap = {"tmpfs", "romfs", "ramfs", "devtmpfs", "overlay", "squashfs"};
-			if (device && strlen(device) && ignoreMap.count(device) == 0 && device[0] == '/')
+			std::set<std::string> ignoreFsList = {"tmpfs", "romfs", "ramfs", "devtmpfs", "overlay", "squashfs"};
+			if (device && strlen(device) && ignoreFsList.count(mountEntryPtr->mnt_type) == 0 && device[0] == '/')
 			{
 				LOG_DBG << fname << "device:" << device << " mountPoint:" << mountPoint;
 				points[mountPoint] = device;
