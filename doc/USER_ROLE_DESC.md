@@ -4,19 +4,19 @@
 
 ### What is supported:
 
-> * App Mesh REST API have user permission control
-> * App Mesh Command Line have user permission control
-> * Each REST API have permission definition
+> * App Mesh REST API support user permission control
+> * App Mesh CLI (based on REST API) support user permission control
+> * Permission KEY is defined for each REST API 
 > * Role list is configurable 
 > * Each user can define a password and some roles
-> * All the user/role/permission is defined in json file
-> * user/role configuration support dynamic update by `systemctl reload appmesh`
+> * All the user/role/permission can be defined in local json file and central Consul service
+> * user/role configuration support dynamic update by `systemctl reload appmesh`, WebGUI and CLI
 > * User support metadata attributes for special usage
-> * User have user group
+> * User group is defined for a user
 > * App ownership permission can define group permission and other group permission
 
 ### What is **not** supported:
-> * N/A
+> * One user can only define one user group
 
 ### User and Role configure json sample
 
@@ -150,7 +150,7 @@ id name        user  status   return pid    memory  start_time          command
 1  sleep       root  enabled  0      32646  812 K   2019-10-10 19:25:38 /bin/sleep 60
 ```
 
- - Use `appc logoff` to clear authentication infomation
+ - Use `appc logoff` to clear authentication information
 
 ```shell
 $ appc logoff

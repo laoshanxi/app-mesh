@@ -3,17 +3,17 @@
 ------
 
 App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
-- Stand-alone mode: The hosted applications are static and applications can only be managed by CLI or Web UI.
-- Consul-cluster mode: The hosted applications are dynamic, The cluster will vote one leader node to do the Consul application schedule, and application will register to Consul for service discovery.
+- Stand-alone mode: The hosted applications can only be managed by CLI or Web UI locally.
+- Consul-cluster mode: The hosted applications can be defined in Consul, all the App Mesh nodes will vote one leader node to do the Consul application schedule, the worker App Mesh nodes will got the schedule result and launch corresponding applications.
 
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/consul_arch.png" width=600 height=300 align=center /></div>
 
 ### What is supported:
 
-> * App Mesh will keep connection(support SSL) to Consul Service as a consul session
+> * Each App Mesh instance in the cluster will keep a connection(support SSL) to Consul Service as a consul session
 > * App Mesh only talks to Consul service by one way communication
 > * Each App Mesh node report status to Consul KV data
-> * App Mesh can be a cluster leader node or worker node
+> * App Mesh node can be a cluster leader node or worker node
 > * Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any App Mesh Labels, wildcards is supported when build gcc version upper than 5.3)
 > * App Mesh Leader node schedule cluster applications and write schedule result to Consul KV data
 > * App Mesh worker node retrieve cluster applications (schedule result) and launch on worker node
@@ -21,7 +21,7 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 > * Consul session support HA recovery
 > * App Mesh request Consul session with TTL and expire delete behavior
 > * Consul watch is supported for monitor consul schedule changes and security sync-up
-> * Schedule consider resource usage
+> * Schedule consider resource usage and guarantee cluster applications running with corresponding replication
 
 ### What is **not** supported:
 > * Consul access ACL

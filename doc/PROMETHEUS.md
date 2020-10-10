@@ -8,7 +8,7 @@ Prometheus, a Cloud Native Computing Foundation project, is a systems and servic
 
 ### What is supported:
 > * App Mesh provide a build-in Prometheus exporter
-> * Prometheus exporter is a build-in REST server for Prometheus to scrap methics
+> * Prometheus exporter is a build-in REST server for Prometheus to scrap metrics
 
 ### What is **not** supported:
 > * Exporter SSL is not supported as community
