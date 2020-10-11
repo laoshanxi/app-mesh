@@ -92,4 +92,9 @@ TEST_CASE("Boost Date Time Test", "[Boost]")
     LOG_DBG << "get_utc_offset: " << machine_time_zone::get_utc_offset();
     REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("-08:00")) == "-08:00:00");
     REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("08:00")) == "08:00:00");
+
+    REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("+20:01:00")) == "20:01:00");
+    REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("-20:01")) == "-20:01:00");
+    REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("8")) == "08:00:00");
+    REQUIRE(boost::posix_time::to_simple_string(boost::posix_time::duration_from_string("+8")) == "08:00:00");
 }

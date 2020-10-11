@@ -169,12 +169,20 @@ std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_poin
 
 std::string DateTime::getISO8601TimeZone(const std::string &strTime)
 {
+	// go through with reversed order
 	for (size_t i = strTime.length() - 1; i > 0; i--)
 	{
-		if (strTime[i] == '-' || strTime[i] == '+')
-			return std::move(strTime.substr(i));
-		if (strTime[i] == ' ' || strTime[i] == 'T')
+		switch (strTime[i])
+		{
+		case '-':
+		case '+':
+			return std::move(strTime.substr(i));// found zone string
+		case ' ':
+		case 'T':
+			return std::string(); 				// not found zone string
+		default:
 			break;
+		}
 	}
 	return std::string();
 }
