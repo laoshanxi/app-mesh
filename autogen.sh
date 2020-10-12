@@ -3,9 +3,13 @@
 ## This script is used to install all 3rd-party dependency libraries
 ################################################################################
 set -x
+MACHINE_TYPE="$(uname -m)"
+ARM="arm"
+AARC="aarc"
+export ROOTDIR=`pwd`
+
 mkdir -p dep
 cd dep
-export ROOTDIR=`pwd`
 
 if [ "$(id -u)" != "0" ]; then
     echo "This script must be run as root"
@@ -37,6 +41,7 @@ if [ -f "/usr/bin/yum" ]; then
 
 	# check libssl in case of openssl_update.sh not executed
 	if [ [ ! -f "/usr/include/openssl/ssl.h" ] || [ ! -f "/usr/local/include/openssl/ssl.h" ] ]; then
+		echo 'ssl installed'
 	else
 		yum install -y openssl-devel
 	fi
@@ -95,16 +100,21 @@ cd $ROOTDIR
 
 # build log4cpp:
 # https://my.oschina.net/u/1983790/blog/1587568
-wget --no-check-certificate https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
-tar zxvf log4cpp-1.1.3.tar.gz
-cd log4cpp/
-./autogen.sh
-./configure
-make
-make install
-ls -al /usr/local/lib*/liblog4cpp.a
-cd $ROOTDIR
-	
+if [ -z "${MACHINE_TYPE##*$ARM*}"  -o  -z "${MACHINE_TYPE##*$AARC*}"  ] ; then
+	# arm64 will failed with log4cpp build, use package directly
+	apt install -y liblog4cpp5-dev
+else
+	wget --no-check-certificate https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
+	tar zxvf log4cpp-1.1.3.tar.gz
+	cd log4cpp/
+	./autogen.sh
+	./configure
+	make
+	make install
+	ls -al /usr/local/lib*/liblog4cpp.a
+	cd $ROOTDIR
+fi
+
 # build ACE
 if [ true ]; then
 	# ubuntu does not need build ACE
@@ -124,18 +134,21 @@ if [ true ]; then
 fi
 
 
-
-# SSL
-# https://www.cnblogs.com/fanqisoft/p/10765038.html
-# https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
-cd $ROOTDIR
-wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
-chmod +x cfssl_linux-amd64
-wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
-chmod +x cfssljson_linux-amd64
-wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
-chmod +x cfssl-certinfo_linux-amd64
-mv cfssl_linux-amd64 /usr/local/bin/cfssl
-mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
-mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo
+if [ -z "${MACHINE_TYPE##*$ARM*}"  -o  -z "${MACHINE_TYPE##*$AARC*}"  ] ; then
+	# cfssl have no arm64 binary, just use package instead
+	apt install -y golang-cfssl
+else
+	# SSL
+	# https://www.cnblogs.com/fanqisoft/p/10765038.html
+	# https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
+	cd $ROOTDIR
+	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+	chmod +x cfssl_linux-amd64
+	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+	chmod +x cfssljson_linux-amd64
+	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+	chmod +x cfssl-certinfo_linux-amd64
+	mv cfssl_linux-amd64 /usr/bin/cfssl
+	mv cfssljson_linux-amd64 /usr/bin/cfssljson
+fi
 

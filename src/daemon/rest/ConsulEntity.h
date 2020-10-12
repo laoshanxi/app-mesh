@@ -20,6 +20,7 @@ struct ConsulNode
 {
 	ConsulNode();
 	static std::shared_ptr<ConsulNode> FromJson(const web::json::value &jsonObj, const std::string &hostName);
+	web::json::value AsJson() const;
 
 	/// @brief For schedule sort
 	/// @param app
@@ -34,6 +35,7 @@ struct ConsulNode
 	// MEM
 	uint64_t m_total_bytes;
 	uint64_t m_free_bytes;
+	std::string m_appmeshProxyUrl;
 	std::string m_hostName;
 	std::map<std::string, std::shared_ptr<Application>> m_assignedApps;
 };

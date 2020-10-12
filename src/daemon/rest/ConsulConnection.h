@@ -44,13 +44,13 @@ private:
 	void releaseSessionId(const std::string &sessionId);
 
 	void doSchedule();
-	bool eletionLeader();
+	bool electionLeader();
 	void offlineNode();
 
 	bool registerService(const std::string &appName, int port);
 	bool deregisterService(const std::string &appName);
 
-	void findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>> &task, const std::map<std::string, std::shared_ptr<ConsulNode>> &hosts);
+	void findTaskAvailableHost(const std::map<std::string, std::shared_ptr<ConsulTask>> &task, const std::map<std::string, std::shared_ptr<ConsulNode>> &hosts);
 	void compareTopologyAndDispatch(const std::map<std::string, std::shared_ptr<ConsulTopology>> &oldT, const std::map<std::string, std::shared_ptr<ConsulTopology>> &newT);
 	web::json::value getAppJsonWithIndexEnv(std::shared_ptr<Application> app, int index);
 	bool writeTopology(std::string hostName, const std::shared_ptr<ConsulTopology> topology);
@@ -58,6 +58,7 @@ private:
 	std::map<std::string, std::shared_ptr<ConsulTopology>> retrieveTopology(std::string host);
 	std::map<std::string, std::shared_ptr<ConsulTask>> retrieveTask();
 	std::map<std::string, std::shared_ptr<ConsulNode>> retrieveNode();
+	web::json::value retrieveNode(const std::string &host);
 
 private:
 	std::string m_sessionId;

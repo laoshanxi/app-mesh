@@ -18,8 +18,8 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/script/ssl_cert_generate.sh ${CMAKE_CURRENT_BINAR
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/bash_completion.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yml ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yaml ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
-cp /usr/local/bin/cfssl ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
-cp /usr/local/bin/cfssljson ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
+cp /usr/bin/cfssl ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
+cp /usr/bin/cfssljson ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 chmod +x ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/*.sh
 
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/

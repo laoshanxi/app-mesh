@@ -44,7 +44,7 @@ void DockerProcess::killgroup(int timerId)
 	{
 		m_imagePullProc->killgroup();
 	}
-	// detach manully
+	// detach manually
 	this->detach();
 }
 
@@ -58,7 +58,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	constexpr int dockerCliTimeoutSec = 5;
 	std::string containerName = m_appName;
 
-	// 0. clean old docker contianer (docker container will left when host restart)
+	// 0. clean old docker container (docker container will left when host restart)
 	std::string dockerCommand = Utility::stringFormat("docker rm -f %s", containerName.c_str());
 	AppProcess proc;
 	proc.spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
@@ -137,7 +137,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	dockerCommand += " " + cmd;
 
 	// 3. start docker container
-	bool startSucess = false;
+	bool startSuccess = false;
 	dockerProcess = std::make_shared<AppProcess>();
 	pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
@@ -147,7 +147,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	if (dockerProcess->return_value() == 0)
 	{
 		containerId = Utility::stdStringTrim(dockerProcess->fetchLine());
-		startSucess = (containerId.length() > 0);
+		startSuccess = (containerId.length() > 0);
 	}
 	else
 	{
@@ -157,7 +157,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	this->containerId(containerId);
 
 	// 4. get docker root pid
-	if (startSucess)
+	if (startSuccess)
 	{
 		dockerCommand = Utility::stringFormat("docker inspect -f '{{.State.Pid}}' %s", containerId.c_str());
 		dockerProcess = std::make_shared<AppProcess>();

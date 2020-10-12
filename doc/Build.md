@@ -26,17 +26,20 @@ $ docker run --rm -v /etc/localtime:/etc/localtime -v $(pwd):$(pwd) -w $(pwd) do
 
 BTW, This docker image was built with bellow steps
 ```shell
-$ DATE_STR=$(date "+%Y%m%d")
-$ CONTAINER_NAME=centos7_${DATE_STR}
-$ IMANGE_NAME=appmesh_build_centos7
-$ BASE_IMAGE_NAME=centos/ruby-24-centos7
-# for ubuntu, BASE_IMAGE_NAME can be ubuntu:16.04
+DATE_STR=$(date "+%Y%m%d")
+CONTAINER_NAME=centos7_${DATE_STR}
+IMAGE_NAME=appmesh_build_centos7
+BASE_IMAGE_NAME=centos/ruby-24-centos7 #for ubuntu, BASE_IMAGE_NAME can be ubuntu:18.04
 
-$ git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
-$ cd app-mesh
-$ docker rm -f ${CONTAINER_NAME} || true
-$ docker run --name ${CONTAINER_NAME} -u root --net=host -v $(pwd):$(pwd) -w $(pwd) ${BASE_IMAGE_NAME} sh -c "sh script/openssl_update.sh; sh autogen.sh"
-$ docker rmi -f ${IMANGE_NAME} || true
-$ docker commit ${CONTAINER_NAME} ${IMANGE_NAME}
-$ docker rm -f ${CONTAINER_NAME} || true
+git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
+cd app-mesh
+docker rm -f ${CONTAINER_NAME} || true
+docker run --name ${CONTAINER_NAME} -u root --net=host -v $(pwd):$(pwd) -w $(pwd) ${BASE_IMAGE_NAME} sh -c "sh script/openssl_update.sh; sh autogen.sh"
+docker rmi -f ${IMAGE_NAME} || true
+docker commit ${CONTAINER_NAME} ${IMAGE_NAME}
+docker rm -f ${CONTAINER_NAME} || true
+
+docker rmi -f docker.pkg.github.com/laoshanxi/app-mesh/centos7_build
+docker tag ${IMAGE_NAME} docker.pkg.github.com/laoshanxi/app-mesh/centos7_build
+docker push docker.pkg.github.com/laoshanxi/app-mesh/centos7_build
 ```

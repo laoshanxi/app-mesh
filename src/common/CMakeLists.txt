@@ -10,6 +10,6 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 ##########################################################################
 target_link_libraries(common
   PRIVATE
-    /usr/local/lib/liblog4cpp.a
+    log4cpp
     boost_regex
 )

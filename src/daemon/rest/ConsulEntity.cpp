@@ -160,19 +160,41 @@ std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value &jsonObj
 	{
 		node->m_label = Label::FromJson(jsonObj.at("label"));
 	}
-	if (HAS_JSON_FIELD(jsonObj, "cpu_cores"))
+	if (HAS_JSON_FIELD(jsonObj, "appmesh"))
 	{
-		node->m_cores = GET_JSON_INT_VALUE(jsonObj, "cpu_cores");
+		node->m_appmeshProxyUrl = GET_JSON_STR_VALUE(jsonObj, "appmesh");
 	}
-	if (HAS_JSON_FIELD(jsonObj, "mem_free_bytes"))
+	if (HAS_JSON_FIELD(jsonObj, "resource"))
 	{
-		node->m_free_bytes = GET_JSON_NUMBER_VALUE(jsonObj, "mem_free_bytes");
+		auto resourceJson = jsonObj.at("resource");
+		if (HAS_JSON_FIELD(resourceJson, "cpu_cores"))
+		{
+			node->m_cores = GET_JSON_INT_VALUE(resourceJson, "cpu_cores");
+		}
+		if (HAS_JSON_FIELD(resourceJson, "mem_free_bytes"))
+		{
+			node->m_free_bytes = GET_JSON_NUMBER_VALUE(resourceJson, "mem_free_bytes");
+		}
+		if (HAS_JSON_FIELD(resourceJson, "mem_total_bytes"))
+		{
+			node->m_total_bytes = GET_JSON_NUMBER_VALUE(resourceJson, "mem_total_bytes");
+		}
 	}
-	if (HAS_JSON_FIELD(jsonObj, "mem_total_bytes"))
-	{
-		node->m_total_bytes = GET_JSON_NUMBER_VALUE(jsonObj, "mem_total_bytes");
-	}
+
 	return node;
+}
+
+web::json::value ConsulNode::AsJson() const
+{
+	auto result = web::json::value::object();
+	result["appmesh"] = web::json::value::string(m_appmeshProxyUrl);
+	result["label"] = m_label->AsJson();
+	auto resource = web::json::value::object();
+	resource["cpu_cores"] = web::json::value::number(m_cores);
+	resource["mem_total_bytes"] = web::json::value::number(m_total_bytes);
+	resource["mem_free_bytes"] = web::json::value::number(m_free_bytes);
+	result["resource"] = resource;
+	return result;
 }
 
 void ConsulNode::assignApp(const std::shared_ptr<Application> &app)

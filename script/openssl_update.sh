@@ -4,7 +4,7 @@
 ## CentOS 7.x and Ubuntu 16.04
 ################################################################################
 set -x
-mkdir ssl_build
+mkdir -p ssl_build
 cd ssl_build
 if [ -f "/usr/bin/yum" ]; then
   yum install -y openssl-devel gcc-c++ wget make perl

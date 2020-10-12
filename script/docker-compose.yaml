@@ -19,8 +19,9 @@ services:
     volumes:
       - /var/log:/var/log
       - /opt/appmesh/:/opt/appmesh/
+      - ./promtail.yml:/etc/promtail/config.yml
     # override default container config: /etc/promtail/config.yml
-    command: -config.file=/opt/appmesh/script/promtail.yml
+    command: -config.file=/etc/promtail/config.yml
     networks:
       - loki
     depends_on:

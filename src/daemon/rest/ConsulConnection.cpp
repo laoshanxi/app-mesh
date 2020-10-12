@@ -58,15 +58,18 @@ void ConsulConnection::reportNode()
 		//report resource: /appmesh/cluster/nodes/myhost
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 
-		static long long lastIndex = 0;
-		auto currentIndex = getModifyIndex(path);
-		if (currentIndex == lastIndex)
-			return;
-
 		web::json::value body = web::json::value::object();
 		body["resource"] = ResourceCollection::instance()->getConsulJson();
 		body["label"] = Configuration::instance()->getLabel()->AsJson();
 		body["appmesh"] = web::json::value::string(Configuration::instance()->getConsul()->appmeshUrl());
+		auto node = this->retrieveNode(MY_HOST_NAME);
+		if (node.serialize() == body.serialize())
+		{
+			// TODO: mem_free_bytes is always not the same here
+			LOG_DBG << fname << "host info " << MY_HOST_NAME << " is the same with server";
+			return;
+		}
+		
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 		auto resp = requestHttp(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)
@@ -74,9 +77,7 @@ void ConsulConnection::reportNode()
 			auto result = resp.extract_utf8string(true).get();
 			if (result == "true")
 			{
-				auto index = getModifyIndex(path);
-				if (index > 0)
-					lastIndex = index;
+				LOG_INF << fname << "report resource to " << path << " success";
 			}
 			else
 			{
@@ -307,7 +308,7 @@ void ConsulConnection::doSchedule()
 	LOG_DBG << fname;
 
 	// leader's job
-	if (eletionLeader())
+	if (electionLeader())
 	{
 		LOG_DBG << fname << "leader now, do schedule";
 
@@ -317,7 +318,7 @@ void ConsulConnection::doSchedule()
 		if (nodes.size())
 		{
 			// find matched hosts for each task
-			findTaskAvialableHost(taskList, nodes);
+			findTaskAvailableHost(taskList, nodes);
 
 			// schedule task
 			auto newTopology = Scheduler::scheduleTask(taskList, oldTopology);
@@ -418,7 +419,7 @@ void ConsulConnection::syncTopology()
 	}
 }
 
-bool ConsulConnection::eletionLeader()
+bool ConsulConnection::electionLeader()
 {
 	// get session id
 	std::string sessionId = consulSessionId();
@@ -536,9 +537,9 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 	}
 }
 
-void ConsulConnection::findTaskAvialableHost(const std::map<std::string, std::shared_ptr<ConsulTask>> &taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>> &hosts)
+void ConsulConnection::findTaskAvailableHost(const std::map<std::string, std::shared_ptr<ConsulTask>> &taskMap, const std::map<std::string, std::shared_ptr<ConsulNode>> &hosts)
 {
-	const static char fname[] = "ConsulConnection::findTaskAvialableHost() ";
+	const static char fname[] = "ConsulConnection::findTaskAvailableHost() ";
 
 	for (const auto &task : taskMap)
 	{
@@ -777,6 +778,27 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	}
 	LOG_DBG << fname << "get nodes size : " << result.size();
 	return result;
+}
+
+web::json::value ConsulConnection::retrieveNode(const std::string &host)
+{
+	const static char fname[] = "ConsulConnection::retrieveNode() ";
+
+	// /appmesh/cluster/nodes/myhost
+	std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(host);
+	auto resp = requestHttp(web::http::methods::GET, path, {{"raw", "true"}}, {}, nullptr);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		auto json = resp.extract_json(true).get();
+		//result = ConsulNode::FromJson(json, host);
+		LOG_DBG << fname << "got nodes : " << host;
+		return json;
+	}
+	else
+	{
+		LOG_DBG << fname << "no node info : " << host;
+	}
+	return web::json::value();
 }
 
 void ConsulConnection::initTimer(std::string recoverSsnId)
