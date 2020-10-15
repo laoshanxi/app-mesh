@@ -12,7 +12,8 @@ const char *ISO8601FORMAT_IN = "%Y-%m-%d %H:%M:%S%F%ZP";
 const char *ISO8601FORMAT_OUT = "%Y-%m-%d %H:%M:%S%F%Q";
 const char *RFC3339FORMAT = "%Y-%m-%dT%H:%M:%S%FZ";
 
-static boost::local_time::time_zone_ptr outputZone = boost::local_time::time_zone_ptr(new machine_time_zone());
+static const boost::local_time::time_zone_ptr LOCAL_POSIX_ZONE = boost::local_time::time_zone_ptr(new machine_time_zone());
+static boost::local_time::time_zone_ptr OUTPUT_POSIX_ZONE;
 
 machine_time_zone::machine_time_zone()
 	: boost::local_time::custom_time_zone(
@@ -124,15 +125,15 @@ void DateTime::setTimeFormatPosixZone(const std::string &posixZone)
 	{
 		auto duration = boost::posix_time::duration_from_string(posixZone);
 		auto formatStr = boost::posix_time::to_simple_string(duration);
-		outputZone = boost::local_time::time_zone_ptr(new boost::local_time::posix_time_zone(formatStr));
+		OUTPUT_POSIX_ZONE = boost::local_time::time_zone_ptr(new boost::local_time::posix_time_zone(formatStr));
 	}
 	else
 	{
-		outputZone = boost::local_time::time_zone_ptr(new machine_time_zone());
-		LOG_INF << fname << "empty posix zone, using default: " << outputZone->to_posix_string();
+		OUTPUT_POSIX_ZONE = LOCAL_POSIX_ZONE;
+		LOG_INF << fname << "reset output posix zone";
 	}
 
-	LOG_INF << fname << "output zone was set to: " << outputZone->to_posix_string();
+	LOG_INF << fname << "output zone was set to: " << OUTPUT_POSIX_ZONE->to_posix_string();
 }
 
 std::string DateTime::formatISO8601Time(const std::chrono::system_clock::time_point &time)
@@ -158,7 +159,11 @@ std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_poin
 	ACE_OS::localtime_r(&timeT, &local_tm);
 	boost::gregorian::date target_date(local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
 	boost::posix_time::time_duration target_duration(local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
-	boost::local_time::local_date_time localDateTime(target_date, target_duration, outputZone, boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
+	boost::local_time::local_date_time localDateTime(target_date, target_duration, LOCAL_POSIX_ZONE, boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
+	if (OUTPUT_POSIX_ZONE && OUTPUT_POSIX_ZONE != LOCAL_POSIX_ZONE && OUTPUT_POSIX_ZONE->base_utc_offset() != LOCAL_POSIX_ZONE->base_utc_offset())
+	{
+		localDateTime = localDateTime.local_time_in(OUTPUT_POSIX_ZONE);
+	}
 
 	std::ostringstream oss;
 	oss.exceptions(std::ios_base::failbit);
