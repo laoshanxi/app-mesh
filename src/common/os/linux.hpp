@@ -511,7 +511,9 @@ namespace os
 	{
 		const static char fname[] = "proc::cpus() ";
 
-		std::list<CPU> results;
+		static std::list<CPU> results;
+		if (results.size())
+			return results;
 
 		std::ifstream file("/proc/cpuinfo");
 

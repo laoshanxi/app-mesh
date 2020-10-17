@@ -3,15 +3,16 @@
 #include <cpprest/json.h>
 #include <thread>
 
+#include "ConsulConnection.h"
 #include "../application/Application.h"
 #include "../Configuration.h"
-#include "ConsulConnection.h"
 #include "../ResourceCollection.h"
 #include "../Scheduler.h"
 #include "../security/User.h"
 
 #include "../../common/Utility.h"
 #include "../../common/PerfLog.h"
+#include "../../common/os/linux.hpp"
 
 #define CONSUL_BASE_PATH "/v1/kv/appmesh/"
 //extern ACE_Reactor* m_timerReactor;
@@ -58,12 +59,16 @@ void ConsulConnection::reportNode()
 		//report resource: /appmesh/cluster/nodes/myhost
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 
-		web::json::value body = web::json::value::object();
-		body["resource"] = ResourceCollection::instance()->getConsulJson();
-		body["label"] = Configuration::instance()->getLabel()->AsJson();
-		body["appmesh"] = web::json::value::string(Configuration::instance()->getConsul()->appmeshUrl());
-		auto node = this->retrieveNode(MY_HOST_NAME);
-		if (node.serialize() == body.serialize())
+		ConsulNode node;
+		static auto mem = os::memory();
+		node.m_appmeshProxyUrl = Configuration::instance()->getConsul()->appmeshUrl();
+		node.m_hostName = MY_HOST_NAME;
+		node.m_label = Configuration::instance()->getLabel();
+		node.m_total_bytes = mem->total_bytes;
+		node.m_cores = os::cpus().size();
+		web::json::value body = node.AsJson();
+		auto cloudBody = this->retrieveNode(MY_HOST_NAME);
+		if (cloudBody.serialize() == body.serialize())
 		{
 			// TODO: mem_free_bytes is always not the same here
 			LOG_DBG << fname << "host info " << MY_HOST_NAME << " is the same with server";

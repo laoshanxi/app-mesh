@@ -189,10 +189,13 @@ bool Application::attach(int pid)
 {
 	const static char fname[] = "Application::attach() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_process->attach(pid);
-	m_pid = m_process->getpid();
-	LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
+	if (pid > 1)
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		m_process->attach(pid);
+		m_pid = m_process->getpid();
+		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
+	}
 	return true;
 }
 

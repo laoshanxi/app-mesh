@@ -29,6 +29,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	{
 		m_shellCmd = cmd;
 		LOG_WAR << fname << "create shell file <" << fileName << "> failed with error: " << std::strerror(errno);
+		throw std::runtime_error(Utility::stringFormat("failed to create file: ", fileName.c_str()));
 	}
 }
 
