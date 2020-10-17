@@ -14,9 +14,10 @@ elif [ -f "/usr/bin/apt" ]; then
   apt-get -y install wget g++ make perl
   apt-get -y install zlib1g zlib1g-dev
 fi
-wget --no-check-certificate https://www.openssl.org/source/openssl-1.1.1g.tar.gz
-tar zxvf openssl-1.1.1g.tar.gz
-cd openssl-1.1.1g/
+OPEN_SSL_VERSION=openssl-1.1.1h
+wget --no-check-certificate https://www.openssl.org/source/${OPEN_SSL_VERSION}.tar.gz
+tar zxvf ${OPEN_SSL_VERSION}.tar.gz
+cd ${OPEN_SSL_VERSION}
 
 ./config shared zlib
 make; make install
