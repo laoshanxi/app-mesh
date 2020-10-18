@@ -87,7 +87,7 @@ git clone -b v2.10.16 https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-if [[ -f "/usr/bin/cmake3" ]]; then
+if [ -f "/usr/bin/cmake3" ]; then
 	cmake3 .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
 else
 	cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"

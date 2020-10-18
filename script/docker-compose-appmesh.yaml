@@ -8,9 +8,7 @@ services:
     # https://www.consul.io/docs/agent/options
     command: consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 --bind=0.0.0.0 -bootstrap-expect=1 -ui
     volumes:
-      - /etc/hosts:/etc/hosts
-    #environment:
-    #  CONSUL_BIND_INTERFACE: enp1s0
+      - /etc/hosts:/etc/hosts:ro
     ports:
       # https://www.consul.io/docs/install/ports
       - "8500:8500"

@@ -1,5 +1,7 @@
 # Deployment
 
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/deploy.png"/></div>
+
 App Mesh can deploy with multiple ways, generally, App Mesh run on a host as a daemon service managed by native systemd or docker container.
 
 ### Native installation

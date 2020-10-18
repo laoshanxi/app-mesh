@@ -480,8 +480,9 @@ bool ConsulConnection::registerService(const std::string &appName, int port)
 	body["Address"] = web::json::value::string(MY_HOST_NAME);
 	body["Port"] = web::json::value::number(port);
 
+	auto checkHttpUrl = Configuration::instance()->getConsul()->appmeshUrl() + "/appmesh/app/" + appName + "/health";
 	auto check = web::json::value::object();
-	check["HTTP"] = web::json::value::string("https://" + MY_HOST_NAME + ":" + std::to_string(Configuration::instance()->getRestListenPort()) + "/app/" + appName + "/health");
+	check["HTTP"] = web::json::value::string(checkHttpUrl);
 	check["Interval"] = web::json::value::string("15s");
 	check["Timeout"] = web::json::value::string("5s");
 	check["Method"] = web::json::value::string("GET");
@@ -492,7 +493,7 @@ bool ConsulConnection::registerService(const std::string &appName, int port)
 	auto resp = requestHttp(web::http::methods::PUT, path, {{"replace-existing-checks", "true"}}, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
-		LOG_DBG << fname << "service " << serviceId << " for task <" << appName << "> registered";
+		LOG_DBG << fname << "service " << serviceId << " for task <" << appName << "> registered and check URL: " << checkHttpUrl;
 		return true;
 	}
 	return false;
