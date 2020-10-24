@@ -185,21 +185,21 @@ void ArgumentParser::printMainHelp()
 {
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  logon       Log on to App Mesh for a specific time period." << std::endl;
-	std::cout << "  logoff      End a App Mesh user session" << std::endl;
+	std::cout << "  logoff      Clear current login user infomation" << std::endl;
 	std::cout << "  loginfo     Print current logon user" << std::endl;
 
 	std::cout << "  view        List application[s]" << std::endl;
-	std::cout << "  resource    Display host resource usage" << std::endl;
+	std::cout << "  resource    Display host resources" << std::endl;
 	std::cout << "  label       Manage host labels" << std::endl;
 	std::cout << "  enable      Enable a application" << std::endl;
 	std::cout << "  disable     Disable a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
-	std::cout << "  run         Run application and get output" << std::endl;
-	std::cout << "  exec        Run current cmd by appmesh and impersonate context" << std::endl;
+	std::cout << "  run         Run command and get output" << std::endl;
+	std::cout << "  exec        Run command by appmesh and impersonate context" << std::endl;
 	std::cout << "  get         Download remote file to local" << std::endl;
-	std::cout << "  put         Upload file to server" << std::endl;
+	std::cout << "  put         Upload local file to App Mesh server" << std::endl;
 	std::cout << "  config      Manage basic configurations" << std::endl;
 	std::cout << "  passwd      Change user password" << std::endl;
 	std::cout << "  lock        Lock unlock a user" << std::endl;
@@ -323,7 +323,7 @@ void ArgumentParser::processReg()
 		("metadata,g", po::value<std::string>(), "application metadata string")
 		("perm", po::value<int>(), "application user permission, value = [group & other], each can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("shell_mode,S", "command line will be executed in shell in this mode")
+		("shell_mode,S", "cmd can be more commands in shell mode")
 		("init,I", po::value<std::string>(), "initial command line with arguments")
 		("fini,F", po::value<std::string>(), "fini command line with arguments")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")

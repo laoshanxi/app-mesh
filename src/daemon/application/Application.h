@@ -50,7 +50,7 @@ public:
 	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
 	std::string getAsyncRunOutput(const std::string &processUuid, int &exitCode, bool &finished) noexcept(false);
 
-	// health: 0-health, 1-unhealth
+	// health: 0-health, 1-unhealthy
 	void setHealth(bool health) { m_health = health; }
 	const std::string &getHealthCheck() { return m_healthCheckCmd; }
 	int getHealth() { return 1 - m_health; }

@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
-#include "catch.hpp"
+#include "../catch.hpp"
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -16,8 +16,8 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/RollingFileAppender.hh>
 #include <log4cpp/OstreamAppender.hh>
-#include "../src/common/DateTime.h"
-#include "../src/common/Utility.h"
+#include "../../src/common/DateTime.h"
+#include "../../src/common/Utility.h"
 
 void init()
 {
@@ -82,6 +82,9 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
     // getLocalUtcOffset
     LOG_DBG << DateTime::getLocalUtcOffset();
     REQUIRE(boost::posix_time::to_simple_string(DateTime::parseDayTimeUtcDuration("20:33:00", "+08")) == "12:33:00");
+
+    // time in different zone
+    REQUIRE(DateTime::parseISO8601DateTime("2020-10-07T21:19:00+07", "") == DateTime::parseISO8601DateTime("2020-10-07T22:19:00+08", ""));
 }
 
 TEST_CASE("Boost Date Time Test", "[Boost]")

@@ -15,6 +15,7 @@ Commands:
   reg         Add a new application
   unreg       Remove an application
   run         Run application and get output
+  exec        Run current cmd by appmesh and impersonate context
   get         Download remote file to local
   put         Upload file to server
   config      Manage basic configurations
@@ -23,9 +24,10 @@ Commands:
   log         Set log level
 
 Run 'appc COMMAND --help' for more information on a command.
-Use '-b $hostname','--port $port' to run remote command.
+Use '-b $hostname','-B $port' to run remote command.
 
 Usage:  appc [COMMAND] [ARG...] [flags]
+
 ```
 ---
 ## 1. App Management
@@ -34,24 +36,40 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 
 ```text
 $ appc view
-id name        user  status   health pid    memory  return last_start_time     command
-1  ipmail      root  enabled  0       -      -       -     2020-01-17 14:58:50 sh /opt/qqmail/launch.sh
-2  test        root  enabled  0       -      -       -     2020-01-17 15:01:00 /usr/bin/env
+id name        owner status   health pid    memory  return last_start_time         command
+1  qqmail      admin enabled  0      -      -       0      2020-10-24 07:29:46+08  sh /opt/qqmail/launch.sh
+2  ssd         admin disabled 1      -      -       -      -                       /usr/sbin/fstrim -a -v
+3  appweb      admin enabled  0      2530   4.2 Mi  -      2020-10-24 07:28:48+08  
+4  test        admin enabled  1      -      -       -      -                       ping www.sina.com
+5  loki        admin enabled  0      1033   2.9 Mi  2      2020-10-24 07:28:52+08  ping www.sina.com
+6  myapp             enabled  1      -      -       0      2020-10-24 07:30:07+08  sleep 30
 
 ```
 - View application output
 ```text
-$ appc reg -n ping -c 'ping www.baidu.com' -o 10
+$ appc reg -n ping -c 'ping www.baidu.com'
 {
-        "cache_lines" : 10,
-        "command" : "ping www.baidu.com",
-        "name" : "ping",
-        "status" : 1
+	"command": "ping www.baidu.com",
+	"name": "ping",
+	"owner": "admin",
+	"register_time": "2020-10-24 07:31:40+08",
+	"status": 1
 }
 
-$ appc view
-id name        user  status   return pid    memory  start_time          command_line
-1  ping        root  enabled  0      14001  2 M     2019-09-19 20:17:50 ping www.baidu.com
+$ appc view -n ping
+{
+	"command": "ping www.baidu.com",
+	"health": 0,
+	"last_start_time": "2020-10-24 07:31:40+08",
+	"memory": 3088384,
+	"name": "ping",
+	"owner": "admin",
+	"pid": 4668,
+	"register_time": "2020-10-24 07:31:40+08",
+	"status": 1,
+	"stdout_cache_num": 1
+}
+
 $ appc view -n ping -o
 PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=1 ttl=54 time=35.5 ms
@@ -95,7 +113,7 @@ Register a new application:
   -t [ --start_time ] arg        start date time for app (ISO8601 time format, 
                                  e.g., '2020-10-11T09:22:05')
   -E [ --end_time ] arg          end date time for app (ISO8601 time format, 
-                                 e.g., '2020-10-11T09:22:05')
+                                 e.g., '2020-10-11T10:22:05')
   -j [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
@@ -332,14 +350,3 @@ $ appc label --add --label mytag=abc
 mytag=abc
 os_version=centos7.6
 ```
-
----
-### Usage scenarios
-1. Integrate with rpm installation script and register rpm startup behavior to appmesh
-2. Remote sync/async shell execute (web ssh)
-3. Host/app resource monitor
-4. Run as a standalone JWT server
-5. File server
-6. Microservice management
-7. Cluster application deployment
----

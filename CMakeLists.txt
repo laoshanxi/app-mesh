@@ -82,7 +82,26 @@ link_directories(
 # sub dir
 ##########################################################################
 add_subdirectory(src)
-add_subdirectory(test)
+
+##########################################################################
+# Test
+# cmake -APPMESH_NO_TESTS=1 ..
+# make & make test ARGS="-V"
+# https://cmake.org/pipermail/cmake/2005-December/007778.html
+# https://stackoverflow.com/questions/49923562/how-to-force-cmake-to-write-test-output-after-make-test?r=SearchResults
+##########################################################################
+macro(add_catch_test name)
+    if (TEST_REPORT_FORMAT)
+        add_test(NAME ${name} COMMAND ${name} -r ${TEST_REPORT_FORMAT} -o "${name}.test_out.xml")
+    else()
+        add_test(NAME ${name} COMMAND ${name})
+    endif()
+endmacro()
+
+if(NOT APPMESH_NO_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif()
 
 ##########################################################################
 # package [make pack]
@@ -101,13 +120,4 @@ add_custom_target(pack
 add_custom_target(cppcheck
     COMMENT "code static check ${CMAKE_CURRENT_SOURCE_DIR}"
     COMMAND cppcheck --enable=all --quiet --std=c++11 --platform=native ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-##########################################################################
-# test
-##########################################################################
-add_custom_target(test
-    COMMENT "run unit test ${CMAKE_CURRENT_SOURCE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/ CMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_BINARY_DIR}/test/unittest
-    DEPENDS unittest
 )

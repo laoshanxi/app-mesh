@@ -93,3 +93,12 @@ If App Mesh is running in Docker container, need mount `/opt/appmesh/appsvc.json
 All configuration update from UI support hot-update, no need restart App Mesh process to take effect. Click `Configuration` -> `Consul` and set `Consul URL`, Click `Submit` to take effect.
 
 
+---
+### Usage scenarios
+1. Integrate with rpm installation script and register rpm startup behavior to appmesh
+2. Remote sync/async shell execute (web ssh)
+3. Host/app resource monitor
+4. Run as a standalone JWT server
+5. File server
+6. Micro service management
+7. Cluster application deployment
