@@ -134,7 +134,7 @@ std::string Utility::getSelfDir()
 	{
 		path[index] = '\0';
 	}
-	return path;
+	return path.c_str();
 }
 
 bool Utility::isDirExist(std::string path)
