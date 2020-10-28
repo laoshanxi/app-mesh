@@ -70,12 +70,12 @@ TEST_CASE("Utility Test", "[Utility]")
 
     SECTION("File function test"){
         REQUIRE(Utility::isFileExist(filePath));
-        REQUIRE(Utility::isFileExist("/xx/xxx/xxxx") == false);
+        REQUIRE_FALSE(Utility::isFileExist("/xx/xxx/xxxx"));
     }
 
     SECTION("Dir function test"){
         REQUIRE(Utility::isDirExist(dirPath));
-        REQUIRE(Utility::isDirExist("/xx/xxx/") == false);
+        REQUIRE_FALSE(Utility::isDirExist("/xx/xxx/"));
     }
 
     SECTION("File operate function test"){
