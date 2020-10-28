@@ -64,40 +64,50 @@ TEST_CASE("Utility Test", "[Utility]")
     LOG_INF << "Utility::getSelfDir():" << Utility::getSelfDir();
 
     // setup
-    const std::string filePath = Utility::getSelfFullPath();
-    const std::string dirPath = Utility::getSelfDir();
-    REQUIRE(filePath.length() > dirPath.length());
+    const std::string selfPath = Utility::getSelfFullPath();
+    const std::string selfDir = Utility::getSelfDir();
+    REQUIRE(selfPath.length() > selfDir.length());
 
-    SECTION("File function test"){
-        REQUIRE(Utility::isFileExist(filePath));
-        REQUIRE_FALSE(Utility::isFileExist("/xx/xxx/xxxx"));
+    SECTION("File function test")
+    {
+        REQUIRE(Utility::isFileExist(selfPath));
+        REQUIRE_FALSE(Utility::isFileExist("/abc"));
     }
 
-    SECTION("Dir function test"){
-        REQUIRE(Utility::isDirExist(dirPath));
-        REQUIRE_FALSE(Utility::isDirExist("/xx/xxx/"));
+    SECTION("Dir function test")
+    {
+        REQUIRE(Utility::isDirExist(selfDir));
+        REQUIRE(Utility::isDirExist("/tmp"));
+        auto testDir = "/tmp/test";
+        if (Utility::isDirExist(testDir))
+        {
+            Utility::removeDir(testDir);
+        }
+        REQUIRE_FALSE(Utility::isFileExist(testDir));
+        REQUIRE(Utility::createDirectory(testDir));
+        REQUIRE(Utility::removeDir(testDir));
+        REQUIRE_FALSE(Utility::isDirExist(testDir));
+        REQUIRE_FALSE(Utility::isDirExist("/abc"));
     }
 
-    SECTION("File operate function test"){
-        const std::string newDirPath = dirPath+"xxx";
-        bool isCreatedDir = Utility::createDirectory(newDirPath);
-        bool isDirExist = Utility::isDirExist(newDirPath);
-        bool isRemoveDir = Utility::removeDir(newDirPath);
-        REQUIRE(isCreatedDir == true);
-        REQUIRE(isDirExist == true);
-        REQUIRE(isRemoveDir == true);
-    }
-
-    SECTION("string operation function test"){
-        const std::string testStr= "hello word";
+    SECTION("string operation function test")
+    {
+        const std::string testStr = "hello word";
         bool isNumber = Utility::isNumber(testStr);
-        bool isStartWith = Utility::startWith(testStr,"he");
-        std::vector<std::string> splitList =  Utility::splitString(testStr," ");
-        REQUIRE(isNumber == false );
+        bool isStartWith = Utility::startWith(testStr, "he");
+        std::vector<std::string> splitList = Utility::splitString(testStr, " ");
+        REQUIRE_FALSE(isNumber);
         REQUIRE(isStartWith == true);
         REQUIRE(splitList.size() == 2);
         REQUIRE(splitList.at(0) == "hello");
         REQUIRE(splitList.at(1) == "word");
+
+        REQUIRE_FALSE(Utility::isNumber("abc012"));
+        REQUIRE_FALSE(Utility::isNumber("  "));
+        REQUIRE_FALSE(Utility::isNumber(""));
+        REQUIRE_FALSE(Utility::isNumber("0.123"));
+        REQUIRE(Utility::isNumber("012"));
+        REQUIRE(Utility::isNumber("-012"));
     }
 
     // teardown
