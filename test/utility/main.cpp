@@ -62,8 +62,43 @@ TEST_CASE("Utility Test", "[Utility]")
 
     LOG_INF << "Utility::getSelfFullPath():" << Utility::getSelfFullPath();
     LOG_INF << "Utility::getSelfDir():" << Utility::getSelfDir();
-    REQUIRE(Utility::getSelfFullPath().length() > Utility::getSelfDir().length());
 
-    REQUIRE(Utility::isFileExist(Utility::getSelfFullPath()));
-    REQUIRE_FALSE(Utility::isFileExist("/abc"));
+    // setup
+    const std::string filePath = Utility::getSelfFullPath();
+    const std::string dirPath = Utility::getSelfDir();
+    REQUIRE(filePath.length() > dirPath.length());
+
+    SECTION("File function test"){
+        REQUIRE(Utility::isFileExist(filePath));
+        REQUIRE(Utility::isFileExist("/xx/xxx/xxxx") == false);
+    }
+
+    SECTION("Dir function test"){
+        REQUIRE(Utility::isDirExist(dirPath));
+        REQUIRE(Utility::isDirExist("/xx/xxx/") == false);
+    }
+
+    SECTION("File operate function test"){
+        const std::string newDirPath = dirPath+"xxx";
+        bool isCreatedDir = Utility::createDirectory(newDirPath);
+        bool isDirExist = Utility::isDirExist(newDirPath);
+        bool isRemoveDir = Utility::removeDir(newDirPath);
+        REQUIRE(isCreatedDir == true);
+        REQUIRE(isDirExist == true);
+        REQUIRE(isRemoveDir == true);
+    }
+
+    SECTION("string operation function test"){
+        const std::string testStr= "hello word";
+        bool isNumber = Utility::isNumber(testStr);
+        bool isStartWith = Utility::startWith(testStr,"he");
+        std::vector<std::string> splitList =  Utility::splitString(testStr," ");
+        REQUIRE(isNumber == false );
+        REQUIRE(isStartWith == true);
+        REQUIRE(splitList.size() == 2);
+        REQUIRE(splitList.at(0) == "hello");
+        REQUIRE(splitList.at(1) == "word");
+    }
+
+    // teardown
 }
