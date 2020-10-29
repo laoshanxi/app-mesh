@@ -16,7 +16,7 @@
 > * App ownership permission can define group permission and other group permission
 
 ### What is **not** supported:
-> * One user can only define one user group
+> * One user can only belong to one user group
 
 ### User and Role configure json sample
 
@@ -100,7 +100,7 @@
 
 ### Permission list
 
-| REST method        |  PATH   |  Permission Key |
+| REST method  |  PATH  |  Permission Key |
 | :--------:   | -----  | ----  |
 | GET     | /appmesh/app/app-name |   `view-app`     |
 | GET     | /appmesh/app/app-name/output  |   `view-app-output`   |
@@ -185,4 +185,3 @@ The permission is a two digital int value:
 - Unit Place : define the same group users permissions. 1=deny, 2=read, 3=write
 - Tenth Place : define the other group users permissions. 1=deny, 2=read, 3=write
 For example, 11 indicates all other user can not access this application, 21 indicates only same group users can read this application.
-

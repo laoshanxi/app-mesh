@@ -28,7 +28,7 @@ docker-compose -f docker-compose.yaml up -d
 5. Select Explore -> Metrics
 
 ## Design
-`Prometheus` is monitoring system and time series database, every metric (unique by lable) will be a time seris data in DB, and use pull way to scrap data from Server to Client, client provide a exporter service listen on a local port, the exporter is build with Application together to read metric data from memory. appmesh provide a exporter service listen at 6061 by default. The exporter run build-in with appmesh and no need extra process.
+`Prometheus` is monitoring system and time series database, every metric (unique by label) will be a time series data in DB, and use pull way to scrap data from Server to Client, client provide a exporter service listen on a local port, the exporter is build with Application together to read metric data from memory. appmesh provide a exporter service listen at 6061 by default. The exporter run build-in with appmesh and no need extra process.
 In order to collect node metrics, an extra node-exporter can be started on each node and listen on 9100 to provide node metrics service.
 
 ### Defined Metrics

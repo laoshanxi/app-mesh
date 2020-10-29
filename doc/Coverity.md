@@ -63,7 +63,7 @@ $ du -sh appmesh.tar.gz
 
 4. Upload your build result to Coverity Server (token can get from coverity portal)
 ```
-$ curl --form token=JEaBmAE_eDRabcdToken \
+$ curl --form token=Yor-Coverity-Token \
   --form email=178029200@qq.com \
   --form file=@appmesh.tar.gz \
   --form version="1.8.5" \

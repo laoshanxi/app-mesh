@@ -1,4 +1,5 @@
-### Command lines
+## Command lines
+App Mesh command lines provide the same functionality with Web GUI for *stand-alone* mode, *Consul-cluster* mode related feature require Web GUI.
 
 ```text
 $ appc

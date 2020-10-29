@@ -66,4 +66,3 @@ The REST will response bellow json when authentication success:
     "user": "user"
 }
 ```
-

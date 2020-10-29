@@ -45,4 +45,3 @@ So override promtail configuration (/etc/promtail/config.yml) to combine the 3 l
 - [Loki / Promtail / Grafana vs EFK](https://grafana.com/docs/loki/latest/overview/comparisons/)
 - [Labels in Loki](https://grafana.com/blog/2020/04/21/how-labels-in-loki-can-make-log-queries-faster-and-easier/)
 - [Docker log driver](https://grafana.com/docs/loki/latest/clients/docker-driver/)
-
