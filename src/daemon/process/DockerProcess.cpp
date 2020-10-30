@@ -207,13 +207,13 @@ pid_t DockerProcess::getpid(void) const
 
 std::string DockerProcess::containerId()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	return m_containerId;
 }
 
 void DockerProcess::containerId(std::string containerId)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	m_containerId = containerId;
 }
 
@@ -272,7 +272,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 
 std::string DockerProcess::fetchOutputMsg()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	if (m_containerId.length())
 	{
 		//auto microsecondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
@@ -287,7 +287,7 @@ std::string DockerProcess::fetchOutputMsg()
 
 std::string DockerProcess::fetchLine()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	auto msg = fetchOutputMsg();
 	for (std::size_t i = 0; i < msg.length(); i++)
 	{

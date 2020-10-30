@@ -23,7 +23,7 @@ int TimerHandler::handle_timeout(const ACE_Time_Value &current_time, const void 
 	std::map<const int *, std::shared_ptr<TimerDefinition>> timers;
 	{
 		// Should not hold this lock too long
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 		timers = m_timers;
 	}
 
@@ -40,7 +40,7 @@ int TimerHandler::handle_timeout(const ACE_Time_Value &current_time, const void 
 		if (timerDef->m_callOnce)
 		{
 			LOG_DBG << fname << "one-time timer removed <" << *timerIdPtr << ">.";
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 			m_timers.erase(timerIdPtr);
 		}
 	}
@@ -63,7 +63,7 @@ int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalS
 
 	int *timerIdPtr = new int(0);
 	(*timerIdPtr) = m_reactor->schedule_timer(this, (void *)timerIdPtr, delay, interval);
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	assert(m_timers.find(timerIdPtr) == m_timers.end());
 	m_timers[timerIdPtr] = std::make_shared<TimerDefinition>(timerIdPtr, handler, this->shared_from_this(), callOnce);
 	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
@@ -79,7 +79,7 @@ bool TimerHandler::cancelTimer(int &timerId)
 	auto cancled = m_reactor->cancel_timer(timerId);
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	auto it = std::find_if(m_timers.begin(), m_timers.end(),
 						   [timerId](std::map<const int *, std::shared_ptr<TimerDefinition>>::value_type const &pair) {
 							   return timerId == *(pair.first);

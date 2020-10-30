@@ -61,6 +61,7 @@ private:
 	web::json::value retrieveNode(const std::string &host);
 
 private:
+	mutable std::recursive_mutex m_consulMutex;
 	std::string m_sessionId;
 	int m_ssnRenewTimerId;
 	bool m_leader;

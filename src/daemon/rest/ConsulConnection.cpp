@@ -171,7 +171,7 @@ void ConsulConnection::syncSchedule()
 		if (Configuration::instance()->getConsul()->m_isMaster)
 		{
 			// Leader's job
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
 			doSchedule();
 		}
 	}
@@ -297,13 +297,13 @@ std::string ConsulConnection::renewSessionId()
 
 std::string ConsulConnection::consulSessionId()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
 	return m_sessionId;
 }
 
 void ConsulConnection::consulSessionId(const std::string &sessionId)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
 	m_sessionId = sessionId;
 }
 
@@ -833,7 +833,7 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 	else
 	{
 		releaseSessionId(this->consulSessionId());
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
 		this->consulSessionId("");
 	}
 

@@ -36,7 +36,7 @@ void ApplicationShortRun::refreshPid()
 	Application::refreshPid();
 	// 2. Try to get return code from Buffer process again
 	//    If there have buffer process, current process is still running, so get return code from buffer process
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (nullptr != m_bufferProcess && m_bufferProcess->running())
 	{
 		ACE_Time_Value tv;
@@ -77,7 +77,7 @@ void ApplicationShortRun::invoke()
 	const static char fname[] = "ApplicationShortRun::invoke() ";
 	if (isWorkingState())
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		// 1. kill unexpected process
 		if (!this->available() && m_process->running())
 		{
@@ -99,7 +99,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	}
 	if (!isWorkingState())
 		return;
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// clean old process
 	if (m_process->running())
 	{
@@ -133,7 +133,7 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	LOG_DBG << fname << "Entered.";
 	web::json::value result = Application::AsJson(returnRuntimeInfo);
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_startIntervalValue);
 	if (m_bufferTime)
 		result[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::string(m_bufferTimeValue);
@@ -150,7 +150,7 @@ void ApplicationShortRun::enable()
 	const static char fname[] = "ApplicationShortRun::enable() ";
 	LOG_DBG << fname << "Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_status == STATUS::DISABLED)
 	{
 		m_status = STATUS::ENABLED;
@@ -161,7 +161,7 @@ void ApplicationShortRun::enable()
 void ApplicationShortRun::disable()
 {
 	Application::disable();
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// clean old timer
 	if (m_timerId)
 	{
@@ -175,7 +175,7 @@ void ApplicationShortRun::initTimer()
 	const static char fname[] = "ApplicationShortRun::initTimer() ";
 	LOG_DBG << fname << "Entered.";
 
-	// std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	// std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// 1. clean old timer
 	this->cancelTimer(m_timerId);
 
@@ -207,13 +207,13 @@ void ApplicationShortRun::initTimer()
 
 int ApplicationShortRun::getStartInterval()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	return m_startInterval;
 }
 
 std::chrono::system_clock::time_point ApplicationShortRun::getStartTime()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	return m_startTimeValue;
 }
 
@@ -227,7 +227,7 @@ void ApplicationShortRun::dump()
 	const static char fname[] = "ApplicationShortRun::dump() ";
 
 	Application::dump();
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
 	if (m_nextLaunchTime != nullptr)

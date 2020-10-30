@@ -36,7 +36,7 @@ Application::~Application()
 
 bool Application::operator==(const std::shared_ptr<Application> &app)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 
 	if (app->m_dailyLimit != nullptr && !app->m_dailyLimit->operator==(this->m_dailyLimit))
 		return false;
@@ -72,13 +72,13 @@ const std::string Application::getName() const
 
 bool Application::isEnabled() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	return (m_status == STATUS::ENABLED);
 }
 
 bool Application::isWorkingState() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	return (m_status == STATUS::ENABLED || m_status == STATUS::DISABLED);
 }
 
@@ -158,7 +158,7 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 
 void Application::refreshPid()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// Try to get return code.
 	if (m_process != nullptr)
 	{
@@ -191,7 +191,7 @@ bool Application::attach(int pid)
 
 	if (pid > 1)
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		m_process->attach(pid);
 		m_pid = m_process->getpid();
 		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
@@ -204,7 +204,7 @@ void Application::invoke()
 	const static char fname[] = "Application::invoke() ";
 	if (isWorkingState())
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		if (this->available())
 		{
 			if (!m_process->running())
@@ -235,7 +235,7 @@ void Application::disable()
 {
 	const static char fname[] = "Application::stop() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_status == STATUS::ENABLED)
 	{
 		m_status = STATUS::DISABLED;
@@ -252,7 +252,7 @@ void Application::enable()
 {
 	const static char fname[] = "Application::start() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_status == STATUS::DISABLED)
 	{
 		m_status = STATUS::ENABLED;
@@ -280,7 +280,7 @@ std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << " Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	m_process = allocProcess(MAX_APP_CACHED_LINES, m_dockerImage, m_name);
 	auto monitProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
 	assert(monitProc != nullptr);
@@ -294,7 +294,7 @@ std::string Application::runApp(int timeoutSeconds)
 	const static char fname[] = "Application::runApp() ";
 	LOG_DBG << fname << " Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_dockerImage.length())
 	{
 		throw std::invalid_argument("Docker application does not support this API");
@@ -325,7 +325,7 @@ void Application::handleEndTimer()
 {
 	const static char fname[] = "Application::handleEndTimer() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_endTimerId == 0)
 	{
 		// reg finish timer
@@ -414,7 +414,7 @@ pid_t Application::getpid() const
 
 std::string Application::getOutput(bool keepHistory, int index)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_process != nullptr && index == 0 && !keepHistory)
 	{
 		// get from last FILE handler position
@@ -428,7 +428,7 @@ std::string Application::getOutput(bool keepHistory, int index)
 
 void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// clean
 	m_metricStartCount = nullptr;
 	m_metricMemory = nullptr;
@@ -447,13 +447,13 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 
 int Application::getVersion()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	return m_version;
 }
 
 void Application::setVersion(int version)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	m_version = version;
 }
 
@@ -466,7 +466,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 {
 	web::json::value result = web::json::value::object();
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
 	if (m_owner)
 		result[JSON_KEY_APP_owner] = web::json::value::string(m_owner->getName());
@@ -543,7 +543,7 @@ void Application::dump()
 {
 	const static char fname[] = "Application::dump() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
@@ -633,7 +633,7 @@ bool Application::available()
 void Application::destroy()
 {
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		this->disable();
 		this->m_status = STATUS::NOTAVIALABLE;
 		if (m_commandLineFini.length())
@@ -677,7 +677,7 @@ void Application::onEndEvent(int timerId)
 {
 	const static char fname[] = "Application::onEndEvent() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 
 	// reset timer id
 	assert(m_endTimerId == timerId);

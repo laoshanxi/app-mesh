@@ -81,6 +81,7 @@ protected:
 	const std::string &getCmdLine() const;
 
 protected:
+	mutable std::recursive_mutex m_appMutex;
 	STATUS m_status;
 	std::string m_name;
 	std::string m_commandLine;

@@ -89,7 +89,7 @@ void ApplicationUnInitia::invoke()
 	refreshPid();
 	if (!m_executed)
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		m_executed = true;
 		if (!m_process->running())
 		{
