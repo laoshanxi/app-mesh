@@ -36,6 +36,9 @@ public:
 	virtual std::string fetchOutputMsg();
 	virtual std::string fetchLine();
 	virtual bool complete() { return true; }
+	// error
+	void startError(const std::string &err) { m_startError = err; };
+	const std::string startError() const { return m_startError; }
 
 protected:
 	std::shared_ptr<int> m_returnCode;
@@ -46,6 +49,7 @@ private:
 	int m_killTimerId;
 	ACE_HANDLE m_stdoutHandler;
 	std::string m_uuid;
+	std::string m_startError;
 	mutable std::recursive_mutex m_outFileMutex;
 	std::shared_ptr<std::ifstream> m_inFile;
 };

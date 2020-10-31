@@ -33,7 +33,7 @@ void HealthCheckTask::doHealthCheck()
 				proc->wait(&exitCode);
 				app->setHealth(0 == exitCode);
 				// proc->killgroup();
-				LOG_DBG << fname << app->getName() << " health check :" << app->getHealthCheck() << " return " << exitCode;
+				LOG_DBG << fname << app->getName() << " health check :" << app->getHealthCheck() << ", return " << exitCode << ", last error: " << proc->startError();
 			}
 			else
 			{

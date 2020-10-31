@@ -83,7 +83,12 @@ void ApplicationShortRun::invoke()
 		{
 			LOG_INF << fname << "Application <" << m_name << "> was not in daily start time";
 			m_process->killgroup();
+			setInvalidError();
 		}
+	}
+	else
+	{
+		setLastError("not in working state");
 	}
 	// Only refresh Pid for short running
 	refreshPid();
@@ -98,7 +103,10 @@ void ApplicationShortRun::invokeNow(int timerId)
 		return;
 	}
 	if (!isWorkingState())
+	{
+		setLastError("not in working state");
 		return;
+	}
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// clean old process
 	if (m_process->running())
@@ -123,8 +131,14 @@ void ApplicationShortRun::invokeNow(int timerId)
 		m_process = allocProcess(0, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
 		m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+		setLastError(m_process->startError());
 		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now() + std::chrono::seconds(this->getStartInterval()));
 	}
+	else
+	{
+		setInvalidError();
+	}
+	
 }
 
 web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)

@@ -172,12 +172,14 @@ void Application::refreshPid()
 			{
 				m_return = std::make_shared<int>(m_process->return_value());
 				m_pid = ACE_INVALID_PID;
+				setLastError(Utility::stringFormat("exited with return code: %d, error: %s", *m_return, m_process->startError().c_str()));
 			}
 		}
 		else if (m_pid > 0)
 		{
 			m_return = std::make_shared<int>(m_process->return_value());
 			m_pid = ACE_INVALID_PID;
+			setLastError(Utility::stringFormat("exited with return code: %d, error: %s", *m_return, m_process->startError().c_str()));
 		}
 		checkAndUpdateHealth();
 	}
@@ -213,6 +215,7 @@ void Application::invoke()
 				m_process = allocProcess(0, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+				setLastError(m_process->startError());
 				if (m_metricStartCount)
 					m_metricStartCount->metric().Increment();
 			}
@@ -221,8 +224,14 @@ void Application::invoke()
 		{
 			LOG_INF << fname << "Application <" << m_name << "> was not in start time";
 			m_process->killgroup();
+			setInvalidError();
 		}
 	}
+	else
+	{
+		setLastError("not in working state");
+	}
+
 	refreshPid();
 }
 
@@ -304,7 +313,7 @@ std::string Application::runApp(int timeoutSeconds)
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
-
+	setLastError(m_process->startError());
 	if (m_metricStartCount)
 		m_metricStartCount->metric().Increment();
 
@@ -536,6 +545,9 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_endTimeValue.time_since_epoch().count())
 		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_endTime);
 	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(DateTime::formatISO8601Time(m_regTime));
+	auto err = getLastError();
+	if (err.length())
+		result[JSON_KEY_APP_last_error] = web::json::value::string(err);
 	return result;
 }
 
@@ -563,6 +575,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	LOG_DBG << fname << "m_version:" << m_version;
+	LOG_DBG << fname << "m_lastError:" << getLastError();
 	if (m_dailyLimit != nullptr)
 		m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr)
@@ -694,4 +707,28 @@ void Application::regSuicideTimer(int timeoutSeconds)
 	const static char fname[] = "Application::regSuicideTimer() ";
 
 	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicideEvent, this, std::placeholders::_1), fname);
+}
+
+void Application::setLastError(const std::string &error)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_errorMutex);
+	m_lastError = Utility::stringFormat("%s %s", DateTime::formatISO8601Time(std::chrono::system_clock::now()).c_str(), error.c_str());
+}
+
+const std::string Application::getLastError() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_errorMutex);
+	return m_lastError;
+}
+
+void Application::setInvalidError()
+{
+	if (!this->isEnabled())
+	{
+		setLastError("not enabled");
+	}
+	else
+	{
+		setLastError("not in daily time range");
+	}
 }

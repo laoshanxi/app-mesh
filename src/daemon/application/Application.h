@@ -69,6 +69,11 @@ public:
 	bool isCloudApp() const;
 
 protected:
+	// error
+	void setLastError(const std::string &error) noexcept(false);
+	const std::string getLastError() const noexcept(false);
+	void setInvalidError() noexcept(false);
+
 	// Invoke immediately
 	virtual void invokeNow(int timerId);
 	virtual void refreshPid();
@@ -123,4 +128,8 @@ protected:
 	std::shared_ptr<CounterPtr> m_metricStartCount;
 	std::shared_ptr<GaugePtr> m_metricMemory;
 	std::atomic<int> m_continueFails;
+
+	// error
+	mutable std::recursive_mutex m_errorMutex;
+	std::string m_lastError;
 };

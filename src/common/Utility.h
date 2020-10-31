@@ -227,6 +227,8 @@ public:
 #define JSON_KEY_APP_env "env"
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
+#define JSON_KEY_APP_last_error "last_error"
+
 // runtime attr
 #define JSON_KEY_APP_pid "pid"
 #define JSON_KEY_APP_return "return"

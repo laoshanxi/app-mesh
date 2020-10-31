@@ -153,11 +153,13 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (checkCmd && !Utility::isFileExist(cmdRoot))
 	{
 		LOG_WAR << fname << "command file <" << cmdRoot << "> does not exist";
+		startError(Utility::stringFormat("command file <%s> does not exist", cmdRoot.c_str()));
 		return ACE_INVALID_PID;
 	}
 	if (checkCmd && ACE_OS::access(cmdRoot.c_str(), X_OK) != 0)
 	{
 		LOG_WAR << fname << "command file <" << cmdRoot << "> does not have execution permission";
+		startError(Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str()));
 		return ACE_INVALID_PID;
 	}
 
@@ -183,6 +185,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		}
 		else
 		{
+			startError(Utility::stringFormat("user <%s> does not exist", user.c_str()));
 			return ACE_INVALID_PID;
 		}
 	}
@@ -234,6 +237,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	{
 		pid = -1;
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << std::strerror(errno);
+		startError(Utility::stringFormat("start failed with error <%s>", std::strerror(errno)));
 	}
 	if (dummy != ACE_INVALID_HANDLE)
 		ACE_OS::close(dummy);
