@@ -1,15 +1,25 @@
 #include <thread>
 #include <fstream>
 #include "AppProcess.h"
+#include "LinuxCgroup.h"
 #include "../Configuration.h"
+#include "../ResourceLimitation.h"
 #include "../../common/Utility.h"
 #include "../../common/DateTime.h"
 #include "../../common/os/pstree.hpp"
-#include "LinuxCgroup.h"
-#include "../ResourceLimitation.h"
+
+#define CLOSE_ACE_HANDLER(handler)         \
+	do                                     \
+	{                                      \
+		if (handler != ACE_INVALID_HANDLE) \
+		{                                  \
+			ACE_OS::close(handler);        \
+			handler = ACE_INVALID_HANDLE;  \
+		}                                  \
+	} while (false)
 
 AppProcess::AppProcess()
-	: m_killTimerId(0), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
+	: m_killTimerId(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
 {
 }
 
@@ -19,14 +29,15 @@ AppProcess::~AppProcess()
 	{
 		killgroup();
 	}
-	if (m_stdoutHandler != ACE_INVALID_HANDLE)
+	CLOSE_ACE_HANDLER(m_stdoutHandler);
+	CLOSE_ACE_HANDLER(m_stdinHandler);
+	if (m_stdinFileName.length() && Utility::isFileExist(m_stdinFileName))
 	{
-		ACE_OS::close(m_stdoutHandler);
-		m_stdoutHandler = ACE_INVALID_HANDLE;
+		Utility::removeFile(m_stdinFileName);
 	}
-	if (m_inFile && m_inFile->is_open())
+	if (m_stdoutReadStream && m_stdoutReadStream->is_open())
 	{
-		m_inFile->close();
+		m_stdoutReadStream->close();
 	}
 	this->close_dup_handles();
 	this->close_passed_handles();
@@ -137,7 +148,7 @@ std::tuple<std::string, std::string> AppProcess::extractCommand(const std::strin
 	return std::tuple<std::string, std::string>(params, cmdroot);
 }
 
-int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const std::string &stdinFileContent)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
@@ -205,19 +216,32 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		LOG_DBG << "spawnProcess env: " << pair.first.c_str() << "=" << pair.second.c_str();
 	});
 	option.release_handles();
-	if (m_stdoutHandler != ACE_INVALID_HANDLE)
-	{
-		ACE_OS::close(m_stdoutHandler);
-		m_stdoutHandler = ACE_INVALID_HANDLE;
-	}
+	// clean if necessary
+	CLOSE_ACE_HANDLER(m_stdoutHandler);
+	CLOSE_ACE_HANDLER(m_stdinHandler);
 	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
-	if (stdoutFile.length())
+	m_stdoutFileName = stdoutFile;
+	if (stdoutFile.length() || stdinFileContent.length())
 	{
 		dummy = ACE_OS::open("/dev/null", O_RDWR);
-		m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
-		option.set_handles(dummy, m_stdoutHandler, m_stdoutHandler);
+		m_stdoutHandler = m_stdinHandler = dummy;
+		if (stdoutFile.length())
+		{
+			m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
+			LOG_DBG << "std_out: " << stdoutFile;
+		}
+		if (stdinFileContent.length() && stdinFileContent != JSON_KEY_APP_CLOUD_APP)
+		{
+			m_stdinFileName = Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str());
+			std::ofstream inputFile(m_stdinFileName, std::ios::trunc);
+			inputFile << stdinFileContent;
+			inputFile.close();
+			assert(Utility::isFileExist(m_stdinFileName));
+			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY);
+			LOG_DBG << "std_in: " << m_stdinFileName << " : " << stdinFileContent;
+		}
+		option.set_handles(m_stdinHandler, m_stdoutHandler, m_stdoutHandler);
 	}
-	m_stdoutFileName = stdoutFile;
 	// do not inherit LD_LIBRARY_PATH to child
 	static const std::string ldEnv = ACE_OS::getenv("LD_LIBRARY_PATH") ? ACE_OS::getenv("LD_LIBRARY_PATH") : "";
 	if (!ldEnv.empty())
@@ -247,12 +271,12 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 std::string AppProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_inFile == nullptr)
-		m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
-	if (m_inFile->is_open() && m_inFile->good())
+	if (m_stdoutReadStream == nullptr)
+		m_stdoutReadStream = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
+	if (m_stdoutReadStream->is_open() && m_stdoutReadStream->good())
 	{
 		std::stringstream buffer;
-		buffer << m_inFile->rdbuf();
+		buffer << m_stdoutReadStream->rdbuf();
 		return std::move(buffer.str());
 	}
 	return std::string();
@@ -262,11 +286,11 @@ std::string AppProcess::fetchLine()
 {
 	char buffer[512] = {0};
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_inFile == nullptr)
-		m_inFile = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
-	if (m_inFile->is_open() && m_inFile->good())
+	if (m_stdoutReadStream == nullptr)
+		m_stdoutReadStream = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
+	if (m_stdoutReadStream->is_open() && m_stdoutReadStream->good())
 	{
-		m_inFile->getline(buffer, sizeof(buffer));
+		m_stdoutReadStream->getline(buffer, sizeof(buffer));
 	}
 	return buffer;
 }

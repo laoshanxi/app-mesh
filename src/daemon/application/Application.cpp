@@ -214,7 +214,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << ">.";
 				m_process = allocProcess(0, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
-				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile, m_metadata);
 				setLastError(m_process->startError());
 				if (m_metricStartCount)
 					m_metricStartCount->metric().Increment();
@@ -312,7 +312,7 @@ std::string Application::runApp(int timeoutSeconds)
 
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile);
+	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile, m_metadata);
 	setLastError(m_process->startError());
 	if (m_metricStartCount)
 		m_metricStartCount->metric().Increment();
@@ -559,6 +559,7 @@ void Application::dump()
 
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
+	LOG_DBG << fname << "m_metadata:" << m_metadata;
 	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	if (m_owner)

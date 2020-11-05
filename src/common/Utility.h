@@ -238,7 +238,6 @@ public:
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
-#define JSON_KEY_APP_SYSTEM_INTERNAL "system-internal"
 #define JSON_KEY_APP_CLOUD_APP "cloud-app"
 
 #define JSON_KEY_PERIOD_APP_keep_running "keep_running"

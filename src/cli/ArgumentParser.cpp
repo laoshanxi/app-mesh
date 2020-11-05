@@ -320,7 +320,7 @@ void ArgumentParser::processReg()
 	desc.add_options()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
-		("metadata,g", po::value<std::string>(), "application metadata string")
+		("metadata,g", po::value<std::string>(), "application metadata string (input for application, pass to application process stdin)")
 		("perm", po::value<int>(), "application user permission, value = [group & other], each can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("shell_mode,S", "cmd can be more commands in shell mode")
@@ -624,6 +624,7 @@ void ArgumentParser::processRun()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
+		("metadata,g", po::value<std::string>(), "application metadata string (input for application, pass to application process stdin)")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work')")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
@@ -645,6 +646,8 @@ void ArgumentParser::processRun()
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	if (m_commandLineVariables.count("metadata"))
+		jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables["metadata"].as<std::string>());
 	if (m_commandLineVariables.count("workdir"))
 		jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))

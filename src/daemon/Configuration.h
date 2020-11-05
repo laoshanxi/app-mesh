@@ -94,7 +94,6 @@ public:
 	std::shared_ptr<Application> addApp(const web::json::value &jsonApp);
 	void removeApp(const std::string &appName);
 	std::shared_ptr<Application> parseApp(const web::json::value &jsonApp);
-	bool isSystemInternalApp(const std::string &appName) const;
 
 	int getScheduleInterval();
 	int getRestListenPort();

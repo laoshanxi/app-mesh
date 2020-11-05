@@ -31,7 +31,7 @@ public:
 
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							 std::string stdoutFile);
+							 const std::string &stdoutFile = "", const std::string &stdinFileContent = "");
 
 	virtual std::string fetchOutputMsg();
 	virtual std::string fetchLine();
@@ -47,9 +47,11 @@ protected:
 private:
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	int m_killTimerId;
+	ACE_HANDLE m_stdinHandler;
 	ACE_HANDLE m_stdoutHandler;
+	std::string m_stdinFileName;
 	std::string m_uuid;
 	std::string m_startError;
 	mutable std::recursive_mutex m_outFileMutex;
-	std::shared_ptr<std::ifstream> m_inFile;
+	std::shared_ptr<std::ifstream> m_stdoutReadStream;
 };

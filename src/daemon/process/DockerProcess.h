@@ -17,7 +17,7 @@ public:
 
 	// override with docker behavior
 	virtual void killgroup(int timerId = 0) override;
-	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile) override;
+	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const std::string &stdinFileContent = "") override;
 	virtual int syncSpawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile) noexcept(false);
 	virtual pid_t getpid(void) const override;
 	virtual std::string containerId() override;

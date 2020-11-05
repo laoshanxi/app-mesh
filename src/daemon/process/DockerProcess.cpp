@@ -32,7 +32,7 @@ void DockerProcess::killgroup(int timerId)
 	{
 		auto cmd = Utility::stringFormat("docker rm -f %s", containerId.c_str());
 		AppProcess proc;
-		proc.spawnProcess(cmd, "root", "", {}, nullptr, "");
+		proc.spawnProcess(cmd, "root", "", {}, nullptr);
 		if (proc.wait(ACE_Time_Value(3)) <= 0)
 		{
 			LOG_ERR << fname << "cmd <" << cmd << "> killed due to timeout";
@@ -234,7 +234,7 @@ void DockerProcess::containerId(std::string containerId)
 	m_containerId = containerId;
 }
 
-int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile)
+int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const std::string &stdinFileContent)
 {
 	const static char fname[] = "DockerProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";

@@ -492,8 +492,8 @@ void RestHandler::apiDeleteApp(const HttpRequest &message)
 	auto path = GET_STD_STRING(message.relative_uri().path());
 
 	std::string appName = path.substr(strlen("/appmesh/app/"));
-	if (Configuration::instance()->isSystemInternalApp(appName))
-		throw std::invalid_argument("not allowed for internal and cluster application");
+	if (Configuration::instance()->getApp(appName)->isCloudApp())
+		throw std::invalid_argument("not allowed for cloud application");
 
 	checkAppAccessPermission(message, appName, true);
 
@@ -1181,9 +1181,9 @@ void RestHandler::apiRegApp(const HttpRequest &message)
 			jsonApp[JSON_KEY_APP_initial_application_only] = web::json::value::boolean(true);
 		}
 	}
-	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->isSystemInternalApp(appName))
+	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->getApp(appName)->isCloudApp())
 	{
-		throw std::invalid_argument("not allowed for internal and cluster application");
+		throw std::invalid_argument("not allowed override cloud application");
 	}
 	if (Configuration::instance()->isAppExist(appName))
 	{
