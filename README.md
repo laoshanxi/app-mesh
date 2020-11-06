@@ -16,7 +16,7 @@ App Mesh is similar with Kubernetes but much light weight, support both containe
 Scope  | Behavior
 ---|---
 Support applications | Long running <br> Short running <br> Periodic long running
-Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
+Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define pipe input string data <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/master/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) <br> Multi-tenant support 
 Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/master/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/master/doc/Loki.md) <br> REST service with IPv6 support 
 Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md) 

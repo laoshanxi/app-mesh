@@ -24,6 +24,9 @@
 #include "../common/os/linux.hpp"
 #include "../common/Utility.h"
 #include "../common/PerfLog.h"
+#ifndef NDEBUG
+#include "../common/Valgrind.h"
+#endif
 
 std::set<std::shared_ptr<RestHandler>> m_restList;
 
@@ -31,6 +34,10 @@ int main(int argc, char *argv[])
 {
 	const static char fname[] = "main() ";
 	PRINT_VERSION();
+#ifndef NDEBUG
+	// enable valgrind in debug mode
+	VALGRIND_ENTRYPOINT_ONE_TIME(argv);
+#endif
 
 	try
 	{
