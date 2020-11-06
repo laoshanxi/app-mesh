@@ -320,7 +320,7 @@ void ArgumentParser::processReg()
 	desc.add_options()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
-		("metadata,g", po::value<std::string>(), "application metadata string (input for application, pass to application process stdin)")
+		("metadata,g", po::value<std::string>(), "metadata string (input for application, pass to process stdin), '@' allowed to read from file")
 		("perm", po::value<int>(), "application user permission, value = [group & other], each can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("shell_mode,S", "cmd can be more commands in shell mode")
@@ -395,7 +395,22 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("status"))
 		jsobObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
-		jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>());
+	{
+		auto metaData = m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>();
+		if (metaData.length())
+		{
+			if (metaData[0] == '@')
+			{
+				auto fileName = metaData.substr(1);
+				if (!Utility::isFileExist(fileName))
+				{
+					throw std::invalid_argument(Utility::stringFormat("input file %s does not exist", fileName.c_str()));
+				}
+				metaData = Utility::readFile(fileName);
+			}
+			jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(metaData);
+		}
+	}
 	if (m_commandLineVariables.count("docker_image"))
 		jsobObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
 	if (m_commandLineVariables.count("timezone"))
@@ -646,8 +661,23 @@ void ArgumentParser::processRun()
 	web::json::value jsobObj;
 	jsobObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	jsobObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	if (m_commandLineVariables.count("metadata"))
-		jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(m_commandLineVariables["metadata"].as<std::string>());
+	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
+	{
+		auto metaData = m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>();
+		if (metaData.length())
+		{
+			if (metaData[0] == '@')
+			{
+				auto fileName = metaData.substr(1);
+				if (!Utility::isFileExist(fileName))
+				{
+					throw std::invalid_argument(Utility::stringFormat("input file %s does not exist", fileName.c_str()));
+				}
+				metaData = Utility::readFile(fileName);
+			}
+			jsobObj[JSON_KEY_APP_metadata] = web::json::value::string(metaData);
+		}
+	}
 	if (m_commandLineVariables.count("workdir"))
 		jsobObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
