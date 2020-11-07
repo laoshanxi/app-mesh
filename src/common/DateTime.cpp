@@ -154,22 +154,32 @@ std::string DateTime::formatRFC3339Time(const std::chrono::system_clock::time_po
 
 std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_point &time, const char *fmt)
 {
-	struct tm local_tm = {0};
-	auto timeT = std::chrono::system_clock::to_time_t(time);
-	ACE_OS::localtime_r(&timeT, &local_tm);
-	boost::gregorian::date target_date(local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
-	boost::posix_time::time_duration target_duration(local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
-	boost::local_time::local_date_time localDateTime(target_date, target_duration, LOCAL_POSIX_ZONE, boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
-	if (OUTPUT_POSIX_ZONE && OUTPUT_POSIX_ZONE != LOCAL_POSIX_ZONE && OUTPUT_POSIX_ZONE->base_utc_offset() != LOCAL_POSIX_ZONE->base_utc_offset())
-	{
-		localDateTime = localDateTime.local_time_in(OUTPUT_POSIX_ZONE);
-	}
+	const static char fname[] = "DateTime::formatLocalTime() ";
 
-	std::ostringstream oss;
-	oss.exceptions(std::ios_base::failbit);
-	oss.imbue(std::locale(std::locale::classic(), new boost::local_time::local_time_facet(fmt)));
-	oss << localDateTime;
-	return std::move(reducePosixZone(oss.str()));
+	try
+	{
+		struct tm local_tm = {0};
+		auto timeT = std::chrono::system_clock::to_time_t(time);
+		ACE_OS::localtime_r(&timeT, &local_tm);
+		boost::gregorian::date target_date(local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
+		boost::posix_time::time_duration target_duration(local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
+		boost::local_time::local_date_time localDateTime(target_date, target_duration, LOCAL_POSIX_ZONE, boost::local_time::local_date_time::NOT_DATE_TIME_ON_ERROR);
+		if (OUTPUT_POSIX_ZONE && OUTPUT_POSIX_ZONE != LOCAL_POSIX_ZONE && OUTPUT_POSIX_ZONE->base_utc_offset() != LOCAL_POSIX_ZONE->base_utc_offset())
+		{
+			localDateTime = localDateTime.local_time_in(OUTPUT_POSIX_ZONE);
+		}
+
+		std::ostringstream oss;
+		oss.exceptions(std::ios_base::failbit);
+		oss.imbue(std::locale(std::locale::classic(), new boost::local_time::local_time_facet(fmt)));
+		oss << localDateTime;
+		return std::move(reducePosixZone(oss.str()));
+	}
+	catch (const std::exception &e)
+	{
+		LOG_ERR << fname << "format <" << std::chrono::system_clock::to_time_t(time) << "> with fmt <" << fmt << "> failed with error: " << e.what();
+	}
+	return std::string();
 }
 
 std::string DateTime::getISO8601TimeZone(const std::string &strTime)
@@ -181,10 +191,10 @@ std::string DateTime::getISO8601TimeZone(const std::string &strTime)
 		{
 		case '-':
 		case '+':
-			return std::move(strTime.substr(i));// found zone string
+			return std::move(strTime.substr(i)); // found zone string
 		case ' ':
 		case 'T':
-			return std::string(); 				// not found zone string
+			return std::string(); // not found zone string
 		default:
 			break;
 		}
