@@ -354,7 +354,6 @@ bool Configuration::getSslEnabled() const
 
 bool Configuration::getEncryptKey()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return getSecurity()->m_encryptKey;
 }
 
@@ -378,8 +377,7 @@ bool Configuration::getRestEnabled() const
 
 bool Configuration::getJwtEnabled() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_restEnabled;
+	return getSecurity()->m_jwtEnabled;
 }
 
 const std::size_t Configuration::getThreadPoolSize() const

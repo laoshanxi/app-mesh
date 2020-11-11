@@ -4,6 +4,12 @@
 
 App Mesh can deploy with multiple ways, generally, App Mesh run on a host as a daemon service managed by native systemd or docker container.
 
+### Quick install by docker container
+Start App Mesh daemon docker container with 4g memory limited:
+```
+docker run -d --memory=8g --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
+```
+
 ### Native installation
 Install App Mesh as standalone mode on local node without GUI service by release packages.
 

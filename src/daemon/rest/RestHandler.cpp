@@ -945,24 +945,11 @@ void RestHandler::apiLogin(const HttpRequest &message)
 	{
 		auto uname = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_username)->second));
 		auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_password)->second));
-		int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 1 hour
+		int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 7 days
 		if (message.headers().has(HTTP_HEADER_JWT_expire_seconds))
 		{
 			auto timeout = message.headers().find(HTTP_HEADER_JWT_expire_seconds)->second;
-			auto timeoutValue = std::stoi(timeout);
-			// timeout should less than 24h for none-admin user
-			if (uname != JWT_ADMIN_NAME)
-			{
-				if (timeoutValue <= MAX_TOKEN_EXPIRE_SECONDS)
-				{
-					timeoutSeconds = timeoutValue;
-					LOG_WAR << fname << "User <" << uname << "> login ExpireSeconds was set from " << timeout << "to " << timeoutValue;
-				}
-				else
-				{
-					throw std::invalid_argument("ExpireSeconds should less than 30 days");
-				}
-			}
+			timeoutSeconds = std::stoi(timeout);
 		}
 
 		if (Configuration::instance()->getEncryptKey())
