@@ -1,4 +1,5 @@
 #include <set>
+#include <unistd.h> //environ
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
 
@@ -18,6 +19,7 @@
 #include "../common/Utility.h"
 #include "../common/DateTime.h"
 
+extern char **environ; // unistd.h
 // from main.cpp
 extern std::set<std::shared_ptr<RestHandler>> m_restList;
 
@@ -47,12 +49,17 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 	m_instance = config;
 }
 
-std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str)
+std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, bool applyEnv)
 {
 	web::json::value jsonValue;
 	try
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(str));
+		if (applyEnv)
+		{
+			// Only the first time read from ENV
+			Configuration::readConfigFromEnv(jsonValue);
+		}
 	}
 	catch (const std::exception &e)
 	{
@@ -709,6 +716,111 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 
 	this->dump();
 	ResourceCollection::instance()->dump();
+}
+
+void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
+{
+	const static char fname[] = "Configuration::readConfigFromEnv() ";
+
+	// environment "APPMESH_LogLevel=INFO" can override main configuration
+	// environment "APPMESH_Security_JWTEnabled=false" can override Security configuration
+
+	for (char **var = environ; *var != nullptr; var++)
+	{
+		std::string env = *var;
+		auto pos = env.find('=');
+		if (Utility::startWith(env, ENV_APPMESH_PREFIX) && (pos != std::string::npos))
+		{
+			auto envKey = env.substr(0, pos);
+			auto envVal = env.substr(pos + 1);
+			auto keys = Utility::splitString(envKey, "_");
+			if (keys.size() == 2)
+			{
+				auto keyLevel1 = keys[1];
+				if (jsonConfig.has_field(keyLevel1))
+				{
+					if (applyEnvConfig(jsonConfig.at(keyLevel1), envVal))
+					{
+						LOG_INF << fname << "config: " << envKey << " override to: " << envVal;
+					}
+					else
+					{
+						LOG_WAR << fname << "config: " << envKey << " override to: " << envVal << " failed";
+					}
+				}
+			}
+			else if (keys.size() == 3)
+			{
+				auto keyLevel1 = keys[1];
+				auto keyLevel2 = keys[2];
+				if (jsonConfig.has_field(keyLevel1) && jsonConfig.at(keyLevel1).has_field(keyLevel2))
+				{
+					if (applyEnvConfig(jsonConfig.at(keyLevel1).at(keyLevel2), envVal))
+					{
+						LOG_INF << fname << "config: " << envKey << " override to: " << envVal;
+					}
+					else
+					{
+						LOG_WAR << fname << "config: " << envKey << " override to: " << envVal << " failed";
+					}
+				}
+			}
+			else if (keys.size() == 4)
+			{
+				auto keyLevel1 = keys[1];
+				auto keyLevel2 = keys[2];
+				auto keyLevel3 = keys[3];
+				if (jsonConfig.has_field(keyLevel1) && jsonConfig.at(keyLevel1).has_field(keyLevel2) && jsonConfig.at(keyLevel1).at(keyLevel2).has_field(keyLevel3))
+				{
+					if (applyEnvConfig(jsonConfig.at(keyLevel1).at(keyLevel2).at(keyLevel3), envVal))
+					{
+						LOG_INF << fname << "config: " << envKey << " override to: " << envVal;
+					}
+					else
+					{
+						LOG_WAR << fname << "config: " << envKey << " override to: " << envVal << " failed";
+					}
+				}
+			}
+			else
+			{
+				LOG_WAR << fname << "invalid config env: " << env;
+			}
+		}
+	}
+}
+bool Configuration::applyEnvConfig(web::json::value &jsonValue, std::string envValue)
+{
+	const static char fname[] = "Configuration::applyEnvConfig() ";
+
+	if (jsonValue.is_string())
+	{
+		jsonValue = web::json::value::string(envValue);
+		return true;
+	}
+	else if (jsonValue.is_integer())
+	{
+		jsonValue = web::json::value::number(std::stoi(envValue));
+		return true;
+	}
+	else if (jsonValue.is_boolean())
+	{
+		if (Utility::isNumber(envValue))
+		{
+			jsonValue = web::json::value::boolean(envValue != "0");
+			return true;
+		}
+		else
+		{
+			jsonValue = web::json::value::boolean(envValue != "false");
+			return true;
+		}
+	}
+	else
+	{
+		LOG_WAR << fname << "JSON value type not supported";
+	}
+	return false;
 }
 
 void Configuration::registerPrometheus()

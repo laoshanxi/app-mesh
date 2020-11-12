@@ -797,7 +797,7 @@ void ArgumentParser::processExec()
 
 	// Get current ENV
 	web::json::value objEnvs = web::json::value::object();
-	for (char **var = environ; *var != NULL; var++)
+	for (char **var = environ; *var != nullptr; var++)
 	{
 		std::string e = *var;
 		auto vec = Utility::splitString(e, "=");

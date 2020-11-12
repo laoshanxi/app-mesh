@@ -83,11 +83,13 @@ public:
 	static std::string readConfiguration();
 	static void handleSignal();
 
-	static std::shared_ptr<Configuration> FromJson(const std::string &str) noexcept(false);
+	static std::shared_ptr<Configuration> FromJson(const std::string &str, bool applyEnv = false) noexcept(false);
 	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user);
 	void deSerializeApp(const web::json::value &jsonObj);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value &config);
+	static void readConfigFromEnv(web::json::value &jsonConfig);
+	static bool applyEnvConfig(web::json::value& jsonValue, std::string envValue);
 	void registerPrometheus();
 
 	std::vector<std::shared_ptr<Application>> getApps() const;

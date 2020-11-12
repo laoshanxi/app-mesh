@@ -157,6 +157,7 @@ public:
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
+#define ENV_APPMESH_PREFIX "APPMESH_"
 #define DATE_TIME_FORMAT "%Y-%m-%dT%H:%M:%S"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10				// run app default timeout

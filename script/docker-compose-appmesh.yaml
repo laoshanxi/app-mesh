@@ -21,6 +21,9 @@ services:
   appmesh:
     restart: always
     image: laoshanxi/appmesh
+    environment:
+      APPMESH_Consul_url: https://127.0.0.1
+      # APPMESH_Consul_url: http://localhost:8500
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/appmesh/work:/opt/appmesh/work

@@ -99,8 +99,7 @@
   "Consul": {
     "is_main": true,
     "is_node": true,
-    "url": "https://127.0.0.1",
-    "url_example": "http://localhost:8500",
+    "url": null,
     "appmesh_proxy_url": null,
     "datacenter": "dc1",
     "session_TTL": 30,

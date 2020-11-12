@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
 
 		// get configuration
 		const auto configTxt = Configuration::readConfiguration();
-		auto config = Configuration::FromJson(configTxt);
+		auto config = Configuration::FromJson(configTxt, true);
 		Configuration::instance(config);
 		auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
 		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))

@@ -110,5 +110,19 @@ TEST_CASE("Utility Test", "[Utility]")
         REQUIRE(Utility::isNumber("-012"));
     }
 
+    SECTION("string split function test")
+    {
+        std::string env = "APPMESH_Consul_url=https://127.0.0.1";
+        auto pos = env.find('=');
+        if (Utility::startWith(env, ENV_APPMESH_PREFIX) && (pos != std::string::npos))
+        {
+            LOG_INF << "pos:" << pos;
+            auto envKey = env.substr(0, pos);
+            REQUIRE(envKey == "APPMESH_Consul_url");
+            auto envVal = env.substr(pos + 1);
+            REQUIRE(envVal == "https://127.0.0.1");
+            auto keys = Utility::splitString(envKey, "_");
+        }
+    }
     // teardown
 }
