@@ -262,7 +262,7 @@ void RestHandler::handleRest(const http_request &message, const std::map<std::st
 	}
 	catch (const std::exception &e)
 	{
-		LOG_WAR << fname << "rest " << path << " failed :" << e.what();
+		LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
 		request.reply(web::http::status_codes::BadRequest, e.what());
 	}
 	catch (...)
@@ -276,7 +276,7 @@ void RestHandler::bindRestMethod(web::http::method method, std::string path, std
 {
 	static char fname[] = "RestHandler::bindRest() ";
 
-	LOG_DBG << fname << "bind " << GET_STD_STRING(method).c_str() << " " << path;
+	LOG_DBG << fname << "bind " << GET_STD_STRING(method).c_str() << " for " << path;
 
 	// bind to map
 	if (method == web::http::methods::GET)
@@ -498,8 +498,7 @@ void RestHandler::apiDeleteApp(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->removeApp(appName);
-	auto msg = std::string("application <") + appName + "> removed.";
-	message.reply(status_codes::OK, msg);
+	message.reply(status_codes::OK, Utility::stringFormat("Application <%s> removed.", appName.c_str()));
 }
 
 void RestHandler::apiFileDownload(const HttpRequest &message)
@@ -508,7 +507,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "FilePath header not found");
+		message.reply(status_codes::BadRequest, "header 'FilePath' not found");
 		return;
 	}
 	auto file = GET_STD_STRING(message.headers().find(HTTP_HEADER_KEY_file_path)->second);
@@ -553,7 +552,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "FilePath header not found");
+		message.reply(status_codes::BadRequest, "header 'FilePath' not found");
 		return;
 	}
 	auto file = GET_STD_STRING(message.headers().find(U(HTTP_HEADER_KEY_file_path))->second);
@@ -737,7 +736,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 
 	if (pathUserName == JWT_ADMIN_NAME)
 	{
-		throw std::invalid_argument("admin user can not be locked");
+		throw std::invalid_argument("User admin can not be locked");
 	}
 
 	Configuration::instance()->getUserInfo(pathUserName)->lock();
@@ -1035,7 +1034,7 @@ std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest &mess
 		{
 			auto app = Configuration::instance()->getApp(clientProvideAppName);
 			if (app->isWorkingState())
-				throw std::invalid_argument("should not override a working app");
+				throw std::invalid_argument("Should not override an application in working status");
 		}
 	}
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
@@ -1111,7 +1110,7 @@ void RestHandler::apiRunAsyncOut(const HttpRequest &message)
 	else
 	{
 		LOG_DBG << fname << "process_uuid is required for get run output";
-		throw std::invalid_argument("process_uuid is required for get run output");
+		throw std::invalid_argument("Query parameter 'process_uuid' is required to get run output");
 	}
 }
 
@@ -1155,7 +1154,7 @@ void RestHandler::apiRegApp(const HttpRequest &message)
 	auto jsonApp = message.extract_json(true).get();
 	if (jsonApp.is_null())
 	{
-		throw std::invalid_argument("invalid json format");
+		throw std::invalid_argument("Empty json input");
 	}
 	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	auto initCmd = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command);
@@ -1170,7 +1169,7 @@ void RestHandler::apiRegApp(const HttpRequest &message)
 	}
 	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->getApp(appName)->isCloudApp())
 	{
-		throw std::invalid_argument("not allowed override cloud application");
+		throw std::invalid_argument("Cloud Application is not allowed to override");
 	}
 	if (Configuration::instance()->isAppExist(appName))
 	{

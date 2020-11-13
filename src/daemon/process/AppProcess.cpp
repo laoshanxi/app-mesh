@@ -213,7 +213,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair) {
 		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-		LOG_DBG << "spawnProcess env: " << pair.first.c_str() << "=" << pair.second.c_str();
+		LOG_DBG << fname << "spawnProcess env: " << pair.first.c_str() << "=" << pair.second.c_str();
 	});
 	option.release_handles();
 	// clean if necessary
@@ -228,7 +228,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		if (stdoutFile.length())
 		{
 			m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
-			LOG_DBG << "std_out: " << stdoutFile;
+			LOG_DBG << fname << "std_out: " << stdoutFile;
 		}
 		if (stdinFileContent.length() && stdinFileContent != JSON_KEY_APP_CLOUD_APP)
 		{
@@ -238,7 +238,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			inputFile.close();
 			assert(Utility::isFileExist(m_stdinFileName));
 			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY);
-			LOG_DBG << "std_in: " << m_stdinFileName << " : " << stdinFileContent;
+			LOG_DBG << fname << "std_in: " << m_stdinFileName << " : " << stdinFileContent;
 		}
 		option.set_handles(m_stdinHandler, m_stdoutHandler, m_stdoutHandler);
 	}

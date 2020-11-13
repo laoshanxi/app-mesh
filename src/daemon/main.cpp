@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 		{
 			// Thread pool: 6 threads
 			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
-			LOG_INF << fname << "initialize_with_threads:" << config->getThreadPoolSize();
+			LOG_INF << fname << "REST thread pool size:" << config->getThreadPoolSize();
 
 			// Init Prometheus Exporter
 			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
 		}
 		catch (...)
 		{
-			LOG_ERR << "recover snapshot failed with error " << std::strerror(errno);
+			LOG_ERR << "Recover from snapshot failed with error " << std::strerror(errno);
 		}
 		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p) {
 			if (snap && snap->m_apps.count(p->getName()))

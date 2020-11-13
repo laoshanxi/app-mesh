@@ -86,7 +86,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	unsigned int gid, uid;
 	if (!Utility::getUid(config->m_defaultExecUser, uid, gid))
 	{
-		LOG_ERR << "no such OS user : " << config->m_defaultExecUser;
+		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
 		throw std::invalid_argument(Utility::stringFormat("No such OS user found <%s>", config->m_defaultExecUser.c_str()));
 	}
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
@@ -132,7 +132,8 @@ std::string Configuration::readConfiguration()
 void SigHupHandler(int signo)
 {
 	const static char fname[] = "SigHupHandler() ";
-	LOG_INF << fname << "Singal :" << signo;
+
+	LOG_INF << fname << "Handle singal :" << signo;
 	auto config = Configuration::instance();
 	if (config != nullptr)
 	{
@@ -235,24 +236,6 @@ int Configuration::getRestListenPort()
 {
 	const static char fname[] = "Configuration::getRestListenPort() ";
 
-	static const std::string envStr = ::getenv(ENV_APP_MANAGER_LISTEN_PORT) ? ::getenv(ENV_APP_MANAGER_LISTEN_PORT) : "";
-	if (envStr.length())
-	{
-		static int overrideListenPortValue = 0;
-		if (!overrideListenPortValue)
-		{
-			if (Utility::isNumber(envStr))
-			{
-				overrideListenPortValue = std::stoi(envStr);
-				LOG_INF << fname << ENV_APP_MANAGER_LISTEN_PORT << "=" << overrideListenPortValue;
-				return overrideListenPortValue;
-			}
-			else
-			{
-				LOG_WAR << fname << ENV_APP_MANAGER_LISTEN_PORT << " is not a number: " << envStr << ", config value will be used";
-			}
-		}
-	}
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restListenPort;
 }
@@ -741,11 +724,11 @@ void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
 				{
 					if (applyEnvConfig(jsonConfig.at(keyLevel1), envVal))
 					{
-						LOG_INF << fname << "config: " << envKey << " override to: " << envVal;
+						LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
 					}
 					else
 					{
-						LOG_WAR << fname << "config: " << envKey << " override to: " << envVal << " failed";
+						LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
 					}
 				}
 			}
@@ -757,11 +740,11 @@ void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
 				{
 					if (applyEnvConfig(jsonConfig.at(keyLevel1).at(keyLevel2), envVal))
 					{
-						LOG_INF << fname << "config: " << envKey << " override to: " << envVal;
+						LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
 					}
 					else
 					{
-						LOG_WAR << fname << "config: " << envKey << " override to: " << envVal << " failed";
+						LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
 					}
 				}
 			}
@@ -774,17 +757,17 @@ void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
 				{
 					if (applyEnvConfig(jsonConfig.at(keyLevel1).at(keyLevel2).at(keyLevel3), envVal))
 					{
-						LOG_INF << fname << "config: " << envKey << " override to: " << envVal;
+						LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
 					}
 					else
 					{
-						LOG_WAR << fname << "config: " << envKey << " override to: " << envVal << " failed";
+						LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
 					}
 				}
 			}
 			else
 			{
-				LOG_WAR << fname << "invalid config env: " << env;
+				LOG_WAR << fname << "Invalid configuration environment: " << env;
 			}
 		}
 	}
@@ -818,7 +801,7 @@ bool Configuration::applyEnvConfig(web::json::value &jsonValue, std::string envV
 	}
 	else
 	{
-		LOG_WAR << fname << "JSON value type not supported";
+		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.serialize();
 	}
 	return false;
 }
