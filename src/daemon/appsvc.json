@@ -4,7 +4,7 @@
   "LogLevel": "DEBUG",
   "DefaultExecUser": "root",
   "WorkingDirectory": "",
-  "TimeFormatPosixZone": null,
+  "TimeFormatPosixZone": "",
   "REST": {
     "RestEnabled": true,
     "HttpThreadPoolSize": 6,
@@ -99,8 +99,8 @@
   "Consul": {
     "is_main": true,
     "is_node": true,
-    "url": null,
-    "appmesh_proxy_url": null,
+    "url": "",
+    "appmesh_proxy_url": "",
     "datacenter": "dc1",
     "session_TTL": 30,
     "enable_consul_security": false

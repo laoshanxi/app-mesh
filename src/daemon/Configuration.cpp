@@ -234,8 +234,6 @@ int Configuration::getScheduleInterval()
 
 int Configuration::getRestListenPort()
 {
-	const static char fname[] = "Configuration::getRestListenPort() ";
-
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restListenPort;
 }
@@ -717,57 +715,31 @@ void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
 			auto envKey = env.substr(0, pos);
 			auto envVal = env.substr(pos + 1);
 			auto keys = Utility::splitString(envKey, "_");
-			if (keys.size() == 2)
+			web::json::value *json = &jsonConfig;
+			for (size_t i = 1; i < keys.size(); i++)
 			{
-				auto keyLevel1 = keys[1];
-				if (jsonConfig.has_field(keyLevel1))
+				auto jsonKey = keys[i];
+				if (json->has_field(jsonKey))
 				{
-					if (applyEnvConfig(jsonConfig.at(keyLevel1), envVal))
+					// find the last level
+					if (i == (keys.size() - 1))
 					{
-						LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
+						// override json value
+						if (applyEnvConfig(json->at(jsonKey), envVal))
+						{
+							LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
+						}
+						else
+						{
+							LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
+						}
 					}
 					else
 					{
-						LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
+						// switch to next level
+						json = &(json->at(jsonKey));
 					}
 				}
-			}
-			else if (keys.size() == 3)
-			{
-				auto keyLevel1 = keys[1];
-				auto keyLevel2 = keys[2];
-				if (jsonConfig.has_field(keyLevel1) && jsonConfig.at(keyLevel1).has_field(keyLevel2))
-				{
-					if (applyEnvConfig(jsonConfig.at(keyLevel1).at(keyLevel2), envVal))
-					{
-						LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
-					}
-					else
-					{
-						LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
-					}
-				}
-			}
-			else if (keys.size() == 4)
-			{
-				auto keyLevel1 = keys[1];
-				auto keyLevel2 = keys[2];
-				auto keyLevel3 = keys[3];
-				if (jsonConfig.has_field(keyLevel1) && jsonConfig.at(keyLevel1).has_field(keyLevel2) && jsonConfig.at(keyLevel1).at(keyLevel2).has_field(keyLevel3))
-				{
-					if (applyEnvConfig(jsonConfig.at(keyLevel1).at(keyLevel2).at(keyLevel3), envVal))
-					{
-						LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
-					}
-					else
-					{
-						LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
-					}
-				}
-			}
-			else
-			{
-				LOG_WAR << fname << "Invalid configuration environment: " << env;
 			}
 		}
 	}

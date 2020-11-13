@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.11)
-string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M")
+string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ")
 
 ##########################################################################
 # project
@@ -13,7 +13,9 @@ project(appmesh LANGUAGES CXX VERSION 1.8.5)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-add_compile_options(-DBUILD_TAG=${CMAKE_PROJECT_NAME}-${CMAKE_PROJECT_VERSION}-${APPMESH_BUILD_DATE})
+set(BUILD_TAG ${PROJECT_NAME}-${PROJECT_VERSION}-${APPMESH_BUILD_DATE})
+add_compile_options(-DBUILD_TAG=${BUILD_TAG})
+message(BUILD_TAG=${BUILD_TAG})
 
 ##########################################################################
 # debug / release
@@ -109,7 +111,7 @@ endif()
 add_custom_target(pack
     COMMENT "Packing ${CMAKE_CURRENT_BINARY_DIR}"
     COMMAND make install
-    COMMAND ${CMAKE_COMMAND} -E env PROJECT_NAME=${CMAKE_PROJECT_NAME} PROJECT_VERSION=${CMAKE_PROJECT_VERSION} CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} CMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} sh ${CMAKE_CURRENT_SOURCE_DIR}/script/build_package.sh
+    COMMAND ${CMAKE_COMMAND} -E env PROJECT_NAME=${PROJECT_NAME} PROJECT_VERSION=${PROJECT_VERSION} CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} CMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} sh ${CMAKE_CURRENT_SOURCE_DIR}/script/build_package.sh
     WORKING_DIRECTORY ${CMAKE_PROJECT_DIR}
     DEPENDS appc appsvc
 )
