@@ -759,7 +759,7 @@ void SIGINT_Handler(int signo)
 		//std::cout << "You pressed SIGINT(Ctrl+C)" << std::endl;
 		SIGINIT_BREAKING = true;
 		auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME).append("/disable");
-		auto response = WORK_PARSE->requestHttp(false, methods::POST, restPath);
+		WORK_PARSE->requestHttp(false, methods::POST, restPath);
 	}
 }
 

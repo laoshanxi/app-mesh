@@ -83,7 +83,7 @@ void Users::addUsers(const web::json::value &obj, std::shared_ptr<Roles> roles)
 	}
 }
 
-std::shared_ptr<User> Users::addUser(const std::string userName, const web::json::value &userJson, std::shared_ptr<Roles> roles)
+std::shared_ptr<User> Users::addUser(const std::string &userName, const web::json::value &userJson, std::shared_ptr<Roles> roles)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = User::FromJson(userName, userJson, roles);

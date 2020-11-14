@@ -51,7 +51,7 @@ web::json::value ApplicationUnInitia::AsJson(bool returnRuntimeInfo)
 	// override status
 	if (returnRuntimeInfo)
 	{
-		result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::UNINITIALIZING));
+		result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::UNINITIALIZED));
 	}
 	return result;
 }

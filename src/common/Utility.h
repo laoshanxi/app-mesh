@@ -131,7 +131,7 @@ public:
 	static std::string humanReadableSize(long double bytesSize);
 	static std::string prettyJson(const std::string &jsonStr);
 	static std::string hash(const std::string &str);
-	static std::string stringFormat(const std::string fmt_str, ...);
+	static std::string stringFormat(const std::string &fmt_str, ...);
 
 	static void initLogging();
 	static bool setLogLevel(const std::string &level);

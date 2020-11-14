@@ -76,10 +76,7 @@ const std::string AppLogFile::getFileName() const
 {
 	if (m_index)
 	{
-		std::string file = m_fileName;
-		if (m_index)
-			file = Utility::stringFormat("%s.%d", m_fileName.c_str(), m_index);
-		return file;
+		return Utility::stringFormat("%s.%d", m_fileName.c_str(), m_index);
 	}
 	else
 	{
@@ -88,14 +85,14 @@ const std::string AppLogFile::getFileName() const
 }
 
 LogFileQueue::LogFileQueue(std::string baseFileName, int queueSize)
-	: baseFileName(baseFileName), m_ququeSize(queueSize + 1)
+	: baseFileName(baseFileName), m_queueSize(queueSize + 1)
 {
 }
 
 LogFileQueue::~LogFileQueue()
 {
 	// double check and remove file
-	for (int i = 0; i < m_ququeSize; i++)
+	for (int i = 0; i < m_queueSize; i++)
 	{
 		AppLogFile autoDeleteFile(baseFileName, i);
 	}
@@ -109,7 +106,7 @@ void LogFileQueue::enqueue()
 		(*it)->increaseIndex();
 	}
 	// pop last
-	if (this->size() >= m_ququeSize)
+	if (this->size() >= m_queueSize)
 	{
 		m_fileQueue.pop_back();
 	}

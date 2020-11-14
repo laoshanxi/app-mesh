@@ -13,8 +13,8 @@
 /// HA for app process recover
 //////////////////////////////////////////////////////////////////////////
 PersistManager::PersistManager()
+	: m_persistedSnapshot(std::make_shared<Snapshot>())
 {
-	m_persistedSnapshot = std::make_shared<Snapshot>();
 }
 
 PersistManager::~PersistManager()

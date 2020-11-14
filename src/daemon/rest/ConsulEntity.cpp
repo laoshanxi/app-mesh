@@ -30,9 +30,8 @@ web::json::value ConsulStatus::AsJson() const
 }
 
 ConsulTask::ConsulTask()
-	: m_replication(0), m_priority(0), m_consulServicePort(0)
+	: m_replication(0), m_condition(std::make_shared<Label>()), m_priority(0), m_consulServicePort(0)
 {
-	m_condition = std::make_shared<Label>();
 }
 
 std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value &jsonObj)

@@ -404,14 +404,14 @@ std::string Utility::runShellCommand(std::string cmd)
 {
 	const static char fname[] = "Utility::runShellCommand() ";
 
-	constexpr int LINE_LENGTH = 300;
-	char line[LINE_LENGTH];
 	std::stringstream stdoutMsg;
 	cmd += " 2>&1"; // include stderr
 	FILE *fp = popen(cmd.c_str(), "r");
 	LOG_INF << fname << cmd;
 	if (fp)
 	{
+		constexpr int LINE_LENGTH = 300;
+		char line[LINE_LENGTH];
 		std::queue<std::string> msgQueue;
 		while (fgets(line, LINE_LENGTH, fp) != nullptr)
 		{
@@ -645,7 +645,7 @@ std::string Utility::hash(const std::string &str)
 	return std::move(std::to_string(std::hash<std::string>()(str)));
 }
 
-std::string Utility::stringFormat(const std::string fmt_str, ...)
+std::string Utility::stringFormat(const std::string &fmt_str, ...)
 {
 	// https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
 	int final_n, n = ((int)fmt_str.size()) * 2; /* Reserve two times as much as the length of the fmt_str */

@@ -74,7 +74,7 @@ public:
 
 	// manage users
 	void addUsers(const web::json::value &obj, std::shared_ptr<Roles> roles);
-	std::shared_ptr<User> addUser(const std::string userName, const web::json::value &userJson, std::shared_ptr<Roles> roles);
+	std::shared_ptr<User> addUser(const std::string &userName, const web::json::value &userJson, std::shared_ptr<Roles> roles);
 	void delUser(const std::string &name);
 
 private:

@@ -42,7 +42,7 @@ public:
 private:
 	std::vector<std::shared_ptr<AppLogFile>> m_fileQueue;
 	const std::string baseFileName;
-	const int m_ququeSize;
+	const int m_queueSize;
 };
 
 enum class STATUS : int
@@ -51,7 +51,7 @@ enum class STATUS : int
 	ENABLED,
 	NOTAVIALABLE, // used for temp app from RestHandler::apiRunParseApp and destroyed app
 	INITIALIZING,
-	UNINITIALIZING
+	UNINITIALIZED
 };
 
 enum class PERMISSION : int
