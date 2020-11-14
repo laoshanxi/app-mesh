@@ -958,11 +958,11 @@ void RestHandler::apiLogin(const HttpRequest &message)
 		web::json::value result = web::json::value::object();
 		web::json::value profile = web::json::value::object();
 		profile[GET_STRING_T("name")] = web::json::value::string(uname);
-		profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count());
+		profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 		result[GET_STRING_T("profile")] = profile;
 		result[GET_STRING_T("token_type")] = web::json::value::string(HTTP_HEADER_JWT_Bearer);
 		result[HTTP_HEADER_JWT_access_token] = web::json::value::string(GET_STRING_T(token));
-		result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::now().time_since_epoch().count() + timeoutSeconds * 1000);
+		result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
 		result[GET_STRING_T("expire_seconds")] = web::json::value::number(timeoutSeconds);
 
 		auto userJson = Configuration::instance()->getUserInfo(uname);

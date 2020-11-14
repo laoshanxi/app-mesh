@@ -31,21 +31,22 @@ The REST will response bellow json when authentication success:
 
 ```json
 {
-    "AccessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1ODg5Mjc1MTgsImlhdCI6MTU4ODkyNzUxNiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6InVzZXIifQ.MRK0MH3hBw0ZbcIbSEtynFMkHSca2SYCCziX24VdT0w",
-    "expire_time": 1588927516172435071,
-    "profile": {
-        "auth_time": 1588927516172426859,
-        "name": "user"
-    },
-    "token_type": "Bearer"
+	"AccessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDU5MjA1NjQsImlhdCI6MTYwNTMxNTc2NCwiaXNzIjoiYXBwbWVzaC1hdXRoMCIsIm5hbWUiOiJhZG1pbiJ9.hPOGoU5cl8TexQKyUnKpSi4r9Hy0Vhi03A-mCyQfpXw",
+	"expire_seconds": 604800,
+	"expire_time": 1605920564,
+	"profile": {
+		"auth_time": 1605315764,
+		"name": "admin"
+	},
+	"token_type": "Bearer"
 }
 ```
 
 | response   |  desc   | 
 | --------   | -----  |
 | AccessToken     | JWT token content |
-| expire_time |  UTC time millisecond the token will expire, is the server time add the input ExpireSeconds| 
-| auth_time | the server UTC time millisecond |
+| expire_time |  UTC time (seconds) the token will expire, is the server time plus the input ExpireSeconds| 
+| auth_time | the server UTC time (seconds) |
 | token_type | JWT standard "Bearer" | 
 
 

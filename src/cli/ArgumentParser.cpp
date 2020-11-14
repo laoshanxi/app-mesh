@@ -218,7 +218,7 @@ void ArgumentParser::processLogon()
 	po::options_description desc("Log on to App Mesh:");
 	desc.add_options()
 		COMMON_OPTIONS
-		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in minutes.")
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in 'seconds' or 'ISO 8601 durations'.")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
