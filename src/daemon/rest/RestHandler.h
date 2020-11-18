@@ -32,7 +32,7 @@ private:
 	void handle_post(const HttpRequest &message);
 	void handle_delete(const HttpRequest &message);
 	void handle_options(const HttpRequest &message);
-	void handle_error(pplx::task<void> &t);
+	void handle_error(pplx::task<void> &t, const http_request &message);
 
 	std::string verifyToken(const HttpRequest &message);
 	std::string getTokenUser(const HttpRequest &message);
