@@ -713,7 +713,15 @@ void Application::regSuicideTimer(int timeoutSeconds)
 void Application::setLastError(const std::string &error)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_errorMutex);
-	m_lastError = Utility::stringFormat("%s %s", DateTime::formatISO8601Time(std::chrono::system_clock::now()).c_str(), error.c_str());
+	if (error.length())
+	{
+		m_lastError = Utility::stringFormat("%s %s", DateTime::formatISO8601Time(std::chrono::system_clock::now()).c_str(), error.c_str());
+	}
+	else
+	{
+		m_lastError.clear();
+	}
+	
 }
 
 const std::string Application::getLastError() const
