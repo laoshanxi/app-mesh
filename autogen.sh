@@ -63,7 +63,7 @@ fi
 #install fpm
 gem install fpm
 
-# build boost_1_69_0
+# build boost_1_74_0
 if [ true ]; then
 	# https://www.cnblogs.com/eagle6688/p/5840773.html
 	if [ -f "/usr/bin/yum" ]; then
@@ -71,13 +71,13 @@ if [ true ]; then
 	elif [ -f "/usr/bin/apt" ]; then
 		apt install -y python-dev
 	fi
-	wget --no-check-certificate https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz
-	tar zxvf boost_1_69_0.tar.gz
-	cd ./boost_1_69_0
+	wget --no-check-certificate https://dl.bintray.com/boostorg/release/1.74.0/source/boost_1_74_0.tar.gz
+	tar zxvf boost_1_74_0.tar.gz
+	cd ./boost_1_74_0
 	./bootstrap.sh
 	./b2
 	./b2 install
-	ls -al /usr/local/lib/libboost_system.so.1.69.0 /usr/local/include/boost/thread.hpp 
+	ls -al /usr/local/lib/libboost_system.so.1.74.0 /usr/local/include/boost/thread.hpp 
 	cd $ROOTDIR
 fi
 

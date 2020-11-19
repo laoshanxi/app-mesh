@@ -211,7 +211,7 @@ void Application::invoke()
 		{
 			if (!m_process->running())
 			{
-				LOG_INF << fname << "Starting application <" << m_name << ">.";
+				LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
 				m_process = allocProcess(0, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile, m_metadata);

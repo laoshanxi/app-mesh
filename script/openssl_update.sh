@@ -1,9 +1,11 @@
 #!/bin/sh
 ################################################################################
-## This Script file is used to update OS openssl version to 1.1.1g for
+## This Script file is used to update OS openssl version for
 ## CentOS 7.x and Ubuntu 16.04
 ################################################################################
 set -x
+OPEN_SSL_VERSION=openssl-1.1.1h
+
 mkdir -p ssl_build
 cd ssl_build
 if [ -f "/usr/bin/yum" ]; then
@@ -14,7 +16,7 @@ elif [ -f "/usr/bin/apt" ]; then
   apt-get -y install wget g++ make perl
   apt-get -y install zlib1g zlib1g-dev
 fi
-OPEN_SSL_VERSION=openssl-1.1.1h
+
 wget --no-check-certificate https://www.openssl.org/source/${OPEN_SSL_VERSION}.tar.gz
 tar zxvf ${OPEN_SSL_VERSION}.tar.gz
 cd ${OPEN_SSL_VERSION}
