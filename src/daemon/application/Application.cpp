@@ -265,8 +265,8 @@ void Application::enable()
 	if (m_status == STATUS::DISABLED)
 	{
 		m_status = STATUS::ENABLED;
-		invokeNow(0);
-		LOG_INF << fname << "Application <" << m_name << "> started.";
+		//invokeNow(0);
+		//LOG_INF << fname << "Application <" << m_name << "> started.";
 		handleEndTimer();
 	}
 	else if (!isWorkingState())
