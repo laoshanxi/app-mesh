@@ -150,7 +150,6 @@ public:
 	static std::string readFileCpp(const std::string &path);
 
 	static std::string createUUID();
-	static std::string runShellCommand(std::string cmd);
 };
 
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
@@ -161,7 +160,6 @@ public:
 #define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10				// run app default timeout
 #define MAX_RUN_APP_TIMEOUT_SECONDS 3 * (60 * 60 * 24)	// run app max timeout 3 days
-#define MAX_APP_CACHED_LINES 1024
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define DEFAULT_EXEC_USER "appmesh"

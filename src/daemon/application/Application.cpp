@@ -212,7 +212,7 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
-				m_process = allocProcess(0, m_dockerImage, m_name);
+				m_process = allocProcess(false, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile, m_metadata);
 				setLastError(m_process->startError());
@@ -277,20 +277,20 @@ void Application::enable()
 
 std::string Application::runAsyncrize(int timeoutSeconds)
 {
-	const static char fname[] = "Application::runSyncrize() ";
+	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << " Entered.";
 
-	m_process = allocProcess(0, m_dockerImage, m_name);
+	m_process = allocProcess(false, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
 }
 
 std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 {
-	const static char fname[] = "Application::runAsyncrize() ";
+	const static char fname[] = "Application::runSyncrize() ";
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	m_process = allocProcess(MAX_APP_CACHED_LINES, m_dockerImage, m_name);
+	m_process = allocProcess(true, m_dockerImage, m_name);
 	auto monitProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
 	assert(monitProc != nullptr);
 	monitProc->setAsyncHttpRequest(asyncHttpRequest);
@@ -583,24 +583,28 @@ void Application::dump()
 		m_resourceLimit->dump();
 }
 
-std::shared_ptr<AppProcess> Application::allocProcess(int cacheOutputLines, const std::string &dockerImage, const std::string &appName)
+std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName)
 {
 	std::shared_ptr<AppProcess> process;
 	m_stdoutFileQueue->enqueue();
+
+	// prepare shell mode script
+	if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
+	{
+		m_shellAppFile = nullptr;
+		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, m_workdir);
+	}
+
+	// alloc process object
 	if (dockerImage.length())
 	{
 		process.reset(new DockerProcess(dockerImage, appName));
 	}
 	else
 	{
-		if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
+		if (monitorProcess)
 		{
-			m_shellAppFile = nullptr;
-			m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, m_workdir);
-		}
-		if (cacheOutputLines > 0)
-		{
-			process.reset(new MonitoredProcess(cacheOutputLines));
+			process.reset(new MonitoredProcess());
 		}
 		else
 		{
@@ -721,7 +725,6 @@ void Application::setLastError(const std::string &error)
 	{
 		m_lastError.clear();
 	}
-	
 }
 
 const std::string Application::getLastError() const

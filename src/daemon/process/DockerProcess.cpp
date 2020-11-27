@@ -5,7 +5,6 @@
 #include "../../common/DateTime.h"
 #include "../../common/os/pstree.hpp"
 #include "LinuxCgroup.h"
-#include "MonitoredProcess.h"
 #include "../ResourceLimitation.h"
 
 DockerProcess::DockerProcess(const std::string &dockerImage, const std::string &appName)
@@ -117,6 +116,16 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 				dockerCommand.append("'");
 		}
 	}
+	// should match with format from ShellAppFileGen::ShellAppFileGen
+	if (Utility::startWith(cmd, "sh -l "))
+	{
+		auto scriptFileName = Utility::stdStringTrim(cmd.substr(strlen("sh -l")));
+		if (Utility::isFileExist(scriptFileName))
+		{
+			// mount shell mode script to container
+			dockerCommand.append(" -v ").append(scriptFileName).append(":").append(scriptFileName);
+		}
+	}
 	if (limit != nullptr)
 	{
 		if (limit->m_memoryMb)
@@ -136,6 +145,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	//if (!execUser.empty()) dockerCommand.append(" --user ").append(execUser);
 	dockerCommand += " " + m_dockerImage;
 	dockerCommand += " " + cmd;
+	LOG_DBG << fname << "dockerCommand: " << dockerCommand;
 
 	// 3. start docker container
 	bool startSuccess = false;
@@ -191,7 +201,6 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 				{
 					startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
 				}
-				
 			}
 			else
 			{
@@ -295,7 +304,12 @@ std::string DockerProcess::fetchOutputMsg()
 		//auto microsecondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
 		auto timeSince = DateTime::formatRFC3339Time(m_lastFetchTime);
 		auto dockerCommand = Utility::stringFormat("docker logs --since %s %s", timeSince.c_str(), m_containerId.c_str());
-		auto msg = Utility::runShellCommand(dockerCommand);
+
+		auto dockerProcess = std::make_shared<AppProcess>();
+		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
+		dockerProcess->wait();
+		auto msg = dockerProcess->fetchOutputMsg();
+
 		m_lastFetchTime = std::chrono::system_clock::now();
 		return msg;
 	}

@@ -70,7 +70,7 @@ void MonitoredProcess::runPipeReaderThread()
 			m_httpRequest = nullptr;
 			if (nullptr != response)
 			{
-				response->reply(resp).get();
+				response->reply(resp).wait();
 			}
 		}
 		catch (...)

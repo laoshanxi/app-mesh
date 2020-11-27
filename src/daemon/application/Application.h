@@ -77,7 +77,7 @@ protected:
 	// Invoke immediately
 	virtual void invokeNow(int timerId);
 	virtual void refreshPid();
-	std::shared_ptr<AppProcess> allocProcess(int cacheOutputLines, const std::string &dockerImage, const std::string &appName);
+	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
 	bool isInDailyTimeRange();
 	virtual void checkAndUpdateHealth();
 	std::string runApp(int timeoutSeconds) noexcept(false);

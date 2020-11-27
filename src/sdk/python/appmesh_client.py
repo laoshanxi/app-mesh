@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 import requests
-import json
 import base64
 import time
 import urllib3

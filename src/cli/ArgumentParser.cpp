@@ -1380,7 +1380,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(6) << (JSON_KEY_APP_owner)
 		<< std::setw(9) << (JSON_KEY_APP_status)
 		<< std::setw(7) << (JSON_KEY_APP_health)
-		<< std::setw(7) << (JSON_KEY_APP_pid)
+		<< std::setw(8) << (JSON_KEY_APP_pid)
 		<< std::setw(8) << (JSON_KEY_APP_memory)
 		<< std::setw(7) << (JSON_KEY_APP_return)
 		<< std::setw(24) << (JSON_KEY_APP_last_start)
@@ -1402,7 +1402,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
 		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);
-		std::cout << std::setw(7);
+		std::cout << std::setw(8);
 		{
 			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
 				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);

@@ -400,36 +400,6 @@ std::string Utility::createUUID()
 	return str;
 }
 
-std::string Utility::runShellCommand(std::string cmd)
-{
-	const static char fname[] = "Utility::runShellCommand() ";
-
-	std::stringstream stdoutMsg;
-	cmd += " 2>&1"; // include stderr
-	FILE *fp = popen(cmd.c_str(), "r");
-	LOG_INF << fname << cmd;
-	if (fp)
-	{
-		constexpr int LINE_LENGTH = 300;
-		char line[LINE_LENGTH];
-		std::queue<std::string> msgQueue;
-		while (fgets(line, LINE_LENGTH, fp) != nullptr)
-		{
-			msgQueue.push(line);
-			if (msgQueue.size() > 512)
-				msgQueue.pop();
-		}
-		pclose(fp);
-		while (msgQueue.size())
-		{
-			stdoutMsg << msgQueue.front();
-			msgQueue.pop();
-		}
-	}
-	auto str = std::string(stdoutMsg.str());
-	return str;
-}
-
 std::vector<std::string> Utility::splitString(const std::string &source, const std::string &splitFlag)
 {
 	std::vector<std::string> result;
