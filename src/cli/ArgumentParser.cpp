@@ -4,6 +4,7 @@
 #include <termios.h>
 #include <unistd.h>
 #endif
+#include <atomic>
 #include <ace/Signal.h>
 #include <iostream>
 #include <thread>
@@ -720,19 +721,28 @@ void ArgumentParser::processRun()
 		auto result = response.extract_json(true).get();
 		auto appName = result[JSON_KEY_APP_name].as_string();
 		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
-		while (process_uuid.length())
+		std::atomic<int> continueFailure(0);
+		while (process_uuid.length() && continueFailure < 3)
 		{
 			// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
 			restPath = std::string("/appmesh/app/").append(appName).append("/run/output");
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
-			response = requestHttp(true, methods::GET, restPath, query);
+			response = requestHttp(false, methods::GET, restPath, query);
 			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
+			// check continues failure
+			if (response.status_code() != http::status_codes::OK && !response.headers().has(HTTP_HEADER_KEY_exit_code))
+			{
+				continueFailure++;
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+				continue;
+			}
 			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
 			{
 				break;
 			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			continueFailure = 0;
+			std::this_thread::sleep_for(std::chrono::milliseconds(800));
 		}
 	}
 }
