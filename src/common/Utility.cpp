@@ -6,6 +6,7 @@
 #include <sstream>
 #include <thread>
 #include <stdarg.h>
+#include <errno.h>
 
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
@@ -94,7 +95,7 @@ std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool t
 	return len >= start ? str.substr(start, len) : str.substr(start);
 }
 
-std::string Utility::getSelfFullPath()
+const std::string Utility::getSelfFullPath()
 {
 	const static char fname[] = "Utility::getSelfFullPath() ";
 #if defined(WIN32)
@@ -126,7 +127,7 @@ std::string Utility::getSelfFullPath()
 	return buf;
 }
 
-std::string Utility::getSelfDir()
+const std::string Utility::getSelfDir()
 {
 	auto path = getSelfFullPath();
 	auto index = path.rfind(ACE_DIRECTORY_SEPARATOR_CHAR);
@@ -135,6 +136,13 @@ std::string Utility::getSelfDir()
 		path[index] = '\0';
 	}
 	return path.c_str();
+}
+
+// program_name from errno.h
+extern char *program_invocation_short_name;
+const std::string Utility::getBinaryName()
+{
+	return program_invocation_short_name;
 }
 
 bool Utility::isDirExist(std::string path)
@@ -170,17 +178,16 @@ bool Utility::createDirectory(const std::string &path, mode_t mode)
 
 bool Utility::createRecursiveDirectory(const std::string &path, mode_t mode)
 {
-	// TODO: on windows, path can both contain '/' and '\'
-	auto dirVec = splitString(path, "/");
+	auto dirVec = splitString(path, ACE_DIRECTORY_SEPARATOR_STR);
 	std::string pstr;
-	if (path.length() && path[0] == '/')
-		pstr = "/";
+	if (path.length() && path[0] == ACE_DIRECTORY_SEPARATOR_CHAR)
+		pstr = ACE_DIRECTORY_SEPARATOR_STR;
 	for (auto str : dirVec)
 	{
 		if (str.length() == 0)
 			continue;
 		pstr += str;
-		pstr += "/";
+		pstr += ACE_DIRECTORY_SEPARATOR_STR;
 		if (!createDirectory(pstr, mode))
 		{
 			return false;
@@ -220,7 +227,7 @@ void Utility::removeFile(const std::string &path)
 		}
 		else
 		{
-			LOG_DBG << fname << "file  <" << path << "> removed";
+			LOG_DBG << fname << "file <" << path << "> removed";
 		}
 	}
 }
@@ -241,7 +248,7 @@ void Utility::initLogging()
 	//	boolappend = true, mode_t mode = 00644);
 	auto rollingFileAppender = new RollingFileAppender(
 		"rollingFileAppender",
-		logDir.append("/appsvc.log"),
+		logDir.append(ACE_DIRECTORY_SEPARATOR_STR).append(getBinaryName()).append(".log"),
 		20 * 1024 * 1024,
 		5,
 		true,
@@ -634,4 +641,40 @@ std::string Utility::stringFormat(const std::string &fmt_str, ...)
 			break;
 	}
 	return std::string(formatted.get());
+}
+
+// TODO: assume base 64 have no "|" character
+std::map<std::string, std::string> Utility::parse(const std::string &str)
+{
+	std::map<std::string, std::string> result;
+	const auto headerList = Utility::splitString(str, "||");
+	for (const auto &header : headerList)
+	{
+		auto oneHeader = Utility::splitString(header, "|");
+		if (oneHeader.size() == 2)
+		{
+			result[oneHeader[0]] = oneHeader[1];
+		}
+	}
+	return result;
+}
+
+std::string Utility::serialize(const std::map<std::string, std::string> &map)
+{
+	std::ostringstream oss;
+	for (const auto &pair : map)
+	{
+		oss << pair.first << "|" << pair.second << "||";
+	}
+	return oss.str();
+}
+
+std::string Utility::serialize(const web::http::http_headers &map)
+{
+	std::ostringstream oss;
+	for (const auto &pair : map)
+	{
+		oss << pair.first << "|" << pair.second << "||";
+	}
+	return oss.str();
 }

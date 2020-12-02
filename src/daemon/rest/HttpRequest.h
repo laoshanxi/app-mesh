@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <map>
 #include <cpprest/http_client.h>
 
 using namespace web;
@@ -13,22 +14,39 @@ using namespace http;
 class HttpRequest : public web::http::http_request
 {
 public:
-	HttpRequest(const web::http::http_request& message);
+	HttpRequest(const web::http::http_request &message);
+	HttpRequest(const HttpRequest &message);
+	HttpRequest(const std::string &method,
+				const std::string &uri,
+				const std::string &address,
+				const std::string &body,
+				const std::string &headers,
+				const std::string &query,
+				const std::string &uuid);
 	virtual ~HttpRequest();
+
+	web::json::value extractJson() const;
 
 	/// <summary>
 	/// Asynchronously responses to this HTTP request.
 	/// </summary>
 	/// <param name="response">Response to send.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	pplx::task<void> reply(http_response& response) const;
+	void reply(http_response &response) const;
+
+	/// <summary>
+	/// Asynchronously responses to this HTTP request.
+	/// </summary>
+	/// <param name="response">Response to send.</param>
+	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
+	void reply(http_response &response, const std::string &body_data) const;
 
 	/// <summary>
 	/// Asynchronously responses to this HTTP request.
 	/// </summary>
 	/// <param name="status">Response status code.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	pplx::task<void> reply(http::status_code status) const;
+	void reply(http::status_code status) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -36,7 +54,7 @@ public:
 	/// <param name="status">Response status code.</param>
 	/// <param name="body_data">Json value to use in the response body.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	pplx::task<void> reply(http::status_code status, const json::value& body_data) const;
+	void reply(http::status_code status, const json::value &body_data) const;
 
 	/// Responds to this HTTP request with a string.
 	/// Assumes the character encoding of the string is UTF-8.
@@ -49,9 +67,9 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	pplx::task<void> reply(http::status_code status,
-		utf8string&& body_data,
-		const utf8string& content_type = "text/plain; charset=utf-8") const;
+	void reply(http::status_code status,
+			   utf8string &&body_data,
+			   const utf8string &content_type = "text/plain; charset=utf-8") const;
 
 	/// <summary>
 	/// Responds to this HTTP request with a string.
@@ -65,9 +83,9 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	pplx::task<void> reply(http::status_code status,
-		const utf8string& body_data,
-		const utf8string& content_type = "text/plain; charset=utf-8") const;
+	void reply(http::status_code status,
+			   const utf8string &body_data,
+			   const utf8string &content_type = "text/plain; charset=utf-8") const;
 
 	/// <summary>
 	/// Responds to this HTTP request with a string. Assumes the character encoding
@@ -81,9 +99,9 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	pplx::task<void> reply(http::status_code status,
-		const utf16string& body_data,
-		const utf16string& content_type = utility::conversions::to_utf16string("text/plain")) const;
+	void reply(http::status_code status,
+			   const utf16string &body_data,
+			   const utf16string &content_type = utility::conversions::to_utf16string("text/plain")) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -92,9 +110,9 @@ public:
 	/// <param name="content_type">A string holding the MIME type of the message body.</param>
 	/// <param name="body">An asynchronous stream representing the body data.</param>
 	/// <returns>A task that is completed once a response from the request is received.</returns>
-	pplx::task<void> reply(status_code status,
-		const concurrency::streams::istream& body,
-		const utility::string_t& content_type = _XPLATSTR("application/octet-stream")) const;
+	void reply(status_code status,
+			   const concurrency::streams::istream &body,
+			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -104,28 +122,27 @@ public:
 	/// <param name="content_type">A string holding the MIME type of the message body.</param>
 	/// <param name="body">An asynchronous stream representing the body data.</param>
 	/// <returns>A task that is completed once a response from the request is received.</returns>
-	pplx::task<void> reply(status_code status,
-		const concurrency::streams::istream& body,
-		utility::size64_t content_length,
-		const utility::string_t& content_type = _XPLATSTR("application/octet-stream")) const;
-};
+	void reply(status_code status,
+			   const concurrency::streams::istream &body,
+			   utility::size64_t content_length,
+			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
 
-class HttpRequestWithCallback : public HttpRequest
-{
-public:
-	HttpRequestWithCallback(const web::http::http_request& message, const std::string& appName, std::function<void(std::string)> callBackHandler);
-	virtual ~HttpRequestWithCallback();
-
-private:
-	std::string m_appName;
-	std::function<void(std::string)> m_callBackHandler;
+	// serializeable, always use those variables intead of method(), headers()
+	std::string m_method;
+	std::string m_relative_uri;
+	std::string m_remote_address;
+	std::string m_body;
+	std::string m_query;
+	std::map<std::string, std::string> m_headers;
+	std::string m_uuid;
+	bool m_reply2child; // not directly reply this endpoint, just forward to child rest side
 };
 
 class Application;
 class HttpRequestWithAppRef : public HttpRequest
 {
 public:
-	HttpRequestWithAppRef(const web::http::http_request& message, const std::shared_ptr<Application>& appObj);
+	HttpRequestWithAppRef(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
 	virtual ~HttpRequestWithAppRef();
 
 private:

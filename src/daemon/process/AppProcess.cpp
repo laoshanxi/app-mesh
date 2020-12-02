@@ -244,7 +244,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	// do not inherit LD_LIBRARY_PATH to child
 	static const std::string ldEnv = ACE_OS::getenv("LD_LIBRARY_PATH") ? ACE_OS::getenv("LD_LIBRARY_PATH") : "";
-	if (!ldEnv.empty())
+	if (!ldEnv.empty() && !envMap.count("LD_LIBRARY_PATH"))
 	{
 		std::string env = ldEnv;
 		env = Utility::stringReplace(env, "/opt/appmesh/lib64:", "");

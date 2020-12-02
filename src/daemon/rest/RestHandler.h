@@ -3,19 +3,30 @@
 #include <memory>
 #include <functional>
 #include <cpprest/http_listener.h> // HTTP server
-#include "../../common/HttpRequest.h"
+#include <cpprest/http_msg.h>
 
 class CounterPtr;
 class PrometheusRest;
 class Application;
 class HttpRequest;
+
+enum class REST_SCENARIO : int
+{
+	// A build-in REST service
+	BUILD_IN = 0,
+	// REST in separate process
+	SEPARATE_PROCESS,
+	// TCP REST Service in Server side
+	BUILD_IN_TCP_SERVER
+};
+
 //////////////////////////////////////////////////////////////////////////
 /// REST service
 //////////////////////////////////////////////////////////////////////////
 class RestHandler
 {
 public:
-	explicit RestHandler(const std::string &ipaddress, int port);
+	explicit RestHandler(const std::string &ipaddress, int port, REST_SCENARIO scenario = REST_SCENARIO::BUILD_IN);
 	virtual ~RestHandler();
 
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
@@ -24,15 +35,15 @@ protected:
 	void open();
 	void close();
 
-private:
-	void handleRest(const http_request &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions);
+protected:
+	void handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions);
 	void bindRestMethod(web::http::method method, std::string path, std::function<void(const HttpRequest &)> func);
 	void handle_get(const HttpRequest &message);
 	void handle_put(const HttpRequest &message);
 	void handle_post(const HttpRequest &message);
 	void handle_delete(const HttpRequest &message);
 	void handle_options(const HttpRequest &message);
-	void handle_error(pplx::task<void> &t, const http_request &message);
+	bool forwardRestRequest(const HttpRequest &message);
 
 	std::string verifyToken(const HttpRequest &message);
 	std::string getTokenUser(const HttpRequest &message);
@@ -78,7 +89,8 @@ private:
 	void apiHealth(const HttpRequest &message);
 	void apiMetrics(const HttpRequest &message);
 
-private:
+protected:
+	const REST_SCENARIO m_scenario;
 	std::string m_listenAddress;
 	std::unique_ptr<web::http::experimental::listener::http_listener> m_listener;
 	// API functions

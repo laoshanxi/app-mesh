@@ -7,6 +7,8 @@
   "TimeFormatPosixZone": "",
   "REST": {
     "RestEnabled": true,
+    "SeparateRestProcess": true,
+    "SeparateRestInternalPort": 6059,
     "HttpThreadPoolSize": 6,
     "RestListenPort": 6060,
     "RestListenAddress": "0.0.0.0",

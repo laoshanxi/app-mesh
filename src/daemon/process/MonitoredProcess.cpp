@@ -3,7 +3,7 @@
 #include <ace/Process.h>
 #include "MonitoredProcess.h"
 #include "../../common/Utility.h"
-#include "../../common/HttpRequest.h"
+#include "../rest/HttpRequest.h"
 
 MonitoredProcess::MonitoredProcess(bool enableBuildinThread)
 	: m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
@@ -64,13 +64,13 @@ void MonitoredProcess::runPipeReaderThread()
 		try
 		{
 			web::http::http_response resp(web::http::status_codes::OK);
-			resp.set_body(this->fetchOutputMsg());
+			const auto body = this->fetchOutputMsg();
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->return_value());
 			std::unique_ptr<HttpRequest> response(static_cast<HttpRequest *>(m_httpRequest));
 			m_httpRequest = nullptr;
 			if (nullptr != response)
 			{
-				response->reply(resp).wait();
+				response->reply(resp, body);
 			}
 		}
 		catch (...)

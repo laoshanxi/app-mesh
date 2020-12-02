@@ -2,14 +2,14 @@
 ################################################################################
 ## RPM pre uninstallation script file, will be executed before installation
 ################################################################################
-
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64
+INSTALL_DIR=/opt/appmesh
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$INSTALL_DIR/lib64
 
 # backup configuration file to avoid overide when next installation
-if [ -f "/opt/appmesh/appsvc.json" ];then
-	cp -f /opt/appmesh/appsvc.json /opt/appmesh/.appsvc.json
+if [ -f "$INSTALL_DIR/appsvc.json" ];then
+	cp -f $INSTALL_DIR/appsvc.json $INSTALL_DIR/.appsvc.json
 fi
 # stop all running applications
-#if [ -f "/opt/appmesh/appc" ];then
-#	/opt/appmesh/appc view -l | awk '{if (NR>1){cmd="/opt/appmesh/appc disable -n "$2;print(cmd);system(cmd)}}'
+#if [ -f "$INSTALL_DIR/appc" ];then
+#	$INSTALL_DIR/appc view -l | awk '{if (NR>1){cmd="$INSTALL_DIR/appc disable -n "$2;print(cmd);system(cmd)}}'
 #fi

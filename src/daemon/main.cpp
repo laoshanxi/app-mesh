@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include <atomic>
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -20,6 +21,8 @@
 #include "rest/PrometheusRest.h"
 #include "ResourceCollection.h"
 #include "rest/RestHandler.h"
+#include "rest/RestChildObject.h"
+#include "rest/RestTcpServer.h"
 #include "TimerHandler.h"
 #include "../common/os/linux.hpp"
 #include "../common/Utility.h"
@@ -29,6 +32,7 @@
 #endif
 
 std::set<std::shared_ptr<RestHandler>> m_restList;
+void initCpprestThreadPool();
 
 int main(int argc, char *argv[])
 {
@@ -64,6 +68,21 @@ int main(int argc, char *argv[])
 			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));
 		}
 
+		// init child rest process
+		if (argc == 2 && std::string("rest") == argv[1])
+		{
+
+			initCpprestThreadPool();
+			RestChildObject::instance(std::make_shared<RestChildObject>());
+			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());
+			return 0;
+		}
+		else if (argc > 1)
+		{
+			LOG_WAR << fname << "no such argument supported";
+			return -1;
+		}
+
 		// working dir
 		Utility::createDirectory(config->getDefaultWorkDir(), 00655);
 		ACE_OS::chdir(config->getDefaultWorkDir().c_str());
@@ -72,43 +91,30 @@ int main(int argc, char *argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		Configuration::instance()->dump();
 
-		std::shared_ptr<RestHandler> httpServerIp4;
-		std::shared_ptr<RestHandler> httpServerIp6;
-		if (config->getRestEnabled())
+		// Init Prometheus Exporter
+		if (config->getRestEnabled() && config->getPromListenPort())
 		{
-			// Thread pool: 6 threads
-			crossplat::threadpool::initialize_with_threads(config->getThreadPoolSize());
-			LOG_INF << fname << "REST thread pool size:" << config->getThreadPoolSize();
-
-			// Init Prometheus Exporter
+			initCpprestThreadPool();
 			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
+		}
 
-			// Init REST
-			if (!config->getRestListenAddress().empty())
-			{
-				// just enable for specified address
-				httpServerIp4 = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
-				m_restList.insert(httpServerIp4);
-			}
-			else
-			{
-				// enable for both ipv6 and ipv4
-				httpServerIp4 = std::make_shared<RestHandler>("0.0.0.0", config->getRestListenPort());
-				m_restList.insert(httpServerIp4);
-				try
-				{
-					httpServerIp6 = std::make_shared<RestHandler>(MY_HOST_NAME, config->getRestListenPort());
-					m_restList.insert(httpServerIp6);
-				}
-				catch (const std::exception &e)
-				{
-					LOG_ERR << fname << e.what();
-				}
-				catch (...)
-				{
-					LOG_ERR << fname << "unknown exception";
-				}
-			}
+		// // Init REST service
+		std::shared_ptr<RestHandler> httpServer;
+		if (config->getRestEnabled() && !config->getSeparateRestProcess())
+		{
+			initCpprestThreadPool();
+			// init normal rest service
+			httpServer = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
+			m_restList.insert(httpServer);
+		}
+		else if (config->getSeparateRestProcess())
+		{
+			// init TCP rest service
+			RestTcpServer::instance(std::make_shared<RestTcpServer>());
+			RestTcpServer::instance()->startTcpServer();
+			httpServer = RestTcpServer::instance();
+			m_restList.insert(httpServer);
+			config->addApp(RestTcpServer::instance()->getRestAppJson());
 		}
 
 		// HA attach process to App
@@ -141,8 +147,8 @@ int main(int argc, char *argv[])
 		//auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// init consul
-		std::string recoverConsulSsnId = snap ? snap->m_consulSessionId : "";
-		ConsulConnection::instance()->initTimer(recoverConsulSsnId);
+		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
+		ConsulConnection::instance()->initTimer(consulSsnIdFromRecover);
 
 		// monitor applications
 		while (true)
@@ -172,6 +178,18 @@ int main(int argc, char *argv[])
 	}
 	LOG_ERR << fname << "ERROR exited";
 	ACE::fini();
-	_exit(0);
+	ACE_OS::_exit(0);
 	return 0;
+}
+
+void initCpprestThreadPool()
+{
+	const static char fname[] = "initCpprestThreadPool() ";
+	static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
+	if (!initialized.test_and_set())
+	{
+		// cpprestsdk thread pool, default will be 40 threads
+		crossplat::threadpool::initialize_with_threads(Configuration::instance()->getThreadPoolSize());
+		LOG_INF << fname << "REST thread pool size:" << Configuration::instance()->getThreadPoolSize();
+	}
 }

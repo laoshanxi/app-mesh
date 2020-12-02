@@ -25,26 +25,28 @@ if [ -d "/usr/share/bash-completion/completions" ]; then
 	cp -f $INSTALL_DIR/script/bash_completion.sh /usr/share/bash-completion/completions/appc
 fi
 
-if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "/opt/appmesh/ssl/server.pem" ]]; then
+if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "$INSTALL_DIR/ssl/server.pem" ]]; then
 	# ssl cert gernerate
-	cd /opt/appmesh/ssl/; sh /opt/appmesh/ssl/ssl_cert_generate.sh
+	cd $INSTALL_DIR/ssl/; sh $INSTALL_DIR/ssl/ssl_cert_generate.sh
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "/opt/appmesh/.appsvc.json" ]; then
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.appsvc.json" ]; then
 	# restore previous configuration file
-	mv /opt/appmesh/.appsvc.json /opt/appmesh/appsvc.json
+	mv $INSTALL_DIR/.appsvc.json $INSTALL_DIR/appsvc.json
 else
-	sed -i "s/MYHOST/$(hostname -f)/g" /opt/appmesh/appsvc.json
-	rm -rf /opt/appmesh/work
+	sed -i "s/MYHOST/$(hostname -f)/g" $INSTALL_DIR/appsvc.json
+	rm -rf $INSTALL_DIR/work
 fi
 
 # create appc softlink
 rm -rf /usr/bin/appc
-ln -s /opt/appmesh/script/appc.sh /usr/bin/appc
-chmod +x /opt/appmesh/script/appc.sh
-if [ ! -d "/opt/appmesh/work" ]; then
-    mkdir /opt/appmesh/work
+ln -s $INSTALL_DIR/script/appc.sh /usr/bin/appc
+chmod +x $INSTALL_DIR/script/appc.sh
+if [ ! -d "$INSTALL_DIR/work" ]; then
+    mkdir $INSTALL_DIR/work
 fi
-
+if [ ! -f "$INSTALL_DIR/apprest" ]; then
+	ln -s $INSTALL_DIR/appsvc $INSTALL_DIR/apprest
+fi
 # start service directly
 # systemctl enable appmesh
 # systemctl start appmesh

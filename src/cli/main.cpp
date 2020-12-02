@@ -3,6 +3,7 @@
 #include <string>
 #include <iostream>
 #include <iomanip>
+#include <ace/OS.h>
 #include <pplx/threadpool.h>
 #include <cpprest/json.h>
 #include <cpprest/http_client.h>
@@ -39,7 +40,7 @@ void getListenPort(int &port, bool &sslEnabled)
 	web::json::value jsonValue;
 	auto configPath = Utility::getSelfFullPath();
 	configPath[configPath.length() - 1] = '\0';
-	auto pos = configPath.rfind("/");
+	auto pos = configPath.rfind(ACE_DIRECTORY_SEPARATOR_STR);
 	if (pos != std::string::npos)
 	{
 		configPath = configPath.substr(0, pos + 1);

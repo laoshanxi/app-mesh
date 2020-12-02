@@ -16,11 +16,11 @@ Install App Mesh as standalone mode on local node without GUI service by release
 
 ```text
 # centos
-sudo yum install appmesh-1.8.5-1.x86_64.rpm
+sudo yum install appmesh-1.9.0-1.x86_64.rpm
 # ubuntu
-sudo apt-get install appmesh_1.8.5_amd64.deb
+sudo apt-get install appmesh_1.9.0_amd64.deb
 # SUSE
-sudo zypper install appmesh-1.8.5-1.x86_64.rpm
+sudo zypper install appmesh-1.9.0-1.x86_64.rpm
 ```
 
 Start service:

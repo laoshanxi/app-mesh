@@ -9,6 +9,7 @@
 #include <chrono>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
+#include <cpprest/http_headers.h>
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
@@ -37,10 +38,11 @@
 		(x) = (y);                                                  \
 		LOG_INF << fname << "Configuration value updated : " << #x; \
 	}
-
+/*
 #define REST_HEADER_PRINT                                                          \
-	for (auto it = message.headers().begin(); it != message.headers().end(); it++) \
+	for (auto it = message.m_headers().begin(); it != message.m_headers().end(); it++) \
 		LOG_DBG << "Header: " << it->first << " = " << it->second;
+*/
 #define REST_INFO_PRINT                                                    \
 	LOG_DBG                                                                \
 		<< " fname: " << __FUNCTION__                                      \
@@ -111,8 +113,9 @@ public:
 	virtual ~Utility();
 
 	// OS related
-	static std::string getSelfFullPath();
-	static std::string getSelfDir();
+	static const std::string getSelfFullPath();
+	static const std::string getSelfDir();
+	static const std::string getBinaryName();
 	static bool isDirExist(std::string path);
 	static bool isFileExist(std::string path);
 	static bool createDirectory(const std::string &path, mode_t mode = 0775);
@@ -150,6 +153,10 @@ public:
 	static std::string readFileCpp(const std::string &path);
 
 	static std::string createUUID();
+
+	static std::map<std::string, std::string> parse(const std::string &str);
+	static std::string serialize(const std::map<std::string, std::string> &map);
+	static std::string serialize(const web::http::http_headers &map);
 };
 
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
@@ -172,6 +179,8 @@ public:
 #define JSON_KEY_RestEnabled "RestEnabled"
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
+#define JSON_KEY_SeparateRestProcess "SeparateRestProcess"
+#define JSON_KEY_SeparateRestInternalPort "SeparateRestInternalPort"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
 #define JSON_KEY_ScheduleIntervalSeconds "ScheduleIntervalSeconds"

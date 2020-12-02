@@ -4,11 +4,13 @@
 #include <cpprest/http_listener.h> // HTTP server
 #include <cpprest/http_client.h>
 
+#include "ConsulConnection.h"
+#include "HttpRequest.h"
+#include "RestHandler.h"
+#include "RestChildObject.h"
+#include "PrometheusRest.h"
 #include "../application/Application.h"
 #include "../Configuration.h"
-#include "ConsulConnection.h"
-#include "RestHandler.h"
-#include "PrometheusRest.h"
 #include "../ResourceCollection.h"
 #include "../security/User.h"
 #include "../Label.h"
@@ -17,14 +19,14 @@
 #include "../../prom_exporter/gauge.h"
 #include "../../prom_exporter/text_serializer.h"
 #include "../../common/DurationParse.h"
-#include "../../common/HttpRequest.h"
+
 #include "../../common/Utility.h"
 #include "../../common/jwt-cpp/jwt.h"
 #include "../../common/os/linux.hpp"
 #include "../../common/os/chown.hpp"
 
-RestHandler::RestHandler(const std::string &ipaddress, int port)
-	: m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : ipaddress)
+RestHandler::RestHandler(const std::string &ipaddress, int port, REST_SCENARIO scenario)
+	: m_scenario(scenario), m_listenAddress(ipaddress.empty() ? std::string("0.0.0.0") : ipaddress)
 {
 	const static char fname[] = "RestHandler::RestHandler() ";
 
@@ -69,7 +71,7 @@ RestHandler::RestHandler(const std::string &ipaddress, int port)
 					// Enable ECDH cipher
 					if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
 					{
-						LOG_WAR << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
+						LOG_WAR << "SSL_CTX_set_ecdh_auto failed: " << std::strerror(errno);
 					}
 					// auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
 					auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
@@ -146,9 +148,17 @@ RestHandler::RestHandler(const std::string &ipaddress, int port)
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
 
-	this->open();
-
-	LOG_INF << fname << "Listening for requests at:" << uri.to_string();
+	switch (m_scenario)
+	{
+	case REST_SCENARIO::BUILD_IN:
+	case REST_SCENARIO::SEPARATE_PROCESS:
+		LOG_INF << fname << "Listening for requests at: " << uri.to_string();
+		this->open();
+		break;
+	case REST_SCENARIO::BUILD_IN_TCP_SERVER:
+	default:
+		break;
+	}
 }
 
 RestHandler::~RestHandler()
@@ -175,69 +185,89 @@ void RestHandler::close()
 	m_listener->close(); // .wait();
 }
 
+bool RestHandler::forwardRestRequest(const HttpRequest &message)
+{
+	// TODO: User authen do not forward to server
+	// file download/upload do not forward to server
+	if (m_scenario == REST_SCENARIO::SEPARATE_PROCESS && !Utility::startWith(message.m_relative_uri, "/appmesh/file"))
+	{
+		RestChildObject::instance()->sendRequest2Server(message);
+		return true;
+	}
+	return false;
+}
+
 void RestHandler::handle_get(const HttpRequest &message)
 {
 	REST_INFO_PRINT;
+	if (!forwardRestRequest(message))
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		if (m_restGetCounter)
-			m_restGetCounter->metric().Increment();
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			if (m_restGetCounter)
+				m_restGetCounter->metric().Increment();
+		}
+		handleRest(message, m_restGetFunctions);
 	}
-	handleRest(message, m_restGetFunctions);
 }
 
 void RestHandler::handle_put(const HttpRequest &message)
 {
 	REST_INFO_PRINT;
+	if (!forwardRestRequest(message))
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		if (m_restPutCounter)
-			m_restPutCounter->metric().Increment();
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			if (m_restPutCounter)
+				m_restPutCounter->metric().Increment();
+		}
+		handleRest(message, m_restPutFunctions);
 	}
-	handleRest(message, m_restPutFunctions);
 }
 
 void RestHandler::handle_post(const HttpRequest &message)
 {
 	REST_INFO_PRINT;
+	if (!forwardRestRequest(message))
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		if (m_restPostCounter)
-			m_restPostCounter->metric().Increment();
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			if (m_restPostCounter)
+				m_restPostCounter->metric().Increment();
+		}
+		handleRest(message, m_restPstFunctions);
 	}
-	handleRest(message, m_restPstFunctions);
 }
 
 void RestHandler::handle_delete(const HttpRequest &message)
 {
-	REST_INFO_PRINT;
+	if (!forwardRestRequest(message))
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_mutex);
-		if (m_restDelCounter)
-			m_restDelCounter->metric().Increment();
+		REST_INFO_PRINT;
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_mutex);
+			if (m_restDelCounter)
+				m_restDelCounter->metric().Increment();
+		}
+		handleRest(message, m_restDelFunctions);
 	}
-	handleRest(message, m_restDelFunctions);
 }
 
 void RestHandler::handle_options(const HttpRequest &message)
 {
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
-void RestHandler::handleRest(const http_request &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
+void RestHandler::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
 {
 	const static char fname[] = "RestHandler::handleRest() ";
 
 	std::function<void(const HttpRequest &)> stdFunction;
-	auto path = Utility::stringReplace(GET_STD_STRING(message.relative_uri().path()), "//", "/");
-
-	const auto request = std::move(HttpRequest(message));
+	auto path = Utility::stringReplace(message.m_relative_uri, "//", "/");
 
 	if (path == "/" || path.empty())
 	{
-		request.reply(status_codes::OK, "App Mesh")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::OK, "App Mesh");
 		return;
 	}
 
@@ -253,25 +283,24 @@ void RestHandler::handleRest(const http_request &message, const std::map<std::st
 	}
 	if (!findRest)
 	{
-		request.reply(status_codes::NotFound, "Path not found")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::NotFound, "Path not found");
 		return;
 	}
 
 	try
 	{
 		// LOG_DBG << fname << "rest " << path;
-		stdFunction(request);
+		stdFunction(message);
 	}
 	catch (const std::exception &e)
 	{
 		LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
-		request.reply(web::http::status_codes::BadRequest, e.what());
+		message.reply(web::http::status_codes::BadRequest, e.what());
 	}
 	catch (...)
 	{
 		LOG_WAR << fname << "rest " << path << " failed";
-		request.reply(web::http::status_codes::BadRequest, "unknow exception");
+		message.reply(web::http::status_codes::BadRequest, "unknow exception");
 	}
 }
 
@@ -292,24 +321,6 @@ void RestHandler::bindRestMethod(web::http::method method, std::string path, std
 		m_restDelFunctions[path] = func;
 	else
 		LOG_ERR << fname << GET_STD_STRING(method).c_str() << " not supported.";
-}
-
-void RestHandler::handle_error(pplx::task<void> &t, const http_request &message)
-{
-	const static char fname[] = "RestHandler::handle_error() ";
-
-	try
-	{
-		t.get();
-	}
-	catch (const std::exception &e)
-	{
-		LOG_ERR << fname << message.remote_address() << " " << message.relative_uri().to_string() << ": " << e.what();
-	}
-	catch (...)
-	{
-		LOG_ERR << fname << message.remote_address() << " " << message.relative_uri().to_string() << " unknown exception";
-	}
 }
 
 std::string RestHandler::verifyToken(const HttpRequest &message)
@@ -355,8 +366,7 @@ std::string RestHandler::getTokenUser(const HttpRequest &message)
 	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
 	{
 		// get user info
-		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
-		return userName;
+		return decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
 	}
 	else
 	{
@@ -374,7 +384,7 @@ bool RestHandler::permissionCheck(const HttpRequest &message, const std::string 
 		// check user role permission
 		if (Configuration::instance()->getUserPermissions(userName).count(permission))
 		{
-			LOG_DBG << fname << "authentication success for remote: " << message.remote_address() << " with user : " << userName << " and permission : " << permission;
+			LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
 			return true;
 		}
 		else
@@ -403,9 +413,9 @@ void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std
 std::string RestHandler::getTokenStr(const HttpRequest &message)
 {
 	std::string token;
-	if (message.headers().has(HTTP_HEADER_JWT_Authorization))
+	if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
 	{
-		token = Utility::stdStringTrim(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_Authorization)->second));
+		token = Utility::stdStringTrim(message.m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
 		std::string bearerFlag = HTTP_HEADER_JWT_BearerSpace;
 		if (Utility::startWith(token, bearerFlag))
 		{
@@ -442,7 +452,7 @@ int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string
 {
 	const static char fname[] = "RestHandler::getHttpQueryValue() ";
 
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
 	int rt = defaultValue;
 	if (querymap.find(U(key)) != querymap.end())
 	{
@@ -462,7 +472,7 @@ int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string
 void RestHandler::apiEnableApp(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 
 	// /app/$app-name/enable
 	std::string appName = path.substr(strlen("/appmesh/app/"));
@@ -471,14 +481,13 @@ void RestHandler::apiEnableApp(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->enableApp(appName);
-	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.")
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
 }
 
 void RestHandler::apiDisableApp(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 
 	// /appmesh/app/$app-name/disable
 	std::string appName = path.substr(strlen("/appmesh/app/"));
@@ -487,14 +496,13 @@ void RestHandler::apiDisableApp(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->disableApp(appName);
-	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.")
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
 }
 
 void RestHandler::apiDeleteApp(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_delete);
-	auto path = GET_STD_STRING(message.relative_uri().path());
+	auto path = message.m_relative_uri;
 
 	std::string appName = path.substr(strlen("/appmesh/app/"));
 	if (Configuration::instance()->getApp(appName)->isCloudApp())
@@ -503,8 +511,7 @@ void RestHandler::apiDeleteApp(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->removeApp(appName);
-	message.reply(status_codes::OK, Utility::stringFormat("Application <%s> removed.", appName.c_str()))
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, Utility::stringFormat("Application <%s> removed.", appName.c_str()));
 }
 
 void RestHandler::apiFileDownload(const HttpRequest &message)
@@ -514,15 +521,13 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "header 'FilePath' not found")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::BadRequest, "header 'FilePath' not found");
 		return;
 	}
 	auto file = GET_STD_STRING(message.headers().find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
-		message.reply(status_codes::NotAcceptable, "file not found")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::NotAcceptable, "file not found");
 		return;
 	}
 
@@ -539,7 +544,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 																						  resp.set_body(fileStream, length);
 																						  resp.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(file));
 																						  resp.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(file));
-																						  message.reply(resp).then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+																						  message.reply(resp);
 																					  })
 		.then([=](pplx::task<void> t) {
 			try
@@ -550,8 +555,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 			{
 				// opening the file (open_istream) failed.
 				// Reply with an error.
-				message.reply(status_codes::InternalError)
-					.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+				message.reply(status_codes::InternalError);
 			}
 		});
 }
@@ -562,15 +566,13 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "header 'FilePath' not found")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::BadRequest, "header 'FilePath' not found");
 		return;
 	}
-	auto file = GET_STD_STRING(message.headers().find(U(HTTP_HEADER_KEY_file_path))->second);
+	auto file = message.headers().find(HTTP_HEADER_KEY_file_path)->second;
 	if (Utility::isFileExist(file))
 	{
-		message.reply(status_codes::Forbidden, "file already exist")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::Forbidden, "file already exist");
 		return;
 	}
 
@@ -580,16 +582,15 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 		.then([=](concurrency::streams::ostream os) {
 			message.body().read_to_end(os.streambuf()).then([=](pplx::task<std::size_t> t) {
 				os.close();
-				if (message.headers().has(HTTP_HEADER_KEY_file_mode))
+				if (message.m_headers.count(HTTP_HEADER_KEY_file_mode))
 				{
-					os::fileChmod(file, std::stoi(message.headers().find(HTTP_HEADER_KEY_file_mode)->second));
+					os::fileChmod(file, std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_mode)->second));
 				}
-				if (message.headers().has(HTTP_HEADER_KEY_file_user))
+				if (message.m_headers.count(HTTP_HEADER_KEY_file_user))
 				{
-					os::chown(file, message.headers().find(HTTP_HEADER_KEY_file_user)->second);
+					os::chown(file, message.m_headers.find(HTTP_HEADER_KEY_file_user)->second);
 				}
-				message.reply(status_codes::OK, "Success")
-					.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+				message.reply(status_codes::OK, "Success");
 			});
 		})
 		.then([=](pplx::task<void> t) {
@@ -601,8 +602,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 			{
 				// opening the file (open_istream) failed.
 				// Reply with an error.
-				message.reply(status_codes::InternalError, "Failed to write file in server")
-					.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+				message.reply(status_codes::InternalError, "Failed to write file in server");
 			}
 		});
 }
@@ -610,18 +610,17 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 void RestHandler::apiGetLabels(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_view);
-	message.reply(status_codes::OK, Configuration::instance()->getLabel()->AsJson())
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, Configuration::instance()->getLabel()->AsJson());
 }
 
 void RestHandler::apiAddLabel(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_set);
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto vec = Utility::splitString(path, "/");
 	auto labelKey = vec[vec.size() - 1];
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
 	if (querymap.find(U(HTTP_QUERY_KEY_label_value)) != querymap.end())
 	{
 		auto value = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_label_value))->second);
@@ -629,13 +628,11 @@ void RestHandler::apiAddLabel(const HttpRequest &message)
 		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();
 
-		message.reply(status_codes::OK)
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::OK);
 	}
 	else
 	{
-		message.reply(status_codes::BadRequest, "query value required")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::BadRequest, "query value required");
 	}
 }
 
@@ -643,15 +640,14 @@ void RestHandler::apiDeleteLabel(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_delete);
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto vec = Utility::splitString(path, "/");
 	auto labelKey = vec[vec.size() - 1];
 
 	Configuration::instance()->getLabel()->delLabel(labelKey);
 	Configuration::instance()->saveConfigToDisk();
 
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiGetUserPermissions(const HttpRequest &message)
@@ -664,8 +660,7 @@ void RestHandler::apiGetUserPermissions(const HttpRequest &message)
 	{
 		json[index++] = web::json::value::string(perm);
 	}
-	message.reply(status_codes::OK, json)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiGetBasicConfig(const HttpRequest &message)
@@ -677,15 +672,14 @@ void RestHandler::apiGetBasicConfig(const HttpRequest &message)
 	{
 		config.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
 	}
-	message.reply(status_codes::OK, config)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, config);
 }
 
 void RestHandler::apiSetBasicConfig(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_set);
 
-	auto json = message.extract_json().get();
+	auto json = message.extractJson();
 	// do not allow users update from host-update API
 	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
 		json.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
@@ -701,7 +695,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserChangePwd() ";
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_change_passwd);
 
 	auto vec = Utility::splitString(path, "/");
@@ -711,11 +705,11 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 	}
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
-	if (!(message.headers().has(HTTP_HEADER_JWT_new_password)))
+	if (!(message.m_headers.count(HTTP_HEADER_JWT_new_password)))
 	{
 		throw std::invalid_argument("can not find new password from header");
 	}
-	auto newPasswd = Utility::stdStringTrim(Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_new_password)->second)));
+	auto newPasswd = Utility::stdStringTrim(Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_new_password)->second)));
 
 	if (pathUserName != tokenUserName)
 	{
@@ -736,15 +730,14 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> changed password";
-	message.reply(status_codes::OK, "password changed success")
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, "password changed success");
 }
 
 void RestHandler::apiUserLock(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserLock() ";
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_lock_user);
 
 	auto vec = Utility::splitString(path, "/");
@@ -766,15 +759,14 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiUserUnlock(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserUnlock() ";
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_lock_user);
 
 	auto vec = Utility::splitString(path, "/");
@@ -791,15 +783,14 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiUserAdd(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserAdd() ";
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_add_user);
 
 	auto vec = Utility::splitString(path, "/");
@@ -810,7 +801,7 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	auto pathUserName = vec[2];
 	auto tokenUserName = getTokenUser(message);
 
-	auto user = Configuration::instance()->getUsers()->addUser(pathUserName, message.extract_json(true).get(), Configuration::instance()->getRoles());
+	auto user = Configuration::instance()->getUsers()->addUser(pathUserName, message.extractJson(), Configuration::instance()->getRoles());
 	// Store encrypted key if any
 	if (Configuration::instance()->getEncryptKey())
 		user->updateKey(Utility::hash(user->getKey()));
@@ -819,15 +810,14 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiUserDel(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserDel() ";
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_delete_user);
 
 	auto vec = Utility::splitString(path, "/");
@@ -844,8 +834,7 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiUserList(const HttpRequest &message)
@@ -859,23 +848,21 @@ void RestHandler::apiUserList(const HttpRequest &message)
 			user.second.erase(JSON_KEY_USER_key);
 	}
 
-	message.reply(status_codes::OK, users)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, users);
 }
 
 void RestHandler::apiRoleView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_role_view);
 
-	message.reply(status_codes::OK, Configuration::instance()->getRoles()->AsJson())
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, Configuration::instance()->getRoles()->AsJson());
 }
 
 void RestHandler::apiRoleUpdate(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiRoleUpdate() ";
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_role_update);
 
 	auto vec = Utility::splitString(path, "/");
@@ -886,21 +873,20 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 	auto pathRoleName = vec[2];
 	auto tokenUserName = getTokenUser(message);
 
-	Configuration::instance()->getRoles()->addRole(message.extract_json(true).get(), pathRoleName);
+	Configuration::instance()->getRoles()->addRole(message.extractJson(), pathRoleName);
 
 	Configuration::instance()->saveConfigToDisk();
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiRoleDelete(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiRoleDelete() ";
 
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_role_delete);
 
 	auto vec = Utility::splitString(path, "/");
@@ -917,8 +903,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
-	message.reply(status_codes::OK)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiUserGroupsView(const HttpRequest &message)
@@ -930,8 +915,7 @@ void RestHandler::apiUserGroupsView(const HttpRequest &message)
 	{
 		json[index++] = web::json::value::string(grp);
 	}
-	message.reply(status_codes::OK, json)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiListPermissions(const HttpRequest &message)
@@ -945,13 +929,12 @@ void RestHandler::apiListPermissions(const HttpRequest &message)
 	{
 		json[index++] = web::json::value::string(perm);
 	}
-	message.reply(status_codes::OK, json)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiHealth(const HttpRequest &message)
 {
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	// /appmesh/app/$app-name/health
 	std::string appName = path.substr(strlen("/appmesh/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
@@ -959,27 +942,25 @@ void RestHandler::apiHealth(const HttpRequest &message)
 	http::status_code status = status_codes::OK;
 	if (health != 0)
 		status = status_codes::NotAcceptable;
-	message.reply(status, std::to_string(health))
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status, std::to_string(health));
 }
 
 void RestHandler::apiMetrics(const HttpRequest &message)
 {
-	message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4")
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
 }
 
 void RestHandler::apiLogin(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiLogin() ";
-	if (message.headers().has(HTTP_HEADER_JWT_username) && message.headers().has(HTTP_HEADER_JWT_password))
+	if (message.m_headers.count(HTTP_HEADER_JWT_username) && message.m_headers.count(HTTP_HEADER_JWT_password))
 	{
-		auto uname = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_username)->second));
-		auto passwd = Utility::decode64(GET_STD_STRING(message.headers().find(HTTP_HEADER_JWT_password)->second));
+		std::string uname = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_username)->second));
+		std::string passwd = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_password)->second));
 		int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 7 days
-		if (message.headers().has(HTTP_HEADER_JWT_expire_seconds))
+		if (message.m_headers.count(HTTP_HEADER_JWT_expire_seconds))
 		{
-			auto timeout = message.headers().find(HTTP_HEADER_JWT_expire_seconds)->second;
+			auto timeout = message.m_headers.find(HTTP_HEADER_JWT_expire_seconds)->second;
 			timeoutSeconds = std::stoi(timeout);
 		}
 
@@ -1005,23 +986,21 @@ void RestHandler::apiLogin(const HttpRequest &message)
 		}
 		else
 		{
-			message.reply(status_codes::Unauthorized, "Incorrect user password")
-				.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+			message.reply(status_codes::Unauthorized, "Incorrect user password");
 		}
 	}
 	else
 	{
-		message.reply(status_codes::NetworkAuthenticationRequired, "UserName or Password missing")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::NetworkAuthenticationRequired, "UserName or Password missing");
 	}
 }
 
 void RestHandler::apiAuth(const HttpRequest &message)
 {
 	std::string permission;
-	if (message.headers().has(HTTP_HEADER_JWT_auth_permission))
+	if (message.m_headers.count(HTTP_HEADER_JWT_auth_permission))
 	{
-		permission = message.headers().find(HTTP_HEADER_JWT_auth_permission)->second;
+		permission = message.m_headers.find(HTTP_HEADER_JWT_auth_permission)->second;
 	}
 
 	// permission is empty meas just verify token
@@ -1032,31 +1011,28 @@ void RestHandler::apiAuth(const HttpRequest &message)
 		result["user"] = web::json::value::string(getTokenUser(message));
 		result["success"] = web::json::value::boolean(true);
 		result["permission"] = web::json::value::string(permission);
-		message.reply(status_codes::OK, result)
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::OK, result);
 	}
 	else
 	{
-		message.reply(status_codes::Unauthorized, "Incorrect authentication info")
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(status_codes::Unauthorized, "Incorrect authentication info");
 	}
 }
 
 void RestHandler::apiGetApp(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	std::string appName = path.substr(strlen("/appmesh/app/"));
 
 	checkAppAccessPermission(message, appName, false);
 
-	message.reply(status_codes::OK, Configuration::instance()->getApp(appName)->AsJson(true))
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, Configuration::instance()->getApp(appName)->AsJson(true));
 }
 
 std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest &message)
 {
-	auto jsonApp = const_cast<HttpRequest *>(&message)->extract_json(true).get();
+	auto jsonApp = message.extractJson();
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	if (clientProvideAppName.empty())
 	{
@@ -1093,8 +1069,7 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 	auto result = web::json::value::object();
 	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
-	message.reply(status_codes::OK, result)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, result);
 
 	// clean reference from timer
 	appObj->regSuicideTimer(timeout + retention);
@@ -1116,13 +1091,13 @@ void RestHandler::apiRunAsyncOut(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiAsyncRunOut() ";
 	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 
 	// /appmesh/app/$app-name/run?timeout=5
 	std::string app = path.substr(strlen("/appmesh/app/"));
 	app = app.substr(0, app.find_first_of('/'));
 
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.relative_uri().query()));
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
 	if (querymap.find(U(HTTP_QUERY_KEY_process_uuid)) != querymap.end())
 	{
 		auto uuid = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_process_uuid))->second);
@@ -1132,7 +1107,6 @@ void RestHandler::apiRunAsyncOut(const HttpRequest &message)
 		auto appObj = Configuration::instance()->getApp(app);
 		std::string body = appObj->getAsyncRunOutput(uuid, exitCode, finished);
 		web::http::http_response resp(status_codes::OK);
-		resp.set_body(body);
 		if (finished)
 		{
 			resp.set_status_code(status_codes::Created);
@@ -1143,8 +1117,7 @@ void RestHandler::apiRunAsyncOut(const HttpRequest &message)
 		}
 
 		LOG_DBG << fname << "Use process uuid :" << uuid << " ExitCode:" << exitCode;
-		message.reply(resp)
-			.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+		message.reply(resp, body);
 	}
 	else
 	{
@@ -1157,7 +1130,7 @@ void RestHandler::apiGetAppOutput(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiGetAppOutput() ";
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
-	auto path = GET_STD_STRING(http::uri::decode(message.relative_uri().path()));
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 
 	// /appmesh/app/$app-name/output
 	std::string app = path.substr(strlen("/appmesh/app/"));
@@ -1170,29 +1143,26 @@ void RestHandler::apiGetAppOutput(const HttpRequest &message)
 
 	auto output = Configuration::instance()->getApp(appName)->getOutput(keepHis, index);
 	LOG_DBG << fname; // << output;
-	message.reply(status_codes::OK, output)
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, output);
 }
 
 void RestHandler::apiGetApps(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	auto tokenUserName = getTokenUser(message);
-	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName))
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName));
 }
 
 void RestHandler::apiGetResources(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_host_resource);
-	message.reply(status_codes::OK, ResourceCollection::instance()->AsJson())
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, ResourceCollection::instance()->AsJson());
 }
 
 void RestHandler::apiRegApp(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_reg);
-	auto jsonApp = message.extract_json(true).get();
+	auto jsonApp = message.extractJson();
 	if (jsonApp.is_null())
 	{
 		throw std::invalid_argument("Empty json input");
@@ -1218,8 +1188,7 @@ void RestHandler::apiRegApp(const HttpRequest &message)
 	}
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getTokenUser(message));
 	auto app = Configuration::instance()->addApp(jsonApp);
-	message.reply(status_codes::OK, app->AsJson(false))
-		.then([this, message](pplx::task<void> t) { this->handle_error(t, message); });
+	message.reply(status_codes::OK, app->AsJson(false));
 }
 
 void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
@@ -1237,15 +1206,15 @@ void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	{
 		m_restGetCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", "GET"}, {"listen", m_listenAddress}});
+			{{"method", web::http::methods::GET}, {"listen", m_listenAddress}});
 		m_restPutCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", "PUT"}, {"listen", m_listenAddress}});
+			{{"method", web::http::methods::PUT}, {"listen", m_listenAddress}});
 		m_restDelCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", "DELETE"}, {"listen", m_listenAddress}});
+			{{"method", web::http::methods::DEL}, {"listen", m_listenAddress}});
 		m_restPostCounter = prom->createPromCounter(
 			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", "POST"}, {"listen", m_listenAddress}});
+			{{"method", web::http::methods::POST}, {"listen", m_listenAddress}});
 	}
 }
