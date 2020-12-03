@@ -9,9 +9,9 @@
 #include <ace/Message_Block.h>
 
 #include "HttpRequest.h"
-#include "RestHandler.h"
+#include "PrometheusRest.h"
 
-class RestTcpServer : public ACE_Task<ACE_MT_SYNCH>, public ACE_SOCK_Acceptor, public RestHandler
+class RestTcpServer : public ACE_Task<ACE_MT_SYNCH>, public ACE_SOCK_Acceptor, public PrometheusRest
 {
 public:
     RestTcpServer();
@@ -25,7 +25,7 @@ public:
 
     void startTcpServer();
     web::json::value getRestAppJson();
-    void backforwardResponse(const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status);
+    void backforwardResponse(const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType);
 
 private:
     void handleTcpRest(const HttpRequest &message);

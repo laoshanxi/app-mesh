@@ -170,6 +170,7 @@ public:
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define DEFAULT_EXEC_USER "appmesh"
+#define SEPARATE_REST_APP_NAME "apprest"
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"

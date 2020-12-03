@@ -10,29 +10,19 @@ class PrometheusRest;
 class Application;
 class HttpRequest;
 
-enum class REST_SCENARIO : int
-{
-	// A build-in REST service
-	BUILD_IN = 0,
-	// REST in separate process
-	SEPARATE_PROCESS,
-	// TCP REST Service in Server side
-	BUILD_IN_TCP_SERVER
-};
-
 //////////////////////////////////////////////////////////////////////////
 /// REST service
 //////////////////////////////////////////////////////////////////////////
 class RestHandler
 {
 public:
-	explicit RestHandler(const std::string &ipaddress, int port, REST_SCENARIO scenario = REST_SCENARIO::BUILD_IN);
+	explicit RestHandler(bool forward2TcpServer);
 	virtual ~RestHandler();
 
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 
 protected:
-	void open();
+	virtual void open();
 	void close();
 
 protected:
@@ -90,7 +80,7 @@ protected:
 	void apiMetrics(const HttpRequest &message);
 
 protected:
-	const REST_SCENARIO m_scenario;
+	const bool m_forward2TcpServer;
 	std::string m_listenAddress;
 	std::unique_ptr<web::http::experimental::listener::http_listener> m_listener;
 	// API functions

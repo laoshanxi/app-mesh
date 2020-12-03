@@ -9,9 +9,9 @@
 #include <ace/SOCK_Stream.h>
 
 #include "HttpRequest.h"
-#include "RestHandler.h"
+#include "PrometheusRest.h"
 
-class RestChildObject : public ACE_SOCK_Connector, public RestHandler
+class RestChildObject : public ACE_SOCK_Connector, public PrometheusRest
 {
 public:
     RestChildObject();

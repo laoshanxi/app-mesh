@@ -31,7 +31,6 @@
 #include "../common/Valgrind.h"
 #endif
 
-std::set<std::shared_ptr<RestHandler>> m_restList;
 void initCpprestThreadPool();
 
 int main(int argc, char *argv[])
@@ -91,30 +90,16 @@ int main(int argc, char *argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		Configuration::instance()->dump();
 
-		// Init Prometheus Exporter
-		if (config->getRestEnabled() && config->getPromListenPort())
+		// init TCP rest service
+		std::shared_ptr<RestTcpServer> httpServer;
+		if (config->getRestEnabled())
 		{
-			initCpprestThreadPool();
-			PrometheusRest::instance(std::make_shared<PrometheusRest>(config->getRestListenAddress(), config->getPromListenPort()));
-		}
-
-		// // Init REST service
-		std::shared_ptr<RestHandler> httpServer;
-		if (config->getRestEnabled() && !config->getSeparateRestProcess())
-		{
-			initCpprestThreadPool();
-			// init normal rest service
-			httpServer = std::make_shared<RestHandler>(config->getRestListenAddress(), config->getRestListenPort());
-			m_restList.insert(httpServer);
-		}
-		else if (config->getSeparateRestProcess())
-		{
-			// init TCP rest service
-			RestTcpServer::instance(std::make_shared<RestTcpServer>());
+			httpServer = std::make_shared<RestTcpServer>();
+			RestTcpServer::instance(httpServer);
+			PrometheusRest::instance(httpServer);
 			RestTcpServer::instance()->startTcpServer();
-			httpServer = RestTcpServer::instance();
-			m_restList.insert(httpServer);
-			config->addApp(RestTcpServer::instance()->getRestAppJson());
+			RestTcpServer::instance()->initMetrics(httpServer);
+			Configuration::instance()->addApp(RestTcpServer::instance()->getRestAppJson());
 		}
 
 		// HA attach process to App

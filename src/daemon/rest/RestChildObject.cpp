@@ -13,9 +13,7 @@
 
 std::shared_ptr<RestChildObject> RestChildObject::m_instance = nullptr;
 RestChildObject::RestChildObject()
-    : RestHandler(Configuration::instance()->getRestListenAddress(),
-                  Configuration::instance()->getRestListenPort(),
-                  REST_SCENARIO::SEPARATE_PROCESS)
+    : PrometheusRest(true)
 {
 }
 
@@ -44,7 +42,7 @@ void RestChildObject::connectAndRun(int port)
         if (connector.connect(m_socketStream, localAddress) >= 0)
         {
             LOG_INF << fname << "connected to TCP REST port: " << localAddress.get_port_number();
-            RestHandler::open();
+            PrometheusRest::open();
             //auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
             while (auto msg = readMessageBlock(m_socketStream))
             {
@@ -119,13 +117,14 @@ void RestChildObject::replyResponse(ACE_Message_Block *msg)
 {
     const static char fname[] = "RestChildObject::replyResponse() ";
 
-    std::string uuid, body, headers;
+    std::string uuid, body, headers, bodyType;
     http::status_code status;
     ACE_InputCDR cdr(msg);
     if (cdr >> status &&
         cdr >> uuid &&
         cdr >> body &&
-        cdr >> headers)
+        cdr >> headers &&
+        cdr >> bodyType)
     {
         std::lock_guard<std::recursive_mutex> guard(m_mutex);
         if (m_sentMessages.count(uuid))
@@ -142,7 +141,7 @@ void RestChildObject::replyResponse(ACE_Message_Block *msg)
 
             try
             {
-                msg.reply(resp);
+                msg.reply(resp, bodyType);
             }
             catch (const std::exception &e)
             {

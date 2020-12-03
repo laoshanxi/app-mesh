@@ -1,10 +1,9 @@
 #pragma once
 
 #include <memory>
-#include <assert.h>
-#include <functional>
 #include <cpprest/http_listener.h> // HTTP server
 #include "HttpRequest.h"
+#include "RestHandler.h"
 #include "../../prom_exporter/family.h"
 
 namespace prometheus
@@ -15,11 +14,11 @@ namespace prometheus
 }; // namespace prometheus
 
 //////////////////////////////////////////////////////////////////////////
-//                 Rgistry
+//                 Registry
 //                   _|_
-//  CounterFamlity-1     CounterFamlity-2
+//  CounterFamily-1       CounterFamily-2
 //        _|_                   _|_
-//  Counter1/Counter2    Counter3/Counter4
+//  Counter1/Counter2     Counter3/Counter4
 //////////////////////////////////////////////////////////////////////////
 // Metric Wrapper for safe access
 //////////////////////////////////////////////////////////////////////////
@@ -67,10 +66,10 @@ private:
 //////////////////////////////////////////////////////////////////////////
 /// Prometheus Exporter REST service
 //////////////////////////////////////////////////////////////////////////
-class PrometheusRest
+class PrometheusRest : public RestHandler
 {
 public:
-	explicit PrometheusRest(std::string ipaddress, int port);
+	explicit PrometheusRest(bool forward2TcpServer);
 	virtual ~PrometheusRest();
 
 	std::shared_ptr<CounterPtr> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
@@ -78,32 +77,15 @@ public:
 	const std::string collectData();
 
 protected:
-	void open();
-	void close();
-	void initMetrics();
+	virtual void open();
+	void initSelfMetrics();
 
 private:
-	void handleRest(const http_request &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions);
-	void bindRestMethod(web::http::method method, std::string path, std::function<void(const HttpRequest &)> func);
-	void handle_get(const HttpRequest &message);
-	void handle_put(const HttpRequest &message);
-	void handle_post(const HttpRequest &message);
-	void handle_delete(const HttpRequest &message);
-	void handle_options(const HttpRequest &message);
-	void handle_error(pplx::task<void> &t);
-
 	void apiMetrics(const HttpRequest &message);
 
 private:
-	std::unique_ptr<web::http::experimental::listener::http_listener> m_listener;
-	// API functions
-	std::map<std::string, std::function<void(const HttpRequest &)>> m_restGetFunctions;
-	std::map<std::string, std::function<void(const HttpRequest &)>> m_restPutFunctions;
-	std::map<std::string, std::function<void(const HttpRequest &)>> m_restPstFunctions;
-	std::map<std::string, std::function<void(const HttpRequest &)>> m_restDelFunctions;
 	bool m_promEnabled;
-	std::recursive_mutex m_mutex;
-
+	std::unique_ptr<web::http::experimental::listener::http_listener> m_promListener;
 	// prometheus
 	std::shared_ptr<prometheus::Registry> m_promRegistry;
 	std::shared_ptr<CounterPtr> m_scrapeCounter;

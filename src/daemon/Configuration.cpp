@@ -13,6 +13,7 @@
 #include "ResourceCollection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
+#include "rest/PrometheusRest.h"
 #include "security/User.h"
 
 #include "../common/DurationParse.h"
@@ -20,8 +21,6 @@
 #include "../common/DateTime.h"
 
 extern char **environ; // unistd.h
-// from main.cpp
-extern std::set<std::shared_ptr<RestHandler>> m_restList;
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
@@ -248,12 +247,6 @@ std::string Configuration::getRestListenAddress()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restListenAddress;
-}
-
-bool Configuration::getSeparateRestProcess()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_separateRestProcess;
 }
 
 int Configuration::getSeparateRestInternalPort()
@@ -654,8 +647,6 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_SeparateRestProcess))
-				SET_COMPARE(this->m_rest->m_separateRestProcess, newConfig->m_rest->m_separateRestProcess);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SeparateRestInternalPort))
 				SET_COMPARE(this->m_rest->m_separateRestInternalPort, newConfig->m_rest->m_separateRestInternalPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
@@ -665,9 +656,6 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 			if (HAS_JSON_FIELD(rest, JSON_KEY_PrometheusExporterListenPort) && (this->m_rest->m_promListenPort != newConfig->m_rest->m_promListenPort))
 			{
 				SET_COMPARE(this->m_rest->m_promListenPort, newConfig->m_rest->m_promListenPort);
-				PrometheusRest::instance(nullptr);
-				PrometheusRest::instance(std::make_shared<PrometheusRest>(this->getRestListenAddress(), this->getPromListenPort()));
-				registerPrometheus();
 			}
 			// SSL
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
@@ -801,10 +789,6 @@ void Configuration::registerPrometheus()
 	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p) {
 		p->initMetrics(PrometheusRest::instance());
 	});
-	for (auto rest : m_restList)
-	{
-		rest->initMetrics(PrometheusRest::instance());
-	}
 }
 
 std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jsonApp)
@@ -878,7 +862,6 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	auto rest = std::make_shared<JsonRest>();
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
-	rest->m_separateRestProcess = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SeparateRestProcess);
 	rest->m_separateRestInternalPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_SeparateRestInternalPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
@@ -908,7 +891,6 @@ web::json::value Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_RestListenPort] = web::json::value::number(m_restListenPort);
 	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_restListenAddress);
-	result[JSON_KEY_SeparateRestProcess] = web::json::value::boolean(m_separateRestProcess);
 	result[JSON_KEY_SeparateRestInternalPort] = web::json::value::number(m_separateRestInternalPort);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();

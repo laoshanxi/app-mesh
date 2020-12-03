@@ -38,7 +38,6 @@ class Configuration
 		int m_restListenPort;
 		int m_promListenPort;
 		std::string m_restListenAddress;
-		bool m_separateRestProcess;
 		int m_separateRestInternalPort;
 		std::shared_ptr<JsonSsl> m_ssl;
 		JsonRest();
@@ -103,7 +102,6 @@ public:
 	int getRestListenPort();
 	int getPromListenPort();
 	std::string getRestListenAddress();
-	bool getSeparateRestProcess();
 	int getSeparateRestInternalPort();
 	const web::json::value getSecureConfigJson();
 	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user) const;

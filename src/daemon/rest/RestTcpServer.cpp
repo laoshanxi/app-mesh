@@ -7,7 +7,7 @@
 #include <ace/INET_Addr.h>
 
 #include "HttpRequest.h"
-#include "RestHandler.h"
+#include "PrometheusRest.h"
 #include "RestTcpServer.h"
 #include "RestChildObject.h"
 #include "../Configuration.h"
@@ -15,8 +15,7 @@
 #include "../../common/Utility.h"
 
 std::shared_ptr<RestTcpServer> RestTcpServer::m_instance = nullptr;
-RestTcpServer::RestTcpServer()
-    : RestHandler(ACE_LOCALHOST, 0, REST_SCENARIO::BUILD_IN_TCP_SERVER)
+RestTcpServer::RestTcpServer() : PrometheusRest(false)
 {
 }
 
@@ -122,7 +121,7 @@ web::json::value RestTcpServer::getRestAppJson()
 {
     web::json::value restApp;
     auto objEnvs = web::json::value::object();
-    restApp[JSON_KEY_APP_name] = web::json::value::string("apprest");
+    restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_REST_APP_NAME);
     restApp[JSON_KEY_APP_owner] = web::json::value::string("admin");
     restApp[JSON_KEY_APP_command] = web::json::value::string("/opt/appmesh/apprest rest");
     restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
@@ -131,7 +130,8 @@ web::json::value RestTcpServer::getRestAppJson()
     return restApp;
 }
 
-void RestTcpServer::backforwardResponse(const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status)
+void RestTcpServer::backforwardResponse(const std::string &uuid, const std::string &body,
+ const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType)
 {
     const static char fname[] = "RestTcpServer::backforwardResponse() ";
 
@@ -143,6 +143,7 @@ void RestTcpServer::backforwardResponse(const std::string &uuid, const std::stri
     payload << uuid;
     payload << body;
     payload << Utility::serialize(headers);
+    payload << bodyType;
 
     // Get the number of bytes used by the CDR stream.
     ACE_CDR::ULong length = ACE_Utils::truncate_cast<ACE_CDR::ULong>(payload.total_length());
