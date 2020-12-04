@@ -130,7 +130,8 @@ void RestHandler::open()
 										boost::asio::ssl::context::no_sslv3 |
 										boost::asio::ssl::context::no_tlsv1 |
 										boost::asio::ssl::context::no_tlsv1_1 |
-										boost::asio::ssl::context::single_dh_use,
+										boost::asio::ssl::context::single_dh_use |
+										SSL_OP_CIPHER_SERVER_PREFERENCE,
 									ec);
 					// LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
 

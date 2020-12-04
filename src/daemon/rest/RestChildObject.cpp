@@ -108,7 +108,7 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
     }
     else
     {
-        LOG_DBG << fname << "pending message id: " << message.m_uuid << " header len: " << 8 << " body len: " << length;
+        LOG_DBG << fname << "Cache message: " << message.m_uuid << " header len: " << 8 << " body len: " << length;
         m_sentMessages.insert(std::pair<std::string, HttpRequest>(message.m_uuid, HttpRequest(message)));
     }
 }
@@ -159,6 +159,13 @@ void RestChildObject::replyResponse(ACE_Message_Block *msg)
     else
     {
         LOG_ERR << fname << "deserialize response failed: " << uuid;
+        std::lock_guard<std::recursive_mutex> guard(m_mutex);
+        if (m_sentMessages.count(uuid))
+        {
+            auto &msg = m_sentMessages.find(uuid)->second;
+            msg.reply(web::http::status_codes::ExpectationFailed, "deserialize response failed");
+            m_sentMessages.erase(uuid);
+        }
     }
 }
 

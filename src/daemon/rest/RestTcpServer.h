@@ -11,6 +11,10 @@
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
 
+/// <summary>
+/// REST Server, inherit from RestHandler and PrometheusRest
+/// Accept REST request from TCP channel and process via RestHandler and PrometheusRest
+/// </summary>
 class RestTcpServer : public ACE_Task<ACE_MT_SYNCH>, public ACE_SOCK_Acceptor, public PrometheusRest
 {
 public:
@@ -19,15 +23,52 @@ public:
     static std::shared_ptr<RestTcpServer> instance();
     static void instance(std::shared_ptr<RestTcpServer> restProcess);
 
-    int open(void *);
-    int svc(void);
-    void socketThread();
-
+    /// <summary>
+    /// start thread pool and listen port
+    /// </summary>
     void startTcpServer();
-    web::json::value getRestAppJson();
+
+    /// <summary>
+    /// Response REST response to client
+    /// </summary>
+    /// <param name="uuid"></param>
+    /// <param name="body"></param>
+    /// <param name="headers"></param>
+    /// <param name="status"></param>
+    /// <param name="bodyType"></param>
     void backforwardResponse(const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType);
 
+    /// <summary>
+    /// Generate Application json for rest process
+    /// </summary>
+    /// <returns></returns>
+    const web::json::value getRestAppJson() const;
+
 private:
+    /// <summary>
+    /// ACE_Task_Base::open()
+    /// Hook called to initialize a task and prepare it for execution.
+    /// </summary>
+    /// <param name=""></param>
+    /// <returns></returns>
+    int open(void *);
+
+    /// <summary>
+    /// Thread pool to handle TCP REST request asynchronous
+    /// </summary>
+    /// <param name=""></param>
+    /// <returns></returns>
+    int svc(void);
+
+    /// <summary>
+    /// Thread to accept and read socket message
+    /// </summary>
+    void socketThread();
+
+    /// <summary>
+    /// Process TCP request
+    /// </summary>
+    /// <param name="message"></param>
     void handleTcpRest(const HttpRequest &message);
 
 private:

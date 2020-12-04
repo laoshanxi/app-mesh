@@ -39,7 +39,7 @@ int RestTcpServer::open(void *)
     if (!lock.test_and_set())
     {
         activate(THR_NEW_LWP | THR_BOUND | THR_DETACHED, Configuration::instance()->getThreadPoolSize());
-        // one thread is used to read socket
+        // thread used to read socket
         m_socketThread = std::thread(std::bind(&RestTcpServer::socketThread, this));
     }
     return 0;
@@ -74,6 +74,7 @@ int RestTcpServer::svc(void)
             {
                 LOG_ERR << fname << "message deserialize failed";
             }
+            msg->release();
         }
     }
     catch (const std::exception &e)
@@ -117,7 +118,7 @@ void RestTcpServer::startTcpServer()
     this->open(0);
 }
 
-web::json::value RestTcpServer::getRestAppJson()
+const web::json::value RestTcpServer::getRestAppJson() const
 {
     web::json::value restApp;
     auto objEnvs = web::json::value::object();
@@ -131,7 +132,7 @@ web::json::value RestTcpServer::getRestAppJson()
 }
 
 void RestTcpServer::backforwardResponse(const std::string &uuid, const std::string &body,
- const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType)
+                                        const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType)
 {
     const static char fname[] = "RestTcpServer::backforwardResponse() ";
 
@@ -162,19 +163,19 @@ void RestTcpServer::backforwardResponse(const std::string &uuid, const std::stri
     iov[1].iov_base = payload.begin()->rd_ptr();
     iov[1].iov_len = length;
 
-    LOG_DBG << fname << "send response with header length: " << 8 << " body length: " << length;
+    LOG_DBG << fname << "send response: " << uuid << " with header length: " << 8 << " body length: " << length;
 
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
     if (m_socketStream.get_handle() == ACE_INVALID_HANDLE || m_socketStream.sendv_n(iov, 2) < (ssize_t)length)
     {
-        LOG_ERR << fname << "send response failed with error :" << std::strerror(errno);
+        LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
     }
 }
 
 void RestTcpServer::handleTcpRest(const HttpRequest &message)
 {
     const static char fname[] = "RestTcpServer::handleTcpRest() ";
-    LOG_DBG << fname << message.m_method << " from " << message.m_remote_address << " with path " << message.m_relative_uri;
+    LOG_DBG << fname << message.m_method << " from " << message.m_remote_address << " path " << message.m_relative_uri << " id " << message.m_uuid;
 
     if (message.m_method == web::http::methods::GET)
     {

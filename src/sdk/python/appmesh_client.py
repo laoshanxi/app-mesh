@@ -74,6 +74,26 @@ class AppMeshClient:
         else:
             return False, resp.text
 
+    def get_config(self):
+        resp = self.__request_http(
+            Method.GET,
+            path="/appmesh/config"
+        )
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
+    def set_config(self, cfg_json):
+        resp = self.__request_http(
+            Method.POST,
+            path="/appmesh/config"
+        )
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
     def reg_app(self, app_json):
         resp = self.__request_http(
             Method.PUT,
