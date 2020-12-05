@@ -128,7 +128,7 @@ public:
 			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
 
 	// serializeable, always use those variables intead of method(), headers()
-	std::string m_method;
+	web::http::method m_method;
 	std::string m_relative_uri;
 	std::string m_remote_address;
 	std::string m_body;

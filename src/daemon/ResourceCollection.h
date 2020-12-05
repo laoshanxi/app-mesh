@@ -47,7 +47,7 @@ public:
 	// Internal Singleton.
 	static std::unique_ptr<ResourceCollection> &instance();
 
-	std::string getHostName(bool refresh = false);
+	const std::string getHostName(bool refresh = false);
 	const HostResource &getHostResource();
 	const pid_t getPid();
 

@@ -22,7 +22,7 @@ std::unique_ptr<ResourceCollection> &ResourceCollection::instance()
 	return singleton;
 }
 
-std::string ResourceCollection::getHostName(bool refresh)
+const std::string ResourceCollection::getHostName(bool refresh)
 {
 	static std::string hostname;
 	if (hostname.empty() || refresh)

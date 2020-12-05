@@ -183,8 +183,14 @@ void Application::refreshPid()
 		}
 		checkAndUpdateHealth();
 	}
-	if (m_metricMemory)
-		m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
+
+	if (PrometheusRest::instance()->collected())
+	{
+		if (m_metricMemory)
+			m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
+		if (m_metricAppPid)
+			m_metricAppPid->metric().Set(m_pid);
+	}
 }
 
 bool Application::attach(int pid)
@@ -447,6 +453,9 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 		// use uuid in label here to avoid same name app use the same metric cause issue
 		m_metricStartCount = prom->createPromCounter(
 			PROM_METRIC_NAME_appmesh_prom_process_start_count, PROM_METRIC_HELP_appmesh_prom_process_start_count,
+			{{"application", getName()}, {"id", m_appId}});
+		m_metricAppPid = prom->createPromGauge(
+			PROM_METRIC_NAME_appmesh_prom_process_id_gauge, PROM_METRIC_HELP_appmesh_prom_process_start_count,
 			{{"application", getName()}, {"id", m_appId}});
 		m_metricMemory = prom->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_memory_gauge, PROM_METRIC_HELP_appmesh_prom_process_memory_gauge,

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <cpprest/http_listener.h> // HTTP server
 #include "HttpRequest.h"
-#include "RestHandler.h"
+#include "RestBase.h"
 #include "../../prom_exporter/family.h"
 
 namespace prometheus
@@ -66,7 +67,7 @@ private:
 //////////////////////////////////////////////////////////////////////////
 /// Prometheus Exporter REST service
 //////////////////////////////////////////////////////////////////////////
-class PrometheusRest : public RestHandler
+class PrometheusRest : public RestBase
 {
 public:
 	explicit PrometheusRest(bool forward2TcpServer);
@@ -75,13 +76,15 @@ public:
 	std::shared_ptr<CounterPtr> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
 	std::shared_ptr<GaugePtr> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
 	const std::string collectData();
+	bool collected();
 
 protected:
 	virtual void open();
-	void initSelfMetrics();
+	virtual void handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions);
 
 private:
 	void apiMetrics(const HttpRequest &message);
+	void initSelfMetrics();
 
 private:
 	bool m_promEnabled;
@@ -90,12 +93,27 @@ private:
 	std::shared_ptr<prometheus::Registry> m_promRegistry;
 	std::shared_ptr<CounterPtr> m_scrapeCounter;
 	std::shared_ptr<GaugePtr> m_promGauge;
+
+	// prometheus rest event counter
+	std::shared_ptr<CounterPtr> m_restGetCounter;
+	std::shared_ptr<CounterPtr> m_restPutCounter;
+	std::shared_ptr<CounterPtr> m_restDelCounter;
+	std::shared_ptr<CounterPtr> m_restPostCounter;
+
+	std::atomic_long m_collectFlag;
 	static std::shared_ptr<PrometheusRest> m_instance;
 
 public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
 };
+
+#define PROM_COUNTER_INCREASE(counter)     \
+	{                                      \
+		if (counter)                       \
+			counter->metric().Increment(); \
+	}
+
 // Prometheus scrap counter
 #define PROM_METRIC_NAME_appmesh_prom_scrape_count "appmesh_prom_scrape_count"
 #define PROM_METRIC_HELP_appmesh_prom_scrape_count "prometheus scrape count"
@@ -108,6 +126,9 @@ public:
 // Application process start count
 #define PROM_METRIC_NAME_appmesh_prom_process_start_count "appmesh_prom_process_start_count"
 #define PROM_METRIC_HELP_appmesh_prom_process_start_count "application process spawn count"
+// Application process id
+#define PROM_METRIC_NAME_appmesh_prom_process_id_gauge "appmesh_prom_process_id_gauge"
+#define PROM_METRIC_HELP_appmesh_prom_process_id_gauge "application process id"
 // Application process memory usage
 #define PROM_METRIC_NAME_appmesh_prom_process_memory_gauge "appmesh_prom_process_memory_gauge"
 #define PROM_METRIC_HELP_appmesh_prom_process_memory_gauge "application process memory bytes"

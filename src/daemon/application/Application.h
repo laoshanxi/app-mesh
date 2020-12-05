@@ -127,6 +127,7 @@ protected:
 	// Prometheus
 	std::shared_ptr<CounterPtr> m_metricStartCount;
 	std::shared_ptr<GaugePtr> m_metricMemory;
+	std::shared_ptr<GaugePtr> m_metricAppPid;
 	std::atomic<int> m_continueFails;
 
 	// error

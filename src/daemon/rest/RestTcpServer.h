@@ -9,13 +9,13 @@
 #include <ace/Message_Block.h>
 
 #include "HttpRequest.h"
-#include "PrometheusRest.h"
+#include "RestHandler.h"
 
 /// <summary>
 /// REST Server, inherit from RestHandler and PrometheusRest
 /// Accept REST request from TCP channel and process via RestHandler and PrometheusRest
 /// </summary>
-class RestTcpServer : public ACE_Task<ACE_MT_SYNCH>, public ACE_SOCK_Acceptor, public PrometheusRest
+class RestTcpServer : public ACE_Task<ACE_MT_SYNCH>, public ACE_SOCK_Acceptor, public RestHandler
 {
 public:
     RestTcpServer();

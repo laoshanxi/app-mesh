@@ -1,5 +1,8 @@
+#include <atomic>
+#include <ace/OS.h>
 #include <boost/algorithm/string_regex.hpp>
 #include "PrometheusRest.h"
+#include "RestBase.h"
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/registry.h"
 #include "../../prom_exporter/text_serializer.h"
@@ -10,7 +13,7 @@
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest(bool forward2TcpServer)
-	: RestHandler(forward2TcpServer), m_promEnabled(true), m_scrapeCounter(0)
+	: RestBase(forward2TcpServer), m_promEnabled(true), m_scrapeCounter(0), m_collectFlag(ATOMIC_FLAG_INIT)
 {
 	m_promRegistry = std::make_shared<prometheus::Registry>();
 	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
@@ -23,8 +26,6 @@ PrometheusRest::PrometheusRest(bool forward2TcpServer)
 void PrometheusRest::open()
 {
 	const static char fname[] = "PrometheusRest::open() ";
-
-	RestHandler::open();
 
 	std::string ipaddress = Configuration::instance()->getRestListenAddress();
 	ipaddress = ipaddress.empty() ? std::string("0.0.0.0") : ipaddress;
@@ -67,8 +68,10 @@ PrometheusRest::~PrometheusRest()
 	LOG_INF << fname << "Entered";
 	try
 	{
-		if (m_listener != nullptr)
-			m_listener->close().wait();
+		if (m_promListener)
+		{
+			m_promListener->close().wait();
+		}
 	}
 	catch (...)
 	{
@@ -90,6 +93,20 @@ void PrometheusRest::initSelfMetrics()
 		{});
 	if (m_promGauge)
 		m_promGauge->metric().Set(1);
+
+	auto listenAddress = Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
+	m_restGetCounter = createPromCounter(
+		PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
+		{{"method", web::http::methods::GET}, {"listen", listenAddress}});
+	m_restPutCounter = createPromCounter(
+		PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
+		{{"method", web::http::methods::PUT}, {"listen", listenAddress}});
+	m_restDelCounter = createPromCounter(
+		PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
+		{{"method", web::http::methods::DEL}, {"listen", listenAddress}});
+	m_restPostCounter = createPromCounter(
+		PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
+		{{"method", web::http::methods::POST}, {"listen", listenAddress}});
 }
 
 std::shared_ptr<CounterPtr> PrometheusRest::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
@@ -105,12 +122,35 @@ std::shared_ptr<GaugePtr> PrometheusRest::createPromGauge(const std::string &met
 		return nullptr;
 	return std::make_shared<GaugePtr>(m_promRegistry, metricName, metricHelp, labels);
 }
+void PrometheusRest::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
+{
+	if (message.m_method == web::http::methods::GET)
+		PROM_COUNTER_INCREASE(m_restGetCounter)
+	else if (message.m_method == web::http::methods::PUT)
+		PROM_COUNTER_INCREASE(m_restPutCounter)
+	else if (message.m_method == web::http::methods::POST)
+		PROM_COUNTER_INCREASE(m_restPostCounter)
+	else if (message.m_method == web::http::methods::DEL)
+		PROM_COUNTER_INCREASE(m_restDelCounter)
+
+	RestBase::handleRest(message, restFunctions);
+}
 
 const std::string PrometheusRest::collectData()
 {
+	m_collectFlag = ACE_OS::time();
 	// leave a static text serializer here
 	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
 	return std::move(promSerializer->Serialize(m_promRegistry->Collect()));
+}
+
+bool PrometheusRest::collected()
+{
+	if (ACE_OS::time() - m_collectFlag > 5)
+	{
+		return false;
+	}
+	return true;
 }
 
 void PrometheusRest::apiMetrics(const HttpRequest &message)
@@ -119,7 +159,9 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 	LOG_DBG << fname << "Entered";
 
 	if (m_scrapeCounter)
+	{
 		m_scrapeCounter->metric().Increment();
+	}
 
 	message.reply(status_codes::OK, collectData(), "text/plain; version=0.0.4");
 }
@@ -128,7 +170,6 @@ CounterPtr::CounterPtr(std::shared_ptr<prometheus::Registry> registry, const std
 	: m_metric(nullptr), m_family(nullptr), m_promRegistry(registry), m_name(name), m_help(help), m_label(label)
 {
 	const static char fname[] = "CounterPtr::CounterPtr() ";
-
 	std::map<std::string, std::string> commonLabels = {{"host", MY_HOST_NAME}, {"pid", std::to_string(ResourceCollection::instance()->getPid())}};
 	commonLabels.insert(label.begin(), label.end());
 

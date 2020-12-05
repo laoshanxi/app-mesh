@@ -9,12 +9,12 @@
 #include <ace/SOCK_Stream.h>
 
 #include "HttpRequest.h"
-#include "PrometheusRest.h"
+#include "RestHandler.h"
 
 /// <summary>
 /// REST Server Object, forward http REST request to TCP Server process side
 /// </summary>
-class RestChildObject : public ACE_SOCK_Connector, public PrometheusRest
+class RestChildObject : public ACE_SOCK_Connector, public RestHandler
 {
 public:
     RestChildObject();

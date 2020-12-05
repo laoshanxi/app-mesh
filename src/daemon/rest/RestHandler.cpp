@@ -1,5 +1,5 @@
 #include <chrono>
-#include <boost/algorithm/string_regex.hpp>
+
 #include <cpprest/filestream.h>
 #include <cpprest/http_listener.h> // HTTP server
 #include <cpprest/http_client.h>
@@ -14,19 +14,12 @@
 #include "../ResourceCollection.h"
 #include "../security/User.h"
 #include "../Label.h"
-
-#include "../../prom_exporter/counter.h"
-#include "../../prom_exporter/gauge.h"
-#include "../../prom_exporter/text_serializer.h"
 #include "../../common/DurationParse.h"
-
 #include "../../common/Utility.h"
-#include "../../common/jwt-cpp/jwt.h"
 #include "../../common/os/linux.hpp"
 #include "../../common/os/chown.hpp"
 
-RestHandler::RestHandler(bool forward2TcpServer)
-	: m_forward2TcpServer(forward2TcpServer)
+RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpServer)
 {
 	// 1. Authentication
 	bindRestMethod(web::http::methods::POST, "/appmesh/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
@@ -78,7 +71,7 @@ RestHandler::RestHandler(bool forward2TcpServer)
 
 	// 9. metrics
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/metrics", std::bind(&RestHandler::apiMetrics, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/metrics", std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
 }
 
 RestHandler::~RestHandler()
@@ -99,12 +92,14 @@ void RestHandler::open()
 {
 	const static char fname[] = "RestHandler::open() ";
 
+	PrometheusRest::open();
+
 	const std::string ipaddress = Configuration::instance()->getRestListenAddress();
 	const int port = Configuration::instance()->getRestListenPort();
-	m_listenAddress = ipaddress.empty() ? std::string("0.0.0.0") : ipaddress;
+	auto listenAddress = ipaddress.empty() ? std::string("0.0.0.0") : ipaddress;
 	// Construct URI
 	web::uri_builder uri;
-	uri.set_host(m_listenAddress);
+	uri.set_host(listenAddress);
 	uri.set_port(port);
 	uri.set_path("/");
 	if (Configuration::instance()->getSslEnabled())
@@ -178,266 +173,14 @@ void RestHandler::close()
 	m_listener->close(); // .wait();
 }
 
-bool RestHandler::forwardRestRequest(const HttpRequest &message)
-{
-	// file download/upload do not forward to server
-	if (m_forward2TcpServer && !Utility::startWith(message.m_relative_uri, "/appmesh/file"))
-	{
-		RestChildObject::instance()->sendRequest2Server(message);
-		return true;
-	}
-	return false;
-}
-
-void RestHandler::handle_get(const HttpRequest &message)
-{
-	REST_INFO_PRINT;
-	if (!forwardRestRequest(message))
-	{
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			if (m_restGetCounter)
-				m_restGetCounter->metric().Increment();
-		}
-		handleRest(message, m_restGetFunctions);
-	}
-}
-
-void RestHandler::handle_put(const HttpRequest &message)
-{
-	REST_INFO_PRINT;
-	if (!forwardRestRequest(message))
-	{
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			if (m_restPutCounter)
-				m_restPutCounter->metric().Increment();
-		}
-		handleRest(message, m_restPutFunctions);
-	}
-}
-
-void RestHandler::handle_post(const HttpRequest &message)
-{
-	REST_INFO_PRINT;
-	if (!forwardRestRequest(message))
-	{
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			if (m_restPostCounter)
-				m_restPostCounter->metric().Increment();
-		}
-		handleRest(message, m_restPstFunctions);
-	}
-}
-
-void RestHandler::handle_delete(const HttpRequest &message)
-{
-	if (!forwardRestRequest(message))
-	{
-		REST_INFO_PRINT;
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_mutex);
-			if (m_restDelCounter)
-				m_restDelCounter->metric().Increment();
-		}
-		handleRest(message, m_restDelFunctions);
-	}
-}
-
-void RestHandler::handle_options(const HttpRequest &message)
-{
-	message.reply(status_codes::OK);
-}
-
-void RestHandler::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
-{
-	const static char fname[] = "RestHandler::handleRest() ";
-
-	std::function<void(const HttpRequest &)> stdFunction;
-	auto path = Utility::stringReplace(message.m_relative_uri, "//", "/");
-
-	if (path == "/" || path.empty())
-	{
-		message.reply(status_codes::OK, "App Mesh");
-		return;
-	}
-
-	bool findRest = false;
-	for (const auto &kvp : restFunctions)
-	{
-		if (path == kvp.first || boost::regex_match(path, boost::regex(kvp.first)))
-		{
-			findRest = true;
-			stdFunction = kvp.second;
-			break;
-		}
-	}
-	if (!findRest)
-	{
-		message.reply(status_codes::NotFound, "Path not found");
-		return;
-	}
-
-	try
-	{
-		// LOG_DBG << fname << "rest " << path;
-		stdFunction(message);
-	}
-	catch (const std::exception &e)
-	{
-		LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
-		message.reply(web::http::status_codes::BadRequest, e.what());
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "rest " << path << " failed";
-		message.reply(web::http::status_codes::BadRequest, "unknow exception");
-	}
-}
-
-void RestHandler::bindRestMethod(web::http::method method, std::string path, std::function<void(const HttpRequest &)> func)
-{
-	const static char fname[] = "RestHandler::bindRest() ";
-
-	LOG_DBG << fname << "bind " << GET_STD_STRING(method).c_str() << " for " << path;
-
-	// bind to map
-	if (method == web::http::methods::GET)
-		m_restGetFunctions[path] = func;
-	else if (method == web::http::methods::PUT)
-		m_restPutFunctions[path] = func;
-	else if (method == web::http::methods::POST)
-		m_restPstFunctions[path] = func;
-	else if (method == web::http::methods::DEL)
-		m_restDelFunctions[path] = func;
-	else
-		LOG_ERR << fname << GET_STD_STRING(method).c_str() << " not supported.";
-}
-
-std::string RestHandler::verifyToken(const HttpRequest &message)
-{
-	if (!Configuration::instance()->getJwtEnabled())
-		return "";
-
-	auto token = getTokenStr(message);
-	auto decoded_token = jwt::decode(token);
-	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
-	{
-		// get user info
-		auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name);
-		auto userObj = Configuration::instance()->getUserInfo(userName.as_string());
-		auto userKey = userObj->getKey();
-
-		// check locked
-		if (userObj->locked())
-			throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.as_string().c_str()));
-
-		// check user token
-		auto verifier = jwt::verify()
-							.allow_algorithm(jwt::algorithm::hs256{userKey})
-							.with_issuer(HTTP_HEADER_JWT_ISSUER)
-							.with_claim(HTTP_HEADER_JWT_name, userName);
-		verifier.verify(decoded_token);
-
-		return std::move(userName.as_string());
-	}
-	else
-	{
-		throw std::invalid_argument("No user info in token");
-	}
-}
-
-std::string RestHandler::getTokenUser(const HttpRequest &message)
-{
-	if (!Configuration::instance()->getJwtEnabled())
-		return std::string();
-
-	auto token = getTokenStr(message);
-	auto decoded_token = jwt::decode(token);
-	if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
-	{
-		// get user info
-		return decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
-	}
-	else
-	{
-		throw std::invalid_argument("No user info in token");
-	}
-}
-
-bool RestHandler::permissionCheck(const HttpRequest &message, const std::string &permission)
-{
-	const static char fname[] = "RestHandler::permissionCheck() ";
-
-	auto userName = verifyToken(message);
-	if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
-	{
-		// check user role permission
-		if (Configuration::instance()->getUserPermissions(userName).count(permission))
-		{
-			LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
-			return true;
-		}
-		else
-		{
-			LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-			throw std::invalid_argument(Utility::stringFormat("No permission <%s> for user <%s>", permission.c_str(), userName.c_str()));
-		}
-	}
-	else
-	{
-		// JWT not enabled
-		return true;
-	}
-}
-
 void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite)
 {
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 	auto app = Configuration::instance()->getApp(appName);
 	if (!Configuration::instance()->checkOwnerPermission(tokenUserName, app->getOwner(), app->getOwnerPermission(), requestWrite))
 	{
 		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to <%s> app <%s>", tokenUserName.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
 	}
-}
-
-std::string RestHandler::getTokenStr(const HttpRequest &message)
-{
-	std::string token;
-	if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
-	{
-		token = Utility::stdStringTrim(message.m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
-		std::string bearerFlag = HTTP_HEADER_JWT_BearerSpace;
-		if (Utility::startWith(token, bearerFlag))
-		{
-			token = token.substr(bearerFlag.length());
-		}
-	}
-	return token;
-}
-
-std::string RestHandler::createToken(const std::string &uname, const std::string &passwd, int timeoutSeconds)
-{
-	if (uname.empty() || passwd.empty())
-	{
-		throw std::invalid_argument("must provide name and password to generate token");
-	}
-
-	// https://thalhammer.it/projects/
-	// https://www.cnblogs.com/mantoudev/p/8994341.html
-	// 1. Header {"typ": "JWT","alg" : "HS256"}
-	// 2. Payload{"iss": "appmesh-auth0","name" : "u-name",}
-	// 3. Signature HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
-	// creating a token that will expire in one hour
-	auto token = jwt::create()
-					 .set_issuer(HTTP_HEADER_JWT_ISSUER)
-					 .set_type(HTTP_HEADER_JWT)
-					 .set_issued_at(jwt::date(std::chrono::system_clock::now()))
-					 .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
-					 .set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
-					 .sign(jwt::algorithm::hs256{passwd});
-	return token;
 }
 
 int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, int defaultValue, int min, int max) const
@@ -525,19 +268,20 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
-	concurrency::streams::fstream::open_istream(file, std::ios::in | std::ios::binary).then([=](concurrency::streams::istream fileStream) {
-																						  // Get the content length, which is used to set the
-																						  // Content-Length property
-																						  fileStream.seek(0, std::ios::end);
-																						  auto length = static_cast<std::size_t>(fileStream.tell());
-																						  fileStream.seek(0, std::ios::beg);
+	concurrency::streams::fstream::open_istream(file, std::ios::in | std::ios::binary)
+		.then([=](concurrency::streams::istream fileStream) {
+			// Get the content length, which is used to set the
+			// Content-Length property
+			fileStream.seek(0, std::ios::end);
+			auto length = static_cast<std::size_t>(fileStream.tell());
+			fileStream.seek(0, std::ios::beg);
 
-																						  web::http::http_response resp(status_codes::OK);
-																						  resp.set_body(fileStream, length);
-																						  resp.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(file));
-																						  resp.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(file));
-																						  message.reply(resp);
-																					  })
+			web::http::http_response resp(status_codes::OK);
+			resp.set_body(fileStream, length);
+			resp.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(file));
+			resp.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(file));
+			message.reply(resp);
+		})
 		.then([=](pplx::task<void> t) {
 			try
 			{
@@ -659,7 +403,7 @@ void RestHandler::apiGetBasicConfig(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
-	auto config = Configuration::instance()->AsJson(false, getTokenUser(message));
+	auto config = Configuration::instance()->AsJson(false, getJwtUserName(message));
 	if (HAS_JSON_FIELD(config, JSON_KEY_Security) && HAS_JSON_FIELD(config.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
 	{
 		config.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
@@ -696,7 +440,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 	if (!(message.m_headers.count(HTTP_HEADER_JWT_new_password)))
 	{
 		throw std::invalid_argument("can not find new password from header");
@@ -738,7 +482,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 
 	if (pathUserName == JWT_ADMIN_NAME)
 	{
@@ -767,7 +511,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 
 	Configuration::instance()->getUserInfo(pathUserName)->unlock();
 
@@ -791,7 +535,7 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 
 	auto user = Configuration::instance()->getUsers()->addUser(pathUserName, message.extractJson(), Configuration::instance()->getRoles());
 	// Store encrypted key if any
@@ -818,7 +562,7 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 		throw std::invalid_argument(Utility::stringFormat("Failed to get user name from path: %s", path.c_str()));
 	}
 	auto pathUserName = vec[2];
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 
 	Configuration::instance()->getUsers()->delUser(pathUserName);
 
@@ -863,7 +607,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 		throw std::invalid_argument(Utility::stringFormat("Failed to get role name from path: %s", path.c_str()));
 	}
 	auto pathRoleName = vec[2];
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 
 	Configuration::instance()->getRoles()->addRole(message.extractJson(), pathRoleName);
 
@@ -887,7 +631,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 		throw std::invalid_argument(Utility::stringFormat("Failed to get role name from path: %s", path.c_str()));
 	}
 	auto pathRoleName = vec[2];
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 
 	Configuration::instance()->getRoles()->delRole(pathRoleName);
 
@@ -937,7 +681,7 @@ void RestHandler::apiHealth(const HttpRequest &message)
 	message.reply(status, std::to_string(health));
 }
 
-void RestHandler::apiMetrics(const HttpRequest &message)
+void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
 	message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
 }
@@ -958,7 +702,7 @@ void RestHandler::apiLogin(const HttpRequest &message)
 
 		if (Configuration::instance()->getEncryptKey())
 			passwd = Utility::hash(passwd);
-		auto token = createToken(uname, passwd, timeoutSeconds);
+		auto token = createJwtToken(uname, passwd, timeoutSeconds);
 
 		web::json::value result = web::json::value::object();
 		web::json::value profile = web::json::value::object();
@@ -1000,7 +744,7 @@ void RestHandler::apiAuth(const HttpRequest &message)
 	if (permissionCheck(message, permission))
 	{
 		auto result = web::json::value::object();
-		result["user"] = web::json::value::string(getTokenUser(message));
+		result["user"] = web::json::value::string(getJwtUserName(message));
 		result["success"] = web::json::value::boolean(true);
 		result["permission"] = web::json::value::string(permission);
 		message.reply(status_codes::OK, result);
@@ -1043,7 +787,7 @@ std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest &mess
 		}
 	}
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
-	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getTokenUser(message));
+	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
 	return Configuration::instance()->addApp(jsonApp);
 }
 
@@ -1141,7 +885,7 @@ void RestHandler::apiGetAppOutput(const HttpRequest &message)
 void RestHandler::apiGetApps(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
-	auto tokenUserName = getTokenUser(message);
+	auto tokenUserName = getJwtUserName(message);
 	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName));
 }
 
@@ -1178,35 +922,7 @@ void RestHandler::apiRegApp(const HttpRequest &message)
 	{
 		checkAppAccessPermission(message, appName, true);
 	}
-	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getTokenUser(message));
+	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, app->AsJson(false));
-}
-
-void RestHandler::initMetrics(std::shared_ptr<PrometheusRest> prom)
-{
-	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-
-	// clean
-	m_restGetCounter = nullptr;
-	m_restPutCounter = nullptr;
-	m_restDelCounter = nullptr;
-	m_restPostCounter = nullptr;
-
-	// update
-	if (prom)
-	{
-		m_restGetCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", web::http::methods::GET}, {"listen", m_listenAddress}});
-		m_restPutCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", web::http::methods::PUT}, {"listen", m_listenAddress}});
-		m_restDelCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", web::http::methods::DEL}, {"listen", m_listenAddress}});
-		m_restPostCounter = prom->createPromCounter(
-			PROM_METRIC_NAME_appmesh_http_request_count, PROM_METRIC_HELP_appmesh_http_request_count,
-			{{"method", web::http::methods::POST}, {"listen", m_listenAddress}});
-	}
 }

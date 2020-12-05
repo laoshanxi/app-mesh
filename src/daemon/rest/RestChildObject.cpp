@@ -13,7 +13,7 @@
 
 std::shared_ptr<RestChildObject> RestChildObject::m_instance = nullptr;
 RestChildObject::RestChildObject()
-    : PrometheusRest(true)
+    : RestHandler(true)
 {
 }
 
@@ -42,7 +42,7 @@ void RestChildObject::connectAndRun(int port)
         if (connector.connect(m_socketStream, localAddress) >= 0)
         {
             LOG_INF << fname << "connected to TCP REST port: " << localAddress.get_port_number();
-            PrometheusRest::open();
+            RestHandler::open();
             //auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
             while (auto msg = readMessageBlock(m_socketStream))
             {
@@ -71,7 +71,16 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
     const static char fname[] = "RestChildObject::sendRequest2Server() ";
 
     // https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Logger/client/logging_app.cpp
-    const size_t max_payload_size = ACE_MAXLOGMSGLEN + 1 + ACE_CDR::MAX_ALIGNMENT;
+    auto headerStr = Utility::serialize(message.headers());
+    const size_t max_payload_size =
+        message.m_method.length() +
+        message.m_relative_uri.length() +
+        message.m_remote_address.length() +
+        message.m_body.length() +
+        headerStr.length() +
+        message.m_query.length() +
+        message.m_uuid.length() +
+        7 + 7 * ACE_CDR::MAX_ALIGNMENT;
 
     // Insert contents into payload stream.
     ACE_OutputCDR payload(max_payload_size);
@@ -79,7 +88,7 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
     payload << message.m_relative_uri;
     payload << message.m_remote_address;
     payload << message.m_body;
-    payload << Utility::serialize(message.headers());
+    payload << headerStr;
     payload << message.m_query;
     payload << message.m_uuid;
     //LOG_DBG << fname << "headers: " << Utility::serialize(message.headers());

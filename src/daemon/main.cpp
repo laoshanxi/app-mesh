@@ -98,7 +98,6 @@ int main(int argc, char *argv[])
 			RestTcpServer::instance(httpServer);
 			PrometheusRest::instance(httpServer);
 			RestTcpServer::instance()->startTcpServer();
-			RestTcpServer::instance()->initMetrics(httpServer);
 			Configuration::instance()->addApp(RestTcpServer::instance()->getRestAppJson());
 		}
 

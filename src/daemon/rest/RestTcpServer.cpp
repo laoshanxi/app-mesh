@@ -7,7 +7,7 @@
 #include <ace/INET_Addr.h>
 
 #include "HttpRequest.h"
-#include "PrometheusRest.h"
+#include "RestHandler.h"
 #include "RestTcpServer.h"
 #include "RestChildObject.h"
 #include "../Configuration.h"
@@ -15,7 +15,7 @@
 #include "../../common/Utility.h"
 
 std::shared_ptr<RestTcpServer> RestTcpServer::m_instance = nullptr;
-RestTcpServer::RestTcpServer() : PrometheusRest(false)
+RestTcpServer::RestTcpServer() : RestHandler(false)
 {
 }
 
@@ -136,14 +136,20 @@ void RestTcpServer::backforwardResponse(const std::string &uuid, const std::stri
 {
     const static char fname[] = "RestTcpServer::backforwardResponse() ";
 
-    const size_t max_payload_size = ACE_MAXLOGMSGLEN + 1 + ACE_CDR::MAX_ALIGNMENT;
-
+    auto headerStr = Utility::serialize(headers);
+    const size_t max_payload_size =
+        uuid.length() +
+        body.length() +
+        headerStr.length() +
+        8 +
+        bodyType.length() +
+        6 + 6 * ACE_CDR::MAX_ALIGNMENT;
     // Insert contents into payload stream.
     ACE_OutputCDR payload(max_payload_size);
     payload << status;
     payload << uuid;
     payload << body;
-    payload << Utility::serialize(headers);
+    payload << headerStr;
     payload << bodyType;
 
     // Get the number of bytes used by the CDR stream.
