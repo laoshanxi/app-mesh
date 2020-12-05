@@ -4,6 +4,7 @@
 
 #include "client_metric.h"
 #include "detail/builder.h"
+
 #include "metric_type.h"
 
 namespace prometheus {

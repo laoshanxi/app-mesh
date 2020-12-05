@@ -3,6 +3,7 @@
 #include <vector>
 
 
+
 namespace prometheus {
 struct MetricFamily;
 }
@@ -18,7 +19,7 @@ class Collectable {
   virtual ~Collectable() = default;
 
   /// \brief Returns a list of metrics and their samples.
-  virtual std::vector<MetricFamily> Collect() = 0;
+  virtual std::vector<MetricFamily> Collect() const = 0;
 };
 
 }  // namespace prometheus

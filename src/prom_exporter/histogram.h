@@ -5,6 +5,8 @@
 #include "client_metric.h"
 #include "counter.h"
 #include "detail/builder.h"
+
+#include "gauge.h"
 #include "metric_type.h"
 
 namespace prometheus {
@@ -18,7 +20,7 @@ namespace prometheus {
 /// values, allowing to calculate the average of the observed values.
 ///
 /// At its core a histogram has a counter per bucket. The sum of observations
-/// also behaves like a counter.
+/// also behaves like a counter as long as there are no negative observations.
 ///
 /// See https://prometheus.io/docs/practices/histograms/ for detailed
 /// explanations of histogram usage and differences to summaries.
@@ -56,7 +58,7 @@ class Histogram {
   /// Increments counters given a count for each bucket. (i.e. the caller of
   /// this function must have already sorted the values into buckets).
   /// Also increments the total sum of all observations by the given value.
-  void ObserveMultiple(const std::vector<double> bucket_increments,
+  void ObserveMultiple(const std::vector<double>& bucket_increments,
                        const double sum_of_values);
 
   /// \brief Get the current value of the counter.
@@ -67,7 +69,7 @@ class Histogram {
  private:
   const BucketBoundaries bucket_boundaries_;
   std::vector<Counter> bucket_counts_;
-  Counter sum_;
+  Gauge sum_;
 };
 
 /// \brief Return a builder to configure and register a Histogram metric.

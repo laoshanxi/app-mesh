@@ -2,6 +2,7 @@
 
 #include "client_metric.h"
 #include "detail/builder.h"
+
 #include "gauge.h"
 #include "metric_type.h"
 
