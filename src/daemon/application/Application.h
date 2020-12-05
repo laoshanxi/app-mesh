@@ -10,8 +10,8 @@
 #include "../TimerHandler.h"
 
 class User;
-class CounterPtr;
-class GaugePtr;
+class CounterMetric;
+class GaugeMetric;
 class PrometheusRest;
 class AppProcess;
 class DailyLimitation;
@@ -125,9 +125,9 @@ protected:
 	std::chrono::system_clock::time_point m_procStartTime;
 
 	// Prometheus
-	std::shared_ptr<CounterPtr> m_metricStartCount;
-	std::shared_ptr<GaugePtr> m_metricMemory;
-	std::shared_ptr<GaugePtr> m_metricAppPid;
+	std::shared_ptr<CounterMetric> m_metricStartCount;
+	std::shared_ptr<GaugeMetric> m_metricMemory;
+	std::shared_ptr<GaugeMetric> m_metricAppPid;
 	std::atomic<int> m_continueFails;
 
 	// error

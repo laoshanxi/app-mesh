@@ -1,5 +1,4 @@
 #pragma once
-
 #include <atomic>
 #include <memory>
 #include <cpprest/http_listener.h> // HTTP server
@@ -21,16 +20,18 @@ namespace prometheus
 //        _|_                   _|_
 //  Counter1/Counter2     Counter3/Counter4
 //////////////////////////////////////////////////////////////////////////
-// Metric Wrapper for safe access
-//////////////////////////////////////////////////////////////////////////
-class CounterPtr
+
+/// <summary>
+/// Metric Wrapper for reg/unreg metric automaticaly
+/// </summary>
+class CounterMetric
 {
 public:
-	explicit CounterPtr(std::shared_ptr<prometheus::Registry> retistry,
-						const std::string &name, const std::string &help,
-						std::map<std::string, std::string> label);
+	explicit CounterMetric(std::shared_ptr<prometheus::Registry> registry,
+						   const std::string &name, const std::string &help,
+						   std::map<std::string, std::string> label);
 
-	virtual ~CounterPtr();
+	virtual ~CounterMetric();
 
 	prometheus::Counter &metric();
 
@@ -44,14 +45,17 @@ private:
 	const std::map<std::string, std::string> m_label;
 };
 
-class GaugePtr
+/// <summary>
+/// Metric Wrapper for reg/unreg metric automaticaly
+/// </summary>
+class GaugeMetric
 {
 public:
-	explicit GaugePtr(std::shared_ptr<prometheus::Registry> retistry,
-					  const std::string &name, const std::string &help,
-					  std::map<std::string, std::string> label);
+	explicit GaugeMetric(std::shared_ptr<prometheus::Registry> registry,
+						 const std::string &name, const std::string &help,
+						 std::map<std::string, std::string> label);
 
-	virtual ~GaugePtr();
+	virtual ~GaugeMetric();
 
 	prometheus::Gauge &metric();
 
@@ -64,18 +68,42 @@ private:
 	const std::map<std::string, std::string> m_label;
 };
 
-//////////////////////////////////////////////////////////////////////////
+/// <summary>
 /// Prometheus Exporter REST service
-//////////////////////////////////////////////////////////////////////////
+/// </summary>
 class PrometheusRest : public RestBase
 {
 public:
 	explicit PrometheusRest(bool forward2TcpServer);
 	virtual ~PrometheusRest();
 
-	std::shared_ptr<CounterPtr> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
-	std::shared_ptr<GaugePtr> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
+	/// <summary>
+	/// Create a Counter Metric
+	/// </summary>
+	/// <param name="metricName"></param>
+	/// <param name="metricHelp"></param>
+	/// <param name="labels"></param>
+	/// <returns>return null if exporter was not enabled</returns>
+	std::shared_ptr<CounterMetric> createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
+	/// <summary>
+	/// Create a Gauge Metric
+	/// </summary>
+	/// <param name="metricName"></param>
+	/// <param name="metricHelp"></param>
+	/// <param name="labels"></param>
+	/// <returns>return null if exporter was not enabled</returns>
+	std::shared_ptr<GaugeMetric> createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels) noexcept(false);
+
+	/// <summary>
+	/// Collect all metrics
+	/// </summary>
+	/// <returns></returns>
 	const std::string collectData();
+
+	/// <summary>
+	/// The metrics is collected by Prometheus server or not
+	/// </summary>
+	/// <returns></returns>
 	bool collected();
 
 protected:
@@ -84,24 +112,26 @@ protected:
 
 private:
 	void apiMetrics(const HttpRequest &message);
-	void initSelfMetrics();
+	void initMetrics();
 
 private:
 	bool m_promEnabled;
-	std::unique_ptr<web::http::experimental::listener::http_listener> m_promListener;
-	// prometheus
-	std::shared_ptr<prometheus::Registry> m_promRegistry;
-	std::shared_ptr<CounterPtr> m_scrapeCounter;
-	std::shared_ptr<GaugePtr> m_promGauge;
-
-	// prometheus rest event counter
-	std::shared_ptr<CounterPtr> m_restGetCounter;
-	std::shared_ptr<CounterPtr> m_restPutCounter;
-	std::shared_ptr<CounterPtr> m_restDelCounter;
-	std::shared_ptr<CounterPtr> m_restPostCounter;
-
-	std::atomic_long m_collectFlag;
+	std::atomic_long m_collectTime;
 	static std::shared_ptr<PrometheusRest> m_instance;
+
+	std::unique_ptr<web::http::experimental::listener::http_listener> m_promListener;
+	// prometheus registry
+	std::shared_ptr<prometheus::Registry> m_promRegistry;
+
+	// prometheus global metric
+	std::shared_ptr<CounterMetric> m_scrapeCounter;
+	std::shared_ptr<GaugeMetric> m_promGauge;
+
+	// prometheus rest event counter metric
+	std::shared_ptr<CounterMetric> m_restGetCounter;
+	std::shared_ptr<CounterMetric> m_restPutCounter;
+	std::shared_ptr<CounterMetric> m_restDelCounter;
+	std::shared_ptr<CounterMetric> m_restPostCounter;
 
 public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }

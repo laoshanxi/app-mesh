@@ -444,9 +444,11 @@ std::string Application::getOutput(bool keepHistory, int index)
 void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	// clean
+	// must clean first, otherwise the duplicate one will create
 	m_metricStartCount = nullptr;
+	m_metricAppPid = nullptr;
 	m_metricMemory = nullptr;
+
 	// update
 	if (prom)
 	{
