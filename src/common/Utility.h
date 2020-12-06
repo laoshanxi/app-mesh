@@ -74,6 +74,7 @@ namespace std
 
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
+#define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_SCHEDULE_INTERVAL 2
 #define DEFAULT_HTTP_THREAD_POOL_SIZE 6
 
@@ -123,6 +124,7 @@ public:
 	static std::string prettyJson(const std::string &jsonStr);
 	static std::string hash(const std::string &str);
 	static std::string stringFormat(const std::string &fmt_str, ...);
+	static std::string strToupper(std::string s);
 
 	static void initLogging();
 	static bool setLogLevel(const std::string &level);
@@ -209,7 +211,6 @@ public:
 #define JSON_KEY_APP_command "command"
 #define JSON_KEY_APP_init_command "init_command"
 #define JSON_KEY_APP_fini_command "fini_command"
-#define JSON_KEY_APP_stdout_cache_size "stdout_cache_size"
 #define JSON_KEY_APP_stdout_cache_num "stdout_cache_num"
 #define JSON_KEY_APP_initial_application_only "initial_application_only"
 #define JSON_KEY_APP_onetime_application_only "onetime_application_only"

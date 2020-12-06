@@ -12,7 +12,7 @@
 #include "RestHandler.h"
 
 /// <summary>
-/// REST Server Object, forward http REST request to TCP Server process side
+/// REST Server Object, forward http REST request to TCP Server side
 /// </summary>
 class RestChildObject : public ACE_SOCK_Connector, public RestHandler
 {

@@ -99,7 +99,7 @@ protected:
 	std::string m_stdoutFile;
 	std::string m_metadata;
 	bool m_shellApp;
-	int m_stdoutCacheSize;
+	int m_stdoutCacheNum;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
 	//the exit code of last instance

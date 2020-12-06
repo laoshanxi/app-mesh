@@ -2,12 +2,10 @@
 
 #include <cpprest/filestream.h>
 #include <cpprest/http_listener.h> // HTTP server
-#include <cpprest/http_client.h>
 
 #include "ConsulConnection.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
-#include "RestChildObject.h"
 #include "PrometheusRest.h"
 #include "../application/Application.h"
 #include "../Configuration.h"

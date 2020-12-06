@@ -67,8 +67,7 @@ $ appc view -n ping
 	"owner": "admin",
 	"pid": 4668,
 	"register_time": "2020-10-24 07:31:40+08",
-	"status": 1,
-	"stdout_cache_num": 1
+	"status": 1
 }
 
 $ appc view -n ping -o
@@ -119,7 +118,7 @@ Register a new application:
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
   -p [ --pid ] arg               process id used to attach
-  -O [ --stdout_cache_size ] arg stdout file cache number
+  -O [ --stdout_cache_num ] arg stdout file cache number
   -v [ --virtual_memory ] arg    virtual memory limit in MByte
   -r [ --cpu_shares ] arg        CPU shares (relative weight)
   -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e

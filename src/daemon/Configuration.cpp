@@ -898,7 +898,8 @@ web::json::value Configuration::JsonRest::AsJson() const
 
 Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_httpThreadPoolSize(DEFAULT_HTTP_THREAD_POOL_SIZE),
-	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT)
+	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
+	  m_separateRestInternalPort(DEFAULT_TCP_REST_LISTEN_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 }

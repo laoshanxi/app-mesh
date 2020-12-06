@@ -337,7 +337,7 @@ void ArgumentParser::processReg()
 		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
 		("pid,p", po::value<int>(), "process id used to attach")
-		("stdout_cache_size,O", po::value<int>(), "stdout file cache number")
+		("stdout_cache_num,O", po::value<int>(), "stdout file cache number")
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
@@ -424,8 +424,8 @@ void ArgumentParser::processReg()
 		jsobObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
 	if (m_commandLineVariables.count("extra_time"))
 		jsobObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::string(m_commandLineVariables["extra_time"].as<std::string>());
-	if (m_commandLineVariables.count("stdout_cache_size"))
-		jsobObj[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_commandLineVariables["stdout_cache_size"].as<int>());
+	if (m_commandLineVariables.count("stdout_cache_num"))
+		jsobObj[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_commandLineVariables["stdout_cache_num"].as<int>());
 	if (m_commandLineVariables.count("keep_running"))
 		jsobObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
@@ -1385,16 +1385,16 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	// Title:
 	std::cout << std::left;
 	std::cout
-		<< std::setw(3) << ("id")
-		<< std::setw(12) << (JSON_KEY_APP_name)
-		<< std::setw(6) << (JSON_KEY_APP_owner)
-		<< std::setw(9) << (JSON_KEY_APP_status)
-		<< std::setw(7) << (JSON_KEY_APP_health)
-		<< std::setw(8) << (JSON_KEY_APP_pid)
-		<< std::setw(8) << (JSON_KEY_APP_memory)
-		<< std::setw(7) << (JSON_KEY_APP_return)
-		<< std::setw(24) << (JSON_KEY_APP_last_start)
-		<< (JSON_KEY_APP_command)
+		<< std::setw(3) << Utility::strToupper("id")
+		<< std::setw(12) << Utility::strToupper(JSON_KEY_APP_name)
+		<< std::setw(6) << Utility::strToupper(JSON_KEY_APP_owner)
+		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_status)
+		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_health)
+		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
+		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_memory)
+		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_return)
+		<< std::setw(24) << Utility::strToupper(JSON_KEY_APP_last_start)
+		<< Utility::strToupper(JSON_KEY_APP_command)
 		<< std::endl;
 
 	int index = 1;

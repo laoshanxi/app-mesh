@@ -8,9 +8,9 @@
 using namespace web;
 using namespace http;
 
-//////////////////////////////////////////////////////////////////////////
+/// <summary>
 /// HttpRequest is used to handle across domain reply
-//////////////////////////////////////////////////////////////////////////
+/// </summary>
 class HttpRequest : public web::http::http_request
 {
 public:
@@ -139,6 +139,9 @@ public:
 };
 
 class Application;
+/// <summary>
+/// HttpRequest used to remove template Application when finished reply
+/// </summary>
 class HttpRequestWithAppRef : public HttpRequest
 {
 public:

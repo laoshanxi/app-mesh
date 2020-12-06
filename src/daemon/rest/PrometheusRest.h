@@ -107,11 +107,26 @@ public:
 	bool collected();
 
 protected:
+	/// <summary>
+	/// open REST listen port
+	/// </summary>
 	virtual void open();
+	/// <summary>
+	/// override RestBase::handleRest() to set REST related metrics
+	/// </summary>
+	/// <param name="message"></param>
+	/// <param name="restFunctions"></param>
 	virtual void handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions);
 
 private:
+	/// <summary>
+	/// REST API function
+	/// </summary>
+	/// <param name="message"></param>
 	void apiMetrics(const HttpRequest &message);
+	/// <summary>
+	/// Create metrics
+	/// </summary>
 	void initMetrics();
 
 private:

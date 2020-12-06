@@ -14,9 +14,9 @@ class User;
 class Label;
 class Application;
 
-//////////////////////////////////////////////////////////////////////////
-/// All the operation functions to access appmg.json
-//////////////////////////////////////////////////////////////////////////
+/// <summary>
+/// Configuration file <appsvc.json> parse/update
+/// </summary>
 class Configuration
 {
 	struct JsonSsl

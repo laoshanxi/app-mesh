@@ -17,7 +17,7 @@
 #include "../../prom_exporter/gauge.h"
 
 Application::Application()
-	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheSize(0),
+	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
 	  m_endTimerId(0), m_health(true), m_appId(Utility::createUUID()),
 	  m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID),
 	  m_suicideTimerId(0), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
@@ -94,8 +94,8 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	// TODO: consider i18n and  legal file name
 	app->m_stdoutFile = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
-	app->m_stdoutCacheSize = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_size);
-	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheSize);
+	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
+	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)
 		throw std::invalid_argument("command line length should less than 2048");
 	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_init_command));
@@ -505,8 +505,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_workdir.length())
 		result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
-	if (m_stdoutCacheSize)
-		result[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(static_cast<int>(m_stdoutCacheSize));
+	if (m_stdoutCacheNum)
+		result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(static_cast<int>(m_stdoutCacheNum));
 	if (m_metadata.length())
 		result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
 	if (returnRuntimeInfo)

@@ -1,14 +1,9 @@
-#include <thread>
-#include <ace/Signal.h>
-#include <ace/OS.h>
 #include <ace/CDR_Stream.h>
-#include <ace/SOCK_Acceptor.h>
 #include <ace/SOCK_Stream.h>
 #include <ace/SOCK_Connector.h>
 #include <ace/INET_Addr.h>
 
 #include "RestChildObject.h"
-#include "../Configuration.h"
 #include "../../common/Utility.h"
 
 std::shared_ptr<RestChildObject> RestChildObject::m_instance = nullptr;
