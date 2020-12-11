@@ -49,7 +49,7 @@ void ConsulConnection::reportNode()
 	if (!Configuration::instance()->getConsul()->consulEnabled())
 		return;
 
-	// Only node need report status for node (master does not need report)
+	// Only node need report status for node (main does not need report)
 	if (!Configuration::instance()->getConsul()->m_isNode)
 		return;
 
@@ -468,7 +468,7 @@ bool ConsulConnection::registerService(const std::string &appName, int port)
 	const static char fname[] = "ConsulConnection::registerService() ";
 	// https://www.hashicorp.com/blog/consul-and-external-services/
 	//curl -X PUT -d
-	//  '{"Node": "myhost", "Address": "myhost","Service": {"Service": "mysql", "tags": ["master","v1"], "Port": 3306}}'
+	//  '{"Node": "myhost", "Address": "myhost","Service": {"Service": "mysql", "tags": ["main","v1"], "Port": 3306}}'
 	//  http://127.0.0.1:8500/v1/catalog/register
 
 	if (port == 0)

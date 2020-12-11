@@ -72,7 +72,7 @@ $ curl --form token=Yor-Coverity-Token \
 ```
 
 5. All done, open your [dashboard](https://scan.coverity.com/dashboard) to view the defects
-<img src="https://raw.githubusercontent.com/laoshanxi/picture/master/appmesh/h.png" />
+<img src="https://raw.githubusercontent.com/laoshanxi/picture/main/appmesh/h.png" />
 
 ## Reference
 - [coverity scan](https://scan.coverity.com/)

@@ -1,6 +1,6 @@
 # Deployment
 
-<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/deploy.png"/></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/doc/deploy.png"/></div>
 
 App Mesh can deploy with multiple ways, generally, App Mesh run on a host as a daemon service managed by native systemd or docker container.
 
@@ -60,11 +60,11 @@ sudo curl -L "https://github.com/docker/compose/releases/download/1.27.4/docker-
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-Get integrated docker compose file [docker-compose-appmesh.yaml](https://github.com/laoshanxi/app-mesh/raw/master/script/docker-compose-appmesh.yaml) and configure correct Consul bind IP address and network device name.
+Get integrated docker compose file [docker-compose-appmesh.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose-appmesh.yaml) and configure correct Consul bind IP address and network device name.
 ```
 $ mkdir appmesh
 $ cd appmesh
-$ wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/master/script/docker-compose-appmesh.yaml
+$ wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose-appmesh.yaml
 
 $ docker-compose -f docker-compose.yaml up -d
 Creating apppmesh_appmesh_1    ... done

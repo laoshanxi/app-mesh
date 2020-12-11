@@ -10,26 +10,26 @@ App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application manage
 
 App Mesh is similar with Kubernetes but much light weight, support both container app and native app.
 
-<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/master/doc/diagram.png" width=600 height=400 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/doc/diagram.png" width=600 height=400 align=center /></div>
 
 ## Features
 Scope  | Behavior
 ---|---
 Support applications | Long running <br> Short running <br> Periodic long running
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define pipe input string data <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
-Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/master/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/master/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) <br> Multi-tenant support 
-Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/master/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/master/doc/Loki.md) <br> REST service with IPv6 support 
-Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/master/doc/CONSUL.md) 
+Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) <br> Multi-tenant support 
+Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/doc/Loki.md) <br> REST service with IPv6 support 
+Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/doc/CONSUL.md) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32/64
 
 ## Getting started
-The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/master/doc/Install.md) introduce how
+The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/main/doc/Install.md) introduce how
 to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Documentation
-- [Command Lines](https://github.com/laoshanxi/app-mesh/blob/master/doc/CLI.md) provide all the interfaces to manage App Mesh.
-- [Development](https://github.com/laoshanxi/app-mesh/blob/master/doc/Development.md) define REST APIs and show how to build App Mesh.
+- [Command Lines](https://github.com/laoshanxi/app-mesh/blob/main/doc/CLI.md) provide all the interfaces to manage App Mesh.
+- [Development](https://github.com/laoshanxi/app-mesh/blob/main/doc/Development.md) define REST APIs and show how to build App Mesh.
 
 ---
 
