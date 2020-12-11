@@ -5,8 +5,7 @@
 #include "../../common/Utility.h"
 #include "../rest/HttpRequest.h"
 
-MonitoredProcess::MonitoredProcess(bool enableBuildinThread)
-	: m_httpRequest(nullptr), m_buildinThreadFinished(false), m_enableBuildinThread(enableBuildinThread)
+MonitoredProcess::MonitoredProcess() : m_httpRequest(nullptr)
 {
 }
 
@@ -30,8 +29,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options &option)
 	auto rt = AppProcess::spawn(option);
 
 	// Start thread to read stdout/stderr stream
-	if (m_enableBuildinThread)
-		m_thread = std::make_unique<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
+	m_thread = std::make_unique<std::thread>(std::bind(&MonitoredProcess::runPipeReaderThread, this));
 
 	return rt;
 }
@@ -49,7 +47,6 @@ void MonitoredProcess::waitThread(int timerId)
 void MonitoredProcess::runPipeReaderThread()
 {
 	const static char fname[] = "MonitoredProcess::runPipeReaderThread() ";
-	m_buildinThreadFinished = false;
 	LOG_DBG << fname << "Entered";
 
 	// hold self point to avoid release
@@ -80,6 +77,5 @@ void MonitoredProcess::runPipeReaderThread()
 	}
 	///////////////////////////////////////////////////////////////////////
 	LOG_DBG << fname << "Exited";
-	m_buildinThreadFinished = true;
 	this->registerTimer(0, 0, std::bind(&MonitoredProcess::waitThread, this, std::placeholders::_1), fname);
 }

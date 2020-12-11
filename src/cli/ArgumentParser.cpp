@@ -66,7 +66,7 @@ ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, boo
 
 	// parse [command] and all other arguments in [subargs]
 	auto parsed = po::command_line_parser(argc, argv).options(global).positional(pos).allow_unregistered().run();
-	m_pasrsedOptions = parsed.options;
+	m_parsedOptions = parsed.options;
 	po::store(parsed, m_commandLineVariables);
 	po::notify(m_commandLineVariables);
 }
@@ -131,9 +131,9 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "restart")
 	{
-		auto tmpOpts = m_pasrsedOptions;
+		auto tmpOpts = m_parsedOptions;
 		processEnableDisable(false);
-		m_pasrsedOptions = tmpOpts;
+		m_parsedOptions = tmpOpts;
 		processEnableDisable(true);
 	}
 	else if (cmd == "run")
@@ -1164,7 +1164,7 @@ void ArgumentParser::processLockUser()
 
 void ArgumentParser::processEncryptUserPwd()
 {
-	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
+	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
 	if (opts.size())
 		opts.erase(opts.begin());
 
@@ -1448,7 +1448,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 void ArgumentParser::shiftCommandLineArgs(po::options_description &desc)
 {
 	m_commandLineVariables.clear();
-	std::vector<std::string> opts = po::collect_unrecognized(m_pasrsedOptions, po::include_positional);
+	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
 	// remove [command] option and parse all others in m_commandLineVariables
 	if (opts.size())
 		opts.erase(opts.begin());

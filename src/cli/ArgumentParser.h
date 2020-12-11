@@ -72,7 +72,7 @@ private:
 
 private:
 	po::variables_map m_commandLineVariables;
-	std::vector<po::option> m_pasrsedOptions;
+	std::vector<po::option> m_parsedOptions;
 	const int m_argc;
 	const char **m_argv;
 	int m_listenPort;

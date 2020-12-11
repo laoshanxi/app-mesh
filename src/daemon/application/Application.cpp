@@ -326,7 +326,7 @@ std::string Application::runApp(int timeoutSeconds)
 	if (m_pid > 0)
 	{
 		if (timeoutSeconds > 0)
-			m_process->regKillTimer(timeoutSeconds, __FUNCTION__);
+			m_process->delayKill(timeoutSeconds, __FUNCTION__);
 	}
 	else
 	{
@@ -388,7 +388,7 @@ std::string Application::getAsyncRunOutput(const std::string &processUuid, int &
 	if (m_process != nullptr && m_process->getuuid() == processUuid)
 	{
 		auto output = m_process->fetchOutputMsg();
-		if (output.length() == 0 && !m_process->running() && m_process->complete())
+		if (output.length() == 0 && !m_process->running())
 		{
 			exitCode = m_process->return_value();
 			finished = true;

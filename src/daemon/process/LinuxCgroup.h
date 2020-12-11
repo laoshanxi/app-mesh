@@ -2,9 +2,9 @@
 
 #include <string>
 
-//////////////////////////////////////////////////////////////////////////
-/// Linux Cgroup Management interface
-//////////////////////////////////////////////////////////////////////////
+/// </summary>
+/// Linux Cgroup operate interface
+/// </summary>
 class LinuxCgroup
 {
 public:
@@ -31,5 +31,4 @@ private:
 
 	static std::string cgroupMemRootName;
 	static std::string cgroupCpuRootName;
-	static const std::string cgroupBaseDir;
 };

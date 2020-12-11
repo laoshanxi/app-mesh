@@ -19,7 +19,7 @@
 	} while (false)
 
 AppProcess::AppProcess()
-	: m_killTimerId(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
+	: m_delayKillTimerId(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID())
 {
 }
 
@@ -29,12 +29,11 @@ AppProcess::~AppProcess()
 	{
 		killgroup();
 	}
+
 	CLOSE_ACE_HANDLER(m_stdoutHandler);
 	CLOSE_ACE_HANDLER(m_stdinHandler);
-	if (m_stdinFileName.length() && Utility::isFileExist(m_stdinFileName))
-	{
-		Utility::removeFile(m_stdinFileName);
-	}
+
+	Utility::removeFile(m_stdinFileName);
 	if (m_stdoutReadStream && m_stdoutReadStream->is_open())
 	{
 		m_stdoutReadStream->close();
@@ -48,7 +47,7 @@ void AppProcess::attach(int pid)
 	this->child_id_ = pid;
 }
 
-void AppProcess::detach()
+void AppProcess::detach(void)
 {
 	attach(ACE_INVALID_PID);
 }
@@ -67,12 +66,12 @@ void AppProcess::killgroup(int timerId)
 	if (timerId == 0)
 	{
 		// killed before timer event, cancel timer event
-		this->cancelTimer(m_killTimerId);
+		this->cancelTimer(m_delayKillTimerId);
 	}
-	if (m_killTimerId > 0 && m_killTimerId == timerId)
+	if (m_delayKillTimerId > 0 && m_delayKillTimerId == timerId)
 	{
 		// clean timer id, trigger-ing this time.
-		m_killTimerId = 0;
+		m_delayKillTimerId = 0;
 	}
 
 	if (this->running() && this->getpid() > 1)
@@ -111,9 +110,9 @@ const std::string AppProcess::getuuid() const
 	return m_uuid;
 }
 
-void AppProcess::regKillTimer(std::size_t timeout, const std::string from)
+void AppProcess::delayKill(std::size_t timeout, const std::string from)
 {
-	m_killTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
+	m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
 }
 
 // tuple: 1 cmdRoot, 2 parameters
@@ -268,7 +267,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	return pid;
 }
 
-std::string AppProcess::fetchOutputMsg()
+const std::string AppProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
 	if (m_stdoutReadStream == nullptr)
@@ -282,7 +281,7 @@ std::string AppProcess::fetchOutputMsg()
 	return std::string();
 }
 
-std::string AppProcess::fetchLine()
+const std::string AppProcess::fetchLine()
 {
 	char buffer[512] = {0};
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
@@ -293,4 +292,14 @@ std::string AppProcess::fetchLine()
 		m_stdoutReadStream->getline(buffer, sizeof(buffer));
 	}
 	return buffer;
+}
+
+void AppProcess::startError(const std::string &err)
+{
+	m_startError = err;
+}
+
+const std::string AppProcess::startError() const
+{
+	return m_startError;
 }

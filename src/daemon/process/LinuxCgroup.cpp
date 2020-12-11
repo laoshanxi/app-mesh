@@ -3,9 +3,10 @@
 #include <mntent.h>
 #include "../../common/Utility.h"
 
+constexpr char CGROUP_FEATURE_DIR[] = "/appmesh";
 std::string LinuxCgroup::cgroupMemRootName;
 std::string LinuxCgroup::cgroupCpuRootName;
-const std::string LinuxCgroup::cgroupBaseDir = "/appmesh";
+
 LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long long cpuShares)
 	: m_memLimitMb(memLimitBytes), m_memSwapMb(memSwapBytes), m_cpuShares(cpuShares), m_pid(0), cgroupEnabled(false)
 {
@@ -37,8 +38,8 @@ LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long l
 			LOG_WAR << fname << "Your kernel does not support swap limit capabilities or the cgroup is not mounted.";
 			swapLimitSupport = false;
 		}
-		cgroupMemRootName += cgroupBaseDir;
-		cgroupCpuRootName += cgroupBaseDir;
+		cgroupMemRootName += CGROUP_FEATURE_DIR;
+		cgroupCpuRootName += CGROUP_FEATURE_DIR;
 	}
 	if (!swapLimitSupport)
 	{

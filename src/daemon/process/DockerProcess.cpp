@@ -9,7 +9,7 @@
 
 DockerProcess::DockerProcess(const std::string &dockerImage, const std::string &appName)
 	: m_dockerImage(dockerImage),
-	  m_appName(appName), m_lastFetchTime(std::chrono::system_clock::now())
+	  m_containerName(appName), m_lastFetchTime(std::chrono::system_clock::now())
 {
 }
 
@@ -55,7 +55,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	killgroup();
 	int pid = ACE_INVALID_PID;
 	constexpr int dockerCliTimeoutSec = 5;
-	std::string containerName = m_appName;
+	std::string containerName = m_containerName;
 
 	// 0. clean old docker container (docker container will left when host restart)
 	std::string dockerCommand = Utility::stringFormat("docker rm -f %s", containerName.c_str());
@@ -67,7 +67,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	dockerCommand = Utility::stringFormat("docker inspect -f '{{.Size}}' %s", m_dockerImage.c_str());
 	auto dockerProcess = std::make_shared<AppProcess>();
 	pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
-	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
+	dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 	dockerProcess->wait();
 	auto imageSizeStr = Utility::stdStringTrim(dockerProcess->fetchLine());
 	if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
@@ -87,7 +87,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		}
 		m_imagePullProc = std::make_shared<AppProcess>();
 		m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile);
-		m_imagePullProc->regKillTimer(pullTimeout, fname);
+		m_imagePullProc->delayKill(pullTimeout, fname);
 		this->attach(m_imagePullProc->getpid());
 		return this->getpid();
 	}
@@ -151,7 +151,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	bool startSuccess = false;
 	dockerProcess = std::make_shared<AppProcess>();
 	pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
-	dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
+	dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 	dockerProcess->wait();
 
 	std::string containerId;
@@ -180,7 +180,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		dockerCommand = Utility::stringFormat("docker inspect -f '{{.State.Pid}}' %s", containerId.c_str());
 		dockerProcess = std::make_shared<AppProcess>();
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
-		dockerProcess->regKillTimer(dockerCliTimeoutSec, fname);
+		dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 		dockerProcess->wait();
 		if (dockerProcess->return_value() == 0)
 		{
@@ -231,7 +231,7 @@ pid_t DockerProcess::getpid(void) const
 		return ACE_Process::getpid();
 }
 
-std::string DockerProcess::containerId()
+std::string DockerProcess::containerId() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	return m_containerId;
@@ -296,7 +296,7 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 	return 1;
 }
 
-std::string DockerProcess::fetchOutputMsg()
+const std::string DockerProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	if (m_containerId.length())
@@ -316,7 +316,7 @@ std::string DockerProcess::fetchOutputMsg()
 	return std::string();
 }
 
-std::string DockerProcess::fetchLine()
+const std::string DockerProcess::fetchLine()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	auto msg = fetchOutputMsg();

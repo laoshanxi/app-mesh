@@ -115,7 +115,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 		{
 			// give some time for buffer process
 			m_bufferProcess = m_process;
-			m_bufferProcess->regKillTimer(m_bufferTime, __FUNCTION__);
+			m_bufferProcess->delayKill(m_bufferTime, __FUNCTION__);
 		}
 		else
 		{
