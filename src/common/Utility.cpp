@@ -8,13 +8,12 @@
 #include <string>
 #include <thread>
 
+#include <ace/OS.h>
+#include <ace/UUID.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
-
-#include <ace/OS.h>
-#include <ace/UUID.h>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/Category.hh>
 #include <log4cpp/FileAppender.hh>

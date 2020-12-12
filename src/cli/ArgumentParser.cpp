@@ -802,7 +802,7 @@ void ArgumentParser::processExec()
 
 	// Get current command line, use raw argv here
 	std::string initialCmd;
-	for (int i = 1; i < m_argc; i++)
+	for (int i = 2; i < m_argc; i++)
 	{
 		initialCmd.append(m_argv[i]).append(" ");
 	}
