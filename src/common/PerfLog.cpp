@@ -14,8 +14,4 @@ PerfLog::~PerfLog()
 	{
 		LOG_DBG << m_logger << " cost <" << seconds << "> seconds.";
 	}
-	//else
-	//{
-	//	LOG_DBG << m_logger << " cost <" << seconds << "> seconds.";
-	//}
 }
