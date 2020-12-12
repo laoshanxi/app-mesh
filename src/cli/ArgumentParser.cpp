@@ -4,22 +4,24 @@
 #include <termios.h>
 #include <unistd.h>
 #endif
-#include <atomic>
 #include <ace/Signal.h>
-#include <iostream>
-#include <thread>
+#include <atomic>
 #include <chrono>
 #include <functional>
+#include <iostream>
+#include <thread>
+
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <cpprest/filestream.h>
 #include <cpprest/json.h>
-#include "ArgumentParser.h"
+
 #include "../common/DurationParse.h"
-#include "../common/jwt-cpp/jwt.h"
 #include "../common/Utility.h"
-#include "../common/os/linux.hpp"
+#include "../common/jwt-cpp/jwt.h"
 #include "../common/os/chown.hpp"
+#include "../common/os/linux.hpp"
+#include "ArgumentParser.h"
 
 #define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")("port,B", po::value<int>(), "port number")
 #define COMMON_OPTIONS                                                                                                              \

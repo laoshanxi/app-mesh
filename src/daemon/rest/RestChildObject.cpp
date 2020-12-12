@@ -1,10 +1,10 @@
 #include <ace/CDR_Stream.h>
-#include <ace/SOCK_Stream.h>
-#include <ace/SOCK_Connector.h>
 #include <ace/INET_Addr.h>
+#include <ace/SOCK_Connector.h>
+#include <ace/SOCK_Stream.h>
 
-#include "RestChildObject.h"
 #include "../../common/Utility.h"
+#include "RestChildObject.h"
 
 std::shared_ptr<RestChildObject> RestChildObject::m_instance = nullptr;
 RestChildObject::RestChildObject()
@@ -39,10 +39,10 @@ void RestChildObject::connectAndRun(int port)
             LOG_INF << fname << "connected to TCP REST port: " << localAddress.get_port_number();
             RestHandler::open();
             //auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-            while (auto msg = readMessageBlock(m_socketStream))
+            while (auto response = readMessageBlock(m_socketStream))
             {
-                this->replyResponse(msg);
-                msg->release();
+                this->replyResponse(response);
+                response->release();
             }
         }
         else
@@ -117,13 +117,13 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
     }
 }
 
-void RestChildObject::replyResponse(ACE_Message_Block *msg)
+void RestChildObject::replyResponse(ACE_Message_Block *response)
 {
     const static char fname[] = "RestChildObject::replyResponse() ";
 
     std::string uuid, body, headers, bodyType;
     http::status_code status;
-    ACE_InputCDR cdr(msg);
+    ACE_InputCDR cdr(response);
     if (cdr >> status &&
         cdr >> uuid &&
         cdr >> body &&

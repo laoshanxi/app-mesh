@@ -1,12 +1,13 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
+
 #include <ace/OS.h>
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-#include "Utility.h"
 #include "DateTime.h"
+#include "Utility.h"
 
 const char *ISO8601FORMAT_IN = "%Y-%m-%d %H:%M:%S%F%ZP";
 const char *ISO8601FORMAT_OUT = "%Y-%m-%d %H:%M:%S%F%Q";

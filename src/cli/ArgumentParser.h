@@ -1,10 +1,11 @@
 #pragma once
 
-#include <string>
 #include <iomanip>
-#include <cpprest/json.h>
-#include <cpprest/http_client.h>
+#include <string>
+
 #include <boost/program_options.hpp>
+#include <cpprest/http_client.h>
+#include <cpprest/json.h>
 
 using namespace web;				  // Common features like URIs.
 using namespace web::http;			  // Common HTTP functionality

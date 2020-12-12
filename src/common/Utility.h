@@ -1,15 +1,16 @@
 #pragma once
 
-#include <string>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
-#include <chrono>
+
+#include <cpprest/http_headers.h>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
-#include <cpprest/http_headers.h>
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 

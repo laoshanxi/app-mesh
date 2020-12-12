@@ -1,6 +1,7 @@
 #pragma once
-#include <memory>
 #include <map>
+#include <memory>
+
 #include <cpprest/http_listener.h> // HTTP server
 
 class HttpRequest;

@@ -1,20 +1,20 @@
-#include <assert.h>
 #include <algorithm>
+#include <assert.h>
 
-#include "Application.h"
-#include "../process/AppProcess.h"
+#include "../../common/DateTime.h"
+#include "../../common/Utility.h"
+#include "../../prom_exporter/counter.h"
+#include "../../prom_exporter/gauge.h"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
+#include "../ResourceCollection.h"
+#include "../ResourceLimitation.h"
+#include "../process/AppProcess.h"
 #include "../process/DockerProcess.h"
 #include "../process/MonitoredProcess.h"
 #include "../rest/PrometheusRest.h"
-#include "../ResourceCollection.h"
-#include "../ResourceLimitation.h"
 #include "../security/User.h"
-#include "../../common/Utility.h"
-#include "../../common/DateTime.h"
-#include "../../prom_exporter/counter.h"
-#include "../../prom_exporter/gauge.h"
+#include "Application.h"
 
 Application::Application()
 	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),

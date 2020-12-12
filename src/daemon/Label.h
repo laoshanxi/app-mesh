@@ -1,9 +1,10 @@
 #pragma once
 
-#include <string>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <string>
+
 #include <cpprest/json.h>
 
 //////////////////////////////////////////////////////////////////////////

@@ -1,9 +1,9 @@
+#include "HealthCheckTask.h"
+#include "../common/PerfLog.h"
+#include "../common/Utility.h"
+#include "Configuration.h"
 #include "application/Application.h"
 #include "process/AppProcess.h"
-#include "Configuration.h"
-#include "HealthCheckTask.h"
-#include "../common/Utility.h"
-#include "../common/PerfLog.h"
 
 HealthCheckTask::HealthCheckTask()
 {

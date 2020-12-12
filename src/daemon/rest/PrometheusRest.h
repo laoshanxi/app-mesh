@@ -1,10 +1,12 @@
 #pragma once
 #include <atomic>
 #include <memory>
+
 #include <cpprest/http_listener.h> // HTTP server
+
+#include "../../prom_exporter/family.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
-#include "../../prom_exporter/family.h"
 
 namespace prometheus
 {
@@ -116,7 +118,7 @@ protected:
 	/// </summary>
 	/// <param name="message"></param>
 	/// <param name="restFunctions"></param>
-	virtual void handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions);
+	virtual void handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions) override;
 
 private:
 	/// <summary>

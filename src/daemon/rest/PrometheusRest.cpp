@@ -1,13 +1,14 @@
 #include <ace/OS.h>
 #include <boost/algorithm/string_regex.hpp>
-#include "PrometheusRest.h"
-#include "RestBase.h"
-#include "../Configuration.h"
-#include "../ResourceCollection.h"
+
+#include "../../common/Utility.h"
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/registry.h"
 #include "../../prom_exporter/text_serializer.h"
-#include "../../common/Utility.h"
+#include "../Configuration.h"
+#include "../ResourceCollection.h"
+#include "PrometheusRest.h"
+#include "RestBase.h"
 
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 

@@ -1,7 +1,7 @@
 #pragma once
+#include <string>
 
 #include <cpprest/json.h>
-#include <string>
 
 //////////////////////////////////////////////////////////////////////////
 /// Define the application resource usage limitation

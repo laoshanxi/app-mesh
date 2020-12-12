@@ -1,11 +1,13 @@
 #include <set>
+
 #include <ace/OS.h>
-#include "ResourceCollection.h"
-#include "../common/Utility.h"
+
 #include "../common/DateTime.h"
+#include "../common/Utility.h"
 #include "../common/os/net.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
+#include "ResourceCollection.h"
 
 ResourceCollection::ResourceCollection()
 	: m_appmeshStartTime(std::chrono::system_clock::now())

@@ -1,7 +1,7 @@
 #include "HttpRequest.h"
-#include "RestTcpServer.h"
-#include "../../daemon/application/Application.h"
 #include "../../common/Utility.h"
+#include "../../daemon/application/Application.h"
+#include "RestTcpServer.h"
 
 HttpRequest::HttpRequest(const web::http::http_request &message)
 	: http_request(message), m_uuid(Utility::createUUID()), m_reply2child(false)

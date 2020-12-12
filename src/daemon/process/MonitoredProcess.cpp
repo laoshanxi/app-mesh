@@ -1,9 +1,11 @@
-#include <thread>
 #include <fstream>
+#include <thread>
+
 #include <ace/Process.h>
-#include "MonitoredProcess.h"
+
 #include "../../common/Utility.h"
 #include "../rest/HttpRequest.h"
+#include "MonitoredProcess.h"
 
 MonitoredProcess::MonitoredProcess() : m_httpRequest(nullptr)
 {

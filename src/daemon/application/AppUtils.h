@@ -1,7 +1,7 @@
 #pragma once
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 
 struct ShellAppFileGen
 {
@@ -33,7 +33,7 @@ private:
 class LogFileQueue
 {
 public:
-	explicit LogFileQueue(std::string baseFileName, int queueSize);
+	explicit LogFileQueue(const std::string &baseFileName, int queueSize);
 	virtual ~LogFileQueue();
 	void enqueue();
 	int size();

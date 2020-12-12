@@ -3,19 +3,19 @@
 #include <cpprest/filestream.h>
 #include <cpprest/http_listener.h> // HTTP server
 
-#include "ConsulConnection.h"
-#include "HttpRequest.h"
-#include "RestHandler.h"
-#include "PrometheusRest.h"
-#include "../application/Application.h"
-#include "../Configuration.h"
-#include "../ResourceCollection.h"
-#include "../security/User.h"
-#include "../Label.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
-#include "../../common/os/linux.hpp"
 #include "../../common/os/chown.hpp"
+#include "../../common/os/linux.hpp"
+#include "../Configuration.h"
+#include "../Label.h"
+#include "../ResourceCollection.h"
+#include "../application/Application.h"
+#include "../security/User.h"
+#include "ConsulConnection.h"
+#include "HttpRequest.h"
+#include "PrometheusRest.h"
+#include "RestHandler.h"
 
 RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpServer)
 {

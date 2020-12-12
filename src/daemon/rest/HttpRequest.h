@@ -1,8 +1,9 @@
 #pragma once
 
 #include <functional>
-#include <memory>
 #include <map>
+#include <memory>
+
 #include <cpprest/http_client.h>
 
 using namespace web;

@@ -1,6 +1,6 @@
 #pragma once
-#include <memory>
 #include <map>
+#include <memory>
 
 class ConsulTopology;
 class ConsulTask;

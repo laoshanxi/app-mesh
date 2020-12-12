@@ -1,8 +1,8 @@
 #include "PerfLog.h"
 #include "../common/Utility.h"
 
-PerfLog::PerfLog(const std::string& logger)
-	:m_start(std::chrono::system_clock::now()), m_logger(logger)
+PerfLog::PerfLog(const std::string &logger)
+	: m_start(std::chrono::system_clock::now()), m_logger(logger)
 {
 }
 

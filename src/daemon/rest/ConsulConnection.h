@@ -1,16 +1,18 @@
 #pragma once
 
-#include <memory>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <thread>
+
 #include <cpprest/http_msg.h>
 #include <cpprest/json.h>
+
 #include "../Label.h"
 #include "../TimerHandler.h"
-#include "ConsulEntity.h"
 #include "../process/AppProcess.h"
+#include "ConsulEntity.h"
 
 class ConsulConnection : public TimerHandler
 {

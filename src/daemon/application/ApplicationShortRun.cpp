@@ -1,9 +1,9 @@
 #include "ApplicationShortRun.h"
-#include "../process/AppProcess.h"
-#include "../Configuration.h"
+#include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
-#include "../../common/DateTime.h"
+#include "../Configuration.h"
+#include "../process/AppProcess.h"
 
 ApplicationShortRun::ApplicationShortRun()
 	: m_startInterval(0), m_bufferTime(0), m_timerId(0)
@@ -138,7 +138,6 @@ void ApplicationShortRun::invokeNow(int timerId)
 	{
 		setInvalidError();
 	}
-	
 }
 
 web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)

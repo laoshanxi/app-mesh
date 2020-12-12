@@ -1,11 +1,12 @@
 #include <boost/algorithm/string_regex.hpp>
-#include "RestBase.h"
-#include "HttpRequest.h"
-#include "RestChildObject.h"
-#include "../Configuration.h"
-#include "../security/User.h"
+
 #include "../../common/Utility.h"
 #include "../../common/jwt-cpp/jwt.h"
+#include "../Configuration.h"
+#include "../security/User.h"
+#include "HttpRequest.h"
+#include "RestBase.h"
+#include "RestChildObject.h"
 
 RestBase::RestBase(bool forward2TcpServer)
     : m_forward2TcpServer(forward2TcpServer)

@@ -1,7 +1,7 @@
 #include "ApplicationInitialize.h"
-#include "../process/AppProcess.h"
-#include "../Configuration.h"
 #include "../../common/Utility.h"
+#include "../Configuration.h"
+#include "../process/AppProcess.h"
 
 ApplicationInitialize::ApplicationInitialize()
 	: m_executed(false)

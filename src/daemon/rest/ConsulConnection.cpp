@@ -3,16 +3,15 @@
 #include <cpprest/json.h>
 #include <thread>
 
-#include "ConsulConnection.h"
-#include "../application/Application.h"
+#include "../../common/PerfLog.h"
+#include "../../common/Utility.h"
+#include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "../Scheduler.h"
+#include "../application/Application.h"
 #include "../security/User.h"
-
-#include "../../common/Utility.h"
-#include "../../common/PerfLog.h"
-#include "../../common/os/linux.hpp"
+#include "ConsulConnection.h"
 
 #define CONSUL_BASE_PATH "/v1/kv/appmesh/"
 //extern ACE_Reactor* m_timerReactor;
@@ -74,7 +73,7 @@ void ConsulConnection::reportNode()
 			LOG_DBG << fname << "host info " << MY_HOST_NAME << " is the same with server";
 			return;
 		}
-		
+
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 		auto resp = requestHttp(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 		if (resp.status_code() == web::http::status_codes::OK)

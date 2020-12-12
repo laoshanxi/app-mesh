@@ -1,7 +1,7 @@
 #include "ApplicationUnInitia.h"
-#include "../process/AppProcess.h"
-#include "../Configuration.h"
 #include "../../common/Utility.h"
+#include "../Configuration.h"
+#include "../process/AppProcess.h"
 
 ApplicationUnInitia::ApplicationUnInitia()
 	: m_executed(false)

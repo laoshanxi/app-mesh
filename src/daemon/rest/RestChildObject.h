@@ -39,7 +39,7 @@ public:
     /// Reply REST Response
     /// </summary>
     /// <param name="msg"></param>
-    void replyResponse(ACE_Message_Block *msg);
+    void replyResponse(ACE_Message_Block *response);
 
     /// <summary>
     /// Read Message Block from Socket Stream

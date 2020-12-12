@@ -1,9 +1,10 @@
 #pragma once
 
-#include <memory>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
+
 #include <cpprest/json.h>
 
 class Application;

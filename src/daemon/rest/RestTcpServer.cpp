@@ -1,15 +1,16 @@
 #include <atomic>
+
 #include <ace/CDR_Stream.h>
+#include <ace/INET_Addr.h>
 #include <ace/SOCK_Acceptor.h>
 #include <ace/SOCK_Stream.h>
-#include <ace/INET_Addr.h>
 
+#include "../../common/Utility.h"
+#include "../Configuration.h"
 #include "HttpRequest.h"
+#include "RestChildObject.h"
 #include "RestHandler.h"
 #include "RestTcpServer.h"
-#include "RestChildObject.h"
-#include "../Configuration.h"
-#include "../../common/Utility.h"
 
 std::shared_ptr<RestTcpServer> RestTcpServer::m_instance = nullptr;
 RestTcpServer::RestTcpServer() : RestHandler(false)

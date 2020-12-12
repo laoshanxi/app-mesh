@@ -1,10 +1,11 @@
-#include "TimerHandler.h"
+
+#include <ace/OS.h>
 #include <ace/Reactor.h>
 #include <ace/Time_Value.h>
-#include <ace/OS.h>
 #include <assert.h>
-#include "TimerHandler.h"
+
 #include "../common/Utility.h"
+#include "TimerHandler.h"
 
 TimerHandler::TimerHandler()
 	: m_reactor(ACE_Reactor::instance())

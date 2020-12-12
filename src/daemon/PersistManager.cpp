@@ -1,10 +1,11 @@
-#include "PersistManager.h"
-#include "Configuration.h"
-#include "process/AppProcess.h"
 #include <fstream>
-#include "application/Application.h"
-#include "rest/ConsulConnection.h"
+
 #include "../common/os/linux.hpp"
+#include "Configuration.h"
+#include "PersistManager.h"
+#include "application/Application.h"
+#include "process/AppProcess.h"
+#include "rest/ConsulConnection.h"
 
 #define SNAPSHOT_JSON_KEY_pid "pid"
 #define SNAPSHOT_JSON_KEY_starttime "starttime"

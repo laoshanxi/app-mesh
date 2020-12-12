@@ -1,7 +1,9 @@
 #include <math.h>
+
 #include <boost/algorithm/string_regex.hpp>
-#include "Utility.h"
+
 #include "DurationParse.h"
+#include "Utility.h"
 
 #define DURATION_WEEK R"(^P([0-9]+W)$)"
 #define DURATION_DATE_TIME R"(^P(([0-9]+Y)?([0-9]+M)?([0-9]+D)?)?(T([0-9]+H)?([0-9]+M)?([0-9]+S)?)?$)"

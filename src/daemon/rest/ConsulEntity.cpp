@@ -1,13 +1,15 @@
 #include <algorithm>
 #include <thread>
+
 #include <cpprest/http_client.h>
 #include <cpprest/json.h>
-#include "../application/Application.h"
-#include "../Label.h"
-#include "../rest/ConsulConnection.h"
-#include "../Configuration.h"
-#include "../ResourceCollection.h"
+
 #include "../../common/Utility.h"
+#include "../Configuration.h"
+#include "../Label.h"
+#include "../ResourceCollection.h"
+#include "../application/Application.h"
+#include "../rest/ConsulConnection.h"
 
 std::shared_ptr<ConsulStatus> ConsulStatus::FromJson(const web::json::value &json)
 {

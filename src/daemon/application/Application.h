@@ -1,13 +1,15 @@
 #pragma once
 #include <atomic>
-#include <memory>
-#include <string>
-#include <map>
-#include <mutex>
 #include <chrono>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+
 #include <cpprest/json.h>
-#include "AppUtils.h"
+
 #include "../TimerHandler.h"
+#include "AppUtils.h"
 
 class User;
 class CounterMetric;

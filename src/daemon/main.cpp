@@ -1,32 +1,31 @@
-#include <stdio.h>
-
 #include <atomic>
-#include <iostream>
-#include <string>
 #include <chrono>
-#include <thread>
-#include <set>
 #include <fstream>
+#include <iostream>
+#include <set>
+#include <stdio.h>
+#include <string>
+#include <thread>
 
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
 #include <pplx/threadpool.h>
 
-#include "application/Application.h"
-#include "process/AppProcess.h"
+#include "../common/PerfLog.h"
+#include "../common/Utility.h"
+#include "../common/os/linux.hpp"
 #include "Configuration.h"
-#include "rest/ConsulConnection.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
-#include "rest/PrometheusRest.h"
 #include "ResourceCollection.h"
-#include "rest/RestHandler.h"
-#include "rest/RestChildObject.h"
-#include "rest/RestTcpServer.h"
 #include "TimerHandler.h"
-#include "../common/os/linux.hpp"
-#include "../common/Utility.h"
-#include "../common/PerfLog.h"
+#include "application/Application.h"
+#include "process/AppProcess.h"
+#include "rest/ConsulConnection.h"
+#include "rest/PrometheusRest.h"
+#include "rest/RestChildObject.h"
+#include "rest/RestHandler.h"
+#include "rest/RestTcpServer.h"
 #ifndef NDEBUG
 #include "../common/Valgrind.h"
 #endif

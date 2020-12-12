@@ -1,24 +1,23 @@
-#include <set>
-#include <unistd.h> //environ
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
+#include <set>
+#include <unistd.h> //environ
 
-#include "application/Application.h"
-#include "application/ApplicationInitialize.h"
-#include "application/ApplicationUnInitia.h"
-#include "application/ApplicationPeriodRun.h"
 #include "Configuration.h"
-#include "rest/ConsulConnection.h"
 #include "Label.h"
 #include "ResourceCollection.h"
+#include "application/Application.h"
+#include "application/ApplicationInitialize.h"
+#include "application/ApplicationPeriodRun.h"
+#include "application/ApplicationUnInitia.h"
+#include "rest/ConsulConnection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
-#include "rest/PrometheusRest.h"
 #include "security/User.h"
 
+#include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
-#include "../common/DateTime.h"
 
 extern char **environ; // unistd.h
 
@@ -278,14 +277,11 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
-	for (auto app : m_apps)
-	{
-		// do not persist temp application
-		if ((returnRuntimeInfo || app->isWorkingState()) && checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false))
-		{
-			apps.push_back(app);
-		}
-	}
+	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
+				 [this, &returnRuntimeInfo, &user](std::shared_ptr<Application> app) {
+					 // do not persist temp application
+					 return ((returnRuntimeInfo || app->isWorkingState()) && checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false));
+				 });
 
 	// Build Json
 	auto result = web::json::value::array(apps.size());

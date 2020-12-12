@@ -1,9 +1,10 @@
 #pragma once
 
-#include <thread>
 #include <memory>
-#include <string>
 #include <mutex>
+#include <string>
+#include <thread>
+
 #include "AppProcess.h"
 
 class ACE_Process_Options;
