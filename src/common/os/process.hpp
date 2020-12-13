@@ -2,38 +2,39 @@
 
 #include <sys/types.h> // For pid_t.
 
-#include <numeric>
+#include <chrono>
 #include <list>
+#include <memory>
+#include <numeric>
 #include <ostream>
 #include <sstream>
 #include <string>
-#include <chrono>
-#include <memory>
 
 #include "../../common/Utility.h"
 
-namespace os {
+namespace os
+{
 
 	struct Process
 	{
 		Process(pid_t _pid,
-			pid_t _parent,
-			pid_t _group,
-			const pid_t& _session,
-			const uint64_t& _rss_bytes,
-			const std::chrono::seconds& _utime,
-			const std::chrono::seconds& _stime,
-			const std::string& _command,
-			bool _zombie)
+				pid_t _parent,
+				pid_t _group,
+				const pid_t &_session,
+				const uint64_t &_rss_bytes,
+				const std::chrono::seconds &_utime,
+				const std::chrono::seconds &_stime,
+				const std::string &_command,
+				bool _zombie)
 			: pid(_pid),
-			parent(_parent),
-			group(_group),
-			session(_session),
-			rss_bytes(_rss_bytes),
-			utime(_utime),
-			stime(_stime),
-			command(_command),
-			zombie(_zombie) {}
+			  parent(_parent),
+			  group(_group),
+			  session(_session),
+			  rss_bytes(_rss_bytes),
+			  utime(_utime),
+			  stime(_stime),
+			  command(_command),
+			  zombie(_zombie) {}
 
 		const pid_t pid;
 		const pid_t parent;
@@ -46,16 +47,13 @@ namespace os {
 		const std::string command;
 		const bool zombie;
 
-		// TODO(bmahler): Add additional data as needed.
-
-		bool operator<(const Process& p) const { return pid < p.pid; }
-		bool operator<=(const Process& p) const { return pid <= p.pid; }
-		bool operator>(const Process& p) const { return pid > p.pid; }
-		bool operator>=(const Process& p) const { return pid >= p.pid; }
-		bool operator==(const Process& p) const { return pid == p.pid; }
-		bool operator!=(const Process& p) const { return pid != p.pid; }
+		bool operator<(const Process &p) const { return pid < p.pid; }
+		bool operator<=(const Process &p) const { return pid <= p.pid; }
+		bool operator>(const Process &p) const { return pid > p.pid; }
+		bool operator>=(const Process &p) const { return pid >= p.pid; }
+		bool operator==(const Process &p) const { return pid == p.pid; }
+		bool operator!=(const Process &p) const { return pid != p.pid; }
 	};
-
 
 	class ProcessTree
 	{
@@ -64,14 +62,17 @@ namespace os {
 		// the specified pid could not be found in this process tree.
 		std::shared_ptr<ProcessTree> find(pid_t pid) const
 		{
-			if (process.pid == pid) {
+			if (process.pid == pid)
+			{
 				// make a copy of this
 				return std::make_shared<ProcessTree>(*this);
 			}
 
-			for (const ProcessTree& tree : children) {
+			for (const ProcessTree &tree : children)
+			{
 				std::shared_ptr<ProcessTree> option = tree.find(pid);
-				if (option != nullptr) {
+				if (option != nullptr)
+				{
 					return option;
 				}
 			}
@@ -80,7 +81,7 @@ namespace os {
 		}
 
 		// Count the total RES memory usage in the process tree
-		const uint64_t totalRSS() const
+		uint64_t totalRSS() const
 		{
 			uint64_t result = std::accumulate(children.begin(), children.end(), process.rss_bytes);
 			return result;
@@ -117,44 +118,52 @@ namespace os {
 		const std::list<ProcessTree> children;
 
 	private:
-		friend std::shared_ptr<ProcessTree> pstree(pid_t, const std::list<Process>&);
+		friend std::shared_ptr<ProcessTree> pstree(pid_t, const std::list<Process> &);
 
 		ProcessTree(
-			const Process& _process,
-			const std::list<ProcessTree>& _children)
+			const Process &_process,
+			const std::list<ProcessTree> &_children)
 			: process(_process),
-			children(_children) {}
+			  children(_children) {}
 	};
 
-
-	inline std::ostream& operator<<(std::ostream& stream, const ProcessTree& tree)
+	inline std::ostream &operator<<(std::ostream &stream, const ProcessTree &tree)
 	{
-		if (tree.children.empty()) {
+		if (tree.children.empty())
+		{
 			stream << "--- " << tree.process.pid << " ";
-			if (tree.process.zombie) {
+			if (tree.process.zombie)
+			{
 				stream << "(" << tree.process.command << ")";
 			}
-			else {
+			else
+			{
 				stream << tree.process.command;
 			}
 		}
-		else {
+		else
+		{
 			stream << "-+- " << tree.process.pid << " ";
-			if (tree.process.zombie) {
+			if (tree.process.zombie)
+			{
 				stream << "(" << tree.process.command << ")";
 			}
-			else {
+			else
+			{
 				stream << tree.process.command;
 			}
 			size_t size = tree.children.size();
-			for (const ProcessTree& child : tree.children) {
+			for (const ProcessTree &child : tree.children)
+			{
 				std::ostringstream out;
 				out << child;
 				stream << "\n";
-				if (--size != 0) {
+				if (--size != 0)
+				{
 					stream << " |" << Utility::stringReplace(out.str(), "\n", "\n |");
 				}
-				else {
+				else
+				{
 					stream << " \\" << Utility::stringReplace(out.str(), "\n", "\n  ");
 				}
 			}
@@ -162,13 +171,15 @@ namespace os {
 		return stream;
 	}
 
-	inline std::ostream& operator<<(std::ostream& stream, const std::list<os::ProcessTree>& list)
+	inline std::ostream &operator<<(std::ostream &stream, const std::list<os::ProcessTree> &list)
 	{
 		stream << "[ " << std::endl;
 		std::list<os::ProcessTree>::const_iterator iterator = list.begin();
-		while (iterator != list.end()) {
+		while (iterator != list.end())
+		{
 			stream << *iterator;
-			if (++iterator != list.end()) {
+			if (++iterator != list.end())
+			{
 				stream << std::endl << std::endl;
 			}
 		}
@@ -176,4 +187,4 @@ namespace os {
 		return stream;
 	}
 
-} // namespace os {
+} // namespace os

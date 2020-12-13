@@ -1,10 +1,12 @@
 #pragma once
 
-#include <string>
-#include <set>
 #include <map>
 #include <mutex>
+#include <set>
+#include <string>
+
 #include <cpprest/json.h>
+
 #include "Role.h"
 
 //////////////////////////////////////////////////////////////////////////
@@ -16,7 +18,7 @@ public:
 	explicit User(const std::string &name);
 	virtual ~User();
 
-	// seriarize
+	// serialize
 	web::json::value AsJson() const;
 	static std::shared_ptr<User> FromJson(const std::string &userName, const web::json::value &obj, const std::shared_ptr<Roles> roles) noexcept(false);
 
@@ -24,7 +26,7 @@ public:
 	void lock();
 	void unlock();
 	void updateUser(std::shared_ptr<User> user);
-	void updateKey(const std::string &passswd);
+	void updateKey(const std::string &passwd);
 
 	// get user info
 	bool locked() const;

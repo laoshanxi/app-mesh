@@ -2,8 +2,8 @@
 #include <map>
 #include <memory>
 
-class ConsulTopology;
-class ConsulTask;
+struct ConsulTopology;
+struct ConsulTask;
 class Scheduler
 {
 public:

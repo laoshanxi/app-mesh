@@ -1,10 +1,10 @@
 #pragma once
 
-#include <unistd.h>
-#include <sys/types.h>
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <sys/param.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <list>
 #include <string>
@@ -122,7 +122,7 @@ namespace net
 		}
 
 		// remove % from ipv6 address (fe80::bacd:a28c:186c:a9cd%enp0s3)
-		if (storage->sa_family == AF_INET6 && strchr(buffer, '%') > 0)
+		if (storage->sa_family == AF_INET6 && strchr(buffer, '%') > (char *)NULL)
 		{
 			*(strchr(buffer, '%')) = '\0';
 		}

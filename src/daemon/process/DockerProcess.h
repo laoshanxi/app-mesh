@@ -26,7 +26,7 @@ public:
 
 	virtual pid_t getpid(void) const override;
 	virtual std::string containerId() const override;
-	virtual void containerId(std::string containerId) override;
+	virtual void containerId(const std::string &containerId) override;
 
 	// docker logs
 	virtual const std::string fetchOutputMsg() override;

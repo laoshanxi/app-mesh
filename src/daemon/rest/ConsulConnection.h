@@ -21,7 +21,7 @@ public:
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection> &instance();
 	void initTimer(std::string recoverSsnId = "");
-	void saveSecurity(bool checkExistance = false);
+	void saveSecurity(bool checkExistence = false);
 	std::string consulSessionId();
 
 	void syncSchedule();

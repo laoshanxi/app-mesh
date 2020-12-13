@@ -13,7 +13,7 @@
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest(bool forward2TcpServer)
-	: RestBase(forward2TcpServer), m_promEnabled(true), m_collectTime(ATOMIC_FLAG_INIT), m_scrapeCounter(0)
+	: RestBase(forward2TcpServer), m_promEnabled(true), m_scrapeCounter(0)
 {
 	m_promRegistry = std::make_shared<prometheus::Registry>();
 	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));

@@ -111,7 +111,7 @@ const std::string AppProcess::getuuid() const
 	return m_uuid;
 }
 
-void AppProcess::delayKill(std::size_t timeout, const std::string from)
+void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 {
 	m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
 }
@@ -277,7 +277,7 @@ const std::string AppProcess::fetchOutputMsg()
 	{
 		std::stringstream buffer;
 		buffer << m_stdoutReadStream->rdbuf();
-		return std::move(buffer.str());
+		return buffer.str();
 	}
 	return std::string();
 }

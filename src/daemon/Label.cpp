@@ -1,11 +1,12 @@
-#include "Label.h"
-#include "../common/Utility.h"
 #ifdef __GNUC__
 #include <features.h>
 #if __GNUC_PREREQ(5, 4)
 #include "../common/wildcards/wildcards.hpp"
 #endif
 #endif
+
+#include "../common/Utility.h"
+#include "Label.h"
 #include "ResourceCollection.h"
 
 Label::Label()
@@ -35,8 +36,8 @@ const std::shared_ptr<Label> Label::FromJson(const web::json::value &obj)
 		auto jsonObj = obj.as_object();
 		for (auto lblJson : jsonObj)
 		{
-			std::string lableKey = GET_STD_STRING(lblJson.first);
-			label->m_labels[lableKey] = GET_STD_STRING(lblJson.second.as_string());
+			std::string labelKey = GET_STD_STRING(lblJson.first);
+			label->m_labels[labelKey] = GET_STD_STRING(lblJson.second.as_string());
 		}
 	}
 	return label;

@@ -99,7 +99,7 @@ void ConsulConnection::reportNode()
 	}
 }
 
-void ConsulConnection::refreshSession(int timerId)
+void ConsulConnection::refreshSession(int)
 {
 	const static char fname[] = "ConsulConnection::refreshSession() ";
 
@@ -514,7 +514,7 @@ bool ConsulConnection::deregisterService(const std::string &appName)
 	return false;
 }
 
-void ConsulConnection::saveSecurity(bool checkExistance)
+void ConsulConnection::saveSecurity(bool checkExistence)
 {
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
 
@@ -524,7 +524,7 @@ void ConsulConnection::saveSecurity(bool checkExistance)
 	// /appmesh/security
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
 	// if check exist and security KV already exist, do nothing
-	if (checkExistance && requestHttp(web::http::methods::GET, path, {}, {}, nullptr).status_code() == web::http::status_codes::OK)
+	if (checkExistence && requestHttp(web::http::methods::GET, path, {}, {}, nullptr).status_code() == web::http::status_codes::OK)
 	{
 		LOG_WAR << fname << path << " already exist, on need override";
 		return;

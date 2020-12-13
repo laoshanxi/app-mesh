@@ -86,7 +86,7 @@ const HostResource &ResourceCollection::getHostResource()
 	return m_resources;
 }
 
-const pid_t ResourceCollection::getPid()
+pid_t ResourceCollection::getPid()
 {
 	static auto pid = getpid();
 	return pid;

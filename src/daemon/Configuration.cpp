@@ -370,7 +370,7 @@ bool Configuration::getJwtEnabled() const
 	return getSecurity()->m_jwtEnabled;
 }
 
-const std::size_t Configuration::getThreadPoolSize() const
+std::size_t Configuration::getThreadPoolSize() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_httpThreadPoolSize;
@@ -798,7 +798,7 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jso
 		ApplicationInitialize::FromJson(initApp, jsonApp);
 		return app;
 	}
-	// check uninitial application
+	// check un-initial application
 	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_onetime_application_only))
 	{
 		std::shared_ptr<ApplicationUnInitia> oneApp(new ApplicationUnInitia());

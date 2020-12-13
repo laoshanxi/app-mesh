@@ -4,31 +4,32 @@
 #ifndef __linux__
 #error "os/linux.hpp is only available on Linux systems."
 #else
-#include <sys/types.h> // For pid_t.
-#include <sys/sysinfo.h>
-#include <unistd.h> // For sysconf
-#include <sys/statvfs.h>
 #include <dirent.h>
 #include <errno.h>
-#include <stdlib.h>
 #include <mntent.h>
-#endif // __linux__
+#include <stdlib.h>
+#include <sys/statvfs.h>
+#include <sys/sysinfo.h>
+#include <sys/types.h> // For pid_t.
+#include <unistd.h>	   // For sysconf
+#endif				   // __linux__
 
 #ifdef __linux__
 #include <linux/version.h>
 #include <sys/sysinfo.h>
 #endif // __linux__
 
-#include <sys/stat.h>
-#include <pwd.h>
+#include <assert.h>
+#include <fstream>
 #include <list>
+#include <memory>
+#include <pwd.h>
 #include <set>
 #include <string>
-#include <assert.h>
-#include <memory>
-#include <fstream>
-#include "process.hpp"
+#include <sys/stat.h>
+
 #include "../../common//Utility.h"
+#include "process.hpp"
 
 namespace os
 {

@@ -50,7 +50,7 @@ public:
 
 	const std::string getHostName(bool refresh = false);
 	const HostResource &getHostResource();
-	const pid_t getPid();
+	pid_t getPid();
 
 	uint64_t getRssMemory(pid_t pid = getpid());
 

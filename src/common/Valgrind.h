@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -89,7 +90,7 @@ bool isValgrindEnabled()
             !binaryExtentionExist(VALGRIND_STOP_FILE));
 }
 
-void *valgrindStopMonitorThread(void *p)
+void *valgrindStopMonitorThread(void *)
 {
     while (true)
     {

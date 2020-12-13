@@ -1,10 +1,11 @@
 #pragma once
 
-#include <string>
 #include <map>
-#include <set>
 #include <memory>
 #include <mutex>
+#include <set>
+#include <string>
+
 #include <cpprest/json.h>
 
 //////////////////////////////////////////////////////////////////////////
@@ -16,7 +17,7 @@ public:
 	explicit Role(const std::string &name);
 	virtual ~Role();
 
-	// seriarize
+	// serialize
 	web::json::value AsJson() const;
 	static std::shared_ptr<Role> FromJson(std::string roleName, web::json::value &obj) noexcept(false);
 

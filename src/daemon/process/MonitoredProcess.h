@@ -27,6 +27,5 @@ protected:
 
 private:
 	void *m_httpRequest;
-
 	std::unique_ptr<std::thread> m_thread;
 };

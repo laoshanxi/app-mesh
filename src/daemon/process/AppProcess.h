@@ -26,7 +26,7 @@ public:
 	virtual pid_t getpid(void) const;
 	const std::string getuuid() const;
 	virtual std::string containerId() const { return std::string(); };
-	virtual void containerId(std::string containerId){};
+	virtual void containerId(const std::string &containerId){};
 
 	/// <summary>
 	/// Attach a existing pid to AppProcess to manage
@@ -54,7 +54,7 @@ public:
 	/// </summary>
 	/// <param name="timeoutSec">seconds</param>
 	/// <param name="from"></param>
-	void delayKill(std::size_t timeoutSec, const std::string from);
+	void delayKill(std::size_t timeoutSec, const std::string &from);
 
 	/// <summary>
 	/// start process

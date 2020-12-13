@@ -185,10 +185,10 @@ void User::updateUser(std::shared_ptr<User> user)
 	this->m_locked = user->m_locked;
 }
 
-void User::updateKey(const std::string &passswd)
+void User::updateKey(const std::string &passwd)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_key = passswd;
+	m_key = passwd;
 }
 
 bool User::locked() const

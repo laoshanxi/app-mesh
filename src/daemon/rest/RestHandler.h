@@ -16,7 +16,7 @@ public:
 	virtual ~RestHandler();
 
 protected:
-	virtual void open();
+	virtual void open() override;
 	void close();
 
 	void checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite);

@@ -239,7 +239,7 @@ std::string DockerProcess::containerId() const
 	return m_containerId;
 }
 
-void DockerProcess::containerId(std::string containerId)
+void DockerProcess::containerId(const std::string &containerId)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	m_containerId = containerId;

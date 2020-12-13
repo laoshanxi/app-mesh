@@ -302,8 +302,7 @@ unsigned long long Utility::getThreadId()
 {
 	std::ostringstream oss;
 	oss << std::this_thread::get_id();
-	std::string stid = oss.str();
-	return std::stoull(stid);
+	return std::stoull(oss.str());
 }
 
 std::string Utility::encode64(const std::string &val)
@@ -489,7 +488,7 @@ std::string Utility::humanReadableSize(long double bytesSize)
 	char buffer[64] = {0};
 	sprintf(buffer, "%.1Lf %s", n, fmt[units]);
 	std::string str = buffer;
-	return std::move(stringReplace(str, ".0", ""));
+	return stringReplace(str, ".0", "");
 }
 
 bool Utility::getUid(std::string userName, unsigned int &uid, unsigned int &groupid)
@@ -618,7 +617,7 @@ std::string Utility::prettyJson(const std::string &jsonStr)
 
 std::string Utility::hash(const std::string &str)
 {
-	return std::move(std::to_string(std::hash<std::string>()(str)));
+	return std::to_string(std::hash<std::string>()(str));
 }
 
 std::string Utility::stringFormat(const std::string &fmt_str, ...)
