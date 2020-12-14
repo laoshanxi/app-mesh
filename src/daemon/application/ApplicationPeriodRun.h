@@ -3,7 +3,7 @@
 #include "ApplicationShortRun.h"
 
 //////////////////////////////////////////////////////////////////////////
-/// An Period Application will start periodly but keep running all the time.
+/// An Period Application will start period but keep running all the time.
 //////////////////////////////////////////////////////////////////////////
 class ApplicationPeriodRun : public ApplicationShortRun
 {

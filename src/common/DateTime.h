@@ -6,7 +6,10 @@
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-// https://stackoverflow.com/questions/8746848/boost-get-the-current-local-date-time-with-current-time-zone-from-the-machine
+/// <summary>
+/// Boost local time zone
+/// https://stackoverflow.com/questions/8746848/boost-get-the-current-local-date-time-with-current-time-zone-from-the-machine
+/// </summary>
 class machine_time_zone : public boost::local_time::custom_time_zone
 {
 	typedef boost::local_time::custom_time_zone base_type;
@@ -20,6 +23,9 @@ public:
 	static const std::string &get_std_zone_abbrev();
 };
 
+/// <summary>
+/// ISO8601 date time parse and format
+/// </summary>
 class DateTime
 {
 public:

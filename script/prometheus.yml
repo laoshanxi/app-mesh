@@ -1,12 +1,12 @@
-global: 
+global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: 'prometheus'
+  - job_name: "prometheus"
     static_configs:
-      - targets: ['127.0.0.1:9090', '127.0.0.1:9100']
-  - job_name: 'appmesh'
+      - targets: ["127.0.0.1:9090", "127.0.0.1:9100"]
+  - job_name: "appmesh"
     scrape_interval: 10s
     static_configs:
-      - targets: ['127.0.0.1:6061']
+      - targets: ["127.0.0.1:6061"]

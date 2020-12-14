@@ -11,26 +11,6 @@
 #include "../application/Application.h"
 #include "../rest/ConsulConnection.h"
 
-std::shared_ptr<ConsulStatus> ConsulStatus::FromJson(const web::json::value &json)
-{
-	auto consul = std::make_shared<ConsulStatus>();
-	for (const auto &app : json.as_object())
-	{
-		consul->m_apps[GET_STD_STRING(app.first)] = app.second;
-	}
-	return consul;
-}
-
-web::json::value ConsulStatus::AsJson() const
-{
-	auto result = web::json::value::object();
-	for (const auto &app : m_apps)
-	{
-		result[app.first] = app.second;
-	}
-	return result;
-}
-
 ConsulTask::ConsulTask()
 	: m_replication(0), m_condition(std::make_shared<Label>()), m_priority(0), m_consulServicePort(0)
 {

@@ -14,13 +14,10 @@
 #include "ConsulConnection.h"
 
 #define CONSUL_BASE_PATH "/v1/kv/appmesh/"
-//extern ACE_Reactor* m_timerReactor;
 
 ConsulConnection::ConsulConnection()
 	: m_ssnRenewTimerId(0), m_leader(0)
 {
-	// override default reactor here
-	// m_reactor = m_timerReactor;
 }
 
 ConsulConnection::~ConsulConnection()

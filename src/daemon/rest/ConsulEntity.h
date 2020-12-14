@@ -9,14 +9,10 @@
 
 class Application;
 class Label;
-struct ConsulStatus
-{
-	static std::shared_ptr<ConsulStatus> FromJson(const web::json::value &json);
-	web::json::value AsJson() const;
 
-	std::map<std::string, web::json::value> m_apps;
-};
-
+/// <summary>
+/// Consul Node definition
+/// </summary>
 struct ConsulNode
 {
 	ConsulNode();
@@ -41,6 +37,9 @@ struct ConsulNode
 	std::map<std::string, std::shared_ptr<Application>> m_assignedApps;
 };
 
+/// <summary>
+/// Cluster level application definition with replication and node selector
+/// </summary>
 struct ConsulTask
 {
 	ConsulTask();
@@ -65,6 +64,9 @@ struct ConsulTask
 	std::set<int> m_taskIndexDic;
 };
 
+/// <summary>
+/// Topology is leader schedule result
+/// </summary>
 struct ConsulTopology
 {
 	static std::shared_ptr<ConsulTopology> FromJson(const web::json::value &jsonObj, const std::string &hostName);

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <string>
 
 /// @brief Easily converts ISO 8601 Durations to Seconds and Seconds to ISO 8601 Durations

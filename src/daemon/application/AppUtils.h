@@ -1,8 +1,12 @@
 #pragma once
+
 #include <memory>
 #include <string>
 #include <vector>
 
+/// <summary>
+/// Shell mode application manage (create/clean) shell script
+/// </summary>
 struct ShellAppFileGen
 {
 	explicit ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &workDir);
@@ -16,6 +20,9 @@ private:
 	std::string m_fileName;
 };
 
+/// <summary>
+/// One application log file
+/// </summary>
 struct AppLogFile
 {
 public:
@@ -30,6 +37,9 @@ private:
 	int m_index;
 };
 
+/// <summary>
+/// Manage stdout log files for an application
+/// </summary>
 class LogFileQueue
 {
 public:
@@ -45,6 +55,9 @@ private:
 	const int m_queueSize;
 };
 
+/// <summary>
+/// Application status
+/// </summary>
 enum class STATUS : int
 {
 	DISABLED,
@@ -54,6 +67,9 @@ enum class STATUS : int
 	UNINITIALIZED
 };
 
+/// <summary>
+/// Application permissions for group user and other group users
+/// </summary>
 enum class PERMISSION : int
 {
 	GROUP_DENY = 1,

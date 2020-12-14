@@ -16,6 +16,9 @@
 namespace po = boost::program_options;
 void getListenPort(int &port, bool &sslEnabled);
 
+/// <summary>
+/// Command line entrypoint
+/// </summary>
 int main(int argc, const char *argv[])
 {
 	PRINT_VERSION();

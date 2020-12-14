@@ -6,9 +6,9 @@
 
 #include "cpprest/json.h"
 
-//////////////////////////////////////////////////////////////////////////
-/// HA for app process recover
-//////////////////////////////////////////////////////////////////////////
+/// <summary>
+/// App Process Recover object
+/// </summary>
 struct AppSnap
 {
 	explicit AppSnap(pid_t pid, int64_t starttime);
@@ -17,6 +17,9 @@ struct AppSnap
 	int64_t m_startTime;
 };
 
+/// <summary>
+/// App Mesh HA snapshot
+/// </summary>
 struct Snapshot
 {
 	bool operator==(const Snapshot &snapshort) const;
@@ -27,6 +30,10 @@ struct Snapshot
 	std::map<std::string, AppSnap> m_apps;
 	std::string m_consulSessionId;
 };
+
+/// <summary>
+/// App Mesh HA manager
+/// </summary>
 class PersistManager
 {
 public:

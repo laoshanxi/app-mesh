@@ -14,6 +14,12 @@
 #include "../process/AppProcess.h"
 #include "ConsulEntity.h"
 
+/// <summary>
+/// Connect to Consul service
+///  1. main node: elect leader and do the scheduler
+///  2. work node: watch task dispatch and manage local cloud application accordingly
+///  3. sync security: sync consul security to local
+/// </summary>
 class ConsulConnection : public TimerHandler
 {
 public:

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <functional>
 
 #include <cpprest/http_listener.h> // HTTP server

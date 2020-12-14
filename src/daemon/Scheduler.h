@@ -1,9 +1,14 @@
 #pragma once
+
 #include <map>
 #include <memory>
 
 struct ConsulTopology;
 struct ConsulTask;
+
+/// <summary>
+/// Leader schedule logic
+/// </summary>
 class Scheduler
 {
 public:

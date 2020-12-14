@@ -57,4 +57,3 @@ services:
       - /:/rootfs:ro
     #ports:
     #  - "9100:9100"
-
