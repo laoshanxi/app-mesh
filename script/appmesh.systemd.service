@@ -1,4 +1,8 @@
-#/etc/systemd/system/appmesh.service
+################################################################################
+## service definition for systemd
+## target location: /etc/systemd/system/appmesh.service
+## https://wiki.archlinux.org/index.php/systemd_(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87)
+################################################################################
 
 [Unit]
 Description=App Mesh daemon service

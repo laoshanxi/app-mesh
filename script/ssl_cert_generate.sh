@@ -1,6 +1,11 @@
 #!/bin/bash
 ################################################################################
 ## This Script file used to generate self signed ssl cert files
+##
+## References:
+## https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
+## https://www.cnblogs.com/fanqisoft/p/10765038.html
+## https://blog.csdn.net/kozazyh/article/details/79844609
 ################################################################################
 
 PATH=$PATH:$(pwd)
@@ -60,35 +65,4 @@ HOSTNAM=$(hostname --fqdn)
 HOSTS="$IPADDRS,$HOSTNAM"
 echo '{"CN":"App Mesh","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server -hostname=$HOSTS - | cfssljson -bare server
 
-# cat > server-csr.json << EOF
-# {
-#    "CN":"App Mesh",
-#    "hosts":[
-#        "127.0.0.1",
-#        "192.168.3.24",
-#        "cents"
-#    ],
-#    "key":{
-#        "algo":"rsa",
-#        "size":2048
-#    },
-#    "names":[
-#        {
-#            "C": "CN",
-#            "L": "Shaanxi",
-#            "O": "Dev",
-#            "ST": "XiAn",
-#            "OU":"System"
-#        }
-#    ]
-#}
-#EOF
-#
-#cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server server-csr.json | cfssljson -bare server
-
 echo '{"CN":"App Mesh Client","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client -hostname="" - | cfssljson -bare client
-
-# Reference
-# https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
-# https://www.cnblogs.com/fanqisoft/p/10765038.html
-# https://blog.csdn.net/kozazyh/article/details/79844609

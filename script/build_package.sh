@@ -2,6 +2,7 @@
 ################################################################################
 ## This Script file is used to build rpm/deb package and launched by cmake cmd
 ################################################################################
+
 rm -rf *.rpm
 rm -rf *.deb
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/

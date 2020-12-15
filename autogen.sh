@@ -48,14 +48,14 @@ if [ -f "/usr/bin/yum" ]; then
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	export DEBIAN_FRONTEND=noninteractive
-	apt-get update
+	apt update
 	apt install -y dos2unix g++ git make zlib1g-dev cmake alien
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 
 	# https://gemfury.com/help/could-not-verify-ssl-certificate/
-	apt-get install -y ca-certificates
+	apt install -y ca-certificates
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 fi

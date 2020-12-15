@@ -1,6 +1,7 @@
 #!/bin/bash
 ################################################################################
-## This Script file a wrapper of CLI binary "appc
+## wrapper script for CLI binary appc
+## with this script can avoid source environment before execute appc
 ################################################################################
 
 # by default, IFS is space which means space is string spliter

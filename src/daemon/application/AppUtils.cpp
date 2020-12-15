@@ -17,6 +17,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	{
 		shellFile << "#!/bin/sh" << std::endl;
 		shellFile << "#application <" << name << ">" << std::endl;
+		shellFile << "set -e" << std::endl;
 		if (workDir.length())
 			shellFile << "cd " << workDir << std::endl;
 		shellFile << cmd << std::endl;

@@ -2,6 +2,7 @@
 ################################################################################
 ## RPM pre uninstallation script file, will be executed before installation
 ################################################################################
+
 INSTALL_DIR=/opt/appmesh
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$INSTALL_DIR/lib64
 

@@ -2,6 +2,7 @@
 ################################################################################
 ## init.d service definition file
 ## will be used when systemd is not installed on Linux
+## https://gist.github.com/mrowe/8b617a8b12a6248d48b8
 ################################################################################
 
 ### BEGIN INIT INFO
@@ -10,7 +11,7 @@
 # Required-Start:   $local_fs  $remote_fs
 # Required-Stop:	$local_fs  $remote_fs
 # Default-Start:	2 3 4 5
-# Default-Stop:	 0 1 6
+# Default-Stop:	 	0 1 6
 # Short-Description:	initscript
 # Description:  This file should be used to construct scripts to be placed in /etc/init.d.
 #
@@ -30,15 +31,15 @@ log() {
 }
 
 start() {
-	APPMG_INSTENCE_NUM=$(ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | wc -l)
-	WATCHDOG_INSTENCE_NUM=$(ps aux | grep -w ${PROG_PATH}/script/${PROG_WATCHDOG} | grep -v grep | wc -l)
-	#echo "APPMG_INSTENCE_NUM:${APPMG_INSTENCE_NUM}  WATCHDOG_INSTENCE_NUM:${WATCHDOG_INSTENCE_NUM}"
-	if [ "${APPMG_INSTENCE_NUM}" = "1" -a "${WATCHDOG_INSTENCE_NUM}" = "1" ]; then
+	APPMESH_PROC_NUMBER=$(ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | wc -l)
+	WATCHDOG_PROC_NUMBER=$(ps aux | grep -w ${PROG_PATH}/script/${PROG_WATCHDOG} | grep -v grep | wc -l)
+	#echo "APPMESH_PROC_NUMBER:${APPMESH_PROC_NUMBER}  WATCHDOG_PROC_NUMBER:${WATCHDOG_PROC_NUMBER}"
+	if [ "${APPMESH_PROC_NUMBER}" = "1" -a "${WATCHDOG_PROC_NUMBER}" = "1" ]; then
 		## Program is running, exit with error.
 		log "Error! $PROG is currently running!"
 		exit 1
 	else
-		if [ "${WATCHDOG_INSTENCE_NUM}" -ge "1" ]; then
+		if [ "${WATCHDOG_PROC_NUMBER}" -ge "1" ]; then
 			ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | awk '{print $2}' | xargs kill -9
 		fi
 		cd $PROG_PATH
@@ -49,13 +50,13 @@ start() {
 
 stop() {
 	log "Begin stop $PROG"
-	APPMG_INSTENCE_NUM=$(ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | wc -l)
-	WATCHDOG_INSTENCE_NUM=$(ps aux | grep -w ${PROG_PATH}/script/${PROG_WATCHDOG} | grep -v grep | wc -l)
-	#echo "APPMG_INSTENCE_NUM:${APPMG_INSTENCE_NUM}  WATCHDOG_INSTENCE_NUM:${WATCHDOG_INSTENCE_NUM}"
-	if [ "${WATCHDOG_INSTENCE_NUM}" -ge "1" ]; then
+	APPMESH_PROC_NUMBER=$(ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | wc -l)
+	WATCHDOG_PROC_NUMBER=$(ps aux | grep -w ${PROG_PATH}/script/${PROG_WATCHDOG} | grep -v grep | wc -l)
+	#echo "APPMESH_PROC_NUMBER:${APPMESH_PROC_NUMBER}  WATCHDOG_PROC_NUMBER:${WATCHDOG_PROC_NUMBER}"
+	if [ "${WATCHDOG_PROC_NUMBER}" -ge "1" ]; then
 		ps aux | grep -w ${PROG_PATH}/script/${PROG_WATCHDOG} | grep -v grep | awk '{print $2}' | xargs kill -9
 	fi
-	if [ "${APPMG_INSTENCE_NUM}" -ge "1" ]; then
+	if [ "${APPMESH_PROC_NUMBER}" -ge "1" ]; then
 		ps aux | grep -w ${PROG_PATH}/${PROG} | grep -v grep | awk '{print $2}' | xargs kill -9
 		log "$PROG stopped"
 	else

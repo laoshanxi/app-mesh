@@ -2,6 +2,7 @@
 ################################################################################
 ## RPM post uninstallation script file, will be executed when uninstalled
 ################################################################################
+
 INSTALL_DIR=/opt/appmesh
 SYSTEMD_PATH=/etc/systemd/system/appmesh.service
 systemctl stop appmesh

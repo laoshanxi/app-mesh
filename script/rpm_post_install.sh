@@ -2,6 +2,7 @@
 ################################################################################
 ## RPM post installation script file, will be executed while installation
 ################################################################################
+
 INSTALL_DIR=/opt/appmesh
 SYSTEMD_FILE=/etc/systemd/system/appmesh.service
 if [ ! -d $INSTALL_DIR ]; then
