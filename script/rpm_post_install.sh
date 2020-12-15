@@ -27,7 +27,8 @@ fi
 
 if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "$INSTALL_DIR/ssl/server.pem" ]]; then
 	# ssl cert gernerate
-	cd $INSTALL_DIR/ssl/; sh $INSTALL_DIR/ssl/ssl_cert_generate.sh
+	cd $INSTALL_DIR/ssl/
+	sh $INSTALL_DIR/ssl/ssl_cert_generate.sh
 fi
 if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.appsvc.json" ]; then
 	# restore previous configuration file
@@ -42,7 +43,7 @@ rm -rf /usr/bin/appc
 ln -s $INSTALL_DIR/script/appc.sh /usr/bin/appc
 chmod +x $INSTALL_DIR/script/appc.sh
 if [ ! -d "$INSTALL_DIR/work" ]; then
-    mkdir $INSTALL_DIR/work
+	mkdir $INSTALL_DIR/work
 fi
 if [ ! -f "$INSTALL_DIR/apprest" ]; then
 	ln -s $INSTALL_DIR/appsvc $INSTALL_DIR/apprest
@@ -52,7 +53,7 @@ fi
 # systemctl start appmesh
 
 # add user appmesh
-id appmesh >& /dev/null
+id appmesh >&/dev/null
 if [ $? -ne 0 ]; then
-    useradd appmesh -s /usr/sbin/nologin --no-create-home  || true
+	useradd appmesh -s /usr/sbin/nologin --no-create-home || true
 fi

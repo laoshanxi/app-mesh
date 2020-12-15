@@ -6,14 +6,14 @@ set -x
 MACHINE_TYPE="$(uname -m)"
 ARM="arm"
 AARC="aarc"
-export ROOTDIR=`pwd`
+export ROOTDIR=$(pwd)
 
 mkdir -p dep
 cd dep
 
 if [ "$(id -u)" != "0" ]; then
-    echo "This script must be run as root"
-    exit 1
+	echo "This script must be run as root"
+	exit 1
 fi
 
 if [ -f "/usr/bin/yum" ]; then
@@ -53,7 +53,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
-	
+
 	# https://gemfury.com/help/could-not-verify-ssl-certificate/
 	apt-get install -y ca-certificates
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
@@ -77,7 +77,7 @@ if [ true ]; then
 	./bootstrap.sh
 	./b2
 	./b2 install
-	ls -al /usr/local/lib/libboost_system.so.1.74.0 /usr/local/include/boost/thread.hpp 
+	ls -al /usr/local/lib/libboost_system.so.1.74.0 /usr/local/include/boost/thread.hpp
 	cd $ROOTDIR
 fi
 
@@ -97,10 +97,9 @@ make install
 ls -al /usr/local/lib*/libcpprest.so
 cd $ROOTDIR
 
-
 # build log4cpp:
 # https://my.oschina.net/u/1983790/blog/1587568
-if [ -z "${MACHINE_TYPE##*$ARM*}"  -o  -z "${MACHINE_TYPE##*$AARC*}"  ] ; then
+if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
 	# arm64 will failed with log4cpp build, use package directly
 	apt install -y liblog4cpp5-dev
 else
@@ -124,7 +123,7 @@ if [ true ]; then
 	wget --no-check-certificate https://download.dre.vanderbilt.edu/previous_versions/ACE-6.5.9.tar.gz
 	tar zxvf ACE-6.5.9.tar.gz
 	cd ACE_wrappers
-	export ACE_ROOT=`pwd`
+	export ACE_ROOT=$(pwd)
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
 	make
@@ -133,8 +132,7 @@ if [ true ]; then
 	cd $ROOTDIR
 fi
 
-
-if [ -z "${MACHINE_TYPE##*$ARM*}"  -o  -z "${MACHINE_TYPE##*$AARC*}"  ] ; then
+if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
 	# cfssl have no arm64 binary, just use package instead
 	apt install -y golang-cfssl
 else
@@ -151,4 +149,3 @@ else
 	mv cfssl_linux-amd64 /usr/bin/cfssl
 	mv cfssljson_linux-amd64 /usr/bin/cfssljson
 fi
-

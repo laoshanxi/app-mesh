@@ -22,7 +22,8 @@ tar zxvf ${OPEN_SSL_VERSION}.tar.gz
 cd ${OPEN_SSL_VERSION}
 
 ./config shared zlib
-make; make install
+make
+make install
 
 # include files
 rm -rf /usr/include/openssl
@@ -46,7 +47,7 @@ elif [ -f "/usr/bin/apt" ]; then
   cd /lib/x86_64-linux-gnu/
 fi
 
-echo "/usr/local/ssl/lib" >> /etc/ld.so.conf
+echo "/usr/local/ssl/lib" >>/etc/ld.so.conf
 ldconfig -v
 
 rm -f libssl.so
