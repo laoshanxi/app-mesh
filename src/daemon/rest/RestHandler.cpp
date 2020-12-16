@@ -673,10 +673,7 @@ void RestHandler::apiHealth(const HttpRequest &message)
 	std::string appName = path.substr(strlen("/appmesh/app/"));
 	appName = appName.substr(0, appName.find_last_of('/'));
 	auto health = Configuration::instance()->getApp(appName)->getHealth();
-	http::status_code status = status_codes::OK;
-	if (health != 0)
-		status = status_codes::NotAcceptable;
-	message.reply(status, std::to_string(health));
+	message.reply(status_codes::OK, std::to_string(health));
 }
 
 void RestHandler::apiRestMetrics(const HttpRequest &message)

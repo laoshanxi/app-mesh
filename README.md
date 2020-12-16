@@ -21,7 +21,8 @@ Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/bl
 Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/doc/Loki.md) <br> REST service with IPv6 support 
 Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/doc/CONSUL.md) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
-Platform support | X86_64 <br> ARM32/64
+Platform support | X86_64 <br> ARM32 <br> ARM64
+SDK | [Python](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/python/appmesh_client.py)
 
 ## Getting started
 The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/main/doc/Install.md) introduce how
