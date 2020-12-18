@@ -199,21 +199,19 @@ class AppMeshClient:
 
     def upload(self, file_path, local_file):
         # upload a local file to remote
-        with open(local_file, "r") as fp:
-            files = {
-                "files": (local_file, fp, "application/octet-stream", {"Expires": "0"})
-            }
+        with open(file=local_file, mode="rb") as fp:
             file_stat = os.stat(local_file)
             header = {}
             header["FilePath"] = file_path
             header["FileMode"] = str(file_stat.st_mode)
             header["FileUser"] = str(file_stat.st_uid)
             header["FileGroup"] = str(file_stat.st_gid)
+            # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self.__request_http(
                 Method.POST_STREAM,
                 path="/appmesh/file/upload",
                 header=header,
-                body=files,
+                body=fp,
             )
             if resp.status_code == HTTPStatus.OK:
                 return True, ""
@@ -294,7 +292,7 @@ class AppMeshClient:
                 url=rest_url,
                 params=query,
                 headers=header,
-                files=body,
+                data=body,
                 verify=False,
                 stream=True,
             )

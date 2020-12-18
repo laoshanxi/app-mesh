@@ -931,10 +931,11 @@ void ArgumentParser::processDownload()
 	headers[HTTP_HEADER_KEY_file_path] = file;
 	auto response = requestHttp(true, methods::GET, restPath, query, nullptr, &headers);
 
-	auto stream = concurrency::streams::file_stream<uint8_t>::open_ostream(local, std::ios_base::trunc | std::ios_base::binary).get();
+	auto stream = concurrency::streams::fstream::open_ostream(local, std::ios::out | std::ios::binary | std::ios::trunc).get();
 	response.body().read_to_end(stream.streambuf()).wait();
 
 	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.streambuf().size()) << ">" << std::endl;
+	stream.close();
 
 	if (response.headers().has(HTTP_HEADER_KEY_file_mode))
 		os::fileChmod(local, std::stoi(response.headers().find(HTTP_HEADER_KEY_file_mode)->second));
@@ -981,9 +982,9 @@ void ArgumentParser::processUpload()
 
 	std::map<std::string, std::string> query, header;
 	header[HTTP_HEADER_KEY_file_path] = file;
-	header[HTTP_HEADER_KEY_file_mode] = std::get<0>(fileInfo);
-	header[HTTP_HEADER_KEY_file_user] = std::get<1>(fileInfo);
-	header[HTTP_HEADER_KEY_file_group] = std::get<2>(fileInfo);
+	header[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
+	header[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
+	header[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
 
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
 	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));

@@ -262,7 +262,7 @@ public:
 #define HTTP_HEADER_JWT "JWT"
 #define HTTP_HEADER_JWT_ISSUER "appmesh-auth0"
 #define HTTP_HEADER_JWT_name "name"
-#define HTTP_HEADER_JWT_Authorization "Authorization"
+#define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization
 #define HTTP_HEADER_JWT_Bearer "Bearer"
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "
 #define HTTP_HEADER_JWT_access_token "AccessToken"

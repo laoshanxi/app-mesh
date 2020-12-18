@@ -10,7 +10,11 @@ HttpRequest::HttpRequest(const web::http::http_request &message)
 	this->m_relative_uri = message.relative_uri().path();
 	this->m_remote_address = message.remote_address();
 	this->m_query = message.relative_uri().query();
-	this->m_body = const_cast<web::http::http_request &>(message).extract_utf8string(true).get();
+	// do not read body for file download/upload
+	if (this->m_relative_uri.find("/appmesh/file/download") == std::string::npos && this->m_relative_uri.find("/appmesh/file/upload") == std::string::npos)
+	{
+		this->m_body = const_cast<web::http::http_request &>(message).extract_utf8string(true).get();
+	}
 	for (const auto &header : message.headers())
 	{
 		this->m_headers[header.first] = header.second;

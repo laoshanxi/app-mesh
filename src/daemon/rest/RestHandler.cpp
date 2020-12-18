@@ -281,6 +281,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 			resp.headers().add(HTTP_HEADER_KEY_file_user, std::get<1>(fileInfo));
 			resp.headers().add(HTTP_HEADER_KEY_file_group, std::get<2>(fileInfo));
 			message.reply(resp);
+			fileStream.close();
 		})
 		.then([=](pplx::task<void> t) {
 			try
@@ -314,35 +315,21 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 
 	LOG_DBG << fname << "Uploading file <" << file << ">";
 
-	concurrency::streams::file_stream<uint8_t>::open_ostream(file, std::ios::out | std::ios::binary | std::ios::trunc)
-		.then([=](concurrency::streams::ostream os) {
-			message.body().read_to_end(os.streambuf()).then([=](pplx::task<std::size_t> t) {
-				os.close();
-				if (message.m_headers.count(HTTP_HEADER_KEY_file_mode))
-				{
-					os::fileChmod(file, std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_mode)->second));
-				}
-				if (message.m_headers.count(HTTP_HEADER_KEY_file_user) && message.m_headers.count(HTTP_HEADER_KEY_file_group))
-				{
-					os::chown(std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_user)->second),
-							  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
-							  file, false);
-				}
-				message.reply(status_codes::OK, "Success");
-			});
-		})
-		.then([=](pplx::task<void> t) {
-			try
-			{
-				t.get();
-			}
-			catch (...)
-			{
-				// opening the file (open_istream) failed.
-				// Reply with an error.
-				message.reply(status_codes::InternalError, "Failed to write file in server");
-			}
-		});
+	auto stream = concurrency::streams::fstream::open_ostream(file, std::ios::out | std::ios::binary | std::ios::trunc).get();
+	message.body().read_to_end(stream.streambuf()).get();
+	auto fileSize = stream.streambuf().size();
+	stream.close();
+	if (message.m_headers.count(HTTP_HEADER_KEY_file_mode))
+	{
+		os::fileChmod(file, std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_mode)->second));
+	}
+	if (message.m_headers.count(HTTP_HEADER_KEY_file_user) && message.m_headers.count(HTTP_HEADER_KEY_file_group))
+	{
+		os::chown(std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_user)->second),
+				  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
+				  file, false);
+	}
+	message.reply(status_codes::OK, Utility::stringFormat("Success upload file with size %s", Utility::humanReadableSize(fileSize)));
 }
 
 void RestHandler::apiGetLabels(const HttpRequest &message)
