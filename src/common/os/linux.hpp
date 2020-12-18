@@ -706,53 +706,37 @@ namespace os
 		return points;
 	}
 
-	inline int fileStat(const std::string &path)
+	/**
+	* @brief  get file mode, user and group id
+	* @note   
+	* @param  &path: file path
+	* @retval file mode, user id, file group id
+	*/
+	inline std::tuple<int, int, int> fileStat(const std::string &path)
 	{
 		const static char fname[] = "fileStat() ";
 
 		struct stat fileStat;
 		if (::stat(path.c_str(), &fileStat) >= 0)
 		{
-			return fileStat.st_mode;
+			return std::make_tuple(fileStat.st_mode, fileStat.st_uid, fileStat.st_gid);
 		}
 		else
 		{
 			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << std::strerror(errno);
-			return -1;
+			return std::make_tuple(-1, -1, -1);
 		}
-	}
-
-	inline std::string fileUser(const std::string &path)
-	{
-		const static char fname[] = "fileUser() ";
-
-		struct stat fstate;
-		if (::stat(path.c_str(), &fstate) >= 0)
-		{
-			struct passwd *pw_ptr;
-			if ((pw_ptr = getpwuid(fstate.st_uid)) == NULL)
-			{
-				LOG_WAR << fname << "Failed getpwuid <" << path << "> with error: " << std::strerror(errno);
-				return std::to_string(fstate.st_uid);
-			}
-			else
-			{
-				return pw_ptr->pw_name;
-			}
-		}
-		else
-		{
-			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << std::strerror(errno);
-		}
-		return "";
 	}
 
 	inline bool fileChmod(const std::string &path, __mode_t mode)
 	{
 		const static char fname[] = "fileChmod() ";
 
-		if (mode <= 0)
+		if (mode < 0)
+		{
+			LOG_WAR << fname << "invalid __mode_t: <" << mode << ">";
 			return false;
+		}
 
 		if (::chmod(path.c_str(), mode) >= 0)
 		{

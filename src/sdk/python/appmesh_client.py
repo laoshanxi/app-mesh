@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 import base64
 import os
-import pwd
 import time
 from enum import Enum
 from http import HTTPStatus
@@ -189,9 +188,12 @@ class AppMeshClient:
                         fp.write(chunk)
             if resp.headers.__contains__("FileMode"):
                 os.chmod(path=local_file, mode=int(resp.headers["FileMode"]))
-            if resp.headers.__contains__("FileUser"):
-                user_pwd = pwd.getpwnam(resp.headers["FileUser"])
-                os.chown(path=local_file, uid=user_pwd.pw_uid, gid=user_pwd.pw_gid)
+            if resp.headers.__contains__("FileUser") and resp.headers.__contains__(
+                "FileGroup"
+            ):
+                file_uid = int(resp.headers["FileUser"])
+                file_gid = int(resp.headers["FileGroup"])
+                os.chown(path=local_file, uid=file_uid, gid=file_gid)
             return True
         return False
 
@@ -201,10 +203,16 @@ class AppMeshClient:
             files = {
                 "files": (local_file, fp, "application/octet-stream", {"Expires": "0"})
             }
+            file_stat = os.stat(local_file)
+            header = {}
+            header["FilePath"] = file_path
+            header["FileMode"] = str(file_stat.st_mode)
+            header["FileUser"] = str(file_stat.st_uid)
+            header["FileGroup"] = str(file_stat.st_gid)
             resp = self.__request_http(
                 Method.POST_STREAM,
                 path="/appmesh/file/upload",
-                header={"FilePath": file_path},
+                header=header,
                 body=files,
             )
             if resp.status_code == HTTPStatus.OK:

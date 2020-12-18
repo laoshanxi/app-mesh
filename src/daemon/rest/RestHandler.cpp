@@ -273,11 +273,13 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 			fileStream.seek(0, std::ios::end);
 			auto length = static_cast<std::size_t>(fileStream.tell());
 			fileStream.seek(0, std::ios::beg);
+			auto fileInfo = os::fileStat(file);
 
 			web::http::http_response resp(status_codes::OK);
 			resp.set_body(fileStream, length);
-			resp.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(file));
-			resp.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(file));
+			resp.headers().add(HTTP_HEADER_KEY_file_mode, std::get<0>(fileInfo));
+			resp.headers().add(HTTP_HEADER_KEY_file_user, std::get<1>(fileInfo));
+			resp.headers().add(HTTP_HEADER_KEY_file_group, std::get<2>(fileInfo));
 			message.reply(resp);
 		})
 		.then([=](pplx::task<void> t) {
@@ -320,9 +322,11 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 				{
 					os::fileChmod(file, std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_mode)->second));
 				}
-				if (message.m_headers.count(HTTP_HEADER_KEY_file_user))
+				if (message.m_headers.count(HTTP_HEADER_KEY_file_user) && message.m_headers.count(HTTP_HEADER_KEY_file_group))
 				{
-					os::chown(file, message.m_headers.find(HTTP_HEADER_KEY_file_user)->second);
+					os::chown(std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_user)->second),
+							  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
+							  file, false);
 				}
 				message.reply(status_codes::OK, "Success");
 			});

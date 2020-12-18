@@ -275,6 +275,7 @@ public:
 #define HTTP_HEADER_KEY_file_path "FilePath"
 #define HTTP_HEADER_KEY_file_mode "FileMode"
 #define HTTP_HEADER_KEY_file_user "FileUser"
+#define HTTP_HEADER_KEY_file_group "FileGroup"
 
 #define HTTP_QUERY_KEY_keep_history "keep_history"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"

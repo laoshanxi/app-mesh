@@ -11,6 +11,14 @@ namespace os {
 	// Set the ownership for a path. This function never follows any symlinks.
 	inline bool chown(uid_t uid, gid_t gid, const std::string& path, bool recursive)
 	{
+		const static char fname[] = "os::chown() ";
+
+		if (uid < 0 || gid < 0)
+		{
+			LOG_WAR << fname << "invalid uid: <" << uid << "> or gid <" << gid << ">";
+			return false;
+		}
+
 		char* path_[] = { const_cast<char*>(path.c_str()), nullptr };
 
 		FTS* tree = ::fts_open(path_, FTS_NOCHDIR | FTS_PHYSICAL, nullptr);

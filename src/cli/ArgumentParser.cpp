@@ -938,8 +938,10 @@ void ArgumentParser::processDownload()
 
 	if (response.headers().has(HTTP_HEADER_KEY_file_mode))
 		os::fileChmod(local, std::stoi(response.headers().find(HTTP_HEADER_KEY_file_mode)->second));
-	if (response.headers().has(HTTP_HEADER_KEY_file_user))
-		os::chown(local, response.headers().find(HTTP_HEADER_KEY_file_user)->second);
+	if (response.headers().has(HTTP_HEADER_KEY_file_user) && response.headers().has(HTTP_HEADER_KEY_file_group))
+		os::chown(std::stoi(response.headers().find(HTTP_HEADER_KEY_file_user)->second),
+				  std::stoi(response.headers().find(HTTP_HEADER_KEY_file_group)->second),
+				  local, false);
 }
 
 void ArgumentParser::processUpload()
@@ -975,9 +977,13 @@ void ArgumentParser::processUpload()
 	fileStream.seek(0, std::ios::end);
 	auto length = static_cast<std::size_t>(fileStream.tell());
 	fileStream.seek(0, std::ios::beg);
+	auto fileInfo = os::fileStat(local);
 
 	std::map<std::string, std::string> query, header;
 	header[HTTP_HEADER_KEY_file_path] = file;
+	header[HTTP_HEADER_KEY_file_mode] = std::get<0>(fileInfo);
+	header[HTTP_HEADER_KEY_file_user] = std::get<1>(fileInfo);
+	header[HTTP_HEADER_KEY_file_group] = std::get<2>(fileInfo);
 
 	auto protocol = m_sslEnabled ? U("https://") : U("http://");
 	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
@@ -987,11 +993,8 @@ void ArgumentParser::processUpload()
 	config.set_validate_certificates(false);
 	http_client client(restURL, config);
 	std::string restPath = "/appmesh/file/upload";
-	http_request request = createRequest(methods::POST, restPath, query, &header);
-
+	auto request = createRequest(methods::POST, restPath, query, &header);
 	request.set_body(fileStream, length);
-	request.headers().add(HTTP_HEADER_KEY_file_mode, os::fileStat(local));
-	request.headers().add(HTTP_HEADER_KEY_file_user, os::fileUser(local));
 	http_response response = client.request(request).get();
 	fileStream.close();
 	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
