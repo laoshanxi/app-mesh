@@ -179,6 +179,10 @@ void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std
 	{
 		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to <%s> app <%s>", tokenUserName.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
 	}
+	if (requestWrite && appName == SEPARATE_REST_APP_NAME)
+	{
+		throw std::invalid_argument("REST service application is not allowed to <EDIT>");
+	}
 }
 
 int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, int defaultValue, int min, int max) const

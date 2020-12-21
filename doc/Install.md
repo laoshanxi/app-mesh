@@ -41,14 +41,16 @@ Note:
 ```
     $ tree -L 1 /opt/appmesh/
     /opt/appmesh/
-    ├── appc                 -------- command line binary
-    ├── appsvc               -------- service binary
-    ├── appsvc.json          -------- configuration file (can be modified manually or update from GUI)
+    ├── appc                              -------- command line binary
+    ├── apprest -> /opt/appmesh/appsvc    -------- rest service soft link
+    ├── appsvc                            -------- service binary
+    ├── appsvc.json                       -------- configuration file (can be modified manually or update from GUI)
     ├── lib64
-    ├── log                  -------- service log dir
+    ├── log                               -------- service log dir
     ├── script
-    ├── ssl                  -------- SSL certification files
-    └── work                 -------- child app work dir (app log files will write in this dir)
+    ├── sdk                               -------- SDK binary dir
+    ├── ssl                               -------- SSL certification files
+    └── work                              -------- child app work dir (app log files will write in this dir)
 ```
 
 ### Docker compose installation with GUI and Consul Service

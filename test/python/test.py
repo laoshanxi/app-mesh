@@ -1,5 +1,12 @@
 #!/usr/bin/python3
 import json
+import sys
+import os
+
+# path = "/opt/appmesh/sdk/"
+path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(path + "/src/sdk/python")
+
 import appmesh_client
 
 client = appmesh_client.AppMeshClient()
@@ -10,6 +17,7 @@ print(json.dumps(client.get_apps(), indent=2))
 client.run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False)
 print(client.disable_app("ping"))
 print(client.enable_app("ping"))
+print(client.add_tag("MyTag", "TagValue"))
 print(client.get_tags())
 print(client.get_app_output("loki"))
 print(client.get_app_health("ping"))
