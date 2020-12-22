@@ -543,7 +543,7 @@ std::string Utility::prettyJson(const std::string &jsonStr)
 	std::stringstream stream;
 	stream << jsonStr;
 
-	const char ident = '\t';
+	static const char *ident = "  "; // '\t'
 	std::size_t level = 0;
 	char c;
 	bool ignore_next = false, in_string = false;

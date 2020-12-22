@@ -333,7 +333,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 				  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
 				  file, false);
 	}
-	message.reply(status_codes::OK, Utility::stringFormat("Success upload file with size %s", Utility::humanReadableSize(fileSize)));
+	message.reply(status_codes::OK, Utility::stringFormat("Success upload file with size %s", Utility::humanReadableSize(fileSize).c_str()));
 }
 
 void RestHandler::apiGetLabels(const HttpRequest &message)

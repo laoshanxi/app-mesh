@@ -9,7 +9,7 @@
 namespace os {
 
 	// Set the ownership for a path. This function never follows any symlinks.
-	inline bool chown(uid_t uid, gid_t gid, const std::string& path, bool recursive)
+	inline bool chown(int uid, int gid, const std::string& path, bool recursive)
 	{
 		const static char fname[] = "os::chown() ";
 
@@ -41,7 +41,7 @@ namespace os {
 			case FTS_SL:
 				// Symbolic link without target.
 			case FTS_SLNONE: {
-				if (::lchown(node->fts_path, uid, gid) < 0)
+				if (::lchown(node->fts_path, static_cast<uid_t>(uid), static_cast<gid_t>(gid)) < 0)
 				{
 					::fts_close(tree);
 					return false;
