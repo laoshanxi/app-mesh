@@ -2,6 +2,7 @@
 
 #include <map>
 #include <string>
+#include <tuple>
 
 #include <ace/Process.h>
 
@@ -27,6 +28,17 @@ public:
 	const std::string getuuid() const;
 	virtual std::string containerId() const { return std::string(); };
 	virtual void containerId(const std::string &containerId){};
+
+	/// <summary>
+	/// get process memory and cpu usage
+	/// </summary>
+	/// <returns>
+	/// tuple
+	/// - bool: get success or fail
+	/// - uint64_t: total memory bytes
+	/// - float: cpu usage
+	/// </returns>
+	std::tuple<bool, uint64_t, float> getProcUsage();
 
 	/// <summary>
 	/// Attach a existing pid to AppProcess to manage
@@ -108,6 +120,10 @@ private:
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;
 	std::shared_ptr<std::ifstream> m_stdoutReadStream;
+
+	mutable std::recursive_mutex m_cpuMutex;
+	uint64_t m_lastProcCpuTime;
+	uint64_t m_lastSysCpuTime;
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	std::shared_ptr<int> m_returnCode;

@@ -304,3 +304,30 @@ const std::string AppProcess::startError() const
 {
 	return m_startError;
 }
+
+std::tuple<bool, uint64_t, float> AppProcess::getProcUsage()
+{
+	auto pid = this->getpid();
+	if (pid > 0)
+	{
+		auto tree = os::pstree(this->getpid());
+		auto totalMemory = tree ? tree->totalRssMemBytes() : 0;
+
+		// https://stackoverflow.com/questions/1420426/how-to-calculate-the-cpu-usage-of-a-process-by-pid-in-linux-from-c/1424556
+		auto curSysCpuTime = os::cpuTotalTime();
+		float cpuUsage(0);
+		auto curProcCpuTime = tree ? tree->totalCpuTime() : 0;
+		static auto cpuNumber = os::cpus().size(); //static int cpuNumber = sysconf(_SC_NPROCESSORS_ONLN);
+		std::lock_guard<std::recursive_mutex> guard(m_cpuMutex);
+		// only calculate when there have previous cpu time record
+		if (m_lastSysCpuTime && curSysCpuTime && curProcCpuTime)
+		{
+			auto totalTimeDiff = curSysCpuTime - m_lastSysCpuTime;
+			cpuUsage = 100.0 * cpuNumber * (curProcCpuTime - m_lastProcCpuTime) / totalTimeDiff;
+		}
+		m_lastProcCpuTime = curProcCpuTime;
+		m_lastSysCpuTime = curSysCpuTime;
+		return std::make_tuple(true, totalMemory, cpuUsage);
+	}
+	return std::make_tuple(false, uint64_t(0), float(0));
+}

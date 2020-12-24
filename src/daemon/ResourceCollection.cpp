@@ -92,25 +92,6 @@ pid_t ResourceCollection::getPid()
 	return pid;
 }
 
-uint64_t ResourceCollection::getRssMemory(pid_t pid)
-{
-	const static char fname[] = "ResourceCollection::getRssMemory() ";
-	if (pid > 0)
-	{
-		auto tree = os::pstree(pid);
-		if (nullptr != tree)
-		{
-			return tree->totalRSS();
-		}
-		else
-		{
-			LOG_WAR << fname << " Failed to find process: " << pid;
-			return 0;
-		}
-	}
-	return 0;
-}
-
 void ResourceCollection::dump()
 {
 	const static char fname[] = "ResourceCollection::dump() ";
@@ -162,7 +143,7 @@ web::json::value ResourceCollection::AsJson()
 	auto allAppMem = os::pstree();
 	if (nullptr != allAppMem)
 	{
-		result[GET_STRING_T("mem_applications")] = web::json::value::number(allAppMem->totalRSS());
+		result[GET_STRING_T("mem_applications")] = web::json::value::number(allAppMem->totalRssMemBytes());
 	}
 	// Load
 	auto load = os::loadavg();

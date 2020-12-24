@@ -180,3 +180,6 @@ public:
 // Application process memory usage
 #define PROM_METRIC_NAME_appmesh_prom_process_memory_gauge "appmesh_prom_process_memory_gauge"
 #define PROM_METRIC_HELP_appmesh_prom_process_memory_gauge "application process memory bytes"
+// Application process cpu usage
+#define PROM_METRIC_NAME_appmesh_prom_process_cpu_gauge "appmesh_prom_process_cpu_gauge"
+#define PROM_METRIC_HELP_appmesh_prom_process_cpu_gauge "application process cpu usage"

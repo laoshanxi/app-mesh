@@ -193,6 +193,24 @@ namespace os
 		const unsigned long cnswap;
 	};
 
+	// get system cpu statictic from /proc/stat
+	inline int64_t cpuTotalTime()
+	{
+		std::string path = "/proc/stat";
+		std::string read = Utility::readFile(path);
+		if (read.length() == 0)
+		{
+			return 0;
+		}
+		unsigned long u, n, s, i, w, x, y, z; // as represented in /proc/stat
+
+		std::string _; // For ignoring fields.
+		std::istringstream data(read);
+		// Parse all fields from stat.
+		data >> _ >> u >> n >> s >> i >> w >> x >> y >> z;
+		return u + n + s + i + w + x + y + z;
+	}
+
 	// Returns the process statistics from /proc/[pid]/stat.
 	// The return value is None if the process does not exist.
 	inline std::shared_ptr<ProcessStatus> status(pid_t pid)
@@ -391,28 +409,14 @@ namespace os
 
 	inline std::shared_ptr<Process> process(pid_t pid)
 	{
-		const static char fname[] = "os::process() ";
-
 		// Page size, used for memory accounting.
 		static const size_t pageSize = os::pagesize();
 
-		// Number of clock ticks per second, used for cpu accounting.
-		static const long ticks = sysconf(_SC_CLK_TCK);
-		if (ticks <= 0)
-		{
-			LOG_ERR << fname << "Failed to get sysconf(_SC_CLK_TCK)";
-			return nullptr;
-		}
-
 		const std::shared_ptr<os::ProcessStatus> processStatus = os::status(pid);
-
 		if (nullptr == processStatus)
 		{
 			return nullptr;
 		}
-
-		auto utime = std::chrono::seconds(processStatus->utime / ticks);
-		auto stime = std::chrono::seconds(processStatus->stime / ticks);
 
 		// The command line from 'status->comm' is only "arg0" from "argv"
 		// (i.e., the canonical executable name). To get the entire command
@@ -425,8 +429,10 @@ namespace os
 			processStatus->pgrp,
 			processStatus->session,
 			processStatus->rss * pageSize,
-			utime,
-			stime,
+			processStatus->utime,
+			processStatus->stime,
+			processStatus->cutime,
+			processStatus->cstime,
 			commandLine.length() ? commandLine : processStatus->comm,
 			processStatus->state == 'Z');
 	}

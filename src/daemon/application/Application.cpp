@@ -187,7 +187,11 @@ void Application::refreshPid()
 	if (PrometheusRest::instance()->collected())
 	{
 		if (m_metricMemory)
-			m_metricMemory->metric().Set(ResourceCollection::instance()->getRssMemory(m_pid));
+		{
+			auto usage = m_process->getProcUsage();
+			m_metricMemory->metric().Set(std::get<1>(usage));
+			m_metricCpu->metric().Set(std::get<2>(usage));
+		}
 		if (m_metricAppPid)
 			m_metricAppPid->metric().Set(m_pid);
 	}
@@ -448,6 +452,7 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	m_metricStartCount = nullptr;
 	m_metricAppPid = nullptr;
 	m_metricMemory = nullptr;
+	m_metricCpu = nullptr;
 
 	// update
 	if (prom)
@@ -461,6 +466,9 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 			{{"application", getName()}, {"id", m_appId}});
 		m_metricMemory = prom->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_memory_gauge, PROM_METRIC_HELP_appmesh_prom_process_memory_gauge,
+			{{"application", getName()}, {"id", m_appId}});
+		m_metricCpu = prom->createPromGauge(
+			PROM_METRIC_NAME_appmesh_prom_process_cpu_gauge, PROM_METRIC_HELP_appmesh_prom_process_cpu_gauge,
 			{{"application", getName()}, {"id", m_appId}});
 	}
 }
@@ -516,7 +524,14 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		if (m_return != nullptr)
 			result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
 		if (m_pid > 0)
-			result[JSON_KEY_APP_memory] = web::json::value::number(ResourceCollection::instance()->getRssMemory(m_pid));
+		{
+			auto usage = m_process->getProcUsage();
+			if (std::get<0>(usage))
+			{
+				result[JSON_KEY_APP_memory] = web::json::value::number(std::get<1>(usage));
+				result[JSON_KEY_APP_cpu] = web::json::value::number(std::get<2>(usage));
+			}
+		}
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[JSON_KEY_APP_last_start] = web::json::value::string(DateTime::formatISO8601Time(m_procStartTime));
 		if (!m_process->containerId().empty())

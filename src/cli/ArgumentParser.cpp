@@ -9,6 +9,7 @@
 #include <chrono>
 #include <functional>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 #include <boost/io/ios_state.hpp>
@@ -1398,6 +1399,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_health)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_memory)
+		<< std::setw(5) << Utility::strToupper(JSON_KEY_APP_cpu)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_return)
 		<< std::setw(24) << Utility::strToupper(JSON_KEY_APP_last_start)
 		<< Utility::strToupper(JSON_KEY_APP_command)
@@ -1429,6 +1431,18 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		{
 			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
 				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_memory));
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(5);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cpu))
+			{
+				std::stringstream ss;
+				ss << (int)GET_JSON_DOUBLE_VALUE(jsonObj, JSON_KEY_APP_cpu);
+				ss << "%";
+				std::cout << ss.str();
+			}
 			else
 				std::cout << slash;
 		}

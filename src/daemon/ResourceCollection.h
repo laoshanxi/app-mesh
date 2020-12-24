@@ -52,8 +52,6 @@ public:
 	const HostResource &getHostResource();
 	pid_t getPid();
 
-	uint64_t getRssMemory(pid_t pid = getpid());
-
 	void dump();
 
 	web::json::value AsJson();

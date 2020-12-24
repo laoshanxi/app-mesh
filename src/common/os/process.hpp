@@ -22,8 +22,10 @@ namespace os
 				pid_t _group,
 				const pid_t &_session,
 				const uint64_t &_rss_bytes,
-				const std::chrono::seconds &_utime,
-				const std::chrono::seconds &_stime,
+				const unsigned long &_utime,
+				const unsigned long &_stime,
+				const unsigned long &_cutime,
+				const unsigned long &_cstime,
 				const std::string &_command,
 				bool _zombie)
 			: pid(_pid),
@@ -33,6 +35,8 @@ namespace os
 			  rss_bytes(_rss_bytes),
 			  utime(_utime),
 			  stime(_stime),
+			  cutime(_cutime),
+			  cstime(_cstime),
 			  command(_command),
 			  zombie(_zombie) {}
 
@@ -42,8 +46,10 @@ namespace os
 		const pid_t session;
 		// Resident Set Size
 		const uint64_t rss_bytes;
-		const std::chrono::seconds utime;
-		const std::chrono::seconds stime;
+		const unsigned long utime;
+		const unsigned long stime;
+		const unsigned long cutime;
+		const unsigned long cstime;
 		const std::string command;
 		const bool zombie;
 
@@ -81,9 +87,19 @@ namespace os
 		}
 
 		// Count the total RES memory usage in the process tree
-		uint64_t totalRSS() const
+		uint64_t totalRssMemBytes() const
 		{
 			uint64_t result = std::accumulate(children.begin(), children.end(), process.rss_bytes);
+			return result;
+		}
+
+		// get total CPU time
+		uint64_t totalCpuTime() const
+		{
+			auto result = std::accumulate(children.begin(), children.end(), process.utime) +
+						  std::accumulate(children.begin(), children.end(), process.stime) +
+						  std::accumulate(children.begin(), children.end(), process.cutime) +
+						  std::accumulate(children.begin(), children.end(), process.cstime);
 			return result;
 		}
 
@@ -180,10 +196,12 @@ namespace os
 			stream << *iterator;
 			if (++iterator != list.end())
 			{
-				stream << std::endl << std::endl;
+				stream << std::endl
+					   << std::endl;
 			}
 		}
-		stream << std::endl << "]";
+		stream << std::endl
+			   << "]";
 		return stream;
 	}
 

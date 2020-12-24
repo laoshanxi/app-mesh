@@ -59,6 +59,7 @@ namespace std
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))
 #define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_integer() : 0)
 #define GET_JSON_NUMBER_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_number().to_int64() : 0L)
+#define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_double() : 0.0L)
 #define SET_JSON_INT_VALUE(jsonObj, key, value) \
 	if (HAS_JSON_FIELD(jsonObj, key))           \
 		value = GET_JSON_INT_VALUE(jsonObj, key);
@@ -231,6 +232,7 @@ public:
 #define JSON_KEY_APP_return "return"
 #define JSON_KEY_APP_id "id"
 #define JSON_KEY_APP_memory "memory"
+#define JSON_KEY_APP_cpu "cpu"
 #define JSON_KEY_APP_last_start "last_start_time"
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
