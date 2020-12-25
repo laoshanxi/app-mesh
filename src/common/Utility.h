@@ -52,6 +52,12 @@ namespace std
 } // namespace std
 #endif
 
+template <typename T>
+std::shared_ptr<T> make_shared_array(size_t size)
+{
+	return std::shared_ptr<T>(new T[size], std::default_delete<T[]>());
+}
+
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object
@@ -224,6 +230,7 @@ public:
 #define JSON_KEY_APP_daily_limitation "daily_limitation"
 #define JSON_KEY_APP_resource_limit "resource_limit"
 #define JSON_KEY_APP_env "env"
+#define JSON_KEY_APP_sec_env "sec_env"
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
 #define JSON_KEY_APP_last_error "last_error"

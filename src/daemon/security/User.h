@@ -49,6 +49,9 @@ public:
 	const std::set<std::shared_ptr<Role>> getRoles();
 	bool hasPermission(const std::string &permission);
 
+	const std::string encrypt(const std::string &msg);
+	const std::string decrypt(const std::string &msg);
+
 private:
 	std::string m_key;
 	bool m_locked;

@@ -86,6 +86,7 @@ protected:
 	void handleEndTimer();
 	const std::string getExecUser() const;
 	const std::string &getCmdLine() const;
+	std::map<std::string, std::string> getMergedEnvMap() const;
 
 protected:
 	mutable std::recursive_mutex m_appMutex;
@@ -123,6 +124,7 @@ protected:
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;
+	std::map<std::string, std::string> m_secEnvMap;
 	std::string m_dockerImage;
 	std::chrono::system_clock::time_point m_procStartTime;
 

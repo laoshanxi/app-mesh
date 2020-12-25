@@ -132,6 +132,15 @@ if [ true ]; then
 	cd $ROOTDIR
 fi
 
+# cryptopp
+wget https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
+unzip CRYPTOPP_8_3_0.zip
+export CXXFLAGS="-DNDEBUG -g2 -O3 -std=c++11"
+cd cryptopp-CRYPTOPP_8_3_0/
+make
+make install
+cd $ROOTDIR
+
 if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
 	# cfssl have no arm64 binary, just use package instead
 	apt install -y golang-cfssl

@@ -1,5 +1,8 @@
-#include "User.h"
+#include <cryptopp/aes.h>
+#include <cryptopp/default.h>
+
 #include "../../common/Utility.h"
+#include "User.h"
 
 //////////////////////////////////////////////////////////////////////
 /// Users
@@ -217,4 +220,105 @@ bool User::hasPermission(const std::string &permission)
 			return true;
 	}
 	return false;
+}
+
+const std::string User::encrypt(const std::string &message)
+{
+	// https://www.cryptopp.com/wiki/Advanced_Encryption_Standard
+	// https://github.com/weidai11/cryptopp/blob/master/Install.txt
+	// https://github.com/shanet/Crypto-Example/blob/master/crypto_example.cpp
+	
+	//#include <cryptopp/osrng.h>
+	//AutoSeededRandomPool rnd;
+	//Generate a random key
+	//rnd.GenerateBlock(key, key.size());
+
+	using namespace CryptoPP;
+	// prepare Key & IV
+	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
+	size_t size = 0;
+	while (size < key.size())
+	{
+		for (size_t i = 0; i < m_key.length(); i++)
+		{
+			key[size++] = m_key[i];
+			if (size >= key.size())
+			{
+				break;
+			}
+		}
+	}
+
+	SecByteBlock iv(AES::BLOCKSIZE);
+	size = 0;
+	while (size < iv.size())
+	{
+		for (size_t i = 0; i < m_name.length(); i++)
+		{
+			iv[size++] = m_name[i];
+			if (size >= iv.size())
+			{
+				break;
+			}
+		}
+	}
+
+	size_t messageLen = std::strlen(message.c_str()) + 1;
+	std::shared_ptr<byte> plainText = make_shared_array<byte>(messageLen);
+
+	//////////////////////////////////////////////////////////////////////////
+	// Encrypt
+	//////////////////////////////////////////////////////////////////////////
+	CFB_Mode<AES>::Encryption cfbEncryption(key, key.size(), iv);
+	cfbEncryption.ProcessData(&(*plainText), (const byte *)message.c_str(), messageLen);
+
+	// use base64 for persist
+	return Utility::encode64((char *)(&(*plainText)));
+}
+
+const std::string User::decrypt(const std::string &encryptedMessage)
+{
+	using namespace CryptoPP;
+	// decode base64
+	std::string message = Utility::decode64(encryptedMessage);
+
+	// prepare Key & IV
+	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
+	size_t size = 0;
+	while (size < key.size())
+	{
+		for (size_t i = 0; i < m_key.length(); i++)
+		{
+			key[size++] = m_key[i];
+			if (size >= key.size())
+			{
+				break;
+			}
+		}
+	}
+
+	SecByteBlock iv(AES::BLOCKSIZE);
+	size = 0;
+	while (size < iv.size())
+	{
+		for (size_t i = 0; i < m_name.length(); i++)
+		{
+			iv[size++] = m_name[i];
+			if (size >= iv.size())
+			{
+				break;
+			}
+		}
+	}
+
+	size_t messageLen = std::strlen(message.c_str()) + 1;
+	std::shared_ptr<byte> plainText = make_shared_array<byte>(messageLen);
+
+	//////////////////////////////////////////////////////////////////////////
+	// Decrypt
+	//////////////////////////////////////////////////////////////////////////
+	CFB_Mode<AES>::Decryption cfbDecryption(key, key.size(), iv);
+	cfbDecryption.ProcessData(&(*plainText), (const byte *)message.c_str(), messageLen);
+
+	return std::string((char *)(&(*plainText)));
 }

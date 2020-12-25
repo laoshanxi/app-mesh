@@ -54,12 +54,14 @@ extern char **environ;
 static bool SIGINIT_BREAKING = false;
 static std::string APPC_EXEC_APP_NAME;
 static ArgumentParser *WORK_PARSE = nullptr;
+// command line help width
+static size_t BOOST_DESC_WIDTH = 100;
 
 ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, bool sslEnabled)
 	: m_argc(argc), m_argv(argv), m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
 {
 	WORK_PARSE = this;
-	po::options_description global("Global options");
+	po::options_description global("Global options", BOOST_DESC_WIDTH);
 	global.add_options()
 	("command", po::value<std::string>(), "command to execute")
 	("subargs", po::value<std::vector<std::string>>(), "arguments for command");
@@ -219,7 +221,7 @@ void ArgumentParser::printMainHelp()
 
 void ArgumentParser::processLogon()
 {
-	po::options_description desc("Log on to App Mesh:");
+	po::options_description desc("Log on to App Mesh:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in 'seconds' or 'ISO 8601 durations'.")
@@ -279,7 +281,7 @@ void ArgumentParser::processLogon()
 
 void ArgumentParser::processLogoff()
 {
-	po::options_description desc("Logoff to App Mesh:");
+	po::options_description desc("Logoff to App Mesh:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		OPTION_HOST_NAME
 		("help,h", "Prints command usage to stdout and exits");
@@ -297,7 +299,7 @@ void ArgumentParser::processLogoff()
 
 void ArgumentParser::processLoginfo()
 {
-	po::options_description desc("Print logon user:");
+	po::options_description desc("Print logon user:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		OPTION_HOST_NAME
 		("help,h", "Prints command usage to stdout and exits");
@@ -320,20 +322,20 @@ void ArgumentParser::processLoginfo()
 // appName is null means this is a normal application (not a shell application)
 void ArgumentParser::processReg()
 {
-	po::options_description desc("Register a new application");
+	po::options_description desc("Register a new application", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
 		("metadata,g", po::value<std::string>(), "metadata string (input for application, pass to process stdin), '@' allowed to read from file")
-		("perm", po::value<int>(), "application user permission, value = [group & other], each can be deny:1, read:2, write: 3.")
+		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("shell_mode,S", "cmd can be more commands in shell mode")
+		("shell_mode,S", "use shell mode, cmd can be more commands")
 		("init,I", po::value<std::string>(), "initial command line with arguments")
 		("fini,F", po::value<std::string>(), "fini command line with arguments")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
-		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (this will enable docker)")
+		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (for docker container application)")
 		("workdir,w", po::value<std::string>(), "working directory")
-		("status,s", po::value<bool>()->default_value(true), "application status status (start is true, stop is false)")
+		("status,s", po::value<bool>()->default_value(true), "initial application status (true is enable, false is disabled)")
 		("start_time,t", po::value<std::string>(), "start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')")
 		("end_time,E", po::value<std::string>(), "end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')")
 		("daily_start,j", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
@@ -344,6 +346,7 @@ void ArgumentParser::processReg()
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
+		("sec_env", po::value<std::vector<std::string>>(), "security environment variables, encrypt in server side with application owner's cipher")
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
 		("extra_time,q", po::value<std::string>(), "extra timeout for short running app,the value must less than interval  (default 0), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing Time)")
@@ -480,9 +483,9 @@ void ArgumentParser::processReg()
 		jsonObj[JSON_KEY_APP_resource_limit] = objResourceLimitation;
 	}
 
-	if (m_commandLineVariables.count("env"))
+	if (m_commandLineVariables.count(JSON_KEY_APP_env))
 	{
-		std::vector<std::string> envs = m_commandLineVariables["env"].as<std::vector<std::string>>();
+		std::vector<std::string> envs = m_commandLineVariables[JSON_KEY_APP_env].as<std::vector<std::string>>();
 		if (envs.size())
 		{
 			web::json::value objEnvs = web::json::value::object();
@@ -499,6 +502,25 @@ void ArgumentParser::processReg()
 			jsonObj[JSON_KEY_APP_env] = objEnvs;
 		}
 	}
+	if (m_commandLineVariables.count(JSON_KEY_APP_sec_env))
+	{
+		std::vector<std::string> envs = m_commandLineVariables[JSON_KEY_APP_sec_env].as<std::vector<std::string>>();
+		if (envs.size())
+		{
+			web::json::value objEnvs = web::json::value::object();
+			for (auto env : envs)
+			{
+				auto find = env.find_first_of('=');
+				if (find != std::string::npos)
+				{
+					auto key = Utility::stdStringTrim(env.substr(0, find));
+					auto val = Utility::stdStringTrim(env.substr(find + 1));
+					objEnvs[key] = web::json::value::string(val);
+				}
+			}
+			jsonObj[JSON_KEY_APP_sec_env] = objEnvs;
+		}
+	}
 	if (m_commandLineVariables.count("pid"))
 		jsonObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + appName;
@@ -508,11 +530,11 @@ void ArgumentParser::processReg()
 
 void ArgumentParser::processUnReg()
 {
-	po::options_description desc("Unregister and remove an application");
+	po::options_description desc("Unregister and remove an application", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("name,n", po::value<std::vector<std::string>>(), "remove application by name")
+		("name,n", po::value<std::vector<std::string>>(), "application name[s]")
 		("force,f", "force without confirm.");
 
 	shiftCommandLineArgs(desc);
@@ -550,11 +572,11 @@ void ArgumentParser::processUnReg()
 
 void ArgumentParser::processView()
 {
-	po::options_description desc("List application[s]");
+	po::options_description desc("List application[s]", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("name,n", po::value<std::string>(), "view application by name.")
+		("name,n", po::value<std::string>(), "application name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
 		("stdout_index,O", po::value<int>(), "application output index");
@@ -600,7 +622,7 @@ void ArgumentParser::processView()
 
 void ArgumentParser::processResource()
 {
-	po::options_description desc("View host resource usage:");
+	po::options_description desc("View host resource usage:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
 		("help,h", "Prints command usage to stdout and exits");
@@ -614,12 +636,12 @@ void ArgumentParser::processResource()
 
 void ArgumentParser::processEnableDisable(bool start)
 {
-	po::options_description desc("Start application:");
+	po::options_description desc("Start application:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("all,a", "action for all applications")
-		("name,n", po::value<std::vector<std::string>>(), "enable/disable application by name.");
+		("all,a", "apply for all applications")
+		("name,n", po::value<std::vector<std::string>>(), "application name[s] to enable or disable.");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -666,7 +688,7 @@ void ArgumentParser::processEnableDisable(bool start)
 
 void ArgumentParser::processRun()
 {
-	po::options_description desc("Shell application:");
+	po::options_description desc("Shell application:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
@@ -938,11 +960,11 @@ void ArgumentParser::processExec()
 
 void ArgumentParser::processDownload()
 {
-	po::options_description desc("Download file:");
+	po::options_description desc("Download file:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("remote,r", po::value<std::string>(), "remote file path")
-		("local,l", po::value<std::string>(), "save to local file path")
+		("remote,r", po::value<std::string>(), "remote file path to download")
+		("local,l", po::value<std::string>(), "local file path to save")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -976,11 +998,11 @@ void ArgumentParser::processDownload()
 
 void ArgumentParser::processUpload()
 {
-	po::options_description desc("Upload file:");
+	po::options_description desc("Upload file:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("remote,r", po::value<std::string>(), "save to remote file path")
-		("local,l", po::value<std::string>(), "local file path")
+		("remote,r", po::value<std::string>(), "remote file path to save")
+		("local,l", po::value<std::string>(), "local file to upload")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -1032,7 +1054,7 @@ void ArgumentParser::processUpload()
 
 void ArgumentParser::processTags()
 {
-	po::options_description desc("Manage labels:");
+	po::options_description desc("Manage labels:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
 		("view,v", "list labels")
@@ -1106,7 +1128,7 @@ void ArgumentParser::processTags()
 
 void ArgumentParser::processLoglevel()
 {
-	po::options_description desc("Set log level:");
+	po::options_description desc("Set log level:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
 		("level,l", po::value<std::string>(), "log level (e.g., DEBUG,INFO,NOTICE,WARN,ERROR)")
@@ -1132,10 +1154,10 @@ void ArgumentParser::processLoglevel()
 
 void ArgumentParser::processConfigView()
 {
-	po::options_description desc("View configurations:");
+	po::options_description desc("View configurations:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("view,v", "view basic configurations")
+		("view,v", "view basic configurations with json output")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -1147,7 +1169,7 @@ void ArgumentParser::processConfigView()
 
 void ArgumentParser::processChangePwd()
 {
-	po::options_description desc("Change password:");
+	po::options_description desc("Change password:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user to change passwd")
@@ -1174,16 +1196,16 @@ void ArgumentParser::processChangePwd()
 
 void ArgumentParser::processLockUser()
 {
-	po::options_description desc("Manage users:");
+	po::options_description desc("Manage users:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
 		("target,t", po::value<std::string>(), "target user")
-		("unlock,k", po::value<bool>(), "lock or unlock user")
+		("lock,k", po::value<bool>(), "lock or unlock user, 'true' for lock, 'false' for unlock")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (!m_commandLineVariables.count("target") || !m_commandLineVariables.count("unlock"))
+	if (!m_commandLineVariables.count("target") || !m_commandLineVariables.count("lock"))
 	{
 		std::cout << desc << std::endl;
 		return;

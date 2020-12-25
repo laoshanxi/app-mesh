@@ -120,6 +120,14 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 			app->m_envMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
 		}
 	}
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_sec_env))
+	{
+		auto envs = jsonObj.at(JSON_KEY_APP_sec_env).as_object();
+		for (auto env : envs)
+		{
+			app->m_secEnvMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
+		}
+	}
 
 	app->m_dockerImage = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image);
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
@@ -224,7 +232,7 @@ void Application::invoke()
 				LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
 				m_process = allocProcess(false, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
-				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile, m_metadata);
+				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
 				setLastError(m_process->startError());
 				if (m_metricStartCount)
 					m_metricStartCount->metric().Increment();
@@ -322,7 +330,7 @@ std::string Application::runApp(int timeoutSeconds)
 
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, m_envMap, m_resourceLimit, m_stdoutFile, m_metadata);
+	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
 	setLastError(m_process->startError());
 	if (m_metricStartCount)
 		m_metricStartCount->metric().Increment();
@@ -555,9 +563,19 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	{
 		web::json::value envs = web::json::value::object();
 		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string> &pair) {
-			envs[GET_STRING_T(pair.first)] = web::json::value::string(GET_STRING_T(pair.second));
+			envs[GET_STRING_T(pair.first)] = web::json::value::string(pair.second);
 		});
 		result[JSON_KEY_APP_env] = envs;
+	}
+	if (m_secEnvMap.size())
+	{
+		web::json::value envs = web::json::value::object();
+		auto owner = getOwner();
+		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair) {
+			auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
+			envs[GET_STRING_T(pair.first)] = web::json::value::string(encryptedEnvValue);
+		});
+		result[JSON_KEY_APP_sec_env] = envs;
 	}
 	if (m_posixTimeZone.length() && m_posixTimeZone != DateTime::getLocalUtcOffset())
 		result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
@@ -769,4 +787,13 @@ void Application::setInvalidError()
 	{
 		setLastError("not in daily time range");
 	}
+}
+
+std::map<std::string, std::string> Application::getMergedEnvMap() const
+{
+	std::map<std::string, std::string> envMap;
+	std::merge(m_envMap.begin(), m_envMap.end(),
+			   m_secEnvMap.begin(), m_secEnvMap.end(),
+			   std::inserter(envMap, envMap.begin()));
+	return envMap;
 }
