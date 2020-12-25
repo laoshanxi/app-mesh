@@ -150,6 +150,9 @@ public:
 	static std::string serialize(const std::map<std::string, std::string> &map);
 	static std::string serialize(const web::http::http_headers &map);
 	static const std::string readStdin2End();
+
+	static const std::string encrypt(const std::string &msg);
+	static const std::string decrypt(const std::string &msg);
 };
 
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
