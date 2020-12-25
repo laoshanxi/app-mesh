@@ -118,10 +118,11 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 				dockerCommand.append("'");
 		}
 	}
-	// should match with format from ShellAppFileGen::ShellAppFileGen
+	// TODO: should match with format from ShellAppFileGen::ShellAppFileGen
 	if (Utility::startWith(cmd, "sh -l "))
 	{
 		auto scriptFileName = Utility::stdStringTrim(cmd.substr(strlen("sh -l")));
+		scriptFileName = Utility::stdStringTrim(scriptFileName, '\'');
 		if (Utility::isFileExist(scriptFileName))
 		{
 			// mount shell mode script to container

@@ -683,3 +683,14 @@ std::string Utility::serialize(const web::http::http_headers &map)
 	}
 	return oss.str();
 }
+
+const std::string Utility::readStdin2End()
+{
+	std::stringstream ss;
+	std::string line;
+	while (!std::cin.eof() && std::getline(std::cin, line))
+	{
+		ss << line << std::endl;
+	}
+	return ss.str();
+}

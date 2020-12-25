@@ -349,12 +349,13 @@ void ArgumentParser::processReg()
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing Time)")
 		("keep_running,k", "monitor and keep running for short running app in start interval")
 		("force,f", "force without confirm")
+		("stdin", "accept json from stdin")
 		("help,h", "Prints command usage to stdout and exits");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
-	if (m_commandLineVariables.count("name") == 0 ||
-		(m_commandLineVariables.count("docker_image") == 0 && m_commandLineVariables.count("cmd") == 0))
+	if (m_commandLineVariables.count("stdin") == 0 && (m_commandLineVariables.count("name") == 0 ||
+		(m_commandLineVariables.count("docker_image") == 0 && m_commandLineVariables.count("cmd") == 0)))
 	{
 		std::cout << desc << std::endl;
 		return;
@@ -369,19 +370,46 @@ void ArgumentParser::processReg()
 			return;
 		}
 	}
-	// Shell app does not need check app existence
-	if (isAppExist(m_commandLineVariables["name"].as<std::string>()))
+	web::json::value jsonObj;
+	if (m_commandLineVariables.count("stdin"))
+	{
+		jsonObj = web::json::value::parse(Utility::readStdin2End());
+	}
+	
+	std::string appName;
+	if (m_commandLineVariables.count("stdin"))
+	{
+		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_name))
+		{
+			std::cout << "Can not find application name" << std::endl;
+			return;
+		}
+		appName = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
+	}
+	else
+	{
+		if (m_commandLineVariables.count("name") == 0)
+		{
+			std::cout << "Can not find application name" << std::endl;
+			return;
+		}
+		appName = m_commandLineVariables["name"].as<std::string>();
+	}
+
+	if (isAppExist(appName))
 	{
 		if (m_commandLineVariables.count("force") == 0)
 		{
-			if (!confirmInput("Application already exist, are you sure you want to update the application? [y/n]"))
+			std::cout << "Application already exist, are you sure you want to update the application <" << appName << ">?" << std::endl;
+			if (m_commandLineVariables.count("stdin") || !confirmInput("[y/n]:"))
 			{
 				return;
 			}
 		}
 	}
-	web::json::value jsonObj;
-	jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
+
+	if (m_commandLineVariables.count("name"))
+		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count("cmd"))
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("shell_mode"))
@@ -473,7 +501,7 @@ void ArgumentParser::processReg()
 	}
 	if (m_commandLineVariables.count("pid"))
 		jsonObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
-	std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
+	std::string restPath = std::string("/appmesh/app/") + appName;
 	auto resp = requestHttp(true, methods::PUT, restPath, jsonObj);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
@@ -1196,7 +1224,7 @@ void ArgumentParser::processEncryptUserPwd()
 
 bool ArgumentParser::confirmInput(const char *msg)
 {
-	std::cout << msg << ":";
+	std::cout << msg;
 	std::string result;
 	std::cin >> result;
 	return result == "y";
