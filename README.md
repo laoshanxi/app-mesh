@@ -19,7 +19,7 @@ Support applications | Long running <br> Short running <br> Periodic long runnin
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define pipe input string data <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) <br> Multi-tenant support 
 Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/doc/Loki.md) <br> REST service with IPv6 support 
-Microservice application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/doc/CONSUL.md) 
+Micro service application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/doc/CONSUL.md) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32 <br> ARM64
 SDK | [Python](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/python/appmesh_client.py)
@@ -29,9 +29,9 @@ The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/main/doc/Insta
 to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Documentation
-- [Command Lines](https://github.com/laoshanxi/app-mesh/blob/main/doc/CLI.md) provide all the interfaces to manage App Mesh.
+- [Command lines](https://github.com/laoshanxi/app-mesh/blob/main/doc/CLI.md) provide all the interfaces to manage App Mesh.
 - [Development](https://github.com/laoshanxi/app-mesh/blob/main/doc/Development.md) define REST APIs and show how to build App Mesh.
-- [Success Cases](https://github.com/laoshanxi/app-mesh/wiki)
+- [Success cases](https://github.com/laoshanxi/app-mesh/wiki) describe successful enterprise use cases provide by App Mesh.
 ---
 
 ## 3rd party dependencies

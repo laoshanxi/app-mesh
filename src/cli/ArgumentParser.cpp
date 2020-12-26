@@ -193,25 +193,34 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  logon       Log on to App Mesh for a specific time period." << std::endl;
 	std::cout << "  logoff      Clear current login user infomation" << std::endl;
 	std::cout << "  loginfo     Print current logon user" << std::endl;
+	std::cout << std::endl;
 
 	std::cout << "  view        List application[s]" << std::endl;
-	std::cout << "  resource    Display host resources" << std::endl;
-	std::cout << "  label       Manage host labels" << std::endl;
+	std::cout << "  reg         Add a new application" << std::endl;
+	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  enable      Enable a application" << std::endl;
 	std::cout << "  disable     Disable a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
-	std::cout << "  reg         Add a new application" << std::endl;
-	std::cout << "  unreg       Remove an application" << std::endl;
+	std::cout << std::endl;
+
 	std::cout << "  run         Run command and get output" << std::endl;
 	std::cout << "  exec        Run command by appmesh and impersonate context" << std::endl;
+	std::cout << std::endl;
+
+	std::cout << "  resource    Display host resources" << std::endl;
+	std::cout << "  label       Manage host labels" << std::endl;
+	std::cout << "  config      Manage basic configurations" << std::endl;
+	std::cout << "  log         Set log level" << std::endl;
+	std::cout << std::endl;
+
 	std::cout << "  get         Download remote file to local" << std::endl;
 	std::cout << "  put         Upload local file to App Mesh server" << std::endl;
-	std::cout << "  config      Manage basic configurations" << std::endl;
+	std::cout << std::endl;
+
 	std::cout << "  passwd      Change user password" << std::endl;
 	std::cout << "  lock        Lock unlock a user" << std::endl;
-	std::cout << "  log         Set log level" << std::endl;
-
 	std::cout << std::endl;
+
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
 	std::cout << "Use '-b $hostname','-B $port' to run remote command." << std::endl;
 
