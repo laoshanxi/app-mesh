@@ -41,7 +41,8 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
-- [zemasoft/wildcards ](https://github.com/zemasoft/wildcards)
+- [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
+- [Crypto++](https://www.cryptopp.com/)
 
 [language.url]:   https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

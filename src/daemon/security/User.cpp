@@ -1,6 +1,5 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/default.h>
-//#include <cryptopp/osrng.h>
 
 #include "../../common/Utility.h"
 #include "User.h"
@@ -227,12 +226,14 @@ const std::string User::encrypt(const std::string &message)
 {
 	// https://www.cryptopp.com/wiki/Advanced_Encryption_Standard
 	// https://github.com/weidai11/cryptopp/blob/master/Install.txt
-
-	using namespace CryptoPP;
+	// https://github.com/shanet/Crypto-Example/blob/master/crypto_example.cpp
+	
+	//#include <cryptopp/osrng.h>
 	//AutoSeededRandomPool rnd;
-	// Generate a random key
+	//Generate a random key
 	//rnd.GenerateBlock(key, key.size());
 
+	using namespace CryptoPP;
 	// prepare Key & IV
 	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
 	size_t size = 0;
