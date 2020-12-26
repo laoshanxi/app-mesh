@@ -52,6 +52,12 @@ namespace std
 } // namespace std
 #endif
 
+template <typename T>
+std::shared_ptr<T> make_shared_array(size_t size)
+{
+	return std::shared_ptr<T>(new T[size], std::default_delete<T[]>());
+}
+
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object
@@ -151,8 +157,6 @@ public:
 	static std::string serialize(const web::http::http_headers &map);
 	static const std::string readStdin2End();
 
-	static const std::string encrypt(const std::string &msg);
-	static const std::string decrypt(const std::string &msg);
 };
 
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"

@@ -14,8 +14,6 @@
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
-#include <cryptopp/aes.h>
-#include <cryptopp/default.h>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/Category.hh>
 #include <log4cpp/FileAppender.hh>
@@ -695,77 +693,4 @@ const std::string Utility::readStdin2End()
 		ss << line << std::endl;
 	}
 	return ss.str();
-}
-
-const std::string Utility::encrypt(const std::string &message)
-{
-	// https://www.cryptopp.com/wiki/Advanced_Encryption_Standard
-	// https://github.com/weidai11/cryptopp/blob/master/Install.txt
-
-	using namespace CryptoPP;
-	//AutoSeededRandomPool rnd;
-
-	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
-	key[0] = 'a';
-	key[1] = 'p';
-	key[2] = 'p';
-	key[3] = 'm';
-	key[4] = 's';
-	key[5] = 'h';
-	// Generate a random key
-	//rnd.GenerateBlock(key, key.size());
-
-	SecByteBlock iv(AES::BLOCKSIZE);
-	iv[0] = 'a';
-	iv[1] = 'p';
-	iv[2] = 'p';
-	iv[3] = 'm';
-	iv[4] = 's';
-	iv[5] = 'h';
-	// Generate a random IV
-	//rnd.GenerateBlock(iv, iv.size());
-
-	size_t messageLen = std::strlen(message.c_str()) + 1;
-	std::shared_ptr<byte> plainText(new byte[messageLen]);//, std::default_delete<int[]>());
-
-	//////////////////////////////////////////////////////////////////////////
-	// Encrypt
-	CFB_Mode<AES>::Encryption cfbEncryption(key, key.size(), iv);
-	cfbEncryption.ProcessData(&(*plainText), (const byte *)message.c_str(), messageLen);
-	return std::string((char *)(&(*plainText)));
-}
-
-const std::string Utility::decrypt(const std::string &encryptedMessage)
-{
-	using namespace CryptoPP;
-
-	SecByteBlock key(0x00, AES::DEFAULT_KEYLENGTH);
-	key[0] = 'a';
-	key[1] = 'p';
-	key[2] = 'p';
-	key[3] = 'm';
-	key[4] = 's';
-	key[5] = 'h';
-	// Generate a random key
-	//rnd.GenerateBlock(key, key.size());
-
-	SecByteBlock iv(AES::BLOCKSIZE);
-	iv[0] = 'a';
-	iv[1] = 'p';
-	iv[2] = 'p';
-	iv[3] = 'm';
-	iv[4] = 's';
-	iv[5] = 'h';
-	// Generate a random IV
-	//rnd.GenerateBlock(iv, iv.size());
-
-	size_t messageLen = std::strlen(encryptedMessage.c_str()) + 1;
-	std::shared_ptr<byte> plainText(new byte[messageLen]);//, std::default_delete<int[]>());
-
-	//////////////////////////////////////////////////////////////////////////
-	// Decrypt
-	CFB_Mode<AES>::Decryption cfbDecryption(key, key.size(), iv);
-	cfbDecryption.ProcessData(&(*plainText), (const byte *)encryptedMessage.c_str(), messageLen);
-
-	return std::string((char *)(&(*plainText)));
 }
