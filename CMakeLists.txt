@@ -25,7 +25,7 @@ if (CMAKE_BUILD_TYPE MATCHES "Debug" OR CMAKE_BUILD_TYPE MATCHES "DEBUG")
     set(CMAKE_CXX_FLAGS_DEBUG   "$ENV{CXXFLAGS} -Wall -ggdb3 -O0 -g")
 else()
     message("Release mode")
-    set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Wall -ggdb3 -O2")
+    set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Wall -ggdb3 -Os")
 endif()
 message("COMPILE_OPTIONS: ${COMPILE_OPTIONS}")
 

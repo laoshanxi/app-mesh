@@ -38,6 +38,12 @@ if [ -f "/usr/bin/yum" ]; then
 	# https://www.cnblogs.com/fujinzhou/p/5735578.html
 	yum install -y ruby rubygems ruby-devel
 	yum install -y rpm-build
+	# reduce binary size
+	# https://stackoverflow.com/questions/15996699/what-modifications-will-lead-to-size-reduction-of-binary-size-in-c-code
+	yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/ucl-1.03-2.el7.rf.x86_64.rpm
+	yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/upx-3.91-1.el7.rf.x86_64.rpm
+	# other platform package download
+	# https://centos.pkgs.org/7/repoforge-x86_64/upx-3.91-1.el7.rf.x86_64.rpm.html
 
 	# check libssl in case of openssl_update.sh not executed
 	if [ [ ! -f "/usr/include/openssl/ssl.h" ] || [ ! -f "/usr/local/include/openssl/ssl.h" ] ]; then
@@ -53,6 +59,8 @@ elif [ -f "/usr/bin/apt" ]; then
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
+	# reduce binary size
+	apt install -y upx-ucl
 
 	# https://gemfury.com/help/could-not-verify-ssl-certificate/
 	apt install -y ca-certificates
@@ -133,9 +141,9 @@ if [ true ]; then
 fi
 
 # cryptopp
-wget https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
+wget --no-check-certificate https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
 unzip CRYPTOPP_8_3_0.zip
-export CXXFLAGS="-DNDEBUG -g2 -O3 -std=c++11"
+export CXXFLAGS="-DNDEBUG -Os -std=c++11"
 cd cryptopp-CRYPTOPP_8_3_0/
 make
 make install
@@ -151,10 +159,13 @@ else
 	cd $ROOTDIR
 	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
 	chmod +x cfssl_linux-amd64
+	upx cfssl_linux-amd64
 	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
 	chmod +x cfssljson_linux-amd64
+	upx cfssljson_linux-amd64
 	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
 	chmod +x cfssl-certinfo_linux-amd64
+	upx cfssl-certinfo_linux-amd64
 	mv cfssl_linux-amd64 /usr/bin/cfssl
 	mv cfssljson_linux-amd64 /usr/bin/cfssljson
 fi
