@@ -19,7 +19,8 @@ _appc() {
         return
         ;;
     esac
-} &&
-    complete -F _appc appc
+
+    _filedir
+} && complete -F _appc appc
 
 # ex: ts=4 sw=4 et filetype=sh

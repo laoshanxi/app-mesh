@@ -38,6 +38,9 @@ else
 	sed -i "s/MYHOST/$(hostname -f)/g" $INSTALL_DIR/appsvc.json
 	rm -rf $INSTALL_DIR/work
 fi
+# only allow root access config json file
+# 600 rw-------
+chmod 600 $INSTALL_DIR/appsvc.json
 
 # create appc softlink
 rm -rf /usr/bin/appc
@@ -49,7 +52,8 @@ fi
 if [ ! -f "$INSTALL_DIR/apprest" ]; then
 	ln -s $INSTALL_DIR/appsvc $INSTALL_DIR/apprest
 fi
-# start service directly
+
+# start service
 # systemctl enable appmesh
 # systemctl start appmesh
 

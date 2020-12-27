@@ -34,7 +34,7 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [Success cases](https://github.com/laoshanxi/app-mesh/wiki) describe successful enterprise use cases provide by App Mesh.
 ---
 
-## 3rd party dependencies
+## Library dependency
 - [ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Microsoft/cpprestsdk](https://github.com/Microsoft/cpprestsdk)
 - [boost](https://github.com/boostorg/boost)
