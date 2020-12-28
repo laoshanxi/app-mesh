@@ -44,6 +44,7 @@ int main(int argc, char *argv[])
 	try
 	{
 		ACE::init();
+		ACE_OS::umask(0077);
 
 		// init log
 		Utility::initLogging();

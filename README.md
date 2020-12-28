@@ -29,9 +29,11 @@ The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/main/doc/Insta
 to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Documentation
-- [Command lines](https://github.com/laoshanxi/app-mesh/blob/main/doc/CLI.md) provide all the interfaces to manage App Mesh.
+- [CLI](https://github.com/laoshanxi/app-mesh/blob/main/doc/CLI.md) provide all the command lines interfaces to manage App Mesh.
 - [Development](https://github.com/laoshanxi/app-mesh/blob/main/doc/Development.md) define REST APIs and show how to build App Mesh.
+- [Security](https://github.com/laoshanxi/app-mesh/blob/main/doc/Security.md) describe the security design for App Mesh.
 - [Success cases](https://github.com/laoshanxi/app-mesh/wiki) describe successful enterprise use cases provide by App Mesh.
+
 ---
 
 ## Library dependency

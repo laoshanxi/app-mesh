@@ -227,7 +227,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		m_stdoutHandler = m_stdinHandler = dummy;
 		if (stdoutFile.length())
 		{
-			m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
+			m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 00664);
 			LOG_DBG << fname << "std_out: " << stdoutFile;
 		}
 		if (stdinFileContent.length() && stdinFileContent != JSON_KEY_APP_CLOUD_APP)
@@ -237,7 +237,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			inputFile << stdinFileContent;
 			inputFile.close();
 			assert(Utility::isFileExist(m_stdinFileName));
-			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY);
+			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY, 00664);
 			LOG_DBG << fname << "std_in: " << m_stdinFileName << " : " << stdinFileContent;
 		}
 		option.set_handles(m_stdinHandler, m_stdoutHandler, m_stdoutHandler);
