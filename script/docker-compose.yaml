@@ -1,59 +1,50 @@
 version: "3"
 
-networks:
-  loki:
-
 services:
-  loki:
+  # Consul
+  consul:
     restart: always
-    image: grafana/loki:latest
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - loki
-
-  promtail:
-    restart: always
-    image: grafana/promtail:latest
+    image: docker.io/consul
+    # https://www.consul.io/docs/agent/options
+    command: consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 --bind=0.0.0.0 -bootstrap-expect=1 -ui
     volumes:
-      - /var/log:/var/log
-      - /opt/appmesh/:/opt/appmesh/
-      - ./promtail.yml:/etc/promtail/config.yml
-    # override default container config: /etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
-    networks:
-      - loki
-    depends_on:
-      - loki
+      - /etc/hosts:/etc/hosts:ro
+    ports:
+      # https://www.consul.io/docs/install/ports
+      - "8500:8500"
+      - "8600:8600"
+      - "8301:8301"
+      - "8302:8302"
+      - "8300:8300"
 
-  grafana:
+  # appmesh, container docker use host docker engine
+  appmesh:
     restart: always
-    image: grafana/grafana:latest
-    #ports:
-    #  - "3000:3000"
-    network_mode: host
-
-  # Prometheus, use host mode to scrap from other nodes
-  prometheus:
-    restart: always
-    image: prom/prometheus:latest
+    image: laoshanxi/appmesh
+    environment:
+      APPMESH_Consul_url: https://127.0.0.1
+      # APPMESH_Consul_url: http://localhost:8500
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/appmesh/work:/opt/appmesh/work
+      - /opt/appmesh/log:/opt/appmesh/log
+      # mount this to enable configuration persist
+      #- /opt/appmesh/appsvc.json:/opt/appmesh/appsvc.json
     privileged: true
     user: root
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    #ports:
-    #  - "9090:9090"
     network_mode: host
-
-  # https://www.cnblogs.com/weifeng1463/p/12828961.html
-  node_exporter:
-    restart: always
-    image: prom/node-exporter:latest
-    command: --path.procfs=/host/proc --path.rootfs=/rootfs --path.sysfs=/host/sys --collector.filesystem.ignored-mount-points='^/(sys|proc|dev|host|etc)($$|/)'
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
     #ports:
-    #  - "9100:9100"
+    #  - "6060:6060" # App Mesh Engine
+    #  - "6061:6061" # Prometheus Exporter
+    depends_on:
+      - consul
+
+  # appmesh UI, use host mode (port 443) to support reverse nginx proxy to Consul ad App Mesh
+  appmesh-ui:
+    restart: always
+    image: laoshanxi/appmesh-ui
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: host
+    depends_on:
+      - appmesh

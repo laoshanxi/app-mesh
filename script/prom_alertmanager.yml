@@ -1,0 +1,15 @@
+global:
+  smtp_smarthost: "smtp.qq.com:25"
+  smtp_from: "1234567@qq.com"
+  smtp_auth_username: "1234567@qq.com"
+  smtp_auth_password: "your-smtp-password"
+
+route:
+  group_interval: 1m
+  repeat_interval: 1m
+  receiver: "mail-receiver"
+
+receivers:
+  - name: "mail-receiver"
+    email_configs:
+      - to: "4567890@163.com"

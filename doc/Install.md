@@ -62,11 +62,11 @@ sudo curl -L "https://github.com/docker/compose/releases/download/1.27.4/docker-
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-Get integrated docker compose file [docker-compose-appmesh.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose-appmesh.yaml) and configure correct Consul bind IP address and network device name.
+Get integrated docker compose file [docker-compose.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml) and configure correct Consul bind IP address and network device name.
 ```
 $ mkdir appmesh
 $ cd appmesh
-$ wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose-appmesh.yaml
+$ wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml
 
 $ docker-compose -f docker-compose.yaml up -d
 Creating apppmesh_appmesh_1    ... done

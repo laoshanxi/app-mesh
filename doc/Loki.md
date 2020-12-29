@@ -11,11 +11,11 @@ sudo curl -L "https://github.com/docker/compose/releases/download/1.23.2/docker-
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-## Start Loki, Grafana, Promtail
+## Start Loki, Grafana, Promtail， AppMesh
 ```
 git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
 cd app-mesh/script
-docker-compose -f docker-compose.yaml up -d
+docker-compose -f docker-compose-all-in-one.yaml up -d
 ```
 
 ## Configure Grafana
@@ -27,8 +27,8 @@ docker-compose -f docker-compose.yaml up -d
 ## Stop and clean
 ```
 cd app-mesh/script
-docker-compose -f docker-compose.yaml stop
-docker-compose -f docker-compose.yaml rm -f
+docker-compose -f docker-compose-all-in-one.yaml stop
+docker-compose -f docker-compose-all-in-one.yaml rm -f
 ```
 
 ## Design
