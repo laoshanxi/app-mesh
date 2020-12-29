@@ -4,8 +4,8 @@
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"
+#include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
-#include "rest/ConsulConnection.h"
 
 #define SNAPSHOT_JSON_KEY_pid "pid"
 #define SNAPSHOT_JSON_KEY_starttime "starttime"

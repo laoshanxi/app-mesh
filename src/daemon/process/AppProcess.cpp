@@ -20,7 +20,7 @@
 	} while (false)
 
 AppProcess::AppProcess()
-	: m_delayKillTimerId(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_uuid(Utility::createUUID()), m_lastProcCpuTime(0), m_lastSysCpuTime(0)
+	: m_delayKillTimerId(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID())
 {
 }
 

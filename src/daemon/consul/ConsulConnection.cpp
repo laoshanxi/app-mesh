@@ -8,10 +8,10 @@
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
-#include "../Scheduler.h"
 #include "../application/Application.h"
 #include "../security/User.h"
 #include "ConsulConnection.h"
+#include "Scheduler.h"
 
 #define CONSUL_BASE_PATH "/v1/kv/appmesh/"
 

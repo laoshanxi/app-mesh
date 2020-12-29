@@ -9,7 +9,7 @@
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
-#include "../rest/ConsulConnection.h"
+#include "ConsulConnection.h"
 
 ConsulTask::ConsulTask()
 	: m_replication(0), m_condition(std::make_shared<Label>()), m_priority(0), m_consulServicePort(0)

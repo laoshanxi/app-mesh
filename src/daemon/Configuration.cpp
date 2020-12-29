@@ -10,7 +10,7 @@
 #include "application/ApplicationInitialize.h"
 #include "application/ApplicationPeriodRun.h"
 #include "application/ApplicationUnInitia.h"
-#include "rest/ConsulConnection.h"
+#include "consul/ConsulConnection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
 #include "security/User.h"
@@ -279,9 +279,9 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	std::vector<std::shared_ptr<Application>> apps;
 	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
 				 [this, &returnRuntimeInfo, &user](std::shared_ptr<Application> app) {
-					 return ((returnRuntimeInfo || app->isWorkingState()) && // not persist temp application
-							 checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&	// access permission check
-							 (app->getName() != SEPARATE_REST_APP_NAME));	// not expose rest process
+					 return ((returnRuntimeInfo || app->isWorkingState()) &&								  // not persist temp application
+							 checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) && // access permission check
+							 (app->getName() != SEPARATE_REST_APP_NAME));									  // not expose rest process
 				 });
 
 	// Build Json
