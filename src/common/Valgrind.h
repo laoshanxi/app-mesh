@@ -39,11 +39,19 @@ static bool RUN_ONE_TIME = false;
 
 // program_name from errno.h
 extern char *program_invocation_short_name;
+/// <summary>
+/// program_name from errno.h
+/// </summary>
+/// <returns></returns>
 std::string binaryName()
 {
     return program_invocation_short_name;
 }
 
+/// <summary>
+/// self binary full path
+/// </summary>
+/// <returns></returns>
 std::string getSelfFullPath()
 {
     std::string path;
@@ -61,6 +69,10 @@ std::string getSelfFullPath()
     return path;
 }
 
+/// <summary>
+/// full command line
+/// </summary>
+/// <returns></returns>
 std::string getFullCommandLine()
 {
     auto path = getSelfFullPath();
@@ -73,6 +85,12 @@ std::string getFullCommandLine()
     }
     return path;
 }
+
+/// <summary>
+/// executable process binary name plus extention name exist or not
+/// </summary>
+/// <param name="fileSuffix"></param>
+/// <returns></returns>
 bool binaryExtentionExist(const char *fileSuffix)
 {
     auto cmdPath = getSelfFullPath() + fileSuffix;
@@ -83,6 +101,10 @@ bool binaryExtentionExist(const char *fileSuffix)
     return false;
 }
 
+/// <summary>
+/// is valgrind enable file exist
+/// </summary>
+/// <returns></returns>
 bool isValgrindEnabled()
 {
     bool valgrindEnabled = binaryExtentionExist(VALGRIND_ENABLE_FILE);
@@ -91,6 +113,11 @@ bool isValgrindEnabled()
             !binaryExtentionExist(VALGRIND_STOP_FILE));
 }
 
+/// <summary>
+/// Thread check stop file and exit valgrind to generate report
+/// </summary>
+/// <param name=""></param>
+/// <returns></returns>
 void *valgrindStopMonitorThread(void *)
 {
     while (true)
@@ -103,6 +130,9 @@ void *valgrindStopMonitorThread(void *)
     }
 }
 
+/// <summary>
+/// valgrind entrypoing
+/// </summary>
 void valgrind_main()
 {
     if (!isValgrindEnabled())

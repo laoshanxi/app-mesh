@@ -9,9 +9,9 @@ PerfLog::PerfLog(const std::string &logger)
 PerfLog::~PerfLog()
 {
 	auto duration = std::chrono::system_clock::now() - m_start;
-	auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-	if (seconds >= 1)
+	auto msec = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+	if (msec >= 100)
 	{
-		LOG_DBG << m_logger << " cost <" << seconds << "> seconds.";
+		LOG_DBG << m_logger << " cost <" << msec << "> microseconds.";
 	}
 }

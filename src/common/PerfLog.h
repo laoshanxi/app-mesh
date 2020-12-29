@@ -3,6 +3,9 @@
 #include <chrono>
 #include <string>
 
+/// <summary>
+/// Print performance log
+/// </summary>
 class PerfLog
 {
 public:
