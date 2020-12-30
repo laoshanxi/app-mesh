@@ -234,6 +234,7 @@ public:
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
 #define JSON_KEY_APP_last_error "last_error"
+#define JSON_KEY_APP_from_recover "from_recover"
 
 // runtime attr
 #define JSON_KEY_APP_pid "pid"

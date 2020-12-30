@@ -295,10 +295,10 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 
 void Configuration::deSerializeApp(const web::json::value &jsonObj)
 {
-	auto &jArr = jsonObj.as_array();
-	for (auto iterB = jArr.begin(); iterB != jArr.end(); iterB++)
+	for (auto jsonApp : jsonObj.as_array())
 	{
-		auto jsonApp = *(iterB);
+		// set recover flag used to decrypt confidential data
+		jsonApp[JSON_KEY_APP_from_recover] = web::json::value::boolean(true);
 		auto app = this->parseApp(jsonApp);
 		this->addApp2Map(app);
 	}

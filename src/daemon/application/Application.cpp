@@ -122,10 +122,19 @@ void Application::FromJson(std::shared_ptr<Application> &app, const web::json::v
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_sec_env))
 	{
+		bool fromRecover = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover);
 		auto envs = jsonObj.at(JSON_KEY_APP_sec_env).as_object();
 		for (auto env : envs)
 		{
-			app->m_secEnvMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
+			// from register, env was not encrypted
+			if (fromRecover && app->m_owner != nullptr)
+			{
+				app->m_secEnvMap[GET_STD_STRING(env.first)] = app->m_owner->decrypt(GET_STD_STRING(env.second.as_string()));
+			}
+			else
+			{
+				app->m_secEnvMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
+			}
 		}
 	}
 
