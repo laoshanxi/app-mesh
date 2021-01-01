@@ -10,7 +10,7 @@ PerfLog::~PerfLog()
 {
 	auto duration = std::chrono::system_clock::now() - m_start;
 	auto msec = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-	if (msec >= 100)
+	if (msec >= 300)
 	{
 		LOG_DBG << m_logger << " cost <" << msec << "> microseconds.";
 	}

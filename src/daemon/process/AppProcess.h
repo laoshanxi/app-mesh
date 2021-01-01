@@ -6,6 +6,7 @@
 
 #include <ace/Process.h>
 
+#include "../../common/Utility.h"
 #include "../TimerHandler.h"
 
 class LinuxCgroup;
@@ -69,6 +70,16 @@ public:
 	void delayKill(std::size_t timeoutSec, const std::string &from);
 
 	/// <summary>
+	/// register check stdout timer
+	/// </summary>
+	void regCheckStdout();
+	/// <summary>
+	/// check stdout file size
+	/// </summary>
+	/// <param name="timerId"></param>
+	void checkStdout(int timerId);
+
+	/// <summary>
 	/// start process
 	/// </summary>
 	/// <param name="cmd">full command line with arguments</param>
@@ -81,7 +92,8 @@ public:
 	/// <returns>process id</returns>
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							 const std::string &stdoutFile = "", const std::string &stdinFileContent = "");
+							 const std::string &stdoutFile = "", const std::string &stdinFileContent = "",
+							 const int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
 	/// <summary>
 	/// get all std out content from stdoutFile
 	/// </summary>
@@ -113,6 +125,8 @@ protected:
 
 private:
 	int m_delayKillTimerId;
+	int m_stdOutSizeTimerId;
+	off_t m_stdOutMaxSize;
 
 	ACE_HANDLE m_stdinHandler;
 	ACE_HANDLE m_stdoutHandler;

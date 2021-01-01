@@ -103,15 +103,15 @@ LogFileQueue::~LogFileQueue()
 
 void LogFileQueue::enqueue()
 {
-	// rename all with reverse order
-	for (auto it = m_fileQueue.rbegin(); it != m_fileQueue.rend(); it++)
-	{
-		(*it)->increaseIndex();
-	}
 	// pop last
 	if (this->size() >= m_queueSize)
 	{
 		m_fileQueue.pop_back();
+	}
+	// rename all with reverse order
+	for (auto it = m_fileQueue.rbegin(); it != m_fileQueue.rend(); it++)
+	{
+		(*it)->increaseIndex();
 	}
 	// insert top
 	auto file = std::make_shared<AppLogFile>(baseFileName);

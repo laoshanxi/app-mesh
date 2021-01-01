@@ -80,6 +80,26 @@ std::shared_ptr<T> make_shared_array(size_t size)
 		jsonObj.erase(GET_STRING_T(key)); \
 	}
 
+#define CLOSE_ACE_HANDLER(handler)         \
+	do                                     \
+	{                                      \
+		if (handler != ACE_INVALID_HANDLE) \
+		{                                  \
+			ACE_OS::close(handler);        \
+			handler = ACE_INVALID_HANDLE;  \
+		}                                  \
+	} while (false)
+
+#define CLOSE_STREAM(streamPtr)                           \
+	do                                                    \
+	{                                                     \
+		if (streamPtr != nullptr && streamPtr->is_open()) \
+		{                                                 \
+			streamPtr->close();                           \
+			streamPtr = nullptr;                          \
+		}                                                 \
+	} while (false)
+
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
@@ -168,6 +188,7 @@ public:
 #define MAX_RUN_APP_TIMEOUT_SECONDS 3 * (60 * 60 * 24)	// run app max timeout 3 days
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
+#define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100 // 100M
 #define DEFAULT_EXEC_USER "appmesh"
 #define SEPARATE_REST_APP_NAME "apprest"
 

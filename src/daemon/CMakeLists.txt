@@ -31,6 +31,7 @@ target_link_libraries(appsvc
     security
     application
     process
+    boost_filesystem
     prometheus
     consul
     common

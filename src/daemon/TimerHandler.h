@@ -12,6 +12,8 @@
 //////////////////////////////////////////////////////////////////////////
 /// Timer Event base class
 /// The class which use timer event should implement from this class.
+/// Note: enable_shared_from_this does not support stack allocation!
+///       http://blog.chinaunix.net/uid-442138-id-2122464.html
 //////////////////////////////////////////////////////////////////////////
 class TimerHandler : public ACE_Event_Handler, public std::enable_shared_from_this<TimerHandler>
 {

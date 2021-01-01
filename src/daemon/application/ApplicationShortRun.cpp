@@ -176,10 +176,7 @@ void ApplicationShortRun::disable()
 	Application::disable();
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// clean old timer
-	if (m_timerId)
-	{
-		this->cancelTimer(m_timerId);
-	}
+	this->cancelTimer(m_timerId);
 	m_nextLaunchTime = nullptr;
 }
 

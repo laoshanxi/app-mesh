@@ -161,7 +161,6 @@ int main(int argc, char *argv[])
 		LOG_ERR << fname << "unknown exception";
 	}
 	LOG_ERR << fname << "ERROR exited";
-	ACE::fini();
 	ACE_OS::_exit(0);
 	return 0;
 }

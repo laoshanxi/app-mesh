@@ -1,6 +1,9 @@
 #include <fstream>
 #include <thread>
 
+#include <ace/OS.h>
+#include <boost/filesystem.hpp>
+
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
 #include "../../common/os/pstree.hpp"
@@ -9,23 +12,22 @@
 #include "AppProcess.h"
 #include "LinuxCgroup.h"
 
-#define CLOSE_ACE_HANDLER(handler)         \
-	do                                     \
-	{                                      \
-		if (handler != ACE_INVALID_HANDLE) \
-		{                                  \
-			ACE_OS::close(handler);        \
-			handler = ACE_INVALID_HANDLE;  \
-		}                                  \
-	} while (false)
+constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
 AppProcess::AppProcess()
-	: m_delayKillTimerId(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID())
+	: m_delayKillTimerId(0), m_stdOutSizeTimerId(0), m_stdOutMaxSize(0),
+	  m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
+	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID())
 {
+	const static char fname[] = "AppProcess::AppProcess() ";
+	LOG_DBG << fname << "Entered";
 }
 
 AppProcess::~AppProcess()
 {
+	const static char fname[] = "AppProcess::~AppProcess() ";
+	LOG_DBG << fname << "Entered";
+
 	if (this->running())
 	{
 		killgroup();
@@ -35,12 +37,16 @@ AppProcess::~AppProcess()
 	CLOSE_ACE_HANDLER(m_stdinHandler);
 
 	Utility::removeFile(m_stdinFileName);
-	if (m_stdoutReadStream && m_stdoutReadStream->is_open())
-	{
-		m_stdoutReadStream->close();
-	}
+	CLOSE_STREAM(m_stdoutReadStream);
+	this->cancelTimer(m_stdOutSizeTimerId);
+
 	this->close_dup_handles();
 	this->close_passed_handles();
+
+	if (m_stdoutFileName.length())
+	{
+		Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+	}
 }
 
 void AppProcess::attach(int pid)
@@ -94,6 +100,7 @@ void AppProcess::killgroup(int timerId)
 			}
 		}
 	}
+	this->cancelTimer(m_stdOutSizeTimerId);
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
@@ -113,7 +120,52 @@ const std::string AppProcess::getuuid() const
 
 void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 {
-	m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
+	const static char fname[] = "AppProcess::delayKill() ";
+
+	if (0 == m_delayKillTimerId)
+	{
+		m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
+	}
+	else
+	{
+		LOG_ERR << fname << "already pending for kill with timer id: " << m_delayKillTimerId;
+	}
+}
+
+void AppProcess::regCheckStdout()
+{
+	const static char fname[] = "AppProcess::regCheckStdout() ";
+
+	if (0 == m_stdOutSizeTimerId)
+	{
+		int timeoutSec = 15;
+		m_stdOutSizeTimerId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::checkStdout, this, std::placeholders::_1), fname);
+	}
+	else
+	{
+		LOG_ERR << fname << "already registered stdout check timer id: " << m_delayKillTimerId;
+	}
+}
+
+void AppProcess::checkStdout(int timerId)
+{
+	const static char fname[] = "AppProcess::checkStdout() ";
+
+	if (m_stdoutHandler != ACE_INVALID_HANDLE && m_stdOutMaxSize)
+	{
+		ACE_stat stat;
+		if (0 == ACE_OS::fstat(m_stdoutHandler, &stat))
+		{
+			if (stat.st_size > m_stdOutMaxSize)
+			{
+				// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
+				auto backupFile = boost::filesystem::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+				boost::filesystem::copy_file(boost::filesystem::path(m_stdoutFileName), backupFile, boost::filesystem::copy_option::overwrite_if_exists);
+				ACE_OS::ftruncate(m_stdoutHandler, 0);
+				LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
+			}
+		}
+	}
 }
 
 // tuple: 1 cmdRoot, 2 parameters
@@ -148,7 +200,7 @@ std::tuple<std::string, std::string> AppProcess::extractCommand(const std::strin
 	return std::tuple<std::string, std::string>(params, cmdroot);
 }
 
-int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const std::string &stdinFileContent)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const std::string &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
@@ -256,6 +308,11 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		pid = this->getpid();
 		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << pid << ">.";
 		this->setCgroup(limit);
+		if (m_stdoutHandler != ACE_INVALID_HANDLE && maxStdoutSize)
+		{
+			m_stdOutMaxSize = maxStdoutSize;
+			this->regCheckStdout();
+		}
 	}
 	else
 	{

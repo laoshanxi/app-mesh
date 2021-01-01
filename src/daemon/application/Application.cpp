@@ -239,6 +239,7 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
+				m_process.reset();
 				m_process = allocProcess(false, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
@@ -280,8 +281,7 @@ void Application::disable()
 	}
 	if (m_process != nullptr)
 		m_process->killgroup();
-	if (m_endTimerId)
-		this->cancelTimer(m_endTimerId);
+	this->cancelTimer(m_endTimerId);
 }
 
 void Application::enable()
@@ -306,7 +306,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 {
 	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << " Entered.";
-
+	m_process.reset();
 	m_process = allocProcess(false, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
 }
@@ -317,6 +317,7 @@ std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	m_process.reset();
 	m_process = allocProcess(true, m_dockerImage, m_name);
 	auto monitProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
 	assert(monitProc != nullptr);
@@ -712,11 +713,7 @@ void Application::destroy()
 			this->registerTimer(0, 0, std::bind(&Application::onFinishEvent, this, std::placeholders::_1), __FUNCTION__);
 		}
 	}
-	if (m_suicideTimerId)
-	{
-		this->cancelTimer(m_suicideTimerId);
-		m_suicideTimerId = 0;
-	}
+	this->cancelTimer(m_suicideTimerId);
 }
 
 void Application::onSuicideEvent(int timerId)
