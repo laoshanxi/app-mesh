@@ -18,10 +18,19 @@
 class TimerHandler : public ACE_Event_Handler, public std::enable_shared_from_this<TimerHandler>
 {
 private:
-	struct TimerDefinition
+	/// <summary>
+	/// One timer event
+	/// </summary>
+	struct TimerEvent
 	{
-		// timerId will be deleted in TimerDefinition de-construction
-		TimerDefinition(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce);
+		/// <summary>
+		/// TimerEvent construction
+		/// </summary>
+		/// <param name="timerId">timerId will be deleted in TimerEvent de-construction</param>
+		/// <param name="handler">timer function</param>
+		/// <param name="object">timer object</param>
+		/// <param name="callOnce">only run one-time</param>
+		explicit TimerEvent(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce);
 		const std::shared_ptr<int> m_timerId;
 		std::function<void(int)> m_handler;
 		const std::shared_ptr<TimerHandler> m_timerObject;
@@ -67,7 +76,7 @@ public:
 
 private:
 	// key: timer ID point, must unique, value: function point
-	std::map<const int *, std::shared_ptr<TimerDefinition>> m_timers;
+	std::map<const int *, std::shared_ptr<TimerEvent>> m_timers;
 
 protected:
 	// this reactor can be init as none-default one

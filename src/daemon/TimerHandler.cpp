@@ -21,7 +21,7 @@ int TimerHandler::handle_timeout(const ACE_Time_Value &current_time, const void 
 	const static char fname[] = "TimerHandler::handle_timeout() ";
 
 	const int *timerIdPtr = static_cast<const int *>(act);
-	std::map<const int *, std::shared_ptr<TimerDefinition>> timers;
+	std::map<const int *, std::shared_ptr<TimerEvent>> timers;
 	{
 		// Should not hold this lock too long
 		std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
@@ -66,7 +66,7 @@ int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalS
 	(*timerIdPtr) = m_reactor->schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	assert(m_timers.find(timerIdPtr) == m_timers.end());
-	m_timers[timerIdPtr] = std::make_shared<TimerDefinition>(timerIdPtr, handler, this->shared_from_this(), callOnce);
+	m_timers[timerIdPtr] = std::make_shared<TimerEvent>(timerIdPtr, handler, this->shared_from_this(), callOnce);
 	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
 	return *timerIdPtr;
 }
@@ -82,7 +82,7 @@ bool TimerHandler::cancelTimer(int &timerId)
 
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	auto it = std::find_if(m_timers.begin(), m_timers.end(),
-						   [timerId](std::map<const int *, std::shared_ptr<TimerDefinition>>::value_type const &pair) {
+						   [timerId](std::map<const int *, std::shared_ptr<TimerEvent>>::value_type const &pair) {
 							   return timerId == *(pair.first);
 						   });
 	if (it != m_timers.end())
@@ -116,7 +116,7 @@ int TimerHandler::endReactorEvent(ACE_Reactor *reactor)
 	return reactor->end_reactor_event_loop();
 }
 
-TimerHandler::TimerDefinition::TimerDefinition(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)
+TimerHandler::TimerEvent::TimerEvent(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)
 	: m_timerId(timerId), m_handler(handler), m_timerObject(object), m_callOnce(callOnce)
 {
 }

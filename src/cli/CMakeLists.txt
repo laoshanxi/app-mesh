@@ -12,7 +12,7 @@ target_link_libraries(appc
   PRIVATE
     Threads::Threads
     ${OPENSSL_LIBRARIES}
-    boost_system boost_program_options
+    boost_program_options
     cpprest
     common
     ACE

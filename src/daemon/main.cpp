@@ -138,12 +138,13 @@ int main(int argc, char *argv[])
 		while (true)
 		{
 			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
-			PerfLog perf(fname);
+			PerfLog perf("main while loop");
 
 			// monitor application
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
+				PerfLog perf(app->getName());
 				app->invoke();
 			}
 
