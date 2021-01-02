@@ -34,6 +34,37 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [Security](https://github.com/laoshanxi/app-mesh/blob/main/doc/Security.md) describe the security design for App Mesh.
 - [Success cases](https://github.com/laoshanxi/app-mesh/wiki) describe successful enterprise use cases provide by App Mesh.
 
+## Comparison
+
+### Stand-alone mode
+| Feature                  | App Mesh | Supervisor | crontab |
+| ------------------------ | -------- | ---------- | ------- |
+| Accuracy                 | seconds  | seconds    | minutes |
+| Manage daemon process    |          |            | √       |
+| Language                 | C++11    | Python     | C       |
+| GUI                      | √        | √          |         |
+| CLI                      | √        | √          | √       |
+| Start check (avoid leak) | √        | √          |         |
+| Manage stdout/stderr     | √        | √          |         |
+| Health check             | √        |            |         |
+| Rich options             | √        |            |         |
+| Authentication           | √        | √          |         |
+| Multi tenant             | √        |            |         |
+
+
+### Cluster mode
+| Feature           | App Mesh | Kubernetes |
+| ----------------- | -------- | ---------- |
+| Easy deploy       | √        |            |
+| More features     |          | √          |
+| Non-container app | √        |            |
+| Service expose    | √        | √          |
+| Scheduler         | √        | √          |
+| Definition file   | JSON     | YAML       |
+| GUI               | √        | √          |
+| Virtual Network   |          | √          |
+| Monitor tools     | √        | √          |
+
 ---
 
 ## Library dependency
