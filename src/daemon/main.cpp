@@ -9,6 +9,7 @@
 
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
+#include <boost/filesystem.hpp>
 #include <pplx/threadpool.h>
 
 #include "../common/PerfLog.h"
@@ -48,7 +49,7 @@ int main(int argc, char *argv[])
 
 		// init log
 		Utility::initLogging();
-		LOG_INF << fname << "Entered working dir: " << getcwd(NULL, 0);
+		LOG_INF << fname << "Entered working dir: " << boost::filesystem::current_path().string();
 
 		// catch SIGHUP for 'systemctl reload'
 		Configuration::handleSignal();
@@ -84,7 +85,7 @@ int main(int argc, char *argv[])
 
 		// working dir
 		Utility::createDirectory(config->getDefaultWorkDir(), 00655);
-		ACE_OS::chdir(config->getDefaultWorkDir().c_str());
+		boost::filesystem::current_path(config->getDefaultWorkDir());
 
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());

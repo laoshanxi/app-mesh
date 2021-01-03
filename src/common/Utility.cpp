@@ -14,6 +14,7 @@
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
+#include <boost/filesystem.hpp>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/Category.hh>
 #include <log4cpp/FileAppender.hh>
@@ -110,10 +111,9 @@ const std::string Utility::getSelfFullPath()
 		}
 	}
 #else
-#define MAX_PATH PATH_MAX
-	char buf[MAX_PATH] = {0};
-	int count = (int)readlink("/proc/self/exe", buf, MAX_PATH);
-	if (count < 0 || count >= MAX_PATH)
+	char buf[PATH_MAX] = {0};
+	auto count = ACE_OS::readlink("/proc/self/exe", buf, PATH_MAX);
+	if (count < 0 || count >= PATH_MAX)
 	{
 		LOG_ERR << fname << "unknown exception";
 		buf[0] = '\0';
@@ -128,13 +128,8 @@ const std::string Utility::getSelfFullPath()
 
 const std::string Utility::getSelfDir()
 {
-	auto path = getSelfFullPath();
-	auto index = path.rfind(ACE_DIRECTORY_SEPARATOR_CHAR);
-	if (index != std::string::npos)
-	{
-		path[index] = '\0';
-	}
-	return path.c_str();
+	auto path = boost::filesystem::path(getSelfFullPath());
+	return path.parent_path().string();
 }
 
 // program_name from errno.h
@@ -146,18 +141,14 @@ const std::string Utility::getBinaryName()
 
 bool Utility::isDirExist(std::string path)
 {
-#if defined(WIN32)
-	DWORD dwAttrib = GetFileAttributes(path.c_str());
-	return (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
-#else
-	struct stat pathStat;
-	return (::stat(path.c_str(), &pathStat) == 0 && S_ISDIR(pathStat.st_mode));
-#endif
+	boost::filesystem::path p(path);
+	return boost::filesystem::exists(p) && boost::filesystem::is_directory(p);
 }
 
 bool Utility::isFileExist(std::string path)
 {
-	return (::access(path.c_str(), F_OK) == 0);
+	boost::filesystem::path p(path);
+	return boost::filesystem::exists(p) && !boost::filesystem::is_directory(p);
 }
 
 bool Utility::createDirectory(const std::string &path, mode_t mode)
@@ -166,7 +157,7 @@ bool Utility::createDirectory(const std::string &path, mode_t mode)
 
 	if (!isDirExist(path))
 	{
-		if (mkdir(path.c_str(), mode) < 0)
+		if (ACE_OS::mkdir(path.c_str(), mode) < 0)
 		{
 			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << std::strerror(errno);
 			return false;
@@ -201,7 +192,7 @@ bool Utility::removeDir(const std::string &path)
 
 	if (isDirExist(path))
 	{
-		if (rmdir(path.c_str()) == 0)
+		if (ACE_OS::rmdir(path.c_str()) == 0)
 		{
 			LOG_INF << fname << "Removed directory : " << path;
 		}
@@ -220,13 +211,13 @@ void Utility::removeFile(const std::string &path)
 
 	if (path.length() && isFileExist(path))
 	{
-		if (ACE_OS::unlink(path.c_str()) != 0)
+		if (boost::filesystem::remove(path))
 		{
-			LOG_WAR << fname << "removed stdout file <" << path << "> failed with error: " << std::strerror(errno);
+			LOG_DBG << fname << "file <" << path << "> removed";
 		}
 		else
 		{
-			LOG_DBG << fname << "file <" << path << "> removed";
+			LOG_WAR << fname << "removed file <" << path << "> failed with error: " << std::strerror(errno);
 		}
 	}
 }

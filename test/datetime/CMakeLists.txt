@@ -13,7 +13,6 @@ add_catch_test(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
-    boost_regex
     cpprest
     ACE
     rest

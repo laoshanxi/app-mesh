@@ -43,18 +43,8 @@ void getListenPort(int &port, bool &sslEnabled)
 {
 	// Get listen port
 	web::json::value jsonValue;
-	auto configPath = Utility::getSelfFullPath();
-	configPath[configPath.length() - 1] = '\0';
-	auto pos = configPath.rfind(ACE_DIRECTORY_SEPARATOR_STR);
-	if (pos != std::string::npos)
-	{
-		configPath = configPath.substr(0, pos + 1);
-	}
-	else
-	{
-		assert(false);
-	}
-	auto file = Utility::readFileCpp(configPath + "appsvc.json");
+	std::string jsonPath = Utility::getSelfDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
+	auto file = Utility::readFileCpp(jsonPath);
 	if (file.length() > 0)
 	{
 		jsonValue = web::json::value::parse(GET_STRING_T(file));

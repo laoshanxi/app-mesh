@@ -100,6 +100,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 		}                                                 \
 	} while (false)
 
+#define APPMESH_CONFIG_JSON_FILE "appsvc.json"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059

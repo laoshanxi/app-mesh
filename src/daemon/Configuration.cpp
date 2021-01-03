@@ -25,7 +25,7 @@ std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
 	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL)
 {
-	m_jsonFilePath = Utility::getSelfFullPath() + ".json";
+	m_jsonFilePath = Utility::getSelfDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
 	m_label = std::make_unique<Label>();
 	m_security = std::make_shared<JsonSecurity>();
 	m_rest = std::make_shared<JsonRest>();
@@ -123,7 +123,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 
 std::string Configuration::readConfiguration()
 {
-	std::string jsonPath = Utility::getSelfDir() + ACE_DIRECTORY_SEPARATOR_STR + "appsvc.json";
+	std::string jsonPath = Utility::getSelfDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
 	return Utility::readFileCpp(jsonPath);
 }
 

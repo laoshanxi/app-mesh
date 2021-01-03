@@ -12,4 +12,5 @@ target_link_libraries(common
   PRIVATE
     log4cpp
     boost_regex
+    boost_filesystem
 )
