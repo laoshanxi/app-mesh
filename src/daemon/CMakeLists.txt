@@ -21,7 +21,6 @@ target_link_libraries(appsvc
   PRIVATE
     Threads::Threads
     cpprest
-    ACE
     rest
     ${OPENSSL_LIBRARIES}
     security

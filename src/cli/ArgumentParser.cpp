@@ -1,17 +1,10 @@
-#ifdef WIN32
-#include <windows.h>
-#else
-#include <termios.h>
-#include <unistd.h>
-#endif
-#include <ace/Signal.h>
 #include <atomic>
 #include <chrono>
-#include <functional>
-#include <iostream>
-#include <sstream>
 #include <thread>
+#include <termios.h>
+#include <unistd.h>
 
+#include <ace/Signal.h>
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <cpprest/filestream.h>

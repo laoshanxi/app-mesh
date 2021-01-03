@@ -1,7 +1,8 @@
-#include <ace/Signal.h>
-#include <boost/algorithm/string_regex.hpp>
 #include <set>
 #include <unistd.h> //environ
+
+#include <ace/Signal.h>
+#include <boost/algorithm/string_regex.hpp>
 
 #include "Configuration.h"
 #include "Label.h"

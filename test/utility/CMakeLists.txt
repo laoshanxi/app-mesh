@@ -14,7 +14,6 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
     cpprest
-    ACE
     rest
     ${OPENSSL_LIBRARIES}
     security
