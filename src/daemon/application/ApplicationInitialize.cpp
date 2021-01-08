@@ -92,6 +92,7 @@ void ApplicationInitialize::invoke()
 		if (!m_process->running())
 		{
 			LOG_INF << fname << "Starting initializing for application <" << m_name << ">.";
+			m_process.reset(); //m_process->killgroup();
 			m_process = allocProcess(0, "", m_name);
 			m_procStartTime = std::chrono::system_clock::now();
 			m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);

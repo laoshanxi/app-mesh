@@ -40,8 +40,9 @@ int main(int argc, char *argv[])
 	try
 	{
 		ACE::init();
-		ACE_OS::umask(0077);
 
+		// 0644 root: rw, group r, other r
+		ACE_OS::umask(S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		// init log
 		Utility::initLogging();
 		LOG_INF << fname << "Entered working dir: " << boost::filesystem::current_path().string();

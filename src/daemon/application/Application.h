@@ -119,7 +119,7 @@ protected:
 	const std::string m_appId;
 	unsigned int m_version;
 	std::shared_ptr<AppProcess> m_process;
-	int m_pid;
+	pid_t m_pid;
 	int m_suicideTimerId;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;

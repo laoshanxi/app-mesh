@@ -138,7 +138,7 @@ void AppProcess::regCheckStdout()
 
 	if (0 == m_stdOutSizeTimerId)
 	{
-		int timeoutSec = 15;
+		int timeoutSec = 5;
 		m_stdOutSizeTimerId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::checkStdout, this, std::placeholders::_1), fname);
 	}
 	else
@@ -165,6 +165,11 @@ void AppProcess::checkStdout(int timerId)
 				LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
 			}
 		}
+	}
+	// automatic release timer reference when not running
+	if (!this->running())
+	{
+		this->cancelTimer(timerId);
 	}
 }
 

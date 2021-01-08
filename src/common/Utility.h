@@ -136,7 +136,7 @@ public:
 	static const std::string getBinaryName();
 	static bool isDirExist(std::string path);
 	static bool isFileExist(std::string path);
-	static bool createDirectory(const std::string &path, mode_t mode = 0775);
+	static bool createDirectory(const std::string &path, mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	static bool createRecursiveDirectory(const std::string &path, mode_t mode = 0775);
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
@@ -253,6 +253,7 @@ public:
 #define JSON_KEY_APP_resource_limit "resource_limit"
 #define JSON_KEY_APP_env "env"
 #define JSON_KEY_APP_sec_env "sec_env"
+#define JSON_KEY_APP_open_fd "fd" // open_file_descriptors
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
 #define JSON_KEY_APP_last_error "last_error"

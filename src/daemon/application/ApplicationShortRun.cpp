@@ -128,6 +128,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	if (this->available())
 	{
 		// Spawn new process
+		m_process.reset(); //m_process->killgroup();
 		m_process = allocProcess(0, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
 		m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);

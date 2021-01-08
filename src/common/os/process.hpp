@@ -1,7 +1,6 @@
 #pragma once
 
-#include <sys/types.h> // For pid_t.
-
+#include <boost/filesystem.hpp>
 #include <chrono>
 #include <list>
 #include <memory>
@@ -9,6 +8,7 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <sys/types.h> // For pid_t.
 
 #include "../../common/Utility.h"
 
@@ -204,5 +204,30 @@ namespace os
 			   << "]";
 		return stream;
 	}
+
+	// https://stackoverflow.com/questions/6583158/finding-open-file-descriptors-for-a-process-linux-c-code
+	// https://stackoverflow.com/questions/4470121/how-to-use-lsoflist-opened-files-in-a-c-c-application
+	// get process open file descriptors
+	inline size_t fileDescriptors(pid_t pid = ::getpid())
+	{
+		size_t result = 0;
+		// 1. /proc/pid/fd/
+		std::string path = "/proc/" + std::to_string(pid) + "/fd/";
+		if (boost::filesystem::exists(path))
+		{
+			result += std::distance(boost::filesystem::directory_iterator(path),
+									boost::filesystem::directory_iterator());
+		}
+		// 2. /proc/pid/maps
+		path = "/proc/" + std::to_string(pid) + "maps";
+		std::ifstream maps(path);
+		if (maps.is_open())
+		{
+			std::string line;
+			for (; std::getline(maps, line); result++)
+				;
+		}
+		return result;
+	};
 
 } // namespace os

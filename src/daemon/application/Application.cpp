@@ -3,6 +3,7 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
+#include "../../common/os/process.hpp"
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/gauge.h"
 #include "../Configuration.h"
@@ -239,7 +240,7 @@ void Application::invoke()
 			if (!m_process->running())
 			{
 				LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
-				m_process.reset();
+				m_process.reset(); //m_process->killgroup();
 				m_process = allocProcess(false, m_dockerImage, m_name);
 				m_procStartTime = std::chrono::system_clock::now();
 				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
@@ -306,7 +307,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 {
 	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << " Entered.";
-	m_process.reset();
+	m_process.reset(); //m_process->killgroup();
 	m_process = allocProcess(false, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
 }
@@ -317,7 +318,7 @@ std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 	LOG_DBG << fname << " Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	m_process.reset();
+	m_process.reset(); //m_process->killgroup();
 	m_process = allocProcess(true, m_dockerImage, m_name);
 	auto monitProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
 	assert(monitProc != nullptr);
@@ -538,7 +539,10 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (returnRuntimeInfo)
 	{
 		if (m_pid > 0)
+		{
 			result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
+			result[JSON_KEY_APP_open_fd] = web::json::value::number(os::fileDescriptors(m_pid));
+		}
 		if (m_return != nullptr)
 			result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
 		if (m_pid > 0)

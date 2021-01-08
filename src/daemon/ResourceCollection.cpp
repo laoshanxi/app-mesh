@@ -177,6 +177,7 @@ web::json::value ResourceCollection::AsJson()
 	result[GET_STRING_T("systime")] = web::json::value::string(DateTime::formatISO8601Time(std::chrono::system_clock::now()));
 	result[GET_STRING_T("appmesh_start_time")] = web::json::value::string(DateTime::formatISO8601Time(m_appmeshStartTime));
 	result[GET_STRING_T("pid")] = web::json::value::number(getPid());
+	result[GET_STRING_T("fd")] = web::json::value::number(os::fileDescriptors());
 	LOG_DBG << fname << "Exit";
 	return result;
 }
