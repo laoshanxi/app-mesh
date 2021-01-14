@@ -36,20 +36,23 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Comparison
 
-### Stand-alone mode
+### Standalone mode
 | Feature                  | App Mesh | Supervisor | crontab |
 | ------------------------ | -------- | ---------- | ------- |
 | Accuracy                 | seconds  | seconds    | minutes |
-| Manage daemon process    |          |            | √       |
 | Language                 | C++11    | Python     | C       |
-| GUI                      | √        | √          |         |
-| CLI                      | √        | √          | √       |
+| Web GUI                  | √        | √          |         |
+| Command lines            | √        | √          | √       |
+| SDK                      | √        |            |         |
+| Manage daemon process    |          |            | √       |
+| Manage docker app        | √        |            |         |
 | Start check (avoid leak) | √        | √          |         |
+| Session login            |          |            |         |
 | Manage stdout/stderr     | √        | √          |         |
 | Health check             | √        |            |         |
-| Rich options             | √        |            |         |
+| Rich control options     | √        |            |         |
 | Authentication           | √        | √          |         |
-| Multi tenant             | √        |            |         |
+| Multi-tenant             | √        |            | √       |
 
 
 ### Cluster mode

@@ -2,6 +2,7 @@
 #include <boost/algorithm/string_regex.hpp>
 
 #include "../../common/Utility.h"
+#include "../../common/os/process.hpp"
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/registry.h"
 #include "../../prom_exporter/text_serializer.h"
@@ -86,6 +87,10 @@ void PrometheusRest::initMetrics()
 		PROM_METRIC_NAME_appmesh_prom_scrape_count,
 		PROM_METRIC_HELP_appmesh_prom_scrape_count,
 		{});
+	m_appmeshFileDesc = createPromGauge(
+		PROM_METRIC_NAME_appmesh_prom_file_descriptor,
+		PROM_METRIC_HELP_appmesh_prom_file_descriptor,
+		{});
 	// Const Gauge counter
 	m_promGauge = createPromGauge(
 		PROM_METRIC_NAME_appmesh_prom_scrape_up,
@@ -162,6 +167,10 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 	if (m_scrapeCounter)
 	{
 		m_scrapeCounter->metric().Increment();
+	}
+	if (m_appmeshFileDesc)
+	{
+		m_appmeshFileDesc->metric().Set(os::fileDescriptors());
 	}
 
 	message.reply(status_codes::OK, collectData(), "text/plain; version=0.0.4");

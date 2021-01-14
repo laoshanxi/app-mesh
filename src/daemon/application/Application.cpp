@@ -212,6 +212,8 @@ void Application::refreshPid()
 		}
 		if (m_metricAppPid)
 			m_metricAppPid->metric().Set(m_pid);
+		if (m_metricFileDesc)
+			m_metricFileDesc->metric().Set(os::fileDescriptors(m_pid));
 	}
 }
 
@@ -472,6 +474,7 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	m_metricAppPid = nullptr;
 	m_metricMemory = nullptr;
 	m_metricCpu = nullptr;
+	m_metricFileDesc = nullptr;
 
 	// update
 	if (prom)
@@ -488,6 +491,9 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 			{{"application", getName()}, {"id", m_appId}});
 		m_metricCpu = prom->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_cpu_gauge, PROM_METRIC_HELP_appmesh_prom_process_cpu_gauge,
+			{{"application", getName()}, {"id", m_appId}});
+		m_metricFileDesc = prom->createPromGauge(
+			PROM_METRIC_NAME_appmesh_prom_process_file_descriptors, PROM_METRIC_HELP_appmesh_prom_process_file_descriptors,
 			{{"application", getName()}, {"id", m_appId}});
 	}
 }

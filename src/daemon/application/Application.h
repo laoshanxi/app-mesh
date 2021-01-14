@@ -133,6 +133,7 @@ protected:
 	std::shared_ptr<GaugeMetric> m_metricMemory;
 	std::shared_ptr<GaugeMetric> m_metricCpu;
 	std::shared_ptr<GaugeMetric> m_metricAppPid;
+	std::shared_ptr<GaugeMetric> m_metricFileDesc;
 	std::atomic<int> m_continueFails;
 
 	// error

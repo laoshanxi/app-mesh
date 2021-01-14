@@ -150,6 +150,7 @@ private:
 	std::shared_ptr<CounterMetric> m_restPutCounter;
 	std::shared_ptr<CounterMetric> m_restDelCounter;
 	std::shared_ptr<CounterMetric> m_restPostCounter;
+	std::shared_ptr<GaugeMetric> m_appmeshFileDesc;
 
 public:
 	static std::shared_ptr<PrometheusRest> instance() { return m_instance; }
@@ -168,6 +169,9 @@ public:
 // App Mesh alive
 #define PROM_METRIC_NAME_appmesh_prom_scrape_up "appmesh_prom_scrape_up"
 #define PROM_METRIC_HELP_appmesh_prom_scrape_up "prometheus scrape alive"
+// App Mesh file descriptors
+#define PROM_METRIC_NAME_appmesh_prom_file_descriptor "appmesh_prom_file_descriptor"
+#define PROM_METRIC_HELP_appmesh_prom_file_descriptor "appmesh file descriptors"
 // App Mesh HTTP request count
 #define PROM_METRIC_NAME_appmesh_http_request_count "appmesh_http_request_count"
 #define PROM_METRIC_HELP_appmesh_http_request_count "app mesh http request count"
@@ -183,3 +187,6 @@ public:
 // Application process cpu usage
 #define PROM_METRIC_NAME_appmesh_prom_process_cpu_gauge "appmesh_prom_process_cpu_gauge"
 #define PROM_METRIC_HELP_appmesh_prom_process_cpu_gauge "application process cpu usage"
+// Application process file descriptors
+#define PROM_METRIC_NAME_appmesh_prom_process_file_descriptors "appmesh_prom_process_file_descriptors"
+#define PROM_METRIC_HELP_appmesh_prom_process_file_descriptors "application process file descriptors"

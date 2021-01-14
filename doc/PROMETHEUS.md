@@ -37,6 +37,9 @@ http://127.0.0.1:6061/metrics
 # HELP appmesh_prom_scrape_count prometheus scrape count
 # TYPE appmesh_prom_scrape_count counter
 appmesh_prom_scrape_count{host="appmesh",pid="10791"} 6.000000
+# HELP appmesh_prom_file_descriptor appmesh file descriptors
+# TYPE appmesh_prom_file_descriptor gauge
+appmesh_prom_file_descriptor{host="appmesh",pid="10791"} 11.00000000000000000
 # HELP appmesh_prom_process_start_count application process spawn count
 # TYPE appmesh_prom_process_start_count counter
 appmesh_prom_process_start_count{application="appweb",host="appmesh",pid="10791"} 1.000000
@@ -54,6 +57,9 @@ appmesh_prom_scrape_up{host="appmesh",pid="10791"} 1.000000
 # TYPE appmesh_prom_process_memory_gauge gauge
 appmesh_prom_process_memory_gauge{application="appweb",host="appmesh",pid="10791"} 3268759.000000
 appmesh_prom_process_memory_gauge{application="timer",host="appmesh",pid="10791"} 0.000000
+# HELP appmesh_prom_process_file_descriptors application process file descriptors
+# TYPE appmesh_prom_process_file_descriptors gauge
+appmesh_prom_process_file_descriptors{application="apprest",host="appmesh",id="4229730c-5672-11eb-8000-6c2b59df0017",pid="83288"} 13.00000000000000000
 ```
 
 ![Prometheus Configuration](https://raw.githubusercontent.com/laoshanxi/picture/main/prometheus/Prometheus-Configuration.png)
