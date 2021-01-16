@@ -8,6 +8,7 @@
 #include "Label.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
+#include "application/ApplicationCron.h"
 #include "application/ApplicationInitialize.h"
 #include "application/ApplicationPeriodRun.h"
 #include "application/ApplicationUnInitia.h"
@@ -809,11 +810,18 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jso
 		return app;
 	}
 
-	if (DurationParse::parse(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds)) > 0)
+	if (HAS_JSON_FIELD(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds))
 	{
 		// Consider as short running application
 		std::shared_ptr<ApplicationShortRun> shortApp;
-		if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_PERIOD_APP_keep_running) == true)
+		if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_SHORT_APP_cron_interval) == true)
+		{
+			// TODO: cron app need support keep running
+			std::shared_ptr<ApplicationCron> tmpApp(new ApplicationCron());
+			ApplicationCron::FromJson(tmpApp, jsonApp);
+			shortApp = tmpApp;
+		}
+		else if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_PERIOD_APP_keep_running) == true)
 		{
 			std::shared_ptr<ApplicationPeriodRun> tmpApp(new ApplicationPeriodRun());
 			ApplicationPeriodRun::FromJson(tmpApp, jsonApp);

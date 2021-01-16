@@ -100,6 +100,7 @@ void ApplicationShortRun::invokeNow(int timerId)
 	if (timerId > 0 && !this->isEnabled())
 	{
 		this->cancelTimer(timerId);
+		setLastError("not enabled");
 		return;
 	}
 	if (!isWorkingState())
@@ -184,7 +185,6 @@ void ApplicationShortRun::disable()
 void ApplicationShortRun::initTimer()
 {
 	const static char fname[] = "ApplicationShortRun::initTimer() ";
-	LOG_DBG << fname << "Entered.";
 
 	// std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// 1. clean old timer

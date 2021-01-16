@@ -15,7 +15,7 @@ App Mesh is similar with Kubernetes but much light weight, support both containe
 ## Features
 Scope  | Behavior
 ---|---
-Support applications | Long running <br> Short running <br> Periodic long running
+Support applications | Long running <br> Short running <br> Periodic long running <br> Cron schedule
 Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define pipe input string data <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
 Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) <br> Multi-tenant support 
 Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/doc/Loki.md) <br> REST service with IPv6 support 
@@ -37,12 +37,13 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 ## Comparison
 
 ### Standalone mode
-| Feature                  | App Mesh | Supervisor | crontab |
+| Feature                  | App Mesh | [Supervisor](http://supervisord.org/) | [crontab](https://crontab.guru/) |
 | ------------------------ | -------- | ---------- | ------- |
-| Accuracy                 | seconds  | seconds    | minutes |
+| Accuracy                 | Seconds  | Seconds    | Minutes |
 | Language                 | C++11    | Python     | C       |
 | Web GUI                  | √        | √          |         |
 | Command lines            | √        | √          | √       |
+| Cron expression          | √        |            | √       |
 | SDK                      | √        |            |         |
 | Manage daemon process    |          |            | √       |
 | Manage docker app        | √        |            |         |
@@ -78,7 +79,8 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
-- [Crypto++](https://www.cryptopp.com/)
+- [Crypto++](https://www.cryptopp.com)
+- [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
 
 [language.url]:   https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

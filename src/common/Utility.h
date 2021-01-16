@@ -276,6 +276,7 @@ public:
 #define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
 #define JSON_KEY_SHORT_APP_start_time "start_time"
 #define JSON_KEY_SHORT_APP_end_time "end_time"
+#define JSON_KEY_SHORT_APP_cron_interval "cron" // start_interval_seconds will use cron format
 #define JSON_KEY_SHORT_APP_start_interval_timeout "start_interval_timeout"
 #define JSON_KEY_SHORT_APP_next_start_time "next_start_time"
 

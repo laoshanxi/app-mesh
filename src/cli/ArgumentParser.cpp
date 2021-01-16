@@ -349,7 +349,8 @@ void ArgumentParser::processReg()
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
 		("sec_env", po::value<std::vector<std::string>>(), "security environment variables, encrypt in server side with application owner's cipher")
-		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
+		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')")
+		("cron", "indicate interval parameter use cron expression")
 		("extra_time,q", po::value<std::string>(), "extra timeout for short running app,the value must less than interval  (default 0), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing Time)")
 		("keep_running,k", "monitor and keep running for short running app in start interval")
@@ -457,7 +458,11 @@ void ArgumentParser::processReg()
 	if (m_commandLineVariables.count("end_time"))
 		jsonObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
 	if (m_commandLineVariables.count("interval"))
+	{
 		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
+		if (m_commandLineVariables.count("cron"))
+			jsonObj[JSON_KEY_SHORT_APP_cron_interval] = web::json::value::boolean(true);
+	}	
 	if (m_commandLineVariables.count("extra_time"))
 		jsonObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::string(m_commandLineVariables["extra_time"].as<std::string>());
 	if (m_commandLineVariables.count("stdout_cache_num"))

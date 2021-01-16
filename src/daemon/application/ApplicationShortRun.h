@@ -24,7 +24,7 @@ public:
 	virtual void enable() override;
 	virtual void disable() override;
 	virtual bool available() override;
-	void initTimer();
+	virtual void initTimer();
 
 protected:
 	virtual void invokeNow(int timerId) override;
