@@ -36,8 +36,6 @@ web::json::value ApplicationCron::AsJson(bool returnRuntimeInfo)
 	const static char fname[] = "ApplicationCron::AsJson() ";
 	LOG_DBG << fname << "Entered.";
 	web::json::value result = ApplicationShortRun::AsJson(returnRuntimeInfo);
-
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	result[JSON_KEY_SHORT_APP_cron_interval] = web::json::value::boolean(true);
 	return result;
 }
@@ -46,7 +44,7 @@ void ApplicationCron::initTimer()
 {
 	const static char fname[] = "ApplicationCron::initTimer() ";
 
-	// std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// 1. clean old timer
 	this->cancelTimer(m_timerId);
 
@@ -75,10 +73,6 @@ void ApplicationCron::initTimer()
 void ApplicationCron::invokeNow(int timerId)
 {
 	ApplicationShortRun::invokeNow(timerId);
-	if (m_timerId == timerId)
-	{
-		m_timerId = 0;
-	}
 	initTimer();
 }
 
@@ -87,6 +81,5 @@ void ApplicationCron::dump()
 	const static char fname[] = "ApplicationCron::dump() ";
 
 	ApplicationShortRun::dump();
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	LOG_DBG << fname << "m_cron:" << cron::to_string(m_cron);
 }

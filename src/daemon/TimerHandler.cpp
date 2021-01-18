@@ -37,13 +37,14 @@ int TimerHandler::handle_timeout(const ACE_Time_Value &current_time, const void 
 	else
 	{
 		auto timerDef = timers.find(timerIdPtr)->second;
-		timerDef->m_handler(*timerIdPtr);
 		if (timerDef->m_callOnce)
 		{
+			// remove one-time handler from map before run callback
 			LOG_DBG << fname << "one-time timer removed <" << *timerIdPtr << ">.";
 			std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 			m_timers.erase(timerIdPtr);
 		}
+		timerDef->m_handler(*timerIdPtr);
 	}
 	return 0;
 }
