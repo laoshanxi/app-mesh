@@ -75,7 +75,7 @@ int DurationParse::parse(const std::string &duration)
         LOG_DBG << fname << "date time duration: " << duration << "=" << totalSeconds;
         return totalSeconds;
     }
-    throw std::invalid_argument(Utility::stringFormat("Invalid duration %s", duration.c_str()));
+    throw std::invalid_argument(Utility::stringFormat("Invalid duration <%s>", duration.c_str()));
 }
 
 std::string DurationParse::compose(int time, bool weekMode)

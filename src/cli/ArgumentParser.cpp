@@ -48,7 +48,7 @@ static bool SIGINIT_BREAKING = false;
 static std::string APPC_EXEC_APP_NAME;
 static ArgumentParser *WORK_PARSE = nullptr;
 // command line help width
-static size_t BOOST_DESC_WIDTH = 100;
+static size_t BOOST_DESC_WIDTH = 130;
 
 ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, bool sslEnabled)
 	: m_argc(argc), m_argv(argv), m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
@@ -236,6 +236,10 @@ void ArgumentParser::processLogon()
 	{
 		std::cout << "User: ";
 		std::cin >> m_username;
+	}
+	else
+	{
+		m_username = m_commandLineVariables["user"].as<std::string>();
 	}
 
 	if (!m_commandLineVariables.count("password"))
