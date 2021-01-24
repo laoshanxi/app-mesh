@@ -6,7 +6,7 @@
 
 # App Mesh
 
-App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application management platform, used to on-board, schedule, start and monitor applications. Each app can be a specific micro service for service discover or normal app with replication, the app-mesh will guarantee all defined applications running on-time with defined behavior and resources. The platform can run as standalone or cluster mode, provide REST APIs, command-line and web-ui.
+App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application management platform, used to host, schedule and monitor applications. Each app can be a specific micro service for service discover or normal app with replication, the app-mesh will guarantee all defined applications running on-time with defined behavior and resources requests. The platform can run as standalone or cluster mode, provide REST APIs, command-line and web-ui.
 
 App Mesh is similar with Kubernetes but much light weight, support both container app and native app.
 
@@ -16,9 +16,9 @@ App Mesh is similar with Kubernetes but much light weight, support both containe
 Scope  | Behavior
 ---|---
 Support applications | Long running <br> Short running <br> Periodic long running <br> Cron schedule
-Application behavior | Application support initial and cleanup command <br> Application can define available time range in a day <br> Application can define environment variables <br> Application can define health check command <br> Application can define pipe input string data <br> Application can define resource (memory & CPU) limitation (cgroup on Linux) <br> Docker container app support
-Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/doc/JWT_DESC.md) <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) <br> Multi-tenant support 
-Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/doc/Loki.md) <br> REST service with IPv6 support 
+Application attributes | Extra init and cleanup commands <br> Available time range in a day and more rich time options <br> Environment variables <br> Health check command to identify app health <br> Pipe input string data to pass data to application <br> Resource (memory & CPU) limitation (cgroup on Linux) to request resources <br> Support Docker container app
+Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/doc/JWT_DESC.md) for CLI and REST interface <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
+Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/doc/Loki.md) <br> REST service with IPv4/IPv6 support 
 Micro service application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/doc/CONSUL.md) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32 <br> ARM64
