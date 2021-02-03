@@ -1,4 +1,5 @@
 ﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
+[![Documentation Status](https://readthedocs.org/projects/app-mesh/badge/?version=latest)](https://app-mesh.readthedocs.io/en/latest/?badge=latest)
 <a href="https://scan.coverity.com/projects/laoshanxi-app-mesh">
   <img alt="Coverity Scan Build Status"
        src="https://img.shields.io/coverity/scan/21528.svg"/>
