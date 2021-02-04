@@ -11,28 +11,28 @@ App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application manage
 
 App Mesh is similar with Kubernetes but much light weight, support both container app and native app.
 
-<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/doc/diagram.png" width=600 height=400 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/diagram.png" width=600 height=400 align=center /></div>
 
 ## Features
 Scope  | Behavior
 ---|---
 Support applications | Long running <br> Short running <br> Periodic long running <br> Cron schedule
 Application attributes | Extra init and cleanup commands <br> Available time range in a day and more rich time options <br> Environment variables <br> Health check command to identify app health <br> Pipe input string data to pass data to application <br> Resource (memory & CPU) limitation (cgroup on Linux) to request resources <br> Support Docker container app
-Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/doc/JWT_DESC.md) for CLI and REST interface <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/doc/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
-Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/doc/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/doc/Loki.md) <br> REST service with IPv4/IPv6 support 
-Micro service application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/doc/CONSUL.md) 
+Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/JWT_DESC.md) for CLI and REST interface <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/USER_ROLE_DESC.md) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
+Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Loki.md) <br> REST service with IPv4/IPv6 support 
+Micro service application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/CONSUL.md) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32 <br> ARM64
 SDK | [Python](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/python/appmesh_client.py)
 
 ## Getting started
-The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/main/doc/Install.md) introduce how
+The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Install.md) introduce how
 to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Documentation
-- [CLI](https://github.com/laoshanxi/app-mesh/blob/main/doc/CLI.md) provide all the command lines interfaces to manage App Mesh.
-- [Development](https://github.com/laoshanxi/app-mesh/blob/main/doc/Development.md) define REST APIs and show how to build App Mesh.
-- [Security](https://github.com/laoshanxi/app-mesh/blob/main/doc/Security.md) describe the security design for App Mesh.
+- [CLI](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/CLI.md) provide all the command lines interfaces to manage App Mesh.
+- [Development](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Development.md) define REST APIs and show how to build App Mesh.
+- [Security](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Security.md) describe the security design for App Mesh.
 - [Success cases](https://github.com/laoshanxi/app-mesh/wiki) describe successful enterprise use cases provide by App Mesh.
 
 ## Comparison

@@ -9,7 +9,10 @@ Welcome to app-mesh's documentation!
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+   :numbered:
 
+
+   README.md
 
 
 Indices and tables
