@@ -100,7 +100,7 @@
   ],
   "Consul": {
     "is_main": true,
-    "is_node": true,
+    "is_worker": true,
     "url": "",
     "appmesh_proxy_url": "",
     "datacenter": "dc1",

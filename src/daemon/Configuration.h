@@ -52,7 +52,7 @@ class Configuration
 		const std::string appmeshUrl() const;
 
 		bool m_isMaster;
-		bool m_isNode;
+		bool m_isWorker;
 		std::string m_datacenter;
 		// http://consul.service.consul:8500
 		std::string m_consulUrl;

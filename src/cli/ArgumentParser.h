@@ -42,6 +42,7 @@ private:
 	void processUpload();
 	void processTags();
 	void processLoglevel();
+	void processJoinConsulCluster();
 	void processConfigView();
 	void processChangePwd();
 	void processLockUser();

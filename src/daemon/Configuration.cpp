@@ -982,7 +982,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	consul->m_datacenter = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_DATACENTER);
 	consul->m_proxyUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
 	consul->m_isMaster = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_MAIN);
-	consul->m_isNode = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_NODE);
+	consul->m_isWorker = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_WORKER);
 	SET_JSON_INT_VALUE(jsonObj, JSON_KEY_CONSUL_SESSION_TTL, consul->m_ttl);
 	SET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
 	const static boost::regex urlExrp("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
@@ -1007,7 +1007,7 @@ web::json::value Configuration::JsonConsul::AsJson() const
 	result[JSON_KEY_CONSUL_URL] = web::json::value::string(m_consulUrl);
 	result[JSON_KEY_CONSUL_DATACENTER] = web::json::value::string(m_datacenter);
 	result[JSON_KEY_CONSUL_IS_MAIN] = web::json::value::boolean(m_isMaster);
-	result[JSON_KEY_CONSUL_IS_NODE] = web::json::value::boolean(m_isNode);
+	result[JSON_KEY_CONSUL_IS_WORKER] = web::json::value::boolean(m_isWorker);
 	result[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
 	result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_proxyUrl);
@@ -1033,6 +1033,6 @@ const std::string Configuration::JsonConsul::appmeshUrl() const
 }
 
 Configuration::JsonConsul::JsonConsul()
-	: m_isMaster(false), m_isNode(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_securitySync(false)
+	: m_isMaster(false), m_isWorker(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_securitySync(false)
 {
 }

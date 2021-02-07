@@ -46,7 +46,7 @@ void ConsulConnection::reportNode()
 		return;
 
 	// Only node need report status for node (main does not need report)
-	if (!Configuration::instance()->getConsul()->m_isNode)
+	if (!Configuration::instance()->getConsul()->m_isWorker)
 		return;
 
 	PerfLog perf(fname);
@@ -810,7 +810,7 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 
 	if (!Configuration::instance()->getConsul()->consulEnabled())
 		return;
-	if (!Configuration::instance()->getConsul()->m_isNode)
+	if (!Configuration::instance()->getConsul()->m_isWorker)
 		offlineNode();
 	if (recoverSsnId.length())
 		releaseSessionId(recoverSsnId);
@@ -818,7 +818,7 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 	// session renew timer
 	this->cancelTimer(m_ssnRenewTimerId);
 	if (Configuration::instance()->getConsul()->m_ttl > 10 &&
-		(Configuration::instance()->getConsul()->m_isMaster || Configuration::instance()->getConsul()->m_isNode))
+		(Configuration::instance()->getConsul()->m_isMaster || Configuration::instance()->getConsul()->m_isWorker))
 	{
 		m_ssnRenewTimerId = this->registerTimer(
 			0,
@@ -840,7 +840,7 @@ void ConsulConnection::initTimer(std::string recoverSsnId)
 		m_securityWatch->detach();
 	}
 	// topology watch
-	if (Configuration::instance()->getConsul()->m_isNode)
+	if (Configuration::instance()->getConsul()->m_isWorker)
 	{
 		m_topologyWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchTopologyThread, this));
 		m_topologyWatch->detach();
@@ -984,7 +984,7 @@ void ConsulConnection::watchTopologyThread()
 	auto path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
 	long long index = getModifyIndex(path);
 	this->syncTopology();
-	while (Configuration::instance()->getConsul()->m_isNode)
+	while (Configuration::instance()->getConsul()->m_isWorker)
 	{
 		auto result = blockWatchKv(path, index);
 		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))

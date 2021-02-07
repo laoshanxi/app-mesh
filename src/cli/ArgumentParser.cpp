@@ -98,33 +98,26 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "reg")
 	{
-		// PUT /app/$app-name
 		processReg();
 	}
 	else if (cmd == "unreg")
 	{
-		// DELETE /app/$app-name
 		processUnReg();
 	}
 	else if (cmd == "view")
 	{
-		// GET /app/$app-name
-		// GET /app-manager/applications
 		processView();
 	}
 	else if (cmd == "resource")
 	{
-		// GET /app-manager/resources
 		processResource();
 	}
 	else if (cmd == "enable")
 	{
-		// POST /app/$app-name/enable
 		processEnableDisable(true);
 	}
 	else if (cmd == "disable")
 	{
-		// POST /app/$app-name/disable
 		processEnableDisable(false);
 	}
 	else if (cmd == "restart")
@@ -170,6 +163,10 @@ void ArgumentParser::parse()
 	{
 		processLockUser();
 	}
+	else if (cmd == "join")
+	{
+		processJoinConsulCluster();
+	}
 	else if (cmd == "appmgpwd")
 	{
 		processEncryptUserPwd();
@@ -203,6 +200,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  resource    Display host resources" << std::endl;
 	std::cout << "  label       Manage host labels" << std::endl;
 	std::cout << "  config      Manage basic configurations" << std::endl;
+	std::cout << "  join        Join to Consul cluster" << std::endl;
 	std::cout << "  log         Set log level" << std::endl;
 	std::cout << std::endl;
 
@@ -1160,7 +1158,46 @@ void ArgumentParser::processLoglevel()
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
 	auto response = requestHttp(true, methods::POST, restPath, jsonObj);
-	std::cout << "Log level set to : " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
+	std::cout << "Log level set to: " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
+}
+
+void ArgumentParser::processJoinConsulCluster()
+{
+	po::options_description desc("Join App Mesh cluster:", BOOST_DESC_WIDTH);
+	desc.add_options()
+		COMMON_OPTIONS
+		("consul,c", po::value<std::string>(), "Consul url (e.g., http://localhost:8500)")
+		("main,m", "Join as main node")
+		("worker,w", "Join as worker node")
+		("proxy,r", po::value<std::string>()->default_value(""), "appmesh_proxy_url")
+		("datacentor,d", po::value<std::string>()->default_value("dc1"), "datacenter name")
+		("ttl,l", po::value<std::int16_t>()->default_value(30), "Consul session TTL seconds")
+		("security,s", "Enable Consul security (security persist will use Consul storage)")
+		("help,h", "Prints command usage to stdout and exits");
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	if (m_commandLineVariables.size() == 0 || m_commandLineVariables.count("consul") == 0)
+	{
+		std::cout << desc << std::endl;
+		return;
+	}
+
+	web::json::value jsonObj;
+	web::json::value jsonConsul;
+	jsonConsul[JSON_KEY_CONSUL_URL] = web::json::value::string(m_commandLineVariables["consul"].as<std::string>());
+	jsonConsul[JSON_KEY_CONSUL_IS_MAIN] = web::json::value::boolean(m_commandLineVariables.count("main"));
+	jsonConsul[JSON_KEY_CONSUL_IS_WORKER] = web::json::value::boolean(m_commandLineVariables.count("worker"));
+	jsonConsul[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_commandLineVariables["proxy"].as<std::string>());
+	jsonConsul[JSON_KEY_CONSUL_DATACENTER] = web::json::value::string(m_commandLineVariables["datacentor"].as<std::string>());
+	jsonConsul[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_commandLineVariables["ttl"].as<std::int16_t>());
+	jsonConsul[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_commandLineVariables.count("security"));
+	jsonObj[JSON_KEY_CONSUL] = jsonConsul;
+
+	// /app-manager/config
+	auto restPath = std::string("/appmesh/config");
+	auto response = requestHttp(true, methods::POST, restPath, jsonObj);
+	std::cout << "App Mesh join to: " << Utility::prettyJson(response.extract_json(true).get().at(JSON_KEY_CONSUL).serialize()) << std::endl;
 }
 
 void ArgumentParser::processConfigView()

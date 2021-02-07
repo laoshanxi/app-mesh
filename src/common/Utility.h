@@ -227,7 +227,7 @@ public:
 #define JSON_KEY_VERSION "Version"
 #define JSON_KEY_CONSUL_URL "url"
 #define JSON_KEY_CONSUL_IS_MAIN "is_main"
-#define JSON_KEY_CONSUL_IS_NODE "is_node"
+#define JSON_KEY_CONSUL_IS_WORKER "is_worker"
 #define JSON_KEY_CONSUL_SESSION_NODE "session_node"
 #define JSON_KEY_CONSUL_DATACENTER "datacenter"
 #define JSON_KEY_CONSUL_SESSION_TTL "session_TTL"
