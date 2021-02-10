@@ -16,7 +16,7 @@
 #define CONSUL_BASE_PATH "/v1/kv/appmesh/"
 
 ConsulConnection::ConsulConnection()
-	: m_ssnRenewTimerId(0), m_leader(0)
+	: m_ssnRenewTimerId(0), m_leader(0), m_config(std::make_shared<Configuration::JsonConsul>())
 {
 }
 
@@ -31,6 +31,12 @@ std::shared_ptr<ConsulConnection> &ConsulConnection::instance()
 	return singleton;
 }
 
+std::shared_ptr<Configuration::JsonConsul> ConsulConnection::getConfig()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
+	return m_config;
+}
+
 // report label and resource to host KV
 // report timestamp to Flags attr for KV
 void ConsulConnection::reportNode()
@@ -42,11 +48,11 @@ void ConsulConnection::reportNode()
 		return;
 
 	// check feature enabled
-	if (!Configuration::instance()->getConsul()->consulEnabled())
+	if (!getConfig()->consulEnabled())
 		return;
 
 	// Only node need report status for node (main does not need report)
-	if (!Configuration::instance()->getConsul()->m_isWorker)
+	if (!getConfig()->m_isWorker)
 		return;
 
 	PerfLog perf(fname);
@@ -57,7 +63,7 @@ void ConsulConnection::reportNode()
 
 		ConsulNode node;
 		static auto mem = os::memory();
-		node.m_appmeshProxyUrl = Configuration::instance()->getConsul()->appmeshUrl();
+		node.m_appmeshProxyUrl = getConfig()->appmeshUrl();
 		node.m_hostName = MY_HOST_NAME;
 		node.m_label = Configuration::instance()->getLabel();
 		node.m_total_bytes = mem->total_bytes;
@@ -103,7 +109,7 @@ void ConsulConnection::refreshSession(int)
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->consulEnabled())
+		if (!getConfig()->consulEnabled())
 			return;
 
 		PerfLog perf(fname);
@@ -157,14 +163,14 @@ void ConsulConnection::syncSchedule()
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->consulEnabled())
+		if (!getConfig()->consulEnabled())
 			return;
 		if (consulSessionId().empty())
 			this->consulSessionId(requestSessionId());
 
 		PerfLog perf(fname);
 
-		if (Configuration::instance()->getConsul()->m_isMaster)
+		if (getConfig()->m_isMaster)
 		{
 			// Leader's job
 			std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
@@ -188,7 +194,7 @@ void ConsulConnection::syncSecurity()
 	try
 	{
 		// check feature enabled
-		if (!Configuration::instance()->getConsul()->consulSecurityEnabled())
+		if (!getConfig()->consulSecurityEnabled())
 			return;
 
 		PerfLog perf(fname);
@@ -238,7 +244,7 @@ std::string ConsulConnection::requestSessionId()
 	payload["LockDelay"] = web::json::value::string("15s");
 	payload["Name"] = web::json::value::string(std::string("appmesh-lock-") + MY_HOST_NAME);
 	payload["Behavior"] = web::json::value::string("delete");
-	payload["TTL"] = web::json::value::string(std::to_string(Configuration::instance()->getConsul()->m_ttl) + "s");
+	payload["TTL"] = web::json::value::string(std::to_string(getConfig()->m_ttl) + "s");
 
 	auto resp = requestHttp(web::http::methods::PUT, "/v1/session/create", {}, {}, &payload);
 	if (resp.status_code() == web::http::status_codes::OK)
@@ -476,7 +482,7 @@ bool ConsulConnection::registerService(const std::string &appName, int port)
 	body["Address"] = web::json::value::string(MY_HOST_NAME);
 	body["Port"] = web::json::value::number(port);
 
-	auto checkHttpUrl = Configuration::instance()->getConsul()->appmeshUrl() + "/appmesh/app/" + appName + "/health";
+	auto checkHttpUrl = getConfig()->appmeshUrl() + "/appmesh/app/" + appName + "/health";
 	auto check = web::json::value::object();
 	check["HTTP"] = web::json::value::string(checkHttpUrl);
 	check["Interval"] = web::json::value::string("15s");
@@ -515,7 +521,7 @@ void ConsulConnection::saveSecurity(bool checkExistence)
 {
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
 
-	if (!Configuration::instance()->getConsul()->consulSecurityEnabled())
+	if (!getConfig()->consulSecurityEnabled())
 		return;
 
 	// /appmesh/security
@@ -803,53 +809,65 @@ web::json::value ConsulConnection::retrieveNode(const std::string &host)
 	return web::json::value();
 }
 
-void ConsulConnection::initTimer(std::string recoverSsnId)
+void ConsulConnection::init(std::string recoverSsnId)
 {
-	const static char fname[] = "ConsulConnection::initTimer() ";
+	const static char fname[] = "ConsulConnection::init() ";
 	LOG_DBG << fname;
 
-	if (!Configuration::instance()->getConsul()->consulEnabled())
-		return;
-	if (!Configuration::instance()->getConsul()->m_isWorker)
-		offlineNode();
-	if (recoverSsnId.length())
-		releaseSessionId(recoverSsnId);
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
+		m_config = Configuration::instance()->getConsul();
+	}
+
+	if (getConfig()->consulEnabled())
+	{
+		if (!getConfig()->m_isWorker)
+		{
+			offlineNode();
+		}
+		if (recoverSsnId.length())
+		{
+			releaseSessionId(recoverSsnId);
+		}
+	}
 
 	// session renew timer
 	this->cancelTimer(m_ssnRenewTimerId);
-	if (Configuration::instance()->getConsul()->m_ttl > 10 &&
-		(Configuration::instance()->getConsul()->m_isMaster || Configuration::instance()->getConsul()->m_isWorker))
+	if (getConfig()->m_ttl > 10 &&
+		(getConfig()->m_isMaster || getConfig()->m_isWorker))
 	{
 		m_ssnRenewTimerId = this->registerTimer(
 			0,
-			Configuration::instance()->getConsul()->m_ttl - 3,
+			getConfig()->m_ttl - 3,
 			std::bind(&ConsulConnection::refreshSession, this, std::placeholders::_1),
 			__FUNCTION__);
 	}
-	else
+	else if (getConfig()->consulEnabled())
 	{
 		releaseSessionId(this->consulSessionId());
-		std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
 		this->consulSessionId("");
 	}
 
-	// security watch
-	if (Configuration::instance()->getConsul()->consulSecurityEnabled())
+	if (getConfig()->consulEnabled())
 	{
-		m_securityWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchSecurityThread, this));
-		m_securityWatch->detach();
-	}
-	// topology watch
-	if (Configuration::instance()->getConsul()->m_isWorker)
-	{
-		m_topologyWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchTopologyThread, this));
-		m_topologyWatch->detach();
-	}
-	// schedule nodes watch
-	if (Configuration::instance()->getConsul()->m_isMaster)
-	{
-		m_scheduleWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchScheduleThread, this));
-		m_scheduleWatch->detach();
+		// security watch
+		if (getConfig()->consulSecurityEnabled())
+		{
+			m_securityWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchSecurityThread, this));
+			m_securityWatch->detach();
+		}
+		// topology watch
+		if (getConfig()->m_isWorker)
+		{
+			m_topologyWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchTopologyThread, this));
+			m_topologyWatch->detach();
+		}
+		// schedule nodes watch
+		if (getConfig()->m_isMaster)
+		{
+			m_scheduleWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchScheduleThread, this));
+			m_scheduleWatch->detach();
+		}
 	}
 }
 
@@ -857,11 +875,16 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method &
 {
 	const static char fname[] = "ConsulConnection::requestHttp() ";
 
-	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
+	auto restURL = getConfig()->m_consulUrl;
 
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
 	//config.set_timeout(std::chrono::seconds(5));
+	web::credentials cred(getConfig()->m_basicAuthUser, getConfig()->m_basicAuthPass);
+	if (getConfig()->m_basicAuthUser.length())
+	{
+		config.set_credentials(cred);
+	}
 	config.set_validate_certificates(false);
 	web::http::client::http_client client(restURL, config);
 
@@ -907,11 +930,16 @@ std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kv
 {
 	const static char fname[] = "ConsulConnection::blockWatchKv() ";
 
-	auto restURL = Configuration::instance()->getConsul()->m_consulUrl;
+	auto restURL = getConfig()->m_consulUrl;
 
 	int waitTimeout = 30;
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
+	web::credentials cred(getConfig()->m_basicAuthUser, getConfig()->m_basicAuthPass);
+	if (getConfig()->m_basicAuthUser.length())
+	{
+		config.set_credentials(cred);
+	}
 	config.set_timeout(std::chrono::seconds(waitTimeout)); // set block pull to 30s timeout
 	config.set_validate_certificates(false);
 	web::http::client::http_client client(restURL, config);
@@ -959,7 +987,7 @@ void ConsulConnection::watchSecurityThread()
 	std::string path = std::string(CONSUL_BASE_PATH).append("security");
 	long long index = getModifyIndex(path);
 	this->syncSecurity();
-	while (Configuration::instance()->getConsul()->consulSecurityEnabled())
+	while (getConfig()->consulSecurityEnabled())
 	{
 		auto result = blockWatchKv(path, index);
 		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))
@@ -984,7 +1012,7 @@ void ConsulConnection::watchTopologyThread()
 	auto path = std::string(CONSUL_BASE_PATH).append("topology/").append(MY_HOST_NAME);
 	long long index = getModifyIndex(path);
 	this->syncTopology();
-	while (Configuration::instance()->getConsul()->m_isWorker)
+	while (getConfig()->m_isWorker)
 	{
 		auto result = blockWatchKv(path, index);
 		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))
@@ -1009,7 +1037,7 @@ void ConsulConnection::watchScheduleThread()
 	auto path = std::string(CONSUL_BASE_PATH).append("cluster/");
 	long long index = getModifyIndex(path, true);
 	this->syncSchedule();
-	while (Configuration::instance()->getConsul()->m_isMaster)
+	while (getConfig()->m_isMaster)
 	{
 		auto result = blockWatchKv(path, index);
 		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))

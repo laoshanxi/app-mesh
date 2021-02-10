@@ -231,6 +231,8 @@ public:
 #define JSON_KEY_CONSUL_SESSION_NODE "session_node"
 #define JSON_KEY_CONSUL_DATACENTER "datacenter"
 #define JSON_KEY_CONSUL_SESSION_TTL "session_TTL"
+#define JSON_KEY_CONSUL_AUTH_USER "user"
+#define JSON_KEY_CONSUL_AUTH_PASS "pass"
 #define JSON_KEY_CONSUL_SECURITY "enable_consul_security"
 #define JSON_KEY_CONSUL_APPMESH_PROXY_URL "appmesh_proxy_url"
 #define JSON_KEY_JWT_Users "Users"

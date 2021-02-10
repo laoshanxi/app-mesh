@@ -1170,6 +1170,8 @@ void ArgumentParser::processJoinConsulCluster()
 		("main,m", "Join as main node")
 		("worker,w", "Join as worker node")
 		("proxy,r", po::value<std::string>()->default_value(""), "appmesh_proxy_url")
+		("user,u", po::value<std::string>()->default_value(""), "Basic auth user name for Consul REST")
+		("pass,p", po::value<std::string>()->default_value(""), "Basic auth user password for Consul REST")
 		("datacentor,d", po::value<std::string>()->default_value("dc1"), "datacenter name")
 		("ttl,l", po::value<std::int16_t>()->default_value(30), "Consul session TTL seconds")
 		("security,s", "Enable Consul security (security persist will use Consul storage)")
@@ -1192,6 +1194,8 @@ void ArgumentParser::processJoinConsulCluster()
 	jsonConsul[JSON_KEY_CONSUL_DATACENTER] = web::json::value::string(m_commandLineVariables["datacentor"].as<std::string>());
 	jsonConsul[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_commandLineVariables["ttl"].as<std::int16_t>());
 	jsonConsul[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_commandLineVariables.count("security"));
+	jsonConsul[JSON_KEY_CONSUL_AUTH_USER] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
+	jsonConsul[JSON_KEY_CONSUL_AUTH_PASS] = web::json::value::string(m_commandLineVariables["pass"].as<std::string>());
 	jsonObj[JSON_KEY_CONSUL] = jsonConsul;
 
 	// /app-manager/config

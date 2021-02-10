@@ -695,7 +695,9 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 	}
 	// do not hold Configuration lock to access timer, timer lock is higher level
 	if (consulUpdated)
-		ConsulConnection::instance()->initTimer();
+	{
+		ConsulConnection::instance()->init();
+	}
 	ResourceCollection::instance()->getHostName(true);
 
 	this->dump();
@@ -981,6 +983,8 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_URL);
 	consul->m_datacenter = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_DATACENTER);
 	consul->m_proxyUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
+	consul->m_basicAuthPass = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_AUTH_PASS);
+	consul->m_basicAuthUser = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_AUTH_USER);
 	consul->m_isMaster = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_MAIN);
 	consul->m_isWorker = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_WORKER);
 	SET_JSON_INT_VALUE(jsonObj, JSON_KEY_CONSUL_SESSION_TTL, consul->m_ttl);
@@ -1011,6 +1015,8 @@ web::json::value Configuration::JsonConsul::AsJson() const
 	result[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
 	result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_proxyUrl);
+	result[JSON_KEY_CONSUL_AUTH_USER] = web::json::value::string(m_basicAuthUser);
+	result[JSON_KEY_CONSUL_AUTH_PASS] = web::json::value::string(m_basicAuthPass);
 	return result;
 }
 

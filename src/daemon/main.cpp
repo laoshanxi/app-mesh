@@ -129,7 +129,7 @@ int main(int argc, char *argv[])
 
 		// init consul
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
-		ConsulConnection::instance()->initTimer(consulSsnIdFromRecover);
+		ConsulConnection::instance()->init(consulSsnIdFromRecover);
 
 		// monitor applications
 		while (true)

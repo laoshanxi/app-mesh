@@ -26,7 +26,7 @@ public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection> &instance();
-	void initTimer(std::string recoverSsnId = "");
+	void init(std::string recoverSsnId = "");
 	void saveSecurity(bool checkExistence = false);
 	std::string consulSessionId();
 
@@ -37,6 +37,7 @@ public:
 private:
 	void reportNode();
 	long long getModifyIndex(const std::string &path, bool recurse = false);
+	std::shared_ptr<Configuration::JsonConsul> getConfig();
 
 	web::http::http_response requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body);
 
@@ -73,6 +74,7 @@ private:
 	std::string m_sessionId;
 	int m_ssnRenewTimerId;
 	bool m_leader;
+	std::shared_ptr<Configuration::JsonConsul> m_config;
 
 	std::shared_ptr<std::thread> m_securityWatch;
 	std::shared_ptr<std::thread> m_topologyWatch;

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <string>
+#include <cpprest/json.h>
 #include <memory>
-#include <vector>
 #include <mutex>
 #include <set>
-#include <cpprest/json.h>
+#include <string>
+#include <vector>
 
 class RestHandler;
 class Roles;
@@ -19,6 +19,7 @@ class Application;
 /// </summary>
 class Configuration
 {
+public:
 	struct JsonSsl
 	{
 		static std::shared_ptr<JsonSsl> FromJson(const web::json::value &jsonObj);
@@ -28,6 +29,7 @@ class Configuration
 		std::string m_certKeyFile;
 		JsonSsl();
 	};
+
 	struct JsonRest
 	{
 		static std::shared_ptr<JsonRest> FromJson(const web::json::value &jsonObj);
@@ -42,6 +44,7 @@ class Configuration
 		std::shared_ptr<JsonSsl> m_ssl;
 		JsonRest();
 	};
+
 	struct JsonConsul
 	{
 		JsonConsul();
@@ -63,9 +66,10 @@ class Configuration
 		// TTL (string: "") - Specifies the number of seconds (between 10s and 86400s).
 		int m_ttl;
 		bool m_securitySync;
+		std::string m_basicAuthUser;
+		std::string m_basicAuthPass;
 	};
 
-public:
 	struct JsonSecurity
 	{
 		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value &jsonObj);
@@ -90,7 +94,7 @@ public:
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value &config);
 	static void readConfigFromEnv(web::json::value &jsonConfig);
-	static bool applyEnvConfig(web::json::value& jsonValue, std::string envValue);
+	static bool applyEnvConfig(web::json::value &jsonValue, std::string envValue);
 	void registerPrometheus();
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
