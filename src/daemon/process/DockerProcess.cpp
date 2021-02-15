@@ -268,53 +268,6 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 	LOG_DBG << fname << "Entered";
 
 	return syncSpawnProcess(cmd, execUser, workDir, envMap, limit, stdoutFile);
-
-	if (m_spawnThread != nullptr)
-		return ACE_INVALID_PID;
-
-	struct SpawnParams
-	{
-		std::string cmd;
-		std::string execUser;
-		std::string workDir;
-		std::map<std::string, std::string> envMap;
-		std::shared_ptr<ResourceLimitation> limit;
-		std::shared_ptr<DockerProcess> thisProc;
-		std::shared_ptr<ACE_Barrier> barrier;
-	};
-	auto param = std::make_shared<SpawnParams>();
-	param->cmd = cmd;
-	param->execUser = execUser;
-	param->workDir = workDir;
-	param->envMap = envMap;
-	param->limit = limit;
-	param->barrier = std::make_shared<ACE_Barrier>(2);
-	param->thisProc = std::dynamic_pointer_cast<DockerProcess>(this->shared_from_this());
-
-	m_spawnThread = std::make_shared<std::thread>(
-		[param, stdoutFile]() {
-			const static char fname[] = "DockerProcess::m_spawnThread() ";
-			LOG_DBG << fname << "Entered";
-			param->barrier->wait(); // wait here for m_spawnThread->detach() finished
-
-			// use try catch to avoid throw from syncSpawnProcess crash
-			try
-			{
-				param->thisProc->syncSpawnProcess(param->cmd, param->execUser, param->workDir, param->envMap, param->limit, stdoutFile);
-			}
-			catch (...)
-			{
-				LOG_ERR << fname << "failed";
-			}
-			param->thisProc->m_spawnThread = nullptr;
-			param->thisProc = nullptr;
-			LOG_DBG << fname << "Exited";
-		});
-	m_spawnThread->detach();
-	param->barrier->wait();
-	// TBD: Docker app should not support short running here, since short running have kill and bellow attach is not real pid
-	this->attach(1);
-	return 1;
 }
 
 const std::string DockerProcess::fetchOutputMsg()
