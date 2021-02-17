@@ -29,6 +29,7 @@ public:
 	void init(std::string recoverSsnId = "");
 	void saveSecurity(bool checkExistence = false);
 	std::string consulSessionId();
+	web::json::value viewCloudApps();
 
 	void syncSchedule();
 	void syncSecurity();

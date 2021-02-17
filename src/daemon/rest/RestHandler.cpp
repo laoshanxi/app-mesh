@@ -27,6 +27,7 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/applications", std::bind(&RestHandler::apiGetCloudApps, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
 
 	// 3. Manage Application
@@ -877,6 +878,12 @@ void RestHandler::apiGetApps(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	auto tokenUserName = getJwtUserName(message);
 	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName));
+}
+
+void RestHandler::apiGetCloudApps(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
+	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApps());
 }
 
 void RestHandler::apiGetResources(const HttpRequest &message)

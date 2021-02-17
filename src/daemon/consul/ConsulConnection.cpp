@@ -155,6 +155,24 @@ long long ConsulConnection::getModifyIndex(const std::string &path, bool recurse
 	return 0;
 }
 
+web::json::value ConsulConnection::viewCloudApps()
+{
+	const static char fname[] = "ConsulConnection::viewCloudApps() ";
+	LOG_DBG << fname;
+	
+	if (!getConfig()->consulEnabled())
+	{
+		throw std::runtime_error("Consul not enabled");
+	}
+	auto cloudTasks = this->retrieveTask();
+	web::json::value result;
+	for (auto task : cloudTasks)
+	{
+		result[task.first] = task.second->AsJson();
+	}
+	return result;
+}
+
 void ConsulConnection::syncSchedule()
 {
 	const static char fname[] = "ConsulConnection::syncSchedule() ";

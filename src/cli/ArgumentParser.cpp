@@ -108,6 +108,10 @@ void ArgumentParser::parse()
 	{
 		processView();
 	}
+	else if (cmd == "cloud")
+	{
+		processViewCloud();
+	}
 	else if (cmd == "resource")
 	{
 		processResource();
@@ -186,6 +190,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << std::endl;
 
 	std::cout << "  view        List application[s]" << std::endl;
+	std::cout << "  cloud       List cloud application[s]" << std::endl;
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  enable      Enable a application" << std::endl;
@@ -627,6 +632,19 @@ void ArgumentParser::processView()
 		auto response = requestHttp(true, methods::GET, restPath);
 		printApps(response.extract_json(true).get(), reduce);
 	}
+}
+
+void ArgumentParser::processViewCloud()
+{
+	po::options_description desc("List cloud applications usage:", BOOST_DESC_WIDTH);
+	desc.add_options()
+		COMMON_OPTIONS("help,h", "Prints command usage to stdout and exits");
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	std::string restPath = "/appmesh/cloud/applications";
+	auto resp = requestHttp(true, methods::GET, restPath);
+	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
 void ArgumentParser::processResource()
