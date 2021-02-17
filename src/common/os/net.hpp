@@ -9,6 +9,9 @@
 #include <list>
 #include <string>
 
+#include <boost/filesystem/operations.hpp>
+#include <boost/filesystem/path.hpp>
+
 #include "../../common/Utility.h"
 
 namespace net
@@ -130,6 +133,28 @@ namespace net
 		return std::string(buffer);
 	}
 
+	inline std::set<std::string> virtLinks()
+	{
+		const static char fname[] = "net::virtLinks() ";
+
+		std::set<std::string> result;
+		boost::filesystem::path virtNetDir("/sys/devices/virtual/net/");
+		boost::filesystem::directory_iterator itEnd;
+		if (boost::filesystem::exists(virtNetDir))
+		{
+			for (boost::filesystem::directory_iterator it(virtNetDir); it != itEnd; it++)
+			{
+				if (boost::filesystem::is_directory(*it))
+				{
+					auto deviceName = it->path().leaf().c_str();
+					result.insert(deviceName);
+					LOG_DBG << fname << "virtual network device :" << deviceName;
+				}
+			}
+		}
+		return result;
+	}
+
 	// Returns the names of all the link devices in the system.
 	inline std::list<NetInterface> links()
 	{
@@ -145,7 +170,8 @@ namespace net
 		std::list<NetInterface> names;
 		for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
 		{
-			if (ifa->ifa_name != nullptr && (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6))
+			static auto virtDevices = virtLinks();
+			if (ifa->ifa_name != nullptr && (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) && virtDevices.count(ifa->ifa_name) == 0)
 			{
 				NetInterface mi;
 				mi.name = ifa->ifa_name;
