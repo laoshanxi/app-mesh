@@ -1500,7 +1500,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_status)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_health)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
-		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_memory)
+		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_memory)
 		<< std::setw(5) << Utility::strToupper(JSON_KEY_APP_cpu)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_return)
 		<< std::setw(24) << Utility::strToupper(JSON_KEY_APP_last_start)
@@ -1529,7 +1529,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 			else
 				std::cout << slash;
 		}
-		std::cout << std::setw(8);
+		std::cout << std::setw(9);
 		{
 			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
 				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_memory));
