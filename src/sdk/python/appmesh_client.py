@@ -72,9 +72,7 @@ class AppMeshClient:
 
     def get_app_output(self, app_name):
         # get application output
-        resp = self.__request_http(
-            Method.GET, path="/appmesh/app/{0}/output".format(app_name)
-        )
+        resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/output".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def get_apps(self):
@@ -85,11 +83,17 @@ class AppMeshClient:
         else:
             return False, resp.text
 
+    def get_cloud_apps(self):
+        # get cloud applications
+        resp = self.__request_http(Method.GET, path="/appmesh/cloud/applications")
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
     def get_app_health(self, app_name):
         # get application health status, 0 is health
-        resp = self.__request_http(
-            Method.GET, path="/appmesh/app/{0}/health".format(app_name)
-        )
+        resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/health".format(app_name))
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
         else:
@@ -118,9 +122,7 @@ class AppMeshClient:
 
     def reg_app(self, app_json):
         # register an application
-        resp = self.__request_http(
-            Method.PUT, path="/appmesh/app/{0}".format(app_json["name"])
-        )
+        resp = self.__request_http(Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]))
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
         else:
@@ -128,23 +130,17 @@ class AppMeshClient:
 
     def remove_app(self, app_name):
         # remove an application
-        resp = self.__request_http(
-            Method.DELETE, path="/appmesh/app/{0}".format(app_name)
-        )
+        resp = self.__request_http(Method.DELETE, path="/appmesh/app/{0}".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def enable_app(self, app_name):
         # enable an application
-        resp = self.__request_http(
-            Method.POST, path="/appmesh/app/{0}/enable".format(app_name)
-        )
+        resp = self.__request_http(Method.POST, path="/appmesh/app/{0}/enable".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def disable_app(self, app_name):
         # stop and disable an application
-        resp = self.__request_http(
-            Method.POST, path="/appmesh/app/{0}/disable".format(app_name)
-        )
+        resp = self.__request_http(Method.POST, path="/appmesh/app/{0}/disable".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def add_tag(self, tag_name, tag_value):
@@ -158,9 +154,7 @@ class AppMeshClient:
 
     def remove_tag(self, tag_name):
         # remove a tag for app mesh node
-        resp = self.__request_http(
-            Method.DELETE, path="/appmesh/label/{0}".format(tag_name)
-        )
+        resp = self.__request_http(Method.DELETE, path="/appmesh/label/{0}".format(tag_name))
         return resp.status_code == HTTPStatus.OK
 
     def get_tags(self):
@@ -178,9 +172,7 @@ class AppMeshClient:
 
     def download(self, file_path, local_file):
         # download a remote file to local
-        resp = self.__request_http(
-            Method.GET, path="/appmesh/file/download", header={"FilePath": file_path}
-        )
+        resp = self.__request_http(Method.GET, path="/appmesh/file/download", header={"FilePath": file_path})
         if resp.status_code == HTTPStatus.OK:
             with open(local_file, "wb") as fp:
                 for chunk in resp.iter_content(chunk_size=512):
@@ -188,9 +180,7 @@ class AppMeshClient:
                         fp.write(chunk)
             if resp.headers.__contains__("FileMode"):
                 os.chmod(path=local_file, mode=int(resp.headers["FileMode"]))
-            if resp.headers.__contains__("FileUser") and resp.headers.__contains__(
-                "FileGroup"
-            ):
+            if resp.headers.__contains__("FileUser") and resp.headers.__contains__("FileGroup"):
                 file_uid = int(resp.headers["FileUser"])
                 file_gid = int(resp.headers["FileGroup"])
                 os.chown(path=local_file, uid=file_uid, gid=file_gid)
@@ -246,14 +236,10 @@ class AppMeshClient:
                 while len(process_uuid) > 0:
                     # /app/testapp/run/output?process_uuid=UUID
                     path = "/appmesh/app/{0}/run/output".format(app_name)
-                    resp = self.__request_http(
-                        Method.GET, path=path, query={"process_uuid": process_uuid}
-                    )
+                    resp = self.__request_http(Method.GET, path=path, query={"process_uuid": process_uuid})
                     if resp.text is not None:
                         print(resp.text, end="")
-                    if resp.headers.__contains__("exit_code") or (
-                        resp.status_code != HTTPStatus.OK
-                    ):
+                    if resp.headers.__contains__("exit_code") or (resp.status_code != HTTPStatus.OK):
                         break
                     time.sleep(0.5)
         else:
@@ -267,26 +253,18 @@ class AppMeshClient:
         else:
             protocol = "http"
 
-        rest_url = "{0}://{1}:{2}".format(
-            protocol, self.server_host, str(self.server_port)
-        )
+        rest_url = "{0}://{1}:{2}".format(protocol, self.server_host, str(self.server_port))
         rest_url = parse.urljoin(rest_url, path)
 
         if len(self.jwt_token):
             header["Authorization"] = "Bearer " + self.jwt_token
 
         if method is Method.GET:
-            return requests.get(
-                url=rest_url, params=query, headers=header, verify=False
-            )
+            return requests.get(url=rest_url, params=query, headers=header, verify=False)
         elif method is Method.GET_STREAM:
-            return requests.get(
-                url=rest_url, params=query, headers=header, verify=False, stream=True
-            )
+            return requests.get(url=rest_url, params=query, headers=header, verify=False, stream=True)
         elif method is Method.POST:
-            return requests.post(
-                url=rest_url, params=query, headers=header, json=body, verify=False
-            )
+            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=False)
         elif method is Method.POST_STREAM:
             return requests.post(
                 url=rest_url,
@@ -299,8 +277,6 @@ class AppMeshClient:
         elif method is Method.DELETE:
             return requests.delete(url=rest_url, param=query)
         elif method is Method.PUT:
-            return requests.put(
-                url=rest_url, params=query, headers=header, json=body, verify=False
-            )
+            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=False)
         else:
             raise Exception("Invalid http method", method)

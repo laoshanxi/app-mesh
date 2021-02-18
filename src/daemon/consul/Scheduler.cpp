@@ -33,7 +33,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 				// found app running on old host still match
 				if (taskReplication <= 0)
 				{
-					LOG_DBG << fname << " task <" << taskName << "> over running";
+					LOG_DBG << fname << "task <" << taskName << "> over running";
 					break;
 				}
 				taskDedicateHosts.erase(oldHostName);
@@ -41,7 +41,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 					taskIndexDic.erase(oldTaskIndex);
 				--taskReplication;
 
-				LOG_DBG << fname << " task <" << taskName << "> already running on host <" << oldHostName << ">";
+				LOG_DBG << fname << "task <" << taskName << "> already running on host <" << oldHostName << ">";
 
 				{
 					// save to topology
@@ -114,7 +114,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 					newTopology[hostname]->m_scheduleApps[taskName] = selectedIndex;
 					consulNode->assignApp(task.second->m_app);
 				}
-				LOG_DBG << fname << " task <" << taskName << "> assigned to host < " << hostname << ">";
+				LOG_DBG << fname << "task <" << taskName << "> assigned to host < " << hostname << ">";
 				task.second->dump();
 			}
 			else

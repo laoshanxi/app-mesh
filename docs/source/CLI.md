@@ -15,12 +15,15 @@ Commands:
   disable     Disable a application
   restart     Restart a application
 
+  cloud       List cloud application[s]
+
   run         Run command and get output
   exec        Run command by appmesh and impersonate context
 
   resource    Display host resources
   label       Manage host labels
   config      Manage basic configurations
+  join        Join to Consul cluster
   log         Set log level
 
   get         Download remote file to local
@@ -33,6 +36,7 @@ Run 'appc COMMAND --help' for more information on a command.
 Use '-b $hostname','-B $port' to run remote command.
 
 Usage:  appc [COMMAND] [ARG...] [flags]
+
 ```
 ---
 ## 1. App Management
@@ -187,6 +191,33 @@ Success
 $ appc enable -n ping
 $ appc disable -n ping
 $ appc restart -n ping
+```
+
+- View cloud applications
+```text
+$ appc cloud
+{
+  "myapp": {
+    "condition": {
+      "arch": "x86_64",
+      "os_version": "centos7.6"
+    },
+    "content": {
+      "command": "sleep 30",
+      "metadata": "cloud-app",
+      "name": "myapp",
+      "register_time": "2021-02-18 20:24:03+08",
+      "shell_mode": true,
+      "status": 1
+    },
+    "port": 6666,
+    "priority": 0,
+    "replication": 1,
+    "status": {
+      "ubuntu-lsx": 0
+    }
+  }
+}
 ```
 
 ---

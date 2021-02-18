@@ -75,11 +75,11 @@ void PersistManager::persistSnapshot()
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << " got exception: " << ex.what();
+		LOG_WAR << fname << "got exception: " << ex.what();
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << " exception";
+		LOG_WAR << fname << "exception";
 	}
 }
 

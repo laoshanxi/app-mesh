@@ -190,12 +190,14 @@ void ArgumentParser::printMainHelp()
 	std::cout << std::endl;
 
 	std::cout << "  view        List application[s]" << std::endl;
-	std::cout << "  cloud       List cloud application[s]" << std::endl;
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  enable      Enable a application" << std::endl;
 	std::cout << "  disable     Disable a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;
+	std::cout << std::endl;
+
+	std::cout << "  cloud       List cloud application[s]" << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "  run         Run command and get output" << std::endl;
@@ -1336,13 +1338,16 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 
 http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body, std::map<std::string, std::string> *header)
 {
-	auto protocol = m_sslEnabled ? U("https://") : U("http://");
-	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	web::uri_builder baseUri;
+	baseUri.set_host(m_hostname);
+	baseUri.set_port(m_listenPort);
+	baseUri.set_scheme(m_sslEnabled ? U("https") : U("http"));
+
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
 	config.set_timeout(std::chrono::seconds(65));
 	config.set_validate_certificates(false);
-	web::http::client::http_client client(restURL, config);
+	web::http::client::http_client client(baseUri.to_uri(), config);
 	http_request request = createRequest(mtd, path, query, header);
 	if (body != nullptr)
 	{
@@ -1482,14 +1487,17 @@ std::string ArgumentParser::readAuthenToken()
 
 std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd)
 {
-	auto protocol = m_sslEnabled ? U("https://") : U("http://");
-	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
+	web::uri_builder baseUri;
+	baseUri.set_host(m_hostname);
+	baseUri.set_port(m_listenPort);
+	baseUri.set_scheme(m_sslEnabled ? U("https") : U("http"));
+
 	http_client_config config;
 	config.set_validate_certificates(false);
-	http_client client(restURL, config);
+	http_client client(baseUri.to_uri(), config);
 	http_request requestLogin(web::http::methods::POST);
-	uri_builder builder(GET_STRING_T("/appmesh/login"));
-	requestLogin.set_request_uri(builder.to_uri());
+
+	requestLogin.set_request_uri("/appmesh/login");
 	requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(user));
 	requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(passwd));
 	if (m_tokenTimeoutSeconds)

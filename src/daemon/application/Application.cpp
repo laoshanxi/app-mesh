@@ -308,7 +308,7 @@ void Application::enable()
 std::string Application::runAsyncrize(int timeoutSeconds)
 {
 	const static char fname[] = "Application::runAsyncrize() ";
-	LOG_DBG << fname << " Entered.";
+	LOG_DBG << fname << "Entered.";
 	m_process.reset(); //m_process->killgroup();
 	m_process = allocProcess(false, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
@@ -317,7 +317,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 {
 	const static char fname[] = "Application::runSyncrize() ";
-	LOG_DBG << fname << " Entered.";
+	LOG_DBG << fname << "Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	m_process.reset(); //m_process->killgroup();
@@ -332,7 +332,7 @@ std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 std::string Application::runApp(int timeoutSeconds)
 {
 	const static char fname[] = "Application::runApp() ";
-	LOG_DBG << fname << " Entered.";
+	LOG_DBG << fname << "Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_dockerImage.length())

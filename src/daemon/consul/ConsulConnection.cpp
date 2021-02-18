@@ -94,11 +94,11 @@ void ConsulConnection::reportNode()
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << " got exception: " << ex.what();
+		LOG_WAR << fname << "got exception: " << ex.what();
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << " exception";
+		LOG_WAR << fname << "exception";
 	}
 }
 
@@ -129,11 +129,11 @@ void ConsulConnection::refreshSession(int)
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << " got exception: " << ex.what();
+		LOG_WAR << fname << "got exception: " << ex.what();
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << " exception";
+		LOG_WAR << fname << "exception";
 	}
 	this->consulSessionId("");
 }
@@ -159,17 +159,45 @@ web::json::value ConsulConnection::viewCloudApps()
 {
 	const static char fname[] = "ConsulConnection::viewCloudApps() ";
 	LOG_DBG << fname;
-	
+
 	if (!getConfig()->consulEnabled())
 	{
 		throw std::runtime_error("Consul not enabled");
 	}
+	auto topology = retrieveTopology("");
 	auto cloudTasks = this->retrieveTask();
 	web::json::value result;
 	for (auto task : cloudTasks)
 	{
 		result[task.first] = task.second->AsJson();
+
+		for (auto host : topology)
+		{
+			if (host.second->m_scheduleApps.count(task.first))
+			{
+				// health status
+				const static std::string statusStr = "status";
+				result[task.first][statusStr][host.first] = 0;
+
+				web::uri_builder baseUri;
+				baseUri.set_host(host.first);
+				baseUri.set_port(Configuration::instance()->getRestListenPort());
+				baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
+				auto restPath = Utility::stringFormat("/appmesh/app/%s/health", task.first.c_str());
+				auto resp = requestHttp(baseUri.to_uri(), restPath, web::http::methods::GET);
+				if (resp.status_code() != web::http::status_codes::OK)
+				{
+					result[task.first][statusStr][host.first] = web::json::value::number(1);
+					LOG_WAR << fname << "failed to get health status: " << resp.status_code() << " with uri: " << restPath;
+				}
+				else
+				{
+					result[task.first][statusStr][host.first] = web::json::value::number(std::stoi(resp.extract_utf8string().get()));
+				}
+			}
+		}
 	}
+
 	return result;
 }
 
@@ -197,11 +225,11 @@ void ConsulConnection::syncSchedule()
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << " got exception: " << ex.what();
+		LOG_WAR << fname << "got exception: " << ex.what();
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << " exception";
+		LOG_WAR << fname << "exception";
 	}
 }
 
@@ -243,11 +271,11 @@ void ConsulConnection::syncSecurity()
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << " got exception: " << ex.what();
+		LOG_WAR << fname << "got exception: " << ex.what();
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << " exception";
+		LOG_WAR << fname << "exception";
 	}
 }
 
@@ -398,7 +426,7 @@ void ConsulConnection::syncTopology()
 					if (!currentRunningApp->operator==(topologyAppObj))
 					{
 						Configuration::instance()->addApp(getAppJsonWithIndexEnv(currentRunningApp, hostApp.second));
-						LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> updated";
+						LOG_INF << fname << "Consul application <" << topologyAppObj->getName() << "> updated";
 
 						registerService(appName, consulTask->m_consulServicePort);
 					}
@@ -407,7 +435,7 @@ void ConsulConnection::syncTopology()
 				{
 					// New add app
 					Configuration::instance()->addApp(getAppJsonWithIndexEnv(topologyAppObj, hostApp.second));
-					LOG_INF << fname << " Consul application <" << topologyAppObj->getName() << "> added";
+					LOG_INF << fname << "Consul application <" << topologyAppObj->getName() << "> added";
 
 					registerService(appName, consulTask->m_consulServicePort);
 				}
@@ -422,7 +450,7 @@ void ConsulConnection::syncTopology()
 				{
 					// Remove no used topology
 					Configuration::instance()->removeApp(currentApp->getName());
-					LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+					LOG_INF << fname << "Consul application <" << currentApp->getName() << "> removed";
 					deregisterService(currentApp->getName());
 				}
 			}
@@ -437,7 +465,7 @@ void ConsulConnection::syncTopology()
 			{
 				// Remove no used topology
 				Configuration::instance()->removeApp(currentApp->getName());
-				LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+				LOG_INF << fname << "Consul application <" << currentApp->getName() << "> removed";
 				deregisterService(currentApp->getName());
 			}
 		}
@@ -477,7 +505,7 @@ void ConsulConnection::offlineNode()
 		{
 			// Remove no used topology
 			Configuration::instance()->removeApp(currentApp->getName());
-			LOG_INF << fname << " Consul application <" << currentApp->getName() << "> removed";
+			LOG_INF << fname << "Consul application <" << currentApp->getName() << "> removed";
 			deregisterService(currentApp->getName());
 		}
 	}
@@ -529,7 +557,7 @@ bool ConsulConnection::deregisterService(const std::string &appName)
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_utf8string(true).get();
-		LOG_DBG << fname << " service for task <" << appName << "> removed : " << result;
+		LOG_DBG << fname << "service for task <" << appName << "> removed : " << result;
 		return (result == "true");
 	}
 	return false;
@@ -558,7 +586,7 @@ void ConsulConnection::saveSecurity(bool checkExistence)
 		auto result = resp.extract_utf8string(true).get();
 		if (result != "true")
 		{
-			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
+			LOG_WAR << fname << "PUT " << path << " failed with response : " << result;
 		}
 	}
 }
@@ -579,7 +607,7 @@ void ConsulConnection::findTaskAvailableHost(const std::map<std::string, std::sh
 			if (consulHost->m_label->match(taskCondition))
 			{
 				task.second->m_matchedHosts[hostName] = consulHost;
-				LOG_DBG << fname << " task <" << taskName << "> match host <" << hostName << ">";
+				LOG_DBG << fname << "task <" << taskName << "> match host <" << hostName << ">";
 			}
 		}
 	}
@@ -670,7 +698,7 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 		}
 		else
 		{
-			LOG_WAR << fname << " PUT " << path << " failed with response : " << result;
+			LOG_WAR << fname << "PUT " << path << " failed with response : " << result;
 		}
 	}
 	return false;
@@ -944,6 +972,38 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method &
 	return response;
 }
 
+web::http::http_response ConsulConnection::requestHttp(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd)
+{
+	const static char fname[] = "ConsulConnection::requestHttp() ";
+
+	// Create http_client to send the request.
+	web::http::client::http_client_config config;
+	//config.set_timeout(std::chrono::seconds(5));
+	config.set_validate_certificates(false);
+	web::http::client::http_client client(baseUri, config);
+	web::http::http_request request(mtd);
+	request.set_request_uri(requestPath);
+	try
+	{
+		// In case of REST server crash or block query timeout, will throw exception:
+		// "Failed to read HTTP status line"
+		web::http::http_response response = client.request(request).get();
+		LOG_DBG << fname << mtd << " " << requestPath << " return " << response.status_code();
+		return response;
+	}
+	catch (const std::exception &ex)
+	{
+		LOG_WAR << fname << requestPath << " got exception: " << ex.what();
+	}
+	catch (...)
+	{
+		LOG_WAR << fname << requestPath << " exception";
+	}
+
+	web::http::http_response response(web::http::status_codes::ResetContent);
+	return response;
+}
+
 std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse)
 {
 	const static char fname[] = "ConsulConnection::blockWatchKv() ";
@@ -991,7 +1051,7 @@ std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kv
 	{
 		// In case of REST server crash or block query timeout, will throw exception:
 		// "Failed to read HTTP status line"
-		// LOG_DBG << fname << " exception";
+		// LOG_DBG << fname << "exception";
 	}
 	// timeout
 	return std::make_tuple(false, 0);
