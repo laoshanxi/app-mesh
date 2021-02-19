@@ -214,6 +214,21 @@ Join App Mesh cluster::
   -l [ --ttl ] arg (=30)         Consul session TTL seconds
   -s [ --security ]              Enable Consul security (security persist will use Consul storage)
   -h [ --help ]                  Prints command usage to stdout and exits
+
+appc join -c http://127.0.0.1:8500 -l 30 -m -w 
+App Mesh join to: 
+{
+  "appmesh_proxy_url": "",
+  "datacenter": "dc1",
+  "enable_consul_security": false,
+  "is_main": true,
+  "is_worker": true,
+  "pass": "",
+  "session_TTL": 30,
+  "url": "http://127.0.0.1:8500",
+  "user": ""
+}
+
 ```
 
 - View cloud applications

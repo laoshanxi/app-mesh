@@ -1221,7 +1221,7 @@ void ArgumentParser::processJoinConsulCluster()
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
 	auto response = requestHttp(true, methods::POST, restPath, jsonObj);
-	std::cout << "App Mesh join to: " << Utility::prettyJson(response.extract_json(true).get().at(JSON_KEY_CONSUL).serialize()) << std::endl;
+	std::cout << "App Mesh join to: " << std::endl << Utility::prettyJson(response.extract_json(true).get().at(JSON_KEY_CONSUL).serialize()) << std::endl;
 }
 
 void ArgumentParser::processConfigView()
