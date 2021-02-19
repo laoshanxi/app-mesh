@@ -193,6 +193,29 @@ $ appc disable -n ping
 $ appc restart -n ping
 ```
 
+---
+## 2. Cloud management
+
+- Join to Consul cluster
+```text
+# appc join
+Join App Mesh cluster::
+  -b [ --host ] arg (=localhost) host name or ip address
+  -B [ --port ] arg              port number
+  -u [ --user ] arg              Specifies the name of the user to connect to App Mesh for this command.
+  -x [ --password ] arg          Specifies the user password to connect to App Mesh for this command.
+  -c [ --consul ] arg            Consul url (e.g., http://localhost:8500)
+  -m [ --main ]                  Join as main node
+  -w [ --worker ]                Join as worker node
+  -r [ --proxy ] arg             appmesh_proxy_url
+  -u [ --user ] arg              Basic auth user name for Consul REST
+  -p [ --pass ] arg              Basic auth user password for Consul REST
+  -d [ --datacentor ] arg (=dc1) datacenter name
+  -l [ --ttl ] arg (=30)         Consul session TTL seconds
+  -s [ --security ]              Enable Consul security (security persist will use Consul storage)
+  -h [ --help ]                  Prints command usage to stdout and exits
+```
+
 - View cloud applications
 ```text
 $ appc cloud
@@ -221,7 +244,7 @@ $ appc cloud
 ```
 
 ---
-## 2. Resource Management
+## 3. Resource Management
 
 - Display host resource usage
 
@@ -328,7 +351,7 @@ $ appc view -n ping
 ```
 
 ---
-## 3. Remote command and application output (with session login)
+## 4. Remote command and application output (with session login)
 
 - Run remote application and get stdout
 ```text
@@ -352,7 +375,7 @@ id name        user  status   health pid    memory  return last_start_time     c
 
 
 ---
-## 4. File Management
+## 5. File Management
 
 - Download a file from server
 ```text
@@ -367,7 +390,7 @@ Success
 ```
 
 ---
-## 5. Label Management
+## 6. Label Management
 - Manage labels
 ```text
 # list label
