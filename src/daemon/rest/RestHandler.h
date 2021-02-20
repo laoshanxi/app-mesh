@@ -33,6 +33,8 @@ protected:
 	void apiGetAppOutput(const HttpRequest &message);
 	void apiGetApps(const HttpRequest &message);
 	void apiGetCloudApps(const HttpRequest &message);
+	void apiAddCloudApp(const HttpRequest &message);
+	void apiDelCloudApp(const HttpRequest &message);
 	void apiGetResources(const HttpRequest &message);
 	void apiRegApp(const HttpRequest &message);
 	void apiEnableApp(const HttpRequest &message);

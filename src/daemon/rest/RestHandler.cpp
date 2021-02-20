@@ -27,34 +27,38 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/applications", std::bind(&RestHandler::apiGetCloudApps, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
 
-	// 3. Manage Application
+	// 3. Cloud Application
+	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/applications", std::bind(&RestHandler::apiGetCloudApps, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiAddCloudApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiDelCloudApp, this, std::placeholders::_1));
+
+	// 4. Manage Application
 	bindRestMethod(web::http::methods::PUT, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiDisableApp, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
 
-	// 4. Operate Application
+	// 5. Operate Application
 	bindRestMethod(web::http::methods::POST, "/appmesh/app/run", std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/run/output)", std::bind(&RestHandler::apiRunAsyncOut, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, "/appmesh/app/syncrun", std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
 
-	// 5. File Management
+	// 6. File Management
 	bindRestMethod(web::http::methods::GET, "/appmesh/file/download", std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, "/appmesh/file/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
-	// 6. Label Management
+	// 7. Label Management
 	bindRestMethod(web::http::methods::GET, "/appmesh/labels", std::bind(&RestHandler::apiGetLabels, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiAddLabel, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiDeleteLabel, this, std::placeholders::_1));
 
-	// 7. Log level
+	// 8. Log level
 	bindRestMethod(web::http::methods::GET, "/appmesh/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, "/appmesh/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
 
-	// 8. Security
+	// 9. Security
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiUserChangePwd, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/lock)", std::bind(&RestHandler::apiUserLock, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
@@ -68,7 +72,7 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::GET, "/appmesh/permissions", std::bind(&RestHandler::apiListPermissions, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/user/groups", std::bind(&RestHandler::apiUserGroupsView, this, std::placeholders::_1));
 
-	// 9. metrics
+	// 10. metrics
 	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/health)", std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/metrics", std::bind(&RestHandler::apiRestMetrics, this, std::placeholders::_1));
 }
@@ -884,6 +888,34 @@ void RestHandler::apiGetCloudApps(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
 	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApps());
+}
+
+void RestHandler::apiAddCloudApp(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_cloud_app_reg);
+
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
+	std::string app = path.substr(strlen("/appmesh/cloud/app/"));
+	auto appName = app.substr(0, app.find_first_of('/'));
+
+	auto jsonApp = message.extractJson();
+	if (jsonApp.is_null())
+	{
+		throw std::invalid_argument("Empty json input");
+	}
+	message.reply(status_codes::OK, ConsulConnection::instance()->addCloudApp(appName, jsonApp));
+}
+
+void RestHandler::apiDelCloudApp(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_cloud_app_delete);
+
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
+	std::string app = path.substr(strlen("/appmesh/cloud/app/"));
+	auto appName = app.substr(0, app.find_first_of('/'));
+
+	ConsulConnection::instance()->deleteCloudApp(appName);
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiGetResources(const HttpRequest &message)

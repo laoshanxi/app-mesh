@@ -137,6 +137,25 @@ public:
 	std::map<std::string, std::string> m_headers;
 	std::string m_uuid;
 	bool m_reply2child; // not directly reply this endpoint, just forward to child rest side
+
+private:
+	// hide bellow extract functions
+	pplx::task<utf8string> extract_utf8string(bool ignore_content_type = false)
+	{
+		return web::http::http_request::extract_utf8string(ignore_content_type);
+	};
+	pplx::task<utility::string_t> extract_string(bool ignore_content_type = false)
+	{
+		return web::http::http_request::extract_string(ignore_content_type);
+	};
+	pplx::task<utf16string> extract_utf16string(bool ignore_content_type = false)
+	{
+		return web::http::http_request::extract_utf16string(ignore_content_type);
+	};
+	pplx::task<json::value> extract_json(bool ignore_content_type = false) const
+	{
+		return web::http::http_request::extract_json(ignore_content_type);
+	};
 };
 
 class Application;

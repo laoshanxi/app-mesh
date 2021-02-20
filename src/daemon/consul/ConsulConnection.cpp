@@ -197,8 +197,59 @@ web::json::value ConsulConnection::viewCloudApps()
 			}
 		}
 	}
-
 	return result;
+}
+
+void ConsulConnection::deleteCloudApp(const std::string &app)
+{
+	const static char fname[] = "ConsulConnection::deleteCloudApp() ";
+	LOG_DBG << fname;
+
+	if (!getConfig()->consulEnabled())
+	{
+		throw std::runtime_error("Consul not enabled");
+	}
+
+	if (app.empty())
+	{
+		throw std::runtime_error("application name not specified");
+	}
+
+	auto path = std::string(CONSUL_BASE_PATH).append("cluster/tasks/").append(app);
+	auto resp = requestHttp(web::http::methods::DEL, path, {}, {}, nullptr);
+
+	if (resp.status_code() != web::http::status_codes::OK)
+	{
+		throw std::runtime_error(resp.extract_utf8string().get());
+	}
+}
+
+web::json::value ConsulConnection::addCloudApp(const std::string &app, web::json::value &content)
+{
+	const static char fname[] = "ConsulConnection::addCloudApp() ";
+	LOG_DBG << fname;
+
+	if (!getConfig()->consulEnabled())
+	{
+		throw std::runtime_error("Consul not enabled");
+	}
+
+	if (app.empty())
+	{
+		throw std::runtime_error("application name not specified");
+	}
+
+	// de-serialize to verify the json content
+	auto task = ConsulTask::FromJson(content);
+
+	auto path = std::string(CONSUL_BASE_PATH).append("cluster/tasks/").append(app);
+	auto resp = requestHttp(web::http::methods::PUT, path, {}, {}, &content);
+
+	if (resp.status_code() != web::http::status_codes::OK)
+	{
+		throw std::runtime_error(resp.extract_utf8string().get());
+	}
+	return task->AsJson();
 }
 
 void ConsulConnection::syncSchedule()

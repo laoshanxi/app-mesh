@@ -91,6 +91,19 @@ class AppMeshClient:
         else:
             return False, resp.text
 
+    def remove_cloud_app(self, app_name):
+        # delete cloud application
+        resp = self.__request_http(Method.DELETE, path="/appmesh/cloud/app/{0}".format(app_name))
+        return (resp.status_code == HTTPStatus.OK), resp.text
+
+    def add_cloud_app(self, app_json):
+        # add cloud application
+        resp = self.__request_http(Method.PUT, path="/appmesh/cloud/app/{0}".format(app_json["content"]["name"]), body=app_json)
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
     def get_app_health(self, app_name):
         # get application health status, 0 is health
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/health".format(app_name))
@@ -120,9 +133,9 @@ class AppMeshClient:
         else:
             return False, resp.text
 
-    def reg_app(self, app_json):
+    def add_app(self, app_json):
         # register an application
-        resp = self.__request_http(Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]))
+        resp = self.__request_http(Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]), body=app_json)
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
         else:
@@ -275,7 +288,7 @@ class AppMeshClient:
                 stream=True,
             )
         elif method is Method.DELETE:
-            return requests.delete(url=rest_url, param=query)
+            return requests.delete(url=rest_url, headers=header, verify=False)
         elif method is Method.PUT:
             return requests.put(url=rest_url, params=query, headers=header, json=body, verify=False)
         else:

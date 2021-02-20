@@ -13,7 +13,16 @@ Welcome to app-mesh's documentation!
 
 
    README.md
-
+   Build.md
+   CLI.md
+   CONSUL.md
+   Development.md
+   Install.md
+   JWT_DESC.md
+   Loki.md
+   PROMETHEUS.md
+   Security.md
+   USER_ROLE_DESC.md
 
 Indices and tables
 ==================

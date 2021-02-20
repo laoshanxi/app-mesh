@@ -269,83 +269,54 @@ $ appc cloud
 ```text
 $ appc resource
 {
-        "cpu_cores" : 2,
-        "cpu_processors" : 2,
-        "cpu_sockets" : 1,
-        "fs" : 
-        [
-                {
-                        "device" : "/dev/mapper/centos-root",
-                        "mount_point" : "/",
-                        "size" : 10504634368,
-                        "usage" : 0.62867853488720304,
-                        "used" : 6604038144
-                },
-                {
-                        "device" : "/dev/sda1",
-                        "mount_point" : "/boot",
-                        "size" : 1063256064,
-                        "usage" : 0.13290110330374755,
-                        "used" : 141307904
-                },
-                {
-                        "device" : "/dev/mapper/centos-root",
-                        "mount_point" : "/var/lib/docker/containers",
-                        "size" : 10504634368,
-                        "usage" : 0.62867853488720304,
-                        "used" : 6604038144
-                },
-                {
-                        "device" : "/dev/mapper/centos-root",
-                        "mount_point" : "/var/lib/docker/overlay2",
-                        "size" : 10504634368,
-                        "usage" : 0.62867853488720304,
-                        "used" : 6604038144
-                }
-        ],
-        "host_name" : "centos1",
-        "load" : 
-        {
-                "15min" : 0.059999999999999998,
-                "1min" : 0.070000000000000007,
-                "5min" : 0.070000000000000007
-        },
-        "mem_applications" : 9850880,
-        "mem_freeSwap_bytes" : 1287647232,
-        "mem_free_bytes" : 3260231680,
-        "mem_totalSwap_bytes" : 1287647232,
-        "mem_total_bytes" : 4142419968,
-        "net" : 
-        [
-                {
-                        "address" : "192.168.2.7",
-                        "ipv4" : true,
-                        "name" : "enp0s3"
-                },
-                {
-                        "address" : "10.0.3.15",
-                        "ipv4" : true,
-                        "name" : "enp0s8"
-                },
-                {
-                        "address" : "172.17.0.1",
-                        "ipv4" : true,
-                        "name" : "docker0"
-                },
-                {
-                        "address" : "fe80::982a:da64:68ec:a6e0",
-                        "ipv4" : false,
-                        "name" : "enp0s3"
-                },
-                {
-                        "address" : "fe80::a817:69be:f5e9:e667",
-                        "ipv4" : false,
-                        "name" : "enp0s8"
-                }
-        ],
-        "systime" : "2019-09-12 11:41:38"
+  "appmesh_start_time": "2021-02-20 10:26:55+08",
+  "cpu_cores": 6,
+  "cpu_processors": 6,
+  "cpu_sockets": 1,
+  "fd": 17,
+  "fs": [
+    {
+      "device": "/dev/sda2",
+      "mount_point": "/",
+      "size": 244529655808,
+      "usage": 0.26739761823956576,
+      "used": 65386647552
+    },
+    {
+      "device": "/dev/sda1",
+      "mount_point": "/boot/efi",
+      "size": 535805952,
+      "usage": 0.01525853897195976,
+      "used": 8175616
+    }
+  ],
+  "host_description": "ubuntu-OptiPlex-7070",
+  "host_name": "ubuntu-lsx",
+  "load": {
+    "15min": 0.46999999999999997,
+    "1min": 0.64000000000000001,
+    "5min": 0.66000000000000003
+  },
+  "mem_applications": 17352934,
+  "mem_freeSwap_bytes": 2147479552,
+  "mem_free_bytes": 25269743616,
+  "mem_totalSwap_bytes": 2147479552,
+  "mem_total_bytes": 33477701632,
+  "net": [
+    {
+      "address": "192.168.3.24",
+      "ipv4": true,
+      "name": "enp1s0"
+    },
+    {
+      "address": "fe80::8b4a:81ce:7bf5:7431",
+      "ipv4": false,
+      "name": "enp1s0"
+    }
+  ],
+  "pid": 21430,
+  "systime": "2021-02-20 10:27:48+08"
 }
-
 ```
 </details>
 
