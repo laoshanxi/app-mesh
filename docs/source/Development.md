@@ -1,9 +1,9 @@
-## Development
+# Development
 
-- Application state machine
+## Application state machine
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/state_machine.jpg" width=400 height=400 align=center /></div>
 
-- REST APIs
+## REST APIs
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
@@ -48,13 +48,13 @@ GET | /appmesh/permissions |  | Get all permissions
 GET | /appmesh/user/groups |  | Get all user groups
 GET | /appmesh/metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)
 
-- How to build App Mesh
+## How to build App Mesh
 
 See document [Build App Mesh guidance](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Build.md).
 
-- valgrind memory test
+## valgrind memory test
 
 App Mesh can test memory issue by valgrind to find potential memory leaks. build `/opt/appmesh/appsvc` binary with debug mode `cmake -DCMAKE_BUILD_TYPE=Debug ..`, use `touch /opt/appmesh/appsvc.valgrind` to enable and restart `/opt/appmesh/appsvc` to run some cases, use `touch /opt/appmesh/appsvc.valgrind.stop` to finish memory test and check memory report in dir `/opt/appmesh/`.
 
-- Thread model
+## Thread model
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/threadmodel.jpg" width=400 height=282 align=center /></div>

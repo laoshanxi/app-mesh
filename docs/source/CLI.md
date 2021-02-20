@@ -5,7 +5,7 @@ App Mesh command lines provide the same functionality with Web GUI for *stand-al
 $ appc
 Commands:
   logon       Log on to App Mesh for a specific time period.
-  logoff      Clear current login user infomation
+  logoff      Clear current login user information
   loginfo     Print current logon user
 
   view        List application[s]
@@ -15,6 +15,7 @@ Commands:
   disable     Disable a application
   restart     Restart a application
 
+  join        Join to Consul cluster
   cloud       List cloud application[s]
 
   run         Run command and get output
@@ -23,7 +24,6 @@ Commands:
   resource    Display host resources
   label       Manage host labels
   config      Manage basic configurations
-  join        Join to Consul cluster
   log         Set log level
 
   get         Download remote file to local
@@ -36,10 +36,9 @@ Run 'appc COMMAND --help' for more information on a command.
 Use '-b $hostname','-B $port' to run remote command.
 
 Usage:  appc [COMMAND] [ARG...] [flags]
-
 ```
 ---
-## 1. App Management
+### App Management
 
 - List application[s]
 
@@ -194,7 +193,7 @@ $ appc restart -n ping
 ```
 
 ---
-## 2. Cloud management
+### Cloud management
 
 - Join to Consul cluster
 ```text
@@ -259,7 +258,7 @@ $ appc cloud
 ```
 
 ---
-## 3. Resource Management
+### Resource Management
 
 - Display host resource usage
 
@@ -337,7 +336,7 @@ $ appc view -n ping
 ```
 
 ---
-## 4. Remote command and application output (with session login)
+### Remote command and application output (with session login)
 
 - Run remote application and get stdout
 ```text
@@ -361,7 +360,7 @@ id name        user  status   health pid    memory  return last_start_time     c
 
 
 ---
-## 5. File Management
+### File Management
 
 - Download a file from server
 ```text
@@ -376,7 +375,7 @@ Success
 ```
 
 ---
-## 6. Label Management
+### Label Management
 - Manage labels
 ```text
 # list label

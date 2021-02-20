@@ -1,0 +1,13 @@
+# https://www.cnblogs.com/Tsanfer/p/12456317.html
+
+# markdown suport
+recommonmark
+# markdown table suport
+sphinx-markdown-tables
+#emoji
+sphinxemoji
+
+# theme default rtd
+
+# crate-docs-theme
+sphinx-rtd-theme

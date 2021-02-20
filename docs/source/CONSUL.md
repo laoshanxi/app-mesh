@@ -1,7 +1,5 @@
 # Consul Integration
 
-------
-
 App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 - Stand-alone mode: The hosted applications can only be managed by CLI or Web UI locally.
 - Consul-cluster mode: The hosted applications can be defined in Consul, all the App Mesh nodes will vote one leader node to do the Consul application schedule, the worker App Mesh nodes will got the schedule result and launch corresponding applications.

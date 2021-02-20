@@ -1,5 +1,7 @@
 # How to scan github C++ project by Coverity
 
+Use Coverity cloud scan defects for Open Source project
+
 ## Prepare Coverity tools
 1. Open coverity scan website and login with Github account.
 2. In "My Dashboard", add your github project.

@@ -21,7 +21,7 @@ public:
 	web::json::value AsJson() const;
 	static std::shared_ptr<Role> FromJson(std::string roleName, web::json::value &obj) noexcept(false);
 
-	// get infomation
+	// get information
 	bool hasPermission(std::string permission);
 	const std::set<std::string> getPermissions();
 	const std::string getName() const;

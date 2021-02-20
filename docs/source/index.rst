@@ -9,7 +9,7 @@ Welcome to app-mesh's documentation!
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
-   :numbered:
+   :numbered: 0
 
 
    README.md
@@ -23,6 +23,7 @@ Welcome to app-mesh's documentation!
    PROMETHEUS.md
    Security.md
    USER_ROLE_DESC.md
+   Coverity.md
 
 Indices and tables
 ==================

@@ -185,7 +185,7 @@ void ArgumentParser::printMainHelp()
 {
 	std::cout << "Commands:" << std::endl;
 	std::cout << "  logon       Log on to App Mesh for a specific time period." << std::endl;
-	std::cout << "  logoff      Clear current login user infomation" << std::endl;
+	std::cout << "  logoff      Clear current login user information" << std::endl;
 	std::cout << "  loginfo     Print current logon user" << std::endl;
 	std::cout << std::endl;
 
@@ -197,6 +197,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  restart     Restart a application" << std::endl;
 	std::cout << std::endl;
 
+	std::cout << "  join        Join to Consul cluster" << std::endl;
 	std::cout << "  cloud       List cloud application[s]" << std::endl;
 	std::cout << std::endl;
 
@@ -207,7 +208,6 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  resource    Display host resources" << std::endl;
 	std::cout << "  label       Manage host labels" << std::endl;
 	std::cout << "  config      Manage basic configurations" << std::endl;
-	std::cout << "  join        Join to Consul cluster" << std::endl;
 	std::cout << "  log         Set log level" << std::endl;
 	std::cout << std::endl;
 

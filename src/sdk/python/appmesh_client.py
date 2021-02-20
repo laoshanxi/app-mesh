@@ -63,7 +63,7 @@ class AppMeshClient:
                 return False
 
     def get_app(self, app_name):
-        # get application JSON infomation
+        # get application JSON information
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}".format(app_name))
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
