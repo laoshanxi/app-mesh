@@ -129,7 +129,11 @@ int main(int argc, char *argv[])
 
 		// init consul
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
-		ConsulConnection::instance()->init(consulSsnIdFromRecover);
+		if (Configuration::instance()->getConsul()->consulEnabled())
+		{
+			initCpprestThreadPool();
+			ConsulConnection::instance()->init(consulSsnIdFromRecover);
+		}
 
 		// monitor applications
 		while (true)
