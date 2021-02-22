@@ -15,7 +15,7 @@ public:
 	ApplicationUnInitia();
 	virtual ~ApplicationUnInitia();
 
-	static void FromJson(std::shared_ptr<ApplicationUnInitia> &app, const web::json::value &jsonObj) noexcept(false);
+	static void FromJson(const std::shared_ptr<ApplicationUnInitia> &app, const web::json::value &jsonObj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	virtual void dump() override;
 

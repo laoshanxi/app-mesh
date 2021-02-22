@@ -18,7 +18,7 @@ ApplicationShortRun::~ApplicationShortRun()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationShortRun::FromJson(std::shared_ptr<ApplicationShortRun> &app, const web::json::value &jsonObj)
+void ApplicationShortRun::FromJson(const std::shared_ptr<ApplicationShortRun> &app, const web::json::value &jsonObj)
 {
 	DurationParse duration;
 	std::shared_ptr<Application> fatherApp = app;

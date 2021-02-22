@@ -131,7 +131,7 @@ void *valgrindStopMonitorThread(void *)
 }
 
 /// <summary>
-/// valgrind entrypoing
+/// valgrind entrypoint
 /// </summary>
 void valgrind_main()
 {

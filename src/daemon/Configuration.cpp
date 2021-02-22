@@ -989,8 +989,8 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	consul->m_isWorker = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_WORKER);
 	SET_JSON_INT_VALUE(jsonObj, JSON_KEY_CONSUL_SESSION_TTL, consul->m_ttl);
 	SET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
-	const static boost::regex urlExrp("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
-	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExrp))
+	const static boost::regex urlExpr("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
+	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExpr))
 	{
 		throw std::invalid_argument(Utility::stringFormat("Consul url <%s> is not correct", consul->m_consulUrl.c_str()));
 	}

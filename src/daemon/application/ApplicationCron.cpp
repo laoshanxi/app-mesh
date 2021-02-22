@@ -18,7 +18,7 @@ ApplicationCron::~ApplicationCron()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationCron::FromJson(std::shared_ptr<ApplicationCron> &app, const web::json::value &jsonObj)
+void ApplicationCron::FromJson(const std::shared_ptr<ApplicationCron> &app, const web::json::value &jsonObj)
 {
 	DurationParse duration;
 	std::shared_ptr<Application> fatherApp = app;

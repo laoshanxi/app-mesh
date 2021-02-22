@@ -16,7 +16,7 @@ ApplicationInitialize::~ApplicationInitialize()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationInitialize::FromJson(std::shared_ptr<ApplicationInitialize> &app, const web::json::value &jsonObj)
+void ApplicationInitialize::FromJson(const std::shared_ptr<ApplicationInitialize> &app, const web::json::value &jsonObj)
 {
 	const static char fname[] = "ApplicationInitialize::FromJson() ";
 	LOG_DBG << fname << "Entered.";

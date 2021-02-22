@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
-				PerfLog perf(app->getName());
+				PerfLog perf1(app->getName());
 				app->invoke();
 			}
 

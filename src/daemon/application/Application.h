@@ -34,7 +34,7 @@ public:
 	bool isWorkingState() const;
 	bool attach(int pid);
 
-	static void FromJson(std::shared_ptr<Application> &app, const web::json::value &obj) noexcept(false);
+	static void FromJson(const std::shared_ptr<Application> &app, const web::json::value &obj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
 

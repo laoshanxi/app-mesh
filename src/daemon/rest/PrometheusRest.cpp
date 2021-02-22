@@ -147,7 +147,7 @@ const std::string PrometheusRest::collectData()
 	m_collectTime = ACE_OS::time();
 	// leave a static text serializer here
 	static auto promSerializer = std::unique_ptr<prometheus::Serializer>(new prometheus::TextSerializer());
-	return std::move(promSerializer->Serialize(m_promRegistry->Collect()));
+	return promSerializer->Serialize(m_promRegistry->Collect());
 }
 
 bool PrometheusRest::collected()

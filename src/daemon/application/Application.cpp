@@ -83,7 +83,7 @@ bool Application::isWorkingState() const
 	return (m_status == STATUS::ENABLED || m_status == STATUS::DISABLED);
 }
 
-void Application::FromJson(std::shared_ptr<Application> &app, const web::json::value &jsonObj)
+void Application::FromJson(const std::shared_ptr<Application> &app, const web::json::value &jsonObj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
 	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner));
@@ -322,9 +322,9 @@ std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	m_process.reset(); //m_process->killgroup();
 	m_process = allocProcess(true, m_dockerImage, m_name);
-	auto monitProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
-	assert(monitProc != nullptr);
-	monitProc->setAsyncHttpRequest(asyncHttpRequest);
+	auto monitorProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
+	assert(monitorProc != nullptr);
+	monitorProc->setAsyncHttpRequest(asyncHttpRequest);
 
 	return runApp(timeoutSeconds);
 }
@@ -463,7 +463,7 @@ std::string Application::getOutput(bool keepHistory, int index)
 	}
 	auto file = m_stdoutFileQueue->getFileName(index);
 	// TODO: limit read file buffer size, or return stream
-	return std::move(Utility::readFile(file));
+	return Utility::readFile(file);
 }
 
 void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)

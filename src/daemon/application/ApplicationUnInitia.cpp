@@ -16,7 +16,7 @@ ApplicationUnInitia::~ApplicationUnInitia()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationUnInitia::FromJson(std::shared_ptr<ApplicationUnInitia> &app, const web::json::value &jsonObj)
+void ApplicationUnInitia::FromJson(const std::shared_ptr<ApplicationUnInitia> &app, const web::json::value &jsonObj)
 {
 	const static char fname[] = "ApplicationUnInitia::FromJson() ";
 	LOG_DBG << fname << "Entered.";

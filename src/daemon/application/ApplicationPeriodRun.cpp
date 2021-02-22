@@ -34,7 +34,7 @@ void ApplicationPeriodRun::checkAndUpdateHealth()
 	Application::checkAndUpdateHealth();
 }
 
-void ApplicationPeriodRun::FromJson(std::shared_ptr<ApplicationPeriodRun> &app, const web::json::value &jsonObj)
+void ApplicationPeriodRun::FromJson(const std::shared_ptr<ApplicationPeriodRun> &app, const web::json::value &jsonObj)
 {
 	std::shared_ptr<ApplicationShortRun> fatherApp = app;
 	ApplicationShortRun::FromJson(fatherApp, jsonObj);

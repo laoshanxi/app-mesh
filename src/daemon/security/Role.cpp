@@ -102,9 +102,9 @@ std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value &obj
 {
 	auto role = std::make_shared<Role>(roleName);
 	auto permissions = obj.as_array();
-	for (auto permmisionJson : permissions)
+	for (auto permissionJson : permissions)
 	{
-		auto perm = permmisionJson.as_string();
+		auto perm = permissionJson.as_string();
 		if (perm.length())
 			role->m_permissions.insert(perm);
 	}

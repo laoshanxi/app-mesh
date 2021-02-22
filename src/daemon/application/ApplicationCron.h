@@ -12,7 +12,7 @@ public:
 	ApplicationCron();
 	virtual ~ApplicationCron();
 
-	static void FromJson(std::shared_ptr<ApplicationCron> &app, const web::json::value &jsonObj) noexcept(false);
+	static void FromJson(const std::shared_ptr<ApplicationCron> &app, const web::json::value &jsonObj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	virtual void dump() override;
 
