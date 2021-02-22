@@ -26,7 +26,7 @@
 #include "../common/Valgrind.h"
 #endif
 
-void initCpprestThreadPool();
+void initCpprestThreadPool(int);
 
 int main(int argc, char *argv[])
 {
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
 		if (argc == 2 && std::string("rest") == argv[1])
 		{
 
-			initCpprestThreadPool();
+			initCpprestThreadPool(Configuration::instance()->getThreadPoolSize());
 			RestChildObject::instance(std::make_shared<RestChildObject>());
 			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());
 			return 0;
@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
 		if (Configuration::instance()->getConsul()->consulEnabled())
 		{
-			initCpprestThreadPool();
+			initCpprestThreadPool(4); // max threads number is <4> = security + topology + schedule + client
 			ConsulConnection::instance()->init(consulSsnIdFromRecover);
 		}
 
@@ -167,14 +167,14 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-void initCpprestThreadPool()
+void initCpprestThreadPool(int threads)
 {
 	const static char fname[] = "initCpprestThreadPool() ";
 	static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
 	if (!initialized.test_and_set())
 	{
 		// cpprestsdk thread pool, default will be 40 threads
-		crossplat::threadpool::initialize_with_threads(Configuration::instance()->getThreadPoolSize());
-		LOG_INF << fname << "REST thread pool size:" << Configuration::instance()->getThreadPoolSize();
+		crossplat::threadpool::initialize_with_threads(threads);
+		LOG_INF << fname << "REST thread pool size:" << threads;
 	}
 }
