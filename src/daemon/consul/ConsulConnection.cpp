@@ -918,6 +918,8 @@ void ConsulConnection::init(std::string recoverSsnId)
 
 	if (getConfig()->consulEnabled())
 	{
+		Utility::initCpprestThreadPool(4); // max threads number is <4> = security + topology + schedule + client
+		
 		if (!getConfig()->m_isWorker)
 		{
 			offlineNode();

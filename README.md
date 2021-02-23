@@ -14,7 +14,8 @@ App Mesh is similar with Kubernetes but much light weight, support both containe
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/diagram.png" width=600 height=400 align=center /></div>
 
 ## Features
-Scope  | Behavior
+
+Scope | Behavior
 ---|---
 Support applications | Long running <br> Short running <br> Periodic long running <br> Cron schedule
 Application attributes | Extra init and cleanup commands <br> Available time range in a day and more rich time options <br> Environment variables <br> Health check command to identify app health <br> Pipe input string data to pass data to application <br> Resource (memory & CPU) limitation (cgroup on Linux) to request resources <br> Support Docker container app
@@ -38,31 +39,33 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 ## Comparison
 
 ### Standalone mode
+
 | Feature                  | App Mesh | [Supervisor](http://supervisord.org/) | [crontab](https://crontab.guru/) |
-| ------------------------ | -------- | ---------- | ------- |
-| Accuracy                 | Seconds  | Seconds    | Minutes |
-| Language                 | C++11    | Python     | C       |
-| Web GUI                  | √        | √          |         |
-| Command lines            | √        | √          | √       |
-| Cron expression          | √        |            | √       |
-| SDK                      | √        |            |         |
-| Manage daemon process    |          |            | √       |
-| Manage docker app        | √        |            |         |
-| Start check (avoid leak) | √        | √          |         |
-| Session login            |          |            |         |
-| Manage stdout/stderr     | √        | √          |         |
-| Health check             | √        |            |         |
-| Rich control options     | √        |            |         |
-| Authentication           | √        | √          |         |
-| Multi-tenant             | √        |            | √       |
+| ------------------------ | -------- | ------------------------------------- | -------------------------------- |
+| Accuracy                 | Seconds  | Seconds                               | Minutes                          |
+| Language                 | C++11    | Python                                | C                                |
+| Web GUI                  | √        | √                                     |
+| Command lines            | √        | √                                     | √                                |
+| Cron expression          | √        |                                       | √                                |
+| SDK                      | √        |                                       |
+| Manage daemon process    |          |                                       | √                                |
+| Manage docker app        | √        |                                       |
+| Start check (avoid leak) | √        | √                                     |
+| Session login            |          |                                       |
+| Manage stdout/stderr     | √        | √                                     |
+| Health check             | √        |                                       |
+| Rich control options     | √        |                                       |
+| Authentication           | √        | √                                     |
+| Multi-tenant             | √        |                                       | √                                |
 
 
 ### Cluster mode
+
 | Feature           | App Mesh | Kubernetes |
 | ----------------- | -------- | ---------- |
-| Easy deploy       | √        |            |
+| Easy deploy       | √        |
 | More features     |          | √          |
-| Non-container app | √        |            |
+| Non-container app | √        |
 | Service expose    | √        | √          |
 | Scheduler         | √        | √          |
 | Definition file   | JSON     | YAML       |

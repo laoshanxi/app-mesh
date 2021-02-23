@@ -1,5 +1,3 @@
-import os
-import sys
 from shutil import copyfile
 from recommonmark.parser import CommonMarkParser
 
@@ -21,7 +19,7 @@ from recommonmark.parser import CommonMarkParser
 
 # If your documentation needs a minimal Sphinx version, state it here.
 needs_sphinx = "3.0"
-project = "app-mesh"
+project = "AppMesh"
 copyright = "2021, laoshanxi"
 author = "laoshanxi"
 

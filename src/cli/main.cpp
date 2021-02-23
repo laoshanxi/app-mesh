@@ -1,6 +1,4 @@
 
-#include <pplx/threadpool.h>
-
 #include "../common/Utility.h"
 #include "ArgumentParser.h"
 
@@ -12,7 +10,7 @@ int main(int argc, const char *argv[])
 	PRINT_VERSION();
 	try
 	{
-		crossplat::threadpool::initialize_with_threads(1);
+		Utility::initCpprestThreadPool(1);
 		ArgumentParser parser(argc, argv, DEFAULT_REST_LISTEN_PORT, true);
 		parser.parse();
 	}

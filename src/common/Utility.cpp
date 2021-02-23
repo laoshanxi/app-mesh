@@ -1,3 +1,4 @@
+#include <atomic>
 #include <fstream>
 #include <string>
 #include <thread>
@@ -16,6 +17,7 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/Priority.hh>
 #include <log4cpp/RollingFileAppender.hh>
+#include <pplx/threadpool.h>
 
 #include "Utility.h"
 
@@ -678,4 +680,16 @@ const std::string Utility::readStdin2End()
 		ss << line << std::endl;
 	}
 	return ss.str();
+}
+
+void Utility::initCpprestThreadPool(int threads)
+{
+	const static char fname[] = "Utility::initCpprestThreadPool() ";
+	static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
+	if (!initialized.test_and_set())
+	{
+		// cpprestsdk thread pool, default will be 40 threads
+		crossplat::threadpool::initialize_with_threads(threads);
+		LOG_INF << fname << "REST thread pool size:" << threads;
+	}
 }

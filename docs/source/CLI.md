@@ -38,7 +38,7 @@ Use '-b $hostname','-B $port' to run remote command.
 Usage:  appc [COMMAND] [ARG...] [flags]
 ```
 ---
-### App Management
+### App management
 
 - List application[s]
 
@@ -258,7 +258,7 @@ $ appc cloud
 ```
 
 ---
-### Resource Management
+### Resource management
 
 - Display host resource usage
 
@@ -360,7 +360,7 @@ id name        user  status   health pid    memory  return last_start_time     c
 
 
 ---
-### File Management
+### File management
 
 - Download a file from server
 ```text
@@ -375,7 +375,7 @@ Success
 ```
 
 ---
-### Label Management
+### Label management
 - Manage labels
 ```text
 # list label

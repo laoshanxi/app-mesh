@@ -5,7 +5,6 @@
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
 #include <boost/filesystem.hpp>
-#include <pplx/threadpool.h>
 
 #include "../common/PerfLog.h"
 #include "../common/Utility.h"
@@ -68,7 +67,7 @@ int main(int argc, char *argv[])
 		if (argc == 2 && std::string("rest") == argv[1])
 		{
 
-			initCpprestThreadPool(Configuration::instance()->getThreadPoolSize());
+			Utility::initCpprestThreadPool(Configuration::instance()->getThreadPoolSize());
 			RestChildObject::instance(std::make_shared<RestChildObject>());
 			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());
 			return 0;
@@ -131,7 +130,6 @@ int main(int argc, char *argv[])
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
 		if (Configuration::instance()->getConsul()->consulEnabled())
 		{
-			initCpprestThreadPool(4); // max threads number is <4> = security + topology + schedule + client
 			ConsulConnection::instance()->init(consulSsnIdFromRecover);
 		}
 
@@ -165,16 +163,4 @@ int main(int argc, char *argv[])
 	LOG_ERR << fname << "ERROR exited";
 	ACE_OS::_exit(0);
 	return 0;
-}
-
-void initCpprestThreadPool(int threads)
-{
-	const static char fname[] = "initCpprestThreadPool() ";
-	static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
-	if (!initialized.test_and_set())
-	{
-		// cpprestsdk thread pool, default will be 40 threads
-		crossplat::threadpool::initialize_with_threads(threads);
-		LOG_INF << fname << "REST thread pool size:" << threads;
-	}
 }

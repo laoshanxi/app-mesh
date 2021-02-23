@@ -7,8 +7,8 @@
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /appmesh/login | UserName=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> ExpireSeconds=600 | JWT authenticate login
-POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> AuthPermission=permission_id | JWT token authenticate
+POST| /appmesh/login | UserName=base64(USER-NAME) <br> Password=base64(PASSWD) <br> Optional: <br> ExpireSeconds=600 | JWT authenticate login, get JWT token
+POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer MY-JWT-TOKEN" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> AuthPermission=permission_id | JWT token authenticate
 GET | /appmesh/app/$app-name | | Get an application information
 GET | /appmesh/app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
 GET | /appmesh/app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
