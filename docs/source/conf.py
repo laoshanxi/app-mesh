@@ -14,13 +14,13 @@ from recommonmark.parser import CommonMarkParser
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-root_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, os.path.join(root_path, "src/sdk/python"))
+# sys.path.insert(0, os.path.abspath('.'))
 
 
 # -- Project information -----------------------------------------------------
 
+# If your documentation needs a minimal Sphinx version, state it here.
+needs_sphinx = "3.0"
 project = "app-mesh"
 copyright = "2021, laoshanxi"
 author = "laoshanxi"
@@ -37,11 +37,11 @@ release = "1.9.1"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.ifconfig",
-    "sphinx.ext.doctest",
-    "sphinx.ext.todo",
-    "sphinx.ext.coverage",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.extlinks",
     "sphinx.ext.viewcode",
+    "sphinx_markdown_tables",
+    "recommonmark",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -57,7 +57,7 @@ language = "C++"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = []
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -72,14 +72,6 @@ html_theme = "sphinx_rtd_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
-extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.mathjax",
-    "recommonmark",
-    "sphinx_markdown_tables",
-    'sphinxemoji.sphinxemoji',
-]
 
 source_parsers = {".md": CommonMarkParser}
 source_suffix = [".rst", ".md"]
