@@ -2,10 +2,16 @@
 import json
 import sys
 import os
+import inspect
 
-# path = "/opt/appmesh/sdk/"
-path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-sys.path.append(path + "/src/sdk/python")
+# For installation env:
+# sys.path.append("/opt/appmesh/sdk/")
+
+# For source code env:
+current_file_path = inspect.getfile(inspect.currentframe())
+current_dir_name = os.path.abspath(os.path.dirname(current_file_path))
+root_dir = os.path.dirname(os.path.dirname(current_dir_name))
+sys.path.append(os.path.join(root_dir, "src/sdk/python"))
 
 import appmesh_client
 

@@ -21,111 +21,114 @@ User and Role design for App Mesh
 ### User and Role configure json sample
 
 ```json
- "Security": {
-    "Users": {
-      "admin": {
-        "key": "Admin123",
-        "group": "admin",
-        "locked": false,
-        "roles": [
-          "manage",
-          "view",
-          "usermgr"
-        ]
-      },
-      "user": {
-        "key": "User123",
-        "group": "user",
-        "locked": false,
-        "roles": [
-          "view",
-          "manage"
-        ]
-      }
-    },
+  "Security": {
+    "EncryptKey": false,
+    "JWTEnabled": true,
     "Roles": {
       "manage": [
-        "user-add",
         "app-control",
         "app-delete",
+        "cloud-app-reg",
+        "cloud-app-delete",
         "app-reg",
-        "passwd-change",
         "config-set",
-        "config-view",
-        "user-delete",
         "file-download",
         "file-upload",
-        "user-list",
         "label-delete",
-        "label-set",
-        "label-view",
-        "user-lock",
-        "permission-list",
-        "role-delete",
-        "role-set",
-        "role-view",
-        "app-run-async",
-        "app-run-async-output",
-        "app-run-sync",
-        "user-unlock",
-        "app-view-all",
-        "app-view",
-        "app-output-view",
-        "host-resource-view"
+        "label-set"
       ],
       "usermgr": [
         "user-add",
         "passwd-change",
         "user-delete",
-        "user-list",
         "user-lock",
-        "permission-list",
         "role-delete",
         "role-set",
-        "role-view",
         "user-unlock"
+      ],
+      "shell": [
+        "app-run-async",
+        "app-run-async-output",
+        "app-run-sync"
       ],
       "view": [
         "config-view",
         "label-view",
         "role-view",
+        "user-list",
+        "permission-list",
         "app-view-all",
+        "cloud-app-view",
         "app-view",
         "app-output-view",
         "host-resource-view"
       ]
+    },
+    "Users": {
+      "admin": {
+        "key": "Admin123",
+        "group": "admin",
+        "exec_user": "root",
+        "locked": false,
+        "roles": [
+          "manage",
+          "view",
+          "shell",
+          "usermgr"
+        ]
+      },
+      "test": {
+        "key": "123",
+        "group": "user",
+        "exec_user": "appmesh",
+        "locked": false,
+        "roles": []
+      },
+      "user": {
+        "key": "User123",
+        "group": "user",
+        "exec_user": "appmesh",
+        "locked": false,
+        "roles": [
+          "view",
+          "shell"
+        ]
+      }
     }
   }
 ```
 
 ### Permission list
 
-| REST method  |  PATH  |  Permission Key |
-| :--------:   | -----  | ----  |
-| GET     | /appmesh/app/app-name |   `view-app`     |
-| GET     | /appmesh/app/app-name/output  |   `view-app-output`   |
-| GET     | /appmesh/applications |   `view-all-app`     |
-| GET     | /appmesh/resources |   `view-host-resource`     |
-| PUT     | /appmesh/app/app-name |   `app-reg`     |
-| POST    | /appmesh/app/appname/enable |   `app-control`     |
-| POST    | /appmesh/app/appname/disable |   `app-control`     |
-| DEL     | /appmesh/app/appname |   `app-delete`    |
-| POST    | /appmesh/app/syncrun?timeout=5 | `run-app-sync`  |
-| POST    | /appmesh/app/run?timeout=5 |   `run-app-async`  |
-| GET     | /appmesh/app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output`  |
-| GET     | /appmesh/download | `file-download`  |
-| POST    | /appmesh/upload | `file-upload`  |
-| GET     | /appmesh/labels | `label-view`  |
-| PUT     | /appmesh/label/abc?value=123  | `label-set`  |
-| DEL     | /appmesh/label/abc | `label-delete`  |
-| POST    | /appmesh/config | `config-view`  |
-| GET     | /appmesh/config | `config-set`  |
-| POST    | /appmesh/user/admin/passwd | `change-passwd`  |
-| POST    | /appmesh/user/usera/lock | `lock-user`  |
-| POST    | /appmesh/user/usera/unlock | `unlock-user`  |
-| DEL     | /appmesh/user/usera | `delete-user`  |
-| PUT     | /appmesh/user/usera | `add-user`  |
-| GET     | /appmesh/users | `get-users`  |
+| REST method | PATH                                                  | Permission Key         |
+| :---------: | ----------------------------------------------------- | ---------------------- |
+|     GET     | /appmesh/app/app-name                                 | `view-app`             |
+|     GET     | /appmesh/app/app-name/output                          | `view-app-output`      |
+|     GET     | /appmesh/applications                                 | `view-all-app`         |
+|     GET     | /appmesh/resources                                    | `view-host-resource`   |
+|     PUT     | /appmesh/app/app-name                                 | `app-reg`              |
+|    POST     | /appmesh/app/app-name/enable                          | `app-control`          |
+|    POST     | /appmesh/app/app-name/disable                         | `app-control`          |
+|     DEL     | /appmesh/app/app-name                                 | `app-delete`           |
+|    POST     | /appmesh/app/syncrun?timeout=5                        | `run-app-sync`         |
+|    POST     | /appmesh/app/run?timeout=5                            | `run-app-async`        |
+|     GET     | /appmesh/app/app-name/run/output?process_uuid=uuidabc | `run-app-async-output` |
+|     GET     | /appmesh/cloud/applications                           | `cloud-app-view`       |
+|     PUT     | /appmesh/cloud/app/app-name                           | `cloud-app-reg`        |
+|   DELETE    | /appmesh/cloud/app/app-name                           | `cloud-app-delete`     |
+|     GET     | /appmesh/download                                     | `file-download`        |
+|    POST     | /appmesh/upload                                       | `file-upload`          |
+|     GET     | /appmesh/labels                                       | `label-view`           |
+|     PUT     | /appmesh/label/abc?value=123                          | `label-set`            |
+|     DEL     | /appmesh/label/abc                                    | `label-delete`         |
+|    POST     | /appmesh/config                                       | `config-view`          |
+|     GET     | /appmesh/config                                       | `config-set`           |
+|    POST     | /appmesh/user/admin/passwd                            | `change-passwd`        |
+|    POST     | /appmesh/user/usera/lock                              | `lock-user`            |
+|    POST     | /appmesh/user/usera/unlock                            | `unlock-user`          |
+|     DEL     | /appmesh/user/usera                                   | `delete-user`          |
+|     PUT     | /appmesh/user/usera                                   | `add-user`             |
+|     GET     | /appmesh/users                                        | `get-users`            |
 
 
 ### Command line authentication

@@ -8,23 +8,23 @@
 Method | URI | Body/Headers | Desc
 ---|---|---|---
 POST| /appmesh/login | UserName=base64(USER-NAME) <br> Password=base64(PASSWD) <br> Optional: <br> ExpireSeconds=600 | JWT authenticate login, get JWT token
-POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer MY-JWT-TOKEN" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> AuthPermission=permission_id | JWT token authenticate
-GET | /appmesh/app/$app-name | | Get an application information
-GET | /appmesh/app/$app-name/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
-GET | /appmesh/app/$app-name/output?keep_history=1 | | Get app output (app should define cache_lines)
-GET | /appmesh/app/$app-name/output/2 | | Get app output with cached index
+POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer MY-JWT-TOKEN" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> AuthPermission=${PERMISSION-ID} | JWT token and permission authenticate
+GET | /appmesh/app/${APP-NAME} | | Get an application information
+GET | /appmesh/app/${APP-NAME}/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
+GET | /appmesh/app/${APP-NAME}/output?keep_history=1 | | Fetch app console output
+GET | /appmesh/app/${APP-NAME}/output/2 | | Get app output with cached index
 POST| /appmesh/app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
-GET | /appmesh/app/$app-name/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
+GET | /appmesh/app/${APP-NAME}/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
 POST| /appmesh/app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
 GET | /appmesh/applications | | Get all application information
 GET | /appmesh/resources | | Get host resource usage
-PUT | /appmesh/app/$app-name | {"command": "/bin/sleep 60", "name": "ping", "exec_user": "root", "working_dir": "/tmp" } | Register a new application
-POST| /appmesh/app/$app-name/enable | | Enable an application
-POST| /appmesh/app/$app-name/disable | | Disable an application
-DELETE| /appmesh/app/$app-name | | Deregister an application
+PUT | /appmesh/app/${APP-NAME} | {"command": "/bin/sleep 60", "name": "ping", "exec_user": "root", "working_dir": "/tmp" } | Register a new application
+POST| /appmesh/app/${APP-NAME}/enable | | Enable an application
+POST| /appmesh/app/${APP-NAME}/disable | | Disable an application
+DELETE| /appmesh/app/${APP-NAME} | | Deregister an application
 GET | /appmesh/cloud/applications | | Get cloud applications
-PUT | /appmesh/cloud/app/$app-name | Body: <br> cloud application definition | Add cloud application
-DEL | /appmesh/cloud/app/$app-name | | Delete cloud application
+PUT | /appmesh/cloud/app/${APP-NAME} | Body: <br> cloud application definition | Add cloud application
+DEL | /appmesh/cloud/app/${APP-NAME} | | Delete cloud application
 GET | /appmesh/file/download | Header: <br> FilePath=/opt/remote/filename | Download a file from REST server and grant permission
 POST| /appmesh/file/upload | Header: <br> FilePath=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
 GET | /appmesh/labels | { "os": "linux","arch": "x86_64" } | Get labels

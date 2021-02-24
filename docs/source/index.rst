@@ -18,11 +18,11 @@ Welcome to AppMesh's documentation!
    CONSUL.md
    Development.md
    Install.md
-   JWT_DESC.md
+   JWT.md
    Loki.md
    PROMETHEUS.md
    Security.md
-   USER_ROLE_DESC.md
+   USER_ROLE.md
    Coverity.md
 
 Indices and tables
