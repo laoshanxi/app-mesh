@@ -6,10 +6,10 @@ set -x
 MACHINE_TYPE="$(uname -m)"
 ARM="arm"
 AARC="aarc"
-export ROOTDIR=$(pwd)
 
 mkdir -p dep
 cd dep
+export ROOTDIR=$(pwd)
 
 if [ "$(id -u)" != "0" ]; then
 	echo "This script must be run as root"
@@ -18,14 +18,18 @@ fi
 
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
+	RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
 	yum install -y epel-release
-	yum install -y https://repo.ius.io/ius-release-el7.rpm
-
-	yum remove git -y
-	yum install -y git222 make cmake3 gcc-c++ libtool
+	if [[ $systemver = "7" ]]; then
+		yum install -y https://repo.ius.io/ius-release-el7.rpm
+		yum remove git -y
+		yum install git222 -y
+	else
+		yum install git -y
+	fi
+	yum install -y make cmake cmake3 gcc-c++ libtool
 	if [[ -f "/usr/bin/cmake3" ]]; then
-		rm -f /usr/bin/cmake
-		cp /usr/bin/cmake3 /usr/bin/cmake
+		cp /usr/bin/cmake3 /usr/bin/cmake -f
 	fi
 	yum install -y dos2unix wget which
 
@@ -86,8 +90,8 @@ if [ true ]; then
 	./b2
 	./b2 install
 	ls -al /usr/local/lib/libboost_system.so.1.74.0 /usr/local/include/boost/thread.hpp
-	cd $ROOTDIR
 fi
+cd $ROOTDIR
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
@@ -95,11 +99,11 @@ git clone -b v2.10.16 https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
+CMAKE=/usr/bin/cmake3
 if [ -f "/usr/bin/cmake3" ]; then
-	cmake3 .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
-else
-	cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
+	CMAKE=/usr/bin/cmake3
 fi
+$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so
@@ -111,6 +115,7 @@ if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
 	# arm64 will failed with log4cpp build, use package directly
 	apt install -y liblog4cpp5-dev
 else
+	# yum install log4cpp -y
 	wget --no-check-certificate https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
 	tar zxvf log4cpp-1.1.3.tar.gz
 	cd log4cpp/
@@ -119,8 +124,8 @@ else
 	make
 	make install
 	ls -al /usr/local/lib*/liblog4cpp.a
-	cd $ROOTDIR
 fi
+cd $ROOTDIR
 
 # build ACE
 if [ true ]; then
@@ -128,7 +133,7 @@ if [ true ]; then
 	# ACE:
 	# https://www.cnblogs.com/tanzi-888/p/5342431.html
 	# http://download.dre.vanderbilt.edu/
-	wget --no-check-certificate https://download.dre.vanderbilt.edu/previous_versions/ACE-6.5.9.tar.gz
+	wget --no-check-certificate https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_9/ACE-6.5.9.tar.gz
 	tar zxvf ACE-6.5.9.tar.gz
 	cd ACE_wrappers
 	export ACE_ROOT=$(pwd)
@@ -137,8 +142,8 @@ if [ true ]; then
 	make
 	make install INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
-	cd $ROOTDIR
 fi
+cd $ROOTDIR
 
 # cryptopp
 wget --no-check-certificate https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
