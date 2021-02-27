@@ -169,7 +169,7 @@ void RestTcpServer::backforwardResponse(const std::string &uuid, const std::stri
 
     LOG_DBG << fname << "send response: " << uuid << " with header length: " << 8 << " body length: " << length;
 
-    std::lock_guard<std::recursive_mutex> guard(m_mutex);
+    std::lock_guard<std::recursive_mutex> guard(m_socketSendLock);
     if (m_socketStream.get_handle() == ACE_INVALID_HANDLE || m_socketStream.sendv_n(iov, 2) < (ssize_t)length)
     {
         LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);

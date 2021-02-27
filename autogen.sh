@@ -50,7 +50,7 @@ if [ -f "/usr/bin/yum" ]; then
 	# https://centos.pkgs.org/7/repoforge-x86_64/upx-3.91-1.el7.rf.x86_64.rpm.html
 
 	# check libssl in case of openssl_update.sh not executed
-	if [ [ ! -f "/usr/include/openssl/ssl.h" ] || [ ! -f "/usr/local/include/openssl/ssl.h" ] ]; then
+	if [[ -f "/usr/include/openssl/ssl.h" ]] || [[ -f "/usr/local/include/openssl/ssl.h" ]]; then
 		echo 'ssl installed'
 	else
 		yum install -y openssl-devel
@@ -95,11 +95,11 @@ cd $ROOTDIR
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
-git clone -b v2.10.16 https://github.com/microsoft/cpprestsdk.git cpprestsdk
+git clone -b 2.10.18 https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-CMAKE=/usr/bin/cmake3
+CMAKE=/usr/bin/cmake
 if [ -f "/usr/bin/cmake3" ]; then
 	CMAKE=/usr/bin/cmake3
 fi

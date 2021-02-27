@@ -73,7 +73,7 @@ private:
     void handleTcpRest(const HttpRequest &message);
 
 private:
-    mutable std::recursive_mutex m_mutex;
+    mutable std::recursive_mutex m_socketSendLock;
     ACE_SOCK_Stream m_socketStream;
     static std::shared_ptr<RestTcpServer> m_instance;
     std::thread m_socketThread;
