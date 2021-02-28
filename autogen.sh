@@ -3,19 +3,24 @@
 ## This script is used to install all 3rd-party dependency libraries
 ################################################################################
 set -x
+set -e
 MACHINE_TYPE="$(uname -m)"
 ARM="arm"
 AARC="aarc"
+WGWT_A=wget --continue --tries=30 --no-check-certificate
 
+# prepare dep dir
 mkdir -p dep
 cd dep
 export ROOTDIR=$(pwd)
 
+# check root permission
 if [ "$(id -u)" != "0" ]; then
 	echo "This script must be run as root"
 	exit 1
 fi
 
+# install compiler and tools
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
 	RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
@@ -48,13 +53,6 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/upx-3.91-1.el7.rf.x86_64.rpm
 	# other platform package download
 	# https://centos.pkgs.org/7/repoforge-x86_64/upx-3.91-1.el7.rf.x86_64.rpm.html
-
-	# check libssl in case of openssl_update.sh not executed
-	if [[ -f "/usr/include/openssl/ssl.h" ]] || [[ -f "/usr/local/include/openssl/ssl.h" ]]; then
-		echo 'ssl installed'
-	else
-		yum install -y openssl-devel
-	fi
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	export DEBIAN_FRONTEND=noninteractive
@@ -71,6 +69,16 @@ elif [ -f "/usr/bin/apt" ]; then
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 fi
+# check libssl in case of openssl_update.sh not executed
+if [[ -f "/usr/include/openssl/ssl.h" ]] || [[ -f "/usr/local/include/openssl/ssl.h" ]]; then
+	echo 'ssl installed'
+else
+	if [ -f "/usr/bin/yum" ]; then
+		yum install -y openssl-devel
+	else
+		apt install -y libssl-dev
+	fi
+fi
 
 #install fpm
 gem install fpm
@@ -83,7 +91,7 @@ if [ true ]; then
 	elif [ -f "/usr/bin/apt" ]; then
 		apt install -y python-dev
 	fi
-	wget --no-check-certificate https://dl.bintray.com/boostorg/release/1.74.0/source/boost_1_74_0.tar.gz
+	$WGWT_A https://dl.bintray.com/boostorg/release/1.74.0/source/boost_1_74_0.tar.gz
 	tar zxvf boost_1_74_0.tar.gz
 	cd ./boost_1_74_0
 	./bootstrap.sh
@@ -116,7 +124,7 @@ if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
 	apt install -y liblog4cpp5-dev
 else
 	# yum install log4cpp -y
-	wget --no-check-certificate https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
+	$WGWT_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
 	tar zxvf log4cpp-1.1.3.tar.gz
 	cd log4cpp/
 	./autogen.sh
@@ -133,7 +141,7 @@ if [ true ]; then
 	# ACE:
 	# https://www.cnblogs.com/tanzi-888/p/5342431.html
 	# http://download.dre.vanderbilt.edu/
-	wget --no-check-certificate https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_9/ACE-6.5.9.tar.gz
+	$WGWT_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_9/ACE-6.5.9.tar.gz
 	tar zxvf ACE-6.5.9.tar.gz
 	cd ACE_wrappers
 	export ACE_ROOT=$(pwd)
@@ -145,8 +153,8 @@ if [ true ]; then
 fi
 cd $ROOTDIR
 
-# cryptopp
-wget --no-check-certificate https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
+# cryptopp: AES encrypt
+$WGWT_A https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
 unzip CRYPTOPP_8_3_0.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
 cd cryptopp-CRYPTOPP_8_3_0/
@@ -154,6 +162,7 @@ make
 make install
 cd $ROOTDIR
 
+# cfssl: generate SSL certification file
 if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
 	# cfssl have no arm64 binary, just use package instead
 	apt install -y golang-cfssl
@@ -162,13 +171,13 @@ else
 	# https://www.cnblogs.com/fanqisoft/p/10765038.html
 	# https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
 	cd $ROOTDIR
-	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+	$WGWT_A https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
 	chmod +x cfssl_linux-amd64
 	upx cfssl_linux-amd64
-	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+	$WGWT_A https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
 	chmod +x cfssljson_linux-amd64
 	upx cfssljson_linux-amd64
-	wget --no-check-certificate https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+	$WGWT_A https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
 	chmod +x cfssl-certinfo_linux-amd64
 	upx cfssl-certinfo_linux-amd64
 	mv cfssl_linux-amd64 /usr/bin/cfssl
