@@ -1527,7 +1527,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_health)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_memory)
-		<< std::setw(5) << Utility::strToupper(JSON_KEY_APP_cpu)
+		<< std::setw(5) << std::string("%").append(Utility::strToupper(JSON_KEY_APP_cpu))
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_return)
 		<< std::setw(24) << Utility::strToupper(JSON_KEY_APP_last_start)
 		<< Utility::strToupper(JSON_KEY_APP_command)
@@ -1568,7 +1568,6 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 			{
 				std::stringstream ss;
 				ss << (int)GET_JSON_DOUBLE_VALUE(jsonObj, JSON_KEY_APP_cpu);
-				ss << "%";
 				std::cout << ss.str();
 			}
 			else

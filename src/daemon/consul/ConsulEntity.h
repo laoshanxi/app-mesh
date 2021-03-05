@@ -1,15 +1,18 @@
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 
 #include <cpprest/json.h>
 
 class Application;
 class Label;
 
+struct ConsulTask;
 /// <summary>
 /// Consul Node definition
 /// </summary>
@@ -21,7 +24,8 @@ struct ConsulNode
 
 	/// @brief For schedule sort
 	/// @param app
-	void assignApp(const std::shared_ptr<Application> &app);
+	void assignApp(const std::shared_ptr<ConsulTask> &task);
+	bool full();
 	/// @brief For schedule sort
 	/// @return
 	uint64_t getAssignedAppMem() const;
@@ -32,6 +36,7 @@ struct ConsulNode
 	// MEM
 	uint64_t m_total_bytes;
 	uint64_t m_free_bytes;
+	uint64_t m_occupyMemoryBytes;
 	std::string m_appmeshProxyUrl;
 	std::string m_hostName;
 	std::map<std::string, std::shared_ptr<Application>> m_assignedApps;
@@ -58,10 +63,14 @@ struct ConsulTask
 	// consul service port
 	int m_consulServicePort;
 
+	// request memory, MB
+	int m_requestMemMega;
+
 	// used for schedule fill
 	std::map<std::string, std::shared_ptr<ConsulNode>> m_matchedHosts;
 	/// @brief Used for schedule fill, store all index, index start from 1
-	std::set<int> m_taskIndexDic;
+	/// If one task have 4 replica, the set will have 1,2,3,4
+	std::set<int> m_tasksSet;
 };
 
 /// <summary>
@@ -77,6 +86,6 @@ struct ConsulTopology
 	/// @brief Topology is organized by host for performance consideration
 	std::string m_hostName;
 	/// @brief Dispatched tasks on this host
-	/// key: app name. value: app index id to identify the unique instance index for one consul task
-	std::map<std::string, int> m_scheduleApps;
+	/// key: app name. value: <date time>
+	std::map<std::string, std::chrono::system_clock::time_point> m_scheduleApps;
 };

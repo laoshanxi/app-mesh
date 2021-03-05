@@ -176,28 +176,32 @@ web::json::value ConsulConnection::viewCloudApps()
 			if (host.second->m_scheduleApps.count(task.first))
 			{
 				// health status
-				const static std::string statusStr = "status";
-				result[task.first][statusStr][host.first] = 0;
-
-				web::uri_builder baseUri;
-				baseUri.set_host(host.first);
-				baseUri.set_port(Configuration::instance()->getRestListenPort());
-				baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
-				auto restPath = Utility::stringFormat("/appmesh/app/%s/health", task.first.c_str());
-				auto resp = requestHttp(baseUri.to_uri(), restPath, web::http::methods::GET);
-				if (resp.status_code() != web::http::status_codes::OK)
-				{
-					result[task.first][statusStr][host.first] = web::json::value::number(1);
-					LOG_WAR << fname << "failed to get health status: " << resp.status_code() << " with uri: " << restPath;
-				}
-				else
-				{
-					result[task.first][statusStr][host.first] = web::json::value::number(std::stoi(resp.extract_utf8string().get()));
-				}
+				result[task.first]["status"][host.first] = getHealthStatus(host.first, task.first);
 			}
 		}
 	}
 	return result;
+}
+
+int ConsulConnection::getHealthStatus(const std::string &host, const std::string &app)
+{
+	const static char fname[] = "ConsulConnection::getHealthStatus() ";
+
+	web::uri_builder baseUri;
+	baseUri.set_host(host);
+	baseUri.set_port(Configuration::instance()->getRestListenPort());
+	baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
+	auto restPath = Utility::stringFormat("/appmesh/app/%s/health", app.c_str());
+	auto resp = requestHttp(baseUri.to_uri(), restPath, web::http::methods::GET);
+	if (resp.status_code() != web::http::status_codes::OK)
+	{
+		LOG_WAR << fname << "failed to get health status: " << resp.status_code() << " with host: " << host << ", app: " << app;
+		return 1;
+	}
+	else
+	{
+		return (std::stoi(resp.extract_utf8string().get()));
+	}
 }
 
 void ConsulConnection::deleteCloudApp(const std::string &app)
@@ -476,8 +480,8 @@ void ConsulConnection::syncTopology()
 					auto &currentRunningApp = *it;
 					if (!currentRunningApp->operator==(topologyAppObj))
 					{
-						Configuration::instance()->addApp(getAppJsonWithIndexEnv(currentRunningApp, hostApp.second));
-						LOG_INF << fname << "Consul application <" << topologyAppObj->getName() << "> updated";
+						Configuration::instance()->addApp(currentRunningApp->AsJson(false));
+						LOG_INF << fname << "Consul application <" << currentRunningApp->getName() << "> updated";
 
 						registerService(appName, consulTask->m_consulServicePort);
 					}
@@ -485,7 +489,7 @@ void ConsulConnection::syncTopology()
 				else
 				{
 					// New add app
-					Configuration::instance()->addApp(getAppJsonWithIndexEnv(topologyAppObj, hostApp.second));
+					Configuration::instance()->addApp(topologyAppObj->AsJson(false));
 					LOG_INF << fname << "Consul application <" << topologyAppObj->getName() << "> added";
 
 					registerService(appName, consulTask->m_consulServicePort);
@@ -710,23 +714,6 @@ void ConsulConnection::compareTopologyAndDispatch(const std::map<std::string, st
 	}
 }
 
-web::json::value ConsulConnection::getAppJsonWithIndexEnv(std::shared_ptr<Application> app, int index)
-{
-	auto appJson = app->AsJson(false);
-	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_env))
-	{
-		web::json::value &envs = appJson.at(JSON_KEY_APP_env);
-		envs["APP_INDEX"] = web::json::value::string(std::to_string(index));
-	}
-	else
-	{
-		web::json::value envs = web::json::value::object();
-		envs["APP_INDEX"] = web::json::value::string(std::to_string(index));
-		appJson[JSON_KEY_APP_env] = envs;
-	}
-	return appJson;
-}
-
 bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr<ConsulTopology> topology)
 {
 	const static char fname[] = "ConsulConnection::writeTopology() ";
@@ -919,7 +906,7 @@ void ConsulConnection::init(std::string recoverSsnId)
 	if (getConfig()->consulEnabled())
 	{
 		Utility::initCpprestThreadPool(4); // max threads number is <4> = security + topology + schedule + client
-		
+
 		if (!getConfig()->m_isWorker)
 		{
 			offlineNode();
@@ -1085,7 +1072,6 @@ std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kv
 		builder.append_query("recurse", "true");
 	}
 
-	LOG_DBG << fname << "watch " << kvPath << " with timeout " << waitTimeout << " and index " << lastIndex;
 	web::http::http_request request(web::http::methods::GET);
 	request.set_request_uri(builder.to_uri());
 
@@ -1098,6 +1084,7 @@ std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kv
 			index = std::atoll(response.headers().find("X-Consul-Index")->second.c_str());
 		}
 		bool success = (response.status_code() == web::http::status_codes::OK);
+		LOG_DBG << fname << "watch " << kvPath << " with timeout " << waitTimeout << ", last-index " << lastIndex << " index " << index << " success " << success;
 		return std::make_tuple(success, index);
 	}
 	catch (...)

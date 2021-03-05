@@ -12,7 +12,7 @@
 #include "ConsulConnection.h"
 
 ConsulTask::ConsulTask()
-	: m_replication(0), m_condition(std::make_shared<Label>()), m_priority(0), m_consulServicePort(0)
+	: m_replication(0), m_condition(std::make_shared<Label>()), m_priority(0), m_consulServicePort(0), m_requestMemMega(0)
 {
 }
 
@@ -30,13 +30,15 @@ std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value &jsonObj
 		SET_JSON_INT_VALUE(jsonObj, "replication", consul->m_replication);
 		SET_JSON_INT_VALUE(jsonObj, "priority", consul->m_priority);
 		SET_JSON_INT_VALUE(jsonObj, "port", consul->m_consulServicePort);
+		SET_JSON_INT_VALUE(jsonObj, "memoryMB", consul->m_requestMemMega);
 		if (HAS_JSON_FIELD(jsonObj, "condition"))
 		{
 			consul->m_condition = Label::FromJson(jsonObj.at("condition"));
 		}
+		// for schedule runtime
 		for (std::size_t i = 1; i <= consul->m_replication; i++)
 		{
-			consul->m_taskIndexDic.insert(i);
+			consul->m_tasksSet.insert(i);
 		}
 	}
 	return consul;
@@ -48,6 +50,7 @@ web::json::value ConsulTask::AsJson() const
 	result["replication"] = web::json::value::number(m_replication);
 	result["priority"] = web::json::value::number(m_priority);
 	result["port"] = web::json::value::number(m_consulServicePort);
+	result["memoryMB"] = web::json::value::number(m_requestMemMega);
 	result["content"] = m_app->AsJson(false);
 	if (m_condition != nullptr)
 		result["condition"] = m_condition->AsJson();
@@ -60,6 +63,8 @@ void ConsulTask::dump()
 	LOG_DBG << fname << "m_app=" << m_app->getName();
 	LOG_DBG << fname << "m_priority=" << m_priority;
 	LOG_DBG << fname << "m_replication=" << m_replication;
+	LOG_DBG << fname << "m_consulServicePort=" << m_consulServicePort;
+	LOG_DBG << fname << "m_requestMemMega=" << m_requestMemMega;
 	m_app->dump();
 }
 
@@ -83,8 +88,8 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value 
 		for (const auto &app : jsonObj.as_array())
 		{
 			auto appName = GET_JSON_STR_VALUE(app, "app");
-			auto appIndex = GET_JSON_INT_VALUE(app, "index");
-			topology->m_scheduleApps[appName] = appIndex;
+			auto appScheduleTime = std::chrono::system_clock::from_time_t(GET_JSON_INT_VALUE(app, "schedule_time"));
+			topology->m_scheduleApps[appName] = appScheduleTime;
 		}
 	}
 	return topology;
@@ -98,7 +103,7 @@ web::json::value ConsulTopology::AsJson() const
 	{
 		auto appJson = web::json::value::object();
 		appJson["app"] = web::json::value::string(app.first);
-		appJson["index"] = web::json::value::number(app.second);
+		appJson["schedule_time"] = web::json::value::number(std::chrono::system_clock::to_time_t(app.second));
 		result[appIndex++] = appJson;
 	}
 	return result;
@@ -124,12 +129,12 @@ void ConsulTopology::dump()
 	const static char fname[] = "ConsulTopology::dump() ";
 	for (const auto &app : m_scheduleApps)
 	{
-		LOG_DBG << fname << "app:" << app.first << " host:" << m_hostName << " with index:" << app.second;
+		LOG_DBG << fname << "app:" << app.first << " host:" << m_hostName;
 	}
 }
 
 ConsulNode::ConsulNode()
-	: m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_free_bytes(0)
+	: m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_free_bytes(0), m_occupyMemoryBytes(0)
 {
 }
 
@@ -178,12 +183,18 @@ web::json::value ConsulNode::AsJson() const
 	return result;
 }
 
-void ConsulNode::assignApp(const std::shared_ptr<Application> &app)
+void ConsulNode::assignApp(const std::shared_ptr<ConsulTask> &task)
 {
-	m_assignedApps[app->getName()] = app;
+	m_assignedApps[task->m_app->getName()] = task->m_app;
+	m_occupyMemoryBytes += task->m_requestMemMega * 1024 * 1024;
+}
+
+bool ConsulNode::full()
+{
+	return m_occupyMemoryBytes >= m_total_bytes;
 }
 
 uint64_t ConsulNode::getAssignedAppMem() const
 {
-	return uint64_t(0);
+	return m_occupyMemoryBytes;
 }
