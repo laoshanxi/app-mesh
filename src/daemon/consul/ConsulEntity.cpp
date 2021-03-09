@@ -4,6 +4,7 @@
 #include <cpprest/http_client.h>
 #include <cpprest/json.h>
 
+#include "../../common/DateTime.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "../Label.h"
@@ -88,8 +89,8 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value 
 		for (const auto &app : jsonObj.as_array())
 		{
 			auto appName = GET_JSON_STR_VALUE(app, "app");
-			auto appScheduleTime = std::chrono::system_clock::from_time_t(GET_JSON_INT_VALUE(app, "schedule_time"));
-			topology->m_scheduleApps[appName] = appScheduleTime;
+			auto appScheduleTime = GET_JSON_STR_VALUE(app, "schedule_time");
+			topology->m_scheduleApps[appName] = DateTime::parseISO8601DateTime(appScheduleTime);
 		}
 	}
 	return topology;
@@ -103,7 +104,7 @@ web::json::value ConsulTopology::AsJson() const
 	{
 		auto appJson = web::json::value::object();
 		appJson["app"] = web::json::value::string(app.first);
-		appJson["schedule_time"] = web::json::value::number(std::chrono::system_clock::to_time_t(app.second));
+		appJson["schedule_time"] = web::json::value::string(DateTime::formatISO8601Time(app.second));
 		result[appIndex++] = appJson;
 	}
 	return result;
@@ -134,7 +135,7 @@ void ConsulTopology::dump()
 }
 
 ConsulNode::ConsulNode()
-	: m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_free_bytes(0), m_occupyMemoryBytes(0)
+	: m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_occupyMemoryBytes(0)
 {
 }
 
@@ -157,10 +158,6 @@ std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value &jsonObj
 		{
 			node->m_cores = GET_JSON_INT_VALUE(resourceJson, "cpu_cores");
 		}
-		if (HAS_JSON_FIELD(resourceJson, "mem_free_bytes"))
-		{
-			node->m_free_bytes = GET_JSON_NUMBER_VALUE(resourceJson, "mem_free_bytes");
-		}
 		if (HAS_JSON_FIELD(resourceJson, "mem_total_bytes"))
 		{
 			node->m_total_bytes = GET_JSON_NUMBER_VALUE(resourceJson, "mem_total_bytes");
@@ -178,7 +175,6 @@ web::json::value ConsulNode::AsJson() const
 	auto resource = web::json::value::object();
 	resource["cpu_cores"] = web::json::value::number(m_cores);
 	resource["mem_total_bytes"] = web::json::value::number(m_total_bytes);
-	resource["mem_free_bytes"] = web::json::value::number(m_free_bytes);
 	result["resource"] = resource;
 	return result;
 }
@@ -187,6 +183,11 @@ void ConsulNode::assignApp(const std::shared_ptr<ConsulTask> &task)
 {
 	m_assignedApps[task->m_app->getName()] = task->m_app;
 	m_occupyMemoryBytes += task->m_requestMemMega * 1024 * 1024;
+}
+
+bool ConsulNode::tryAssignApp(const std::shared_ptr<ConsulTask> &task)
+{
+	return (m_occupyMemoryBytes + (task->m_requestMemMega * 1024 * 1024)) < m_total_bytes;
 }
 
 bool ConsulNode::full()

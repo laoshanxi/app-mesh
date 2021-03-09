@@ -659,7 +659,7 @@ void ConsulConnection::findTaskAvailableHost(const std::map<std::string, std::sh
 			auto &hostName = host.first;
 			auto &consulHost = host.second;
 			auto &taskCondition = task.second->m_condition;
-			if (consulHost->m_label->match(taskCondition))
+			if (consulHost->m_label->match(taskCondition) && !consulHost->full())
 			{
 				task.second->m_matchedHosts[hostName] = consulHost;
 				LOG_DBG << fname << "task <" << taskName << "> match host <" << hostName << ">";

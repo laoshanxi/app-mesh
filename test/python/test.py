@@ -46,6 +46,7 @@ print(
             "port": 6667,
             "priority": 0,
             "replication": 1,
+            "memoryMB": 1024,
         }
     )
 )

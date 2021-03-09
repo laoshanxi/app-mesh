@@ -90,7 +90,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 
 		if (tasksSet.size() > taskDedicateHostsVec.size())
 		{
-			LOG_WAR << fname << taskName << " : Replication <" << tasksSet.size() << "> Dedicate Host < " << taskDedicateHostsVec.size() << ">";
+			LOG_WAR << fname << taskName << " : Replication <" << tasksSet.size() << "> Dedicate Host <" << taskDedicateHostsVec.size() << ">";
 		}
 		// assign host to task
 		while (tasksSet.size() && taskDedicateHostsVec.size())
@@ -99,6 +99,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 			taskDedicateHostsVec.erase(taskDedicateHostsVec.begin());
 			const auto &hostname = selectedNode->m_hostName;
 			// save to topology
+			if (!selectedNode->full() && selectedNode->tryAssignApp(task.second))
 			{
 				if (!newTopology.count(hostname))
 					newTopology[hostname] = std::make_shared<ConsulTopology>();
@@ -109,6 +110,10 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 				newTopology[hostname]->m_scheduleApps[taskName] = std::chrono::system_clock::now();
 				selectedNode->assignApp(task.second);
 				LOG_DBG << fname << "task <" << taskName << "> assigned to host < " << hostname << ">";
+			}
+			else
+			{
+				LOG_INF << fname << "task <" << taskName << "> failed assigned to host < " << hostname << "> due to full with total bytes: " << selectedNode->getAssignedAppMem();
 			}
 			task.second->dump();
 		}

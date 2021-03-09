@@ -25,6 +25,7 @@ struct ConsulNode
 	/// @brief For schedule sort
 	/// @param app
 	void assignApp(const std::shared_ptr<ConsulTask> &task);
+	bool tryAssignApp(const std::shared_ptr<ConsulTask> &task);
 	bool full();
 	/// @brief For schedule sort
 	/// @return
@@ -35,7 +36,6 @@ struct ConsulNode
 	std::size_t m_cores;
 	// MEM
 	uint64_t m_total_bytes;
-	uint64_t m_free_bytes;
 	uint64_t m_occupyMemoryBytes;
 	std::string m_appmeshProxyUrl;
 	std::string m_hostName;

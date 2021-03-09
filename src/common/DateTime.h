@@ -45,9 +45,9 @@ public:
 	/// Parse ISO8601 date time from string, if the parameter strTime have zone info, will ignore posixTimeZone
 	/// </summary>
 	/// <param name="strTime">"2017-09-11 21:52:13+00:00" or "2017-09-11 21:52:13"</param>
-	/// <param name="posixTimeZone">+07:00 or empty</param>
+	/// <param name="posixTimeZone">+07:00, leave empty will use getLocalUtcOffset()</param>
 	/// <returns></returns>
-	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone);
+	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone = "");
 
 	/// <summary>
 	/// Format time_point with [%Y-%m-%d %H:%M:%S%F%Q] flags and LOCAL_POSIX_ZONE (set from setTimeFormatPosixZone()) offset
