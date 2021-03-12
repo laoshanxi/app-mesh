@@ -33,6 +33,7 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/applications", std::bind(&RestHandler::apiGetCloudApps, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiAddCloudApp, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiDelCloudApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/nodes", std::bind(&RestHandler::apiGetCloudHost, this, std::placeholders::_1));
 
 	// 4. Manage Application
 	bindRestMethod(web::http::methods::PUT, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
@@ -916,6 +917,12 @@ void RestHandler::apiDelCloudApp(const HttpRequest &message)
 
 	ConsulConnection::instance()->deleteCloudApp(appName);
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiGetCloudHost(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_cloud_host_view);
+	message.reply(status_codes::OK, ConsulConnection::instance()->getCloudNodes());
 }
 
 void RestHandler::apiGetResources(const HttpRequest &message)

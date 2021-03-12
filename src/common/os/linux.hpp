@@ -738,7 +738,7 @@ namespace os
 	{
 		const static char fname[] = "fileChmod() ";
 
-		if (mode < 0U)
+		if (mode <= 0U)
 		{
 			LOG_WAR << fname << "invalid __mode_t: <" << mode << ">";
 			return false;

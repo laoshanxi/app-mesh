@@ -57,6 +57,7 @@
         "permission-list",
         "app-view-all",
         "cloud-app-view",
+        "cloud-host-view",
         "app-view",
         "app-output-view",
         "host-resource-view"

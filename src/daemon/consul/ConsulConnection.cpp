@@ -68,6 +68,7 @@ void ConsulConnection::reportNode()
 		node.m_label = Configuration::instance()->getLabel();
 		node.m_total_bytes = mem->total_bytes;
 		node.m_cores = os::cpus().size();
+		node.m_leader = m_leader;
 		web::json::value body = node.AsJson();
 		auto cloudBody = this->retrieveNode(MY_HOST_NAME);
 		if (cloudBody.serialize() == body.serialize())
@@ -254,6 +255,17 @@ web::json::value ConsulConnection::addCloudApp(const std::string &app, web::json
 		throw std::runtime_error(resp.extract_utf8string().get());
 	}
 	return task->AsJson();
+}
+
+web::json::value ConsulConnection::getCloudNodes()
+{
+	auto nodes = this->retrieveNode();
+	web::json::value result;
+	for (const auto &node : nodes)
+	{
+		result[node.first] = node.second->AsJson();
+	}
+	return result;
 }
 
 void ConsulConnection::syncSchedule()

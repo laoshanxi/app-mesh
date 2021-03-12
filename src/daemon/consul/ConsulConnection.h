@@ -31,6 +31,7 @@ public:
 	std::string consulSessionId();
 	web::json::value viewCloudApps();
 	web::json::value addCloudApp(const std::string &app, web::json::value &content);
+	web::json::value getCloudNodes();
 	void deleteCloudApp(const std::string &app);
 	int getHealthStatus(const std::string &host, const std::string &app);
 

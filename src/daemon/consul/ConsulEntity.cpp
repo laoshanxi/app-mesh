@@ -135,7 +135,7 @@ void ConsulTopology::dump()
 }
 
 ConsulNode::ConsulNode()
-	: m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_occupyMemoryBytes(0)
+	: m_label(std::make_shared<Label>()), m_cores(0), m_total_bytes(0), m_occupyMemoryBytes(0), m_leader(false)
 {
 }
 
@@ -150,6 +150,10 @@ std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value &jsonObj
 	if (HAS_JSON_FIELD(jsonObj, "appmesh"))
 	{
 		node->m_appmeshProxyUrl = GET_JSON_STR_VALUE(jsonObj, "appmesh");
+	}
+	if (HAS_JSON_FIELD(jsonObj, "leader"))
+	{
+		node->m_leader = GET_JSON_BOOL_VALUE(jsonObj, "leader");
 	}
 	if (HAS_JSON_FIELD(jsonObj, "resource"))
 	{
@@ -176,6 +180,7 @@ web::json::value ConsulNode::AsJson() const
 	resource["cpu_cores"] = web::json::value::number(m_cores);
 	resource["mem_total_bytes"] = web::json::value::number(m_total_bytes);
 	result["resource"] = resource;
+	result["leader"] = web::json::value::boolean(m_leader);
 	return result;
 }
 

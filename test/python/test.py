@@ -51,3 +51,4 @@ print(
     )
 )
 print(json.dumps(client.remove_cloud_app("cloud"), indent=2))
+print(json.dumps(client.get_cloud_nodes(), indent=2))

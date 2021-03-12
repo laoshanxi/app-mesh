@@ -331,6 +331,7 @@ public:
 #define PERMISSION_KEY_cloud_app_view "cloud-app-view"
 #define PERMISSION_KEY_cloud_app_reg "cloud-app-reg"
 #define PERMISSION_KEY_cloud_app_delete "cloud-app-delete"
+#define PERMISSION_KEY_cloud_host_view "cloud-host-view"
 #define PERMISSION_KEY_view_host_resource "host-resource-view"
 #define PERMISSION_KEY_app_reg "app-reg"
 #define PERMISSION_KEY_app_control "app-control"

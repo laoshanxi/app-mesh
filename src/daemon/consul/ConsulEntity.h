@@ -39,6 +39,7 @@ struct ConsulNode
 	uint64_t m_occupyMemoryBytes;
 	std::string m_appmeshProxyUrl;
 	std::string m_hostName;
+	bool m_leader;
 	std::map<std::string, std::shared_ptr<Application>> m_assignedApps;
 };
 

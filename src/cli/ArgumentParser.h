@@ -35,6 +35,7 @@ private:
 	void processUnReg();
 	void processView();
 	void processViewCloud();
+	void processViewNodes();
 	void processResource();
 	void processEnableDisable(bool start);
 	void processRun();

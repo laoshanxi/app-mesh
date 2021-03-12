@@ -32,31 +32,41 @@ protected:
 	void apiRunAsyncOut(const HttpRequest &message);
 	void apiGetAppOutput(const HttpRequest &message);
 	void apiGetApps(const HttpRequest &message);
+
 	void apiGetCloudApps(const HttpRequest &message);
 	void apiAddCloudApp(const HttpRequest &message);
 	void apiDelCloudApp(const HttpRequest &message);
+	void apiGetCloudHost(const HttpRequest &message);
+
 	void apiGetResources(const HttpRequest &message);
+
 	void apiRegApp(const HttpRequest &message);
 	void apiEnableApp(const HttpRequest &message);
 	void apiDisableApp(const HttpRequest &message);
 	void apiDeleteApp(const HttpRequest &message);
+
 	void apiFileDownload(const HttpRequest &message);
 	void apiFileUpload(const HttpRequest &message);
+
 	void apiGetLabels(const HttpRequest &message);
 	void apiAddLabel(const HttpRequest &message);
 	void apiDeleteLabel(const HttpRequest &message);
 	void apiGetUserPermissions(const HttpRequest &message);
+
 	void apiGetBasicConfig(const HttpRequest &message);
 	void apiSetBasicConfig(const HttpRequest &message);
+
 	void apiUserChangePwd(const HttpRequest &message);
 	void apiUserLock(const HttpRequest &message);
 	void apiUserUnlock(const HttpRequest &message);
 	void apiUserAdd(const HttpRequest &message);
 	void apiUserDel(const HttpRequest &message);
 	void apiUserList(const HttpRequest &message);
+
 	void apiRoleView(const HttpRequest &message);
 	void apiRoleUpdate(const HttpRequest &message);
 	void apiRoleDelete(const HttpRequest &message);
+
 	void apiUserGroupsView(const HttpRequest &message);
 	void apiListPermissions(const HttpRequest &message);
 	void apiHealth(const HttpRequest &message);

@@ -104,6 +104,14 @@ class AppMeshClient:
         else:
             return False, resp.text
 
+    def get_cloud_nodes(self):
+        # get cloud nodes
+        resp = self.__request_http(Method.GET, path="/appmesh/cloud/nodes")
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
     def get_app_health(self, app_name):
         # get application health status, 0 is health
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/health".format(app_name))

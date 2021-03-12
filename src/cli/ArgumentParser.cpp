@@ -112,6 +112,10 @@ void ArgumentParser::parse()
 	{
 		processViewCloud();
 	}
+	else if (cmd == "nodes")
+	{
+		processViewNodes();
+	}
 	else if (cmd == "resource")
 	{
 		processResource();
@@ -645,6 +649,19 @@ void ArgumentParser::processViewCloud()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/appmesh/cloud/applications";
+	auto resp = requestHttp(true, methods::GET, restPath);
+	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+}
+
+void ArgumentParser::processViewNodes()
+{
+	po::options_description desc("List cluster nodes usage:", BOOST_DESC_WIDTH);
+	desc.add_options()
+		COMMON_OPTIONS("help,h", "Prints command usage to stdout and exits");
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	std::string restPath = "/appmesh/cloud/nodes";
 	auto resp = requestHttp(true, methods::GET, restPath);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
