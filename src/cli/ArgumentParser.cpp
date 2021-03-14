@@ -201,12 +201,13 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  restart     Restart a application" << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  join        Join to Consul cluster" << std::endl;
+	std::cout << "  join        Join to a Consul cluster" << std::endl;
 	std::cout << "  cloud       List cloud application[s]" << std::endl;
+	std::cout << "  nodes       List cloud nodes" << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  run         Run command and get output" << std::endl;
-	std::cout << "  exec        Run command by appmesh and impersonate context" << std::endl;
+	std::cout << "  run         Run commands or an existing application and get output" << std::endl;
+	std::cout << "  exec        Run command by appmesh and impersonate current shell context" << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "  resource    Display host resources" << std::endl;
@@ -220,7 +221,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << std::endl;
 
 	std::cout << "  passwd      Change user password" << std::endl;
-	std::cout << "  lock        Lock unlock a user" << std::endl;
+	std::cout << "  lock        Lock/Unlock a user" << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
@@ -734,20 +735,21 @@ void ArgumentParser::processEnableDisable(bool start)
 
 void ArgumentParser::processRun()
 {
-	po::options_description desc("Shell application:", BOOST_DESC_WIDTH);
+	po::options_description desc("Run commands or application:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("cmd,c", po::value<std::string>(), "full command line with arguments")
+		("cmd,c", po::value<std::string>(), "full command line with arguments (run application do not need specify command line)")
+		("name,n", po::value<std::string>(), "application name to run (run commands do not need specify application name)")
 		("metadata,g", po::value<std::string>(), "application metadata string (input for application, pass to application process stdin)")
-		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work')")
+		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (m_commandLineVariables.count("cmd") == 0 || m_commandLineVariables.count("help"))
+	if (m_commandLineVariables.count("help") || (m_commandLineVariables.count("name") == 0 && m_commandLineVariables.count("cmd") == 0))
 	{
 		std::cout << desc << std::endl;
 		return;
@@ -760,7 +762,14 @@ void ArgumentParser::processRun()
 
 	web::json::value jsonObj;
 	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
-	jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	if (m_commandLineVariables.count(JSON_KEY_APP_command))
+	{
+		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	}
+	if (m_commandLineVariables.count(JSON_KEY_APP_name))
+	{
+		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
+	}
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
 	{
 		auto metaData = m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>();
