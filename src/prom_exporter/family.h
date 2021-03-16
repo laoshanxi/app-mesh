@@ -1,24 +1,23 @@
 #pragma once
 
-#include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
-#include "check_names.h"
 #include "client_metric.h"
 #include "collectable.h"
-
+#include "detail/core_export.h"
 #include "detail/future_std.h"
-#include "detail/utils.h"
 #include "metric_family.h"
+
+// IWYU pragma: no_include "prometheus/counter.h"
+// IWYU pragma: no_include "prometheus/gauge.h"
+// IWYU pragma: no_include "prometheus/histogram.h"
+// IWYU pragma: no_include "prometheus/summary.h"
 
 namespace prometheus {
 
@@ -59,7 +58,7 @@ namespace prometheus {
 ///
 /// \tparam T One of the metric types Counter, Gauge, Histogram or Summary.
 template <typename T>
-class Family : public Collectable {
+class PROMETHEUS_CPP_CORE_EXPORT Family : public Collectable {
  public:
   /// \brief Create a new metric.
   ///
@@ -88,6 +87,7 @@ class Family : public Collectable {
   /// \param constant_labels Assign a set of key-value pairs (= labels) to the
   /// metric. All these labels are propagated to each time series within the
   /// metric.
+  /// \throw std::runtime_exception on invalid metric or label names.
   Family(const std::string& name, const std::string& help,
          const std::map<std::string, std::string>& constant_labels);
 
@@ -107,6 +107,7 @@ class Family : public Collectable {
   /// Counter, Gauge, Histogram or Summary for required constructor arguments.
   /// \return Return the newly created dimensional data or - if a same set of
   /// labels already exists - the already existing dimensional data.
+  /// \throw std::runtime_exception on invalid label names.
   template <typename... Args>
   T& Add(const std::map<std::string, std::string>& labels, Args&&... args) {
     return Add(labels, detail::make_unique<T>(args...));

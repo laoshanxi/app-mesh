@@ -25,6 +25,7 @@ DELETE| /appmesh/app/${APP-NAME} | | Deregister an application
 GET | /appmesh/cloud/applications | | Get cloud applications
 PUT | /appmesh/cloud/app/${APP-NAME} | Body: <br> cloud application definition | Add cloud application
 DEL | /appmesh/cloud/app/${APP-NAME} | | Delete cloud application
+DEL | /appmesh/cloud/nodes | | Get cloud node list
 GET | /appmesh/file/download | Header: <br> FilePath=/opt/remote/filename | Download a file from REST server and grant permission
 POST| /appmesh/file/upload | Header: <br> FilePath=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
 GET | /appmesh/labels | { "os": "linux","arch": "x86_64" } | Get labels

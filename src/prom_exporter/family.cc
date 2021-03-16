@@ -1,6 +1,13 @@
 #include "family.h"
 
+#include <algorithm>
+#include <cassert>
+#include <stdexcept>
+#include <utility>
+
+#include "check_names.h"
 #include "counter.h"
+#include "detail/utils.h"
 #include "gauge.h"
 #include "histogram.h"
 #include "summary.h"
@@ -11,7 +18,15 @@ template <typename T>
 Family<T>::Family(const std::string& name, const std::string& help,
                   const std::map<std::string, std::string>& constant_labels)
     : name_(name), help_(help), constant_labels_(constant_labels) {
-  assert(CheckMetricName(name_));
+  if (!CheckMetricName(name_)) {
+    throw std::invalid_argument("Invalid metric name");
+  }
+  for (auto& label_pair : constant_labels_) {
+    auto& label_name = label_pair.first;
+    if (!CheckLabelName(label_name)) {
+      throw std::invalid_argument("Invalid label name");
+    }
+  }
 }
 
 template <typename T>
@@ -29,20 +44,23 @@ T& Family<T>::Add(const std::map<std::string, std::string>& labels,
     assert(labels == old_labels);
 #endif
     return *metrics_iter->second;
-  } else {
-#ifndef NDEBUG
-    for (auto& label_pair : labels) {
-      auto& label_name = label_pair.first;
-      assert(CheckLabelName(label_name));
-    }
-#endif
-
-    auto metric = metrics_.insert(std::make_pair(hash, std::move(object)));
-    assert(metric.second);
-    labels_.insert({hash, labels});
-    labels_reverse_lookup_.insert({metric.first->second.get(), hash});
-    return *(metric.first->second);
   }
+
+  for (auto& label_pair : labels) {
+    auto& label_name = label_pair.first;
+    if (!CheckLabelName(label_name)) {
+      throw std::invalid_argument("Invalid label name");
+    }
+    if (constant_labels_.count(label_name)) {
+      throw std::invalid_argument("Duplicate label name");
+    }
+  }
+
+  auto metric = metrics_.insert(std::make_pair(hash, std::move(object)));
+  assert(metric.second);
+  labels_.insert({hash, labels});
+  labels_reverse_lookup_.insert({metric.first->second.get(), hash});
+  return *(metric.first->second);
 }
 
 template <typename T>
@@ -71,6 +89,11 @@ const std::map<std::string, std::string> Family<T>::GetConstantLabels() const {
 template <typename T>
 std::vector<MetricFamily> Family<T>::Collect() const {
   std::lock_guard<std::mutex> lock{mutex_};
+
+  if (metrics_.empty()) {
+    return {};
+  }
+
   auto family = MetricFamily{};
   family.name = name_;
   family.help = help_;
@@ -97,9 +120,9 @@ ClientMetric Family<T>::CollectMetric(std::size_t hash, T* metric) const {
   return collected;
 }
 
-template class Family<Counter>;
-template class Family<Gauge>;
-template class Family<Histogram>;
-template class Family<Summary>;
+template class PROMETHEUS_CPP_CORE_EXPORT Family<Counter>;
+template class PROMETHEUS_CPP_CORE_EXPORT Family<Gauge>;
+template class PROMETHEUS_CPP_CORE_EXPORT Family<Histogram>;
+template class PROMETHEUS_CPP_CORE_EXPORT Family<Summary>;
 
 }  // namespace prometheus

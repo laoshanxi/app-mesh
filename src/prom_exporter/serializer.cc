@@ -1,6 +1,6 @@
 #include "serializer.h"
 
-#include <sstream>
+#include <sstream>  // IWYU pragma: keep
 
 namespace prometheus {
 

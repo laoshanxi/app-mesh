@@ -5,14 +5,16 @@
 #include <functional>
 #include <vector>
 
+#include "detail/core_export.h"
 
+// IWYU pragma: private, include "prometheus/summary.h"
 
 namespace prometheus {
 namespace detail {
 
-class CKMSQuantiles {
+class PROMETHEUS_CPP_CORE_EXPORT CKMSQuantiles {
  public:
-  struct Quantile {
+  struct PROMETHEUS_CPP_CORE_EXPORT Quantile {
     const double quantile;
     const double error;
     const double u;

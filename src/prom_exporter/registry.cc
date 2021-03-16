@@ -1,11 +1,15 @@
 #include "registry.h"
 
+#include <algorithm>
+#include <iterator>
+#include <stdexcept>
+#include <tuple>
+
 #include "counter.h"
+#include "detail/future_std.h"
 #include "gauge.h"
 #include "histogram.h"
 #include "summary.h"
-
-#include <iterator>
 
 namespace prometheus {
 

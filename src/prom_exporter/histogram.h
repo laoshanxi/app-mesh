@@ -4,8 +4,8 @@
 
 #include "client_metric.h"
 #include "counter.h"
-#include "detail/builder.h"
-
+#include "detail/builder.h"  // IWYU pragma: export
+#include "detail/core_export.h"
 #include "gauge.h"
 #include "metric_type.h"
 
@@ -27,7 +27,7 @@ namespace prometheus {
 ///
 /// The class is thread-safe. No concurrent call to any API of this type causes
 /// a data race.
-class Histogram {
+class PROMETHEUS_CPP_CORE_EXPORT Histogram {
  public:
   using BucketBoundaries = std::vector<double>;
 
@@ -99,6 +99,6 @@ class Histogram {
 ///
 /// To finish the configuration of the Histogram metric register it with
 /// Register(Registry&).
-detail::Builder<Histogram> BuildHistogram();
+PROMETHEUS_CPP_CORE_EXPORT detail::Builder<Histogram> BuildHistogram();
 
 }  // namespace prometheus

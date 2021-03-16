@@ -4,13 +4,15 @@
 #include <cstddef>
 #include <vector>
 
-#include "detail/ckms_quantiles.h"
+#include "detail/ckms_quantiles.h"  // IWYU pragma: export
+#include "detail/core_export.h"
 
+// IWYU pragma: private, include "prometheus/summary.h"
 
 namespace prometheus {
 namespace detail {
 
-class TimeWindowQuantiles {
+class PROMETHEUS_CPP_CORE_EXPORT TimeWindowQuantiles {
   using Clock = std::chrono::steady_clock;
 
  public:

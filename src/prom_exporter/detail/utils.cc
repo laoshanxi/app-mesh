@@ -1,7 +1,8 @@
 #include "detail/utils.h"
-#include "hash.h"
 
-#include <numeric>
+#include <utility>
+
+#include "hash.h"
 
 namespace prometheus {
 

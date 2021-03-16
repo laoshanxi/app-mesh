@@ -1,6 +1,7 @@
 #include "detail/builder.h"
 
 #include "counter.h"
+#include "detail/core_export.h"
 #include "gauge.h"
 #include "histogram.h"
 #include "registry.h"
@@ -34,10 +35,10 @@ Family<T>& Builder<T>::Register(Registry& registry) {
   return registry.Add<T>(name_, help_, labels_);
 }
 
-template class Builder<Counter>;
-template class Builder<Gauge>;
-template class Builder<Histogram>;
-template class Builder<Summary>;
+template class PROMETHEUS_CPP_CORE_EXPORT Builder<Counter>;
+template class PROMETHEUS_CPP_CORE_EXPORT Builder<Gauge>;
+template class PROMETHEUS_CPP_CORE_EXPORT Builder<Histogram>;
+template class PROMETHEUS_CPP_CORE_EXPORT Builder<Summary>;
 
 }  // namespace detail
 

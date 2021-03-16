@@ -4,12 +4,12 @@
 #include <string>
 #include <vector>
 
-
+#include "detail/core_export.h"
 #include "metric_family.h"
 
 namespace prometheus {
 
-class Serializer {
+class PROMETHEUS_CPP_CORE_EXPORT Serializer {
  public:
   virtual ~Serializer() = default;
   virtual std::string Serialize(const std::vector<MetricFamily>&) const;

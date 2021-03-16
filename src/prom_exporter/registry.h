@@ -7,8 +7,7 @@
 #include <vector>
 
 #include "collectable.h"
-
-#include "detail/future_std.h"
+#include "detail/core_export.h"
 #include "family.h"
 #include "metric_family.h"
 
@@ -22,7 +21,7 @@ class Summary;
 namespace detail {
 
 template <typename T>
-class Builder;
+class Builder;  // IWYU pragma: keep
 
 }
 /// \brief Manages the collection of a number of metrics.
@@ -38,7 +37,7 @@ class Builder;
 ///
 /// The class is thread-safe. No concurrent call to any API of this type causes
 /// a data race.
-class Registry : public Collectable {
+class PROMETHEUS_CPP_CORE_EXPORT Registry : public Collectable {
  public:
   /// \brief How to deal with repeatedly added family names for a type.
   ///

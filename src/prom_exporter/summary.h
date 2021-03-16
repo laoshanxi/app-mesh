@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "client_metric.h"
-#include "detail/builder.h"
+#include "detail/builder.h"  // IWYU pragma: export
 #include "detail/ckms_quantiles.h"
-
+#include "detail/core_export.h"
 #include "detail/time_window_quantiles.h"
 #include "metric_type.h"
 
@@ -38,7 +38,7 @@ namespace prometheus {
 ///
 /// The class is thread-safe. No concurrent call to any API of this type causes
 /// a data race.
-class Summary {
+class PROMETHEUS_CPP_CORE_EXPORT Summary {
  public:
   using Quantiles = std::vector<detail::CKMSQuantiles::Quantile>;
 
@@ -118,6 +118,6 @@ class Summary {
 ///
 /// To finish the configuration of the Summary metric register it with
 /// Register(Registry&).
-detail::Builder<Summary> BuildSummary();
+PROMETHEUS_CPP_CORE_EXPORT detail::Builder<Summary> BuildSummary();
 
 }  // namespace prometheus
