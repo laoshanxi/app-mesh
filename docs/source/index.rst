@@ -25,6 +25,20 @@ Welcome to AppMesh's documentation!
    USER_ROLE.md
    Coverity.md
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Success:
+   :numbered: 0
+
+
+   success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.md
+   success/customize_app_startup_behavior.md
+   success/manage_cluster_level_microservice_applications.md
+   success/open_service_broker_support_local_pv_for_K8S.md
+   success/promote_native_app_to_microservice_app.md
+   success/secure_REST_file_server.md
+   success/standalone_JWT_server.md
+
 Indices and tables
 ==================
 
