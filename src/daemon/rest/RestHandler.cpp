@@ -123,12 +123,12 @@ void RestHandler::open()
 			server_config->set_ssl_context_callback(
 				[&](boost::asio::ssl::context &ctx) {
 					boost::system::error_code ec;
-
+					// https://github.com/zaphoyd/websocketpp/blob/c5510d6de04917812b910a8dd44735c1f17061d9/examples/echo_server_tls/echo_server_tls.cpp
 					ctx.set_options(boost::asio::ssl::context::default_workarounds |
-										boost::asio::ssl::context::no_sslv2 |
-										boost::asio::ssl::context::no_sslv3 |
-										boost::asio::ssl::context::no_tlsv1 |
-										boost::asio::ssl::context::no_tlsv1_1 |
+										boost::asio::ssl::context::no_sslv2 |	// disable SSL v2
+										boost::asio::ssl::context::no_sslv3 |	// disable SSL v3
+										boost::asio::ssl::context::no_tlsv1 |	// disable TLS v1.0
+										boost::asio::ssl::context::no_tlsv1_1 | // disable TLS v1.1
 										boost::asio::ssl::context::single_dh_use |
 										SSL_OP_CIPHER_SERVER_PREFERENCE,
 									ec);

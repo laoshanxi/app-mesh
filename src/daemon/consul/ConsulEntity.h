@@ -21,6 +21,7 @@ struct ConsulNode
 	ConsulNode();
 	static std::shared_ptr<ConsulNode> FromJson(const web::json::value &jsonObj, const std::string &hostName);
 	web::json::value AsJson() const;
+	void dump();
 
 	/// @brief For schedule sort
 	/// @param app
@@ -65,7 +66,7 @@ struct ConsulTask
 	int m_consulServicePort;
 
 	// request memory, MB
-	int m_requestMemMega;
+	uint64_t m_requestMemMega;
 
 	// used for schedule fill
 	std::map<std::string, std::shared_ptr<ConsulNode>> m_matchedHosts;

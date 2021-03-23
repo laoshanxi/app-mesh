@@ -184,6 +184,22 @@ web::json::value ConsulNode::AsJson() const
 	return result;
 }
 
+void ConsulNode::dump()
+{
+	const static char fname[] = "ConsulNode::dump() ";
+	LOG_DBG << fname << "m_hostName=" << m_hostName;
+	LOG_DBG << fname << "m_leader=" << m_leader;
+	LOG_DBG << fname << "m_appmeshProxyUrl=" << m_appmeshProxyUrl;
+	LOG_DBG << fname << "m_occupyMemoryBytes=" << m_occupyMemoryBytes;
+	LOG_DBG << fname << "m_total_bytes=" << m_total_bytes;
+	LOG_DBG << fname << "full=" << full();
+	LOG_DBG << fname << "m_cores=" << m_cores;
+	for (auto app : m_assignedApps)
+	{
+		LOG_DBG << fname << "m_assignedApps=" << app.second->getName();
+	}
+}
+
 void ConsulNode::assignApp(const std::shared_ptr<ConsulTask> &task)
 {
 	m_assignedApps[task->m_app->getName()] = task->m_app;
@@ -192,7 +208,15 @@ void ConsulNode::assignApp(const std::shared_ptr<ConsulTask> &task)
 
 bool ConsulNode::tryAssignApp(const std::shared_ptr<ConsulTask> &task)
 {
-	return (m_occupyMemoryBytes + (task->m_requestMemMega * 1024 * 1024)) < m_total_bytes;
+	const static char fname[] = "ConsulNode::tryAssignApp() ";
+
+	auto result = (m_occupyMemoryBytes + (task->m_requestMemMega * 1024 * 1024)) < m_total_bytes;
+	if (!result)
+	{
+		LOG_INF << fname << "requestMemMega <" << task->m_requestMemMega << "> can not assigned to host <" << m_hostName << ">";
+		this->dump();
+	}
+	return result;
 }
 
 bool ConsulNode::full()

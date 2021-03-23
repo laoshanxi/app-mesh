@@ -19,23 +19,22 @@ Scope | Behavior
 ---|---
 Support applications | Long running <br> Short running <br> Periodic long running <br> Cron schedule
 Application attributes | Extra init and cleanup commands <br> Available time range in a day and more rich time options <br> Environment variables <br> Health check command to identify app health <br> Pipe input string data to pass data to application <br> Resource (memory & CPU) limitation (cgroup on Linux) to request resources <br> Support Docker container app
-Security |  ⚡️ [JWT authentication](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/JWT.md) for CLI and REST interface <br> ⚡️ [Role based permission control](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/USER_ROLE.md) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
-Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/PROMETHEUS.md) <br> ⚡️ [Grafana Loki](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Loki.md) <br> REST service with IPv4/IPv6 support 
-Micro service application | ⚡️ [Consul micro-service cluster management](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/CONSUL.md) 
+Security |  ⚡️ [JWT authentication](https://app-mesh.readthedocs.io/en/latest/JWT.html) for CLI and REST interface <br> ⚡️ [Role based permission control](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
+Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> ⚡️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> REST service with IPv4/IPv6 support 
+Micro service application | ⚡️ [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32 <br> ARM64
 SDK | [Python](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/python/appmesh_client.py)
 
 ## Getting started
-The [Installation doc](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Install.md) introduce how
+The [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html) introduce how
 to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Documentation
-- [CLI](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/CLI.md) provide all the command lines interfaces to manage App Mesh.
-- [Development](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Development.md) define REST APIs and show how to build App Mesh.
-- [Security](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/Security.md) describe the security design for App Mesh.
-- [Success cases](https://github.com/laoshanxi/app-mesh/wiki) describe successful enterprise use cases provide by App Mesh.
 - [Read the Docs](https://app-mesh.readthedocs.io/)
+- [REST API](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis)
+- [Command lines](https://app-mesh.readthedocs.io/en/latest/CLI.html)
+- [Security](https://app-mesh.readthedocs.io/en/latest/JWT.html)
 
 ## Comparison
 

@@ -1,5 +1,5 @@
 # Manage cluster level microservice applications
-Multiple App Mesh instances can connect as a cluster with [Consul](https://github.com/laoshanxi/app-mesh/blob/main/doc/CONSUL.md) and schedule cluster level micro-service applications. Cluster level application can get the benefit of cluster level HA, and the application will be schedule among the cluster with resource requirement consideration.
+Multiple App Mesh instances can connect as a cluster with [Consul](https://app-mesh.readthedocs.io/en/latest/CONSUL.html) and schedule cluster level micro-service applications. Cluster level application can get the benefit of cluster level HA, and the application will be schedule among the cluster with resource requirement consideration.
 
 ## Configuration
 

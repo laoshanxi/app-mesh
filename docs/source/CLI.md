@@ -15,11 +15,12 @@ Commands:
   disable     Disable a application
   restart     Restart a application
 
-  join        Join to Consul cluster
+  join        Join to a Consul cluster
   cloud       List cloud application[s]
+  nodes       List cloud nodes
 
-  run         Run command and get output
-  exec        Run command by appmesh and impersonate context
+  run         Run commands or an existing application and get output
+  exec        Run command by appmesh and impersonate current shell context
 
   resource    Display host resources
   label       Manage host labels
@@ -30,7 +31,7 @@ Commands:
   put         Upload local file to App Mesh server
 
   passwd      Change user password
-  lock        Lock unlock a user
+  lock        Lock/Unlock a user
 
 Run 'appc COMMAND --help' for more information on a command.
 Use '-b $hostname','-B $port' to run remote command.
@@ -44,14 +45,12 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 
 ```text
 $ appc view
-ID NAME        OWNER STATUS   HEALTH PID     MEMORY  CPU  RETURN LAST_START_TIME         COMMAND
-1  qqmail      admin enabled  0      -       -       -    0      2020-12-26 19:55:38+08  sh /opt/qqmail/launch.sh
-2  ssd         admin enabled  1      -       -       -    -      -                       /usr/sbin/fstrim -a -v
-3  loki        admin enabled  0      1058    3 Mi    0%   -      -                       ping www.sina.com
-4  ping        admin enabled  0      1059    2.9 Mi  0%   -      -                       ping www.baidu.com
-5  docker            enabled  0      1853    2.5 Mi  0%   -      -                       ping www.sina.com
-6  sec         admin enabled  0      30306   516 Ki  0%   -      2020-12-26 19:54:37+08  sleep 200
-
+ID NAME        OWNER STATUS   HEALTH PID     MEMORY   %CPU RETURN LAST_START_TIME         COMMAND
+1  qqmail      admin enabled  0      -       -        -    0      2021-03-26 10:54:26+08  sh /opt/qqmail/launch.sh
+2  ssd         admin enabled  1      -       -        -    -      -                       /usr/sbin/fstrim -a -v
+3  loki        admin enabled  0      4789    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping www.sina.com
+4  ping        admin enabled  0      4790    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping www.baidu.com
+5  docker            enabled  0      2866    2.5 Mi   0    -      2021-03-26 08:03:28+08  ping www.sina.com
 ```
 - View application output
 ```text
@@ -66,16 +65,21 @@ $ appc reg -n ping -c 'ping www.baidu.com'
 
 $ appc view -n ping
 {
-	"command": "ping www.baidu.com",
-	"health": 0,
-	"last_start_time": "2020-10-24 07:31:40+08",
-	"memory": 3088384,
-	"name": "ping",
-	"owner": "admin",
-	"pid": 4668,
-	"register_time": "2020-10-24 07:31:40+08",
-	"status": 1
+  "command": "ping www.baidu.com",
+  "cpu": 0,
+  "fd": 5,
+  "health": 0,
+  "last_start_time": "2021-03-26 08:03:37+08",
+  "memory": 3203072,
+  "name": "ping",
+  "owner": "admin",
+  "pid": 4790,
+  "register_time": "2020-10-24 07:31:40+08",
+  "return": 2,
+  "status": 1,
+  "stdout_cache_num": 2
 }
+
 
 $ appc view -n ping -o
 PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
@@ -97,29 +101,22 @@ $ appc reg
 Register a new application:
   -b [ --host ] arg (=localhost) host name or ip address
   -B [ --port ] arg              port number
-  -u [ --user ] arg              Specifies the name of the user to connect to App Mesh for this 
-                                 command.
-  -x [ --password ] arg          Specifies the user password to connect to App Mesh for this 
-                                 command.
+  -u [ --user ] arg              Specifies the name of the user to connect to App Mesh for this command.
+  -x [ --password ] arg          Specifies the user password to connect to App Mesh for this command.
   -n [ --name ] arg              application name
-  -g [ --metadata ] arg          metadata string (input for application, pass to process stdin), 
-                                 '@' allowed to read from file
-  --perm arg                     application user permission, value is 2 bit integer: [group & 
-                                 other], each bit can be deny:1, read:2, write: 3.
+  -g [ --metadata ] arg          metadata string (input for application, pass to process stdin), '@' allowed to read from file
+  --perm arg                     application user permission, value is 2 bit integer: [group & other], each bit can be deny:1,
+                                 read:2, write: 3.
   -c [ --cmd ] arg               full command line with arguments
   -S [ --shell_mode ]            use shell mode, cmd can be more commands
   -I [ --init ] arg              initial command line with arguments
   -F [ --fini ] arg              fini command line with arguments
-  -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl host:port/health', 
-                                 return 0 is health)
-  -d [ --docker_image ] arg      docker image which used to run command line (for docker container 
-                                 application)
+  -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)
+  -d [ --docker_image ] arg      docker image which used to run command line (for docker container application)
   -w [ --workdir ] arg           working directory
   -s [ --status ] arg (=1)       initial application status (true is enable, false is disabled)
-  -t [ --start_time ] arg        start date time for app (ISO8601 time format, e.g., 
-                                 '2020-10-11T09:22:05')
-  -E [ --end_time ] arg          end date time for app (ISO8601 time format, e.g., 
-                                 '2020-10-11T10:22:05')
+  -t [ --start_time ] arg        start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')
+  -E [ --end_time ] arg          end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')
   -j [ --daily_start ] arg       daily start time (e.g., '09:00:00')
   -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
   -m [ --memory ] arg            memory limit in MByte
@@ -127,18 +124,16 @@ Register a new application:
   -O [ --stdout_cache_num ] arg  stdout file cache number
   -v [ --virtual_memory ] arg    virtual memory limit in MByte
   -r [ --cpu_shares ] arg        CPU shares (relative weight)
-  -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e env2=value2, 
-                                 APP_DOCKER_OPTS is used to input docker parameters)
-  --sec_env arg                  security environment variables, encrypt in server side with 
-                                 application owner's cipher
-  -i [ --interval ] arg          start interval seconds for short running app, support ISO 8601 
-                                 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')
-  -q [ --extra_time ] arg        extra timeout for short running app,the value must less than 
-                                 interval  (default 0), support ISO 8601 durations (e.g., 
-                                 'P1Y2M3DT4H5M6S' 'P5W')
-  -z [ --timezone ] arg          posix timezone for the application, reflect 
-                                 [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing 
-                                 Time)
+  -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input
+                                 docker parameters)
+  --sec_env arg                  security environment variables, encrypt in server side with application owner's cipher
+  -i [ --interval ] arg          start interval seconds for short running app, support ISO 8601 durations and cron expression
+                                 (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')
+  --cron                         indicate interval parameter use cron expression
+  -q [ --extra_time ] arg        extra timeout for short running app,the value must less than interval  (default 0), support ISO
+                                 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')
+  -z [ --timezone ] arg          posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g.,
+                                 'GMT+08:00' is Beijing Time)
   -k [ --keep_running ]          monitor and keep running for short running app in start interval
   -f [ --force ]                 force without confirm
   --stdin                        accept json from stdin

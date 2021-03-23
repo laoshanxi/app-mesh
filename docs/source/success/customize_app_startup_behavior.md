@@ -3,7 +3,7 @@ App Mesh can be used as a daemon application used to monitor and launch other ap
 For application deployment, application startup behavior can be managed by App Mesh on local host to get High Available benefit.
 
 ## Solution
-App Mesh support monitor both long running and short running applications, for more details, refer to [CommandLine](https://github.com/laoshanxi/app-mesh/blob/main/doc/CLI.md)
+App Mesh support monitor both long running and short running applications, for more details, refer to [CommandLine](https://app-mesh.readthedocs.io/en/latest/CLI.html)
 
 ## Register an existing application to App Mesh
 By default you can register your application simply by specify start command:

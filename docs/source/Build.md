@@ -11,7 +11,8 @@ The general way build all dependencies on local Linux host, this will build all 
 $ git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
 $ sudo sh app-mesh/script/openssl_update.sh
 $ sudo sh app-mesh/autogen.sh
-# The above process will create 'dep' directory, this dir can be deleted
+# clean
+$ rm -rf app-mesh dep
 ```
 
 After environment was setup with above steps, use bellow steps to build App Mesh. `make test ARGS="-V"` is used to run Unit Test after `make`.

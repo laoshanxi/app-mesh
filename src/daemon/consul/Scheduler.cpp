@@ -109,13 +109,13 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> Scheduler::scheduleTask(c
 
 				newTopology[hostname]->m_scheduleApps[taskName] = std::chrono::system_clock::now();
 				selectedNode->assignApp(task.second);
-				LOG_DBG << fname << "task <" << taskName << "> assigned to host < " << hostname << ">";
+				LOG_DBG << fname << "task <" << taskName << "> assigned to host <" << hostname << ">";
 			}
 			else
 			{
-				LOG_INF << fname << "task <" << taskName << "> failed assigned to host < " << hostname << "> due to full with total bytes: " << selectedNode->getAssignedAppMem();
+				LOG_INF << fname << "task <" << taskName << "> failed assigned to host <" << hostname << "> due to full with total bytes: " << selectedNode->getAssignedAppMem();
 			}
-			task.second->dump();
+			//task.second->dump();
 		}
 	}
 

@@ -3,6 +3,7 @@
 App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 - Stand-alone mode: The hosted applications can only be managed by CLI or Web UI locally.
 - Consul-cluster mode: The hosted applications can be defined in Consul, all the App Mesh nodes will vote one leader node to do the Consul application schedule, the worker App Mesh nodes will got the schedule result and launch corresponding applications.
+- Each application with listen port will register as Consul service for service discovery
 
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/consul_arch.png" width=600 height=300 align=center /></div>
 
@@ -10,7 +11,7 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 
 > * Each App Mesh instance in the cluster will keep a connection(support SSL) to Consul Service as a consul session
 > * App Mesh only talks to Consul service by one way communication
-> * Each App Mesh node report status to Consul KV data
+> * Each App Mesh node report status to Consul KV data with session lock
 > * App Mesh node can be a cluster leader node or worker node
 > * Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any App Mesh Labels, wildcards is supported when build gcc version upper than 5.3)
 > * App Mesh Leader node schedule cluster applications and write schedule result to Consul KV data
@@ -48,12 +49,17 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 curl -s http://localhost:8500/v1/kv/appmesh/cluster/nodes/centos8?raw | python3 -m json.tool
 `
 {
+    "appmesh": "https://centos8:6060",
     "label": {
         "HOST_NAME": "centos8",
         "arch": "x86_64",
         "os_version": "centos7.6"
     },
-    "appmesh": "https://myhost.com:6060"
+    "leader": true,
+    "resource": {
+        "cpu_cores": 64,
+        "mem_total_bytes": 270453616640
+    }
 }
 `
  ```
@@ -95,10 +101,12 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/nodes/centos8?raw | python3 
 curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m json.tool
 `
 {
-    "replication": 1,
+    "replication": 3,
     "port": 6666,
+    "memoryMB": 1024,
     "content": {
         "name": "myapp",
+        "shell_mode": true,
         "command": "sleep 30"
     },
     "condition": {
@@ -106,6 +114,7 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m
         "os_version": "centos7.6"
     }
 }
+
 `
  ```
 
@@ -115,24 +124,17 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m
    For task dimension, the result assemble to one key
 
  ```shell
- curl -s http://localhost:8500/v1/kv/appmesh/cluster/topology?recurse | python -m json.tool | grep Key
+curl -s http://localhost:8500/v1/kv/appmesh/topology?recurse | python -m json.tool | grep Key
         "Key": "appmesh/cluster/topology/",
-        "Key": "appmesh/cluster/topology/cents",
- curl -s http://localhost:8500/v1/kv/appmesh/cluster/topology/myhost?raw | python -m json.tool  
+        "Key": "appmesh/cluster/topology/myhost",
+curl -s http://localhost:8500/v1/kv/appmesh/topology/myhost?raw | python -m json.tool  
 [
     {
         "app": "myapp",
-        "peer_hosts": [
-            "myhost"
-        ]
-    },
-    {
-        "app": "myapp2",
-        "peer_hosts": [
-            "myhost"
-        ]
+        "schedule_time": "2021-03-25 17:23:58+08"
     }
 ]
+
  ```
 
  ### Consul Key/Value organization
@@ -177,10 +179,10 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m
         },
 		"topology": {
 			"myhost": [ 
-			    {"app": "myapp", "peer_hosts": ["host2"] },
-				{"app": "myapp2","peer_hosts": [] }],
+			    {"app": "myapp", "schedule_time": "2021-03-25 17:23:58+08" },
+				{"app": "myapp2", "schedule_time": "2021-03-25 17:23:58+08" }],
 			"host2": [ 
-			    {"app": "myapp", "peer_hosts": ["myhost"] }
+			    {"app": "myapp", "schedule_time": "2021-03-25 17:23:58+08" }
 			]
 		}
 	}

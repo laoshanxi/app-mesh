@@ -1,5 +1,5 @@
 # Standalone JWT server
-JWT authentication is a popular authentication method for HTTP service and client, App Mesh implemented a JWT Server with RBAC (role based access control) and this service can be used to build a JWT server for other systems. detail design refer to [JWT Design](https://github.com/laoshanxi/app-mesh/blob/main/doc/JWT_DESC.md)
+JWT authentication is a popular authentication method for HTTP service and client, App Mesh implemented a JWT Server with RBAC (role based access control) and this service can be used to build a JWT server for other systems. detail design refer to [JWT Design](https://app-mesh.readthedocs.io/en/latest/JWT.html)
 
 ## Solution
 ### App Mesh can manage bellow concepts:

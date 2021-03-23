@@ -11,7 +11,7 @@ User and Role design for App Mesh
 > * Each user can define a password and some roles
 > * All the user/role/permission can be defined in local json file and central Consul service
 > * user/role configuration support dynamic update by `systemctl reload appmesh`, WebGUI and CLI
-> * User support metadata attributes for special usage
+> * User support metadata attribute for extra usage
 > * User group is defined for a user
 > * App ownership permission can define group permission and other group permission
 
