@@ -81,5 +81,5 @@ void ApplicationCron::dump()
 	const static char fname[] = "ApplicationCron::dump() ";
 
 	ApplicationShortRun::dump();
-	LOG_DBG << fname << "m_cron:" << cron::to_string(m_cron);
+	LOG_DBG << fname << "m_cron:" << cron::to_cronstr(m_cron);
 }

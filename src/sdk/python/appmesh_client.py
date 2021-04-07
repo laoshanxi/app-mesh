@@ -17,7 +17,8 @@ DEFAULT_RUN_APP_RETENTION_DURATION = 10
 
 
 class Method(Enum):
-    # REST methods
+    """REST methods"""
+
     GET = "GET"
     PUT = "PUT"
     POST = "POST"
@@ -27,7 +28,8 @@ class Method(Enum):
 
 
 class AppMeshClient:
-    # Client object used to access App Mesh Service
+    """Client object used to access App Mesh Service"""
+
     def __init__(
         self,
         server_host="127.0.0.1",
@@ -35,7 +37,7 @@ class AppMeshClient:
         ssl_enable=True,
         jwt_auth_enable=True,
     ):
-        # init function
+        """init function"""
         self.server_host = server_host
         self.server_port = server_port
         self.ssl_enable = ssl_enable
@@ -43,7 +45,7 @@ class AppMeshClient:
         self.jwt_token = ""
 
     def login(self, user_name, user_pwd, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS):
-        # login session
+        """login session"""
         if self.jwt_auth_enable:
             self.jwt_token = ""
             resp = self.__request_http(
@@ -63,7 +65,7 @@ class AppMeshClient:
                 return False
 
     def get_app(self, app_name):
-        # get application JSON information
+        """get application JSON information"""
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}".format(app_name))
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -71,12 +73,12 @@ class AppMeshClient:
             return False, resp.text
 
     def get_app_output(self, app_name):
-        # get application output
+        """get application output"""
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/output".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def get_apps(self):
-        # get all applications
+        """get all applications"""
         resp = self.__request_http(Method.GET, path="/appmesh/applications")
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -84,7 +86,7 @@ class AppMeshClient:
             return False, resp.text
 
     def get_cloud_apps(self):
-        # get cloud applications
+        """get cloud applications"""
         resp = self.__request_http(Method.GET, path="/appmesh/cloud/applications")
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -92,12 +94,12 @@ class AppMeshClient:
             return False, resp.text
 
     def remove_cloud_app(self, app_name):
-        # delete cloud application
+        """delete cloud application"""
         resp = self.__request_http(Method.DELETE, path="/appmesh/cloud/app/{0}".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def add_cloud_app(self, app_json):
-        # add cloud application
+        """add cloud application"""
         resp = self.__request_http(Method.PUT, path="/appmesh/cloud/app/{0}".format(app_json["content"]["name"]), body=app_json)
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -105,7 +107,7 @@ class AppMeshClient:
             return False, resp.text
 
     def get_cloud_nodes(self):
-        # get cloud nodes
+        """get cloud nodes"""
         resp = self.__request_http(Method.GET, path="/appmesh/cloud/nodes")
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -113,7 +115,7 @@ class AppMeshClient:
             return False, resp.text
 
     def get_app_health(self, app_name):
-        # get application health status, 0 is health
+        """get application health status, 0 is health"""
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/health".format(app_name))
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -121,12 +123,12 @@ class AppMeshClient:
             return False, resp.text
 
     def get_resource(self):
-        # get app mesh host resource status
+        """get app mesh host resource status"""
         resp = self.__request_http(Method.GET, path="/appmesh/resources")
         return resp.status_code == HTTPStatus.OK, resp.text == "0"
 
     def get_config(self):
-        # get app mesh configuration JSON
+        """get app mesh configuration JSON"""
         resp = self.__request_http(Method.GET, path="/appmesh/config")
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -134,7 +136,7 @@ class AppMeshClient:
             return False, resp.text
 
     def set_config(self, cfg_json):
-        # update app mesh configuration
+        """update app mesh configuration"""
         resp = self.__request_http(Method.POST, path="/appmesh/config")
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -142,7 +144,7 @@ class AppMeshClient:
             return False, resp.text
 
     def add_app(self, app_json):
-        # register an application
+        """register an application"""
         resp = self.__request_http(Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]), body=app_json)
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -150,22 +152,22 @@ class AppMeshClient:
             return False, resp.text
 
     def remove_app(self, app_name):
-        # remove an application
+        """remove an application"""
         resp = self.__request_http(Method.DELETE, path="/appmesh/app/{0}".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def enable_app(self, app_name):
-        # enable an application
+        """enable an application"""
         resp = self.__request_http(Method.POST, path="/appmesh/app/{0}/enable".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def disable_app(self, app_name):
-        # stop and disable an application
+        """stop and disable an application"""
         resp = self.__request_http(Method.POST, path="/appmesh/app/{0}/disable".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def add_tag(self, tag_name, tag_value):
-        # add a tag for app mesh node
+        """add a tag for app mesh node"""
         resp = self.__request_http(
             Method.PUT,
             query={"value": tag_value},
@@ -174,12 +176,12 @@ class AppMeshClient:
         return resp.status_code == HTTPStatus.OK
 
     def remove_tag(self, tag_name):
-        # remove a tag for app mesh node
+        """remove a tag for app mesh node"""
         resp = self.__request_http(Method.DELETE, path="/appmesh/label/{0}".format(tag_name))
         return resp.status_code == HTTPStatus.OK
 
     def get_tags(self):
-        # get tags for app mesh node
+        """get tags for app mesh node"""
         resp = self.__request_http(Method.GET, path="/appmesh/labels")
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
@@ -187,12 +189,12 @@ class AppMeshClient:
             return False, resp.text
 
     def get_metrics(self):
-        # get Promethus metrics
+        """get Promethus metrics"""
         resp = self.__request_http(Method.GET, path="/appmesh/metrics")
         return resp.status_code == HTTPStatus.OK, resp.text
 
     def download(self, file_path, local_file):
-        # download a remote file to local
+        """download a remote file to local"""
         resp = self.__request_http(Method.GET, path="/appmesh/file/download", header={"FilePath": file_path})
         if resp.status_code == HTTPStatus.OK:
             with open(local_file, "wb") as fp:
@@ -209,7 +211,7 @@ class AppMeshClient:
         return False
 
     def upload(self, file_path, local_file):
-        # upload a local file to remote
+        """upload a local file to remote"""
         with open(file=local_file, mode="rb") as fp:
             file_stat = os.stat(local_file)
             header = {}
@@ -235,7 +237,7 @@ class AppMeshClient:
         max_exec_time=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
         async_retention=DEFAULT_RUN_APP_RETENTION_DURATION,
     ):
-        # remote run a command
+        """remote run a command"""
         path = ""
         if synchronized:
             path = "/appmesh/app/syncrun"
@@ -267,7 +269,7 @@ class AppMeshClient:
             print(resp.text)
 
     def __request_http(self, method, path, query={}, header={}, body=None):
-        # http request
+        """http request"""
         protocol = ""
         if self.ssl_enable:
             protocol = "https"

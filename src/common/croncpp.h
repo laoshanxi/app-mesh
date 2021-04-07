@@ -52,7 +52,7 @@ namespace cron
       static bool find_next(cronexpr const &cex,
                             std::tm &date,
                             size_t const dot);
-   } // namespace detail
+   }
 
    struct bad_cronexpr : public std::runtime_error
    {
@@ -196,6 +196,7 @@ namespace cron
       std::bitset<7> days_of_week;
       std::bitset<31> days_of_month;
       std::bitset<12> months;
+      std::string expr;
 
       friend bool operator==(cronexpr const &e1, cronexpr const &e2);
       friend bool operator!=(cronexpr const &e1, cronexpr const &e2);
@@ -205,6 +206,7 @@ namespace cron
                                     std::tm &date,
                                     size_t const dot);
 
+      friend std::string to_cronstr(cronexpr const &cex);
       friend std::string to_string(cronexpr const &cex);
 
       template <typename Traits>
@@ -234,6 +236,11 @@ namespace cron
              cex.days_of_month.to_string() + " " +
              cex.months.to_string() + " " +
              cex.days_of_week.to_string();
+   }
+
+   inline std::string to_cronstr(cronexpr const &cex)
+   {
+      return cex.expr;
    }
 
    namespace utils
@@ -270,7 +277,6 @@ namespace cron
          int hour = 0;
          int minute = 0;
          int second = 0;
-         // "%Y-%m-%d %H:%M:%S"
          sscanf(time.data(), "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second);
          result.tm_year = year - 1900;
          result.tm_mon = month - 1;
@@ -295,7 +301,6 @@ namespace cron
 
          return str.str();
 #else
-         // std::put_time is not ready when gcc version < 5 (e.g 4.8.5)
          char buff[70] = {0};
          strftime(buff, sizeof(buff), "%Y-%m-%d %H:%M:%S", &tm);
          return std::string(buff);
@@ -326,7 +331,7 @@ namespace cron
       {
          return STRING_VIEW_NPOS != text.find_first_of(ch);
       }
-   } // namespace utils
+   }
 
    namespace detail
    {
@@ -822,7 +827,7 @@ namespace cron
 
          return res;
       }
-   } // namespace detail
+   }
 
    template <typename Traits>
    static cronexpr make_cron(STRING_VIEW expr)
@@ -849,6 +854,8 @@ namespace cron
       detail::set_cron_days_of_month<Traits>(fields[3], cex.days_of_month);
 
       detail::set_cron_month<Traits>(fields[4], cex.months);
+
+      cex.expr = expr;
 
       return cex;
    }
@@ -905,4 +912,4 @@ namespace cron
 
       return utils::tm_to_time(*dt);
    }
-} // namespace cron
+}
