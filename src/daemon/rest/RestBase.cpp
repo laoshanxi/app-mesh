@@ -30,7 +30,6 @@ bool RestBase::forwardRestRequest(const HttpRequest &message)
 
 void RestBase::handle_get(const HttpRequest &message)
 {
-    REST_INFO_PRINT;
     if (!forwardRestRequest(message))
     {
         handleRest(message, m_restGetFunctions);
@@ -39,7 +38,6 @@ void RestBase::handle_get(const HttpRequest &message)
 
 void RestBase::handle_put(const HttpRequest &message)
 {
-    REST_INFO_PRINT;
     if (!forwardRestRequest(message))
     {
         handleRest(message, m_restPutFunctions);
@@ -48,7 +46,6 @@ void RestBase::handle_put(const HttpRequest &message)
 
 void RestBase::handle_post(const HttpRequest &message)
 {
-    REST_INFO_PRINT;
     if (!forwardRestRequest(message))
     {
         handleRest(message, m_restPstFunctions);
@@ -57,7 +54,6 @@ void RestBase::handle_post(const HttpRequest &message)
 
 void RestBase::handle_delete(const HttpRequest &message)
 {
-    REST_INFO_PRINT;
     if (!forwardRestRequest(message))
     {
         handleRest(message, m_restDelFunctions);
@@ -72,7 +68,7 @@ void RestBase::handle_options(const HttpRequest &message)
 void RestBase::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
 {
     const static char fname[] = "RestHandler::handleRest() ";
-
+    REST_INFO_PRINT;
     std::function<void(const HttpRequest &)> stdFunction;
     const auto path = Utility::stringReplace(message.m_relative_uri, "//", "/");
 

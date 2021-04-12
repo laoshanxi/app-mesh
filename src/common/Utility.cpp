@@ -635,6 +635,13 @@ std::string Utility::strToupper(std::string s)
 	return s;
 }
 
+std::string Utility::strTolower(std::string s)
+{
+	std::transform(s.begin(), s.end(), s.begin(),
+				   [](unsigned char c) { return std::tolower(c); });
+	return s;
+}
+
 // TODO: assume base 64 have no "|" character
 std::map<std::string, std::string> Utility::parse(const std::string &str)
 {

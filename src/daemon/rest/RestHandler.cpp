@@ -264,7 +264,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "header 'FilePath' not found");
+		message.reply(status_codes::BadRequest, "header 'File-Path' not found");
 		return;
 	}
 	auto file = GET_STD_STRING(message.headers().find(HTTP_HEADER_KEY_file_path)->second);
@@ -313,7 +313,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "header 'FilePath' not found");
+		message.reply(status_codes::BadRequest, "header 'File-Path' not found");
 		return;
 	}
 	auto file = message.headers().find(HTTP_HEADER_KEY_file_path)->second;
@@ -723,7 +723,7 @@ void RestHandler::apiLogin(const HttpRequest &message)
 	}
 	else
 	{
-		message.reply(status_codes::NetworkAuthenticationRequired, "UserName or Password missing");
+		message.reply(status_codes::NetworkAuthenticationRequired, "Username or Password missing");
 	}
 }
 
@@ -863,7 +863,7 @@ void RestHandler::apiRunAsyncOut(const HttpRequest &message)
 				Configuration::instance()->removeApp(app);
 		}
 
-		LOG_DBG << fname << "Use process uuid :" << uuid << " ExitCode:" << exitCode;
+		LOG_DBG << fname << "Use process uuid :" << uuid << " Exit-Code:" << exitCode;
 		message.reply(resp, body);
 	}
 	else

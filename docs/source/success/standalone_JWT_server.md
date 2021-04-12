@@ -12,9 +12,9 @@ JWT authentication is a popular authentication method for HTTP service and clien
 
 Index | Method | URI | Body/Headers | Desc
 ---|---|---|---|---
-1 |POST| /appmesh/login | UserName=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> ExpireSeconds=600 | JWT authenticate login
-2 |POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> AuthPermission=permission_id | JWT token and permission authenticate
-3 |POST| /appmesh/user/admin/passwd | NewPassword=base64(passwd) | Change user password
+1 |POST| /appmesh/login | Username=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> Expire-Seconds=600 | JWT authenticate login
+2 |POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> Auth-Permission=permission_id | JWT token and permission authenticate
+3 |POST| /appmesh/user/admin/passwd | New-Password=base64(passwd) | Change user password
 4 |POST| /appmesh/user/usera/lock | | admin user to lock usera
 5 |POST| /appmesh/user/usera/unlock | | admin user to unlock usera
 6 |PUT | /appmesh/user/usera | | Add usera to Users

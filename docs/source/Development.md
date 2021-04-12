@@ -4,8 +4,8 @@
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /appmesh/login | UserName=base64(USER-NAME) <br> Password=base64(PASSWD) <br> Optional: <br> ExpireSeconds=600 | JWT authenticate login, get JWT token
-POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer MY-JWT-TOKEN" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> AuthPermission=${PERMISSION-ID} | JWT token and permission authenticate
+POST| /appmesh/login | Username=base64(USER-NAME) <br> Password=base64(PASSWD) <br> Optional: <br> Expire-Seconds=600 | JWT authenticate login, get JWT token
+POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer MY-JWT-TOKEN" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> Auth-Permission=${PERMISSION-ID} | JWT token and permission authenticate
 GET | /appmesh/app/${APP-NAME} | | Get an application information
 GET | /appmesh/app/${APP-NAME}/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
 GET | /appmesh/app/${APP-NAME}/output?keep_history=1 | | Fetch app console output
@@ -23,8 +23,8 @@ GET | /appmesh/cloud/applications | | Get cloud applications
 PUT | /appmesh/cloud/app/${APP-NAME} | Body: <br> cloud application definition | Add cloud application
 DEL | /appmesh/cloud/app/${APP-NAME} | | Delete cloud application
 DEL | /appmesh/cloud/nodes | | Get cloud node list
-GET | /appmesh/file/download | Header: <br> FilePath=/opt/remote/filename | Download a file from REST server and grant permission
-POST| /appmesh/file/upload | Header: <br> FilePath=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
+GET | /appmesh/file/download | Header: <br> File-Path=/opt/remote/filename | Download a file from REST server and grant permission
+POST| /appmesh/file/upload | Header: <br> File-Path=/opt/remote/filename <br> Body: <br> file steam | Upload a file to REST server and grant permission
 GET | /appmesh/labels | { "os": "linux","arch": "x86_64" } | Get labels
 POST| /appmesh/labels | { "os": "linux","arch": "x86_64" } | Update labels
 PUT | /appmesh/label/abc?value=123 |  | Set a label
@@ -32,7 +32,7 @@ DELETE| /appmesh/label/abc |  | Delete a label
 POST| /appmesh/loglevel?level=DEBUG | level=DEBUG/INFO/NOTICE/WARN/ERROR | Set log level
 GET | /appmesh/config |  | Get basic configurations
 POST| /appmesh/config |  | Set basic configurations
-POST| /appmesh/user/admin/passwd | NewPassword=base64(passwd) | Change user password
+POST| /appmesh/user/admin/passwd | New-Password=base64(passwd) | Change user password
 POST| /appmesh/user/user/lock | | admin user to lock a user
 POST| /appmesh/user/user/unlock | | admin user to unlock a user
 PUT | /appmesh/user/usera | | Add usera to Users

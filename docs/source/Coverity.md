@@ -68,7 +68,7 @@ $ du -sh appmesh.tar.gz
 $ curl --form token=Yor-Coverity-Token \
   --form email=178029200@qq.com \
   --form file=@appmesh.tar.gz \
-  --form version="1.9.1" \
+  --form version="1.9.2" \
   --form description="gcc 8.3 build" \
   https://scan.coverity.com/builds?project=laoshanxi%2Fapp-mesh
 ```

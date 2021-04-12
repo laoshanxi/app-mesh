@@ -52,12 +52,28 @@ class AppMeshClient:
                 Method.POST,
                 path="/appmesh/login",
                 header={
-                    "UserName": base64.b64encode(user_name.encode()),
+                    "Username": base64.b64encode(user_name.encode()),
                     "Password": base64.b64encode(user_pwd.encode()),
+                    "Expire-Seconds": str(timeout_seconds)
                 },
             )
             if resp.status_code == HTTPStatus.OK:
-                self.jwt_token = resp.json()["AccessToken"]
+                self.jwt_token = resp.json()["Access-Token"]
+                return True
+            else:
+                # resp.raise_for_status()
+                print(resp.text)
+                return False
+
+    def login_with_token(self, token):
+        """login session with existing JWT token"""
+        if self.jwt_auth_enable:
+            self.jwt_token = token
+            resp = self.__request_http(
+                Method.POST,
+                path="/appmesh/auth",
+            )
+            if resp.status_code == HTTPStatus.OK:
                 return True
             else:
                 # resp.raise_for_status()
@@ -195,17 +211,17 @@ class AppMeshClient:
 
     def download(self, file_path, local_file):
         """download a remote file to local"""
-        resp = self.__request_http(Method.GET, path="/appmesh/file/download", header={"FilePath": file_path})
+        resp = self.__request_http(Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
         if resp.status_code == HTTPStatus.OK:
             with open(local_file, "wb") as fp:
                 for chunk in resp.iter_content(chunk_size=512):
                     if chunk:
                         fp.write(chunk)
-            if resp.headers.__contains__("FileMode"):
-                os.chmod(path=local_file, mode=int(resp.headers["FileMode"]))
-            if resp.headers.__contains__("FileUser") and resp.headers.__contains__("FileGroup"):
-                file_uid = int(resp.headers["FileUser"])
-                file_gid = int(resp.headers["FileGroup"])
+            if resp.headers.__contains__("File-Mode"):
+                os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
+            if resp.headers.__contains__("File-User") and resp.headers.__contains__("File-Group"):
+                file_uid = int(resp.headers["File-User"])
+                file_gid = int(resp.headers["File-Group"])
                 os.chown(path=local_file, uid=file_uid, gid=file_gid)
             return True
         return False
@@ -215,10 +231,10 @@ class AppMeshClient:
         with open(file=local_file, mode="rb") as fp:
             file_stat = os.stat(local_file)
             header = {}
-            header["FilePath"] = file_path
-            header["FileMode"] = str(file_stat.st_mode)
-            header["FileUser"] = str(file_stat.st_uid)
-            header["FileGroup"] = str(file_stat.st_gid)
+            header["File-Path"] = file_path
+            header["File-Mode"] = str(file_stat.st_mode)
+            header["File-User"] = str(file_stat.st_uid)
+            header["File-Group"] = str(file_stat.st_gid)
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self.__request_http(
                 Method.POST_STREAM,

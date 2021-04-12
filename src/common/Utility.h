@@ -154,6 +154,7 @@ public:
 	static std::string hash(const std::string &str);
 	static std::string stringFormat(const std::string &fmt_str, ...);
 	static std::string strToupper(std::string s);
+	static std::string strTolower(std::string s);
 
 	static void initLogging();
 	static bool setLogLevel(const std::string &level);
@@ -303,17 +304,17 @@ public:
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization
 #define HTTP_HEADER_JWT_Bearer "Bearer"
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "
-#define HTTP_HEADER_JWT_access_token "AccessToken"
-#define HTTP_HEADER_JWT_expire_seconds "ExpireSeconds"
-#define HTTP_HEADER_JWT_username "UserName"
+#define HTTP_HEADER_JWT_access_token "Access-Token"
+#define HTTP_HEADER_JWT_expire_seconds "Expire-Seconds"
+#define HTTP_HEADER_JWT_username "Username"
 #define HTTP_HEADER_JWT_password "Password"
-#define HTTP_HEADER_JWT_new_password "NewPassword"
-#define HTTP_HEADER_JWT_auth_permission "AuthPermission"
-#define HTTP_HEADER_KEY_exit_code "ExitCode"
-#define HTTP_HEADER_KEY_file_path "FilePath"
-#define HTTP_HEADER_KEY_file_mode "FileMode"
-#define HTTP_HEADER_KEY_file_user "FileUser"
-#define HTTP_HEADER_KEY_file_group "FileGroup"
+#define HTTP_HEADER_JWT_new_password "New-Password"
+#define HTTP_HEADER_JWT_auth_permission "Auth-Permission"
+#define HTTP_HEADER_KEY_exit_code "Exit-Code"
+#define HTTP_HEADER_KEY_file_path "File-Path"
+#define HTTP_HEADER_KEY_file_mode "File-Mode"
+#define HTTP_HEADER_KEY_file_user "File-User"
+#define HTTP_HEADER_KEY_file_group "File-Group"
 
 #define HTTP_QUERY_KEY_keep_history "keep_history"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"

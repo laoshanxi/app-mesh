@@ -22,16 +22,16 @@ What is **not** supported:
 
 | Method | URI            | Body/Headers                                                                              | Desc                                                 |
 | ------ | -------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| POST   | /appmesh/login | UserName=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> ExpireSeconds=600 | JWT authenticate login, the max ExpireSeconds is 24h |
+| POST   | /appmesh/login | Username=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> Expire-Seconds=600 | JWT authenticate login, the max Expire-Seconds is 24h |
 
 ```shell
-curl -X POST -k -s -H "UserName:$(echo -n user | base64)" -H "Password:$(echo -n Password | base64)" -H "ExpireSeconds:2" https://localhost:6060/appmesh/login | python -m json.tool
+curl -X POST -k -s -H "Username:$(echo -n user | base64)" -H "Password:$(echo -n Password | base64)" -H "Expire-Seconds:2" https://localhost:6060/appmesh/login | python -m json.tool
 ```
 The REST will response bellow json when authentication success:
 
 ```json
 {
-	"AccessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDU5MjA1NjQsImlhdCI6MTYwNTMxNTc2NCwiaXNzIjoiYXBwbWVzaC1hdXRoMCIsIm5hbWUiOiJhZG1pbiJ9.hPOGoU5cl8TexQKyUnKpSi4r9Hy0Vhi03A-mCyQfpXw",
+	"Access-Token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDU5MjA1NjQsImlhdCI6MTYwNTMxNTc2NCwiaXNzIjoiYXBwbWVzaC1hdXRoMCIsIm5hbWUiOiJhZG1pbiJ9.hPOGoU5cl8TexQKyUnKpSi4r9Hy0Vhi03A-mCyQfpXw",
 	"expire_seconds": 604800,
 	"expire_time": 1605920564,
 	"profile": {
@@ -44,8 +44,8 @@ The REST will response bellow json when authentication success:
 
 | response    | desc                                                                                      |
 | ----------- | ----------------------------------------------------------------------------------------- |
-| AccessToken | JWT token content                                                                         |
-| expire_time | UTC time (seconds) the token will expire, is the server time plus the input ExpireSeconds |
+| Access-Token | JWT token content                                                                         |
+| expire_time | UTC time (seconds) the token will expire, is the server time plus the input Expire-Seconds |
 | auth_time   | the server UTC time (seconds)                                                             |
 | token_type  | JWT standard "Bearer"                                                                     |
 
@@ -54,10 +54,10 @@ The REST will response bellow json when authentication success:
 
 | Method | URI           | Body/Headers                                                                                   | Desc                   |
 | ------ | ------------- | ---------------------------------------------------------------------------------------------- | ---------------------- |
-| POST   | /appmesh/auth | headers: <br> Authorization=Bearer token_str  <br> Optional: <br> AuthPermission=permission-id | JWT token authenticate |
+| POST   | /appmesh/auth | headers: <br> Authorization=Bearer token_str  <br> Optional: <br> Auth-Permission=permission-id | JWT token authenticate |
 
 ```shell
-curl -s -X POST -k -H "Authorization:Bearer $jwt_token" -H "AuthPermission:app-view"  https://127.0.0.1:6060/appmesh/auth | python -m json.tool
+curl -s -X POST -k -H "Authorization:Bearer $jwt_token" -H "Auth-Permission:app-view"  https://127.0.0.1:6060/appmesh/auth | python -m json.tool
 ```
 The REST will response bellow json when authentication success:
 ```json
