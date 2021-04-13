@@ -762,7 +762,7 @@ void RestHandler::apiGetApp(const HttpRequest &message)
 	message.reply(status_codes::OK, Configuration::instance()->getApp(appName)->AsJson(true));
 }
 
-std::shared_ptr<Application> RestHandler::apiRunParseApp(const HttpRequest &message)
+std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &message)
 {
 	auto jsonApp = message.extractJson();
 	if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_name) && HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
@@ -808,7 +808,7 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 
 	int retention = getHttpQueryValue(message, HTTP_QUERY_KEY_retention, DEFAULT_RUN_APP_RETENTION_DURATION, 1, 60 * 60 * 24);
 	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, 60 * 60 * 24);
-	auto appObj = apiRunParseApp(message);
+	auto appObj = parseAndRegRunApp(message);
 
 	if (timeout < 0)
 		timeout = MAX_RUN_APP_TIMEOUT_SECONDS;
@@ -827,7 +827,7 @@ void RestHandler::apiRunSync(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
 
 	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, 60 * 60 * 24);
-	auto appObj = apiRunParseApp(message);
+	auto appObj = parseAndRegRunApp(message);
 
 	// Use async reply here
 	HttpRequest *asyncRequest = new HttpRequestWithAppRef(message, appObj);

@@ -26,7 +26,7 @@ protected:
 	void apiLogin(const HttpRequest &message);
 	void apiAuth(const HttpRequest &message);
 	void apiGetApp(const HttpRequest &message);
-	std::shared_ptr<Application> apiRunParseApp(const HttpRequest &message);
+	std::shared_ptr<Application> parseAndRegRunApp(const HttpRequest &message);
 	void apiRunAsync(const HttpRequest &message);
 	void apiRunSync(const HttpRequest &message);
 	void apiRunAsyncOut(const HttpRequest &message);

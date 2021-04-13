@@ -54,7 +54,7 @@ class AppMeshClient:
                 header={
                     "Username": base64.b64encode(user_name.encode()),
                     "Password": base64.b64encode(user_pwd.encode()),
-                    "Expire-Seconds": str(timeout_seconds)
+                    "Expire-Seconds": str(timeout_seconds),
                 },
             )
             if resp.status_code == HTTPStatus.OK:
@@ -64,21 +64,23 @@ class AppMeshClient:
                 # resp.raise_for_status()
                 print(resp.text)
                 return False
+        return True
 
-    def login_with_token(self, token):
-        """login session with existing JWT token"""
+    def authentication(self, token, permission=None):
+        """verify JWT token and permission id"""
         if self.jwt_auth_enable:
             self.jwt_token = token
-            resp = self.__request_http(
-                Method.POST,
-                path="/appmesh/auth",
-            )
+            headers = {}
+            if (permission is not None) and len(permission):
+                headers["Auth-Permission"] = permission
+            resp = self.__request_http(Method.POST, path="/appmesh/auth", header=headers)
             if resp.status_code == HTTPStatus.OK:
                 return True
             else:
                 # resp.raise_for_status()
                 print(resp.text)
                 return False
+        return True
 
     def get_app(self, app_name):
         """get application JSON information"""
@@ -88,9 +90,16 @@ class AppMeshClient:
         else:
             return False, resp.text
 
-    def get_app_output(self, app_name):
+    def get_app_output(self, app_name, keep_history=False, stdout_index=0):
         """get application output"""
-        resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/output".format(app_name))
+        resp = self.__request_http(
+            Method.GET,
+            path="/appmesh/app/{0}/output".format(app_name),
+            query={
+                "keep_history": '1' if keep_history else '0',
+                "stdout_index": str(stdout_index),
+            },
+        )
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     def get_apps(self):
@@ -154,6 +163,40 @@ class AppMeshClient:
     def set_config(self, cfg_json):
         """update app mesh configuration"""
         resp = self.__request_http(Method.POST, path="/appmesh/config")
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
+    def change_passwd(self, new_password):
+        """change user password"""
+        resp = self.__request_http(
+            method=Method.POST,
+            path="/appmesh/user/{0}/passwd".format(new_password),
+            header={"New-Password": base64.b64encode(new_password.encode())},
+        )
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
+    def lock_user(self, user):
+        """lock a user"""
+        resp = self.__request_http(
+            method=Method.POST,
+            path="/appmesh/user/{0}/lock".format(user),
+        )
+        if resp.status_code == HTTPStatus.OK:
+            return True, resp.json()
+        else:
+            return False, resp.text
+
+    def unlock_user(self, user):
+        """lock a user"""
+        resp = self.__request_http(
+            method=Method.POST,
+            path="/appmesh/user/{0}/unlock".format(user),
+        )
         if resp.status_code == HTTPStatus.OK:
             return True, resp.json()
         else:

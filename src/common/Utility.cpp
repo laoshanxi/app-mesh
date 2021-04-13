@@ -630,15 +630,13 @@ std::string Utility::stringFormat(const std::string &fmt_str, ...)
 
 std::string Utility::strToupper(std::string s)
 {
-	std::transform(s.begin(), s.end(), s.begin(),
-				   [](unsigned char c) { return std::toupper(c); });
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::toupper(c); });
 	return s;
 }
 
 std::string Utility::strTolower(std::string s)
 {
-	std::transform(s.begin(), s.end(), s.begin(),
-				   [](unsigned char c) { return std::tolower(c); });
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
 	return s;
 }
 
