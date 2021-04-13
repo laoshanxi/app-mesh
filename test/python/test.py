@@ -17,7 +17,7 @@ import appmesh_client
 
 client = appmesh_client.AppMeshClient()
 client.login("admin", "Admin123")
-client.login_with_token(client.jwt_token)
+client.authentication(client.jwt_token)
 print(json.dumps(client.get_resource(), indent=2))
 print(json.dumps(client.get_app("ping"), indent=2))
 print(json.dumps(client.get_apps(), indent=2))
