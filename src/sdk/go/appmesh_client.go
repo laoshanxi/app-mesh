@@ -342,11 +342,13 @@ type Application struct {
 	SecEnv        *Environments       `json:"sec_env"`
 }
 
+// Daily time limitation
 type DailyLimitation struct {
 	DailyStart string `json:"daily_start"`
 	DailyEnd   string `json:"daily_end"`
 }
 
+// CPU & Memory limitation
 type ResourceLimitation struct {
 	MemoryMb        int `json:"memory_mb"`
 	MemoryVirtualMb int `json:"memory_virt_mb"`
@@ -354,6 +356,7 @@ type ResourceLimitation struct {
 }
 
 // https://mholt.github.io/json-to-go/
+// JWT Response
 type JWTResponse struct {
 	AccessToken   string `json:"Access-Token"`
 	ExpireSeconds int    `json:"expire_seconds"`
