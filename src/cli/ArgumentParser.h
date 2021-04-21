@@ -73,6 +73,7 @@ private:
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();
 	void unregSignal();
+	std::string parseOutputMessage(http_response& resp);
 
 private:
 	po::variables_map m_commandLineVariables;

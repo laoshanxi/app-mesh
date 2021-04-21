@@ -582,7 +582,7 @@ void ArgumentParser::processUnReg()
 			}
 			std::string restPath = std::string("/appmesh/app/") + appName;
 			auto response = requestHttp(true, methods::DEL, restPath);
-			std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+			std::cout << parseOutputMessage(response) << std::endl;
 		}
 		else
 		{
@@ -629,8 +629,7 @@ void ArgumentParser::processView()
 			query["keep_history"] = std::to_string(keepHis);
 			query["stdout_index"] = std::to_string(index);
 			auto response = requestHttp(true, methods::GET, restPath, query);
-			auto bodyStr = response.extract_utf8string(true).get();
-			std::cout << bodyStr;
+			std::cout << response.extract_utf8string(true).get();
 		}
 	}
 	else
@@ -725,7 +724,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	{
 		std::string restPath = std::string("/appmesh/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(true, methods::POST, restPath);
-		std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+		std::cout << parseOutputMessage(response) << std::endl;
 	}
 	if (appList.size() == 0)
 	{
@@ -816,7 +815,7 @@ void ArgumentParser::processRun()
 		std::string restPath = "/appmesh/app/syncrun";
 		auto response = requestHttp(true, methods::POST, restPath, query, &jsonObj);
 
-		std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
+		std::cout << response.extract_utf8string(true).get();
 	}
 	else
 	{
@@ -837,7 +836,7 @@ void ArgumentParser::processRun()
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			response = requestHttp(false, methods::GET, restPath, query);
-			std::cout << GET_STD_STRING(response.extract_utf8string(true).get());
+			std::cout << response.extract_utf8string(true).get();
 			// check continues failure
 			if (response.status_code() != http::status_codes::OK && !response.headers().has(HTTP_HEADER_KEY_exit_code))
 			{
@@ -879,6 +878,28 @@ void SIGINT_Handler(int signo)
 		auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME).append("/disable");
 		WORK_PARSE->requestHttp(false, methods::POST, restPath);
 	}
+}
+
+std::string ArgumentParser::parseOutputMessage(http_response &resp)
+{
+	std::string result;
+	try
+	{
+		auto respJson = resp.extract_json().get();
+		if (HAS_JSON_FIELD(respJson, REST_TEXT_MESSAGE_JSON_KEY))
+		{
+			result = respJson.at(REST_TEXT_MESSAGE_JSON_KEY).as_string();
+		}
+		else
+		{
+			result = respJson.serialize();
+		}
+	}
+	catch(...)
+	{
+		result = resp.extract_utf8string().get();
+	}
+	return result;
 }
 
 void ArgumentParser::regSignal()
@@ -1104,7 +1125,7 @@ void ArgumentParser::processUpload()
 	request.set_body(fileStream, length);
 	http_response response = client.request(request).get();
 	fileStream.close();
-	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+	std::cout << parseOutputMessage(response) << std::endl;
 }
 
 void ArgumentParser::processTags()
@@ -1289,7 +1310,7 @@ void ArgumentParser::processChangePwd()
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
 	http_response response = requestHttp(true, methods::POST, restPath, query, nullptr, &headers);
-	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+	std::cout << parseOutputMessage(response) << std::endl;
 }
 
 void ArgumentParser::processLockUser()
@@ -1314,7 +1335,7 @@ void ArgumentParser::processLockUser()
 
 	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
 	http_response response = requestHttp(true, methods::POST, restPath);
-	std::cout << GET_STD_STRING(response.extract_utf8string(true).get()) << std::endl;
+	std::cout << parseOutputMessage(response) << std::endl;
 }
 
 void ArgumentParser::processEncryptUserPwd()
@@ -1382,7 +1403,7 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 	http_response response = client.request(request).get();
 	if (throwAble && response.status_code() != status_codes::OK)
 	{
-		throw std::invalid_argument(response.extract_utf8string(true).get());
+		throw std::invalid_argument(parseOutputMessage(response));
 	}
 	return response;
 }
@@ -1531,7 +1552,7 @@ std::string ArgumentParser::requestToken(const std::string &user, const std::str
 	http_response response = client.request(requestLogin).get();
 	if (response.status_code() != status_codes::OK)
 	{
-		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", response.extract_utf8string(true).get().c_str()));
+		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(response).c_str()));
 	}
 	else
 	{

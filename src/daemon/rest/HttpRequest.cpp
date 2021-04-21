@@ -98,23 +98,17 @@ void HttpRequest::reply(http_response &response, const std::string &body_data) c
 
 void HttpRequest::reply(http::status_code status) const
 {
-
-	if (m_reply2child)
-	{
-		RestTcpServer::instance()->backforwardResponse(m_uuid, "", {}, status, "text/plain; charset=utf-8");
-	}
-	else
-	{
-		http_response response(status);
-		return reply(response);
-	}
+	// give empty JSON str for client to decode JSON always
+	web::json::value emptyBody;
+	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string("");
+	reply(status, emptyBody);
 }
 
 void HttpRequest::reply(http::status_code status, const json::value &body_data) const
 {
 	if (m_reply2child)
 	{
-		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data.serialize(), {}, status, "application/json");
+		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 	}
 	else
 	{

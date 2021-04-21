@@ -17,6 +17,13 @@ RestBase::~RestBase()
 {
 }
 
+web::json::value RestBase::convertText2Json(const std::string &msg)
+{
+    web::json::value result;
+    result[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string(msg);
+    return result;
+}
+
 bool RestBase::forwardRestRequest(const HttpRequest &message)
 {
     // file download/upload do not forward to server
@@ -74,7 +81,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
     if (path == "/" || path.empty())
     {
-        message.reply(status_codes::OK, "App Mesh");
+        message.reply(status_codes::OK, REST_ROOT_TEXT_MESSAGE);
         return;
     }
 
@@ -90,7 +97,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     if (!findRest)
     {
-        message.reply(status_codes::NotFound, "Path not found");
+        message.reply(status_codes::NotFound, convertText2Json("Path not found"));
         return;
     }
 
@@ -101,12 +108,12 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     catch (const std::exception &e)
     {
         LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
-        message.reply(web::http::status_codes::BadRequest, e.what());
+        message.reply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
     }
     catch (...)
     {
         LOG_WAR << fname << "rest " << path << " failed";
-        message.reply(web::http::status_codes::BadRequest, "unknow exception");
+        message.reply(web::http::status_codes::BadRequest, convertText2Json("unknow exception"));
     }
 }
 

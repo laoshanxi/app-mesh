@@ -9,6 +9,8 @@
 using namespace web;
 using namespace http;
 
+#define CONTENT_TYPE_APPLICATION_JSON "application/json"
+
 /// <summary>
 /// HttpRequest is used to handle across domain reply
 /// </summary>

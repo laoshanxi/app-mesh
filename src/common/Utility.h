@@ -194,6 +194,8 @@ public:
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100 // 100M
 #define DEFAULT_EXEC_USER "appmesh"
 #define SEPARATE_REST_APP_NAME "apprest"
+#define REST_ROOT_TEXT_MESSAGE "App Mesh"
+#define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"

@@ -19,6 +19,7 @@ class RestBase
 public:
     explicit RestBase(bool forward2TcpServer);
     virtual ~RestBase();
+    web::json::value convertText2Json(const std::string &msg);
 
 protected:
     /// <summary>

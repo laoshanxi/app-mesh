@@ -91,18 +91,12 @@ class AppMeshClient:
     def get_app(self, app_name):
         """get application JSON information"""
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}".format(app_name))
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_apps(self):
         """get all applications"""
         resp = self.__request_http(Method.GET, path="/appmesh/applications")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_app_output(self, app_name, keep_history=False, stdout_index=0):
         """get application output"""
@@ -119,10 +113,7 @@ class AppMeshClient:
     def get_app_health(self, app_name):
         """get application health status, 0 is health"""
         resp = self.__request_http(Method.GET, path="/appmesh/app/{0}/health".format(app_name))
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
     # Application manage
@@ -130,25 +121,22 @@ class AppMeshClient:
     def add_app(self, app_json):
         """register an application"""
         resp = self.__request_http(Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]), body=app_json)
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def remove_app(self, app_name):
         """remove an application"""
         resp = self.__request_http(Method.DELETE, path="/appmesh/app/{0}".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def enable_app(self, app_name):
         """enable an application"""
         resp = self.__request_http(Method.POST, path="/appmesh/app/{0}/enable".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def disable_app(self, app_name):
         """stop and disable an application"""
         resp = self.__request_http(Method.POST, path="/appmesh/app/{0}/disable".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
     # Cloud API
@@ -156,63 +144,45 @@ class AppMeshClient:
     def get_cloud_apps(self):
         """get cloud applications"""
         resp = self.__request_http(Method.GET, path="/appmesh/cloud/applications")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def remove_cloud_app(self, app_name):
         """delete cloud application"""
         resp = self.__request_http(Method.DELETE, path="/appmesh/cloud/app/{0}".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def add_cloud_app(self, app_json):
         """add cloud application"""
         resp = self.__request_http(Method.PUT, path="/appmesh/cloud/app/{0}".format(app_json["content"]["name"]), body=app_json)
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_cloud_nodes(self):
         """get cloud nodes"""
         resp = self.__request_http(Method.GET, path="/appmesh/cloud/nodes")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
     # Configuration API
     ########################################
     def get_resource(self):
-        """get app mesh host resource status"""
+        """get app mesh host resource report"""
         resp = self.__request_http(Method.GET, path="/appmesh/resources")
-        return resp.status_code == HTTPStatus.OK, resp.text == "0"
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_config(self):
         """get app mesh configuration JSON"""
         resp = self.__request_http(Method.GET, path="/appmesh/config")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def set_config(self, cfg_json):
         """update app mesh configuration"""
         resp = self.__request_http(Method.POST, path="/appmesh/config")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def set_log_level(self, level="DEBUG"):
         """set log level(DEBUG/INFO/NOTICE/WARN/ERROR)"""
         resp = self.__request_http(Method.POST, path="/appmesh/loglevel")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
     # User Management
@@ -224,10 +194,7 @@ class AppMeshClient:
             path="/appmesh/user/{0}/passwd".format(new_password),
             header={"New-Password": base64.b64encode(new_password.encode())},
         )
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def add_user(self, user_name, user_json):
         """register a user"""
@@ -236,10 +203,7 @@ class AppMeshClient:
             path="/appmesh/user/{0}".format(user_name),
             body=user_json,
         )
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def delete_user(self, user):
         """delete a user"""
@@ -247,10 +211,7 @@ class AppMeshClient:
             method=Method.DELETE,
             path="/appmesh/user/{0}".format(user),
         )
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def lock_user(self, user):
         """lock a user"""
@@ -258,10 +219,7 @@ class AppMeshClient:
             method=Method.POST,
             path="/appmesh/user/{0}/lock".format(user),
         )
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def unlock_user(self, user):
         """lock a user"""
@@ -269,50 +227,32 @@ class AppMeshClient:
             method=Method.POST,
             path="/appmesh/user/{0}/unlock".format(user),
         )
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_users(self):
         """get all users"""
         resp = self.__request_http(method=Method.GET, path="/appmesh/users")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_roles(self):
         """get all roles"""
         resp = self.__request_http(method=Method.GET, path="/appmesh/roles")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_groups(self):
         """get all groups"""
         resp = self.__request_http(method=Method.GET, path="/appmesh/groups")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_permissions(self):
         """get all permissions"""
         resp = self.__request_http(method=Method.GET, path="/appmesh/permissions")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def update_role(self, role, role_json):
         """update role with defined permissions"""
         resp = self.__request_http(method=Method.POST, path="/appmesh/role/{0}".format(role), body=role_json)
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def delete_role(self, role):
         """delete a role"""
@@ -320,10 +260,7 @@ class AppMeshClient:
             method=Method.DELETE,
             path="/appmesh/role/{0}".format(role),
         )
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
     # Tag management API
@@ -335,20 +272,17 @@ class AppMeshClient:
             query={"value": tag_value},
             path="/appmesh/label/{0}".format(tag_name),
         )
-        return resp.status_code == HTTPStatus.OK
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def remove_tag(self, tag_name):
         """remove a tag for app mesh node"""
         resp = self.__request_http(Method.DELETE, path="/appmesh/label/{0}".format(tag_name))
-        return resp.status_code == HTTPStatus.OK
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_tags(self):
         """get tags for app mesh node"""
         resp = self.__request_http(Method.GET, path="/appmesh/labels")
-        if resp.status_code == HTTPStatus.OK:
-            return True, resp.json()
-        else:
-            return False, resp.text
+        return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
     # Promethus metrics

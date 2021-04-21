@@ -137,7 +137,22 @@ void RestChildObject::replyResponse(ACE_Message_Block *response)
             auto headerMap = Utility::parse(headers);
             web::http::http_response resp(status);
             resp.set_status_code(status);
-            resp.set_body(body); // TODO: content type
+            if (bodyType == CONTENT_TYPE_APPLICATION_JSON && body.length())
+            {
+                try
+                {
+                    resp.set_body(web::json::value::parse(body));
+                }
+                catch (...)
+                {
+                    LOG_ERR << fname << "failed to parse body to JSON :" << body;
+                    resp.set_body(body);
+                }
+            }
+            else
+            {
+                resp.set_body(body);
+            }
             for (const auto &h : headerMap)
             {
                 resp.headers().add(h.first, h.second);
@@ -145,7 +160,7 @@ void RestChildObject::replyResponse(ACE_Message_Block *response)
 
             try
             {
-                msg.reply(resp, bodyType);
+                msg.reply(resp);
             }
             catch (const std::exception &e)
             {
@@ -167,7 +182,7 @@ void RestChildObject::replyResponse(ACE_Message_Block *response)
         if (m_sentMessages.count(uuid))
         {
             auto &msg = m_sentMessages.find(uuid)->second;
-            msg.reply(web::http::status_codes::ExpectationFailed, "deserialize response failed");
+            msg.reply(web::http::status_codes::ExpectationFailed, convertText2Json("deserialize response failed"));
             m_sentMessages.erase(uuid);
         }
     }

@@ -224,7 +224,7 @@ void RestHandler::apiEnableApp(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->enableApp(appName);
-	message.reply(status_codes::OK, std::string("Enable <") + appName + "> success.");
+	message.reply(status_codes::OK, convertText2Json(std::string("Enable <") + appName + "> success."));
 }
 
 void RestHandler::apiDisableApp(const HttpRequest &message)
@@ -239,7 +239,7 @@ void RestHandler::apiDisableApp(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->disableApp(appName);
-	message.reply(status_codes::OK, std::string("Disable <") + appName + "> success.");
+	message.reply(status_codes::OK, convertText2Json(std::string("Disable <") + appName + "> success."));
 }
 
 void RestHandler::apiDeleteApp(const HttpRequest &message)
@@ -254,7 +254,7 @@ void RestHandler::apiDeleteApp(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->removeApp(appName);
-	message.reply(status_codes::OK, Utility::stringFormat("Application <%s> removed.", appName.c_str()));
+	message.reply(status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 }
 
 void RestHandler::apiFileDownload(const HttpRequest &message)
@@ -264,13 +264,13 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "header 'File-Path' not found");
+		message.reply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
 	auto file = GET_STD_STRING(message.headers().find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
-		message.reply(status_codes::NotAcceptable, "file not found");
+		message.reply(status_codes::NotAcceptable, convertText2Json("file not found"));
 		return;
 	}
 
@@ -313,13 +313,13 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
 	{
-		message.reply(status_codes::BadRequest, "header 'File-Path' not found");
+		message.reply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
 	auto file = message.headers().find(HTTP_HEADER_KEY_file_path)->second;
 	if (Utility::isFileExist(file))
 	{
-		message.reply(status_codes::Forbidden, "file already exist");
+		message.reply(status_codes::Forbidden, convertText2Json("file already exist"));
 		return;
 	}
 
@@ -339,7 +339,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 				  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
 				  file, false);
 	}
-	message.reply(status_codes::OK, Utility::stringFormat("Success upload file with size %s", Utility::humanReadableSize(fileSize).c_str()));
+	message.reply(status_codes::OK, convertText2Json(Utility::stringFormat("Success upload file with size %s", Utility::humanReadableSize(fileSize).c_str())));
 }
 
 void RestHandler::apiGetLabels(const HttpRequest &message)
@@ -367,7 +367,7 @@ void RestHandler::apiAddLabel(const HttpRequest &message)
 	}
 	else
 	{
-		message.reply(status_codes::BadRequest, "query value required");
+		message.reply(status_codes::BadRequest, convertText2Json("query value required"));
 	}
 }
 
@@ -465,7 +465,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> changed password";
-	message.reply(status_codes::OK, "password changed success");
+	message.reply(status_codes::OK, convertText2Json("password changed success"));
 }
 
 void RestHandler::apiUserLock(const HttpRequest &message)
@@ -718,12 +718,12 @@ void RestHandler::apiLogin(const HttpRequest &message)
 		}
 		else
 		{
-			message.reply(status_codes::Unauthorized, "Incorrect user password");
+			message.reply(status_codes::Unauthorized, convertText2Json("Incorrect user password"));
 		}
 	}
 	else
 	{
-		message.reply(status_codes::NetworkAuthenticationRequired, "Username or Password missing");
+		message.reply(status_codes::NetworkAuthenticationRequired, convertText2Json("Username or Password missing"));
 	}
 }
 
@@ -747,7 +747,7 @@ void RestHandler::apiAuth(const HttpRequest &message)
 	}
 	else
 	{
-		message.reply(status_codes::Unauthorized, "Incorrect authentication info");
+		message.reply(status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
 	}
 }
 
