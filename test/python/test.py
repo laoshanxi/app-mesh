@@ -16,23 +16,37 @@ sys.path.append(os.path.join(root_dir, "src/sdk/python"))
 import appmesh_client
 
 client = appmesh_client.AppMeshClient()
+# authentication
 client.login("admin", "Admin123")
 client.authentication(client.jwt_token)
-print(json.dumps(client.get_resource(), indent=2))
+client.change_passwd("Admin123")
+# view application
 print(json.dumps(client.get_app("ping"), indent=2))
+print(json.dumps(client.get_app("ping2"), indent=2))
 print(json.dumps(client.get_apps(), indent=2))
+print(json.dumps(client.get_app_output("cron"), indent=2))
+print(json.dumps(client.get_app_health("ping"), indent=2))
+# manage application
 print(json.dumps(client.add_app({"command": "ping www.baidu.com -w 5", "name": "SDK"}), indent=2))
-client.run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False)
 print(client.remove_app("SDK"))
 print(client.disable_app("ping"))
 print(client.enable_app("ping"))
+
+print(json.dumps(client.get_resource(), indent=2))
+
 print(client.add_tag("MyTag", "TagValue"))
 print(client.get_tags())
 print(client.get_app_output("loki"))
 print(client.get_app_health("ping"))
 print(client.get_metrics())
+# config
+print(client.get_config())
+print(json.dumps(client.set_config({"REST": {"SSL": {"SSLEnabled": True}}}), indent=2))
+print(client.set_log_level("INFO"))
+# file
 print(client.download("/opt/appmesh/log/appsvc.log", "1.log"))
 print(client.upload(local_file="/opt/appmesh/log/appsvc.log", file_path="/tmp/2.log"))
+# cloud
 print(json.dumps(client.get_cloud_apps(), indent=2))
 print(
     client.add_cloud_app(
@@ -53,3 +67,5 @@ print(
 )
 print(json.dumps(client.remove_cloud_app("cloud"), indent=2))
 print(json.dumps(client.get_cloud_nodes(), indent=2))
+# run app
+client.run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False, max_exec_time=3)

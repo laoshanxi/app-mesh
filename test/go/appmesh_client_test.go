@@ -12,7 +12,7 @@ import (
 func TestAppmeshLogin(t *testing.T) {
 
 	fmt.Println("main")
-	client, _ := appmesh.NewClient("https://localhost:6060")
+	client, _ := appmesh.NewClient("localhost", 6060, true)
 
 	_, token, _ := client.Login("admin", "Admin123", appmesh.DEFAULT_TOKEN_EXPIRE_SECONDS)
 	client.Authentication(token, "")

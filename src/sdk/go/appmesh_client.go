@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"path"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -28,13 +27,13 @@ type Client struct {
 }
 
 // NewClient initializes client for interacting with an instance of REST server;
-func NewClient(apiURL string) (*Client, error) {
-	if strings.HasPrefix(apiURL, "https://") {
+func NewClient(host string, port int, sslEnable bool) (*Client, error) {
+	if sslEnable {
+		apiURL := fmt.Sprintf("https://%s:%d", host, port)
 		return &Client{baseURL: apiURL, client: defaultHTTPClient}, nil
-	} else if strings.HasPrefix(apiURL, "http://") {
-		return &Client{baseURL: apiURL, client: http.DefaultClient}, nil
 	} else {
-		return nil, fmt.Errorf("invalid API URL <%s>", apiURL)
+		apiURL := fmt.Sprintf("http://%s:%d", host, port)
+		return &Client{baseURL: apiURL, client: http.DefaultClient}, nil
 	}
 }
 

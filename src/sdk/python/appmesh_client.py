@@ -176,7 +176,7 @@ class AppMeshClient:
 
     def set_config(self, cfg_json):
         """update app mesh configuration"""
-        resp = self.__request_http(Method.POST, path="/appmesh/config")
+        resp = self.__request_http(Method.POST, path="/appmesh/config", body=cfg_json)
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def set_log_level(self, level="DEBUG"):

@@ -58,10 +58,7 @@ HttpRequest::~HttpRequest()
 
 web::json::value HttpRequest::extractJson() const
 {
-	if (m_body.length())
-		return web::json::value::parse(m_body);
-	else
-		return this->extract_json(true).get();
+	return web::json::value::parse(m_body);
 }
 
 void HttpRequest::reply(http_response &response) const
