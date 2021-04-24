@@ -64,10 +64,12 @@ private:
     const bool m_forward2TcpServer;
 };
 
+#define REST_HEADER_PRINT
+/*
 #define REST_HEADER_PRINT                                                          \
     for (auto it = message.m_headers.begin(); it != message.m_headers.end(); it++) \
         LOG_DBG << "Header: " << it->first << " = " << it->second;
-
+*/
 #define REST_INFO_PRINT                       \
     REST_HEADER_PRINT                         \
     LOG_DBG                                   \

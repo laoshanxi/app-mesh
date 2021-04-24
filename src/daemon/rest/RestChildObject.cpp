@@ -65,54 +65,18 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
 {
     const static char fname[] = "RestChildObject::sendRequest2Server() ";
 
-    // https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Logger/client/logging_app.cpp
-    auto headerStr = Utility::serialize(message.headers());
-    const size_t max_payload_size =
-        message.m_method.length() +
-        message.m_relative_uri.length() +
-        message.m_remote_address.length() +
-        message.m_body.length() +
-        headerStr.length() +
-        message.m_query.length() +
-        message.m_uuid.length() +
-        7 + 7 * ACE_CDR::MAX_ALIGNMENT;
-
-    // Insert contents into payload stream.
-    ACE_OutputCDR payload(max_payload_size);
-    payload << message.m_method;
-    payload << message.m_relative_uri;
-    payload << message.m_remote_address;
-    payload << message.m_body;
-    payload << headerStr;
-    payload << message.m_query;
-    payload << message.m_uuid;
-    //LOG_DBG << fname << "headers: " << Utility::serialize(message.headers());
-
-    // Get the number of bytes used by the CDR stream.
-    ACE_CDR::ULong length = ACE_Utils::truncate_cast<ACE_CDR::ULong>(payload.total_length());
-
-    // Send a header so the receiver can determine the byte order and
-    // size of the incoming CDR stream.
-    ACE_OutputCDR header(ACE_CDR::MAX_ALIGNMENT + 8);
-    header << ACE_OutputCDR::from_boolean(ACE_CDR_BYTE_ORDER);
-    // Store the size of the payload that follows
-    header << ACE_CDR::ULong(length);
-
-    // Use an iovec to send both buffer and payload simultaneously.
-    iovec iov[2];
-    iov[0].iov_base = header.begin()->rd_ptr();
-    iov[0].iov_len = 8;
-    iov[1].iov_base = payload.begin()->rd_ptr();
-    iov[1].iov_len = length;
+    IoVector io(message.serialize());
+    auto msgLength = io.length();
 
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
-    if (m_socketStream.sendv_n(iov, 2) == -1)
+    auto sendSize = m_socketStream.sendv_n(io.data, 2);
+    if (sendSize == -1)
     {
         LOG_ERR << fname << "send response failed with error :" << std::strerror(errno);
     }
     else
     {
-        LOG_DBG << fname << "Cache message: " << message.m_uuid << " header len: " << 8 << " body len: " << length;
+        LOG_DBG << fname << "Cache message: " << message.m_uuid << " header len: " << 8 << " body len: " << msgLength << " sent len:" << sendSize;
         m_sentMessages.insert(std::pair<std::string, HttpRequest>(message.m_uuid, HttpRequest(message)));
     }
 }
@@ -121,39 +85,33 @@ void RestChildObject::replyResponse(ACE_Message_Block *response)
 {
     const static char fname[] = "RestChildObject::replyResponse() ";
 
-    std::string uuid, body, headers, bodyType;
-    http::status_code status;
-    ACE_InputCDR cdr(response);
-    if (cdr >> status &&
-        cdr >> uuid &&
-        cdr >> body &&
-        cdr >> headers &&
-        cdr >> bodyType)
+    ACE_InputCDR cdrData(response);
+    auto respData = HttpTcpResponse::deserialize(cdrData);
+    if (respData)
     {
         std::lock_guard<std::recursive_mutex> guard(m_mutex);
-        if (m_sentMessages.count(uuid))
+        if (m_sentMessages.count(respData->m_uuid))
         {
-            auto &msg = m_sentMessages.find(uuid)->second;
-            auto headerMap = Utility::parse(headers);
-            web::http::http_response resp(status);
-            resp.set_status_code(status);
-            if (bodyType == CONTENT_TYPE_APPLICATION_JSON && body.length())
+            auto &msg = m_sentMessages.find(respData->m_uuid)->second;
+            web::http::http_response resp(respData->m_status);
+            resp.set_status_code(respData->m_status);
+            if (respData->m_bodyType == CONTENT_TYPE_APPLICATION_JSON && respData->m_body.length())
             {
                 try
                 {
-                    resp.set_body(web::json::value::parse(body));
+                    resp.set_body(web::json::value::parse(respData->m_body));
                 }
                 catch (...)
                 {
-                    LOG_ERR << fname << "failed to parse body to JSON :" << body;
-                    resp.set_body(body);
+                    LOG_ERR << fname << "failed to parse body to JSON :" << respData->m_body;
+                    resp.set_body(respData->m_body);
                 }
             }
             else
             {
-                resp.set_body(body);
+                resp.set_body(respData->m_body);
             }
-            for (const auto &h : headerMap)
+            for (const auto &h : respData->m_headers)
             {
                 resp.headers().add(h.first, h.second);
             }
@@ -171,19 +129,19 @@ void RestChildObject::replyResponse(ACE_Message_Block *response)
                 LOG_ERR << fname << "reply to client failed";
             }
 
-            m_sentMessages.erase(uuid);
-            LOG_DBG << fname << "reply message success: " << uuid << " left pending request size: " << m_sentMessages.size();
+            m_sentMessages.erase(respData->m_uuid);
+            LOG_DBG << fname << "reply message success: " << respData->m_uuid << " left pending request size: " << m_sentMessages.size();
         }
     }
     else
     {
-        LOG_ERR << fname << "deserialize response failed: " << uuid;
+        LOG_ERR << fname << "deserialize response failed: " << respData->m_uuid;
         std::lock_guard<std::recursive_mutex> guard(m_mutex);
-        if (m_sentMessages.count(uuid))
+        if (m_sentMessages.count(respData->m_uuid))
         {
-            auto &msg = m_sentMessages.find(uuid)->second;
+            auto &msg = m_sentMessages.find(respData->m_uuid)->second;
             msg.reply(web::http::status_codes::ExpectationFailed, convertText2Json("deserialize response failed"));
-            m_sentMessages.erase(uuid);
+            m_sentMessages.erase(respData->m_uuid);
         }
     }
 }

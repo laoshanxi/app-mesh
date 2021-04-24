@@ -63,7 +63,8 @@ int main(int argc, char *argv[])
 			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));
 		}
 
-		// init child rest process
+		// init child REST process, the REST process will accept HTTP request and
+		// forward to TCP rest service in order to avoid fork() impact REST handler
 		if (argc == 2 && std::string("rest") == argv[1])
 		{
 

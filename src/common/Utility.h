@@ -175,9 +175,6 @@ public:
 
 	static std::string createUUID();
 
-	static std::map<std::string, std::string> parse(const std::string &str);
-	static std::string serialize(const std::map<std::string, std::string> &map);
-	static std::string serialize(const web::http::http_headers &map);
 	static const std::string readStdin2End();
 };
 

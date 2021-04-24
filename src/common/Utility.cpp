@@ -640,42 +640,6 @@ std::string Utility::strTolower(std::string s)
 	return s;
 }
 
-// TODO: assume base 64 have no "|" character
-std::map<std::string, std::string> Utility::parse(const std::string &str)
-{
-	std::map<std::string, std::string> result;
-	const auto headerList = Utility::splitString(str, "||");
-	for (const auto &header : headerList)
-	{
-		auto oneHeader = Utility::splitString(header, "|");
-		if (oneHeader.size() == 2)
-		{
-			result[oneHeader[0]] = oneHeader[1];
-		}
-	}
-	return result;
-}
-
-std::string Utility::serialize(const std::map<std::string, std::string> &map)
-{
-	std::ostringstream oss;
-	for (const auto &pair : map)
-	{
-		oss << pair.first << "|" << pair.second << "||";
-	}
-	return oss.str();
-}
-
-std::string Utility::serialize(const web::http::http_headers &map)
-{
-	std::ostringstream oss;
-	for (const auto &pair : map)
-	{
-		oss << pair.first << "|" << pair.second << "||";
-	}
-	return oss.str();
-}
-
 const std::string Utility::readStdin2End()
 {
 	std::stringstream ss;

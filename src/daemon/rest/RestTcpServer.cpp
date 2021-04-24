@@ -54,19 +54,11 @@ int RestTcpServer::svc(void)
         ACE_Message_Block *msg;
         while (this->getq(msg) > -1)
         {
-            std::string method, uri, address, body, headers, query, uuid;
             ACE_InputCDR cdr(msg);
-            if (
-                cdr >> method &&
-                cdr >> uri &&
-                cdr >> address &&
-                cdr >> body &&
-                cdr >> headers &&
-                cdr >> query &&
-                cdr >> uuid)
+            auto message = HttpRequest::deserialize(cdr);
+            if (message)
             {
-                HttpRequest message(method, uri, address, body, headers, query, uuid);
-                handleTcpRest(message);
+                handleTcpRest(*message);
             }
             else
             {
@@ -134,45 +126,22 @@ void RestTcpServer::backforwardResponse(const std::string &uuid, const std::stri
 {
     const static char fname[] = "RestTcpServer::backforwardResponse() ";
 
-    auto headerStr = Utility::serialize(headers);
-    const size_t max_payload_size =
-        uuid.length() +
-        body.length() +
-        headerStr.length() +
-        8 +
-        bodyType.length() +
-        6 + 6 * ACE_CDR::MAX_ALIGNMENT;
-    // Insert contents into payload stream.
-    ACE_OutputCDR payload(max_payload_size);
-    payload << status;
-    payload << uuid;
-    payload << body;
-    payload << headerStr;
-    payload << bodyType;
-
-    // Get the number of bytes used by the CDR stream.
-    ACE_CDR::ULong length = ACE_Utils::truncate_cast<ACE_CDR::ULong>(payload.total_length());
-
-    // Send a header so the receiver can determine the byte order and
-    // size of the incoming CDR stream.
-    ACE_OutputCDR header(ACE_CDR::MAX_ALIGNMENT + 8);
-    header << ACE_OutputCDR::from_boolean(ACE_CDR_BYTE_ORDER);
-    // Store the size of the payload that follows
-    header << ACE_CDR::ULong(length);
-
-    // Use an iovec to send both buffer and payload simultaneously.
-    iovec iov[2];
-    iov[0].iov_base = header.begin()->rd_ptr();
-    iov[0].iov_len = 8;
-    iov[1].iov_base = payload.begin()->rd_ptr();
-    iov[1].iov_len = length;
-
-    LOG_DBG << fname << "send response: " << uuid << " with header length: " << 8 << " body length: " << length;
+    std::map<std::string, std::string> stdHeaders;
+    for (const auto &kv : headers)
+        stdHeaders[kv.first] = kv.second;
+    HttpTcpResponse resp(uuid, body, bodyType, stdHeaders, status);
+    IoVector io(resp.serialize());
+    auto msgLength = io.length();
 
     std::lock_guard<std::recursive_mutex> guard(m_socketSendLock);
-    if (m_socketStream.get_handle() == ACE_INVALID_HANDLE || m_socketStream.sendv_n(iov, 2) < (ssize_t)length)
+    size_t sendSize = 0;
+    if (m_socketStream.get_handle() == ACE_INVALID_HANDLE || (sendSize = m_socketStream.sendv_n(io.data, 2)) < msgLength)
     {
         LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
+    }
+    else
+    {
+        LOG_DBG << fname << "send response: " << uuid << " with header length: " << 8 << " body length: " << msgLength << " sent len:" << sendSize;
     }
 }
 
