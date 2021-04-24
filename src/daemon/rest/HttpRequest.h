@@ -189,6 +189,9 @@ private:
 	};
 };
 
+/// <summary>
+/// HttpTcpResponse is the data of REST response used to transfer to REST process
+/// </summary>
 class HttpTcpResponse
 {
 public:
@@ -208,6 +211,9 @@ public:
 	const http::status_code m_status;
 };
 
+/// <summary>
+/// IoVector used prepare sendout data to header and body
+/// </summary>
 struct IoVector
 {
 public:

@@ -64,17 +64,11 @@ private:
     const bool m_forward2TcpServer;
 };
 
-#define REST_HEADER_PRINT
-/*
-#define REST_HEADER_PRINT                                                          \
-    for (auto it = message.m_headers.begin(); it != message.m_headers.end(); it++) \
-        LOG_DBG << "Header: " << it->first << " = " << it->second;
-*/
 #define REST_INFO_PRINT                       \
-    REST_HEADER_PRINT                         \
     LOG_DBG                                   \
         << " fname: " << __FUNCTION__         \
         << " Method: " << message.m_method    \
         << " URI: " << message.m_relative_uri \
         << " Query: " << message.m_query      \
         << " Remote: " << message.m_remote_address;
+// << " Headers: " << HttpRequest::serializeHeaders(message.m_headers) \

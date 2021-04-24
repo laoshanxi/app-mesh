@@ -22,7 +22,7 @@ public:
     RestTcpServer();
     virtual ~RestTcpServer();
     static std::shared_ptr<RestTcpServer> instance();
-    static void instance(std::shared_ptr<RestTcpServer> restProcess);
+    static void instance(std::shared_ptr<RestTcpServer> tcpServer);
 
     /// <summary>
     /// start thread pool and listen port

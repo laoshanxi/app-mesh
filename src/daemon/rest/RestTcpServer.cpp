@@ -26,9 +26,9 @@ std::shared_ptr<RestTcpServer> RestTcpServer::instance()
     return m_instance;
 }
 
-void RestTcpServer::instance(std::shared_ptr<RestTcpServer> config)
+void RestTcpServer::instance(std::shared_ptr<RestTcpServer> tcpServer)
 {
-    m_instance = config;
+    m_instance = tcpServer;
 }
 
 int RestTcpServer::open(void *)
