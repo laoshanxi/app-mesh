@@ -98,23 +98,23 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "reg")
 	{
-		processReg();
+		processAppAdd();
 	}
 	else if (cmd == "unreg")
 	{
-		processUnReg();
+		processAppDel();
 	}
 	else if (cmd == "view")
 	{
-		processView();
+		processAppView();
 	}
 	else if (cmd == "cloud")
 	{
-		processViewCloud();
+		processCloudAppView();
 	}
 	else if (cmd == "nodes")
 	{
-		processViewNodes();
+		processCloudNodesView();
 	}
 	else if (cmd == "resource")
 	{
@@ -122,22 +122,22 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "enable")
 	{
-		processEnableDisable(true);
+		processAppControl(true);
 	}
 	else if (cmd == "disable")
 	{
-		processEnableDisable(false);
+		processAppControl(false);
 	}
 	else if (cmd == "restart")
 	{
 		auto tmpOpts = m_parsedOptions;
-		processEnableDisable(false);
+		processAppControl(false);
 		m_parsedOptions = tmpOpts;
-		processEnableDisable(true);
+		processAppControl(true);
 	}
 	else if (cmd == "run")
 	{
-		processRun();
+		processAppRun();
 	}
 	else if (cmd == "exec")
 	{
@@ -145,11 +145,11 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "get")
 	{
-		processDownload();
+		processFileDownload();
 	}
 	else if (cmd == "put")
 	{
-		processUpload();
+		processFileUpload();
 	}
 	else if (cmd == "label")
 	{
@@ -165,19 +165,19 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "passwd")
 	{
-		processChangePwd();
+		processUserChangePwd();
 	}
 	else if (cmd == "lock")
 	{
-		processLockUser();
+		processUserLock();
 	}
 	else if (cmd == "join")
 	{
-		processJoinConsulCluster();
+		processCloudJoinMaster();
 	}
 	else if (cmd == "appmgpwd")
 	{
-		processEncryptUserPwd();
+		processUserPwdEncrypt();
 	}
 	else
 	{
@@ -336,7 +336,7 @@ void ArgumentParser::processLoginfo()
 }
 
 // appName is null means this is a normal application (not a shell application)
-void ArgumentParser::processReg()
+void ArgumentParser::processAppAdd()
 {
 	po::options_description desc("Register a new application", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -549,7 +549,7 @@ void ArgumentParser::processReg()
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
-void ArgumentParser::processUnReg()
+void ArgumentParser::processAppDel()
 {
 	po::options_description desc("Unregister and remove an application", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -591,7 +591,7 @@ void ArgumentParser::processUnReg()
 	}
 }
 
-void ArgumentParser::processView()
+void ArgumentParser::processAppView()
 {
 	po::options_description desc("List application[s]", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -640,7 +640,7 @@ void ArgumentParser::processView()
 	}
 }
 
-void ArgumentParser::processViewCloud()
+void ArgumentParser::processCloudAppView()
 {
 	po::options_description desc("List cloud applications usage:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -653,7 +653,7 @@ void ArgumentParser::processViewCloud()
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
-void ArgumentParser::processViewNodes()
+void ArgumentParser::processCloudNodesView()
 {
 	po::options_description desc("List cluster nodes usage:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -680,7 +680,7 @@ void ArgumentParser::processResource()
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
-void ArgumentParser::processEnableDisable(bool start)
+void ArgumentParser::processAppControl(bool start)
 {
 	po::options_description desc("Start application:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -732,7 +732,7 @@ void ArgumentParser::processEnableDisable(bool start)
 	}
 }
 
-void ArgumentParser::processRun()
+void ArgumentParser::processAppRun()
 {
 	po::options_description desc("Run commands or application:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -1034,7 +1034,7 @@ void ArgumentParser::processExec()
 	}
 }
 
-void ArgumentParser::processDownload()
+void ArgumentParser::processFileDownload()
 {
 	po::options_description desc("Download file:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -1072,7 +1072,7 @@ void ArgumentParser::processDownload()
 				  local, false);
 }
 
-void ArgumentParser::processUpload()
+void ArgumentParser::processFileUpload()
 {
 	po::options_description desc("Upload file:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -1228,7 +1228,7 @@ void ArgumentParser::processLoglevel()
 	std::cout << "Log level set to: " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
 }
 
-void ArgumentParser::processJoinConsulCluster()
+void ArgumentParser::processCloudJoinMaster()
 {
 	po::options_description desc("Join App Mesh cluster:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -1286,7 +1286,7 @@ void ArgumentParser::processConfigView()
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
 
-void ArgumentParser::processChangePwd()
+void ArgumentParser::processUserChangePwd()
 {
 	po::options_description desc("Change password:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -1313,7 +1313,7 @@ void ArgumentParser::processChangePwd()
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
-void ArgumentParser::processLockUser()
+void ArgumentParser::processUserLock()
 {
 	po::options_description desc("Manage users:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -1338,7 +1338,7 @@ void ArgumentParser::processLockUser()
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
-void ArgumentParser::processEncryptUserPwd()
+void ArgumentParser::processUserPwdEncrypt()
 {
 	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
 	if (opts.size())

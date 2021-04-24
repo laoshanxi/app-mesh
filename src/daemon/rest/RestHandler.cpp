@@ -20,26 +20,26 @@
 RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpServer)
 {
 	// 1. Authentication
-	bindRestMethod(web::http::methods::POST, "/appmesh/login", std::bind(&RestHandler::apiLogin, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, "/appmesh/auth", std::bind(&RestHandler::apiAuth, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/login", std::bind(&RestHandler::apiUserLogin, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/auth", std::bind(&RestHandler::apiUserAuth, this, std::placeholders::_1));
 
 	// 2. View Application
-	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiGetApp, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/output)", std::bind(&RestHandler::apiGetAppOutput, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/applications", std::bind(&RestHandler::apiGetApps, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/resources", std::bind(&RestHandler::apiGetResources, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiAppView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, R"(/appmesh/app/([^/\*]+)/output)", std::bind(&RestHandler::apiAppOutputView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/applications", std::bind(&RestHandler::apiAppsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/resources", std::bind(&RestHandler::apiResourceView, this, std::placeholders::_1));
 
 	// 3. Cloud Application
-	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/applications", std::bind(&RestHandler::apiGetCloudApps, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::PUT, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiAddCloudApp, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiDelCloudApp, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/nodes", std::bind(&RestHandler::apiGetCloudHost, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/applications", std::bind(&RestHandler::apiCloudAppsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiCloudAppAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/cloud/app/([^/\*]+))", std::bind(&RestHandler::apiCloudAppDel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/cloud/nodes", std::bind(&RestHandler::apiCloudHostView, this, std::placeholders::_1));
 
 	// 4. Manage Application
-	bindRestMethod(web::http::methods::PUT, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiRegApp, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiEnableApp, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiDisableApp, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiDeleteApp, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiAppAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/enable)", std::bind(&RestHandler::apiAppEnable, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, R"(/appmesh/app/([^/\*]+)/disable)", std::bind(&RestHandler::apiAppDisable, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/app/([^/\*]+))", std::bind(&RestHandler::apiAppDelete, this, std::placeholders::_1));
 
 	// 5. Operate Application
 	bindRestMethod(web::http::methods::POST, "/appmesh/app/run", std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
@@ -51,13 +51,13 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::POST, "/appmesh/file/upload", std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
 
 	// 7. Label Management
-	bindRestMethod(web::http::methods::GET, "/appmesh/labels", std::bind(&RestHandler::apiGetLabels, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::PUT, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiAddLabel, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiDeleteLabel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/labels", std::bind(&RestHandler::apiLabelsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiLabelAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, R"(/appmesh/label/([^/\*]+))", std::bind(&RestHandler::apiLabelDel, this, std::placeholders::_1));
 
 	// 8. Log level
-	bindRestMethod(web::http::methods::GET, "/appmesh/config", std::bind(&RestHandler::apiGetBasicConfig, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, "/appmesh/config", std::bind(&RestHandler::apiSetBasicConfig, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/config", std::bind(&RestHandler::apiBasicConfigView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, "/appmesh/config", std::bind(&RestHandler::apiBasicConfigSet, this, std::placeholders::_1));
 
 	// 9. Security
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/passwd)", std::bind(&RestHandler::apiUserChangePwd, this, std::placeholders::_1));
@@ -65,12 +65,12 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/user/([^/\*]+)/unlock)", std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, R"(/appmesh/user/([^/\*]+))", std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, R"(/appmesh/user/([^/\*]+))", std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/users", std::bind(&RestHandler::apiUserList, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/roles", std::bind(&RestHandler::apiRoleView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/users", std::bind(&RestHandler::apiUsersView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/roles", std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, R"(/appmesh/role/([^/\*]+))", std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, R"(/appmesh/role/([^/\*]+))", std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/user/permissions", std::bind(&RestHandler::apiGetUserPermissions, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, "/appmesh/permissions", std::bind(&RestHandler::apiListPermissions, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/user/permissions", std::bind(&RestHandler::apiUserPermissionsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, "/appmesh/permissions", std::bind(&RestHandler::apiPermissionsView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, "/appmesh/user/groups", std::bind(&RestHandler::apiUserGroupsView, this, std::placeholders::_1));
 
 	// 10. metrics
@@ -212,7 +212,7 @@ int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string
 	return rt;
 }
 
-void RestHandler::apiEnableApp(const HttpRequest &message)
+void RestHandler::apiAppEnable(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
@@ -227,7 +227,7 @@ void RestHandler::apiEnableApp(const HttpRequest &message)
 	message.reply(status_codes::OK, convertText2Json(std::string("Enable <") + appName + "> success."));
 }
 
-void RestHandler::apiDisableApp(const HttpRequest &message)
+void RestHandler::apiAppDisable(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
@@ -242,7 +242,7 @@ void RestHandler::apiDisableApp(const HttpRequest &message)
 	message.reply(status_codes::OK, convertText2Json(std::string("Disable <") + appName + "> success."));
 }
 
-void RestHandler::apiDeleteApp(const HttpRequest &message)
+void RestHandler::apiAppDelete(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_delete);
 	auto path = message.m_relative_uri;
@@ -342,13 +342,13 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	message.reply(status_codes::OK, convertText2Json(Utility::stringFormat("Success upload file with size %s", Utility::humanReadableSize(fileSize).c_str())));
 }
 
-void RestHandler::apiGetLabels(const HttpRequest &message)
+void RestHandler::apiLabelsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_view);
 	message.reply(status_codes::OK, Configuration::instance()->getLabel()->AsJson());
 }
 
-void RestHandler::apiAddLabel(const HttpRequest &message)
+void RestHandler::apiLabelAdd(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_set);
 
@@ -371,7 +371,7 @@ void RestHandler::apiAddLabel(const HttpRequest &message)
 	}
 }
 
-void RestHandler::apiDeleteLabel(const HttpRequest &message)
+void RestHandler::apiLabelDel(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_delete);
 
@@ -385,7 +385,7 @@ void RestHandler::apiDeleteLabel(const HttpRequest &message)
 	message.reply(status_codes::OK);
 }
 
-void RestHandler::apiGetUserPermissions(const HttpRequest &message)
+void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
 	auto userName = verifyToken(message);
 	auto permissions = Configuration::instance()->getUserPermissions(userName);
@@ -398,7 +398,7 @@ void RestHandler::apiGetUserPermissions(const HttpRequest &message)
 	message.reply(status_codes::OK, json);
 }
 
-void RestHandler::apiGetBasicConfig(const HttpRequest &message)
+void RestHandler::apiBasicConfigView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
@@ -410,7 +410,7 @@ void RestHandler::apiGetBasicConfig(const HttpRequest &message)
 	message.reply(status_codes::OK, config);
 }
 
-void RestHandler::apiSetBasicConfig(const HttpRequest &message)
+void RestHandler::apiBasicConfigSet(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_config_set);
 
@@ -423,7 +423,7 @@ void RestHandler::apiSetBasicConfig(const HttpRequest &message)
 	Configuration::instance()->saveConfigToDisk();
 	ConsulConnection::instance()->saveSecurity(true);
 
-	apiGetBasicConfig(message);
+	apiBasicConfigView(message);
 }
 
 void RestHandler::apiUserChangePwd(const HttpRequest &message)
@@ -572,7 +572,7 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	message.reply(status_codes::OK);
 }
 
-void RestHandler::apiUserList(const HttpRequest &message)
+void RestHandler::apiUsersView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_get_users);
 
@@ -586,7 +586,7 @@ void RestHandler::apiUserList(const HttpRequest &message)
 	message.reply(status_codes::OK, users);
 }
 
-void RestHandler::apiRoleView(const HttpRequest &message)
+void RestHandler::apiRolesView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_role_view);
 
@@ -653,7 +653,7 @@ void RestHandler::apiUserGroupsView(const HttpRequest &message)
 	message.reply(status_codes::OK, json);
 }
 
-void RestHandler::apiListPermissions(const HttpRequest &message)
+void RestHandler::apiPermissionsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_permission_list);
 
@@ -682,9 +682,9 @@ void RestHandler::apiRestMetrics(const HttpRequest &message)
 	message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
 }
 
-void RestHandler::apiLogin(const HttpRequest &message)
+void RestHandler::apiUserLogin(const HttpRequest &message)
 {
-	const static char fname[] = "RestHandler::apiLogin() ";
+	const static char fname[] = "RestHandler::apiUserLogin() ";
 	if (message.m_headers.count(HTTP_HEADER_JWT_username) && message.m_headers.count(HTTP_HEADER_JWT_password))
 	{
 		std::string uname = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_username)->second));
@@ -727,7 +727,7 @@ void RestHandler::apiLogin(const HttpRequest &message)
 	}
 }
 
-void RestHandler::apiAuth(const HttpRequest &message)
+void RestHandler::apiUserAuth(const HttpRequest &message)
 {
 	std::string permission;
 	if (message.m_headers.count(HTTP_HEADER_JWT_auth_permission))
@@ -751,7 +751,7 @@ void RestHandler::apiAuth(const HttpRequest &message)
 	}
 }
 
-void RestHandler::apiGetApp(const HttpRequest &message)
+void RestHandler::apiAppView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
@@ -873,9 +873,9 @@ void RestHandler::apiRunAsyncOut(const HttpRequest &message)
 	}
 }
 
-void RestHandler::apiGetAppOutput(const HttpRequest &message)
+void RestHandler::apiAppOutputView(const HttpRequest &message)
 {
-	const static char fname[] = "RestHandler::apiGetAppOutput() ";
+	const static char fname[] = "RestHandler::apiAppOutputView() ";
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 
@@ -893,20 +893,20 @@ void RestHandler::apiGetAppOutput(const HttpRequest &message)
 	message.reply(status_codes::OK, output);
 }
 
-void RestHandler::apiGetApps(const HttpRequest &message)
+void RestHandler::apiAppsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	auto tokenUserName = getJwtUserName(message);
 	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName));
 }
 
-void RestHandler::apiGetCloudApps(const HttpRequest &message)
+void RestHandler::apiCloudAppsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
 	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApps());
 }
 
-void RestHandler::apiAddCloudApp(const HttpRequest &message)
+void RestHandler::apiCloudAppAdd(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_reg);
 
@@ -922,7 +922,7 @@ void RestHandler::apiAddCloudApp(const HttpRequest &message)
 	message.reply(status_codes::OK, ConsulConnection::instance()->addCloudApp(appName, jsonApp));
 }
 
-void RestHandler::apiDelCloudApp(const HttpRequest &message)
+void RestHandler::apiCloudAppDel(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_delete);
 
@@ -934,19 +934,19 @@ void RestHandler::apiDelCloudApp(const HttpRequest &message)
 	message.reply(status_codes::OK);
 }
 
-void RestHandler::apiGetCloudHost(const HttpRequest &message)
+void RestHandler::apiCloudHostView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_host_view);
 	message.reply(status_codes::OK, ConsulConnection::instance()->getCloudNodes());
 }
 
-void RestHandler::apiGetResources(const HttpRequest &message)
+void RestHandler::apiResourceView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_host_resource);
 	message.reply(status_codes::OK, ResourceCollection::instance()->AsJson());
 }
 
-void RestHandler::apiRegApp(const HttpRequest &message)
+void RestHandler::apiAppAdd(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_reg);
 	auto jsonApp = message.extractJson();

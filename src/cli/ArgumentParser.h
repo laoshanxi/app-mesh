@@ -31,24 +31,29 @@ private:
 	void processLogon();
 	void processLogoff();
 	void processLoginfo();
-	void processReg();
-	void processUnReg();
-	void processView();
-	void processViewCloud();
-	void processViewNodes();
-	void processResource();
-	void processEnableDisable(bool start);
-	void processRun();
+
+	void processAppAdd();
+	void processAppDel();
+	void processAppView();
+	void processAppControl(bool start);
+	void processAppRun();
 	void processExec();
-	void processDownload();
-	void processUpload();
-	void processTags();
+
+	void processCloudAppView();
+	void processCloudNodesView();
+	void processCloudJoinMaster();
+
+	void processFileDownload();
+	void processFileUpload();
+
 	void processLoglevel();
-	void processJoinConsulCluster();
+	void processResource();
+	void processTags();
 	void processConfigView();
-	void processChangePwd();
-	void processLockUser();
-	void processEncryptUserPwd();
+
+	void processUserChangePwd();
+	void processUserLock();
+	void processUserPwdEncrypt();
 
 public:
 	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path);
@@ -73,7 +78,7 @@ private:
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();
 	void unregSignal();
-	std::string parseOutputMessage(http_response& resp);
+	std::string parseOutputMessage(http_response &resp);
 
 private:
 	po::variables_map m_commandLineVariables;
