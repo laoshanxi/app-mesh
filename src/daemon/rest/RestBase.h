@@ -71,4 +71,4 @@ private:
         << " URI: " << message.m_relative_uri \
         << " Query: " << message.m_query      \
         << " Remote: " << message.m_remote_address;
-// << " Headers: " << HttpRequest::serializeHeaders(message.m_headers) \
+// << " Headers: " << HttpRequest::serializeHeaders(message.m_headers)

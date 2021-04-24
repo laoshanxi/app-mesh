@@ -36,7 +36,9 @@ int RestTcpServer::open(void *)
     static std::atomic_flag lock = ATOMIC_FLAG_INIT;
     if (!lock.test_and_set())
     {
-        activate(THR_NEW_LWP | THR_BOUND | THR_DETACHED, Configuration::instance()->getThreadPoolSize());
+        // no need much thread as cpprestsdk, just set half number and reserve 2.
+        auto tcpRestContextThreadNumber = std::max(2, int(Configuration::instance()->getThreadPoolSize() / 2));
+        activate(THR_NEW_LWP | THR_BOUND | THR_DETACHED, tcpRestContextThreadNumber);
         // thread used to read socket
         m_socketThread = std::thread(std::bind(&RestTcpServer::socketThread, this));
     }
