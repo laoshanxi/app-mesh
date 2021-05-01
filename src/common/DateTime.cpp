@@ -10,7 +10,7 @@
 #include "Utility.h"
 
 const char *ISO8601FORMAT_IN = "%Y-%m-%d %H:%M:%S%F%ZP";
-const char *ISO8601FORMAT_OUT = "%Y-%m-%d %H:%M:%S%F%Q";
+const char *ISO8601FORMAT_OUT = "%Y-%m-%dT%H:%M:%S%F%Q";
 const char *RFC3339FORMAT = "%Y-%m-%dT%H:%M:%S%FZ";
 
 static const boost::local_time::time_zone_ptr LOCAL_POSIX_ZONE = boost::local_time::time_zone_ptr(new machine_time_zone());
