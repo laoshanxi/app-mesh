@@ -67,7 +67,7 @@ void ApplicationCron::initTimer()
 	m_timerId = this->registerTimer(sleepMilliseconds, 0, std::bind(&ApplicationCron::invokeNow, this, std::placeholders::_1), __FUNCTION__);
 
 	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::from_time_t(nextTime));
-	LOG_DBG << fname << this->getName() << "cron beginTime=" << DateTime::formatISO8601Time(beginTime) << " m_nextLaunchTime=" << DateTime::formatISO8601Time(*m_nextLaunchTime) << ", will sleep " << diffSeconds << " seconds ";
+	LOG_DBG << fname << this->getName() << "cron beginTime=" << DateTime::formatLocalTime(beginTime) << " m_nextLaunchTime=" << DateTime::formatLocalTime(*m_nextLaunchTime) << ", will sleep " << diffSeconds << " seconds ";
 }
 
 void ApplicationCron::invokeNow(int timerId)

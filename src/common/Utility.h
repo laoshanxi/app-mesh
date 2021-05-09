@@ -207,7 +207,6 @@ public:
 
 #define JSON_KEY_ScheduleIntervalSeconds "ScheduleIntervalSeconds"
 #define JSON_KEY_LogLevel "LogLevel"
-#define JSON_KEY_TimeFormatPosixZone "TimeFormatPosixZone"
 
 #define JSON_KEY_SSL "SSL"
 #define JSON_KEY_SSLEnabled "SSLEnabled"

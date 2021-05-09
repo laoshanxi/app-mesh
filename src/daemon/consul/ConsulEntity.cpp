@@ -104,7 +104,7 @@ web::json::value ConsulTopology::AsJson() const
 	{
 		auto appJson = web::json::value::object();
 		appJson["app"] = web::json::value::string(app.first);
-		appJson["schedule_time"] = web::json::value::string(DateTime::formatISO8601Time(app.second));
+		appJson["schedule_time"] = web::json::value::string(DateTime::formatLocalTime(app.second));
 		result[appIndex++] = appJson;
 	}
 	return result;

@@ -79,8 +79,8 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
     LOG_DBG << DateTime::formatRFC3339Time(iso8601TimePoint);
     REQUIRE(DateTime::formatRFC3339Time(iso8601TimePoint) == rfc3339);
 
-    // getLocalUtcOffset
-    LOG_DBG << DateTime::getLocalUtcOffset();
+    // getLocalZoneUTCOffset
+    LOG_DBG << DateTime::getLocalZoneUTCOffset();
     REQUIRE(boost::posix_time::to_simple_string(DateTime::parseDayTimeUtcDuration("20:33:00", "+08")) == "12:33:00");
 
     // time in different zone

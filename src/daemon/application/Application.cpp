@@ -26,7 +26,7 @@ Application::Application()
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
 	m_regTime = std::chrono::system_clock::now();
-	m_posixTimeZone = DateTime::getLocalUtcOffset();
+	m_posixTimeZone = DateTime::getLocalZoneUTCOffset();
 }
 
 Application::~Application()
@@ -561,7 +561,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 			}
 		}
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[JSON_KEY_APP_last_start] = web::json::value::string(DateTime::formatISO8601Time(m_procStartTime));
+			result[JSON_KEY_APP_last_start] = web::json::value::string(DateTime::formatLocalTime(m_procStartTime));
 		if (!m_process->containerId().empty())
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
@@ -597,7 +597,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		});
 		result[JSON_KEY_APP_sec_env] = envs;
 	}
-	if (m_posixTimeZone.length() && m_posixTimeZone != DateTime::getLocalUtcOffset())
+	if (m_posixTimeZone.length() && m_posixTimeZone != DateTime::getLocalZoneUTCOffset())
 		result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
 	if (m_dockerImage.length())
 		result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
@@ -608,7 +608,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_startTime);
 	if (m_endTimeValue.time_since_epoch().count())
 		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_endTime);
-	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(DateTime::formatISO8601Time(m_regTime));
+	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(DateTime::formatLocalTime(m_regTime));
 	auto err = getLastError();
 	if (err.length())
 		result[JSON_KEY_APP_last_error] = web::json::value::string(err);
@@ -634,9 +634,9 @@ void Application::dump()
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_startTime:" << m_startTime;
 	LOG_DBG << fname << "m_endTime:" << m_endTime;
-	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatISO8601Time(m_startTimeValue);
-	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatISO8601Time(m_endTimeValue);
-	LOG_DBG << fname << "m_regTime:" << DateTime::formatISO8601Time(m_regTime);
+	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTimeValue);
+	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTimeValue);
+	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
 	LOG_DBG << fname << "m_version:" << m_version;
@@ -691,7 +691,7 @@ bool Application::isInDailyTimeRange()
 	if (m_dailyLimit != nullptr)
 	{
 		// Convert now to day time [%H:%M:%S], less than 24h
-		auto now = DateTime::getDayTimeUtcDuration(nowClock);
+		auto now = DateTime::pickDayTimeUtcDuration(nowClock);
 		//LOG_DBG << fname << "now: " << now << ", startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue;
 		if (m_dailyLimit->m_startTimeValue < m_dailyLimit->m_endTimeValue)
 		{
@@ -779,7 +779,7 @@ void Application::setLastError(const std::string &error)
 	std::lock_guard<std::recursive_mutex> guard(m_errorMutex);
 	if (error.length())
 	{
-		m_lastError = Utility::stringFormat("%s %s", DateTime::formatISO8601Time(std::chrono::system_clock::now()).c_str(), error.c_str());
+		m_lastError = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
 	}
 	else
 	{

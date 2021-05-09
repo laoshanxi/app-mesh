@@ -4,7 +4,6 @@
   "LogLevel": "DEBUG",
   "DefaultExecUser": "root",
   "WorkingDirectory": "",
-  "TimeFormatPosixZone": "+08",
   "REST": {
     "RestEnabled": true,
     "SeparateRestProcess": true,

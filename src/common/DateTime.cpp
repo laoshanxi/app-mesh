@@ -9,10 +9,6 @@
 #include "DateTime.h"
 #include "Utility.h"
 
-const char *ISO8601FORMAT_IN = "%Y-%m-%d %H:%M:%S%F%ZP";
-const char *ISO8601FORMAT_OUT = "%Y-%m-%dT%H:%M:%S%F%Q";
-const char *RFC3339FORMAT = "%Y-%m-%dT%H:%M:%S%FZ";
-
 static const boost::local_time::time_zone_ptr LOCAL_POSIX_ZONE = boost::local_time::time_zone_ptr(new machine_time_zone());
 static boost::local_time::time_zone_ptr OUTPUT_POSIX_ZONE;
 
@@ -70,7 +66,7 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	else
 	{
 		// use host zone
-		iso8601TimeStr.append(DateTime::getLocalUtcOffset());
+		iso8601TimeStr.append(DateTime::getLocalZoneUTCOffset());
 	}
 
 	try
@@ -101,9 +97,9 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	}
 }
 
-const std::string DateTime::getLocalUtcOffset()
+const std::string DateTime::getLocalZoneUTCOffset()
 {
-	const static char fname[] = "DateTime::getLocalUtcOffset() ";
+	const static char fname[] = "DateTime::getLocalZoneUTCOffset() ";
 	// option: https://stackoverflow.com/questions/2136970/how-to-get-the-current-time-zone/28259774#28259774
 	static std::string zone;
 	if (zone.empty())
@@ -118,9 +114,9 @@ const std::string DateTime::getLocalUtcOffset()
 	return zone;
 }
 
-void DateTime::setTimeFormatPosixZone(const std::string &posixZone)
+void DateTime::setOutputFormatPosixZone(const std::string &posixZone)
 {
-	const static char fname[] = "DateTime::setTimeFormatPosixZone() ";
+	const static char fname[] = "DateTime::setOutputFormatPosixZone() ";
 
 	if (posixZone.length())
 	{
@@ -144,7 +140,7 @@ std::string DateTime::formatISO8601Time(const std::chrono::system_clock::time_po
 
 std::string DateTime::formatRFC3339Time(const std::chrono::system_clock::time_point &time)
 {
-	// do not need posix zoon here
+	// do not need posix zone here
 	// https://www.boost.org/doc/libs/1_69_0/doc/html/date_time/date_time_io.html
 	std::ostringstream oss;
 	oss.exceptions(std::ios_base::failbit);
@@ -204,7 +200,7 @@ std::string DateTime::getISO8601TimeZone(const std::string &strTime)
 	return std::string();
 }
 
-boost::posix_time::time_duration DateTime::getDayTimeUtcDuration(const std::chrono::system_clock::time_point &time)
+boost::posix_time::time_duration DateTime::pickDayTimeUtcDuration(const std::chrono::system_clock::time_point &time)
 {
 	const auto ptime = boost::posix_time::from_time_t(std::chrono::system_clock::to_time_t(time));
 	return ptime.time_of_day();
@@ -218,7 +214,7 @@ boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(const std::st
 	auto duration = boost::posix_time::duration_from_string(strTime);
 	std::string fakeDate = Utility::stringFormat("2000-01-01T%02d:%02d:%02d", duration.hours(), duration.minutes(), duration.seconds());
 	auto timePoint = parseISO8601DateTime(fakeDate, posixTimezone);
-	duration = getDayTimeUtcDuration(timePoint);
+	duration = pickDayTimeUtcDuration(timePoint);
 	LOG_DBG << fname << "parse <" << fakeDate << "> with zone <" << posixTimezone << "> to <" << formatISO8601Time(timePoint) << "> with duration: " << duration;
 	return duration;
 }

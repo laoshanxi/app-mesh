@@ -276,7 +276,7 @@ const std::string DockerProcess::fetchOutputMsg()
 	if (m_containerId.length())
 	{
 		//auto microsecondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
-		auto timeSince = DateTime::formatRFC3339Time(m_lastFetchTime);
+		auto timeSince = DateTime::formatLocalTime(m_lastFetchTime);
 		auto dockerCommand = Utility::stringFormat("docker logs --since %s %s", timeSince.c_str(), m_containerId.c_str());
 
 		auto dockerProcess = std::make_shared<AppProcess>();

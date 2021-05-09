@@ -155,7 +155,7 @@ web::json::value ApplicationShortRun::AsJson(bool returnRuntimeInfo)
 	if (returnRuntimeInfo)
 	{
 		if (m_nextLaunchTime != nullptr)
-			result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(DateTime::formatISO8601Time(*m_nextLaunchTime));
+			result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(DateTime::formatLocalTime(*m_nextLaunchTime));
 	}
 	return result;
 }
@@ -213,7 +213,7 @@ void ApplicationShortRun::initTimer()
 	firstSleepMilliseconds += 2; // add 2 miliseconds buffer to avoid 59:59
 	m_timerId = this->registerTimer(firstSleepMilliseconds, this->getStartInterval(), std::bind(&ApplicationShortRun::invokeNow, this, std::placeholders::_1), __FUNCTION__);
 	m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(now + std::chrono::milliseconds(firstSleepMilliseconds));
-	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << DateTime::formatISO8601Time(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds / 1000 << " seconds";
+	LOG_DBG << fname << this->getName() << " m_nextLaunchTime=" << DateTime::formatLocalTime(*m_nextLaunchTime) << ", will sleep " << firstSleepMilliseconds / 1000 << " seconds";
 }
 
 int ApplicationShortRun::getStartInterval()
@@ -242,5 +242,5 @@ void ApplicationShortRun::dump()
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
 	if (m_nextLaunchTime != nullptr)
-		LOG_DBG << fname << "m_nextLaunchTime:" << DateTime::formatISO8601Time(*m_nextLaunchTime);
+		LOG_DBG << fname << "m_nextLaunchTime:" << DateTime::formatLocalTime(*m_nextLaunchTime);
 }

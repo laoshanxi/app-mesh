@@ -79,8 +79,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
-	config->m_formatPosixZone = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_TimeFormatPosixZone);
-	DateTime::setTimeFormatPosixZone(config->m_formatPosixZone);
 	if (config->m_defaultExecUser.empty())
 		config->m_defaultExecUser = DEFAULT_EXEC_USER;
 	unsigned int gid, uid;
@@ -184,7 +182,6 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	result[JSON_KEY_WorkingDirectory] = web::json::value::string(m_defaultWorkDir);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
-	result[JSON_KEY_TimeFormatPosixZone] = web::json::value::string(m_formatPosixZone);
 
 	// REST
 	result[JSON_KEY_REST] = m_rest->AsJson();
@@ -623,14 +620,7 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 				SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
 			}
 		}
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_TimeFormatPosixZone))
-		{
-			if (this->m_formatPosixZone != newConfig->m_formatPosixZone)
-			{
-				SET_COMPARE(this->m_formatPosixZone, newConfig->m_formatPosixZone);
-				DateTime::setTimeFormatPosixZone(newConfig->m_formatPosixZone);
-			}
-		}
+
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds))
 			SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser))
