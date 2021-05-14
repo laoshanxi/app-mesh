@@ -22,6 +22,7 @@ protected:
 
 	void checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite);
 	int getHttpQueryValue(const HttpRequest &message, const std::string &key, int defaultValue, int min, int max) const;
+	std::string regexSearch(const std::string &value, const char *regex);
 
 	void apiUserLogin(const HttpRequest &message);
 	void apiUserAuth(const HttpRequest &message);
