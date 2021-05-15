@@ -1,3 +1,5 @@
+#include <functional>
+
 #include <boost/algorithm/string_regex.hpp>
 
 #include "../../common/Utility.h"
@@ -103,6 +105,18 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
     try
     {
+        if (message.m_forwardResponse2RestServer)
+        {
+            // this is REST handler service, defend XSS attach before enter to REST handler
+            const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
+            if (message.m_body.length())
+            {
+                auto body = web::json::value::parse(message.m_body);
+                tranverseJsonTree(body);
+                const_cast<HttpRequest *>(&message)->m_body = body.serialize();
+            }
+        }
+
         stdFunction(message);
     }
     catch (const std::exception &e)
@@ -172,6 +186,51 @@ const std::string RestBase::createJwtToken(const std::string &uname, const std::
                            .set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
                            .sign(jwt::algorithm::hs256{passwd});
     return token;
+}
+
+const std::string RestBase::replaceXssRiskChars(const std::string &source)
+{
+    static const std::map<std::string, std::string> xssRiskChars =
+        {{"<", "&lt;"},
+         {">", "&gt;"},
+         {"\\(", "&#40;"},
+         {"\\)", "&#41;"},
+         {"'", "&#39;"},
+         {"\"", "&quot;"},
+         {"%", "&#37;"}};
+
+    auto result = source;
+    if (source.length())
+    {
+        for (const auto &kvp : xssRiskChars)
+        {
+            boost::replace_all_regex(result, boost::regex(kvp.first, boost::regex::icase), kvp.second, boost::match_flag_type::match_default);
+        }
+    }
+    return result;
+}
+
+void RestBase::tranverseJsonTree(web::json::value &val)
+{
+    if (val.is_array())
+    {
+        for (auto &item : val.as_array())
+        {
+            tranverseJsonTree(item);
+        }
+    }
+    else if (val.is_object())
+    {
+        for (auto &item : val.as_object())
+        {
+            tranverseJsonTree(item.second);
+        }
+    }
+    else if (val.is_string())
+    {
+        // handle string now
+        val = web::json::value::string(RestBase::replaceXssRiskChars(GET_STD_STRING(val.as_string())));
+    }
 }
 
 const std::string RestBase::verifyToken(const HttpRequest &message)

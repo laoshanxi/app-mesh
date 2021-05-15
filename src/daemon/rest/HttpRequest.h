@@ -24,7 +24,7 @@ class HttpRequest : public web::http::http_request
 private:
 	/// <summary>
 	/// Construction for deserialize
-	/// TCP REST Server receive and decode this, m_reply2child always set to true
+	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
 	/// </summary>
 	HttpRequest(const std::string &uuid,
 				const std::string &method,
@@ -167,7 +167,7 @@ public:
 	std::map<std::string, std::string> m_headers;
 	std::string m_query;
 
-	bool m_reply2child; // not directly reply this endpoint, just forward to child rest side
+	bool m_forwardResponse2RestServer; // not directly reply this endpoint, just forward to child rest side
 
 private:
 	// hide bellow extract functions, note extract_X function can only be called once, otherwise will hang

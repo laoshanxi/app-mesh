@@ -20,6 +20,10 @@ public:
     explicit RestBase(bool forward2TcpServer);
     virtual ~RestBase();
     web::json::value convertText2Json(const std::string &msg);
+    // Security: replace XSS risk chars to safe charactor
+    const std::string replaceXssRiskChars(const std::string &source);
+    // Security: go through JSON tree and replace XSS risk chars for string attributes
+    void tranverseJsonTree(web::json::value &tree);
 
 protected:
     /// <summary>

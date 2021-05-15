@@ -277,7 +277,7 @@ std::string RestHandler::regexSearch(const std::string &value, const char *expr)
 	std::string result;
 	boost::regex expression(expr);
 	boost::smatch what;
-	if (boost::regex_search(value, what, expression) && what.size())
+	if (boost::regex_search(value, what, expression) && what.size() > 1)
 	{
 		// NOTE: start from position 1, skip the REST patch prefix
 		for (size_t i = 1; i < what.size(); ++i)

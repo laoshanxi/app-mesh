@@ -6,7 +6,7 @@
 #include "RestTcpServer.h"
 
 HttpRequest::HttpRequest(const web::http::http_request &message)
-	: http_request(message), m_uuid(Utility::createUUID()), m_reply2child(false)
+	: http_request(message), m_uuid(Utility::createUUID()), m_forwardResponse2RestServer(false)
 {
 	this->m_method = message.method();
 	this->m_relative_uri = message.relative_uri().path();
@@ -24,7 +24,7 @@ HttpRequest::HttpRequest(const web::http::http_request &message)
 }
 
 HttpRequest::HttpRequest(const HttpRequest &message)
-	: http_request(message), m_uuid(message.m_uuid), m_reply2child(message.m_reply2child)
+	: http_request(message), m_uuid(message.m_uuid), m_forwardResponse2RestServer(message.m_forwardResponse2RestServer)
 {
 	this->m_method = message.m_method;
 	this->m_relative_uri = message.m_relative_uri;
@@ -51,7 +51,7 @@ HttpRequest::HttpRequest(const std::string &uuid,
 	this->m_headers = parseHeaders(headers);
 	this->m_query = query;
 
-	this->m_reply2child = true;
+	this->m_forwardResponse2RestServer = true;
 	//LOG_DBG << "HttpRequest headers: " << Utility::serializeHeaders(this->m_headers);
 }
 
@@ -67,7 +67,7 @@ web::json::value HttpRequest::extractJson() const
 void HttpRequest::reply(http_response &response) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		LOG_ERR << fname << "unsupported method";
 		throw std::runtime_error("not supported");
@@ -83,7 +83,7 @@ void HttpRequest::reply(http_response &response) const
 
 void HttpRequest::reply(http_response &response, const std::string &body_data) const
 {
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
 	}
@@ -106,7 +106,7 @@ void HttpRequest::reply(http::status_code status) const
 
 void HttpRequest::reply(http::status_code status, const json::value &body_data) const
 {
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 	}
@@ -120,7 +120,7 @@ void HttpRequest::reply(http::status_code status, const json::value &body_data) 
 
 void HttpRequest::reply(http::status_code status, utf8string &&body_data, const utf8string &content_type) const
 {
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data, {}, status, content_type);
 	}
@@ -134,7 +134,7 @@ void HttpRequest::reply(http::status_code status, utf8string &&body_data, const 
 
 void HttpRequest::reply(http::status_code status, const utf8string &body_data, const utf8string &content_type) const
 {
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data, {}, status, content_type);
 	}
@@ -148,7 +148,7 @@ void HttpRequest::reply(http::status_code status, const utf8string &body_data, c
 
 void HttpRequest::reply(http::status_code status, const utf16string &body_data, const utf16string &content_type) const
 {
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		RestTcpServer::instance()->backforwardResponse(m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
 	}
@@ -164,7 +164,7 @@ void HttpRequest::reply(status_code status, const concurrency::streams::istream 
 {
 	const static char fname[] = "HttpRequest::reply() ";
 
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		LOG_ERR << fname << "unsupported method";
 		throw std::runtime_error("not supported");
@@ -180,7 +180,7 @@ void HttpRequest::reply(status_code status, const concurrency::streams::istream 
 void HttpRequest::reply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
-	if (m_reply2child)
+	if (m_forwardResponse2RestServer)
 	{
 		LOG_ERR << fname << "unsupported method";
 		throw std::runtime_error("not supported");

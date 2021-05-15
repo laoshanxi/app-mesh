@@ -761,7 +761,7 @@ void ArgumentParser::processAppRun()
 
 	web::json::value jsonObj;
 	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
-	if (m_commandLineVariables.count(JSON_KEY_APP_command))
+	if (m_commandLineVariables.count("cmd"))
 	{
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	}
