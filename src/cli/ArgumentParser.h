@@ -22,7 +22,7 @@ class ArgumentParser
 {
 public:
 	explicit ArgumentParser(int argc, const char *argv[], int listenPort, bool sslEnabled);
-	virtual ~ArgumentParser() noexcept;
+	virtual ~ArgumentParser();
 
 	void parse();
 

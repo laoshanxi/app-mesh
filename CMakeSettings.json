@@ -5,7 +5,7 @@
       "generator": "Unix Makefiles",
       "configurationType": "Debug",
       "cmakeExecutable": "/usr/bin/cmake",
-      "remoteCopySourcesExclusionList": [ ".vs", ".git", "out" ],
+      "remoteCopySourcesExclusionList": [ ".vs", ".git", "out", ".log" ],
       "cmakeCommandArgs": "",
       "buildCommandArgs": "-j6",
       "ctestCommandArgs": "",

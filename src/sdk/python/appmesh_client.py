@@ -181,7 +181,7 @@ class AppMeshClient:
 
     def set_log_level(self, level="DEBUG"):
         """set log level(DEBUG/INFO/NOTICE/WARN/ERROR)"""
-        resp = self.__request_http(Method.POST, path="/appmesh/loglevel")
+        resp = self.__request_http(Method.POST, path="/appmesh/config", body={"LogLevel": level})
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################

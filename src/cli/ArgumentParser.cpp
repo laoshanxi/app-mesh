@@ -626,8 +626,8 @@ void ArgumentParser::processAppView()
 				index = m_commandLineVariables["stdout_index"].as<int>();
 			}
 			std::map<std::string, std::string> query;
-			query["keep_history"] = std::to_string(keepHis);
-			query["stdout_index"] = std::to_string(index);
+			query[HTTP_QUERY_KEY_keep_history] = std::to_string(keepHis);
+			query[HTTP_QUERY_KEY_stdout_index] = std::to_string(index);
 			auto response = requestHttp(true, methods::GET, restPath, query);
 			std::cout << response.extract_utf8string(true).get();
 		}

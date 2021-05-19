@@ -42,7 +42,7 @@ print(client.get_metrics())
 # config
 print(client.get_config())
 print(json.dumps(client.set_config({"REST": {"SSL": {"SSLEnabled": True}}}), indent=2))
-print(client.set_log_level("INFO"))
+print(client.set_log_level("DEBUG"))
 # file
 print(client.download("/opt/appmesh/log/appsvc.log", "1.log"))
 print(client.upload(local_file="/opt/appmesh/log/appsvc.log", file_path="/tmp/2.log"))
