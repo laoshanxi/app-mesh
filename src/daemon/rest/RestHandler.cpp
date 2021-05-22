@@ -801,38 +801,55 @@ void RestHandler::apiAppView(const HttpRequest &message)
 std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &message)
 {
 	auto jsonApp = message.extractJson();
-	if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_name) && HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
-	{
-		throw std::invalid_argument("Should not specify command for an existing application");
-	}
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	if (clientProvideAppName.length())
 	{
-		if (!Configuration::instance()->isAppExist(clientProvideAppName))
+		if (Configuration::instance()->isAppExist(clientProvideAppName))
 		{
-			throw std::invalid_argument(Utility::stringFormat("Specified application <%s> not exist", clientProvideAppName.c_str()));
+			// CASE: copy existing application and run
+			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
+			{
+				throw std::invalid_argument(Utility::stringFormat("Should not specify command for an existing application <%s>", clientProvideAppName.c_str()));
+			}
+			// require app read permission
+			checkAppAccessPermission(message, clientProvideAppName, false);
+			// get application profile
+			auto existApp = Configuration::instance()->getApp(clientProvideAppName)->AsJson(false);
+			// for run an existing app, only support re-define metadata and env
+			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_metadata))
+			{
+				existApp[JSON_KEY_APP_metadata] = jsonApp[JSON_KEY_APP_metadata];
+			}
+			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_env))
+			{
+				existApp[JSON_KEY_APP_env] = jsonApp[JSON_KEY_APP_env];
+			}
+			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_sec_env))
+			{
+				existApp[JSON_KEY_APP_sec_env] = jsonApp[JSON_KEY_APP_sec_env];
+			}
+			existApp[JSON_KEY_APP_name] = web::json::value::string(Utility::createUUID()); // specify a UUID app name
+			jsonApp = existApp;
 		}
-		// require app read permission
-		checkAppAccessPermission(message, clientProvideAppName, false);
-		// get application profile
-		auto existApp = Configuration::instance()->getApp(clientProvideAppName)->AsJson(false);
-		// for run an existing app, only support re-define metadata and env
-		if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_metadata))
+		else
 		{
-			existApp[JSON_KEY_APP_metadata] = jsonApp[JSON_KEY_APP_metadata];
+			// CASE: new a application and run, client provide new app name
+			if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
+			{
+				throw std::invalid_argument(Utility::stringFormat("Should specify command run application <%s>", clientProvideAppName.c_str()));
+			}
 		}
-		if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_env))
+	}
+	else
+	{
+		// CASE: new a application and run, client did not provide app name
+		jsonApp[JSON_KEY_APP_name] = web::json::value::string(Utility::createUUID()); // specify a UUID app name
+		if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 		{
-			existApp[JSON_KEY_APP_env] = jsonApp[JSON_KEY_APP_env];
+			throw std::invalid_argument("Should specify command run application");
 		}
-		if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_sec_env))
-		{
-			existApp[JSON_KEY_APP_sec_env] = jsonApp[JSON_KEY_APP_sec_env];
-		}
-		jsonApp = existApp;
 	}
 
-	jsonApp[JSON_KEY_APP_name] = web::json::value::string(Utility::createUUID()); // specify a UUID app name
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
 	return Configuration::instance()->addApp(jsonApp);

@@ -38,6 +38,7 @@ Welcome to AppMesh's documentation!
    success/promote_native_app_to_microservice_app.md
    success/secure_REST_file_server.md
    success/standalone_JWT_server.md
+   success/kubernetes_run_native_application.md
 
 Indices and tables
 ==================

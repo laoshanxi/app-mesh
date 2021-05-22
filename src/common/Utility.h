@@ -133,6 +133,7 @@ public:
 	// OS related
 	static const std::string getSelfFullPath();
 	static const std::string getSelfDir();
+	static const std::string getParentDir();
 	static const std::string getBinaryName();
 	static bool isDirExist(std::string path);
 	static bool isFileExist(std::string path);

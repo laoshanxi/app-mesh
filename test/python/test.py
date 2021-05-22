@@ -68,4 +68,4 @@ print(
 print(json.dumps(client.remove_cloud_app("cloud"), indent=2))
 print(json.dumps(client.get_cloud_nodes(), indent=2))
 # run app
-client.run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False, max_exec_time=3)
+print(client.run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False, max_exec_time=3))

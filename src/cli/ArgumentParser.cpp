@@ -739,7 +739,7 @@ void ArgumentParser::processAppRun()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
 		("cmd,c", po::value<std::string>(), "full command line with arguments (run application do not need specify command line)")
-		("name,n", po::value<std::string>(), "application name to run (run commands do not need specify application name)")
+		("name,n", po::value<std::string>(), "existing application name to run or specify a application name for run, empty will generate a random name in server")
 		("metadata,g", po::value<std::string>(), "application metadata string (input for application, pass to application process stdin)")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")

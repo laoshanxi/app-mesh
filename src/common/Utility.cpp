@@ -128,6 +128,12 @@ const std::string Utility::getSelfDir()
 	return path.parent_path().string();
 }
 
+const std::string Utility::getParentDir()
+{
+	auto path = boost::filesystem::path(getSelfFullPath());
+	return path.parent_path().parent_path().string();
+}
+
 // program_name from errno.h
 extern char *program_invocation_short_name;
 const std::string Utility::getBinaryName()
@@ -222,7 +228,7 @@ void Utility::initLogging()
 {
 	using namespace log4cpp;
 
-	auto logDir = Utility::stringFormat("%s/%s", Utility::getSelfDir().c_str(), "log");
+	auto logDir = Utility::stringFormat("%s/%s", Utility::getParentDir().c_str(), "log");
 	createDirectory(logDir);
 	auto consoleLayout = new PatternLayout();
 	consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");

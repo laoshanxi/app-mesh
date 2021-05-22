@@ -27,7 +27,7 @@ std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
 	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL)
 {
-	m_jsonFilePath = Utility::getSelfDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
+	m_jsonFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
 	m_label = std::make_unique<Label>();
 	m_security = std::make_shared<JsonSecurity>();
 	m_rest = std::make_shared<JsonRest>();
@@ -123,7 +123,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 
 std::string Configuration::readConfiguration()
 {
-	std::string jsonPath = Utility::getSelfDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
+	std::string jsonPath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
 	return Utility::readFileCpp(jsonPath);
 }
 
@@ -277,7 +277,8 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
 	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
-				 [this, &returnRuntimeInfo, &user](std::shared_ptr<Application> app) {
+				 [this, &returnRuntimeInfo, &user](std::shared_ptr<Application> app)
+				 {
 					 return ((returnRuntimeInfo || app->isWorkingState()) &&								  // not persist temp application
 							 checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) && // access permission check
 							 (app->getName() != SEPARATE_REST_APP_NAME));									  // not expose rest process
@@ -504,16 +505,17 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 	auto app = parseApp(jsonApp);
 	bool update = false;
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application> &mapApp) {
-		if (mapApp->getName() == app->getName())
-		{
-			// Stop existing app and replace
-			mapApp->disable();
-			mapApp = app;
-			update = true;
-			return;
-		}
-	});
+	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application> &mapApp)
+				  {
+					  if (mapApp->getName() == app->getName())
+					  {
+						  // Stop existing app and replace
+						  mapApp->disable();
+						  mapApp = app;
+						  update = true;
+						  return;
+					  }
+				  });
 
 	if (!update)
 	{
@@ -776,9 +778,8 @@ bool Configuration::applyEnvConfig(web::json::value &jsonValue, std::string envV
 void Configuration::registerPrometheus()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p) {
-		p->initMetrics(PrometheusRest::instance());
-	});
+	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p)
+				  { p->initMetrics(PrometheusRest::instance()); });
 }
 
 std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jsonApp)
@@ -839,7 +840,8 @@ std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jso
 std::shared_ptr<Application> Configuration::getApp(const std::string &appName) const
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();
-	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app) { return app->getName() == appName; });
+	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app)
+							 { return app->getName() == appName; });
 	if (iter != apps.end())
 		return *iter;
 
@@ -849,7 +851,8 @@ std::shared_ptr<Application> Configuration::getApp(const std::string &appName) c
 bool Configuration::isAppExist(const std::string &appName)
 {
 	std::vector<std::shared_ptr<Application>> apps = getApps();
-	return std::any_of(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app) { return app->getName() == appName; });
+	return std::any_of(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app)
+					   { return app->getName() == appName; });
 }
 
 std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value &jsonValue)

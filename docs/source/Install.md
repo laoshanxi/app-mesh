@@ -18,7 +18,7 @@ Install App Mesh as standalone mode on local node without GUI service by release
 # centos
 sudo yum install appmesh-1.9.2-1.x86_64.rpm
 # ubuntu
-sudo apt install appmesh_1.9.1_amd64.deb
+sudo apt install appmesh_1.9.2_amd64.deb
 # SUSE
 sudo zypper install appmesh-1.9.2-1.x86_64.rpm
 ```
@@ -40,11 +40,8 @@ Note:
 5. The installation media structure is like this:
 ```
     $ tree -L 1 /opt/appmesh/
-    /opt/appmesh/
-    ├── appc                              -------- command line binary
-    ├── apprest -> /opt/appmesh/appsvc    -------- rest service soft link
-    ├── appsvc                            -------- service binary
     ├── appsvc.json                       -------- configuration file (can be modified manually or update from GUI)
+    ├── bin                               -------- execute binaries dir
     ├── lib64
     ├── log                               -------- service log dir
     ├── script

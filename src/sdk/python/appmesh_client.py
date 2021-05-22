@@ -341,6 +341,7 @@ class AppMeshClient:
         synchronized=True,
         max_exec_time=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
         async_retention=DEFAULT_RUN_APP_RETENTION_DURATION,
+        block_async_run=True,
     ):
         """remote run a command, app_json specify 'name' attributes used to run a existing application"""
         path = ""
@@ -354,24 +355,30 @@ class AppMeshClient:
             path=path,
             query={"timeout": str(max_exec_time), "retention": str(async_retention)},
         )
+        exit_code = 0
         if resp.status_code == HTTPStatus.OK:
             if synchronized:
                 print(resp.text, end="")
+                if resp.headers.__contains__("exit_code"):
+                    exit_code = int(resp.headers.get("exit_code"))
             else:
                 app_name = resp.json()["name"]
                 process_uuid = resp.json()["process_uuid"]
                 # print(resp.json())
-                while len(process_uuid) > 0:
+                while len(process_uuid) > 0 and block_async_run:
                     # /app/testapp/run/output?process_uuid=UUID
                     path = "/appmesh/app/{0}/run/output".format(app_name)
                     resp = self.__request_http(Method.GET, path=path, query={"process_uuid": process_uuid})
                     if resp.text is not None:
                         print(resp.text, end="")
+                    if resp.headers.__contains__("exit_code"):
+                        exit_code = int(resp.headers.get("exit_code"))
                     if resp.headers.__contains__("exit_code") or (resp.status_code != HTTPStatus.OK):
                         break
                     time.sleep(0.5)
         else:
             print(resp.text)
+        return exit_code
 
     def __request_http(self, method, path, query={}, header={}, body=None):
         """http request"""

@@ -10,8 +10,9 @@ mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/sdk
-cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
-cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
+mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin
+cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
+cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/appsvc.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/app*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/rpm*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
@@ -20,7 +21,9 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/script/ssl_cert_generate.sh ${CMAKE_CURRENT_BINAR
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/bash_completion.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yml ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yaml ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
-cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/appmesh_client.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/sdk
+cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/appmesh_client.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/sdk/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/container_monitor.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appmesh_arm.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
 cp /usr/bin/cfssl ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 cp /usr/bin/cfssljson ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 chmod +x ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/*.sh

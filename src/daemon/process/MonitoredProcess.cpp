@@ -16,10 +16,7 @@ MonitoredProcess::~MonitoredProcess()
 	const static char fname[] = "MonitoredProcess::~MonitoredProcess() ";
 
 	if (m_httpRequest)
-	{
-		std::unique_ptr<HttpRequest> response(static_cast<HttpRequest *>(m_httpRequest));
 		m_httpRequest = nullptr;
-	}
 	if (m_thread != nullptr)
 		m_thread->join();
 

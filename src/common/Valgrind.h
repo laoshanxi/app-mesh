@@ -11,11 +11,11 @@
 
 /*
 * How to enable valgrind test :
-*   - touch /opt/appmesh/appsvc.valgrind
+*   - touch /opt/appmesh/bin/appsvc.valgrind
 * How to finish test :
-*   - touch /opt/appmesh/appsvc.valgrind.stop
+*   - touch /opt/appmesh/bin/appsvc.valgrind.stop
 * Check valgrind report : 
-*   - /opt/appmesh/appsvc.valgrind.$pid.log
+*   - /opt/appmesh/bin/appsvc.valgrind.$pid.log
 */
 
 static char **CMD_ARGV = 0;

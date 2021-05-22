@@ -91,7 +91,8 @@ if [ true ]; then
 	elif [ -f "/usr/bin/apt" ]; then
 		apt install -y python-dev
 	fi
-	$WGWT_A https://dl.bintray.com/boostorg/release/1.74.0/source/boost_1_74_0.tar.gz
+	# https://www.boost.org/users/download/
+	$WGWT_A https://boostorg.jfrog.io/artifactory/main/release/1.74.0/source/boost_1_74_0.tar.gz
 	tar zxvf boost_1_74_0.tar.gz
 	cd ./boost_1_74_0
 	./bootstrap.sh
