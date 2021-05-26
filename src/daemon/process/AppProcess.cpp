@@ -16,7 +16,7 @@ constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
 AppProcess::AppProcess()
 	: m_delayKillTimerId(0), m_stdOutSizeTimerId(0), m_stdOutMaxSize(0),
-	  m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
+	  m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_stdoutReadStreamPos(0),
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID())
 {
 	const static char fname[] = "AppProcess::AppProcess() ";
@@ -37,7 +37,6 @@ AppProcess::~AppProcess()
 	CLOSE_ACE_HANDLER(m_stdinHandler);
 
 	Utility::removeFile(m_stdinFileName);
-	CLOSE_STREAM(m_stdoutReadStream);
 	this->cancelTimer(m_stdOutSizeTimerId);
 
 	this->close_dup_handles();
@@ -268,10 +267,11 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	{
 		option.working_directory(Configuration::instance()->getDefaultWorkDir().c_str()); // set default working dir
 	}
-	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair) {
-		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-		LOG_DBG << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str();
-	});
+	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
+				  {
+					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
+					  LOG_DBG << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str();
+				  });
 	option.release_handles();
 	// clean if necessary
 	CLOSE_ACE_HANDLER(m_stdoutHandler);
@@ -333,12 +333,17 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 const std::string AppProcess::fetchOutputMsg()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_stdoutReadStream == nullptr)
-		m_stdoutReadStream = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
-	if (m_stdoutReadStream->is_open() && m_stdoutReadStream->good())
+	std::ifstream stdoutReadStream(m_stdoutFileName, ios::in);
+	if (stdoutReadStream.is_open() && stdoutReadStream.good())
 	{
 		std::stringstream buffer;
-		buffer << m_stdoutReadStream->rdbuf();
+		if (m_stdoutReadStreamPos)
+		{
+			stdoutReadStream.seekg(m_stdoutReadStreamPos);
+		}
+		buffer << stdoutReadStream.rdbuf();
+		m_stdoutReadStreamPos = stdoutReadStream.tellg();
+		stdoutReadStream.close();
 		return buffer.str();
 	}
 	return std::string();
@@ -348,13 +353,20 @@ const std::string AppProcess::fetchLine()
 {
 	char buffer[512] = {0};
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	if (m_stdoutReadStream == nullptr)
-		m_stdoutReadStream = std::make_shared<std::ifstream>(m_stdoutFileName, ios::in);
-	if (m_stdoutReadStream->is_open() && m_stdoutReadStream->good())
+
+	std::ifstream stdoutReadStream(m_stdoutFileName, ios::in);
+	if (stdoutReadStream.is_open() && stdoutReadStream.good())
 	{
-		m_stdoutReadStream->getline(buffer, sizeof(buffer));
+		if (m_stdoutReadStreamPos)
+		{
+			stdoutReadStream.seekg(m_stdoutReadStreamPos);
+		}
+		stdoutReadStream.getline(buffer, sizeof(buffer));
+		m_stdoutReadStreamPos = stdoutReadStream.tellg();
+		stdoutReadStream.close();
+		return buffer;
 	}
-	return buffer;
+	return std::string();
 }
 
 void AppProcess::startError(const std::string &err)

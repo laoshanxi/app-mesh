@@ -133,7 +133,7 @@ private:
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;
-	std::shared_ptr<std::ifstream> m_stdoutReadStream;
+	std::streampos m_stdoutReadStreamPos;
 
 	mutable std::recursive_mutex m_cpuMutex;
 	uint64_t m_lastProcCpuTime;
