@@ -174,7 +174,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	}
 }
 
-void Application::refreshPid()
+void Application::refreshPid(void *ptree)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// Try to get return code.
@@ -206,7 +206,7 @@ void Application::refreshPid()
 	{
 		if (m_metricMemory)
 		{
-			auto usage = m_process->getProcUsage();
+			auto usage = m_process->getProcUsage(ptree);
 			m_metricMemory->metric().Set(std::get<1>(usage));
 			m_metricCpu->metric().Set(std::get<2>(usage));
 		}
@@ -231,7 +231,7 @@ bool Application::attach(int pid)
 	return true;
 }
 
-void Application::invoke()
+void Application::invoke(void* ptree)
 {
 	const static char fname[] = "Application::invoke() ";
 	if (isWorkingState())
@@ -263,7 +263,7 @@ void Application::invoke()
 		setLastError("not in working state");
 	}
 
-	refreshPid();
+	refreshPid(ptree);
 }
 
 void Application::invokeNow(int timerId)

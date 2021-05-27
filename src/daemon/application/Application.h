@@ -39,7 +39,7 @@ public:
 	virtual void dump();
 
 	// Invoke by scheduler
-	virtual void invoke();
+	virtual void invoke(void *ptree = nullptr);
 	virtual void disable();
 	virtual void enable();
 	void destroy();
@@ -78,7 +78,7 @@ protected:
 
 	// Invoke immediately
 	virtual void invokeNow(int timerId);
-	virtual void refreshPid();
+	virtual void refreshPid(void *ptree = nullptr);
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
 	bool isInDailyTimeRange();
 	virtual void checkAndUpdateHealth();

@@ -42,20 +42,23 @@ namespace os
 
 	// Returns a process tree for the specified pid (or all processes if
 	// pid is none or the current process if pid is 0).
-	inline std::shared_ptr<ProcessTree> pstree(pid_t pid = 0)
+	inline std::shared_ptr<ProcessTree> pstree(pid_t pid = 0, void *ptree = nullptr)
 	{
 		if (pid == 0)
 		{
 			pid = getpid();
 		}
 
+		if (ptree)
+		{
+			return pstree(pid, *(std::list<Process>*)(ptree));
+		}
+		
 		const std::list<Process> processList = os::processes();
-
 		if (processList.size() == 0)
 		{
 			return nullptr;
 		}
-
 		return pstree(pid, processList);
 	}
 

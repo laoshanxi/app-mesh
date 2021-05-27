@@ -379,12 +379,12 @@ const std::string AppProcess::startError() const
 	return m_startError;
 }
 
-std::tuple<bool, uint64_t, float> AppProcess::getProcUsage()
+std::tuple<bool, uint64_t, float> AppProcess::getProcUsage(void *ptree)
 {
 	auto pid = this->getpid();
 	if (pid > 0)
 	{
-		auto tree = os::pstree(this->getpid());
+		auto tree = os::pstree(this->getpid(), ptree);
 		auto totalMemory = tree ? tree->totalRssMemBytes() : 0;
 
 		// https://stackoverflow.com/questions/1420426/how-to-calculate-the-cpu-usage-of-a-process-by-pid-in-linux-from-c/1424556

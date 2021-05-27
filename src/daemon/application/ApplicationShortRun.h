@@ -20,7 +20,7 @@ public:
 	virtual web::json::value AsJson(bool returnRuntimeInfo) override;
 	virtual void dump() override;
 
-	virtual void invoke() override;
+	virtual void invoke(void *ptree = nullptr) override;
 	virtual void enable() override;
 	virtual void disable() override;
 	virtual bool available() override;
@@ -28,7 +28,7 @@ public:
 
 protected:
 	virtual void invokeNow(int timerId) override;
-	virtual void refreshPid() override;
+	virtual void refreshPid(void *ptree = nullptr) override;
 	virtual void checkAndUpdateHealth() override;
 	int getStartInterval();
 	std::chrono::system_clock::time_point getStartTime();

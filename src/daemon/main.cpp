@@ -1,6 +1,7 @@
 #include <chrono>
 #include <string>
 #include <thread>
+#include <list>
 
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
@@ -9,6 +10,7 @@
 #include "../common/PerfLog.h"
 #include "../common/Utility.h"
 #include "../common/os/linux.hpp"
+#include "../common/os/pstree.hpp"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
@@ -141,11 +143,12 @@ int main(int argc, char *argv[])
 			PerfLog perf("main while loop");
 
 			// monitor application
+			const std::list<os::Process> ptree = os::processes();
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
 				PerfLog perf1(app->getName());
-				app->invoke();
+				app->invoke((void*)(&ptree));
 			}
 
 			PersistManager::instance()->persistSnapshot();

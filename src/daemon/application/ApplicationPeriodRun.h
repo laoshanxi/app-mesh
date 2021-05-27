@@ -16,6 +16,6 @@ public:
 	virtual void dump() override;
 
 protected:
-	virtual void refreshPid() override;
+	virtual void refreshPid(void* ptree = nullptr) override;
 	virtual void checkAndUpdateHealth() override;
 };

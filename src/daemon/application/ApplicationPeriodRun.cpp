@@ -15,10 +15,10 @@ ApplicationPeriodRun::~ApplicationPeriodRun()
 	LOG_DBG << fname << "Entered.";
 }
 
-void ApplicationPeriodRun::refreshPid()
+void ApplicationPeriodRun::refreshPid(void* ptree)
 {
 	// 1. Do the same thing with short running app (refresh pid and return code)
-	ApplicationShortRun::refreshPid();
+	ApplicationShortRun::refreshPid(ptree);
 
 	// 2. Start again when the short running app exited
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);

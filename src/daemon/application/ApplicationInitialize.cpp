@@ -79,12 +79,12 @@ void ApplicationInitialize::dump()
 	LOG_DBG << fname << "m_executed:" << m_executed;
 }
 
-void ApplicationInitialize::invoke()
+void ApplicationInitialize::invoke(void *ptree)
 {
 	const static char fname[] = "ApplicationInitialize::invoke() ";
 	LOG_DBG << fname << "Entered.";
 
-	refreshPid();
+	refreshPid(ptree);
 	if (!m_executed)
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);

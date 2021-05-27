@@ -22,7 +22,7 @@ public:
 	virtual void enable() override;
 	virtual void disable() override;
 	virtual bool available() override;
-	virtual void invoke() override;
+	virtual void invoke(void *ptree = nullptr) override;
 
 protected:
 	web::json::value m_application;

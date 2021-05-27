@@ -39,7 +39,7 @@ public:
 	/// - uint64_t: total memory bytes
 	/// - float: cpu usage
 	/// </returns>
-	std::tuple<bool, uint64_t, float> getProcUsage();
+	std::tuple<bool, uint64_t, float> getProcUsage(void *ptree = nullptr);
 
 	/// <summary>
 	/// Attach a existing pid to AppProcess to manage

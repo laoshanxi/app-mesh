@@ -30,7 +30,7 @@ void ApplicationShortRun::FromJson(const std::shared_ptr<ApplicationShortRun> &a
 	assert(app->m_startInterval > 0);
 }
 
-void ApplicationShortRun::refreshPid()
+void ApplicationShortRun::refreshPid(void *ptree)
 {
 	// 1. Call parent to get the new pid
 	Application::refreshPid();
@@ -72,7 +72,7 @@ void ApplicationShortRun::checkAndUpdateHealth()
 	}
 }
 
-void ApplicationShortRun::invoke()
+void ApplicationShortRun::invoke(void *ptree)
 {
 	const static char fname[] = "ApplicationShortRun::invoke() ";
 	if (isWorkingState())
@@ -91,7 +91,7 @@ void ApplicationShortRun::invoke()
 		setLastError("not in working state");
 	}
 	// Only refresh Pid for short running
-	refreshPid();
+	refreshPid(ptree);
 }
 
 void ApplicationShortRun::invokeNow(int timerId)
