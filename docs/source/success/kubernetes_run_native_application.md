@@ -2,8 +2,8 @@
 [Demo video](https://asciinema.org/a/685tfnMjbnxjTB1sKbqs5Qv99)
 
 ## Background
-Kubernetes can only support manage application running in container, its is impossible to run none-container application by Kubernetes.
-This solution provide a way to forward container start cmd to appmesh and running on native host, appmesh will guarantee the native application have same lifecycle with container.
+Kubernetes only support manage container applications, its impossible to run none-container application by Kubernetes.
+This solution provide a simple way to forward container start cmd to AppMesh and running on native host, AppMesh will guarantee the native application have same lifecycle with container.
 
 
 ## Install AppMesh on host OS
@@ -12,7 +12,7 @@ AppMesh is a native app manager, provide REST API which can used to manage appli
 
 
 ## Build Kubernetes Docker image for native command
-The Docker image `laoshanxi/native_container` is used to forward container start command to AppMesh, The image was already built and pushed to docker.io, you can use directly without below build process.
+This Docker image `laoshanxi/native_container` is used to forward container start command to AppMesh, The image was already built and pushed to `docker.io`, you can use directly without below build process.
 ```shell
 $ tee Dockerfile <<-'EOF'
 FROM ubuntu
@@ -26,7 +26,7 @@ RUN apt update && apt install wget net-tools -y && \
 
 ENTRYPOINT ["python3", "/opt/appmesh/bin/appmesh_arm.py"]
 EOF
-$ docker build -t native_container .
+$ docker build --no-cache -t native_container .
 $ docker tag native_container laoshanxi/native_container
 $ docker push laoshanxi/native_container
 ```
