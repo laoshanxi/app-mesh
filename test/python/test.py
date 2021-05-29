@@ -20,6 +20,7 @@ client = appmesh_client.AppMeshClient()
 client.login("admin", "Admin123")
 client.authentication(client.jwt_token)
 client.change_passwd("Admin123")
+print(json.dumps(client.get_permissions(), indent=2))
 # view application
 print(json.dumps(client.get_app("ping"), indent=2))
 print(json.dumps(client.get_app("ping2"), indent=2))

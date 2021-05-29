@@ -38,9 +38,14 @@ else
 	sed -i "s/MYHOST/$(hostname -f)/g" $INSTALL_DIR/appsvc.json
 	rm -rf $INSTALL_DIR/work
 fi
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.security.json" ]; then
+	# restore previous security file
+	mv $INSTALL_DIR/.security.json $INSTALL_DIR/security.json
+fi
 # only allow root access config json file
 # 600 rw-------
 chmod 600 $INSTALL_DIR/appsvc.json
+chmod 600 $INSTALL_DIR/security.json
 
 # create appc softlink
 rm -rf /usr/bin/appc

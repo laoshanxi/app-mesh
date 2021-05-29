@@ -12,6 +12,7 @@
 #include "../common/os/linux.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
+#include "security/Security.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
 #include "ResourceCollection.h"
@@ -60,6 +61,10 @@ int main(int argc, char *argv[])
 		auto config = Configuration::FromJson(configTxt, true);
 		Configuration::instance(config);
 		auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
+		// init security
+		Security::init();
+
+		// recover applications
 		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))
 		{
 			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));

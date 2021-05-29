@@ -14,6 +14,7 @@
 #include "../process/DockerProcess.h"
 #include "../process/MonitoredProcess.h"
 #include "../rest/PrometheusRest.h"
+#include "../security/Security.h"
 #include "../security/User.h"
 #include "Application.h"
 
@@ -88,7 +89,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
 	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner));
 	if (ownerStr.length())
-		app->m_owner = Configuration::instance()->getUserInfo(ownerStr);
+		app->m_owner = Security::instance()->getUserInfo(ownerStr);
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
 	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_metadata));
@@ -231,7 +232,7 @@ bool Application::attach(int pid)
 	return true;
 }
 
-void Application::invoke(void* ptree)
+void Application::invoke(void *ptree)
 {
 	const static char fname[] = "Application::invoke() ";
 	if (isWorkingState())
@@ -582,19 +583,19 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_envMap.size())
 	{
 		web::json::value envs = web::json::value::object();
-		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string> &pair) {
-			envs[GET_STRING_T(pair.first)] = web::json::value::string(pair.second);
-		});
+		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string> &pair)
+					  { envs[GET_STRING_T(pair.first)] = web::json::value::string(pair.second); });
 		result[JSON_KEY_APP_env] = envs;
 	}
 	if (m_secEnvMap.size())
 	{
 		web::json::value envs = web::json::value::object();
 		auto owner = getOwner();
-		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair) {
-			auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
-			envs[GET_STRING_T(pair.first)] = web::json::value::string(encryptedEnvValue);
-		});
+		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair)
+					  {
+						  auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
+						  envs[GET_STRING_T(pair.first)] = web::json::value::string(encryptedEnvValue);
+					  });
 		result[JSON_KEY_APP_sec_env] = envs;
 	}
 	if (m_posixTimeZone.length() && m_posixTimeZone != DateTime::getLocalZoneUTCOffset())

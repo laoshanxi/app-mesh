@@ -17,7 +17,7 @@ This Docker image `laoshanxi/native_container` is used to forward container star
 $ tee Dockerfile <<-'EOF'
 FROM ubuntu
 
-ENV APP_MESH_VER=1.9.2
+ENV APP_MESH_VER=1.9.3
 
 RUN apt update && apt install wget net-tools -y && \
     wget  https://github.com/laoshanxi/app-mesh/releases/download/${APP_MESH_VER}/appmesh_${APP_MESH_VER}_amd64.deb && \

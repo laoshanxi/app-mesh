@@ -2,6 +2,7 @@
 #include <cryptopp/default.h>
 
 #include "../../common/Utility.h"
+#include "Security.h"
 #include "User.h"
 
 //////////////////////////////////////////////////////////////////////
@@ -100,6 +101,7 @@ std::shared_ptr<User> Users::addUser(const std::string &userName, const web::jso
 		// insert
 		m_users[userName] = user;
 	}
+	user->updateKey(user->getKey());
 	return user;
 }
 
@@ -191,7 +193,14 @@ void User::updateUser(std::shared_ptr<User> user)
 void User::updateKey(const std::string &passwd)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_key = passwd;
+	if (Security::instance()->encryptKey())
+	{
+		m_key = Utility::hash(passwd);
+	}
+	else
+	{
+		m_key = passwd;
+	}
 }
 
 bool User::locked() const
@@ -227,7 +236,7 @@ const std::string User::encrypt(const std::string &message)
 	// https://www.cryptopp.com/wiki/Advanced_Encryption_Standard
 	// https://github.com/weidai11/cryptopp/blob/master/Install.txt
 	// https://github.com/shanet/Crypto-Example/blob/master/crypto_example.cpp
-	
+
 	//#include <cryptopp/osrng.h>
 	//AutoSeededRandomPool rnd;
 	//Generate a random key
@@ -321,4 +330,37 @@ const std::string User::decrypt(const std::string &encryptedMessage)
 	cfbDecryption.ProcessData(&(*plainText), (const byte *)message.c_str(), messageLen);
 
 	return std::string((char *)(&(*plainText)));
+}
+
+//////////////////////////////////////////////////////////////////////////
+// JsonSecurity
+//////////////////////////////////////////////////////////////////////////
+JsonSecurity::JsonSecurity()
+	: m_encryptKey(false)
+{
+	m_roles = std::make_shared<Roles>();
+	m_jwtUsers = std::make_shared<Users>();
+}
+
+std::shared_ptr<JsonSecurity> JsonSecurity::FromJson(const web::json::value &jsonValue)
+{
+	auto security = std::make_shared<JsonSecurity>();
+	// Roles
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))
+		security->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SECURITY_EncryptKey, security->m_encryptKey);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users))
+		security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), security->m_roles);
+	return security;
+}
+
+web::json::value JsonSecurity::AsJson()
+{
+	auto result = web::json::value::object();
+	result[JSON_KEY_SECURITY_EncryptKey] = web::json::value::boolean(m_encryptKey);
+	// Users
+	result[JSON_KEY_JWT_Users] = m_jwtUsers->AsJson();
+	// Roles
+	result[JSON_KEY_Roles] = m_roles->AsJson();
+	return result;
 }

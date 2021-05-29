@@ -10,6 +10,9 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$INSTALL_DIR/lib64
 if [ -f "$INSTALL_DIR/appsvc.json" ]; then
 	cp -f $INSTALL_DIR/appsvc.json $INSTALL_DIR/.appsvc.json
 fi
+if [ -f "$INSTALL_DIR/security.json" ]; then
+	cp -f $INSTALL_DIR/security.json $INSTALL_DIR/.security.json
+fi
 # stop all running applications
 #if [ -f "$INSTALL_DIR/appc" ];then
 #	$INSTALL_DIR/appc view -l | awk '{if (NR>1){cmd="$INSTALL_DIR/appc disable -n "$2;print(cmd);system(cmd)}}'
