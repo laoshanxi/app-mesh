@@ -13,6 +13,7 @@
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
 #include "../consul/ConsulConnection.h"
+#include "../security/Security.h"
 #include "../security/User.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
@@ -466,7 +467,7 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
 	auto userName = verifyToken(message);
-	auto permissions = Configuration::instance()->getUserPermissions(userName);
+	auto permissions = Security::instance()->getUserPermissions(userName);
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
 	for (auto perm : permissions)
@@ -481,10 +482,6 @@ void RestHandler::apiBasicConfigView(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
 	auto config = Configuration::instance()->AsJson(false, getJwtUserName(message));
-	if (HAS_JSON_FIELD(config, JSON_KEY_Security) && HAS_JSON_FIELD(config.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
-	{
-		config.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
-	}
 	message.reply(status_codes::OK, config);
 }
 
@@ -493,13 +490,9 @@ void RestHandler::apiBasicConfigSet(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_config_set);
 
 	auto json = message.extractJson();
-	// do not allow users update from host-update API
-	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
-		json.at(JSON_KEY_Security).erase(JSON_KEY_JWT_Users);
 	Configuration::instance()->hotUpdate(json);
 
 	Configuration::instance()->saveConfigToDisk();
-	ConsulConnection::instance()->saveSecurity(true);
 
 	apiBasicConfigView(message);
 }
@@ -528,16 +521,11 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 		throw std::invalid_argument("password length should be greater than 3");
 	}
 
-	auto user = Configuration::instance()->getUserInfo(tokenUserName);
-	user->updateKey(newPasswd);
-	// Store encrypted key if any
-	if (Configuration::instance()->getEncryptKey())
-		user->updateKey(Utility::hash(user->getKey()));
-
-	Configuration::instance()->saveConfigToDisk();
+	Security::instance()->changeUserPasswd(tokenUserName, newPasswd);
+	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
-	LOG_INF << fname << "User <" << uname << "> changed password";
+	LOG_INF << fname << "User <" << tokenUserName << "> changed password";
 	message.reply(status_codes::OK, convertText2Json("password changed success"));
 }
 
@@ -555,9 +543,8 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 		throw std::invalid_argument("User admin can not be locked");
 	}
 
-	Configuration::instance()->getUserInfo(pathUserName)->lock();
-
-	Configuration::instance()->saveConfigToDisk();
+	Security::instance()->getUserInfo(pathUserName)->lock();
+	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
@@ -573,9 +560,8 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_UNLOCK);
 	auto tokenUserName = getJwtUserName(message);
 
-	Configuration::instance()->getUserInfo(pathUserName)->unlock();
-
-	Configuration::instance()->saveConfigToDisk();
+	Security::instance()->getUserInfo(pathUserName)->unlock();
+	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
@@ -591,12 +577,8 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_ADD);
 	auto tokenUserName = getJwtUserName(message);
 
-	auto user = Configuration::instance()->getUsers()->addUser(pathUserName, message.extractJson(), Configuration::instance()->getRoles());
-	// Store encrypted key if any
-	if (Configuration::instance()->getEncryptKey())
-		user->updateKey(Utility::hash(user->getKey()));
-
-	Configuration::instance()->saveConfigToDisk();
+	auto user = Security::instance()->addUser(pathUserName, message.extractJson());
+	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
@@ -612,9 +594,8 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_DELETE);
 	auto tokenUserName = getJwtUserName(message);
 
-	Configuration::instance()->getUsers()->delUser(pathUserName);
-
-	Configuration::instance()->saveConfigToDisk();
+	Security::instance()->delUser(pathUserName);
+	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
@@ -625,7 +606,7 @@ void RestHandler::apiUsersView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_get_users);
 
-	auto users = Configuration::instance()->getUsers()->AsJson();
+	auto users = Security::instance()->getUsersJson();
 	for (auto &user : users.as_object())
 	{
 		if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
@@ -639,7 +620,7 @@ void RestHandler::apiRolesView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_role_view);
 
-	message.reply(status_codes::OK, Configuration::instance()->getRoles()->AsJson());
+	message.reply(status_codes::OK, Security::instance()->getRolesJson());
 }
 
 void RestHandler::apiRoleUpdate(const HttpRequest &message)
@@ -651,9 +632,8 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_UPDATE);
 	auto tokenUserName = getJwtUserName(message);
 
-	Configuration::instance()->getRoles()->addRole(message.extractJson(), pathRoleName);
-
-	Configuration::instance()->saveConfigToDisk();
+	Security::instance()->addRole(message.extractJson(), pathRoleName);
+	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
@@ -670,9 +650,8 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_DELETE);
 	auto tokenUserName = getJwtUserName(message);
 
-	Configuration::instance()->getRoles()->delRole(pathRoleName);
-
-	Configuration::instance()->saveConfigToDisk();
+	Security::instance()->delRole(pathRoleName);
+	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
@@ -681,7 +660,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 
 void RestHandler::apiUserGroupsView(const HttpRequest &message)
 {
-	auto groups = Configuration::instance()->getSecurity()->m_jwtUsers->getGroups();
+	auto groups = Security::instance()->getAllUserGroups();
 	auto json = web::json::value::array(groups.size());
 	int index = 0;
 	for (const auto &grp : groups)
@@ -695,7 +674,7 @@ void RestHandler::apiPermissionsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_permission_list);
 
-	auto permissions = Configuration::instance()->getAllPermissions();
+	auto permissions = Security::instance()->getAllPermissions();
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
 	for (auto perm : permissions)
@@ -725,30 +704,28 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 	{
 		std::string uname = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_username)->second));
 		std::string passwd = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_password)->second));
-		int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 7 days
-		if (message.m_headers.count(HTTP_HEADER_JWT_expire_seconds))
+
+		if (Security::instance()->verifyUserKey(uname, passwd))
 		{
-			auto timeout = message.m_headers.find(HTTP_HEADER_JWT_expire_seconds)->second;
-			timeoutSeconds = std::stoi(timeout);
-		}
+			int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 7 days
+			if (message.m_headers.count(HTTP_HEADER_JWT_expire_seconds))
+			{
+				auto timeout = message.m_headers.find(HTTP_HEADER_JWT_expire_seconds)->second;
+				timeoutSeconds = std::stoi(timeout);
+			}
 
-		if (Configuration::instance()->getEncryptKey())
-			passwd = Utility::hash(passwd);
-		auto token = createJwtToken(uname, passwd, timeoutSeconds);
+			auto token = createJwtToken(uname, timeoutSeconds);
 
-		web::json::value result = web::json::value::object();
-		web::json::value profile = web::json::value::object();
-		profile[GET_STRING_T("name")] = web::json::value::string(uname);
-		profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-		result[GET_STRING_T("profile")] = profile;
-		result[GET_STRING_T("token_type")] = web::json::value::string(HTTP_HEADER_JWT_Bearer);
-		result[HTTP_HEADER_JWT_access_token] = web::json::value::string(GET_STRING_T(token));
-		result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
-		result[GET_STRING_T("expire_seconds")] = web::json::value::number(timeoutSeconds);
+			web::json::value result = web::json::value::object();
+			web::json::value profile = web::json::value::object();
+			profile[GET_STRING_T("name")] = web::json::value::string(uname);
+			profile[GET_STRING_T("auth_time")] = web::json::value::number(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+			result[GET_STRING_T("profile")] = profile;
+			result[GET_STRING_T("token_type")] = web::json::value::string(HTTP_HEADER_JWT_Bearer);
+			result[HTTP_HEADER_JWT_access_token] = web::json::value::string(GET_STRING_T(token));
+			result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
+			result[GET_STRING_T("expire_seconds")] = web::json::value::number(timeoutSeconds);
 
-		auto userJson = Configuration::instance()->getUserInfo(uname);
-		if (passwd == userJson->getKey())
-		{
 			message.reply(status_codes::OK, result);
 			LOG_DBG << fname << "User <" << uname << "> login success";
 		}

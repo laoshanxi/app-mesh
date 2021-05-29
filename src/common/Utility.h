@@ -101,6 +101,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	} while (false)
 
 #define APPMESH_CONFIG_JSON_FILE "appsvc.json"
+#define APPMESH_SECURITY_JSON_FILE "security.json"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
@@ -214,9 +215,11 @@ public:
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
 
-#define JSON_KEY_Security "Security"
-
+#define JSON_KEY_JWT "JWT"
 #define JSON_KEY_JWTEnabled "JWTEnabled"
+#define JSON_KEY_JWTSalt "JWTSalt"
+#define JSON_KEY_SECURITY_Interface "SecurityInterface"
+
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
 #define JSON_KEY_Applications "Applications"

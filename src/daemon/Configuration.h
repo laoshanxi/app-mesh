@@ -8,8 +8,6 @@
 #include <vector>
 
 class RestHandler;
-class Roles;
-class Users;
 class User;
 class Label;
 class Application;
@@ -30,8 +28,20 @@ public:
 		JsonSsl();
 	};
 
+	struct JsonJwt
+	{
+		JsonJwt();
+		static std::shared_ptr<JsonJwt> FromJson(const web::json::value &jsonObj);
+		web::json::value AsJson() const;
+
+		bool m_jwtEnabled;
+		std::string m_jwtSalt;
+		std::string m_jwtInterface;
+	};
+
 	struct JsonRest
 	{
+		JsonRest();
 		static std::shared_ptr<JsonRest> FromJson(const web::json::value &jsonObj);
 		web::json::value AsJson() const;
 
@@ -42,7 +52,7 @@ public:
 		std::string m_restListenAddress;
 		int m_separateRestInternalPort;
 		std::shared_ptr<JsonSsl> m_ssl;
-		JsonRest();
+		std::shared_ptr<JsonJwt> m_jwt;
 	};
 
 	struct JsonConsul
@@ -70,16 +80,6 @@ public:
 		std::string m_basicAuthPass;
 	};
 
-	struct JsonSecurity
-	{
-		static std::shared_ptr<JsonSecurity> FromJson(const web::json::value &jsonObj);
-		web::json::value AsJson(bool returnRuntimeInfo);
-		bool m_jwtEnabled;
-		bool m_encryptKey;
-		std::shared_ptr<Users> m_jwtUsers;
-		std::shared_ptr<Roles> m_roles;
-		JsonSecurity();
-	};
 	Configuration();
 	virtual ~Configuration();
 
@@ -107,7 +107,6 @@ public:
 	int getPromListenPort();
 	std::string getRestListenAddress();
 	int getSeparateRestInternalPort();
-	const web::json::value getSecureConfigJson();
 	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user) const;
 	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
 	bool isAppExist(const std::string &appName);
@@ -120,7 +119,6 @@ public:
 	const std::string getDefaultExecUser() const;
 	const std::string getDefaultWorkDir() const;
 	bool getSslEnabled() const;
-	bool getEncryptKey();
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;
@@ -128,14 +126,8 @@ public:
 	std::size_t getThreadPoolSize() const;
 	const std::string getDescription() const;
 
-	const std::shared_ptr<User> getUserInfo(const std::string &userName) const;
-	std::set<std::string> getUserPermissions(const std::string &userName);
-	std::set<std::string> getAllPermissions();
-	const std::shared_ptr<Users> getUsers();
-	const std::shared_ptr<Roles> getRoles();
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
-	const std::shared_ptr<Configuration::JsonSecurity> getSecurity() const;
-	void updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security);
+	const std::shared_ptr<JsonJwt> getJwt() const;
 	bool checkOwnerPermission(const std::string &user, const std::shared_ptr<User> &appOwner, int appPermission, bool requestWrite) const;
 
 	void dump();
@@ -150,7 +142,6 @@ private:
 	std::string m_defaultWorkDir;
 	int m_scheduleInterval;
 	std::shared_ptr<JsonRest> m_rest;
-	std::shared_ptr<JsonSecurity> m_security;
 	std::shared_ptr<JsonConsul> m_consul;
 
 	std::string m_logLevel;

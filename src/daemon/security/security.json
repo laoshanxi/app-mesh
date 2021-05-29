@@ -1,0 +1,75 @@
+{
+    "EncryptKey": false,
+    "Roles": {
+        "manage": [
+            "app-control",
+            "app-delete",
+            "cloud-app-reg",
+            "cloud-app-delete",
+            "app-reg",
+            "config-set",
+            "file-download",
+            "file-upload",
+            "label-delete",
+            "label-set"
+        ],
+        "usermgr": [
+            "user-add",
+            "passwd-change",
+            "user-delete",
+            "user-lock",
+            "role-delete",
+            "role-set",
+            "user-unlock"
+        ],
+        "shell": [
+            "app-run-async",
+            "app-run-async-output",
+            "app-run-sync"
+        ],
+        "view": [
+            "config-view",
+            "label-view",
+            "role-view",
+            "user-list",
+            "permission-list",
+            "app-view-all",
+            "cloud-app-view",
+            "cloud-host-view",
+            "app-view",
+            "app-output-view",
+            "host-resource-view"
+        ]
+    },
+    "Users": {
+        "admin": {
+            "key": "Admin123",
+            "group": "admin",
+            "exec_user": "root",
+            "locked": false,
+            "roles": [
+                "manage",
+                "view",
+                "shell",
+                "usermgr"
+            ]
+        },
+        "test": {
+            "key": "123",
+            "group": "user",
+            "exec_user": "appmesh",
+            "locked": false,
+            "roles": []
+        },
+        "user": {
+            "key": "User123",
+            "group": "user",
+            "exec_user": "appmesh",
+            "locked": false,
+            "roles": [
+                "view",
+                "shell"
+            ]
+        }
+    }
+}

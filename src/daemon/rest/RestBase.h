@@ -55,7 +55,7 @@ protected:
     const std::string getJwtUserName(const HttpRequest &message);
     bool permissionCheck(const HttpRequest &message, const std::string &permission);
     const std::string getJwtToken(const HttpRequest &message);
-    const std::string createJwtToken(const std::string &uname, const std::string &passwd, int timeoutSeconds);
+    const std::string createJwtToken(const std::string &uname, int timeoutSeconds);
 
 protected:
     // API functions

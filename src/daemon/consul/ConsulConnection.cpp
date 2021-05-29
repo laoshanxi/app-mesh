@@ -9,7 +9,7 @@
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
-#include "../security/User.h"
+#include "../security/Security.h"
 #include "ConsulConnection.h"
 #include "Scheduler.h"
 
@@ -324,10 +324,10 @@ void ConsulConnection::syncSecurity()
 				return;
 
 			auto security = web::json::value::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
-			auto securityObj = Configuration::JsonSecurity::FromJson(security);
-			if (securityObj->m_jwtUsers->getUsers().size())
+			auto securityObj = Security::FromJson(security);
+			if (securityObj->getUsers().size())
 			{
-				Configuration::instance()->updateSecurity(securityObj);
+				Security::instance(securityObj);
 				LOG_DBG << fname << "Security info updated from Consul successfully";
 			}
 		}
@@ -645,7 +645,7 @@ void ConsulConnection::saveSecurity(bool checkExistence)
 		LOG_WAR << fname << path << " already exist, on need override";
 		return;
 	}
-	auto body = Configuration::instance()->getSecurity()->AsJson(false);
+	auto body = Security::instance()->AsJson();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	web::http::http_response resp = requestHttp(web::http::methods::PUT, path, {{"flags", timestamp}}, {}, &body);
 	if (resp.status_code() == web::http::status_codes::OK)

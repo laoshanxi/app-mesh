@@ -15,6 +15,7 @@
 #include "consul/ConsulConnection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
+#include "security/Security.h"
 #include "security/User.h"
 
 #include "../common/DateTime.h"
@@ -29,7 +30,6 @@ Configuration::Configuration()
 {
 	m_jsonFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
 	m_label = std::make_unique<Label>();
-	m_security = std::make_shared<JsonSecurity>();
 	m_rest = std::make_shared<JsonRest>();
 	m_consul = std::make_shared<JsonConsul>();
 	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
@@ -100,11 +100,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 		config->m_rest = JsonRest::FromJson(jsonValue.at(JSON_KEY_REST));
 	}
 
-	// Security
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
-	{
-		config->m_security = JsonSecurity::FromJson(jsonValue.at(JSON_KEY_Security));
-	}
 	// Labels
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
 	{
@@ -189,9 +184,6 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	// Labels
 	result[JSON_KEY_Labels] = m_label->AsJson();
 
-	// Security
-	result[JSON_KEY_Security] = m_security->AsJson(returnRuntimeInfo);
-
 	// Consul
 	result[JSON_KEY_CONSUL] = m_consul->AsJson();
 
@@ -251,25 +243,6 @@ int Configuration::getSeparateRestInternalPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_separateRestInternalPort;
-}
-
-const web::json::value
-Configuration::getSecureConfigJson()
-{
-	auto json = this->AsJson(false, "");
-	if (HAS_JSON_FIELD(json, JSON_KEY_Security) && HAS_JSON_FIELD(json.at(JSON_KEY_Security), JSON_KEY_JWT_Users))
-	{
-		auto &users = json.at(JSON_KEY_Security).at(JSON_KEY_JWT_Users).as_object();
-		for (auto &user : users)
-		{
-			if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
-			{
-				user.second[JSON_KEY_USER_key] = web::json::value::string(SECURIRE_USER_KEY);
-			}
-		}
-	}
-
-	return json;
 }
 
 web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user) const
@@ -343,11 +316,6 @@ bool Configuration::getSslEnabled() const
 	return m_rest->m_ssl->m_sslEnabled;
 }
 
-bool Configuration::getEncryptKey()
-{
-	return getSecurity()->m_encryptKey;
-}
-
 std::string Configuration::getSSLCertificateFile() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -368,7 +336,7 @@ bool Configuration::getRestEnabled() const
 
 bool Configuration::getJwtEnabled() const
 {
-	return getSecurity()->m_jwtEnabled;
+	return getJwt()->m_jwtEnabled;
 }
 
 std::size_t Configuration::getThreadPoolSize() const
@@ -383,63 +351,16 @@ const std::string Configuration::getDescription() const
 	return m_hostDescription;
 }
 
-const std::shared_ptr<User> Configuration::getUserInfo(const std::string &userName) const
-{
-	return getSecurity()->m_jwtUsers->getUser(userName);
-}
-
-std::set<std::string> Configuration::getUserPermissions(const std::string &userName)
-{
-	std::set<std::string> permissionSet;
-	auto user = getUserInfo(userName);
-	for (auto role : user->getRoles())
-	{
-		for (auto perm : role->getPermissions())
-			permissionSet.insert(perm);
-	}
-	return permissionSet;
-}
-
-std::set<std::string> Configuration::getAllPermissions()
-{
-	std::set<std::string> permissionSet;
-	for (auto user : getSecurity()->m_jwtUsers->getUsers())
-	{
-		for (auto role : user.second->getRoles())
-		{
-			for (auto perm : role->getPermissions())
-				permissionSet.insert(perm);
-		}
-	}
-	return permissionSet;
-}
-
-const std::shared_ptr<Users> Configuration::getUsers()
-{
-	return getSecurity()->m_jwtUsers;
-}
-
-const std::shared_ptr<Roles> Configuration::getRoles()
-{
-	return getSecurity()->m_roles;
-}
-
 const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_consul;
 }
 
-const std::shared_ptr<Configuration::JsonSecurity> Configuration::getSecurity() const
+const std::shared_ptr<Configuration::JsonJwt> Configuration::getJwt() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_security;
-}
-
-void Configuration::updateSecurity(std::shared_ptr<Configuration::JsonSecurity> security)
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	m_security = security;
+	return m_rest->m_jwt;
 }
 
 bool Configuration::checkOwnerPermission(const std::string &user, const std::shared_ptr<User> &appOwner, int appPermission, bool requestWrite) const
@@ -454,7 +375,7 @@ bool Configuration::checkOwnerPermission(const std::string &user, const std::sha
 		return true;
 	}
 
-	auto userObj = getUserInfo(user);
+	auto userObj = Security::instance()->getUserInfo(user);
 	if (userObj->getGroup() == appOwner->getGroup())
 	{
 		auto groupPerm = appPermission / 1 % 10;
@@ -491,7 +412,7 @@ void Configuration::dump()
 	const static char fname[] = "Configuration::dump() ";
 
 	LOG_DBG << fname << '\n'
-			<< Utility::prettyJson(this->getSecureConfigJson().serialize());
+			<< Utility::prettyJson(this->AsJson(false, "").serialize());
 
 	auto apps = getApps();
 	for (auto app : apps)
@@ -658,20 +579,18 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
 			}
-		}
 
-		// Security
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Security))
-		{
-			auto sec = jsonValue.at(JSON_KEY_Security);
-			if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled))
-				SET_COMPARE(this->m_security->m_jwtEnabled, newConfig->m_security->m_jwtEnabled);
-			if (HAS_JSON_FIELD(sec, JSON_KEY_JWT_Users))
-				SET_COMPARE(this->m_security->m_jwtUsers, newConfig->m_security->m_jwtUsers);
-
-			// Roles
-			if (HAS_JSON_FIELD(sec, JSON_KEY_Roles))
-				SET_COMPARE(this->m_security->m_roles, newConfig->m_security->m_roles);
+			// JWT
+			if (HAS_JSON_FIELD(rest, JSON_KEY_JWT))
+			{
+				auto sec = rest.at(JSON_KEY_JWT);
+				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled))
+					SET_COMPARE(this->m_rest->m_jwt->m_jwtEnabled, newConfig->m_rest->m_jwt->m_jwtEnabled);
+				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTSalt))
+					SET_COMPARE(this->m_rest->m_jwt->m_jwtSalt, newConfig->m_rest->m_jwt->m_jwtSalt);
+				if (HAS_JSON_FIELD(sec, JSON_KEY_SECURITY_Interface))
+					SET_COMPARE(this->m_rest->m_jwt->m_jwtInterface, newConfig->m_rest->m_jwt->m_jwtInterface);
+			}
 		}
 
 		// Labels
@@ -880,6 +799,11 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	{
 		rest->m_ssl = JsonSsl::FromJson(jsonValue.at(JSON_KEY_SSL));
 	}
+	// JWT
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT))
+	{
+		rest->m_jwt = JsonJwt::FromJson(jsonValue.at(JSON_KEY_JWT));
+	}
 	return rest;
 }
 
@@ -894,6 +818,9 @@ web::json::value Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_SeparateRestInternalPort] = web::json::value::number(m_separateRestInternalPort);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
+
+	// JWT
+	result[JSON_KEY_JWT] = m_jwt->AsJson();
 	return result;
 }
 
@@ -903,6 +830,7 @@ Configuration::JsonRest::JsonRest()
 	  m_separateRestInternalPort(DEFAULT_TCP_REST_LISTEN_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();
+	m_jwt = std::make_shared<JsonJwt>();
 }
 
 std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const web::json::value &jsonValue)
@@ -936,38 +864,27 @@ Configuration::JsonSsl::JsonSsl()
 {
 }
 
-std::shared_ptr<Configuration::JsonSecurity> Configuration::JsonSecurity::FromJson(const web::json::value &jsonValue)
+Configuration::JsonJwt::JsonJwt()
+	: m_jwtEnabled(false)
 {
-	auto security = std::make_shared<Configuration::JsonSecurity>();
-	// Roles
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))
-		security->m_roles = Roles::FromJson(jsonValue.at(JSON_KEY_Roles));
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SECURITY_EncryptKey, security->m_encryptKey);
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_JWT_Users))
-		security->m_jwtUsers = Users::FromJson(jsonValue.at(JSON_KEY_JWT_Users), security->m_roles);
+}
+
+std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const web::json::value &jsonObj)
+{
+	auto security = std::make_shared<Configuration::JsonJwt>();
+	SET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
+	security->m_jwtSalt = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTSalt);
+	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);
 	return security;
 }
 
-web::json::value Configuration::JsonSecurity::AsJson(bool returnRuntimeInfo)
+web::json::value Configuration::JsonJwt::AsJson() const
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
-	result[JSON_KEY_SECURITY_EncryptKey] = web::json::value::boolean(m_encryptKey);
-	if (!returnRuntimeInfo)
-	{
-		result[JSON_KEY_JWT_Users] = m_jwtUsers->AsJson();
-	}
-	//Roles
-	result[JSON_KEY_Roles] = m_roles->AsJson();
+	result[JSON_KEY_JWTSalt] = web::json::value::string(m_jwtSalt);
+	result[JSON_KEY_SECURITY_Interface] = web::json::value::string(m_jwtInterface);
 	return result;
-}
-
-Configuration::JsonSecurity::JsonSecurity()
-	: m_jwtEnabled(true), m_encryptKey(false)
-{
-	m_roles = std::make_shared<Roles>();
-	m_jwtUsers = std::make_shared<Users>();
 }
 
 std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jsonObj, int appmeshRestPort, bool sslEnabled)

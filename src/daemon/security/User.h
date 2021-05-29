@@ -86,3 +86,15 @@ private:
 	std::map<std::string, std::shared_ptr<User>> m_users;
 	mutable std::recursive_mutex m_mutex;
 };
+
+struct JsonSecurity
+{
+	JsonSecurity();
+	static std::shared_ptr<JsonSecurity> FromJson(const web::json::value &jsonObj);
+	web::json::value AsJson();
+
+	bool m_encryptKey;
+	std::string m_jwtSalt;
+	std::shared_ptr<Users> m_users;
+	std::shared_ptr<Roles> m_roles;
+};

@@ -5,7 +5,7 @@
 #include "../../common/Utility.h"
 #include "../../common/jwt-cpp/jwt.h"
 #include "../Configuration.h"
-#include "../security/User.h"
+#include "../security/Security.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
 #include "RestChildObject.h"
@@ -165,11 +165,11 @@ const std::string RestBase::getJwtToken(const HttpRequest &message)
     return token;
 }
 
-const std::string RestBase::createJwtToken(const std::string &uname, const std::string &passwd, int timeoutSeconds)
+const std::string RestBase::createJwtToken(const std::string &uname, int timeoutSeconds)
 {
-    if (uname.empty() || passwd.empty())
+    if (uname.empty())
     {
-        throw std::invalid_argument("must provide name and password to generate token");
+        throw std::invalid_argument("must provide name to generate token");
     }
 
     // https://thalhammer.it/projects/
@@ -184,7 +184,7 @@ const std::string RestBase::createJwtToken(const std::string &uname, const std::
                            .set_issued_at(jwt::date(std::chrono::system_clock::now()))
                            .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
                            .set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
-                           .sign(jwt::algorithm::hs256{passwd});
+                           .sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
     return token;
 }
 
@@ -244,8 +244,7 @@ const std::string RestBase::verifyToken(const HttpRequest &message)
     {
         // get user info
         const auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name);
-        const auto userObj = Configuration::instance()->getUserInfo(userName.as_string());
-        const auto userKey = userObj->getKey();
+        const auto userObj = Security::instance()->getUserInfo(userName.as_string());
 
         // check locked
         if (userObj->locked())
@@ -253,7 +252,7 @@ const std::string RestBase::verifyToken(const HttpRequest &message)
 
         // check user token
         auto verifier = jwt::verify()
-                            .allow_algorithm(jwt::algorithm::hs256{userKey})
+                            .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
                             .with_issuer(HTTP_HEADER_JWT_ISSUER)
                             .with_claim(HTTP_HEADER_JWT_name, userName);
         verifier.verify(decoded_token);
@@ -292,7 +291,7 @@ bool RestBase::permissionCheck(const HttpRequest &message, const std::string &pe
     if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
     {
         // check user role permission
-        if (Configuration::instance()->getUserPermissions(userName).count(permission))
+        if (Security::instance()->getUserPermissions(userName).count(permission))
         {
             LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
             return true;
