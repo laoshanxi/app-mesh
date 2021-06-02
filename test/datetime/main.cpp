@@ -1,23 +1,23 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
-#include "../catch.hpp"
-#include <iostream>
-#include <string>
-#include <chrono>
-#include <thread>
-#include <time.h>
-#include <set>
-#include <fstream>
-#include <ace/Init_ACE.h>
-#include <ace/OS.h>
-#include <log4cpp/Category.hh>
-#include <log4cpp/Appender.hh>
-#include <log4cpp/FileAppender.hh>
-#include <log4cpp/Priority.hh>
-#include <log4cpp/PatternLayout.hh>
-#include <log4cpp/RollingFileAppender.hh>
-#include <log4cpp/OstreamAppender.hh>
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
+#include "../catch.hpp"
+#include <ace/Init_ACE.h>
+#include <ace/OS.h>
+#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <log4cpp/Appender.hh>
+#include <log4cpp/Category.hh>
+#include <log4cpp/FileAppender.hh>
+#include <log4cpp/OstreamAppender.hh>
+#include <log4cpp/PatternLayout.hh>
+#include <log4cpp/Priority.hh>
+#include <log4cpp/RollingFileAppender.hh>
+#include <set>
+#include <string>
+#include <thread>
+#include <time.h>
 
 void init()
 {
@@ -69,6 +69,15 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
     REQUIRE(localTime == DateTime::parseISO8601DateTime(DateTime::formatISO8601Time(localTime), ""));
 
     // parseISO8601DateTime
+    try
+    {
+        DateTime::parseISO8601DateTime("123");
+    }
+    catch (...)
+    {
+        REQUIRE(true);
+    }
+    REQUIRE(DateTime::parseISO8601DateTime("") == std::chrono::system_clock::from_time_t(0));
     auto iso8601 = "2020-10-07T21:19:00+08";
     auto iso8601TimePoint = DateTime::parseISO8601DateTime(iso8601, "");
     REQUIRE(iso8601TimePoint == DateTime::parseISO8601DateTime("2020-10-07T21:19:00+8", ""));

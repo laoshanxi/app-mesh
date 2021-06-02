@@ -40,14 +40,15 @@ Note:
 5. The installation media structure is like this:
 ```
     $ tree -L 1 /opt/appmesh/
-    ├── appsvc.json                       -------- configuration file (can be modified manually or update from GUI)
-    ├── bin                               -------- execute binaries dir
+    ├── appsvc.json                  ====> configuration file (can be modified manually or update from GUI)
+    ├── security.json                ====> local JSON security configuration file
+    ├── bin                          ====> execute binaries dir
     ├── lib64
-    ├── log                               -------- service log dir
+    ├── log                          ====> service log dir
     ├── script
-    ├── sdk                               -------- SDK binary dir
-    ├── ssl                               -------- SSL certification files
-    └── work                              -------- child app work dir (app log files will write in this dir)
+    ├── sdk                          ====> SDK binary dir
+    ├── ssl                          ====> SSL certification files
+    └── work                         ====> child app work dir (app log files will write in this dir)
 ```
 
 ### Docker compose installation with GUI and Consul Service

@@ -53,6 +53,12 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 {
 	const static char fname[] = "DateTime::parseISO8601DateTime() ";
 
+	if (strTime.length() == 0)
+	{
+		LOG_WAR << fname << "Empty date time string input, return with zero time";
+		return std::chrono::system_clock::from_time_t(0);
+	}
+
 	std::string iso8601TimeStr = strTime;
 	if (DateTime::getISO8601TimeZone(iso8601TimeStr).length())
 	{
@@ -89,10 +95,12 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	}
 	catch (std::ios_base::failure &fail)
 	{
+		LOG_WAR << fname << Utility::stringFormat("invalid ISO8601 string: %s, %s", iso8601TimeStr.c_str(), fail.what());
 		throw std::invalid_argument(Utility::stringFormat("invalid ISO8601 string: %s, %s", iso8601TimeStr.c_str(), fail.what()));
 	}
 	catch (...)
 	{
+		LOG_WAR << fname << Utility::stringFormat("invalid ISO8601 string: %s", iso8601TimeStr.c_str());
 		throw std::invalid_argument(Utility::stringFormat("invalid ISO8601 string: %s", iso8601TimeStr.c_str()));
 	}
 }

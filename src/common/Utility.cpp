@@ -1,5 +1,6 @@
 #include <atomic>
 #include <fstream>
+#include <list>
 #include <string>
 #include <thread>
 
@@ -50,7 +51,8 @@ bool Utility::isNumber(const std::string &str)
 	{
 		s = s.substr(1);
 	}
-	return !s.empty() && std::find_if(s.begin(), s.end(), [](char c) { return !std::isdigit(c); }) == s.end();
+	return !s.empty() && std::find_if(s.begin(), s.end(), [](char c)
+									  { return !std::isdigit(c); }) == s.end();
 }
 
 std::string Utility::stdStringTrim(const std::string &str)
@@ -310,9 +312,8 @@ std::string Utility::decode64(const std::string &val)
 {
 	using namespace boost::archive::iterators;
 	using It = transform_width<binary_from_base64<std::string::const_iterator>, 8, 6>;
-	return boost::algorithm::trim_right_copy_if(std::string(It(std::begin(val)), It(std::end(val))), [](char c) {
-		return c == '\0';
-	});
+	return boost::algorithm::trim_right_copy_if(std::string(It(std::begin(val)), It(std::end(val))), [](char c)
+												{ return c == '\0'; });
 }
 
 std::string Utility::readFile(const std::string &path)
@@ -484,6 +485,55 @@ std::string Utility::humanReadableSize(long double bytesSize)
 	return stringReplace(str, ".0", "");
 }
 
+std::string Utility::humanReadableDuration(const std::chrono::system_clock::time_point &time)
+{
+	std::string result;
+	std::list<std::string> steps;
+	const auto now = std::chrono::system_clock::now();
+
+	if (now < time)
+	{
+		result = "N/A";
+		return result;
+	}
+	const auto duration = now - time;
+
+	const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count() % 60;
+	if (seconds)
+	{
+		steps.push_back(std::to_string(seconds).append("s"));
+	}
+	const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(duration).count() % 60;
+	if (minutes)
+	{
+		steps.push_back(std::to_string(minutes).append("m"));
+	}
+	const auto hours = std::chrono::duration_cast<std::chrono::hours>(duration).count() % 24;
+	if (hours)
+	{
+		steps.clear();
+		steps.push_back(std::to_string(hours).append("h"));
+	}
+	const auto days = std::chrono::duration_cast<std::chrono::hours>(duration).count() / 24;
+	if (days)
+	{
+		steps.clear();
+		steps.push_back(std::to_string(days).append("d"));
+	}
+
+	while (steps.size() > 2)
+	{
+		steps.pop_front();
+	}
+	while (steps.size())
+	{
+		result.append(steps.back());
+		steps.pop_back();
+	}
+
+	return result;
+}
+
 bool Utility::getUid(std::string userName, unsigned int &uid, unsigned int &groupid)
 {
 	bool rt = false;
@@ -636,13 +686,15 @@ std::string Utility::stringFormat(const std::string &fmt_str, ...)
 
 std::string Utility::strToupper(std::string s)
 {
-	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::toupper(c); });
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
+				   { return std::toupper(c); });
 	return s;
 }
 
 std::string Utility::strTolower(std::string s)
 {
-	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
+				   { return std::tolower(c); });
 	return s;
 }
 
