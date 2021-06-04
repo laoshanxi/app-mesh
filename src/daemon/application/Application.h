@@ -135,6 +135,7 @@ protected:
 	std::shared_ptr<GaugeMetric> m_metricAppPid;
 	std::shared_ptr<GaugeMetric> m_metricFileDesc;
 	std::atomic<int> m_continueFails;
+	std::atomic<int> m_starts;
 
 	// error
 	mutable std::recursive_mutex m_errorMutex;

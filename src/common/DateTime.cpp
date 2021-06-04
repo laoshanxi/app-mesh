@@ -89,7 +89,7 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 		//iss.imbue(std::locale(std::locale::classic(), output_facet));
 		iss.imbue(std::locale(iss.getloc(), new boost::local_time::local_time_input_facet(ISO8601FORMAT_IN)));
 		iss >> localDateTime;
-		LOG_DBG << fname << "<" << iso8601TimeStr << "> covert to <" << localDateTime << "> with zone <" << posixTimeZone << ">";
+		LOG_DBG << fname << "<" << iso8601TimeStr << "> covert to local <" << localDateTime << ">";
 		auto ptime = localDateTime.utc_time();
 		return std::chrono::system_clock::from_time_t(boost::posix_time::to_time_t(ptime));
 	}

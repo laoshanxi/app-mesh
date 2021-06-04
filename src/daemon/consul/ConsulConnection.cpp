@@ -483,9 +483,8 @@ void ConsulConnection::syncTopology()
 			{
 				auto &consulTask = task[appName];
 				std::shared_ptr<Application> topologyAppObj = consulTask->m_app;
-				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&appName](std::shared_ptr<Application> const &obj) {
-					return obj->getName() == appName;
-				});
+				auto it = std::find_if(currentAllApps.begin(), currentAllApps.end(), [&appName](std::shared_ptr<Application> const &obj)
+									   { return obj->getName() == appName; });
 				if (it != currentAllApps.end())
 				{
 					// Update app
@@ -541,6 +540,7 @@ void ConsulConnection::syncTopology()
 
 bool ConsulConnection::electionLeader()
 {
+	const static char fname[] = "ConsulConnection::electionLeader() ";
 	// get session id
 	std::string sessionId = consulSessionId();
 	if (sessionId.empty())
@@ -552,6 +552,7 @@ bool ConsulConnection::electionLeader()
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	auto resp = requestHttp(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 	m_leader = (resp.status_code() == web::http::status_codes::OK);
+	LOG_DBG << fname << " m_leader = " << m_leader;
 	return m_leader;
 }
 
@@ -988,9 +989,8 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method &
 
 	// Build request URI and start the request.
 	web::uri_builder builder(GET_STRING_T(path));
-	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair) {
-		builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
-	});
+	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair)
+				  { builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second)); });
 
 	web::http::http_request request(mtd);
 	for (const auto &h : header)

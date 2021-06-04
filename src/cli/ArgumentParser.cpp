@@ -1577,8 +1577,9 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_memory)
 		<< std::setw(5) << std::string("%").append(Utility::strToupper(JSON_KEY_APP_cpu))
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_return)
-		<< std::setw(12) << Utility::strToupper("age")
-		<< std::setw(12) << Utility::strToupper("duration")
+		<< std::setw(7) << Utility::strToupper("age")
+		<< std::setw(9) << Utility::strToupper("duration")
+		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_starts)
 		<< Utility::strToupper(JSON_KEY_APP_command)
 		<< std::endl;
 
@@ -1629,17 +1630,24 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 			else
 				std::cout << slash;
 		}
-		std::cout << std::setw(12);
+		std::cout << std::setw(7);
 		{
 			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
 				std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
 			else
 				std::cout << slash;
 		}
-		std::cout << std::setw(12);
+		std::cout << std::setw(9);
 		{
 			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start))
 				std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start)));
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(7);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_starts))
+				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_starts);
 			else
 				std::cout << slash;
 		}

@@ -13,5 +13,6 @@ target_link_libraries(common
     ACE
     log4cpp
     boost_regex
+    boost_system
     boost_filesystem
 )

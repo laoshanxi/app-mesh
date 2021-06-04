@@ -195,22 +195,27 @@ void RestHandler::open()
 									ec);
 					// LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
 
-					ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
-					// LOG_DBG << "lambda::use_certificate_chain_file " << ec.value() << " " << ec.message();
-
-					ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
-					// LOG_DBG << "lambda::use_private_key " << ec.value() << " " << ec.message();
+					ec = ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
+					if (ec.failed())
+					{
+						LOG_WAR << "ssl::context::use_certificate_chain_file failed: " << ec.message();
+					}
+					ec = ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
+					if (ec.failed())
+					{
+						LOG_WAR << "ssl::context::use_private_key_file failed: " << ec.message();
+					}
 
 					// Enable ECDH cipher
 					if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
 					{
-						LOG_WAR << "SSL_CTX_set_ecdh_auto failed: " << std::strerror(errno);
+						LOG_WAR << "::SSL_CTX_set_ecdh_auto failed: " << std::strerror(errno);
 					}
 					// auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
 					auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
 					if (!SSL_CTX_set_cipher_list(ctx.native_handle(), ciphers))
 					{
-						LOG_WAR << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
+						LOG_WAR << "::SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
 					}
 					SSL_CTX_clear_options(ctx.native_handle(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 				});

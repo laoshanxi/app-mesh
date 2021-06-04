@@ -32,6 +32,12 @@ $ systemctl status appmesh
    Loaded: loaded (/etc/systemd/system/appmesh.service; enabled; vendor preset: disabled)
 ```
 
+Deploy Web UI (access https://host-name)
+```
+appc logon -u admin -x Admin123
+appc reg -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -d laoshanxi/appmesh-ui:1.9.3 -f
+```
+
 Note:
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
 2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host)

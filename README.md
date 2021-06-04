@@ -7,7 +7,7 @@
 
 # App Mesh
 
-App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application management platform, used to host, schedule and monitor applications. Each app can be a specific micro service for service discover or normal app with replication, the app-mesh will guarantee all defined applications running on-time with defined behavior and resources requests. The platform can run as standalone or cluster mode, provide REST APIs, command-line and web-ui.
+App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application management platform, used to manage, schedule and monitor applications. Each app can be a specific micro service for service discover or normal app with replication, the app-mesh will guarantee all defined applications running on-time with defined behavior and resources requests. The platform can run as standalone or cluster mode, provide REST APIs, command-line and web-ui.
 
 App Mesh is similar with Kubernetes but much light weight, support both container app and native app.
 
@@ -46,8 +46,8 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 | Language                 | C++11    | Python                                | C                                |
 | Web GUI                  | √        | √                                     |
 | Command lines            | √        | √                                     | √                                |
-| Cron expression          | √        |                                       | √                                |
 | SDK                      | √        |                                       |
+| Cron schedule expression | √        |                                       | √                                |
 | Manage daemon process    |          |                                       | √                                |
 | Manage docker app        | √        |                                       |
 | Start check (avoid leak) | √        | √                                     |

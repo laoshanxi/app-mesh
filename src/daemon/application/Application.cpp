@@ -22,7 +22,7 @@ Application::Application()
 	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
 	  m_endTimerId(0), m_health(true), m_appId(Utility::createUUID()),
 	  m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID),
-	  m_suicideTimerId(0), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0)
+	  m_suicideTimerId(0), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0), m_starts(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -613,6 +613,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	auto err = getLastError();
 	if (err.length())
 		result[JSON_KEY_APP_last_error] = web::json::value::string(err);
+	result[JSON_KEY_APP_starts] = web::json::value::number(m_starts);
 	return result;
 }
 
@@ -640,6 +641,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
+	LOG_DBG << fname << "m_starts:" << m_starts;
 	LOG_DBG << fname << "m_version:" << m_version;
 	LOG_DBG << fname << "m_lastError:" << getLastError();
 	if (m_dailyLimit != nullptr)
@@ -652,6 +654,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 {
 	std::shared_ptr<AppProcess> process;
 	m_stdoutFileQueue->enqueue();
+	++m_starts;
 
 	// prepare shell mode script
 	if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))

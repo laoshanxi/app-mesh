@@ -12,7 +12,7 @@ AppMesh is a native app manager, provide REST API which can used to manage appli
 
 
 ## Build Kubernetes Docker image for native command
-This Docker image `laoshanxi/native_container` is used to forward container start command to AppMesh, The image was already built and pushed to `docker.io`, you can use directly without below build process.
+This Docker image `laoshanxi/appmesh_agent` is used to forward container start command to AppMesh, The image was already built and pushed to `docker.io`, you can use directly without below build process.
 ```shell
 $ tee Dockerfile <<-'EOF'
 FROM ubuntu
@@ -26,9 +26,9 @@ RUN apt update && apt install wget net-tools -y && \
 
 ENTRYPOINT ["python3", "/opt/appmesh/bin/appmesh_arm.py"]
 EOF
-$ docker build --no-cache -t native_container .
-$ docker tag native_container laoshanxi/native_container
-$ docker push laoshanxi/native_container
+$ docker build --no-cache -t appmesh_agent .
+$ docker tag appmesh_agent laoshanxi/appmesh_agent
+$ docker push laoshanxi/appmesh_agent
 ```
 
 ## Kubernetes job example to run cmd on host OS
@@ -46,7 +46,7 @@ spec:
     spec:
       containers:
       - name: native-cmd-test
-        image: laoshanxi/native_container
+        image: laoshanxi/appmesh_agent
         args: ["docker ps"]
       restartPolicy: Never
 EOF
@@ -60,7 +60,7 @@ myjob-vtc8h   0/1     Completed   0          8s
 
 $ kubectl logs myjob-vtc8h
 CONTAINER ID        IMAGE                                                 COMMAND                  CREATED                  STATUS                  PORTS                                                                                                       NAMES
-805dc03c3433        laoshanxi/native_container                            "python3 /opt/appmes…"   Less than a second ago   Up Less than a second 
+805dc03c3433        laoshanxi/appmesh_agent                               "python3 /opt/appmes…"   Less than a second ago   Up Less than a second 
                      k8s_native-cmd-test_myjob-rp6gp_default_473ca690-c685-4d97-b135-499b40c7ad24_0
 3e482b6cf175        registry.aliyuncs.com/google_containers/pause:3.4.1   "/pause"                 8 seconds ago            Up 8 seconds                                                                                                                        k8s_POD_myjob-rp6gp_default_473ca690-c685-4d97-b135-499b40c7ad24_0
 69cd63beddf3        kubernetesui/dashboard                                "/dashboard --insecu…"   3 hours ago              Up 3 hours                                                                                                                          k8s_kubernetes-dashboard_kubernetes-dashboard-1621683118-6dfd7fb446-hbhbj_kube-system_0adaa5dd-e5aa-46d1-9855-ac9fde6afe27_0

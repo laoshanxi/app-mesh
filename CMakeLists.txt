@@ -38,6 +38,7 @@ set(Boost_USE_STATIC_RUNTIME     OFF)
 set(BOOST_ALL_DYN_LINK           ON)
 find_package(Boost REQUIRED COMPONENTS
     system
+    filesystem
     regex
     thread
     program_options
