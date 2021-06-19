@@ -167,10 +167,10 @@ namespace net
 			return std::list<NetInterface>();
 		}
 
+		auto virtDevices = virtLinks();
 		std::list<NetInterface> names;
 		for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
 		{
-			auto virtDevices = virtLinks();
 			if (ifa->ifa_name != nullptr && (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) && virtDevices.count(ifa->ifa_name) == 0)
 			{
 				NetInterface mi;

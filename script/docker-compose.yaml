@@ -23,11 +23,9 @@ services:
     image: laoshanxi/appmesh
     environment:
       APPMESH_Consul_url: https://127.0.0.1
-      # APPMESH_Consul_url: http://localhost:8500
+      APPMESH_REST_RestListenAddress: "127.0.0.1"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /opt/appmesh/work:/opt/appmesh/work
-      - /opt/appmesh/log:/opt/appmesh/log
       # mount this to enable configuration persist
       #- /opt/appmesh/appsvc.json:/opt/appmesh/appsvc.json
     privileged: true
@@ -40,7 +38,7 @@ services:
       - consul
 
   # appmesh UI, use host mode (port 443) to support reverse nginx proxy to Consul ad App Mesh
-  appmesh-ui:
+  appmeshui:
     restart: always
     image: laoshanxi/appmesh-ui
     volumes:
@@ -48,3 +46,31 @@ services:
     network_mode: host
     depends_on:
       - appmesh
+
+  # appmesh slave-1, connect consul via appmeshui reserve proxy
+  appmesh_s1:
+    restart: always
+    image: laoshanxi/appmesh
+    environment:
+      APPMESH_Consul_url: https://appmeshui
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    links:
+      - appmeshui
+    user: root
+    depends_on:
+      - appmeshui
+
+  # appmesh slave-2, connect consul directly
+  appmesh_s2:
+    restart: always
+    image: laoshanxi/appmesh
+    environment:
+      APPMESH_Consul_url: http://consul:8500
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    links:
+      - consul
+    user: root
+    depends_on:
+      - consul
