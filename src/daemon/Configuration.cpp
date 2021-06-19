@@ -891,7 +891,6 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 {
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_URL);
-	consul->m_datacenter = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_DATACENTER);
 	consul->m_proxyUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
 	consul->m_basicAuthPass = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_AUTH_PASS);
 	consul->m_basicAuthUser = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_AUTH_USER);
@@ -919,7 +918,6 @@ web::json::value Configuration::JsonConsul::AsJson() const
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_CONSUL_URL] = web::json::value::string(m_consulUrl);
-	result[JSON_KEY_CONSUL_DATACENTER] = web::json::value::string(m_datacenter);
 	result[JSON_KEY_CONSUL_IS_MAIN] = web::json::value::boolean(m_isMaster);
 	result[JSON_KEY_CONSUL_IS_WORKER] = web::json::value::boolean(m_isWorker);
 	result[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_ttl);

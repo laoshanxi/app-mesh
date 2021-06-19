@@ -22,8 +22,8 @@ services:
     restart: always
     image: laoshanxi/appmesh
     environment:
-      APPMESH_Consul_url: https://127.0.0.1
-      APPMESH_REST_RestListenAddress: "127.0.0.1"
+      - APPMESH_Consul_Url=https://127.0.0.1
+      - APPMESH_REST_RestListenAddress=127.0.0.1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # mount this to enable configuration persist
@@ -47,26 +47,32 @@ services:
     depends_on:
       - appmesh
 
-  # appmesh slave-1, connect consul via appmeshui reserve proxy
+  # appmesh slave-1, connect consul directly
   appmesh_s1:
     restart: always
     image: laoshanxi/appmesh
+    mem_limit: 4G
+    hostname: appmesh_s1
     environment:
-      APPMESH_Consul_url: https://appmeshui
+      - APPMESH_Consul_Url=http://consul:8500
+      - APPMESH_Consul_IsMainNode=false
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     links:
-      - appmeshui
+      - consul
     user: root
     depends_on:
-      - appmeshui
+      - consul
 
   # appmesh slave-2, connect consul directly
   appmesh_s2:
     restart: always
     image: laoshanxi/appmesh
+    mem_limit: 3G
+    hostname: appmesh_s2
     environment:
-      APPMESH_Consul_url: http://consul:8500
+      - APPMESH_Consul_Url=http://consul:8500
+      - APPMESH_Consul_IsMainNode=false
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     links:

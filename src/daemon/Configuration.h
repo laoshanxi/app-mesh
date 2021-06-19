@@ -66,7 +66,6 @@ public:
 
 		bool m_isMaster;
 		bool m_isWorker;
-		std::string m_datacenter;
 		// http://consul.service.consul:8500
 		std::string m_consulUrl;
 		// appmesh proxy url, used to report to Consul to expose local appmesh listen port address

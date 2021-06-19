@@ -29,13 +29,12 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 
 ```json
   "Consul": {
-    "is_main": true,
-    "is_worker": true,
-    "url": "http://localhost:8500",
-    "datacenter": "dc1",
-    "session_TTL": 30,
-    "enable_consul_security": false,
-    "appmesh_proxy_url": null
+    "IsMainNode": true,
+    "IsWorkerNode": true,
+    "Url": "http://localhost:8500",
+    "SessionTTL": 30,
+    "EnableConsulSecurity": false,
+    "AppmeshProxyUrl": null
   }
 ```
 

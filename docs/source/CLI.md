@@ -204,7 +204,6 @@ Join App Mesh cluster::
   -r [ --proxy ] arg             appmesh_proxy_url
   -u [ --user ] arg              Basic auth user name for Consul REST
   -p [ --pass ] arg              Basic auth user password for Consul REST
-  -d [ --datacentor ] arg (=dc1) datacenter name
   -l [ --ttl ] arg (=30)         Consul session TTL seconds
   -s [ --security ]              Enable Consul security (security persist will use Consul storage)
   -h [ --help ]                  Prints command usage to stdout and exits
@@ -213,7 +212,6 @@ appc join -c http://127.0.0.1:8500 -l 30 -m -w
 App Mesh join to: 
 {
   "appmesh_proxy_url": "",
-  "datacenter": "dc1",
   "enable_consul_security": false,
   "is_main": true,
   "is_worker": true,

@@ -31,13 +31,12 @@
     }
   ],
   "Consul": {
-    "is_main": true,
-    "is_worker": true,
-    "url": "",
-    "appmesh_proxy_url": "",
-    "datacenter": "dc1",
-    "session_TTL": 30,
-    "enable_consul_security": false
+    "IsMainNode": true,
+    "IsWorkerNode": true,
+    "Url": "",
+    "AppmeshProxyUrl": "",
+    "SessionTTL": 30,
+    "EnableConsulSecurity": false
   },
   "Labels": {
     "os_version": "centos7.6",
