@@ -1181,5 +1181,6 @@ void ConsulConnection::watchScheduleThread()
 			std::this_thread::sleep_for(std::chrono::seconds(3));
 		}
 	}
+	m_leader = false;
 	LOG_DBG << fname << "exit";
 }

@@ -472,7 +472,15 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
 	auto userName = verifyToken(message);
-	auto permissions = Security::instance()->getUserPermissions(userName);
+	std::set<std::string> permissions;
+	if (userName.empty() && !Configuration::instance()->getJwtEnabled())
+	{
+		permissions = Security::instance()->getAllPermissions();
+	}
+	else
+	{
+		permissions = Security::instance()->getUserPermissions(userName);
+	}
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
 	for (auto perm : permissions)
