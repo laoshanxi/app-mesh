@@ -74,6 +74,7 @@ namespace net
 	{
 		const static char fname[] = "net::hostname() ";
 		char host[512];
+		std::string hostname;
 
 		if (gethostname(host, sizeof(host)) < 0)
 		{
@@ -86,11 +87,17 @@ namespace net
 		int error = getaddrinfo(host, nullptr, &hints, &result);
 		if (error != 0)
 		{
-			throw std::invalid_argument(Utility::stringFormat("getaddrinfo() failed with error: %s", gai_strerror(error)));
+			LOG_ERR << fname << Utility::stringFormat("getaddrinfo() failed with error: %s", gai_strerror(error));
+			hostname = host;
 		}
-
-		std::string hostname = result->ai_canonname;
-		freeaddrinfo(result);
+		else
+		{
+			hostname = result->ai_canonname;
+		}
+		if (result)
+		{
+			freeaddrinfo(result);
+		}
 
 		return hostname;
 	}
