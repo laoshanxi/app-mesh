@@ -62,12 +62,12 @@ void ConsulConnection::reportNode()
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 
 		ConsulNode node;
-		static auto mem = os::memory();
+		static auto resource = ResourceCollection::instance()->getHostResource();
 		node.m_appmeshProxyUrl = getConfig()->appmeshUrl();
 		node.m_hostName = MY_HOST_NAME;
 		node.m_label = Configuration::instance()->getLabel();
-		node.m_total_bytes = mem->total_bytes;
-		node.m_cores = os::cpus().size();
+		node.m_total_bytes = resource.m_total_bytes;
+		node.m_cores = resource.m_cores;
 		node.m_leader = m_leader;
 		web::json::value body = node.AsJson();
 		auto cloudBody = this->retrieveNode(MY_HOST_NAME);
@@ -196,7 +196,7 @@ int ConsulConnection::getHealthStatus(const std::string &host, const std::string
 	auto resp = requestHttp(baseUri.to_uri(), restPath, web::http::methods::GET);
 	if (resp.status_code() != web::http::status_codes::OK)
 	{
-		LOG_WAR << fname << "failed to get health status: " << resp.status_code() << " with host: " << host << ", app: " << app;
+		LOG_WAR << fname << "failed to get health status: " << resp.status_code() << " with host: " << baseUri.to_string() << restPath << ", app: " << app;
 		return 1;
 	}
 	else

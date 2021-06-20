@@ -36,6 +36,11 @@ services:
     #  - "6061:6061" # Prometheus Exporter
     depends_on:
       - consul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "1"
 
   # appmesh UI, use host mode (port 443) to support reverse nginx proxy to Consul ad App Mesh
   appmeshui:
@@ -51,6 +56,7 @@ services:
   appmesh_s1:
     restart: always
     image: laoshanxi/appmesh
+    command: appc unreg -n ping -f
     mem_limit: 4G
     hostname: appmesh_s1
     environment:
@@ -63,11 +69,17 @@ services:
     user: root
     depends_on:
       - consul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "1"
 
   # appmesh slave-2, connect consul directly
   appmesh_s2:
     restart: always
     image: laoshanxi/appmesh
+    command: appc unreg -n ping -f
     mem_limit: 3G
     hostname: appmesh_s2
     environment:
@@ -80,3 +92,8 @@ services:
     user: root
     depends_on:
       - consul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "1"

@@ -97,7 +97,7 @@ For production environment, Consul is better to be a cluster with 3+ server agen
 When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/appsvc.json`:
 ```
   "Consul": {
-    "url": "https://192.168.3.1",
+    "Url": "https://192.168.3.1",
   }
 ```
 If App Mesh is running in Docker container, need mount `/opt/appmesh/appsvc.json` out of container to persist the configuration. After configuration change, just restart App Mesh container. 
@@ -105,6 +105,11 @@ If App Mesh is running in Docker container, need mount `/opt/appmesh/appsvc.json
 #### Option 2: Update from UI
 All configuration update from UI support hot-update, no need restart App Mesh process to take effect. Click `Configuration` -> `Consul` and set `Consul URL`, Click `Submit` to take effect.
 
+#### Option 3: Update from CLI
+Command line support join current node to a Consul cluster with specify the Consul URL.
+```
+$ appc join -c http://127.0.0.1:8500 -l 30 -m -w
+```
 
 ---
 ### Usage scenarios

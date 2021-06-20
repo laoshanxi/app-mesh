@@ -209,16 +209,13 @@ Join App Mesh cluster::
   -h [ --help ]                  Prints command usage to stdout and exits
 
 appc join -c http://127.0.0.1:8500 -l 30 -m -w 
-App Mesh join to: 
+App Mesh will join cluster with parameter: 
 {
-  "appmesh_proxy_url": "",
-  "enable_consul_security": false,
-  "is_main": true,
-  "is_worker": true,
-  "pass": "",
-  "session_TTL": 30,
-  "url": "http://127.0.0.1:8500",
-  "user": ""
+  "EnableConsulSecurity": false,
+  "IsMainNode": true,
+  "IsWorkerNode": true,
+  "SessionTTL": 30,
+  "Url": "http://127.0.0.1:8500"
 }
 
 ```

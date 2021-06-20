@@ -4,12 +4,13 @@
 #include "../../common/Utility.h"
 #include "LinuxCgroup.h"
 
-constexpr char CGROUP_FEATURE_DIR[] = "/appmesh";
-std::string LinuxCgroup::cgroupMemRootName;
-std::string LinuxCgroup::cgroupCpuRootName;
+constexpr char CGROUP_APPMESH_DIR[] = "appmesh";
+std::string LinuxCgroup::CGROUP_MEMORY_ROOT_DIR;
+std::string LinuxCgroup::CGROUP_CPU_ROOT_DIR;
+std::string LinuxCgroup::CGROUP_CPUSET_ROOT_DIR;
 
 LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long long cpuShares)
-	: m_memLimitMb(memLimitBytes), m_memSwapMb(memSwapBytes), m_cpuShares(cpuShares), m_pid(0), cgroupEnabled(false)
+	: m_memLimitMb(memLimitBytes), m_memSwapMb(memSwapBytes), m_cpuShares(cpuShares), m_pid(0), m_cgroupEnabled(false), m_swapLimitSupport(true)
 {
 	const static char fname[] = "LinuxCgroup::LinuxCgroup() ";
 
@@ -24,25 +25,25 @@ LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long l
 		m_memLimitMb = m_memSwapMb;
 		LOG_WAR << fname << "m_memLimitMb is setting to m_memSwapMb";
 	}
-	cgroupEnabled = (m_memLimitMb > 0 || m_memSwapMb > 0 || m_cpuShares > 0);
+	m_cgroupEnabled = (m_memLimitMb > 0 || m_memSwapMb > 0 || m_cpuShares > 0);
 
 	// Only need retrieve once for all
 	static bool retrieved = false;
-	static bool swapLimitSupport = true;
-	if (cgroupEnabled && !retrieved)
+	if (m_cgroupEnabled && !retrieved)
 	{
 		retrieved = true;
 		retrieveCgroupHeirarchy();
 		// Check whether swap limit is enabled for OS, by default, Ubuntu does not enable swap limit
-		if (m_memSwapMb > 0 && !Utility::isFileExist(cgroupMemRootName + "/memory.memsw.limit_in_bytes"))
+		if (!Utility::isFileExist(CGROUP_MEMORY_ROOT_DIR + "/memory.memsw.limit_in_bytes"))
 		{
-			LOG_WAR << fname << "Your kernel does not support swap limit capabilities or the cgroup is not mounted.";
-			swapLimitSupport = false;
+			m_swapLimitSupport = false;
+			if (m_memSwapMb > 0)
+			{
+				LOG_WAR << fname << "Your kernel does not support swap limit capabilities or the cgroup is not mounted.";
+			}
 		}
-		cgroupMemRootName += CGROUP_FEATURE_DIR;
-		cgroupCpuRootName += CGROUP_FEATURE_DIR;
 	}
-	if (!swapLimitSupport)
+	if (!m_swapLimitSupport)
 	{
 		m_memSwapMb = 0;
 	}
@@ -50,42 +51,106 @@ LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long l
 
 LinuxCgroup::~LinuxCgroup()
 {
-	if (cgroupEnabled)
+	if (m_cgroupEnabled)
 	{
-		std::string force_empty_file = cgroupMemoryPath + "/" + "memory.force_empty";
-		if (Utility::isDirExist(cgroupMemoryPath))
+		std::string force_empty_file = m_cgroupMemoryPath + "/" + "memory.force_empty";
+		if (Utility::isDirExist(m_cgroupMemoryPath))
 		{
-			writeFile(force_empty_file, 0);
+			writeValue(force_empty_file, 0);
 		}
 
-		Utility::removeDir(cgroupMemoryPath);
-		Utility::removeDir(cgroupCpuPath);
+		Utility::removeDir(m_cgroupMemoryPath);
+		Utility::removeDir(m_cgroupCpuPath);
 	}
 }
 
 void LinuxCgroup::setCgroup(const std::string &appName, int pid, int index)
 {
-	if (!cgroupEnabled)
+	if (!m_cgroupEnabled)
 		return;
 
 	m_pid = pid;
-	cgroupMemoryPath = cgroupMemRootName + "/" + appName + "/" + std::to_string(index);
-	cgroupCpuPath = cgroupCpuRootName + "/" + appName + "/" + std::to_string(index);
+	m_cgroupMemoryPath = CGROUP_MEMORY_ROOT_DIR + "/" + CGROUP_APPMESH_DIR + "/" + appName + "/" + std::to_string(index);
+	m_cgroupCpuPath = CGROUP_CPU_ROOT_DIR + "/" + CGROUP_APPMESH_DIR + "/" + appName + "/" + std::to_string(index);
 
-	if (m_memLimitMb > 0 && Utility::createRecursiveDirectory(cgroupMemoryPath, 0711))
+	if (m_memLimitMb > 0 && Utility::createRecursiveDirectory(m_cgroupMemoryPath, 0711))
 	{
-		this->setPhysicalMemory(cgroupMemoryPath, m_memLimitMb * 1024 * 1024);
+		this->setPhysicalMemory(m_cgroupMemoryPath, m_memLimitMb * 1024 * 1024);
 	}
 
-	if (m_memSwapMb > 0 && Utility::createRecursiveDirectory(cgroupMemoryPath, 0711))
+	if (m_memSwapMb > 0 && Utility::createRecursiveDirectory(m_cgroupMemoryPath, 0711))
 	{
-		this->setSwapMemory(cgroupMemoryPath, m_memSwapMb * 1024 * 1024);
+		this->setSwapMemory(m_cgroupMemoryPath, m_memSwapMb * 1024 * 1024);
 	}
 
-	if (m_cpuShares > 0 && Utility::createRecursiveDirectory(cgroupCpuPath, 0711))
+	if (m_cpuShares > 0 && Utility::createRecursiveDirectory(m_cgroupCpuPath, 0711))
 	{
-		this->setCpuShares(cgroupCpuPath, m_cpuShares);
+		this->setCpuShares(m_cgroupCpuPath, m_cpuShares);
 	}
+}
+
+long long LinuxCgroup::readHostMemValue(const std::string &cgroupFileName)
+{
+	return readValue(CGROUP_MEMORY_ROOT_DIR + "/" + cgroupFileName);
+}
+
+int LinuxCgroup::readHostCpuSet()
+{
+	const static char fname[] = "LinuxCgroup::readHostCpuSet() ";
+
+	int cpus = 0;
+	auto cpuSets = Utility::readFile(CGROUP_CPUSET_ROOT_DIR + "/" + "cpuset.cpus");
+	LOG_DBG << fname << cpuSets;
+	auto texts = Utility::splitString(cpuSets, "\r");
+	for (auto &line : texts)
+	{
+		line = Utility::stdStringTrim(line);
+		line = Utility::stdStringTrim(line, '\r');
+		line = Utility::stdStringTrim(line, '\n');
+		if (line.length())
+		{
+			LOG_DBG << fname << "line: " << line;
+			auto comas = Utility::splitString(line, ",");
+			for (auto &set : comas)
+			{
+				set = Utility::stdStringTrim(line);
+				set = Utility::stdStringTrim(line, '\r');
+				set = Utility::stdStringTrim(line, '\n');
+
+				LOG_DBG << fname << "set: " << set;
+				if (set.find("-") != std::string::npos)
+				{
+					auto duration = Utility::splitString(set, "-");
+					if (duration.size() == 2 && Utility::isNumber(duration[0]) && Utility::isNumber(duration[1]))
+					{
+						cpus = cpus + (std::atoi(duration[1].c_str()) - atoi(duration[0].c_str())) + 1;
+					}
+					else
+					{
+						LOG_ERR << fname << "failed to parse duration cpu : " << set;
+					}
+				}
+				else
+				{
+					if (Utility::isNumber(set))
+					{
+						cpus++;
+					}
+					else
+					{
+						LOG_ERR << fname << "failed to parse single cpu : " << set;
+					}
+				}
+			}
+		}
+	}
+	LOG_DBG << fname << "cpu cores: " << cpus;
+	return cpus;
+}
+
+bool LinuxCgroup::swapSupport() const
+{
+	return m_swapLimitSupport;
 }
 
 void LinuxCgroup::retrieveCgroupHeirarchy()
@@ -111,26 +176,33 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 			continue;
 		}
 
-		if (hasmntopt(&entObj, "memory") && hasmntopt(&entObj, "rw") && hasmntopt(&entObj, "relatime"))
+		if (hasmntopt(&entObj, "memory") && hasmntopt(&entObj, "relatime"))
 		{
 			// cgroup on /sys/fs/cgroup/memory type cgroup (rw,nosuid,nodev,noexec,relatime,memory)
-			cgroupMemRootName = entObj.mnt_dir;
-			LOG_DBG << fname << "Get memory hierarchy dir : " << cgroupMemRootName;
+			CGROUP_MEMORY_ROOT_DIR = entObj.mnt_dir;
+			LOG_DBG << fname << "Get memory hierarchy dir : " << CGROUP_MEMORY_ROOT_DIR;
 		}
 
-		if (hasmntopt(&entObj, "cpu") && hasmntopt(&entObj, "rw") && hasmntopt(&entObj, "relatime"))
+		if (hasmntopt(&entObj, "cpuset") && hasmntopt(&entObj, "relatime"))
+		{
+			// cgroup on /sys/fs/cgroup/cpuset type cgroup (rw,nosuid,nodev,noexec,relatime,memory)
+			CGROUP_CPUSET_ROOT_DIR = entObj.mnt_dir;
+			LOG_DBG << fname << "Get cpuset hierarchy dir : " << CGROUP_CPUSET_ROOT_DIR;
+		}
+
+		if (hasmntopt(&entObj, "cpu") && hasmntopt(&entObj, "relatime"))
 		{
 			// get the CPU hierarchy mount point.
-			cgroupCpuRootName = entObj.mnt_dir;
+			CGROUP_CPU_ROOT_DIR = entObj.mnt_dir;
 
 			//handle "/sys/fs/cgroup/cpu,cpuacct"
-			auto found = cgroupCpuRootName.find(',');
+			auto found = CGROUP_CPU_ROOT_DIR.find(',');
 			if (found != std::string::npos)
 			{
-				cgroupCpuRootName[found] = '\0';
+				CGROUP_CPU_ROOT_DIR[found] = '\0';
 			}
-			cgroupCpuRootName = cgroupCpuRootName.c_str();
-			LOG_DBG << fname << "Get cpu hierarchy dir : " << cgroupCpuRootName;
+			CGROUP_CPU_ROOT_DIR = CGROUP_CPU_ROOT_DIR.c_str();
+			LOG_DBG << fname << "Get cpu hierarchy dir : " << CGROUP_CPU_ROOT_DIR;
 		}
 	}
 	if (fp)
@@ -140,33 +212,33 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 void LinuxCgroup::setPhysicalMemory(const std::string &cgroupPath, long long memLimitBytes)
 {
 	std::string specifiedHeirarchy = cgroupPath + "/" + "memory.limit_in_bytes";
-	writeFile(specifiedHeirarchy, memLimitBytes);
+	writeValue(specifiedHeirarchy, memLimitBytes);
 
 	std::string tasksHeirarchy = cgroupPath + "/" + "tasks";
-	writeFile(tasksHeirarchy, m_pid);
+	writeValue(tasksHeirarchy, m_pid);
 }
 
 void LinuxCgroup::setSwapMemory(const std::string &cgroupPath, long long memSwapBytes)
 {
 	std::string specifiedHeirarchy = cgroupPath + "/" + "memory.memsw.limit_in_bytes";
-	writeFile(specifiedHeirarchy, memSwapBytes);
+	writeValue(specifiedHeirarchy, memSwapBytes);
 
 	std::string tasksHeirarchy = cgroupPath + "/" + "tasks";
-	writeFile(tasksHeirarchy, m_pid);
+	writeValue(tasksHeirarchy, m_pid);
 }
 
 void LinuxCgroup::setCpuShares(const std::string &cgroupPath, long long cpuShares)
 {
 	std::string specifiedHeirarchy = cgroupPath + "/" + "cpu.shares";
-	writeFile(specifiedHeirarchy, cpuShares);
+	writeValue(specifiedHeirarchy, cpuShares);
 
 	std::string tasksHeirarchy = cgroupPath + "/" + "tasks";
-	writeFile(tasksHeirarchy, m_pid);
+	writeValue(tasksHeirarchy, m_pid);
 }
 
-void LinuxCgroup::writeFile(const std::string &cgroupPath, long long value)
+void LinuxCgroup::writeValue(const std::string &cgroupPath, long long value)
 {
-	const static char fname[] = "LinuxCgroup::writeFile() ";
+	const static char fname[] = "LinuxCgroup::writeValue() ";
 
 	FILE *fp = fopen(cgroupPath.c_str(), "w+");
 	if (fp)
@@ -185,4 +257,35 @@ void LinuxCgroup::writeFile(const std::string &cgroupPath, long long value)
 	{
 		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << std::strerror(errno);
 	}
+}
+
+long long LinuxCgroup::readValue(const std::string &cgroupPath)
+{
+	const static char fname[] = "LinuxCgroup::readValue() ";
+
+	long long value = 0;
+	FILE *fp = fopen(cgroupPath.c_str(), "r");
+	if (fp)
+	{
+		if (fscanf(fp, "%lld", &value))
+		{
+			LOG_DBG << fname << "read <" << value << "> from file <" << cgroupPath << "> success.";
+		}
+		else
+		{
+			LOG_ERR << fname << "read <" << value << "> from file <" << cgroupPath << "> failed with error :" << std::strerror(errno);
+		}
+		fclose(fp);
+	}
+	else
+	{
+		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << std::strerror(errno);
+	}
+	return value;
+}
+
+bool LinuxCgroup::runningInContainer()
+{
+	static bool result = (Utility::readFile("/proc/self/cgroup").find("/docker/") != std::string::npos);
+	return result;
 }

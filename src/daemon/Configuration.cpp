@@ -917,14 +917,18 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 web::json::value Configuration::JsonConsul::AsJson() const
 {
 	auto result = web::json::value::object();
-	result[JSON_KEY_CONSUL_URL] = web::json::value::string(m_consulUrl);
+	if (m_consulUrl.length())
+		result[JSON_KEY_CONSUL_URL] = web::json::value::string(m_consulUrl);
 	result[JSON_KEY_CONSUL_IS_MAIN] = web::json::value::boolean(m_isMaster);
 	result[JSON_KEY_CONSUL_IS_WORKER] = web::json::value::boolean(m_isWorker);
 	result[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_ttl);
 	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
-	result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_proxyUrl);
-	result[JSON_KEY_CONSUL_AUTH_USER] = web::json::value::string(m_basicAuthUser);
-	result[JSON_KEY_CONSUL_AUTH_PASS] = web::json::value::string(m_basicAuthPass);
+	if (m_proxyUrl.length())
+		result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_proxyUrl);
+	if (m_basicAuthUser.length())
+		result[JSON_KEY_CONSUL_AUTH_USER] = web::json::value::string(m_basicAuthUser);
+	if (m_basicAuthPass.length())
+		result[JSON_KEY_CONSUL_AUTH_PASS] = web::json::value::string(m_basicAuthPass);
 	return result;
 }
 

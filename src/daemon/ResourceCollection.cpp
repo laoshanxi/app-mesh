@@ -8,6 +8,7 @@
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
 #include "ResourceCollection.h"
+#include "process/LinuxCgroup.h"
 
 ResourceCollection::ResourceCollection()
 	: m_appmeshStartTime(std::chrono::system_clock::now())
@@ -36,37 +37,64 @@ const std::string ResourceCollection::getHostName(bool refresh)
 
 const HostResource &ResourceCollection::getHostResource()
 {
-	static auto cpus = os::cpus();
+
 	auto nets = net::links();
-	auto mem = os::memory();
+	bool isDocker = LinuxCgroup::runningInContainer();
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-
 	m_resources.m_ipaddress.clear();
 
 	// CPU
-	std::set<int> sockets;
-	std::set<int> processers;
-	for (auto c : cpus)
+	if (isDocker)
 	{
-		sockets.insert(c.socket);
-		processers.insert(c.id);
+		static auto cpus = LinuxCgroup(0, 0, 100).readHostCpuSet();
+		m_resources.m_cores = m_resources.m_sockets = m_resources.m_processors = cpus;
 	}
-	m_resources.m_cores = cpus.size();
-	m_resources.m_sockets = sockets.size();
-	m_resources.m_processors = processers.size();
+	if (m_resources.m_cores == 0)
+	{
+		static auto cpus = os::cpus();
+		std::set<int> sockets;
+		std::set<int> processers;
+		for (auto c : cpus)
+		{
+			sockets.insert(c.socket);
+			processers.insert(c.id);
+		}
+		m_resources.m_cores = cpus.size();
+		m_resources.m_sockets = sockets.size();
+		m_resources.m_processors = processers.size();
+	}
 
 	// Memory
-	if (mem != nullptr)
+	if (isDocker)
 	{
-		m_resources.m_total_bytes = mem->total_bytes;
-		m_resources.m_totalSwap_bytes = mem->totalSwap_bytes;
-		m_resources.m_free_bytes = mem->free_bytes;
-		m_resources.m_freeSwap_bytes = mem->freeSwap_bytes;
+		static LinuxCgroup cgroup(0, 0, 100);
+		static auto limit_in_bytes = cgroup.readHostMemValue("memory.limit_in_bytes");
+		m_resources.m_total_bytes = limit_in_bytes;
+		m_resources.m_free_bytes = m_resources.m_total_bytes - cgroup.readHostMemValue("memory.usage_in_bytes");
+
+		if (cgroup.swapSupport())
+		{
+			static auto memsw_limit_in_bytes = cgroup.readHostMemValue("memory.memsw.limit_in_bytes");
+			m_resources.m_totalSwap_bytes = memsw_limit_in_bytes;
+			m_resources.m_freeSwap_bytes = m_resources.m_totalSwap_bytes - cgroup.readHostMemValue("memory.memsw.usage_in_bytes");
+		}
 	}
-	else
+	if (m_resources.m_total_bytes <= 0 || m_resources.m_total_bytes >= 9223372036854771712L)
 	{
-		m_resources.m_total_bytes = m_resources.m_totalSwap_bytes = m_resources.m_free_bytes = m_resources.m_freeSwap_bytes = 0;
+		auto mem = os::memory();
+		if (mem != nullptr)
+		{
+			m_resources.m_total_bytes = mem->total_bytes;
+			m_resources.m_free_bytes = mem->free_bytes;
+
+			m_resources.m_totalSwap_bytes = mem->totalSwap_bytes;
+			m_resources.m_freeSwap_bytes = mem->freeSwap_bytes;
+		}
+		else
+		{
+			m_resources.m_total_bytes = m_resources.m_totalSwap_bytes = m_resources.m_free_bytes = m_resources.m_freeSwap_bytes = 0;
+		}
 	}
 
 	// Net
@@ -125,13 +153,14 @@ web::json::value ResourceCollection::AsJson()
 	result[GET_STRING_T("host_description")] = web::json::value::string(Configuration::instance()->getDescription());
 	auto arr = web::json::value::array(m_resources.m_ipaddress.size());
 	int idx = 0;
-	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const HostNetInterface &pair) {
-		web::json::value net_detail = web::json::value::object();
-		net_detail["name"] = web::json::value::string(pair.name);
-		net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
-		net_detail["address"] = web::json::value::string(pair.address);
-		arr[idx++] = net_detail;
-	});
+	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const HostNetInterface &pair)
+				  {
+					  web::json::value net_detail = web::json::value::object();
+					  net_detail["name"] = web::json::value::string(pair.name);
+					  net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
+					  net_detail["address"] = web::json::value::string(pair.address);
+					  arr[idx++] = net_detail;
+				  });
 	result[GET_STRING_T("net")] = arr;
 	result[GET_STRING_T("cpu_cores")] = web::json::value::number(m_resources.m_cores);
 	result[GET_STRING_T("cpu_sockets")] = web::json::value::number(m_resources.m_sockets);
@@ -159,19 +188,20 @@ web::json::value ResourceCollection::AsJson()
 	auto mountPoints = os::getMoundPoints();
 	auto fsArr = web::json::value::array(mountPoints.size());
 	idx = 0;
-	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr, &idx](const std::pair<std::string, std::string> &pair) {
-		auto usage = os::df(pair.first);
-		if (usage != nullptr)
-		{
-			web::json::value fs = web::json::value::object();
-			fs["size"] = web::json::value::number(usage->size);
-			fs["used"] = web::json::value::number(usage->used);
-			fs["usage"] = web::json::value::number(usage->usage);
-			fs["device"] = web::json::value::string(pair.second);
-			fs["mount_point"] = web::json::value::string(pair.first);
-			fsArr[idx++] = fs;
-		}
-	});
+	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr, &idx](const std::pair<std::string, std::string> &pair)
+				  {
+					  auto usage = os::df(pair.first);
+					  if (usage != nullptr)
+					  {
+						  web::json::value fs = web::json::value::object();
+						  fs["size"] = web::json::value::number(usage->size);
+						  fs["used"] = web::json::value::number(usage->used);
+						  fs["usage"] = web::json::value::number(usage->usage);
+						  fs["device"] = web::json::value::string(pair.second);
+						  fs["mount_point"] = web::json::value::string(pair.first);
+						  fsArr[idx++] = fs;
+					  }
+				  });
 
 	result[GET_STRING_T("fs")] = fsArr;
 	result[GET_STRING_T("systime")] = web::json::value::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));
