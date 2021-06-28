@@ -14,10 +14,10 @@
 #include "detail/future_std.h"
 #include "metric_family.h"
 
-// IWYU pragma: no_include "prometheus/counter.h"
-// IWYU pragma: no_include "prometheus/gauge.h"
-// IWYU pragma: no_include "prometheus/histogram.h"
-// IWYU pragma: no_include "prometheus/summary.h"
+// IWYU pragma: no_include "counter.h"
+// IWYU pragma: no_include "gauge.h"
+// IWYU pragma: no_include "histogram.h"
+// IWYU pragma: no_include "summary.h"
 
 namespace prometheus {
 
@@ -118,6 +118,11 @@ class PROMETHEUS_CPP_CORE_EXPORT Family : public Collectable {
   /// \param metric Dimensional data to be removed. The function does nothing,
   /// if the given metric was not returned by Add().
   void Remove(T* metric);
+
+  /// \brief Returns true if the dimensional data with the given labels exist
+  ///
+  /// \param labels A set of key-value pairs (= labels) of the dimensional data.
+  bool Has(const std::map<std::string, std::string>& labels) const;
 
   /// \brief Returns the name for this family.
   ///

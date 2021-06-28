@@ -7,7 +7,7 @@
 #include "detail/ckms_quantiles.h"  // IWYU pragma: export
 #include "detail/core_export.h"
 
-// IWYU pragma: private, include "prometheus/summary.h"
+// IWYU pragma: private, include "summary.h"
 
 namespace prometheus {
 namespace detail {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 #include "check_names.h"
@@ -32,7 +33,7 @@ Family<T>::Family(const std::string& name, const std::string& help,
 template <typename T>
 T& Family<T>::Add(const std::map<std::string, std::string>& labels,
                   std::unique_ptr<T> object) {
-  auto hash = detail::hash_labels(labels);
+  const auto hash = detail::hash_labels(labels);
   std::lock_guard<std::mutex> lock{mutex_};
   auto metrics_iter = metrics_.find(hash);
 
@@ -47,7 +48,7 @@ T& Family<T>::Add(const std::map<std::string, std::string>& labels,
   }
 
   for (auto& label_pair : labels) {
-    auto& label_name = label_pair.first;
+    const auto& label_name = label_pair.first;
     if (!CheckLabelName(label_name)) {
       throw std::invalid_argument("Invalid label name");
     }
@@ -56,7 +57,7 @@ T& Family<T>::Add(const std::map<std::string, std::string>& labels,
     }
   }
 
-  auto metric = metrics_.insert(std::make_pair(hash, std::move(object)));
+  const auto metric = metrics_.insert(std::make_pair(hash, std::move(object)));
   assert(metric.second);
   labels_.insert({hash, labels});
   labels_reverse_lookup_.insert({metric.first->second.get(), hash});
@@ -70,10 +71,17 @@ void Family<T>::Remove(T* metric) {
     return;
   }
 
-  auto hash = labels_reverse_lookup_.at(metric);
+  const auto hash = labels_reverse_lookup_.at(metric);
   metrics_.erase(hash);
   labels_.erase(hash);
   labels_reverse_lookup_.erase(metric);
+}
+
+template <typename T>
+bool Family<T>::Has(const std::map<std::string, std::string>& labels) const {
+  const auto hash = detail::hash_labels(labels);
+  std::lock_guard<std::mutex> lock{mutex_};
+  return metrics_.find(hash) != metrics_.end();
 }
 
 template <typename T>
@@ -98,6 +106,7 @@ std::vector<MetricFamily> Family<T>::Collect() const {
   family.name = name_;
   family.help = help_;
   family.type = T::metric_type;
+  family.metric.reserve(metrics_.size());
   for (const auto& m : metrics_) {
     family.metric.push_back(std::move(CollectMetric(m.first, m.second.get())));
   }
@@ -107,7 +116,7 @@ std::vector<MetricFamily> Family<T>::Collect() const {
 template <typename T>
 ClientMetric Family<T>::CollectMetric(std::size_t hash, T* metric) const {
   auto collected = metric->Collect();
-  auto add_label =
+  const auto add_label =
       [&collected](const std::pair<std::string, std::string>& label_pair) {
         auto label = ClientMetric::Label{};
         label.name = label_pair.first;
