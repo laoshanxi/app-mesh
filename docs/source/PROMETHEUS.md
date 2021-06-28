@@ -62,5 +62,5 @@ appmesh_prom_process_memory_gauge{application="timer",host="appmesh",pid="10791"
 appmesh_prom_process_file_descriptors{application="apprest",host="appmesh",id="4229730c-5672-11eb-8000-6c2b59df0017",pid="83288"} 13.00000000000000000
 ```
 
-![Prometheus Configuration](https://raw.githubusercontent.com/laoshanxi/picture/main/prometheus/Prometheus-Configuration.png)
-![Prometheus Targets](https://raw.githubusercontent.com/laoshanxi/picture/main/prometheus/Prometheus-Targets.png)
+![Prometheus Configuration](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Configuration.png)
+![Prometheus Targets](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Targets.png)
