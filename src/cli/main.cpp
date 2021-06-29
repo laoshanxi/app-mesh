@@ -20,7 +20,7 @@ int main(int argc, const char *argv[])
 		std::cout << e.what() << std::endl;
 
 		// do not return -1 in case of input '-f'
-		for (size_t i = 1; i < argc; i++)
+		for (int i = 1; i < argc; i++)
 		{
 			if (std::string("-f") == argv[i])
 			{

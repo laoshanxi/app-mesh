@@ -1,19 +1,15 @@
 ##########################################################################
-# sub dir
-##########################################################################
-add_subdirectory(ldapcpp)
-
-##########################################################################
-# security
+# ldapcpp
 ##########################################################################
 aux_source_directory(. SRC_LIST)
-add_library(security STATIC ${SRC_LIST})
-add_library(${PROJECT_NAME}::security ALIAS security)
+add_library(ldapcpp STATIC ${SRC_LIST})
+add_library(${PROJECT_NAME}::ldapcpp ALIAS ldapcpp)
 
 ##########################################################################
 # Link
 ##########################################################################
-target_link_libraries(security
+target_link_libraries(ldapcpp
   PRIVATE
-    cryptopp
+    ldap
+    lber
 )
