@@ -2,11 +2,13 @@
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
+#include "./ldapplugin/LdapImpl.h"
 #include "Security.h"
 
 std::shared_ptr<Security> Security::m_instance = nullptr;
 std::recursive_mutex Security::m_mutex;
-Security::Security()
+Security::Security(std::shared_ptr<JsonSecurity> jsonSecurity)
+    : m_securityConfig(jsonSecurity)
 {
 }
 
@@ -16,11 +18,18 @@ Security::~Security()
 
 void Security::init()
 {
-    if (Configuration::instance()->getJwt()->m_jwtInterface == "json")
+    const static char fname[] = "Security::init() ";
+    LOG_INF << fname << "Security plugin:" << Configuration::instance()->getJwt()->m_jwtInterface;
+
+    if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_local)
     {
         auto securityJsonFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_JSON_FILE;
         auto security = Security::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
         Security::instance(security);
+    }
+    else if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_ldap)
+    {
+        LdapImpl::init();
     }
     else
     {
@@ -49,10 +58,17 @@ void Security::save()
 {
     const static char fname[] = "Security::save() ";
 
+    // distinguish security.json and ldap.json
+    std::string securityFile = APPMESH_SECURITY_JSON_FILE;
+    if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_local)
+    {
+        securityFile = APPMESH_SECURITY_LDAP_JSON_FILE;
+    }
+
     auto content = this->AsJson().serialize();
     if (content.length())
     {
-        auto securityJsonFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_JSON_FILE;
+        auto securityJsonFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + securityFile;
         auto tmpFile = securityJsonFile + "." + std::to_string(Utility::getThreadId());
         std::ofstream ofs(tmpFile, ios::trunc);
         if (ofs.is_open())
@@ -78,8 +94,7 @@ void Security::save()
 
 std::shared_ptr<Security> Security::FromJson(const web::json::value &obj) noexcept(false)
 {
-    std::shared_ptr<Security> security(new Security());
-    security->m_securityConfig = JsonSecurity::FromJson(obj);
+    std::shared_ptr<Security> security(new Security(JsonSecurity::FromJson(obj)));
     return security;
 }
 
@@ -88,7 +103,7 @@ web::json::value Security::AsJson() const
     return this->m_securityConfig->AsJson();
 }
 
-bool Security::verifyUserKey(const std::string &userName, const std::string &userKey)
+bool Security::verifyUserKey(const std::string &userName, const std::string &userKey, std::string &outUserGroup)
 {
     auto key = userKey;
     if (m_securityConfig->m_encryptKey)
@@ -98,18 +113,19 @@ bool Security::verifyUserKey(const std::string &userName, const std::string &use
     auto user = this->getUserInfo(userName);
     if (user)
     {
+        outUserGroup = user->getGroup();
         return (user->getKey() == key) && !user->locked();
     }
     throw std::invalid_argument(Utility::stringFormat("user %s not exist", userName.c_str()));
 }
 
-std::set<std::string> Security::getUserPermissions(const std::string &userName)
+std::set<std::string> Security::getUserPermissions(const std::string &userName, const std::string &userGroup)
 {
     std::set<std::string> permissionSet;
-    auto user = this->getUserInfo(userName);
-    for (auto role : user->getRoles())
+    const auto user = this->getUserInfo(userName);
+    for (const auto &role : user->getRoles())
     {
-        for (auto perm : role->getPermissions())
+        for (const auto &perm : role->getPermissions())
             permissionSet.insert(perm);
     }
     return permissionSet;
@@ -118,13 +134,10 @@ std::set<std::string> Security::getUserPermissions(const std::string &userName)
 std::set<std::string> Security::getAllPermissions()
 {
     std::set<std::string> permissionSet;
-    for (auto user : this->getUsers())
+    for (const auto &role : m_securityConfig->m_roles->getRoles())
     {
-        for (auto role : user.second->getRoles())
-        {
-            for (auto perm : role->getPermissions())
-                permissionSet.insert(perm);
-        }
+        auto rolePerms = role.second->getPermissions();
+        permissionSet.insert(rolePerms.begin(), rolePerms.end());
     }
     return permissionSet;
 }

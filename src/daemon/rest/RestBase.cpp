@@ -165,7 +165,7 @@ const std::string RestBase::getJwtToken(const HttpRequest &message)
     return token;
 }
 
-const std::string RestBase::createJwtToken(const std::string &uname, int timeoutSeconds)
+const std::string RestBase::createJwtToken(const std::string &uname, const std::string &userGroup, int timeoutSeconds)
 {
     if (uname.empty())
     {
@@ -184,6 +184,7 @@ const std::string RestBase::createJwtToken(const std::string &uname, int timeout
                            .set_issued_at(jwt::date(std::chrono::system_clock::now()))
                            .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
                            .set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
+                           .set_payload_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userGroup))
                            .sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
     return token;
 }
@@ -233,10 +234,10 @@ void RestBase::tranverseJsonTree(web::json::value &val)
     }
 }
 
-const std::string RestBase::verifyToken(const HttpRequest &message)
+const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpRequest &message)
 {
     if (!Configuration::instance()->getJwtEnabled())
-        return "";
+        return std::make_tuple("", "");
 
     const auto token = getJwtToken(message);
     const auto decoded_token = jwt::decode(token);
@@ -245,6 +246,9 @@ const std::string RestBase::verifyToken(const HttpRequest &message)
         // get user info
         const auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name);
         const auto userObj = Security::instance()->getUserInfo(userName.as_string());
+        jwt::claim userGroup;
+        if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_user_group))
+            userGroup = decoded_token.get_payload_claim(HTTP_HEADER_JWT_user_group);
 
         // check locked
         if (userObj->locked())
@@ -254,10 +258,12 @@ const std::string RestBase::verifyToken(const HttpRequest &message)
         auto verifier = jwt::verify()
                             .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
                             .with_issuer(HTTP_HEADER_JWT_ISSUER)
-                            .with_claim(HTTP_HEADER_JWT_name, userName);
+                            .with_claim(HTTP_HEADER_JWT_name, userName)
+                            .with_claim(HTTP_HEADER_JWT_user_group, userGroup);
+
         verifier.verify(decoded_token);
 
-        return std::move(userName.as_string());
+        return std::make_tuple(userName.as_string(), userGroup.as_string());
     }
     else
     {
@@ -279,7 +285,7 @@ const std::string RestBase::getJwtUserName(const HttpRequest &message)
     }
     else
     {
-        throw std::invalid_argument("No user info in token");
+        throw std::invalid_argument("No user name info in token");
     }
 }
 
@@ -287,11 +293,13 @@ bool RestBase::permissionCheck(const HttpRequest &message, const std::string &pe
 {
     const static char fname[] = "RestHandler::permissionCheck() ";
 
-    const auto userName = verifyToken(message);
+    const auto result = verifyToken(message);
+    const auto userName = std::get<0>(result);
+    const auto groupName = std::get<1>(result);
     if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
     {
         // check user role permission
-        if (Security::instance()->getUserPermissions(userName).count(permission))
+        if (Security::instance()->getUserPermissions(userName, groupName).count(permission))
         {
             LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
             return true;

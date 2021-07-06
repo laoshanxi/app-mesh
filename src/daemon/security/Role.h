@@ -45,6 +45,7 @@ public:
 
 	void addRole(const web::json::value &obj, std::string name);
 	void delRole(std::string name);
+	std::map<std::string, std::shared_ptr<Role>> getRoles();
 
 private:
 	std::map<std::string, std::shared_ptr<Role>> m_roles;

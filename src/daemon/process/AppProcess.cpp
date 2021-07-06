@@ -270,7 +270,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
 				  {
 					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-					  LOG_DBG << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str();
+					  LOG_DBG << fname << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str();
 				  });
 	option.release_handles();
 	// clean if necessary
@@ -307,6 +307,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		env = Utility::stringReplace(env, "/opt/appmesh/lib64:", "");
 		env = Utility::stringReplace(env, ":/opt/appmesh/lib64", "");
 		option.setenv("LD_LIBRARY_PATH", "%s", env.c_str());
+		LOG_DBG << fname << "replace LD_LIBRARY_PATH with " << env.c_str();
 	}
 	if (this->spawn(option) >= 0)
 	{

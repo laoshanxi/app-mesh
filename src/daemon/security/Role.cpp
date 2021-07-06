@@ -74,6 +74,12 @@ void Roles::delRole(std::string name)
 	m_roles.erase(name);
 }
 
+std::map<std::string, std::shared_ptr<Role>> Roles::getRoles()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_roles;
+}
+
 //////////////////////////////////////////////////////////////////////
 /// Role
 //////////////////////////////////////////////////////////////////////

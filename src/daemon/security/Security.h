@@ -14,8 +14,8 @@
 //////////////////////////////////////////////////////////////////////////
 class Security
 {
-private:
-    Security();
+protected:
+    Security(std::shared_ptr<JsonSecurity> jsonSecurity);
 
 public:
     virtual ~Security();
@@ -28,7 +28,7 @@ public:
     static void instance(std::shared_ptr<Security> instance);
 
 public:
-    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey);
+    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey, std::string &outUserGroup);
     virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd);
 
     virtual std::shared_ptr<User> getUserInfo(const std::string &userName) const;
@@ -42,7 +42,7 @@ public:
     virtual void delRole(const std::string &name);
 
     virtual std::set<std::string> getAllUserGroups() const;
-    virtual std::set<std::string> getUserPermissions(const std::string &userName);
+    virtual std::set<std::string> getUserPermissions(const std::string &userName, const std::string &userGroup);
     virtual std::set<std::string> getAllPermissions();
 
 private:

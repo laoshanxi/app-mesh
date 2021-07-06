@@ -42,6 +42,10 @@ if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.security.json" ]
 	# restore previous security file
 	mv $INSTALL_DIR/.security.json $INSTALL_DIR/security.json
 fi
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.ldap.json" ]; then
+	# restore previous security file
+	mv $INSTALL_DIR/.ldap.json $INSTALL_DIR/ldap.json
+fi
 # only allow root access config json file
 # 600 rw-------
 chmod 600 $INSTALL_DIR/appsvc.json

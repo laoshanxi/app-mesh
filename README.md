@@ -85,6 +85,7 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
 - [Crypto++](https://www.cryptopp.com)
 - [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
+- [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
 
 [language.url]:   https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

@@ -32,7 +32,7 @@ if [ -f "/usr/bin/yum" ]; then
 	else
 		yum install git -y
 	fi
-	yum install -y make cmake cmake3 gcc-c++ libtool
+	yum install -y make cmake cmake3 gcc-c++ libtool openldap-devel
 	if [[ -f "/usr/bin/cmake3" ]]; then
 		cp /usr/bin/cmake3 /usr/bin/cmake -f
 	fi
@@ -57,7 +57,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
-	apt install -y dos2unix g++ git make zlib1g-dev cmake alien
+	apt install -y dos2unix g++ git make zlib1g-dev cmake alien libldap2-dev
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems

@@ -15,6 +15,7 @@ cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appm
 cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/appsvc.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/security.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/ldapplugin/ldap.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/app*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/rpm*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.service ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/
@@ -37,6 +38,8 @@ ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep cpprest | awk '{cmd="cp "$3" $
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep ssl | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep crypto | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep ldap | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep lber | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
 rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appc
 rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc
 

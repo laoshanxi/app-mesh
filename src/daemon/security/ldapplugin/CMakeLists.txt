@@ -1,20 +1,19 @@
 ##########################################################################
 # sub dir
 ##########################################################################
-add_subdirectory(ldapplugin)
+add_subdirectory(ldapcpp)
 
 ##########################################################################
-# security
+# ldapcpp
 ##########################################################################
 aux_source_directory(. SRC_LIST)
-add_library(security STATIC ${SRC_LIST})
-add_library(${PROJECT_NAME}::security ALIAS security)
+add_library(ldapplugin STATIC ${SRC_LIST})
+add_library(${PROJECT_NAME}::ldapplugin ALIAS ldapplugin)
 
 ##########################################################################
 # Link
 ##########################################################################
-target_link_libraries(security
+target_link_libraries(ldapplugin
   PRIVATE
-    cryptopp
-    ldapplugin
+    ldapcpp
 )
