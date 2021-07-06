@@ -135,14 +135,7 @@ void RestChildObject::replyResponse(ACE_Message_Block *response)
     }
     else
     {
-        LOG_ERR << fname << "deserialize response failed: " << respData->m_uuid;
-        std::lock_guard<std::recursive_mutex> guard(m_mutex);
-        if (m_sentMessages.count(respData->m_uuid))
-        {
-            auto &msg = m_sentMessages.find(respData->m_uuid)->second;
-            msg.reply(web::http::status_codes::ExpectationFailed, convertText2Json("deserialize response failed"));
-            m_sentMessages.erase(respData->m_uuid);
-        }
+        LOG_ERR << fname << "deserialize response failed, failed to reply to client and clean related memory";
     }
 }
 

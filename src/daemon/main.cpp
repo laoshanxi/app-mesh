@@ -1,7 +1,7 @@
 #include <chrono>
+#include <list>
 #include <string>
 #include <thread>
-#include <list>
 
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
@@ -12,7 +12,6 @@
 #include "../common/os/linux.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
-#include "security/Security.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
 #include "ResourceCollection.h"
@@ -24,6 +23,7 @@
 #include "rest/RestChildObject.h"
 #include "rest/RestHandler.h"
 #include "rest/RestTcpServer.h"
+#include "security/Security.h"
 #ifndef NDEBUG
 #include "../common/Valgrind.h"
 #endif
@@ -61,14 +61,6 @@ int main(int argc, char *argv[])
 		auto config = Configuration::FromJson(configTxt, true);
 		Configuration::instance(config);
 		auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
-		// init security
-		Security::init();
-
-		// recover applications
-		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))
-		{
-			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));
-		}
 
 		// init child REST process, the REST process will accept HTTP request and
 		// forward to TCP rest service in order to avoid fork() impact REST handler
@@ -84,6 +76,14 @@ int main(int argc, char *argv[])
 		{
 			LOG_WAR << fname << "no such argument supported";
 			return -1;
+		}
+
+		// init security
+		Security::init();
+		// recover applications
+		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))
+		{
+			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));
 		}
 
 		// working dir
@@ -117,15 +117,16 @@ int main(int argc, char *argv[])
 		{
 			LOG_ERR << "Recover from snapshot failed with error " << std::strerror(errno);
 		}
-		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p) {
-			if (snap && snap->m_apps.count(p->getName()))
-			{
-				auto &appSnapshot = snap->m_apps.find(p->getName())->second;
-				auto stat = os::status(appSnapshot.m_pid);
-				if (stat && appSnapshot.m_startTime == (int64_t)stat->starttime)
-					p->attach(appSnapshot.m_pid);
-			}
-		});
+		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p)
+					  {
+						  if (snap && snap->m_apps.count(p->getName()))
+						  {
+							  auto &appSnapshot = snap->m_apps.find(p->getName())->second;
+							  auto stat = os::status(appSnapshot.m_pid);
+							  if (stat && appSnapshot.m_startTime == (int64_t)stat->starttime)
+								  p->attach(appSnapshot.m_pid);
+						  }
+					  });
 		// reg prometheus
 		config->registerPrometheus();
 
@@ -153,7 +154,7 @@ int main(int argc, char *argv[])
 			for (const auto &app : allApp)
 			{
 				PerfLog perf1(app->getName());
-				app->invoke((void*)(&ptree));
+				app->invoke((void *)(&ptree));
 			}
 
 			PersistManager::instance()->persistSnapshot();

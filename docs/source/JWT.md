@@ -10,18 +10,18 @@ JSON Web Tokens are an open, industry standard RFC 7519 method for representing 
 What is supported:
 
 > * REST login use JWT standard
+> * Support local JSON based user management and LDAP users
 > * Provide login and auth API to run as a stand-alone JWT server
 > * Support centralized user & role DB server by Consul
 
 What is **not** supported:
 > * Redirect authentication to another JWT server is not supported
-> * LDAP is not supported
 
 
 ### GET JWT token
 
-| Method | URI            | Body/Headers                                                                              | Desc                                                 |
-| ------ | -------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Method | URI            | Body/Headers                                                                               | Desc                                                  |
+| ------ | -------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
 | POST   | /appmesh/login | Username=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> Expire-Seconds=600 | JWT authenticate login, the max Expire-Seconds is 24h |
 
 ```shell
@@ -42,18 +42,18 @@ The REST will response bellow json when authentication success:
 }
 ```
 
-| response    | desc                                                                                      |
-| ----------- | ----------------------------------------------------------------------------------------- |
-| Access-Token | JWT token content                                                                         |
-| expire_time | UTC time (seconds) the token will expire, is the server time plus the input Expire-Seconds |
-| auth_time   | the server UTC time (seconds)                                                             |
-| token_type  | JWT standard "Bearer"                                                                     |
+| response     | desc                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| Access-Token | JWT token content                                                                          |
+| expire_time  | UTC time (seconds) the token will expire, is the server time plus the input Expire-Seconds |
+| auth_time    | the server UTC time (seconds)                                                              |
+| token_type   | JWT standard "Bearer"                                                                      |
 
 
 ### Use JWT token for REST request
 
-| Method | URI           | Body/Headers                                                                                   | Desc                   |
-| ------ | ------------- | ---------------------------------------------------------------------------------------------- | ---------------------- |
+| Method | URI           | Body/Headers                                                                                    | Desc                   |
+| ------ | ------------- | ----------------------------------------------------------------------------------------------- | ---------------------- |
 | POST   | /appmesh/auth | headers: <br> Authorization=Bearer token_str  <br> Optional: <br> Auth-Permission=permission-id | JWT token authenticate |
 
 ```shell

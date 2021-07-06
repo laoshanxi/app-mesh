@@ -51,11 +51,12 @@ protected:
     void handle_delete(const HttpRequest &message);
     void handle_options(const HttpRequest &message);
 
-    const std::string verifyToken(const HttpRequest &message);
+    // tuple: username, usergroup
+    const std::tuple<std::string, std::string> verifyToken(const HttpRequest &message);
     const std::string getJwtUserName(const HttpRequest &message);
     bool permissionCheck(const HttpRequest &message, const std::string &permission);
     const std::string getJwtToken(const HttpRequest &message);
-    const std::string createJwtToken(const std::string &uname, int timeoutSeconds);
+    const std::string createJwtToken(const std::string &uname, const std::string &userGroup, int timeoutSeconds);
 
 protected:
     // API functions

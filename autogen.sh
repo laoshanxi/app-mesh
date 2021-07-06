@@ -7,7 +7,7 @@ set -e
 MACHINE_TYPE="$(uname -m)"
 ARM="arm"
 AARC="aarc"
-WGWT_A=wget --continue --tries=30 --no-check-certificate
+WGWT_A="wget --continue --backups=1 --tries=30 --no-check-certificate"
 
 # prepare dep dir
 mkdir -p dep
@@ -32,10 +32,7 @@ if [ -f "/usr/bin/yum" ]; then
 	else
 		yum install git -y
 	fi
-	yum install -y make cmake cmake3 gcc-c++ libtool
-	if [[ -f "/usr/bin/cmake3" ]]; then
-		cp /usr/bin/cmake3 /usr/bin/cmake -f
-	fi
+	yum install -y make gcc-c++ libtool openldap-devel
 	yum install -y dos2unix wget which
 
 	#yum install -y boost169-devel boost169-static
@@ -57,7 +54,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
-	apt install -y dos2unix g++ git make zlib1g-dev cmake alien
+	apt install -y dos2unix g++ git make zlib1g-dev alien libldap2-dev
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
@@ -69,6 +66,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 fi
+
 # check libssl in case of openssl_update.sh not executed
 if [[ -f "/usr/include/openssl/ssl.h" ]] || [[ -f "/usr/local/include/openssl/ssl.h" ]]; then
 	echo 'ssl installed'
@@ -78,6 +76,19 @@ else
 	else
 		apt install -y libssl-dev
 	fi
+fi
+
+# install cmake (depend on g++, make, openssl-devel)
+# https://askubuntu.com/questions/355565/how-do-i-install-the-latest-version-of-cmake-from-the-command-line
+if [[ true ]]; then
+	version=3.20
+	build=5
+	$WGWT_A https://github.com/Kitware/CMake/releases/download/v$version/cmake-$version.$build.tar.gz
+	tar -xzvf cmake-$version.$build.tar.gz
+	cd cmake-$version.$build/
+	./bootstrap
+	make -j 6
+	make install
 fi
 
 #install fpm
@@ -104,15 +115,11 @@ cd $ROOTDIR
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
-git clone -b 2.10.18 https://github.com/microsoft/cpprestsdk.git cpprestsdk
+git clone --depth=1 -b 2.10.18 https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release
-CMAKE=/usr/bin/cmake
-if [ -f "/usr/bin/cmake3" ]; then
-	CMAKE=/usr/bin/cmake3
-fi
-$CMAKE .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
 make
 make install
 ls -al /usr/local/lib*/libcpprest.so
@@ -156,7 +163,7 @@ cd $ROOTDIR
 
 # cryptopp: AES encrypt
 $WGWT_A https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
-unzip CRYPTOPP_8_3_0.zip
+unzip -o CRYPTOPP_8_3_0.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
 cd cryptopp-CRYPTOPP_8_3_0/
 make

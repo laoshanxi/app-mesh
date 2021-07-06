@@ -471,7 +471,9 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
-	auto userName = verifyToken(message);
+	const auto result = verifyToken(message);
+	const auto userName = std::get<0>(result);
+	const auto groupName = std::get<1>(result);
 	std::set<std::string> permissions;
 	if (userName.empty() && !Configuration::instance()->getJwtEnabled())
 	{
@@ -479,7 +481,7 @@ void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 	}
 	else
 	{
-		permissions = Security::instance()->getUserPermissions(userName);
+		permissions = Security::instance()->getUserPermissions(userName, groupName);
 	}
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
@@ -590,7 +592,7 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_ADD);
 	auto tokenUserName = getJwtUserName(message);
 
-	auto user = Security::instance()->addUser(pathUserName, message.extractJson());
+	Security::instance()->addUser(pathUserName, message.extractJson());
 	Security::instance()->save();
 	ConsulConnection::instance()->saveSecurity();
 
@@ -717,8 +719,8 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 	{
 		std::string uname = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_username)->second));
 		std::string passwd = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_password)->second));
-
-		if (Security::instance()->verifyUserKey(uname, passwd))
+		std::string userGroup;
+		if (Security::instance()->verifyUserKey(uname, passwd, userGroup))
 		{
 			int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 7 days
 			if (message.m_headers.count(HTTP_HEADER_JWT_expire_seconds))
@@ -727,7 +729,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 				timeoutSeconds = std::stoi(timeout);
 			}
 
-			auto token = createJwtToken(uname, timeoutSeconds);
+			auto token = createJwtToken(uname, userGroup, timeoutSeconds);
 
 			web::json::value result = web::json::value::object();
 			web::json::value profile = web::json::value::object();

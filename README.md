@@ -19,7 +19,7 @@ Scope | Behavior
 ---|---
 Support applications | Long running <br> Short running <br> Periodic long running <br> Cron schedule
 Application attributes | Extra init and cleanup commands <br> Available time range in a day and more rich time options <br> Environment variables <br> Health check command to identify app health <br> Pipe input string data to pass data to application <br> Resource (memory & CPU) limitation (cgroup on Linux) to request resources <br> Support Docker container app
-Security |  ⚡️ [JWT authentication](https://app-mesh.readthedocs.io/en/latest/JWT.html) for CLI and REST interface <br> ⚡️ [Role based permission control](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
+Security |  ⚡️ [JWT authentication](https://app-mesh.readthedocs.io/en/latest/JWT.html) for CLI and REST interface <br> ⚡️ [LDAP support](https://app-mesh.readthedocs.io/en/latest/LDAP.html) <br> ⚡️ [Role based permission control](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
 Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> ⚡️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> REST service with IPv4/IPv6 support 
 Micro service application | ⚡️ [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html) 
 Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
@@ -85,6 +85,7 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
 - [Crypto++](https://www.cryptopp.com)
 - [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
+- [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
 
 [language.url]:   https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

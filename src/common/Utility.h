@@ -102,6 +102,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 
 #define APPMESH_CONFIG_JSON_FILE "appsvc.json"
 #define APPMESH_SECURITY_JSON_FILE "security.json"
+#define APPMESH_SECURITY_LDAP_JSON_FILE "ldap.json"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
@@ -223,6 +224,7 @@ public:
 
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
+#define JSON_KEY_Groups "Groups"
 #define JSON_KEY_Applications "Applications"
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
@@ -299,9 +301,16 @@ public:
 #define JSON_KEY_USER_metadata "metadata"
 #define JSON_KEY_USER_exec_user "exec_user"
 
+#define JSON_KEY_USER_key_method_local "json"
+#define JSON_KEY_USER_key_method_ldap "ldap"
+#define JSON_KEY_USER_LDAP_ldap_uri "Uri"
+#define JSON_KEY_USER_LDAP_bind_dn "BindDN"
+#define JSON_KEY_USER_LDAP_USER_REPLACE_HOLDER "{USER}"
+
 #define HTTP_HEADER_JWT "JWT"
 #define HTTP_HEADER_JWT_ISSUER "appmesh-auth0"
 #define HTTP_HEADER_JWT_name "name"
+#define HTTP_HEADER_JWT_user_group "group"
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization
 #define HTTP_HEADER_JWT_Bearer "Bearer"
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "

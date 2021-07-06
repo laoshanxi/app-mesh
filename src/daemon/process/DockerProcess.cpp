@@ -275,9 +275,9 @@ const std::string DockerProcess::fetchOutputMsg()
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	if (m_containerId.length())
 	{
-		//auto microsecondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
-		auto timeSince = DateTime::formatLocalTime(m_lastFetchTime);
-		auto dockerCommand = Utility::stringFormat("docker logs --since %s %s", timeSince.c_str(), m_containerId.c_str());
+		// --since: RFC3339 OR UNIX timestamp
+		auto secondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
+		auto dockerCommand = Utility::stringFormat("docker logs --since %llu %s", secondsUTC, m_containerId.c_str());
 
 		auto dockerProcess = std::make_shared<AppProcess>();
 		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
