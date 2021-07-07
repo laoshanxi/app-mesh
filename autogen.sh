@@ -104,7 +104,7 @@ cd $ROOTDIR
 
 # cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
 # https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
-git clone -b 2.10.18 https://github.com/microsoft/cpprestsdk.git cpprestsdk
+git clone --depth=1 -b 2.10.18 https://github.com/microsoft/cpprestsdk.git cpprestsdk
 cd cpprestsdk
 git submodule update --init
 cd Release

@@ -19,6 +19,7 @@ Welcome to AppMesh's documentation!
    Development.md
    Install.md
    JWT.md
+   LDAP.md
    Loki.md
    PROMETHEUS.md
    Security.md
