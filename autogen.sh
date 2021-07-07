@@ -7,7 +7,7 @@ set -e
 MACHINE_TYPE="$(uname -m)"
 ARM="arm"
 AARC="aarc"
-WGWT_A=wget --continue --tries=30 --no-check-certificate
+WGWT_A="wget --continue --backups=1 --tries=30 --no-check-certificate"
 
 # prepare dep dir
 mkdir -p dep
@@ -156,7 +156,7 @@ cd $ROOTDIR
 
 # cryptopp: AES encrypt
 $WGWT_A https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
-unzip CRYPTOPP_8_3_0.zip
+unzip -o CRYPTOPP_8_3_0.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
 cd cryptopp-CRYPTOPP_8_3_0/
 make
