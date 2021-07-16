@@ -22,61 +22,62 @@
 #define CLDAP_ENTRY_H
 
 #include <memory>
+
 #include "cldap_mod.h"
 
 namespace Ldap
 {
-    class Server;
+	class Server;
 
-    class Entry
-    {
+	class Entry
+	{
 	public:
-	    Entry(const std::string &);
-	    ~Entry();
+		Entry(const std::string &);
+		~Entry();
 
-	    void		SetDN(const std::string &);
-	    const std::string &	DN(void) const;
+		void SetDN(const std::string &);
+		const std::string &DN(void) const;
 
-    	    void		Append(int, const std::string &, const std::string &);
-    	    void		Append(int, const std::string &, const std::vector<std::string> &);
-    	    void		Append(int, const std::string &, const std::list<std::string> &);
+		void Append(int, const std::string &, const std::string &);
+		void Append(int, const std::string &, const std::vector<std::string> &);
+		void Append(int, const std::string &, const std::list<std::string> &);
 
-    	    void		Append(int, const std::string &, const std::vector<char> &);
-    	    void		Append(int, const std::string &, const std::vector< std::vector<char> > &);
-    	    void		Append(int, const std::string &, const std::list< std::vector<char> > &);
+		void Append(int, const std::string &, const std::vector<char> &);
+		void Append(int, const std::string &, const std::vector<std::vector<char>> &);
+		void Append(int, const std::string &, const std::list<std::vector<char>> &);
 
-	    std::string		GetStringValue(const std::string &) const;
-	    std::vector<std::string>
-				GetStringValues(const std::string &) const;
-	    std::list<std::string>
-				GetStringList(const std::string &) const;
+		std::string GetStringValue(const std::string &) const;
+		std::vector<std::string>
+		GetStringValues(const std::string &) const;
+		std::list<std::string>
+		GetStringList(const std::string &) const;
 
-	    std::vector<char>	GetBinaryValue(const std::string &) const;
-	    std::vector< std::vector<char> >
-				GetBinaryValues(const std::string &) const;
-	    std::list< std::vector<char> >
-				GetBinaryList(const std::string &) const;
+		std::vector<char> GetBinaryValue(const std::string &) const;
+		std::vector<std::vector<char>>
+		GetBinaryValues(const std::string &) const;
+		std::list<std::vector<char>>
+		GetBinaryList(const std::string &) const;
 
-	    int			Size(void) const { return values.size(); }
+		int Size(void) const { return values.size(); }
 
 	protected:
-	    friend class Server;
-	    friend std::ostream & operator<< (std::ostream &, const Entry &);
+		friend class Server;
+		friend std::ostream &operator<<(std::ostream &, const Entry &);
 
-	    typedef std::vector< std::shared_ptr<ModBase> >::iterator iterator;
-	    typedef std::vector< std::shared_ptr<ModBase> >::const_iterator const_iterator;
+		typedef std::vector<std::shared_ptr<ModBase>>::iterator iterator;
+		typedef std::vector<std::shared_ptr<ModBase>>::const_iterator const_iterator;
 
-	    std::vector<LDAPMod*>
-				toLDAPMods(void) const;
-	    iterator		PushBack(const std::string & type, int op, bool binary);
-	    const_iterator	FindType(const std::string &) const;
+		std::vector<LDAPMod *>
+		toLDAPMods(void) const;
+		iterator PushBack(const std::string &type, int op, bool binary);
+		const_iterator FindType(const std::string &) const;
 
-	    std::string		dn;
-	    std::vector< std::shared_ptr<ModBase> >
-				values;
+		std::string dn;
+		std::vector<std::shared_ptr<ModBase>>
+			values;
 	};
 
-    std::ostream & operator<< (std::ostream &, const Entry &);
+	std::ostream &operator<<(std::ostream &, const Entry &);
 }
 
 #endif

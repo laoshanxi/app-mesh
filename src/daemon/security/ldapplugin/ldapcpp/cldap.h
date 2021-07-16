@@ -21,8 +21,8 @@
 #ifndef CLDAP_H
 #define CLDAP_H
 
-#include "cldap_mod.h"
 #include "cldap_entry.h"
+#include "cldap_mod.h"
 #include "cldap_server.h"
 #include "cldap_types.h"
 

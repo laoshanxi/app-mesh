@@ -21,11 +21,11 @@
 #ifndef CLDAP_TYPES_H
 #define CLDAP_TYPES_H
 
-#include <string>
-#include <list>
-#include <vector>
 #include <iostream>
 #include <ldap.h>
+#include <list>
+#include <string>
+#include <vector>
 
 #define CLDAP_VERSION 20180427
 
@@ -33,17 +33,27 @@ namespace Ldap
 {
     class Entry;
 
-    enum Action { ActionAdd = LDAP_MOD_ADD, ActionDelete = LDAP_MOD_DELETE, ActionReplace = LDAP_MOD_REPLACE };
-    enum Scope { ScopeBase = LDAP_SCOPE_BASE, ScopeOne = LDAP_SCOPE_ONELEVEL, ScopeTree = LDAP_SCOPE_SUBTREE };
+    enum Action
+    {
+        ActionAdd = LDAP_MOD_ADD,
+        ActionDelete = LDAP_MOD_DELETE,
+        ActionReplace = LDAP_MOD_REPLACE
+    };
+    enum Scope
+    {
+        ScopeBase = LDAP_SCOPE_BASE,
+        ScopeOne = LDAP_SCOPE_ONELEVEL,
+        ScopeTree = LDAP_SCOPE_SUBTREE
+    };
 
-    typedef std::list<Entry>            ListEntries;
-    typedef std::list<std::string>      ListAttrs;
+    typedef std::list<Entry> ListEntries;
+    typedef std::list<std::string> ListAttrs;
 }
 
 namespace Base64
 {
-    std::vector<char> encode(const char*, size_t);
-    std::vector<char> decode(const char*, size_t);
+    std::vector<char> encode(const char *, size_t);
+    std::vector<char> decode(const char *, size_t);
 
     std::string StringWrap(const std::string &, const std::string &);
     void SetBinaryOnly(bool);

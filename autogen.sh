@@ -54,7 +54,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
-	apt install -y dos2unix g++ git make zlib1g-dev alien libldap2-dev
+	apt install -y dos2unix g++ git wget make zlib1g-dev alien libldap2-dev
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
@@ -68,7 +68,7 @@ elif [ -f "/usr/bin/apt" ]; then
 fi
 
 # check libssl in case of openssl_update.sh not executed
-if [[ -f "/usr/include/openssl/ssl.h" ]] || [[ -f "/usr/local/include/openssl/ssl.h" ]]; then
+if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then
 	echo 'ssl installed'
 else
 	if [ -f "/usr/bin/yum" ]; then
@@ -80,14 +80,14 @@ fi
 
 # install cmake (depend on g++, make, openssl-devel)
 # https://askubuntu.com/questions/355565/how-do-i-install-the-latest-version-of-cmake-from-the-command-line
-if [[ true ]]; then
+if [ true ]; then
 	version=3.20
 	build=5
-	$WGWT_A https://github.com/Kitware/CMake/releases/download/v$version/cmake-$version.$build.tar.gz
+	$WGWT_A https://cmake.org/files/v$version/cmake-$version.$build.tar.gz
 	tar -xzvf cmake-$version.$build.tar.gz
 	cd cmake-$version.$build/
 	./bootstrap
-	make -j 6
+	make -j6
 	make install
 fi
 
@@ -120,7 +120,7 @@ cd cpprestsdk
 git submodule update --init
 cd Release
 cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
-make
+make -j6
 make install
 ls -al /usr/local/lib*/libcpprest.so
 cd $ROOTDIR
@@ -166,7 +166,7 @@ $WGWT_A https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
 unzip -o CRYPTOPP_8_3_0.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
 cd cryptopp-CRYPTOPP_8_3_0/
-make
+make -j6
 make install
 cd $ROOTDIR
 
