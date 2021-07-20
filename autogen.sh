@@ -52,6 +52,9 @@ if [ -f "/usr/bin/yum" ]; then
 	# https://centos.pkgs.org/7/repoforge-x86_64/upx-3.91-1.el7.rf.x86_64.rpm.html
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
+	# for old archived ubuntu version, the apt update may fail, run below command before update
+	# sed -i s/archive.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
+	# sed -i s/security.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
 	apt install -y dos2unix g++ git wget make zlib1g-dev alien libldap2-dev

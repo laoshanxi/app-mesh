@@ -35,17 +35,14 @@ ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appc | grep boost | awk '{cmd="cp "$3" ${CMA
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep boost | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep ACE | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep cpprest | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep ssl | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep crypto | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libssl | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libcrypto | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep ldap | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep lber | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libsasl2 | awk '{cmd="cp "$3" ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/lib64";print(cmd);system(cmd)}'
+
 rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appc
 rm ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc
 
-# libnsl is depend by log4cpp
-fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools,curl' --vendor laoshanxi --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
+fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools,curl,openldap-devel' --vendor laoshanxi --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
   --before-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_pre_uninstall.sh --after-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_uninstall.sh -C ${CMAKE_CURRENT_BINARY_DIR}/bin
-fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools,curl' --vendor laoshanxi --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
+fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} -d 'psmisc,net-tools,curl,libldap2-dev' --vendor laoshanxi --description ${PROJECT_NAME} --post-install ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_install.sh \
   --before-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_pre_uninstall.sh --after-remove ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/rpm_post_uninstall.sh -C ${CMAKE_CURRENT_BINARY_DIR}/bin

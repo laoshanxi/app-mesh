@@ -42,13 +42,14 @@ Note:
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
 2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host)
 3. The installation will create `appmesh` Linux user for default app running
-4. On SUSE, use `sudo zypper install net-tools-deprecated` to install ifconfig tool before install App Mesh
-5. The installation media structure is like this:
+4. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
+5. For centos 8, install dependency: `sudo yum install libnsl`
+6. The installation media structure is like this:
 ```
     $ tree -L 1 /opt/appmesh/
     ├── appsvc.json                  ====> configuration file (can be modified manually or update from GUI)
     ├── security.json                ====> local JSON security configuration file
-    ├── bin                          ====> execute binaries dir
+    ├── bin                          ====> execution binaries dir
     ├── lib64
     ├── log                          ====> service log dir
     ├── script
