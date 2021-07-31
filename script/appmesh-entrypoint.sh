@@ -17,7 +17,7 @@ fi
 cd /opt/appmesh/work
 
 SCRIPT_PID="$$"
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/
 
 ##################################################################################
 # for docker entrypoint, this function can register docker container commands to

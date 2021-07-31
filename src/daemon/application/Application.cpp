@@ -453,14 +453,12 @@ pid_t Application::getpid() const
 	return m_pid;
 }
 
-std::string Application::getOutput(bool keepHistory, int index)
+std::string Application::getOutput(int &position, int index)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (m_process != nullptr && index == 0 && !keepHistory)
+	if (m_process != nullptr && index == 0)
 	{
-		// get from last FILE handler position
-		// return m_process->getOutputMsg();
-		return m_process->fetchOutputMsg();
+		return m_process->getOutputMsg(position);
 	}
 	auto file = m_stdoutFileQueue->getFileName(index);
 	// TODO: limit read file buffer size, or return stream

@@ -95,10 +95,17 @@ public:
 							 const std::string &stdoutFile = "", const std::string &stdinFileContent = "",
 							 const int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
 	/// <summary>
-	/// get all std out content from stdoutFile
+	/// Get all std out content from stdoutFile and set current position
 	/// </summary>
 	/// <returns></returns>
 	virtual const std::string fetchOutputMsg();
+
+	/// <summary>
+	/// get all std out content from stdoutFile with given position
+	/// </summary>
+	/// <returns></returns>
+	virtual const std::string getOutputMsg(int &position) const;
+
 	/// <summary>
 	/// get one line from stdoutFile
 	/// </summary>

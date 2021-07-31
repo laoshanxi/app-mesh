@@ -620,14 +620,12 @@ void ArgumentParser::processAppView()
 		{
 			// view app output
 			int index = 0;
-			bool keepHis = false;
 			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>() + "/output";
 			if (m_commandLineVariables.count("stdout_index"))
 			{
 				index = m_commandLineVariables["stdout_index"].as<int>();
 			}
 			std::map<std::string, std::string> query;
-			query[HTTP_QUERY_KEY_keep_history] = std::to_string(keepHis);
 			query[HTTP_QUERY_KEY_stdout_index] = std::to_string(index);
 			auto response = requestHttp(true, methods::GET, restPath, query);
 			std::cout << response.extract_utf8string(true).get();
@@ -830,14 +828,21 @@ void ArgumentParser::processAppRun()
 		auto appName = result[JSON_KEY_APP_name].as_string();
 		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
 		std::atomic<int> continueFailure(0);
+		int outputPosition = 0;
 		while (process_uuid.length() && continueFailure < 3)
 		{
 			// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
 			restPath = std::string("/appmesh/app/").append(appName).append("/run/output");
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
+			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 			response = requestHttp(false, methods::GET, restPath, query);
 			std::cout << response.extract_utf8string(true).get();
+			if (response.headers().has(HTTP_HEADER_KEY_output_pos))
+			{
+				outputPosition = std::atoi(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
+			}
+
 			// check continues failure
 			if (response.status_code() != http::status_codes::OK && !response.headers().has(HTTP_HEADER_KEY_exit_code))
 			{

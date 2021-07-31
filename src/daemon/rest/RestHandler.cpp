@@ -471,17 +471,17 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
-	const auto result = verifyToken(message);
-	const auto userName = std::get<0>(result);
-	const auto groupName = std::get<1>(result);
 	std::set<std::string> permissions;
-	if (userName.empty() && !Configuration::instance()->getJwtEnabled())
+	if (Configuration::instance()->getJwtEnabled())
 	{
-		permissions = Security::instance()->getAllPermissions();
+		const auto result = verifyToken(message);
+		const auto userName = std::get<0>(result);
+		const auto groupName = std::get<1>(result);
+		permissions = Security::instance()->getUserPermissions(userName, groupName);
 	}
 	else
 	{
-		permissions = Security::instance()->getUserPermissions(userName, groupName);
+		permissions = Security::instance()->getAllPermissions();
 	}
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
@@ -720,7 +720,11 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 		std::string uname = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_username)->second));
 		std::string passwd = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_password)->second));
 		std::string userGroup;
-		if (Security::instance()->verifyUserKey(uname, passwd, userGroup))
+		if (Configuration::instance()->getJwtEnabled() && !Security::instance()->verifyUserKey(uname, passwd, userGroup))
+		{
+			message.reply(status_codes::Unauthorized, convertText2Json("Incorrect user password"));
+		}
+		else
 		{
 			int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 7 days
 			if (message.m_headers.count(HTTP_HEADER_JWT_expire_seconds))
@@ -744,10 +748,6 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 			message.reply(status_codes::OK, result);
 			LOG_DBG << fname << "User <" << uname << "> login success";
 		}
-		else
-		{
-			message.reply(status_codes::Unauthorized, convertText2Json("Incorrect user password"));
-		}
 	}
 	else
 	{
@@ -763,9 +763,11 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 		permission = message.m_headers.find(HTTP_HEADER_JWT_auth_permission)->second;
 	}
 
-	// permission is empty meas just verify token
-	// with permission means token and permission check both
-	if (permissionCheck(message, permission))
+	if (!Configuration::instance()->getJwtEnabled())
+	{
+		message.reply(status_codes::OK, convertText2Json("JWT authentication not enabled"));
+	}
+	else if (permissionCheck(message, permission))
 	{
 		auto result = web::json::value::object();
 		result["user"] = web::json::value::string(getJwtUserName(message));
@@ -898,7 +900,7 @@ void RestHandler::apiRunAsyncOut(const HttpRequest &message)
 		web::http::http_response resp(status_codes::OK);
 		if (finished)
 		{
-			resp.set_status_code(status_codes::Created);
+			// resp.set_status_code(status_codes::Created);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
 			// remove temp app immediately
 			if (!appObj->isWorkingState())
@@ -922,14 +924,19 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_OUT_VIEW);
 
-	bool keepHis = getHttpQueryValue(message, HTTP_QUERY_KEY_keep_history, false, 0, 0);
+	int pos = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
 	int index = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
 
 	checkAppAccessPermission(message, appName, false);
 
-	auto output = Configuration::instance()->getApp(appName)->getOutput(keepHis, index);
+	auto output = Configuration::instance()->getApp(appName)->getOutput(pos, index);
 	LOG_DBG << fname; // << output;
-	message.reply(status_codes::OK, output);
+	web::http::http_response resp(status_codes::OK);
+	if (pos)
+	{
+		resp.headers().add(HTTP_HEADER_KEY_output_pos, pos);
+	}
+	message.reply(resp, output);
 }
 
 void RestHandler::apiAppsView(const HttpRequest &message)

@@ -23,7 +23,7 @@ PROG_WATCHDOG="appmesh-entrypoint.sh"
 PROGC="appc"
 PROG_PATH="/opt/appmesh" ## Not need, but sometimes helpful (if $PROG resides in /opt for example).
 PROG_ARGS=""
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/
 
 log() {
 	logger "[$(date)]""$1"

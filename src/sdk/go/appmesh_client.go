@@ -163,13 +163,9 @@ func (r *Client) GetApp(appName string) (*Application, error) {
 }
 
 // Get application stdout
-func (r *Client) GetAppOutput(appName string, keepHistory bool, stdoutIndex int) (string, error) {
+func (r *Client) GetAppOutput(appName string, stdoutPosition int, stdoutIndex int) (string, error) {
 	query := url.Values{}
-	keep := 0
-	if keepHistory {
-		keep = 1
-	}
-	query.Add("keep_history", strconv.Itoa(keep))
+	query.Add("stdout_position", strconv.Itoa(stdoutPosition))
 	query.Add("stdout_index", strconv.Itoa(stdoutIndex))
 	raw, code, _, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query)
 	if code == http.StatusOK {
@@ -241,8 +237,9 @@ func (r *Client) AddApp(app Application) (*Application, error) {
 }
 
 // Remote run application
-func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asyncRetentionSeconds int) error {
+func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asyncRetentionSeconds int) (int, error) {
 	appJson, err := json.Marshal(app)
+	exitCode := 0
 	if err == nil {
 		path := ""
 		if syncrize {
@@ -258,21 +255,28 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 		if code == http.StatusOK {
 			if syncrize {
 				fmt.Print(string(raw))
-				return nil
+				return exitCode, nil
 			} else {
 				resultApp := Application{}
 				json.Unmarshal(raw, &resultApp)
 				uuid := resultApp.Uuid
 				if uuid != nil && *uuid != "" {
-					query = url.Values{}
-					query.Add("process_uuid", *uuid)
+					outputPosition := 0
 					for {
+						query = url.Values{}
+						query.Add("process_uuid", *uuid)
+						query.Add("stdout_position", strconv.Itoa(outputPosition))
+
 						path = fmt.Sprintf("/appmesh/app/%s/run/output", *resultApp.Name)
 						output, returnCode, header, _ := r.get(path, query)
 						if len(output) > 0 {
 							fmt.Print(string(output))
 						}
-						if header.Get("exit_code") != "" {
+						if header.Get("Output-Position") != "" {
+							exitCode, err = strconv.Atoi(header.Get("Output-Position"))
+						}
+						if header.Get("Exit-Code") != "" {
+							exitCode, err = strconv.Atoi(header.Get("Exit-Code"))
 							break
 						}
 						if returnCode != http.StatusOK {
@@ -284,7 +288,7 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 			}
 		}
 	}
-	return nil
+	return exitCode, err
 }
 
 //////////////////////////////////////////////////////////////////////////

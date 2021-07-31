@@ -1,24 +1,25 @@
 #!/usr/bin/python3
+import asyncio  # pip3 install asyncio
 import json
 import sys
 import os
 import inspect
 
 # For installation env:
-# sys.path.append("/opt/appmesh/sdk/")
+sys.path.append("/opt/appmesh/sdk/")
 
 # For source code env:
 current_file_path = inspect.getfile(inspect.currentframe())
 current_dir_name = os.path.abspath(os.path.dirname(current_file_path))
 root_dir = os.path.dirname(os.path.dirname(current_dir_name))
-sys.path.append(os.path.join(root_dir, "src/sdk/python"))
+# sys.path.append(os.path.join(root_dir, "src/sdk/python"))
 
 import appmesh_client
 
 client = appmesh_client.AppMeshClient()
 # authentication
-client.login("admin", "Admin123")
-client.authentication(client.jwt_token)
+token = client.login("admin", "Admin123")
+client.authentication(token, "app-view")
 client.change_passwd("Admin123")
 print(json.dumps(client.get_permissions(), indent=2))
 # view application
@@ -70,3 +71,8 @@ print(json.dumps(client.remove_cloud_app("cloud"), indent=2))
 print(json.dumps(client.get_cloud_nodes(), indent=2))
 # run app
 print(client.run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False, max_exec_time=3))
+task1 = asyncio.ensure_future(client.asyncio_run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False, max_exec_time=3))
+task2 = asyncio.ensure_future(client.asyncio_run({"command": "ping www.163.com -w 3", "shell_mode": True}, True, max_exec_time=3))
+results, _ = asyncio.get_event_loop().run_until_complete(asyncio.wait([task1, task2]))
+for r in results:
+    print(r.result())

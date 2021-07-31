@@ -236,9 +236,6 @@ void RestBase::tranverseJsonTree(web::json::value &val)
 
 const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpRequest &message)
 {
-    if (!Configuration::instance()->getJwtEnabled())
-        return std::make_tuple("", "");
-
     const auto token = getJwtToken(message);
     const auto decoded_token = jwt::decode(token);
     if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
@@ -273,9 +270,6 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
 
 const std::string RestBase::getJwtUserName(const HttpRequest &message)
 {
-    if (!Configuration::instance()->getJwtEnabled())
-        return std::string();
-
     const auto token = getJwtToken(message);
     const auto decoded_token = jwt::decode(token);
     if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
@@ -293,26 +287,24 @@ bool RestBase::permissionCheck(const HttpRequest &message, const std::string &pe
 {
     const static char fname[] = "RestHandler::permissionCheck() ";
 
-    const auto result = verifyToken(message);
-    const auto userName = std::get<0>(result);
-    const auto groupName = std::get<1>(result);
-    if (permission.length() && userName.length() && Configuration::instance()->getJwtEnabled())
-    {
-        // check user role permission
-        if (Security::instance()->getUserPermissions(userName, groupName).count(permission))
-        {
-            LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
-            return true;
-        }
-        else
-        {
-            LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-            throw std::invalid_argument(Utility::stringFormat("No permission <%s> for user <%s>", permission.c_str(), userName.c_str()));
-        }
-    }
-    else
+    if (!Configuration::instance()->getJwtEnabled())
     {
         // JWT not enabled
         return true;
+    }
+
+    const auto result = verifyToken(message);
+    const auto userName = std::get<0>(result);
+    const auto groupName = std::get<1>(result);
+    // check user role permission
+    if (Security::instance()->getUserPermissions(userName, groupName).count(permission))
+    {
+        LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
+        return true;
+    }
+    else
+    {
+        LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
+        throw std::invalid_argument(Utility::stringFormat("No permission <%s> for user <%s>", permission.c_str(), userName.c_str()));
     }
 }

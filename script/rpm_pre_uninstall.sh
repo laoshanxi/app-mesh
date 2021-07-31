@@ -4,7 +4,7 @@
 ################################################################################
 
 INSTALL_DIR=/opt/appmesh
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$INSTALL_DIR/lib64
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/
 
 # backup configuration file to avoid overide when next installation
 if [ -f "$INSTALL_DIR/appsvc.json" ]; then

@@ -12,7 +12,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-Environment="LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/appmesh/lib64"
+Environment="LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/"
 # work dir will force set to /opt/appmesh/work in main.cpp
 WorkingDirectory=/opt/appmesh/work
 ExecStart=/opt/appmesh/bin/appsvc

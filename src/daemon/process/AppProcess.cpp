@@ -350,6 +350,30 @@ const std::string AppProcess::fetchOutputMsg()
 	return std::string();
 }
 
+const std::string AppProcess::getOutputMsg(int &position) const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
+	std::ifstream stdoutReadStream(m_stdoutFileName, ios::in);
+	if (stdoutReadStream.is_open() && stdoutReadStream.good())
+	{
+		if (position > stdoutReadStream.tellg())
+		{
+			throw std::invalid_argument("Input invalid output position");
+		}
+
+		std::stringstream buffer;
+		if (position)
+		{
+			stdoutReadStream.seekg(position);
+		}
+		buffer << stdoutReadStream.rdbuf();
+		position = stdoutReadStream.tellg();
+		stdoutReadStream.close();
+		return buffer.str();
+	}
+	return std::string();
+}
+
 const std::string AppProcess::fetchLine()
 {
 	char buffer[512] = {0};
