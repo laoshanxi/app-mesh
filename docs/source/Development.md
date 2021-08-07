@@ -9,7 +9,7 @@ POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ${MY-JWT-TOKEN}" 
 -|-|-|-
 GET | /appmesh/app/${APP-NAME} | | Get an application information
 GET | /appmesh/app/${APP-NAME}/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
-GET | /appmesh/app/${APP-NAME}/output?keep_history=1?stdout_index=0 | | Fetch app console output <br> Optional: <br> keep_history will not clear server side cache <br> stdout_index to identify the process start index
+GET | /appmesh/app/${APP-NAME}/output?stdout_position=128?stdout_index=0 | | Fetch app console output <br> Optional: <br> stdout_position is the position value return by header 'Output-Position' <br> stdout_index to identify the process start index
 POST| /appmesh/app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
 POST| /appmesh/app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
 GET | /appmesh/app/${APP-NAME}/run/output?process_uuid=uuidabc | | Get the stdout and stderr for the remote run
