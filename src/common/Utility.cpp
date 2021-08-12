@@ -385,6 +385,74 @@ std::string Utility::readFileCpp(const std::string &path)
 	return str;
 }
 
+std::string Utility::readFileCpp(const std::string &path, long *position, int maxSize, bool readLine)
+{
+	const static char fname[] = "Utility::readFileCPP() ";
+
+	if (!Utility::isFileExist(path))
+	{
+		LOG_WAR << fname << "File not exist :" << path;
+		return std::string();
+	}
+
+	std::ifstream stdoutReadStream(path, ios::in);
+	if (stdoutReadStream.is_open() && stdoutReadStream.good())
+	{
+		if (position && stdoutReadStream.seekg(0, std::ios_base::end) && *position > stdoutReadStream.tellg())
+		{
+			throw std::invalid_argument(Utility::stringFormat("Input invalid output position <%d>", *position));
+		}
+
+		// adjust read position
+		std::stringstream buffer;
+		if (position)
+		{
+			stdoutReadStream.seekg(*position);
+		}
+		else
+		{
+			stdoutReadStream.seekg(0, std::ios_base::beg);
+		}
+		// read to buffer
+		if (maxSize)
+		{
+			auto temp = make_shared_array<char>(maxSize);
+			memset(temp.get(), '\0', maxSize);
+			if (readLine)
+			{
+				stdoutReadStream.getline(temp.get(), maxSize);
+			}
+			else
+			{
+				stdoutReadStream.readsome(temp.get(), maxSize);
+			}
+			buffer << temp.get();
+		}
+		else
+		{
+			if (readLine)
+			{
+				std::string tmp;
+				std::getline(stdoutReadStream, tmp);
+				buffer << tmp;
+			}
+			else
+			{
+				buffer << stdoutReadStream.rdbuf();
+			}
+		}
+
+		if (position)
+		{
+			// read current position
+			*position = stdoutReadStream.tellg();
+		}
+		stdoutReadStream.close();
+		return buffer.str();
+	}
+	return std::string();
+}
+
 std::string Utility::createUUID()
 {
 	static bool initialized = false;

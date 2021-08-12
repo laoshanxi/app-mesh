@@ -60,8 +60,10 @@ void MonitoredProcess::runPipeReaderThread()
 		try
 		{
 			web::http::http_response resp(web::http::status_codes::OK);
-			const auto body = this->fetchOutputMsg();
+			long position = 0;
+			const auto body = this->getOutputMsg(&position);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->return_value());
+			resp.headers().add(HTTP_HEADER_KEY_output_pos, position);
 			std::unique_ptr<HttpRequest> response(static_cast<HttpRequest *>(m_httpRequest));
 			m_httpRequest = nullptr;
 			if (nullptr != response)

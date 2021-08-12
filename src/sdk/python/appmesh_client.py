@@ -148,7 +148,7 @@ class AppMeshClient:
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def get_app_output(self, app_name, output_position=0, stdout_index=0):
+    def get_app_output(self, app_name, output_position=0, stdout_index=0, stdout_maxsize=10240, process_uuid=""):
         """
         Get application stdout
 
@@ -161,10 +161,17 @@ class AppMeshClient:
             stdout_index : str
                 Index of history process stdout, 0 means current running process
                 The history number depend by 'stdout_cache_num' of a application
+            stdout_maxsize : int
+                Max buffer size
+            process_uuid : str
+                Used to lock a process
 
         Returns
         -------
-            Application stdout string
+            Success : bool
+            Output Text : str
+            Output Position : None or int
+            Exit Code : None or int
         """
         resp = self.__request_http(
             AppMeshClient.Method.GET,
@@ -172,9 +179,13 @@ class AppMeshClient:
             query={
                 "stdout_position": str(output_position),
                 "stdout_index": str(stdout_index),
+                "stdout_maxsize": str(stdout_maxsize),
+                "process_uuid": process_uuid,
             },
         )
-        return (resp.status_code == HTTPStatus.OK), resp.text
+        out_position = None if not resp.headers.__contains__("Output-Position") else int(resp.headers["Output-Position"])
+        exit_code = None if not resp.headers.__contains__("Exit-Code") else int(resp.headers["Exit-Code"])
+        return (resp.status_code == HTTPStatus.OK), resp.text, out_position, exit_code
 
     def get_app_health(self, app_name):
         """
@@ -756,18 +767,16 @@ class AppMeshClient:
                 output_position = 0
                 # print(resp.json())
                 while len(process_uuid) > 0:
-                    # /app/testapp/run/output?process_uuid=UUID
-                    path = "/appmesh/app/{0}/run/output".format(app_name)
-                    resp = self.__request_http(
-                        AppMeshClient.Method.GET, path=path, query={"process_uuid": process_uuid, "stdout_position": str(output_position)}
+                    success, output, position, exit_code = self.get_app_output(
+                        app_name=app_name, output_position=output_position, stdout_index=0, process_uuid=process_uuid
                     )
-                    if resp.text is not None:
+                    if output is not None:
                         print(resp.text, end="")
-                    if resp.headers.__contains__("Output-Position"):
-                        output_position = int(resp.headers.get("Output-Position"))
-                    if resp.headers.__contains__("Exit-Code"):
-                        exit_code = int(resp.headers.get("Exit-Code"))
-                    if resp.headers.__contains__("Exit-Code") or (resp.status_code != HTTPStatus.OK):
+                    if position is not None:
+                        output_position = position
+                    if exit_code is not None:
+                        exit_code = exit_code
+                    if (exit_code is not None) or (not success):
                         break
                     time.sleep(0.5)
         else:

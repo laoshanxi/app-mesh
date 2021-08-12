@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <tuple>
 
 #include <cpprest/json.h>
 
@@ -50,7 +51,6 @@ public:
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
-	std::string getAsyncRunOutput(const std::string &processUuid, int &exitCode, bool &finished) noexcept(false);
 
 	// health: 0-health, 1-unhealthy
 	void setHealth(bool health) { m_health = health; }
@@ -59,7 +59,7 @@ public:
 	pid_t getpid() const;
 
 	// get normal stdout for running app
-	std::string getOutput(int &position, int index = 0);
+	std::tuple<std::string, bool, int> getOutput(long &position, int maxSize, const std::string &processUuid = "", int index = 0);
 
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();

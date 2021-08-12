@@ -176,6 +176,7 @@ public:
 	// Read file to string
 	static std::string readFile(const std::string &path);
 	static std::string readFileCpp(const std::string &path);
+	static std::string readFileCpp(const std::string &path, long *position, int maxSize, bool readLine = false);
 
 	static std::string createUUID();
 
@@ -191,7 +192,8 @@ public:
 #define MAX_RUN_APP_TIMEOUT_SECONDS 3 * (60 * 60 * 24)	// run app max timeout 3 days
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
-#define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100 // 100M
+#define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M
+#define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
 #define DEFAULT_EXEC_USER "appmesh"
 #define SEPARATE_REST_APP_NAME "apprest"
 #define REST_ROOT_TEXT_MESSAGE "App Mesh"
@@ -329,6 +331,7 @@ public:
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"
+#define HTTP_QUERY_KEY_stdout_maxsize "stdout_maxsize"
 #define HTTP_QUERY_KEY_process_uuid "process_uuid"
 #define HTTP_QUERY_KEY_timeout "timeout"
 #define HTTP_QUERY_KEY_action_start "enable"

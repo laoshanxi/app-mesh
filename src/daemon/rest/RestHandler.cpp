@@ -43,7 +43,6 @@ constexpr auto REST_PATH_APP_DELETE = R"(/appmesh/app/([^/\*]+))";
 
 // 5. Operate Application
 constexpr auto REST_PATH_APP_RUN_ASYNC = "/appmesh/app/run";
-constexpr auto REST_PATH_APP_RUN_ASYNC_OUTPUT = R"(/appmesh/app/([^/\*]+)/run/output)";
 constexpr auto REST_PATH_APP_RUN_SYNC = "/appmesh/app/syncrun";
 
 // 6. File Management
@@ -103,7 +102,6 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 
 	// 5. Operate Application
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_ASYNC, std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_APP_RUN_ASYNC_OUTPUT, std::bind(&RestHandler::apiRunAsyncOut, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC, std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
 
 	// 6. File Management
@@ -257,12 +255,12 @@ void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std
 	}
 }
 
-int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, int defaultValue, int min, int max) const
+long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max) const
 {
 	const static char fname[] = "RestHandler::getHttpQueryValue() ";
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
-	int rt = defaultValue;
+	long rt = defaultValue;
 	if (querymap.find(U(key)) != querymap.end())
 	{
 		auto value = querymap.find(U(key))->second;
@@ -273,6 +271,20 @@ int RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string
 				rt = defaultValue;
 		}
 		// if rt less than zero, do not update here.
+	}
+	LOG_DBG << fname << key << "=" << rt;
+	return rt;
+}
+
+std::string RestHandler::getHttpQueryString(const HttpRequest &message, const std::string &key) const
+{
+	const static char fname[] = "RestHandler::getHttpQueryString() ";
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
+	std::string rt;
+	if (querymap.find(U(key)) != querymap.end())
+	{
+		rt = GET_STD_STRING(querymap.find(U(key))->second);
 	}
 	LOG_DBG << fname << key << "=" << rt;
 	return rt;
@@ -881,42 +893,6 @@ void RestHandler::apiRunSync(const HttpRequest &message)
 	appObj->runSyncrize(timeout, asyncRequest);
 }
 
-void RestHandler::apiRunAsyncOut(const HttpRequest &message)
-{
-	const static char fname[] = "RestHandler::apiAsyncRunOut() ";
-	permissionCheck(message, PERMISSION_KEY_run_app_async_output);
-	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
-	auto appName = regexSearch(path, REST_PATH_APP_RUN_ASYNC_OUTPUT);
-
-	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
-	if (querymap.find(U(HTTP_QUERY_KEY_process_uuid)) != querymap.end())
-	{
-		auto uuid = GET_STD_STRING(querymap.find(U(HTTP_QUERY_KEY_process_uuid))->second);
-
-		int exitCode = 0;
-		bool finished = false;
-		auto appObj = Configuration::instance()->getApp(appName);
-		std::string body = appObj->getAsyncRunOutput(uuid, exitCode, finished);
-		web::http::http_response resp(status_codes::OK);
-		if (finished)
-		{
-			// resp.set_status_code(status_codes::Created);
-			resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
-			// remove temp app immediately
-			if (!appObj->isWorkingState())
-				Configuration::instance()->removeApp(appName);
-		}
-
-		LOG_DBG << fname << "Use process uuid :" << uuid << " Exit-Code:" << exitCode;
-		message.reply(resp, body);
-	}
-	else
-	{
-		LOG_DBG << fname << "process_uuid is required for get run output";
-		throw std::invalid_argument("Query parameter 'process_uuid' is required to get run output");
-	}
-}
-
 void RestHandler::apiAppOutputView(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiAppOutputView() ";
@@ -924,17 +900,32 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_OUT_VIEW);
 
-	int pos = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
+	long pos = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
 	int index = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
+	int maxSize = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
+	std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
 
 	checkAppAccessPermission(message, appName, false);
 
-	auto output = Configuration::instance()->getApp(appName)->getOutput(pos, index);
+	auto appObj = Configuration::instance()->getApp(appName);
+	auto result = appObj->getOutput(pos, maxSize, processUuid, index);
+	auto output = std::get<0>(result);
+	auto finished = std::get<1>(result);
+	auto exitCode = std::get<2>(result);
 	LOG_DBG << fname; // << output;
 	web::http::http_response resp(status_codes::OK);
 	if (pos)
 	{
 		resp.headers().add(HTTP_HEADER_KEY_output_pos, pos);
+	}
+	if (finished)
+	{
+		resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
+		// remove temp app immediately
+		if (!appObj->isWorkingState())
+		{
+			Configuration::instance()->removeApp(appName);
+		}
 	}
 	message.reply(resp, output);
 }

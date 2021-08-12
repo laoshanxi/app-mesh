@@ -10,8 +10,7 @@
 #include "LinuxCgroup.h"
 
 DockerProcess::DockerProcess(const std::string &dockerImage, const std::string &appName)
-	: m_dockerImage(dockerImage),
-	  m_containerName(appName), m_lastFetchTime(std::chrono::system_clock::now())
+	: m_dockerImage(dockerImage), m_containerName(appName)
 {
 	const static char fname[] = "DockerProcess::DockerProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -68,7 +67,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	std::string dockerCommand = Utility::stringFormat("docker rm -f %s", containerName.c_str());
 	{
 		auto dockerProcess = std::make_shared<AppProcess>();
-		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr);
+		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
 		dockerProcess->wait();
 	}
 
@@ -81,7 +80,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		dockerProcess->wait();
 		dockerProcess->killgroup();
 		m_imagePullProc.reset();
-		auto imageSizeStr = Utility::stdStringTrim(dockerProcess->fetchLine());
+		auto imageSizeStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(0, 10240, true));
 		dockerProcess.reset();
 		if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 		{
@@ -173,7 +172,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		dockerProcess->killgroup();
 		if (dockerProcess->return_value() == 0)
 		{
-			const auto outmsg = dockerProcess->fetchLine();
+			const auto outmsg = dockerProcess->getOutputMsg(0, 10240, true);
 			containerId = Utility::stdStringTrim(outmsg);
 			startSuccess = (containerId.length() > 0);
 			if (!startSuccess)
@@ -183,7 +182,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		}
 		else
 		{
-			const auto outmsg = dockerProcess->fetchOutputMsg();
+			const auto outmsg = dockerProcess->getOutputMsg(0, 10240, false);
 			LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << outmsg;
 			startError(Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), outmsg.c_str()));
 		}
@@ -202,7 +201,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		dockerProcess->wait();
 		if (dockerProcess->return_value() == 0)
 		{
-			auto pidStr = Utility::stdStringTrim(dockerProcess->fetchLine());
+			auto pidStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(0, 10240, true));
 			if (Utility::isNumber(pidStr))
 			{
 				pid = std::stoi(pidStr);
@@ -228,7 +227,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		}
 		else
 		{
-			const auto output = dockerProcess->fetchOutputMsg();
+			const auto output = dockerProcess->getOutputMsg(0, 10240, false);
 			LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << output;
 			startError(Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), output.c_str()));
 		}
@@ -266,40 +265,28 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 {
 	const static char fname[] = "DockerProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";
-
 	return syncSpawnProcess(cmd, execUser, workDir, envMap, limit, stdoutFile);
 }
 
-const std::string DockerProcess::fetchOutputMsg()
+const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool readLine) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	if (m_containerId.length())
 	{
 		// --since: RFC3339 OR UNIX timestamp
-		auto secondsUTC = std::chrono::duration_cast<std::chrono::seconds>(m_lastFetchTime.time_since_epoch()).count();
+		auto secondsUTC = 0;
+		if (position)
+			secondsUTC = *position;
 		auto dockerCommand = Utility::stringFormat("docker logs --since %llu %s", secondsUTC, m_containerId.c_str());
-
 		auto dockerProcess = std::make_shared<AppProcess>();
 		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
 		dockerProcess->wait();
-		auto msg = dockerProcess->fetchOutputMsg();
-
-		m_lastFetchTime = std::chrono::system_clock::now();
+		auto msg = dockerProcess->getOutputMsg(0, maxSize, readLine);
+		if (position)
+		{
+			*position = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		}
 		return msg;
 	}
 	return std::string();
-}
-
-const std::string DockerProcess::fetchLine()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-	auto msg = fetchOutputMsg();
-	for (std::size_t i = 0; i < msg.length(); i++)
-	{
-		if (i > 0 && msg[i] == '\n')
-		{
-			return msg.substr(0, i - 1);
-		}
-	}
-	return msg;
 }

@@ -94,22 +94,12 @@ public:
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							 const std::string &stdoutFile = "", const std::string &stdinFileContent = "",
 							 const int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
-	/// <summary>
-	/// Get all std out content from stdoutFile and set current position
-	/// </summary>
-	/// <returns></returns>
-	virtual const std::string fetchOutputMsg();
 
 	/// <summary>
 	/// get all std out content from stdoutFile with given position
 	/// </summary>
 	/// <returns></returns>
-	virtual const std::string getOutputMsg(int &position) const;
-
-	/// <summary>
-	/// get one line from stdoutFile
-	/// </summary>
-	virtual const std::string fetchLine();
+	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) const;
 
 	/// <summary>
 	/// save last error
@@ -140,7 +130,6 @@ private:
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;
-	std::streampos m_stdoutReadStreamPos;
 
 	mutable std::recursive_mutex m_cpuMutex;
 	uint64_t m_lastProcCpuTime;

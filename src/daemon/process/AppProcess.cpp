@@ -16,7 +16,7 @@ constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
 AppProcess::AppProcess()
 	: m_delayKillTimerId(0), m_stdOutSizeTimerId(0), m_stdOutMaxSize(0),
-	  m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE), m_stdoutReadStreamPos(0),
+	  m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID())
 {
 	const static char fname[] = "AppProcess::AppProcess() ";
@@ -278,14 +278,14 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	CLOSE_ACE_HANDLER(m_stdinHandler);
 	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
 	m_stdoutFileName = stdoutFile;
-	if (stdoutFile.length() || stdinFileContent.length())
+	if (m_stdoutFileName.length() || stdinFileContent.length())
 	{
 		dummy = ACE_OS::open("/dev/null", O_RDWR);
 		m_stdoutHandler = m_stdinHandler = dummy;
-		if (stdoutFile.length())
+		if (m_stdoutFileName.length())
 		{
-			m_stdoutHandler = ACE_OS::open(stdoutFile.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 00664);
-			LOG_DBG << fname << "std_out: " << stdoutFile;
+			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 00664);
+			LOG_DBG << fname << "std_out: " << m_stdoutFileName;
 		}
 		if (stdinFileContent.length() && stdinFileContent != JSON_KEY_APP_CLOUD_APP)
 		{
@@ -331,67 +331,10 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	return pid;
 }
 
-const std::string AppProcess::fetchOutputMsg()
+const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool readLine) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	std::ifstream stdoutReadStream(m_stdoutFileName, ios::in);
-	if (stdoutReadStream.is_open() && stdoutReadStream.good())
-	{
-		std::stringstream buffer;
-		if (m_stdoutReadStreamPos)
-		{
-			stdoutReadStream.seekg(m_stdoutReadStreamPos);
-		}
-		buffer << stdoutReadStream.rdbuf();
-		m_stdoutReadStreamPos = stdoutReadStream.tellg();
-		stdoutReadStream.close();
-		return buffer.str();
-	}
-	return std::string();
-}
-
-const std::string AppProcess::getOutputMsg(int &position) const
-{
-	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	std::ifstream stdoutReadStream(m_stdoutFileName, ios::in);
-	if (stdoutReadStream.is_open() && stdoutReadStream.good())
-	{
-		if (position > stdoutReadStream.tellg())
-		{
-			throw std::invalid_argument("Input invalid output position");
-		}
-
-		std::stringstream buffer;
-		if (position)
-		{
-			stdoutReadStream.seekg(position);
-		}
-		buffer << stdoutReadStream.rdbuf();
-		position = stdoutReadStream.tellg();
-		stdoutReadStream.close();
-		return buffer.str();
-	}
-	return std::string();
-}
-
-const std::string AppProcess::fetchLine()
-{
-	char buffer[512] = {0};
-	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-
-	std::ifstream stdoutReadStream(m_stdoutFileName, ios::in);
-	if (stdoutReadStream.is_open() && stdoutReadStream.good())
-	{
-		if (m_stdoutReadStreamPos)
-		{
-			stdoutReadStream.seekg(m_stdoutReadStreamPos);
-		}
-		stdoutReadStream.getline(buffer, sizeof(buffer));
-		m_stdoutReadStreamPos = stdoutReadStream.tellg();
-		stdoutReadStream.close();
-		return buffer;
-	}
-	return std::string();
+	return Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine);
 }
 
 void AppProcess::startError(const std::string &err)

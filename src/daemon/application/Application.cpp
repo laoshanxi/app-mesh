@@ -148,6 +148,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_posixTimeZone = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_posix_timezone);
 	if (app->m_dockerImage.length() == 0 && app->m_commandLine.length() == 0)
 		throw std::invalid_argument("no command line provide");
+	if (app->m_dockerImage.length())	// docker app does not support reserve more output backup files
+		app->m_stdoutCacheNum = 0;
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
 	{
@@ -407,29 +409,6 @@ const std::string &Application::getCmdLine() const
 	return m_commandLine;
 }
 
-std::string Application::getAsyncRunOutput(const std::string &processUuid, int &exitCode, bool &finished)
-{
-	const static char fname[] = "Application::getAsyncRunOutput() ";
-	finished = false;
-	if (m_process != nullptr && m_process->getuuid() == processUuid)
-	{
-		auto output = m_process->fetchOutputMsg();
-		if (output.length() == 0 && !m_process->running())
-		{
-			exitCode = m_process->return_value();
-			finished = true;
-			LOG_DBG << fname << "process:" << processUuid << " finished with exit code: " << exitCode;
-			return std::string();
-		}
-
-		return output;
-	}
-	else
-	{
-		throw std::invalid_argument("No corresponding process running or the given process uuid is wrong");
-	}
-}
-
 void Application::checkAndUpdateHealth()
 {
 	if (m_healthCheckCmd.empty())
@@ -453,16 +432,33 @@ pid_t Application::getpid() const
 	return m_pid;
 }
 
-std::string Application::getOutput(int &position, int index)
+std::tuple<std::string, bool, int> Application::getOutput(long &position, int maxSize, const std::string &processUuid, int index)
 {
+	const static char fname[] = "Application::getOutput() ";
+
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	bool finished = false;
+	int exitCode = 0;
 	if (m_process != nullptr && index == 0)
 	{
-		return m_process->getOutputMsg(position);
+		if (processUuid.length() && m_process->getuuid() != processUuid)
+		{
+			throw std::invalid_argument("No corresponding process running or the given process uuid is wrong");
+		}
+		auto output = m_process->getOutputMsg(&position, maxSize);
+		if (m_process->getuuid() == processUuid)
+		{
+			if (output.length() == 0 && !m_process->running())
+			{
+				exitCode = m_process->return_value();
+				finished = true;
+				LOG_DBG << fname << "process:" << processUuid << " finished with exit code: " << exitCode;
+			}
+		}
+		return std::make_tuple(output, finished, exitCode);
 	}
 	auto file = m_stdoutFileQueue->getFileName(index);
-	// TODO: limit read file buffer size, or return stream
-	return Utility::readFile(file);
+	return std::make_tuple(Utility::readFileCpp(file, &position, maxSize), finished, exitCode);
 }
 
 void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)

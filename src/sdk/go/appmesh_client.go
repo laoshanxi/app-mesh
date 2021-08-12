@@ -163,18 +163,20 @@ func (r *Client) GetApp(appName string) (*Application, error) {
 }
 
 // Get application stdout
-func (r *Client) GetAppOutput(appName string, stdoutPosition int, stdoutIndex int) (string, error) {
+func (r *Client) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string) (bool, string, http.Header, error) {
 	query := url.Values{}
-	query.Add("stdout_position", strconv.Itoa(stdoutPosition))
+	query.Add("stdout_position", strconv.FormatInt(int64(stdoutPosition), 10))
 	query.Add("stdout_index", strconv.Itoa(stdoutIndex))
-	raw, code, _, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query)
+	query.Add("stdout_maxsize", strconv.Itoa(stdoutMaxsize))
+	query.Add("process_uuid", processUuid)
+	raw, code, header, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query)
 	if code == http.StatusOK {
-		return string(raw), err
+		return true, string(raw), header, err
 	} else {
 		if err != nil {
-			return string(raw), err
+			return false, string(raw), header, err
 		}
-		return string(raw), fmt.Errorf("HTTP error: %s", string(raw))
+		return false, string(raw), header, fmt.Errorf("HTTP error: %s", string(raw))
 	}
 }
 
@@ -261,25 +263,24 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 				json.Unmarshal(raw, &resultApp)
 				uuid := resultApp.Uuid
 				if uuid != nil && *uuid != "" {
-					outputPosition := 0
+					var outputPosition int64 = 0
 					for {
 						query = url.Values{}
 						query.Add("process_uuid", *uuid)
-						query.Add("stdout_position", strconv.Itoa(outputPosition))
+						query.Add("stdout_position", strconv.FormatInt(outputPosition, 10))
 
-						path = fmt.Sprintf("/appmesh/app/%s/run/output", *resultApp.Name)
-						output, returnCode, header, _ := r.get(path, query)
+						success, output, header, _ := r.GetAppOutput(*resultApp.Name, outputPosition, 0, 10240, *uuid)
 						if len(output) > 0 {
 							fmt.Print(string(output))
 						}
 						if header.Get("Output-Position") != "" {
-							exitCode, err = strconv.Atoi(header.Get("Output-Position"))
+							outputPosition, err = strconv.ParseInt(header.Get("Output-Position"), 10, 64)
 						}
 						if header.Get("Exit-Code") != "" {
 							exitCode, err = strconv.Atoi(header.Get("Exit-Code"))
 							break
 						}
-						if returnCode != http.StatusOK {
+						if !success {
 							break
 						}
 						time.Sleep(time.Microsecond * 500)

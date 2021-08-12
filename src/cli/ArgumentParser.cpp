@@ -828,11 +828,11 @@ void ArgumentParser::processAppRun()
 		auto appName = result[JSON_KEY_APP_name].as_string();
 		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
 		std::atomic<int> continueFailure(0);
-		int outputPosition = 0;
+		long outputPosition = 0;
 		while (process_uuid.length() && continueFailure < 3)
 		{
-			// /app/testapp/run/output?process_uuid=ABDJDD-DJKSJDKF
-			restPath = std::string("/appmesh/app/").append(appName).append("/run/output");
+			// /app/testapp/output?process_uuid=ABDJDD-DJKSJDKF
+			restPath = std::string("/appmesh/app/").append(appName).append("/output");
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
@@ -840,7 +840,7 @@ void ArgumentParser::processAppRun()
 			std::cout << response.extract_utf8string(true).get();
 			if (response.headers().has(HTTP_HEADER_KEY_output_pos))
 			{
-				outputPosition = std::atoi(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
+				outputPosition = std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
 			}
 
 			// check continues failure
@@ -961,6 +961,7 @@ void ArgumentParser::processExec()
 	jsonObj[JSON_KEY_APP_working_dir] = web::json::value::string(getcwd(buff, sizeof(buff)));
 
 	std::string process_uuid;
+	long outputPosition = 0;
 	bool currentRunFinished = true; // one submitted run finished
 	bool runOnce = false;			// if appc exec specify one cmd, then just run once
 	SIGINIT_BREAKING = false;		// if ctrl + c is triggered, stop run and start read input from stdin
@@ -998,6 +999,7 @@ void ArgumentParser::processExec()
 			while (std::getline(std::cin, input) && input.length() > 0)
 			{
 				process_uuid.clear();
+				outputPosition = 0;
 				jsonObj[JSON_KEY_APP_command] = web::json::value::string(input);
 				std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
 				std::string restPath = "/appmesh/app/run";
@@ -1022,10 +1024,14 @@ void ArgumentParser::processExec()
 		// Process Read
 		if (!process_uuid.empty())
 		{
-			std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_process_uuid, process_uuid}};
-			auto restPath = Utility::stringFormat("/appmesh/app/%s/run/output", APPC_EXEC_APP_NAME.c_str());
+			std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_process_uuid, process_uuid}, {HTTP_QUERY_KEY_stdout_position, std::to_string(outputPosition)}};
+			auto restPath = Utility::stringFormat("/appmesh/app/%s/output", APPC_EXEC_APP_NAME.c_str());
 			auto response = requestHttp(false, methods::GET, restPath, query);
 			std::cout << response.extract_utf8string(true).get();
+			if (response.headers().has(HTTP_HEADER_KEY_output_pos))
+			{
+				outputPosition = std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
+			}
 			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
 			{
 				currentRunFinished = true;

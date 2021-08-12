@@ -21,7 +21,8 @@ protected:
 	void close();
 
 	void checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite);
-	int getHttpQueryValue(const HttpRequest &message, const std::string &key, int defaultValue, int min, int max) const;
+	long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max) const;
+	std::string getHttpQueryString(const HttpRequest &message, const std::string &key) const;
 	std::string regexSearch(const std::string &value, const char *regex);
 
 	void apiUserLogin(const HttpRequest &message);
@@ -33,7 +34,6 @@ protected:
 	std::shared_ptr<Application> parseAndRegRunApp(const HttpRequest &message);
 	void apiRunAsync(const HttpRequest &message);
 	void apiRunSync(const HttpRequest &message);
-	void apiRunAsyncOut(const HttpRequest &message);
 
 	void apiCloudAppsView(const HttpRequest &message);
 	void apiCloudAppAdd(const HttpRequest &message);
