@@ -76,7 +76,6 @@ void HttpRequest::reply(http_response &response) const
 	{
 		response.headers().add("Access-Control-Allow-Origin", "*");
 		response.headers().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-		response.headers().add("Access-Control-Allow-Headers", "*");
 		http_request::reply(response).wait();
 	}
 }
@@ -91,7 +90,6 @@ void HttpRequest::reply(http_response &response, const std::string &body_data) c
 	{
 		response.headers().add("Access-Control-Allow-Origin", "*");
 		response.headers().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-		response.headers().add("Access-Control-Allow-Headers", "*");
 		http_request::reply(response).wait();
 	}
 }
