@@ -448,7 +448,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, int ma
 		auto output = m_process->getOutputMsg(&position, maxSize);
 		if (m_process->getuuid() == processUuid)
 		{
-			if (output.length() == 0 && !m_process->running())
+			if (!m_process->running())
 			{
 				exitCode = m_process->return_value();
 				finished = true;

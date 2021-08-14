@@ -136,7 +136,6 @@ private:
 	uint64_t m_lastSysCpuTime;
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
-	std::shared_ptr<int> m_returnCode;
 	std::string m_uuid;
 	std::string m_startError;
 };
