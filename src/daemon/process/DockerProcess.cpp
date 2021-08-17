@@ -75,7 +75,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	dockerCommand = Utility::stringFormat("docker inspect -f '{{.Size}}' %s", m_dockerImage.c_str());
 	{
 		auto dockerProcess = std::make_shared<AppProcess>();
-		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, "", 0);
+		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 		dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 		dockerProcess->wait();
 		dockerProcess->killgroup();
@@ -98,7 +98,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 				LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
 			}
 			m_imagePullProc = std::make_shared<AppProcess>();
-			m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile, "", 0);
+			m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 			m_imagePullProc->delayKill(pullTimeout, fname);
 			this->attach(m_imagePullProc->getpid());
 			return this->getpid();
@@ -196,7 +196,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	{
 		dockerCommand = Utility::stringFormat("docker inspect -f '{{.State.Pid}}' %s", containerId.c_str());
 		auto dockerProcess = std::make_shared<AppProcess>();
-		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, "", 0);
+		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 		dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 		dockerProcess->wait();
 		if (dockerProcess->return_value() == 0)
@@ -261,7 +261,7 @@ void DockerProcess::containerId(const std::string &containerId)
 	m_containerId = containerId;
 }
 
-int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const std::string &stdinFileContent, const int maxStdoutSize)
+int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const web::json::value &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "DockerProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";

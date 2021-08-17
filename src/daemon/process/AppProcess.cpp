@@ -204,7 +204,7 @@ std::tuple<std::string, std::string> AppProcess::extractCommand(const std::strin
 	return std::tuple<std::string, std::string>(params, cmdroot);
 }
 
-int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const std::string &stdinFileContent, const int maxStdoutSize)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const web::json::value &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
@@ -278,7 +278,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	CLOSE_ACE_HANDLER(m_stdinHandler);
 	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
 	m_stdoutFileName = stdoutFile;
-	if (m_stdoutFileName.length() || stdinFileContent.length())
+	if (m_stdoutFileName.length() || stdinFileContent != EMPTY_STR_JSON)
 	{
 		dummy = ACE_OS::open("/dev/null", O_RDWR);
 		m_stdoutHandler = m_stdinHandler = dummy;
@@ -287,11 +287,14 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 00664);
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName;
 		}
-		if (stdinFileContent.length() && stdinFileContent != JSON_KEY_APP_CLOUD_APP)
+		if (stdinFileContent != EMPTY_STR_JSON && stdinFileContent != CLOUD_STR_JSON)
 		{
 			m_stdinFileName = Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str());
 			std::ofstream inputFile(m_stdinFileName, std::ios::trunc);
-			inputFile << stdinFileContent;
+			if (stdinFileContent.is_string())
+				inputFile << stdinFileContent.as_string();
+			else
+				inputFile << stdinFileContent.serialize();
 			inputFile.close();
 			assert(Utility::isFileExist(m_stdinFileName));
 			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY, 00664);

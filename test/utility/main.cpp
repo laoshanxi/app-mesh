@@ -9,6 +9,7 @@
 #include <fstream>
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
+#include <cpprest/json.h>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/FileAppender.hh>
@@ -125,4 +126,27 @@ TEST_CASE("Utility Test", "[Utility]")
         }
     }
     // teardown
+}
+
+TEST_CASE("cpprestsdk", "[Utility]")
+{
+    init();
+
+    LOG_INF << "Utility::getSelfFullPath():" << Utility::getSelfFullPath();
+    LOG_INF << "Utility::getSelfDir():" << Utility::getSelfDir();
+
+    web::json::value a;
+    LOG_INF << "web::json::value: " << a;
+
+    REQUIRE(a.is_null());
+    REQUIRE(a.serialize() == "null");
+
+    a = web::json::value::string("abc");
+    REQUIRE_FALSE(a.serialize() == "abc");
+    REQUIRE(a.as_string() == "abc");
+    REQUIRE(a == web::json::value::string("abc"));
+
+    a = web::json::value::parse("{\"a\":2, \"b\":2}");
+    LOG_INF << "web::json::value: " << a;
+    LOG_INF << "web::json::value: " << a.serialize();
 }

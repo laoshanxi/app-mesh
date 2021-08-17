@@ -27,7 +27,7 @@ void HealthCheckTask::doHealthCheck()
 			if (app->available())
 			{
 				auto proc = std::make_shared<AppProcess>();
-				proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr);
+				proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0);
 				proc->delayKill(DEFAULT_HEALTH_CHECK_INTERVAL, fname);
 				ACE_exitcode exitCode;
 				proc->wait(&exitCode);

@@ -28,6 +28,7 @@ Application::Application()
 	LOG_DBG << fname << "Entered.";
 	m_regTime = std::chrono::system_clock::now();
 	m_posixTimeZone = DateTime::getLocalZoneUTCOffset();
+	m_metadata = EMPTY_STR_JSON;
 }
 
 Application::~Application()
@@ -92,7 +93,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 		app->m_owner = Security::instance()->getUserInfo(ownerStr);
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
-	app->m_metadata = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_metadata));
+	if (jsonObj.has_field(JSON_KEY_APP_metadata))
+		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	// TODO: consider i18n and  legal file name
 	app->m_stdoutFile = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
@@ -148,7 +150,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_posixTimeZone = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_posix_timezone);
 	if (app->m_dockerImage.length() == 0 && app->m_commandLine.length() == 0)
 		throw std::invalid_argument("no command line provide");
-	if (app->m_dockerImage.length())	// docker app does not support reserve more output backup files
+	if (app->m_dockerImage.length()) // docker app does not support reserve more output backup files
 		app->m_stdoutCacheNum = 0;
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
@@ -507,7 +509,7 @@ void Application::setVersion(int version)
 
 bool Application::isCloudApp() const
 {
-	return m_metadata == JSON_KEY_APP_CLOUD_APP;
+	return (m_metadata == CLOUD_STR_JSON);
 }
 
 web::json::value Application::AsJson(bool returnRuntimeInfo)
@@ -535,8 +537,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
 	if (m_stdoutCacheNum)
 		result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(static_cast<int>(m_stdoutCacheNum));
-	if (m_metadata.length())
-		result[JSON_KEY_APP_metadata] = web::json::value::string(GET_STRING_T(m_metadata));
+	if (m_metadata != EMPTY_STR_JSON)
+		result[JSON_KEY_APP_metadata] = m_metadata;
 	if (returnRuntimeInfo)
 	{
 		if (m_pid > 0)

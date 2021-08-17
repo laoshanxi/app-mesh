@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <cpprest/http_headers.h>
+#include <cpprest/json.h>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
 
@@ -120,6 +121,9 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define DEFAULT_WORKING_DIR "/opt/appmesh/work"
+
+const web::json::value EMPTY_STR_JSON = web::json::value::string("");
+const web::json::value CLOUD_STR_JSON = web::json::value::string("APPMESH-CLOUD-APP-FLAG");
 
 const char *GET_STATUS_STR(unsigned int status);
 
@@ -278,7 +282,6 @@ public:
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
-#define JSON_KEY_APP_CLOUD_APP "cloud-app"
 
 #define JSON_KEY_PERIOD_APP_keep_running "keep_running"
 

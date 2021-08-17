@@ -64,7 +64,6 @@ public:
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();
 	void setVersion(int version);
-	const std::string &getMetadata() const { return m_metadata; }
 	const std::string &getInitCmd() const { return m_commandLineInit; }
 	const std::shared_ptr<User> &getOwner() const { return m_owner; }
 	int getOwnerPermission() const { return m_ownerPermission; }
@@ -100,7 +99,7 @@ protected:
 	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;
-	std::string m_metadata;
+	web::json::value m_metadata;
 	bool m_shellApp;
 	int m_stdoutCacheNum;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
