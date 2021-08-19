@@ -34,6 +34,7 @@ if [ -f "/usr/bin/yum" ]; then
 	fi
 	yum install -y make gcc-c++ libtool openldap-devel
 	yum install -y dos2unix wget which
+	yum install -y golang
 
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -63,12 +64,15 @@ elif [ -f "/usr/bin/apt" ]; then
 	apt install -y ruby ruby-dev rubygems
 	# reduce binary size
 	apt install -y upx-ucl
+	apt install -y golang
 
 	# https://gemfury.com/help/could-not-verify-ssl-certificate/
 	apt install -y ca-certificates
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 fi
+
+go get github.com/valyala/fasthttp
 
 # check libssl in case of openssl_update.sh not executed
 if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then

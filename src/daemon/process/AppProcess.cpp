@@ -334,7 +334,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	return pid;
 }
 
-const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool readLine) const
+const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
 	return Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine);

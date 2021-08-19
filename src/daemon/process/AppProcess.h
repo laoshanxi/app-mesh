@@ -99,7 +99,7 @@ public:
 	/// get all std out content from stdoutFile with given position
 	/// </summary>
 	/// <returns></returns>
-	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) const;
+	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
 	/// <summary>
 	/// save last error

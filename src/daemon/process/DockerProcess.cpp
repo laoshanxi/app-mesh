@@ -1,12 +1,9 @@
-#include <thread>
 
-#include <ace/Barrier.h>
-
+#include "DockerProcess.h"
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
 #include "../../common/os/pstree.hpp"
 #include "../ResourceLimitation.h"
-#include "DockerProcess.h"
 #include "LinuxCgroup.h"
 
 DockerProcess::DockerProcess(const std::string &dockerImage, const std::string &appName)
@@ -88,20 +85,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 			startError(Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str()));
 
 			// pull docker image
-			int pullTimeout = 5 * 60; //set default image pull timeout to 5 minutes
-			if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]))
-			{
-				pullTimeout = std::stoi(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]);
-			}
-			else
-			{
-				LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
-			}
-			m_imagePullProc = std::make_shared<AppProcess>();
-			m_imagePullProc->spawnProcess("docker pull " + m_dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
-			m_imagePullProc->delayKill(pullTimeout, fname);
-			this->attach(m_imagePullProc->getpid());
-			return this->getpid();
+			return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
 		}
 	}
 
@@ -241,6 +225,26 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	return this->getpid();
 }
 
+int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMap, const std::string &dockerImage, const std::string &stdoutFile, const std::string &workDir)
+{
+	const static char fname[] = "DockerProcess::execPullDockerImage() ";
+
+	int pullTimeout = 5 * 60; //set default image pull timeout to 5 minutes
+	if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]))
+	{
+		pullTimeout = std::stoi(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]);
+	}
+	else
+	{
+		LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
+	}
+	m_imagePullProc = std::make_shared<AppProcess>();
+	m_imagePullProc->spawnProcess("docker pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
+	m_imagePullProc->delayKill(pullTimeout, fname);
+	this->attach(m_imagePullProc->getpid());
+	return this->getpid();
+}
+
 pid_t DockerProcess::getpid(void) const
 {
 	if (ACE_Process::getpid() == 1)
@@ -268,13 +272,13 @@ int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::stri
 	return syncSpawnProcess(cmd, execUser, workDir, envMap, limit, stdoutFile);
 }
 
-const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool readLine) const
+const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	if (m_containerId.length())
 	{
 		// --since: RFC3339 OR UNIX timestamp
-		auto secondsUTC = 0;
+		auto secondsUTC = 0L;
 		if (position)
 			secondsUTC = *position;
 		auto dockerCommand = Utility::stringFormat("docker logs --since %llu %s", secondsUTC, m_containerId.c_str());

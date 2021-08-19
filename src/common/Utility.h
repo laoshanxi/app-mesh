@@ -200,6 +200,7 @@ public:
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
 #define DEFAULT_EXEC_USER "appmesh"
 #define SEPARATE_REST_APP_NAME "apprest"
+#define SEPARATE_DOCKER_PROXY_APP_NAME "dockerrest"
 #define REST_ROOT_TEXT_MESSAGE "App Mesh"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
@@ -213,6 +214,7 @@ public:
 #define JSON_KEY_RestListenAddress "RestListenAddress"
 #define JSON_KEY_SeparateRestProcess "SeparateRestProcess"
 #define JSON_KEY_SeparateRestInternalPort "SeparateRestInternalPort"
+#define JSON_KEY_DockerProxyListenAddr "DockerProxyListenAddr"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
 #define JSON_KEY_ScheduleIntervalSeconds "ScheduleIntervalSeconds"

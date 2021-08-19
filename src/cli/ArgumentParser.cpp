@@ -362,7 +362,7 @@ void ArgumentParser::processAppAdd()
 		("stdout_cache_num,O", po::value<int>(), "stdout file cache number")
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
-		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker parameters)")
+		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)")
 		("sec_env", po::value<std::vector<std::string>>(), "security environment variables, encrypt in server side with application owner's cipher")
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')")
 		("cron", "indicate interval parameter use cron expression")
@@ -461,7 +461,16 @@ void ArgumentParser::processAppAdd()
 				}
 				metaData = Utility::readFile(fileName);
 			}
-			jsonObj[JSON_KEY_APP_metadata] = web::json::value::string(metaData);
+			try
+			{
+				// try to load as JSON first
+				jsonObj[JSON_KEY_APP_metadata] = web::json::value::parse(metaData);
+			}
+			catch (...)
+			{
+				// use text field in case of not JSON format
+				jsonObj[JSON_KEY_APP_metadata] = web::json::value::string(metaData);
+			}
 		}
 	}
 	if (m_commandLineVariables.count("docker_image"))

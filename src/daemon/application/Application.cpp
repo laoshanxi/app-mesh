@@ -11,6 +11,7 @@
 #include "../ResourceCollection.h"
 #include "../ResourceLimitation.h"
 #include "../process/AppProcess.h"
+#include "../process/DockerApiProcess.h"
 #include "../process/DockerProcess.h"
 #include "../process/MonitoredProcess.h"
 #include "../rest/PrometheusRest.h"
@@ -662,7 +663,14 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	// alloc process object
 	if (dockerImage.length())
 	{
-		process.reset(new DockerProcess(dockerImage, appName));
+		if (Configuration::instance()->getDockerProxyAddress().length() && m_envMap.count(ENV_APP_MANAGER_DOCKER_PARAMS) == 0)
+		{
+			process.reset(new DockerApiProcess(dockerImage, appName));
+		}
+		else
+		{
+			process.reset(new DockerProcess(dockerImage, appName));
+		}
 	}
 	else
 	{

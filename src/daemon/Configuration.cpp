@@ -239,6 +239,12 @@ std::string Configuration::getRestListenAddress()
 	return m_rest->m_restListenAddress;
 }
 
+std::string Configuration::getDockerProxyAddress() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_dockerProxyListenAddr;
+}
+
 int Configuration::getSeparateRestInternalPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -252,9 +258,9 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
 				 [this, &returnRuntimeInfo, &user](std::shared_ptr<Application> app)
 				 {
-					 return ((returnRuntimeInfo || app->isWorkingState()) &&								  // not persist temp application
-							 checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) && // access permission check
-							 (app->getName() != SEPARATE_REST_APP_NAME));									  // not expose rest process
+					 return ((returnRuntimeInfo || app->isWorkingState()) &&													// not persist temp application
+							 checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&					// access permission check
+							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_DOCKER_PROXY_APP_NAME)); // not expose rest process
 				 });
 
 	// Build Json
@@ -447,9 +453,9 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 	if (app->isWorkingState())
 	{
 		app->initMetrics(PrometheusRest::instance());
+		saveConfigToDisk();
 		// invoke immediately
 		app->invoke();
-		saveConfigToDisk();
 	}
 	app->dump();
 	return app;
@@ -560,6 +566,8 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_SeparateRestInternalPort))
 				SET_COMPARE(this->m_rest->m_separateRestInternalPort, newConfig->m_rest->m_separateRestInternalPort);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_DockerProxyListenAddr))
+				SET_COMPARE(this->m_rest->m_dockerProxyListenAddr, newConfig->m_rest->m_dockerProxyListenAddr);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
 				SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize))
@@ -774,6 +782,15 @@ bool Configuration::isAppExist(const std::string &appName)
 					   { return app->getName() == appName; });
 }
 
+const web::json::value Configuration::getDockerProxyAppJson() const
+{
+	web::json::value restApp;
+	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_DOCKER_PROXY_APP_NAME);
+	restApp[JSON_KEY_APP_command] = web::json::value::string(std::string("/opt/appmesh/bin/docker-rest -url ") + this->getDockerProxyAddress());
+	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
+	return restApp;
+}
+
 std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value &jsonValue)
 {
 	const static char fname[] = "Configuration::JsonRest::FromJson() ";
@@ -782,6 +799,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	rest->m_separateRestInternalPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_SeparateRestInternalPort);
+	rest->m_dockerProxyListenAddr = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DockerProxyListenAddr);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
@@ -816,6 +834,7 @@ web::json::value Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_restListenAddress);
 	result[JSON_KEY_SeparateRestInternalPort] = web::json::value::number(m_separateRestInternalPort);
+	result[JSON_KEY_DockerProxyListenAddr] = web::json::value::string(m_dockerProxyListenAddr);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
 

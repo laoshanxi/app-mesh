@@ -105,6 +105,12 @@ int main(int argc, char *argv[])
 			Configuration::instance()->addApp(RestTcpServer::instance()->getRestAppJson());
 		}
 
+		// register docker proxy
+		if (config->getDockerProxyAddress().length())
+		{
+			Configuration::instance()->addApp(config->getDockerProxyAppJson());
+		}
+
 		// HA attach process to App
 		auto snap = std::make_shared<Snapshot>();
 		auto apps = config->getApps();
@@ -154,7 +160,14 @@ int main(int argc, char *argv[])
 			for (const auto &app : allApp)
 			{
 				PerfLog perf1(app->getName());
-				app->invoke((void *)(&ptree));
+				try
+				{
+					app->invoke((void *)(&ptree));
+				}
+				catch (...)
+				{
+					LOG_ERR << "Recover from snapshot failed with error " << std::strerror(errno);
+				}
 			}
 
 			PersistManager::instance()->persistSnapshot();
