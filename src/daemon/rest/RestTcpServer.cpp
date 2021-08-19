@@ -116,7 +116,7 @@ const web::json::value RestTcpServer::getRestAppJson() const
     auto objEnvs = web::json::value::object();
     restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_REST_APP_NAME);
     //restApp[JSON_KEY_APP_owner] = web::json::value::string("admin");
-    restApp[JSON_KEY_APP_command] = web::json::value::string("/opt/appmesh/bin/apprest rest");
+    restApp[JSON_KEY_APP_command] = web::json::value::string("/opt/appmesh/bin/appsvc rest");
     restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
     // if do not define LD_LIBRARY_PATH here, appmesh will replace to none-appmesh environment
     objEnvs["LD_LIBRARY_PATH"] = web::json::value::string(ACE_OS::getenv("LD_LIBRARY_PATH"));

@@ -58,9 +58,6 @@ chmod +x $INSTALL_DIR/script/appc.sh
 if [ ! -d "$INSTALL_DIR/work" ]; then
 	mkdir $INSTALL_DIR/work
 fi
-if [ ! -f "$INSTALL_DIR/bin/apprest" ]; then
-	ln -s $INSTALL_DIR/bin/appsvc $INSTALL_DIR/bin/apprest
-fi
 
 # start service
 # systemctl enable appmesh

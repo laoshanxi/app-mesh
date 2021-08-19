@@ -23,7 +23,6 @@ rm -f /usr/share/bash-completion/completions/appc
 
 rm -rf ~/._appmesh_*
 rm -f /usr/bin/appc
-rm -f $INSTALL_DIR/apprest
 rm -f $INSTALL_DIR/work/appmesh.*
 #rm -rf $INSTALL_DIR
 
