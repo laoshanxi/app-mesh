@@ -1,5 +1,7 @@
 # Development
 
+![block-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/block_diagram.png)
+
 ## REST APIs
 
 Method | URI | Body/Headers | Desc

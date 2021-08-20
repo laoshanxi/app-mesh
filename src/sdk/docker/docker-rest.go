@@ -15,9 +15,16 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var localListenAddr = "127.0.0.1:6058"
-var dockerSocket = "/var/run/docker.sock"
-var parentProPid = os.Getppid()
+var (
+	localListenAddr = "127.0.0.1:6058"
+	dockerSocket    = "/var/run/docker.sock"
+	parentProPid    = os.Getppid()
+	proxyClient     = &fasthttp.HostClient{
+		Addr: dockerSocket,
+		Dial: func(addr string) (net.Conn, error) {
+			return net.Dial("unix", addr)
+		}}
+)
 
 // http handler function
 func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
@@ -25,61 +32,53 @@ func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
 	resp := &ctx.Response
 	preCheckRequest(req)
 
-	// TODO: This can move to global var for better enhancement
-	proxyClient := &fasthttp.HostClient{
-		Addr: dockerSocket,
-		Dial: func(addr string) (net.Conn, error) {
-			return net.Dial("unix", addr)
-		}}
-
 	// do request
 	if err := proxyClient.Do(req, resp); err != nil {
-		ctx.Logger().Printf("error when proxying the request: %s", err)
+		ctx.Logger().Printf("Error when proxying the request: %s", err)
+		proxyClient.CloseIdleConnections()
+
 		resp.SetStatusCode(fasthttp.StatusForbidden)
 		resp.SetBodyString(err.Error())
 	}
-	defer proxyClient.CloseIdleConnections()
 
 	postCheckResponse(resp)
 
-	log.Printf("Request: %v, %v", req, resp)
+	log.Printf("Request: \n %v \n %v \n", req, resp)
 }
 
 func preCheckRequest(req *fasthttp.Request) {
 	// do not proxy "Connection" header.
 	req.Header.Del("Connection")
 	// strip other unneeded headers.
-
 	// alter other request params before sending them to upstream host
 }
 
 func postCheckResponse(resp *fasthttp.Response) {
 	// do not proxy "Connection" header
 	resp.Header.Del("Connection")
-
 	// strip other unneeded headers
-
 	// alter other response data if needed
 }
 
 func monitorParentExit() {
-	// guard-1: prctl
+	// 1. Force process exit when parent was exited
 	_, _, errno := syscall.RawSyscall(uintptr(syscall.SYS_PRCTL), uintptr(syscall.PR_SET_PDEATHSIG), uintptr(syscall.SIGKILL), 0)
 	if errno != 0 {
 		log.Println("Failed to call prctl with error:", errno)
 	}
 
-	// guard-2: monitor parent process id
+	// 2. Period check parent exit and exit itself
+	oneSecond := time.Duration(1) * time.Second
 	for {
 		if os.Getppid() != parentProPid {
 			log.Println("Parent exit")
 			os.Exit(0)
 		}
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(oneSecond)
 	}
 }
 
-// Entrypoint
+// main
 func main() {
 	log.Println("Docker proxy")
 
