@@ -143,7 +143,7 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 		auto resp = this->requestHttp(
 			web::http::methods::GET,
 			Utility::stringFormat("/containers/%s/logs", this->containerId().c_str()),
-			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}},
+			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}, {"tail", readLine ? "1" : "all"}},
 			{}, nullptr);
 		if (position)
 		{
@@ -154,7 +154,7 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 	return std::string();
 }
 
-web::http::http_response DockerApiProcess::requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
+const web::http::http_response DockerApiProcess::requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
 {
 	const static char fname[] = "DockerApiProcess::requestHttp() ";
 

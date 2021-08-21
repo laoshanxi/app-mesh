@@ -160,7 +160,7 @@ public:
 	static std::string humanReadableDuration(const std::chrono::system_clock::time_point &time);
 	static std::string prettyJson(const std::string &jsonStr);
 	static std::string hash(const std::string &str);
-	static std::string stringFormat(const std::string &fmt_str, ...);
+	static std::string stringFormat(const std::string fmt_str, ...);
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
 

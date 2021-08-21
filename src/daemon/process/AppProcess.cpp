@@ -74,28 +74,32 @@ void AppProcess::killgroup(int timerId)
 		// killed before timer event, cancel timer event
 		this->cancelTimer(m_delayKillTimerId);
 	}
-	if (m_delayKillTimerId > 0 && m_delayKillTimerId == timerId)
-	{
-		// clean timer id, trigger-ing this time.
-		m_delayKillTimerId = 0;
-	}
 
-	if (this->running() && this->getpid() > 1)
 	{
-		ACE_OS::kill(-(this->getpid()), 9);
-		this->terminate();
-		if (this->wait() < 0 && errno != 10) // 10 is ECHILD:No child processes
+		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
+		if (m_delayKillTimerId > 0 && m_delayKillTimerId == timerId)
 		{
-			//avoid  zombie process (Interrupted system call)
-			LOG_WAR << fname << "Wait process <" << getpid() << "> to exit failed with error : " << std::strerror(errno);
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			if (this->wait() < 0)
+			// clean timer id, trigger-ing this time.
+			m_delayKillTimerId = 0;
+		}
+
+		if (this->running() && this->getpid() > 1)
+		{
+			ACE_OS::kill(-(this->getpid()), 9);
+			this->terminate();
+			if (this->wait() < 0 && errno != 10) // 10 is ECHILD:No child processes
 			{
-				LOG_ERR << fname << "Retry wait process <" << getpid() << "> failed with error : " << std::strerror(errno);
-			}
-			else
-			{
-				LOG_INF << fname << "Retry wait process <" << getpid() << "> success";
+				//avoid  zombie process (Interrupted system call)
+				LOG_WAR << fname << "Wait process <" << getpid() << "> to exit failed with error : " << std::strerror(errno);
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				if (this->wait() < 0)
+				{
+					LOG_ERR << fname << "Retry wait process <" << getpid() << "> failed with error : " << std::strerror(errno);
+				}
+				else
+				{
+					LOG_INF << fname << "Retry wait process <" << getpid() << "> success";
+				}
 			}
 		}
 	}
@@ -121,6 +125,7 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 {
 	const static char fname[] = "AppProcess::delayKill() ";
 
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	if (0 == m_delayKillTimerId)
 	{
 		m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
@@ -150,18 +155,21 @@ void AppProcess::checkStdout(int timerId)
 {
 	const static char fname[] = "AppProcess::checkStdout() ";
 
-	if (m_stdoutHandler != ACE_INVALID_HANDLE && m_stdOutMaxSize)
 	{
-		ACE_stat stat;
-		if (0 == ACE_OS::fstat(m_stdoutHandler, &stat))
+		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
+		if (m_stdoutHandler != ACE_INVALID_HANDLE && m_stdOutMaxSize)
 		{
-			if (stat.st_size > m_stdOutMaxSize)
+			ACE_stat stat;
+			if (0 == ACE_OS::fstat(m_stdoutHandler, &stat))
 			{
-				// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
-				auto backupFile = boost::filesystem::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
-				boost::filesystem::copy_file(boost::filesystem::path(m_stdoutFileName), backupFile, boost::filesystem::copy_option::overwrite_if_exists);
-				ACE_OS::ftruncate(m_stdoutHandler, 0);
-				LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
+				if (stat.st_size > m_stdOutMaxSize)
+				{
+					// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
+					auto backupFile = boost::filesystem::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+					boost::filesystem::copy_file(boost::filesystem::path(m_stdoutFileName), backupFile, boost::filesystem::copy_option::overwrite_if_exists);
+					ACE_OS::ftruncate(m_stdoutHandler, 0);
+					LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
+				}
 			}
 		}
 	}
