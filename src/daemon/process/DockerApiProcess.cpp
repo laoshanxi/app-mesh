@@ -36,11 +36,18 @@ void DockerApiProcess::killgroup(int timerId)
 	// clean docker container
 	if (!containerId.empty())
 	{
-		// DELETE /containers/{id}?force=true
-		auto resp = this->requestHttp(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
-		if (resp.status_code() >= web::http::status_codes::BadRequest)
+		try
 		{
-			LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp.extract_utf8string().get() << ">";
+			// DELETE /containers/{id}?force=true
+			auto resp = this->requestHttp(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
+			if (resp.status_code() >= web::http::status_codes::BadRequest)
+			{
+				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp.extract_utf8string().get() << ">";
+			}
+		}
+		catch(const std::exception& e)
+		{
+			LOG_WAR << fname << "Remove container failed <" << e.what() << ">";
 		}
 	}
 	// detach manually
