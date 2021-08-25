@@ -153,12 +153,20 @@ void Snapshot::persist()
 {
 	const static char fname[] = "Snapshot::persist() ";
 
-	std::ofstream ofs(SNAPSHOT_FILE_NAME, std::ios::trunc);
+	static auto tmpFile = std::string(SNAPSHOT_FILE_NAME) + "." + std::to_string(Utility::getThreadId());
+	std::ofstream ofs(tmpFile, std::ios::trunc);
 	if (ofs.is_open())
 	{
 		ofs << this->AsJson().serialize();
 		ofs.close();
-		LOG_DBG << fname << "write snapshot";
+		if (ACE_OS::rename(tmpFile.c_str(), SNAPSHOT_FILE_NAME) == 0)
+		{
+			LOG_DBG << fname << "write snapshot success";
+		}
+		else
+		{
+			LOG_ERR << fname << "Failed to create snapshot file <" << SNAPSHOT_FILE_NAME << ">, error :" << std::strerror(errno);
+		}
 	}
 	else
 	{

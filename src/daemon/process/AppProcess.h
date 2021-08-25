@@ -25,9 +25,29 @@ public:
 	AppProcess();
 	virtual ~AppProcess();
 
+	/// <summary>
+	/// Override function
+	/// </summary>
+	/// <param name=""></param>
+	/// <returns></returns>
 	virtual pid_t getpid(void) const;
+
+	/// <summary>
+	/// Process UUID
+	/// </summary>
+	/// <returns></returns>
 	const std::string getuuid() const;
+
+	/// <summary>
+	/// Get Docker container ID
+	/// </summary>
+	/// <returns></returns>
 	virtual std::string containerId() const { return std::string(); };
+
+	/// <summary>
+	/// Set Docker container ID
+	/// </summary>
+	/// <param name="containerId"></param>
 	virtual void containerId(const std::string &containerId){};
 
 	/// <summary>
@@ -46,6 +66,7 @@ public:
 	/// </summary>
 	/// <param name="pid">process id</param>
 	void attach(int pid);
+
 	/// <summary>
 	/// avoid de-constructure kill process
 	/// </summary>
@@ -73,6 +94,7 @@ public:
 	/// register check stdout timer
 	/// </summary>
 	void regCheckStdout();
+
 	/// <summary>
 	/// check stdout file size
 	/// </summary>
@@ -80,7 +102,7 @@ public:
 	void checkStdout(int timerId);
 
 	/// <summary>
-	/// start process
+	/// Start process
 	/// </summary>
 	/// <param name="cmd">full command line with arguments</param>
 	/// <param name="user">Linux user name</param>
@@ -89,6 +111,7 @@ public:
 	/// <param name="limit">cgroup limitation</param>
 	/// <param name="stdoutFile">std out output file</param>
 	/// <param name="stdinFileContent">std in string content</param>
+	/// <param name="maxStdoutSize">max stdout log file size, default is 100MB</param>
 	/// <returns>process id</returns>
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
@@ -124,6 +147,7 @@ private:
 	int m_delayKillTimerId;
 	int m_stdOutSizeTimerId;
 	off_t m_stdOutMaxSize;
+	mutable std::recursive_mutex m_processMutex; //checkStdout, delayKill, killgroup
 
 	ACE_HANDLE m_stdinHandler;
 	ACE_HANDLE m_stdoutHandler;
@@ -136,6 +160,6 @@ private:
 	uint64_t m_lastSysCpuTime;
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
-	std::string m_uuid;
+	const std::string m_uuid;
 	std::string m_startError;
 };

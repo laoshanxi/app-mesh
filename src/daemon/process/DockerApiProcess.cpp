@@ -36,11 +36,18 @@ void DockerApiProcess::killgroup(int timerId)
 	// clean docker container
 	if (!containerId.empty())
 	{
-		// DELETE /containers/{id}?force=true
-		auto resp = this->requestHttp(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
-		if (resp.status_code() >= web::http::status_codes::BadRequest)
+		try
 		{
-			LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp.extract_utf8string().get() << ">";
+			// DELETE /containers/{id}?force=true
+			auto resp = this->requestHttp(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
+			if (resp.status_code() >= web::http::status_codes::BadRequest)
+			{
+				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp.extract_utf8string().get() << ">";
+			}
+		}
+		catch(const std::exception& e)
+		{
+			LOG_WAR << fname << "Remove container failed <" << e.what() << ">";
 		}
 	}
 	// detach manually
@@ -143,7 +150,7 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 		auto resp = this->requestHttp(
 			web::http::methods::GET,
 			Utility::stringFormat("/containers/%s/logs", this->containerId().c_str()),
-			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}},
+			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}, {"tail", readLine ? "1" : "all"}},
 			{}, nullptr);
 		if (position)
 		{
@@ -154,7 +161,7 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 	return std::string();
 }
 
-web::http::http_response DockerApiProcess::requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
+const web::http::http_response DockerApiProcess::requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
 {
 	const static char fname[] = "DockerApiProcess::requestHttp() ";
 

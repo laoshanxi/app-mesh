@@ -511,8 +511,7 @@ void Configuration::saveConfigToDisk()
 			ofs.close();
 			if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
 			{
-				LOG_DBG << fname << '\n'
-						<< formatJson;
+				LOG_DBG << fname << formatJson;
 			}
 			else
 			{
