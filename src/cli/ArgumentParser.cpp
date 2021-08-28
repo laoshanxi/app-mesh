@@ -347,8 +347,6 @@ void ArgumentParser::processAppAdd()
 		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("shell_mode,S", "use shell mode, cmd can be more commands")
-		("init,I", po::value<std::string>(), "initial command line with arguments")
-		("fini,F", po::value<std::string>(), "fini command line with arguments")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (for docker container application)")
 		("workdir,w", po::value<std::string>(), "working directory")
@@ -435,10 +433,6 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("shell_mode"))
 		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
-	if (m_commandLineVariables.count("init"))
-		jsonObj[JSON_KEY_APP_init_command] = web::json::value::string(m_commandLineVariables["init"].as<std::string>());
-	if (m_commandLineVariables.count("fini"))
-		jsonObj[JSON_KEY_APP_fini_command] = web::json::value::string(m_commandLineVariables["fini"].as<std::string>());
 	if (m_commandLineVariables.count("health_check"))
 		jsonObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
 	if (m_commandLineVariables.count("perm"))

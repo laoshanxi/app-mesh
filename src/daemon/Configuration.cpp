@@ -9,9 +9,7 @@
 #include "ResourceCollection.h"
 #include "application/Application.h"
 #include "application/ApplicationCron.h"
-#include "application/ApplicationInitialize.h"
 #include "application/ApplicationPeriodRun.h"
-#include "application/ApplicationUnInitia.h"
 #include "consul/ConsulConnection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
@@ -711,23 +709,6 @@ void Configuration::registerPrometheus()
 std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jsonApp)
 {
 	std::shared_ptr<Application> app;
-
-	// check initial application
-	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_initial_application_only) && Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command)).length())
-	{
-		std::shared_ptr<ApplicationInitialize> initApp(new ApplicationInitialize());
-		app = initApp;
-		ApplicationInitialize::FromJson(initApp, jsonApp);
-		return app;
-	}
-	// check un-initial application
-	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_onetime_application_only))
-	{
-		std::shared_ptr<ApplicationUnInitia> oneApp(new ApplicationUnInitia());
-		app = oneApp;
-		ApplicationUnInitia::FromJson(oneApp, jsonApp);
-		return app;
-	}
 
 	if (HAS_JSON_FIELD(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds))
 	{

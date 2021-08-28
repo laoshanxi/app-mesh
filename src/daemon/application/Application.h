@@ -45,8 +45,6 @@ public:
 	virtual void enable();
 	void destroy();
 	void onSuicideEvent(int timerId = 0);
-	void onFinishEvent(int timerId = 0);
-	void onEndEvent(int timerId = 0);
 	void regSuicideTimer(int timeoutSeconds);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
@@ -64,7 +62,6 @@ public:
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
 	int getVersion();
 	void setVersion(int version);
-	const std::string &getInitCmd() const { return m_commandLineInit; }
 	const std::shared_ptr<User> &getOwner() const { return m_owner; }
 	int getOwnerPermission() const { return m_ownerPermission; }
 	bool isCloudApp() const;
@@ -82,7 +79,6 @@ protected:
 	bool isInDailyTimeRange();
 	virtual void checkAndUpdateHealth();
 	std::string runApp(int timeoutSeconds) noexcept(false);
-	void handleEndTimer();
 	const std::string getExecUser() const;
 	const std::string &getCmdLine() const;
 	std::map<std::string, std::string> getMergedEnvMap() const;
@@ -92,8 +88,6 @@ protected:
 	STATUS m_status;
 	std::string m_name;
 	std::string m_commandLine;
-	std::string m_commandLineInit;
-	std::string m_commandLineFini;
 	/// @brief TODO: when user is removed, need remove associated app, otherwise, app invoke will fail
 	std::shared_ptr<User> m_owner;
 	int m_ownerPermission;
@@ -112,7 +106,6 @@ protected:
 	std::chrono::system_clock::time_point m_startTimeValue;
 	std::chrono::system_clock::time_point m_endTimeValue;
 	std::chrono::system_clock::time_point m_regTime;
-	int m_endTimerId;
 	bool m_health;
 	std::string m_healthCheckCmd;
 	const std::string m_appId;

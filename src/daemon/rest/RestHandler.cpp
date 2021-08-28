@@ -990,16 +990,6 @@ void RestHandler::apiAppAdd(const HttpRequest &message)
 		throw std::invalid_argument("Empty json input");
 	}
 	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
-	auto initCmd = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_init_command);
-	if (initCmd.length())
-	{
-		// if same app not exist, do init
-		// if same app exist but init cmd changed, do init
-		if (!Configuration::instance()->isAppExist(appName) || initCmd != Configuration::instance()->getApp(appName)->getInitCmd())
-		{
-			jsonApp[JSON_KEY_APP_initial_application_only] = web::json::value::boolean(true);
-		}
-	}
 	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->getApp(appName)->isCloudApp())
 	{
 		throw std::invalid_argument("Cloud Application is not allowed to override");

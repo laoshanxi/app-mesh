@@ -52,9 +52,6 @@ GET | /appmesh/user/groups |  | Get all user groups
 GET | /appmesh/metrics | | Get Prometheus exporter metrics (this is not scrap url for prometheus server)
 GET | /appmesh/resources | | Get host resource usage
 
-## Application state machine
-<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/state_machine.jpg" width=400 height=400 align=center /></div>
-
 ## How to build App Mesh
 
 See document [Build App Mesh guidance](https://app-mesh.readthedocs.io/en/latest/Build.html).

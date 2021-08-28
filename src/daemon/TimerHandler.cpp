@@ -83,7 +83,8 @@ bool TimerHandler::cancelTimer(int &timerId)
 
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	auto it = std::find_if(m_timers.begin(), m_timers.end(),
-						   [timerId](std::map<const int *, std::shared_ptr<TimerEvent>>::value_type const &pair) {
+						   [timerId](std::map<const int *, std::shared_ptr<TimerEvent>>::value_type const &pair)
+						   {
 							   return timerId == *(pair.first);
 						   });
 	if (it != m_timers.end())

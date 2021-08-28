@@ -62,9 +62,7 @@ enum class STATUS : int
 {
 	DISABLED,
 	ENABLED,
-	NOTAVIALABLE, // used for temp app from RestHandler::apiRunParseApp and destroyed app
-	INITIALIZING,
-	UNINITIALIZED
+	NOTAVIALABLE // used for temp app from RestHandler::apiRunParseApp and destroyed app
 };
 
 /// <summary>

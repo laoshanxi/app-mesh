@@ -1,8 +1,8 @@
 #pragma once
 
-#include <string>
 #include <chrono>
 #include <memory>
+#include <string>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <cpprest/json.h>

@@ -21,7 +21,7 @@
 
 Application::Application()
 	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
-	  m_endTimerId(0), m_health(true), m_appId(Utility::createUUID()),
+	  m_health(true), m_appId(Utility::createUUID()),
 	  m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID),
 	  m_suicideTimerId(0), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0), m_starts(0)
 {
@@ -55,8 +55,6 @@ bool Application::operator==(const std::shared_ptr<Application> &app)
 	return (this->m_name == app->m_name &&
 			this->m_shellApp == app->m_shellApp &&
 			this->m_commandLine == app->m_commandLine &&
-			this->m_commandLineInit == app->m_commandLineInit &&
-			this->m_commandLineFini == app->m_commandLineFini &&
 			this->m_owner == app->m_owner &&
 			this->m_ownerPermission == app->m_ownerPermission &&
 			this->m_dockerImage == app->m_dockerImage &&
@@ -103,8 +101,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)
 		throw std::invalid_argument("command line length should less than 2048");
-	app->m_commandLineInit = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_init_command));
-	app->m_commandLineFini = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_fini_command));
 	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_health_check_cmd));
 	if (app->m_healthCheckCmd.length() >= MAX_COMMAND_LINE_LENGTH)
 		throw std::invalid_argument("health check length should less than 2048");
@@ -168,7 +164,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	{
 		if (app->m_startTimeValue > app->m_endTimeValue)
 			throw std::invalid_argument("end_time should greater than the start_time");
-		app->handleEndTimer();
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_daily_limitation))
 	{
@@ -290,7 +285,6 @@ void Application::disable()
 	}
 	if (m_process != nullptr)
 		m_process->killgroup();
-	this->cancelTimer(m_endTimerId);
 }
 
 void Application::enable()
@@ -303,7 +297,6 @@ void Application::enable()
 		m_status = STATUS::ENABLED;
 		//invokeNow(0);
 		//LOG_INF << fname << "Application <" << m_name << "> started.";
-		handleEndTimer();
 	}
 	else if (!isWorkingState())
 	{
@@ -365,32 +358,6 @@ std::string Application::runApp(int timeoutSeconds)
 	}
 
 	return m_process->getuuid();
-}
-
-void Application::handleEndTimer()
-{
-	const static char fname[] = "Application::handleEndTimer() ";
-
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (m_endTimerId == 0)
-	{
-		// reg finish timer
-		auto now = std::chrono::system_clock::now();
-		if (m_endTimeValue > now)
-		{
-			m_endTimerId = this->registerTimer(std::chrono::duration_cast<std::chrono::milliseconds>(m_endTimeValue - now).count(),
-											   0, std::bind(&Application::onEndEvent, this, std::placeholders::_1), fname);
-		}
-		else if (m_endTimeValue.time_since_epoch().count())
-		{
-			LOG_WAR << fname << "end time for <" << m_name << "> was set and expired, set application to end finished.";
-			onEndEvent();
-		}
-	}
-	else
-	{
-		LOG_WAR << fname << "end timer already exist for <" << m_name << ">.";
-	}
 }
 
 const std::string Application::getExecUser() const
@@ -527,10 +494,6 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[JSON_KEY_APP_shell_mode] = web::json::value::boolean(m_shellApp);
 	if (m_commandLine.length())
 		result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
-	if (m_commandLineInit.length())
-		result[GET_STRING_T(JSON_KEY_APP_init_command)] = web::json::value::string(GET_STRING_T(m_commandLineInit));
-	if (m_commandLineFini.length())
-		result[GET_STRING_T(JSON_KEY_APP_fini_command)] = web::json::value::string(GET_STRING_T(m_commandLineFini));
 	if (m_healthCheckCmd.length())
 		result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length())
@@ -726,10 +689,6 @@ void Application::destroy()
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		this->disable();
 		this->m_status = STATUS::NOTAVIALABLE;
-		if (m_commandLineFini.length())
-		{
-			this->registerTimer(0, 0, std::bind(&Application::onFinishEvent, this, std::placeholders::_1), __FUNCTION__);
-		}
 	}
 	this->cancelTimer(m_suicideTimerId);
 }
@@ -750,29 +709,6 @@ void Application::onSuicideEvent(int timerId)
 	{
 		LOG_ERR << fname << "unknown exception";
 	}
-}
-
-void Application::onFinishEvent(int timerId)
-{
-	auto jsonApp = this->AsJson(false);
-	jsonApp[JSON_KEY_APP_onetime_application_only] = web::json::value::boolean(true);
-	Configuration::instance()->addApp(jsonApp);
-}
-
-void Application::onEndEvent(int timerId)
-{
-	const static char fname[] = "Application::onEndEvent() ";
-
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-
-	// reset timer id
-	assert(m_endTimerId == timerId);
-	m_endTimerId = 0;
-
-	this->disable();
-	this->m_status = STATUS::NOTAVIALABLE;
-
-	LOG_DBG << fname << "Application <" << m_name << "> is end finished";
 }
 
 void Application::regSuicideTimer(int timeoutSeconds)
