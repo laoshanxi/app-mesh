@@ -7,6 +7,7 @@
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
+#include "../application/AppBehavior.h"
 #include "HttpRequest.h"
 #include "RestChildObject.h"
 #include "RestHandler.h"
@@ -114,13 +115,16 @@ const web::json::value RestTcpServer::getRestAppJson() const
 {
     web::json::value restApp;
     auto objEnvs = web::json::value::object();
+    auto objBehavior = web::json::value::object();
     restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_REST_APP_NAME);
     //restApp[JSON_KEY_APP_owner] = web::json::value::string("admin");
     restApp[JSON_KEY_APP_command] = web::json::value::string("/opt/appmesh/bin/appsvc rest");
     restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
     // if do not define LD_LIBRARY_PATH here, appmesh will replace to none-appmesh environment
     objEnvs["LD_LIBRARY_PATH"] = web::json::value::string(ACE_OS::getenv("LD_LIBRARY_PATH"));
+    objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
     restApp[JSON_KEY_APP_env] = objEnvs;
+    restApp[JSON_KEY_APP_behavior] = objBehavior;
     return restApp;
 }
 

@@ -106,6 +106,7 @@ void TimerHandler::runReactorEvent(ACE_Reactor *reactor)
 		// set the owner of the reactor to the identity of the thread that runs the event loop
 		reactor->owner(ACE_OS::thr_self());
 		reactor->run_reactor_event_loop();
+		LOG_ERR << fname << "run_reactor_event_loop exited";
 	}
 	LOG_WAR << fname << "Exit";
 }

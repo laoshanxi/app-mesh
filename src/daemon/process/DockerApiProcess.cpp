@@ -45,7 +45,7 @@ void DockerApiProcess::killgroup(int timerId)
 				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp.extract_utf8string().get() << ">";
 			}
 		}
-		catch(const std::exception& e)
+		catch (const std::exception &e)
 		{
 			LOG_WAR << fname << "Remove container failed <" << e.what() << ">";
 		}
@@ -69,6 +69,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	// GET /containers/json
 	// curl -g http://127.0.0.1:6058/containers/json'?filters={%22status%22:[%22exited%22]}'
 	// https://stackoverflow.com/questions/39976683/docker-api-can-t-apply-json-filters
+	/*
 	auto filters = web::json::value();
 	auto nameArray = web::json::value::array(1);
 	nameArray[0] = web::json::value::string(m_containerName);
@@ -87,6 +88,14 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	else
 	{
 		LOG_WAR << fname << "Get containers failed <" << resp.extract_utf8string().get() << ">";
+	}
+	*/
+	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerDelete
+	// DELETE /containers/{id}?force=true
+	auto resp = this->requestHttp(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}}, {}, nullptr);
+	if (resp.status_code() >= web::http::status_codes::BadRequest)
+	{
+		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp.extract_utf8string().get() << ">";
 	}
 
 	auto createBody = stdinFileContent;

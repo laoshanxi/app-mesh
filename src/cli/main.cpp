@@ -12,7 +12,7 @@ int main(int argc, const char *argv[])
 	try
 	{
 		Utility::initCpprestThreadPool(1);
-		ArgumentParser parser(argc, argv, DEFAULT_REST_LISTEN_PORT, true);
+		ArgumentParser parser(argc, argv);
 		parser.parse();
 	}
 	catch (const std::exception &e)

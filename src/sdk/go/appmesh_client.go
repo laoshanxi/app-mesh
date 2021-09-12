@@ -285,6 +285,7 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 						}
 						time.Sleep(time.Microsecond * 500)
 					}
+					r.RemoveApp(*resultApp.Name)
 				}
 			}
 		}
@@ -299,21 +300,21 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 // Application json
 type Application struct {
 	// main definition
-	Name           *string `json:"name"`
-	Command        *string `json:"command"`
-	InitCommand    *string `json:"init_command"`
-	FiniCommand    *string `json:"fini_command"`
-	HealthCheckCMD *string `json:"health_check_cmd"`
-	WorkingDir     *string `json:"working_dir"`
-	Status         *int    `json:"status"`
-	StartTime      *string `json:"start_time"`
-	EndTime        *string `json:"end_time"`
+	Name           *string   `json:"name"`
+	Command        *string   `json:"command"`
+	InitCommand    *string   `json:"init_command"`
+	FiniCommand    *string   `json:"fini_command"`
+	HealthCheckCMD *string   `json:"health_check_cmd"`
+	WorkingDir     *string   `json:"working_dir"`
+	Status         *int      `json:"status"`
+	StartTime      *string   `json:"start_time"`
+	EndTime        *string   `json:"end_time"`
+	Retention      *int      `json:"retention"`
+	Behavior       *Behavior `json:"behavior"`
 
 	// short running definition
 	StartIntervalSeconds *string `json:"start_interval_seconds"`
-	StartIntervalTimeout *string `json:"start_interval_timeout"`
 	Cron                 *bool   `json:"cron"`
-	KeepRunning          *bool   `json:"keep_running"`
 
 	// runtime attributes
 	Pid           *int    `json:"pid"`
@@ -344,6 +345,11 @@ type Application struct {
 	ResourceLimit *ResourceLimitation `json:"resource_limit"`
 	Env           *Environments       `json:"env"`
 	SecEnv        *Environments       `json:"sec_env"`
+}
+
+// Behavior
+type Behavior struct {
+	Exit string `json:"exit"`
 }
 
 // Daily time limitation

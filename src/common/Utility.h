@@ -121,8 +121,9 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define DEFAULT_WORKING_DIR "/opt/appmesh/work"
+#define DEFAULT_SERVER_URL "https://localhost:6060"
 
-const web::json::value EMPTY_STR_JSON = web::json::value::string("");
+const web::json::value EMPTY_STR_JSON = web::json::value::object();
 const web::json::value CLOUD_STR_JSON = web::json::value::string("APPMESH-CLOUD-APP-FLAG");
 
 const char *GET_STATUS_STR(unsigned int status);
@@ -164,7 +165,7 @@ public:
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
 
-	static void initLogging();
+	static void initLogging(std::string name);
 	static bool setLogLevel(const std::string &level);
 	static void initCpprestThreadPool(int threads);
 
@@ -270,6 +271,14 @@ public:
 #define JSON_KEY_APP_from_recover "from_recover"
 #define JSON_KEY_APP_starts "starts"
 
+#define JSON_KEY_APP_behavior "behavior"
+#define JSON_KEY_APP_behavior_exit "exit"
+#define JSON_KEY_APP_behavior_control "control"
+#define JSON_KEY_APP_behavior_restart "restart"
+#define JSON_KEY_APP_behavior_keepalive "keepalive"
+#define JSON_KEY_APP_behavior_standby "standby"
+#define JSON_KEY_APP_behavior_remove "remove"
+
 // runtime attr
 #define JSON_KEY_APP_pid "pid"
 #define JSON_KEY_APP_return "return"
@@ -281,13 +290,12 @@ public:
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
 
-#define JSON_KEY_PERIOD_APP_keep_running "keep_running"
-
+#define JSON_KEY_APP_retention "retention" // short running: extra timeout seconds, long running: remove behavior retention
 #define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
 #define JSON_KEY_SHORT_APP_start_time "start_time"
 #define JSON_KEY_SHORT_APP_end_time "end_time"
 #define JSON_KEY_SHORT_APP_cron_interval "cron" // start_interval_seconds will use cron format
-#define JSON_KEY_SHORT_APP_start_interval_timeout "start_interval_timeout"
+
 #define JSON_KEY_SHORT_APP_next_start_time "next_start_time"
 
 #define JSON_KEY_DAILY_LIMITATION_daily_start "daily_start"
@@ -339,7 +347,6 @@ public:
 #define HTTP_QUERY_KEY_action_stop "disable"
 #define HTTP_QUERY_KEY_loglevel "level"
 #define HTTP_QUERY_KEY_label_value "value"
-#define HTTP_QUERY_KEY_retention "retention" // for async run, the output hold timeout in sever side
 
 #define PERMISSION_KEY_view_app "app-view"
 #define PERMISSION_KEY_view_app_output "app-output-view"

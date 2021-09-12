@@ -5,6 +5,7 @@
 
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
+#include <ace/TP_Reactor.h>
 #include <boost/filesystem.hpp>
 
 #include "../common/PerfLog.h"
@@ -45,8 +46,18 @@ int main(int argc, char *argv[])
 
 		// umask 0022 => 644(rw,r,r)
 		ACE_OS::umask(0022);
+
+		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
+		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
+		// check reactor
+		if (ACE_Reactor::instance()->initialized() == 0)
+		{
+			LOG_ERR << "Init reactor failed with error " << std::strerror(errno);
+			return -1;
+		}
+
 		// init log
-		Utility::initLogging();
+		Utility::initLogging((argc == 2 && std::string("rest") == argv[1]) ? "rest" : "server");
 		LOG_INF << fname << "Entered working dir: " << boost::filesystem::current_path().string();
 
 		// catch SIGHUP for 'systemctl reload'
@@ -62,12 +73,12 @@ int main(int argc, char *argv[])
 		Configuration::instance(config);
 		auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
 
+		// init REST thread pool for [child REST server] and [parent REST client]
+		Utility::initCpprestThreadPool(Configuration::instance()->getThreadPoolSize());
 		// init child REST process, the REST process will accept HTTP request and
 		// forward to TCP rest service in order to avoid fork() impact REST handler
 		if (argc == 2 && std::string("rest") == argv[1])
 		{
-
-			Utility::initCpprestThreadPool(Configuration::instance()->getThreadPoolSize());
 			RestChildObject::instance(std::make_shared<RestChildObject>());
 			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());
 			return 0;
@@ -139,7 +150,7 @@ int main(int argc, char *argv[])
 		// start one thread for timer (application & process event & healthcheck & consul report event)
 		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 		// increase thread here
-		//auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// init consul
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
@@ -162,7 +173,7 @@ int main(int argc, char *argv[])
 				PerfLog perf1(app->getName());
 				try
 				{
-					app->invoke((void *)(&ptree));
+					app->execute((void *)(&ptree));
 				}
 				catch (...)
 				{

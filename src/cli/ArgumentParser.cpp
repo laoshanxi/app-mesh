@@ -18,26 +18,28 @@
 #include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
 
-#define OPTION_HOST_NAME ("host,b", po::value<std::string>()->default_value("localhost"), "host name or ip address")("port,B", po::value<int>(), "port number")
-#define COMMON_OPTIONS                                                                                                              \
-	OPTION_HOST_NAME("user,u", po::value<std::string>(), "Specifies the name of the user to connect to App Mesh for this command.") \
+#define OPTION_URL \
+	("url,b", po::value<std::string>()->default_value(DEFAULT_SERVER_URL), "server URL")
+
+#define COMMON_OPTIONS \
+	OPTION_URL         \
+	("user,u", po::value<std::string>(), "Specifies the name of the user to connect to App Mesh for this command.") \
 	("password,x", po::value<std::string>(), "Specifies the user password to connect to App Mesh for this command.")
+
 #define GET_USER_NAME_PASS                                                                \
 	if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
 	{                                                                                     \
 		m_username = m_commandLineVariables["user"].as<std::string>();                    \
 		m_userpwd = m_commandLineVariables["password"].as<std::string>();                 \
 	}
-#define HELP_ARG_CHECK_WITH_RETURN                                 \
-	GET_USER_NAME_PASS                                             \
-	if (m_commandLineVariables.count("help") > 0)                  \
-	{                                                              \
-		std::cout << desc << std::endl;                            \
-		return;                                                    \
-	}                                                              \
-	m_hostname = m_commandLineVariables["host"].as<std::string>(); \
-	if (m_commandLineVariables.count("port"))                      \
-		m_listenPort = m_commandLineVariables["port"].as<int>();
+#define HELP_ARG_CHECK_WITH_RETURN                \
+	GET_USER_NAME_PASS                            \
+	if (m_commandLineVariables.count("help") > 0) \
+	{                                             \
+		std::cout << desc << std::endl;           \
+		return;                                   \
+	}                                             \
+	m_url = m_commandLineVariables["url"].as<std::string>();
 
 // Each user should have its own token path
 const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmesh_";
@@ -51,8 +53,8 @@ static ArgumentParser *WORK_PARSE = nullptr;
 // command line help width
 static size_t BOOST_DESC_WIDTH = 130;
 
-ArgumentParser::ArgumentParser(int argc, const char *argv[], int listenPort, bool sslEnabled)
-	: m_argc(argc), m_argv(argv), m_listenPort(listenPort), m_sslEnabled(sslEnabled), m_tokenTimeoutSeconds(0)
+ArgumentParser::ArgumentParser(int argc, const char *argv[])
+	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(0)
 {
 	WORK_PARSE = this;
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
@@ -269,7 +271,7 @@ void ArgumentParser::processLogon()
 		std::cout << std::endl;
 	}
 
-	std::string tokenFile = std::string(m_tokenFilePrefix) + m_hostname;
+	std::string tokenFile = std::string(m_tokenFilePrefix) + web::uri(m_url).host();
 	// clear token first
 	if (Utility::isFileExist(tokenFile))
 	{
@@ -287,7 +289,7 @@ void ArgumentParser::processLogon()
 		{
 			ofs << m_jwtToken;
 			ofs.close();
-			std::cout << "User <" << m_username << "> logon to " << m_hostname << " success." << std::endl;
+			std::cout << "User <" << m_username << "> logon to " << m_url << " success." << std::endl;
 		}
 		else
 		{
@@ -300,25 +302,25 @@ void ArgumentParser::processLogoff()
 {
 	po::options_description desc("Logoff to App Mesh:", BOOST_DESC_WIDTH);
 	desc.add_options()
-		OPTION_HOST_NAME
+		OPTION_URL
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string tokenFile = std::string(m_tokenFilePrefix) + m_hostname;
+	std::string tokenFile = std::string(m_tokenFilePrefix) + m_url;
 	if (Utility::isFileExist(tokenFile))
 	{
 		std::ofstream ofs(tokenFile, std::ios::trunc);
 		ofs.close();
 	}
-	std::cout << "User logoff from " << m_hostname << " success." << std::endl;
+	std::cout << "User logoff from " << m_url << " success." << std::endl;
 }
 
 void ArgumentParser::processLoginfo()
 {
 	po::options_description desc("Print logon user:", BOOST_DESC_WIDTH);
 	desc.add_options()
-		OPTION_HOST_NAME
+		OPTION_URL
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -364,9 +366,9 @@ void ArgumentParser::processAppAdd()
 		("sec_env", po::value<std::vector<std::string>>(), "security environment variables, encrypt in server side with application owner's cipher")
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')")
 		("cron", "indicate interval parameter use cron expression")
-		("extra_time,q", po::value<std::string>(), "extra timeout for short running app,the value must less than interval  (default 0), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')")
+		("retention,q", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "exit behavior [restart,standby,keepalive,remove]")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing Time)")
-		("keep_running,k", "monitor and keep running for short running app in start interval")
 		("force,f", "force without confirm")
 		("stdin", "accept json from stdin")
 		("help,h", "Prints command usage to stdout and exits");
@@ -427,6 +429,23 @@ void ArgumentParser::processAppAdd()
 		}
 	}
 
+	if (m_commandLineVariables.count("exit"))
+	{
+		auto exit = m_commandLineVariables["exit"].as<std::string>();
+		if (exit == JSON_KEY_APP_behavior_standby ||
+			exit == JSON_KEY_APP_behavior_restart ||
+			exit == JSON_KEY_APP_behavior_keepalive ||
+			exit == JSON_KEY_APP_behavior_remove)
+		{
+			web::json::value jsonBehavior;
+			jsonBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(exit);
+			jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
+		}
+		else
+		{
+			throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", exit.c_str()));
+		}
+	}
 	if (m_commandLineVariables.count("name"))
 		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count("cmd"))
@@ -480,13 +499,11 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
 		if (m_commandLineVariables.count("cron"))
 			jsonObj[JSON_KEY_SHORT_APP_cron_interval] = web::json::value::boolean(true);
-	}	
-	if (m_commandLineVariables.count("extra_time"))
-		jsonObj[JSON_KEY_SHORT_APP_start_interval_timeout] = web::json::value::string(m_commandLineVariables["extra_time"].as<std::string>());
+	}
+	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
+		jsonObj[JSON_KEY_APP_retention] = web::json::value::string(m_commandLineVariables["retention"].as<std::string>());
 	if (m_commandLineVariables.count("stdout_cache_num"))
 		jsonObj[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_commandLineVariables["stdout_cache_num"].as<int>());
-	if (m_commandLineVariables.count("keep_running"))
-		jsonObj[JSON_KEY_PERIOD_APP_keep_running] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
 		web::json::value objDailyLimitation = web::json::value::object();
@@ -745,8 +762,8 @@ void ArgumentParser::processAppRun()
 		("metadata,g", po::value<std::string>(), "application metadata string/JSON (input for application, pass to application process stdin)")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "timeout seconds for the shell command run. More than 0 means output will be fetch and print immediately, less than 0 means output will be print when process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention time[seconds] for app cleanup after finished (default 10s), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -762,10 +779,17 @@ void ArgumentParser::processAppRun()
 		query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
 
 	web::json::value jsonObj;
+	web::json::value jsonBehavior;
+	jsonBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(JSON_KEY_APP_behavior_remove);
+	jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
 	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("cmd"))
 	{
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	}
+	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
+	{
+		jsonObj[JSON_KEY_APP_retention] = web::json::value::string(m_commandLineVariables["retention"].as<std::string>());
 	}
 	if (m_commandLineVariables.count(JSON_KEY_APP_name))
 	{
@@ -825,15 +849,14 @@ void ArgumentParser::processAppRun()
 		// /app/syncrun?timeout=5
 		std::string restPath = "/appmesh/app/syncrun";
 		auto response = requestHttp(true, methods::POST, restPath, query, &jsonObj);
-
 		std::cout << response.extract_utf8string(true).get();
 	}
 	else
 	{
 		// Use run and output
 		// /app/run?timeout=5
-		if (m_commandLineVariables.count(HTTP_QUERY_KEY_retention))
-			query[HTTP_QUERY_KEY_retention] = m_commandLineVariables[HTTP_QUERY_KEY_retention].as<std::string>();
+		if (m_commandLineVariables.count(HTTP_QUERY_KEY_timeout))
+			query[HTTP_QUERY_KEY_timeout] = m_commandLineVariables[HTTP_QUERY_KEY_timeout].as<std::string>();
 		std::string restPath = "/appmesh/app/run";
 		auto response = requestHttp(true, methods::POST, restPath, query, &jsonObj);
 		auto result = response.extract_json(true).get();
@@ -869,6 +892,13 @@ void ArgumentParser::processAppRun()
 			continueFailure = 0;
 			std::this_thread::sleep_for(std::chrono::milliseconds(800));
 		}
+		// delete
+		restPath = std::string("/appmesh/app/").append(appName);
+		response = requestHttp(false, methods::DEL, restPath);
+		if (response.status_code() != status_codes::OK)
+		{
+			std::cerr << response.extract_utf8string(true).get() << std::endl;
+		}
 	}
 }
 
@@ -881,11 +911,7 @@ void SIGINT_Handler(int signo)
 	{
 		//std::cout << "You pressed SIGINT(Ctrl+C) twice, session will exit." << std::endl;
 		auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
-		auto response = WORK_PARSE->requestHttp(false, methods::DEL, restPath);
-		if (response.status_code() != status_codes::OK)
-		{
-			std::cout << response.extract_utf8string(true).get() << std::endl;
-		}
+		WORK_PARSE->requestHttp(false, methods::DEL, restPath);
 		// if ctrl+c typed twice, just exit current
 		ACE_OS::_exit(SIGINT);
 	}
@@ -935,7 +961,7 @@ void ArgumentParser::unregSignal()
 
 void ArgumentParser::processExec()
 {
-	m_hostname = "localhost";
+	m_url = DEFAULT_SERVER_URL;
 	// Get current session id (bash pid)
 	auto bashId = getppid();
 	// Get appmesh user
@@ -966,11 +992,14 @@ void ArgumentParser::processExec()
 
 	char buff[MAX_COMMAND_LINE_LENGTH] = {0};
 	web::json::value jsonObj;
-	jsonObj[JSON_KEY_APP_name] = web::json::value::string(APPC_EXEC_APP_NAME); // option, if not provide, UUID will be created
+	jsonObj[JSON_KEY_APP_name] = web::json::value::string(APPC_EXEC_APP_NAME);
 	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	jsonObj[JSON_KEY_APP_command] = web::json::value::string(initialCmd);
 	jsonObj[JSON_KEY_APP_env] = objEnvs;
 	jsonObj[JSON_KEY_APP_working_dir] = web::json::value::string(getcwd(buff, sizeof(buff)));
+	web::json::value behavior;
+	behavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(JSON_KEY_APP_behavior_remove);
+	jsonObj[JSON_KEY_APP_behavior] = behavior;
 
 	std::string process_uuid;
 	long outputPosition = 0;
@@ -979,6 +1008,9 @@ void ArgumentParser::processExec()
 	SIGINIT_BREAKING = false;		// if ctrl + c is triggered, stop run and start read input from stdin
 	if (initialCmd.length())
 	{
+		// clean first
+		requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
+
 		runOnce = true;
 		std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
 		std::string restPath = "/appmesh/app/run";
@@ -991,7 +1023,7 @@ void ArgumentParser::processExec()
 		}
 		else
 		{
-			std::cout << response.extract_utf8string(true).get() << std::endl;
+			std::cout << parseOutputMessage(response) << std::endl;
 		}
 	}
 	else
@@ -1010,6 +1042,7 @@ void ArgumentParser::processExec()
 			std::string input;
 			while (std::getline(std::cin, input) && input.length() > 0)
 			{
+				requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 				process_uuid.clear();
 				outputPosition = 0;
 				jsonObj[JSON_KEY_APP_command] = web::json::value::string(input);
@@ -1024,7 +1057,7 @@ void ArgumentParser::processExec()
 				}
 				else
 				{
-					std::cout << response.extract_utf8string(true).get() << std::endl;
+					std::cout << parseOutputMessage(response) << std::endl;
 					currentRunFinished = true;
 					process_uuid.clear();
 				}
@@ -1137,13 +1170,11 @@ void ArgumentParser::processFileUpload()
 	header[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
 	header[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
 
-	auto protocol = m_sslEnabled ? U("https://") : U("http://");
-	auto restURL = (protocol + GET_STRING_T(m_hostname) + ":" + GET_STRING_T(std::to_string(m_listenPort)));
 	// Create http_client to send the request.
 	http_client_config config;
 	config.set_timeout(std::chrono::seconds(200));
 	config.set_validate_certificates(false);
-	http_client client(restURL, config);
+	http_client client(m_url, config);
 	std::string restPath = "/appmesh/file/upload";
 	auto request = createRequest(methods::POST, restPath, query, &header);
 	request.set_body(fileStream, length);
@@ -1407,16 +1438,11 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 
 http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body, std::map<std::string, std::string> *header)
 {
-	web::uri_builder baseUri;
-	baseUri.set_host(m_hostname);
-	baseUri.set_port(m_listenPort);
-	baseUri.set_scheme(m_sslEnabled ? U("https") : U("http"));
-
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
 	config.set_timeout(std::chrono::seconds(65));
 	config.set_validate_certificates(false);
-	web::http::client::http_client client(baseUri.to_uri(), config);
+	web::http::client::http_client client(m_url, config);
 	http_request request = createRequest(mtd, path, query, header);
 	if (body != nullptr)
 	{
@@ -1434,9 +1460,8 @@ http_request ArgumentParser::createRequest(const method &mtd, const std::string 
 {
 	// Build request URI and start the request.
 	uri_builder builder(GET_STRING_T(path));
-	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair) {
-		builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second));
-	});
+	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair)
+				  { builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second)); });
 
 	http_request request(mtd);
 	if (header)
@@ -1541,8 +1566,9 @@ std::string ArgumentParser::getOsUser()
 std::string ArgumentParser::readAuthenToken()
 {
 	std::string jwtToken;
-	std::string tokenFile = std::string(m_tokenFilePrefix) + m_hostname;
-	if (Utility::isFileExist(tokenFile) && m_hostname.length())
+	auto hostName = web::uri(m_url).host();
+	std::string tokenFile = std::string(m_tokenFilePrefix) + hostName;
+	if (Utility::isFileExist(tokenFile) && hostName.length())
 	{
 		std::ifstream ifs(tokenFile);
 		if (ifs.is_open())
@@ -1556,14 +1582,9 @@ std::string ArgumentParser::readAuthenToken()
 
 std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd)
 {
-	web::uri_builder baseUri;
-	baseUri.set_host(m_hostname);
-	baseUri.set_port(m_listenPort);
-	baseUri.set_scheme(m_sslEnabled ? U("https") : U("http"));
-
 	http_client_config config;
 	config.set_validate_certificates(false);
-	http_client client(baseUri.to_uri(), config);
+	http_client client(m_url, config);
 	http_request requestLogin(web::http::methods::POST);
 
 	requestLogin.set_request_uri("/appmesh/login");
@@ -1607,74 +1628,75 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	int index = 1;
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
-	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value &jsonObj) {
-		const char *slash = "-";
-		auto name = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
-		if (reduce)
-			name = reduceFunc(name, 12);
-		else if (name.length() >= 12)
-			name += " ";
-		std::cout << std::setw(3) << index++;
-		std::cout << std::setw(12) << name;
-		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
-		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
-		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);
-		std::cout << std::setw(8);
-		{
-			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
-				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);
-			else
-				std::cout << slash;
-		}
-		std::cout << std::setw(9);
-		{
-			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
-				std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_memory));
-			else
-				std::cout << slash;
-		}
-		std::cout << std::setw(5);
-		{
-			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cpu))
-			{
-				std::stringstream ss;
-				ss << (int)GET_JSON_DOUBLE_VALUE(jsonObj, JSON_KEY_APP_cpu);
-				std::cout << ss.str();
-			}
-			else
-				std::cout << slash;
-		}
-		std::cout << std::setw(7);
-		{
-			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_return))
-				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_return);
-			else
-				std::cout << slash;
-		}
-		std::cout << std::setw(7);
-		{
-			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
-				std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
-			else
-				std::cout << slash;
-		}
-		std::cout << std::setw(9);
-		{
-			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start))
-				std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start)));
-			else
-				std::cout << slash;
-		}
-		std::cout << std::setw(7);
-		{
-			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_starts))
-				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_starts);
-			else
-				std::cout << slash;
-		}
-		std::cout << GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
-		std::cout << std::endl;
-	});
+	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value &jsonObj)
+				  {
+					  const char *slash = "-";
+					  auto name = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
+					  if (reduce)
+						  name = reduceFunc(name, 12);
+					  else if (name.length() >= 12)
+						  name += " ";
+					  std::cout << std::setw(3) << index++;
+					  std::cout << std::setw(12) << name;
+					  std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
+					  std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
+					  std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);
+					  std::cout << std::setw(8);
+					  {
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
+							  std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);
+						  else
+							  std::cout << slash;
+					  }
+					  std::cout << std::setw(9);
+					  {
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
+							  std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_memory));
+						  else
+							  std::cout << slash;
+					  }
+					  std::cout << std::setw(5);
+					  {
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cpu))
+						  {
+							  std::stringstream ss;
+							  ss << (int)GET_JSON_DOUBLE_VALUE(jsonObj, JSON_KEY_APP_cpu);
+							  std::cout << ss.str();
+						  }
+						  else
+							  std::cout << slash;
+					  }
+					  std::cout << std::setw(7);
+					  {
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_return))
+							  std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_return);
+						  else
+							  std::cout << slash;
+					  }
+					  std::cout << std::setw(7);
+					  {
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
+							  std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
+						  else
+							  std::cout << slash;
+					  }
+					  std::cout << std::setw(9);
+					  {
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start))
+							  std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start)));
+						  else
+							  std::cout << slash;
+					  }
+					  std::cout << std::setw(7);
+					  {
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_starts))
+							  std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_starts);
+						  else
+							  std::cout << slash;
+					  }
+					  std::cout << GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
+					  std::cout << std::endl;
+				  });
 }
 
 void ArgumentParser::shiftCommandLineArgs(po::options_description &desc)

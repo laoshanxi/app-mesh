@@ -8,8 +8,6 @@
 #include "Label.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
-#include "application/ApplicationCron.h"
-#include "application/ApplicationPeriodRun.h"
 #include "consul/ConsulConnection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
@@ -254,10 +252,9 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
 	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
-				 [this, &returnRuntimeInfo, &user](std::shared_ptr<Application> app)
+				 [this, &user](std::shared_ptr<Application> app)
 				 {
-					 return ((returnRuntimeInfo || app->isWorkingState()) &&													// not persist temp application
-							 checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&					// access permission check
+					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&					// access permission check
 							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_DOCKER_PROXY_APP_NAME)); // not expose rest process
 				 });
 
@@ -448,12 +445,11 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 		addApp2Map(app);
 	}
 	// Write to disk
-	if (app->isWorkingState())
 	{
 		app->initMetrics(PrometheusRest::instance());
 		saveConfigToDisk();
 		// invoke immediately
-		app->invoke();
+		app->execute();
 	}
 	app->dump();
 	return app;
@@ -473,11 +469,9 @@ void Configuration::removeApp(const std::string &appName)
 			if ((*iterA)->getName() == appName)
 			{
 				app = (*iterA);
-				bool needPersist = app->isWorkingState();
 				iterA = m_apps.erase(iterA);
 				// Write to disk
-				if (needPersist)
-					saveConfigToDisk();
+				saveConfigToDisk();
 				LOG_DBG << fname << "removed " << appName;
 			}
 			else
@@ -708,39 +702,8 @@ void Configuration::registerPrometheus()
 
 std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jsonApp)
 {
-	std::shared_ptr<Application> app;
-
-	if (HAS_JSON_FIELD(jsonApp, JSON_KEY_SHORT_APP_start_interval_seconds))
-	{
-		// Consider as short running application
-		std::shared_ptr<ApplicationShortRun> shortApp;
-		if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_SHORT_APP_cron_interval) == true)
-		{
-			// TODO: cron app need support keep running
-			std::shared_ptr<ApplicationCron> tmpApp(new ApplicationCron());
-			ApplicationCron::FromJson(tmpApp, jsonApp);
-			shortApp = tmpApp;
-		}
-		else if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_PERIOD_APP_keep_running) == true)
-		{
-			std::shared_ptr<ApplicationPeriodRun> tmpApp(new ApplicationPeriodRun());
-			ApplicationPeriodRun::FromJson(tmpApp, jsonApp);
-			shortApp = tmpApp;
-		}
-		else
-		{
-			shortApp.reset(new ApplicationShortRun());
-			ApplicationShortRun::FromJson(shortApp, jsonApp);
-		}
-		shortApp->initTimer();
-		app = shortApp;
-	}
-	else
-	{
-		// Long running application
-		app.reset(new Application());
-		Application::FromJson(app, jsonApp);
-	}
+	auto app = std::make_shared<Application>();
+	Application::FromJson(app, jsonApp);
 	return app;
 }
 
@@ -768,6 +731,9 @@ const web::json::value Configuration::getDockerProxyAppJson() const
 	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_DOCKER_PROXY_APP_NAME);
 	restApp[JSON_KEY_APP_command] = web::json::value::string(std::string("/opt/appmesh/bin/docker-rest -url ") + this->getDockerProxyAddress());
 	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
+	auto objBehavior = web::json::value::object();
+	objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
+	restApp[JSON_KEY_APP_behavior] = objBehavior;
 	return restApp;
 }
 

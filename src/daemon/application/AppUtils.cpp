@@ -7,7 +7,7 @@
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 
-ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &workDir)
+ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
@@ -18,8 +18,6 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		shellFile << "#!/bin/sh" << std::endl;
 		shellFile << "#application <" << name << ">" << std::endl;
 		shellFile << "set -e" << std::endl;
-		if (workDir.length())
-			shellFile << "cd " << workDir << std::endl;
 		shellFile << cmd << std::endl;
 		shellFile.close();
 		os::chmod(fileName, 755);

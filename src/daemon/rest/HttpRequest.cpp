@@ -348,6 +348,6 @@ HttpRequestWithAppRef::~HttpRequestWithAppRef()
 {
 	if (m_app)
 	{
-		m_app->onSuicideEvent();
+		m_app->onSuicide();
 	}
 }

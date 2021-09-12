@@ -2,6 +2,7 @@
 #include <assert.h>
 
 #include "../../common/DateTime.h"
+#include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
 #include "../../common/os/process.hpp"
 #include "../../prom_exporter/counter.h"
@@ -17,13 +18,16 @@
 #include "../rest/PrometheusRest.h"
 #include "../security/Security.h"
 #include "../security/User.h"
+#include "AppTimer.h"
 #include "Application.h"
+
+ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(std::chrono::milliseconds(20));
 
 Application::Application()
 	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
-	  m_health(true), m_appId(Utility::createUUID()),
-	  m_version(0), m_process(new AppProcess()), m_pid(ACE_INVALID_PID),
-	  m_suicideTimerId(0), m_metricStartCount(nullptr), m_metricMemory(nullptr), m_continueFails(0), m_starts(0)
+	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false), m_nextStartTimerId(0),
+	  m_health(true), m_appId(Utility::createUUID()), m_version(0), m_pid(ACE_INVALID_PID),
+	  m_suicideTimerId(0), m_continueFails(0), m_starts(0)
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -64,12 +68,31 @@ bool Application::operator==(const std::shared_ptr<Application> &app)
 			this->m_healthCheckCmd == app->m_healthCheckCmd &&
 			this->m_startTime == app->m_startTime &&
 			this->m_endTime == app->m_endTime &&
+			this->m_startIntervalValue == app->m_startIntervalValue &&
+			this->m_bufferTimeValue == app->m_bufferTimeValue &&
+			this->m_startIntervalValueIsCronExpr == app->m_startIntervalValueIsCronExpr &&
 			this->m_status == app->m_status);
 }
 
-const std::string Application::getName() const
+const std::string &Application::getName() const
 {
 	return m_name;
+}
+
+void Application::health(bool health)
+{
+	m_health = health; // health: 0-health, 1-unhealthy
+}
+
+pid_t Application::getpid() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	return m_pid;
+}
+
+int Application::health() const
+{
+	return 1 - m_health;
 }
 
 bool Application::isEnabled() const
@@ -78,10 +101,36 @@ bool Application::isEnabled() const
 	return (m_status == STATUS::ENABLED);
 }
 
-bool Application::isWorkingState() const
+const std::string &Application::healthCheckCmd() const
+{
+	return m_healthCheckCmd;
+}
+
+const std::shared_ptr<User> &Application::getOwner() const
+{
+	return m_owner;
+}
+
+int Application::getOwnerPermission() const
+{
+	return m_ownerPermission;
+}
+
+bool Application::isCloudApp() const
+{
+	return (m_metadata == CLOUD_STR_JSON);
+}
+
+bool Application::available(const std::chrono::system_clock::time_point &now)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	return (m_status == STATUS::ENABLED || m_status == STATUS::DISABLED);
+	// check expired
+	if (m_endTimeValue != AppTimer::EPOCH_ZERO_TIME && now >= m_endTimeValue)
+	{
+		return false;
+	}
+	// check enable
+	return isEnabled();
 }
 
 void Application::FromJson(const std::shared_ptr<Application> &app, const web::json::value &jsonObj)
@@ -173,39 +222,86 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	{
 		app->m_regTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME));
 	}
+
+	// init error handling
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_behavior))
+	{
+		app->behaviorInit(jsonObj.at(JSON_KEY_APP_behavior));
+	}
+
+	// init m_timer
+	DurationParse duration;
+	app->m_bufferTimeValue = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_retention);
+	app->m_bufferTime = duration.parse(app->m_bufferTimeValue);
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds))
+	{
+		// short running
+		app->m_startIntervalValueIsCronExpr = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_SHORT_APP_cron_interval);
+		app->m_startIntervalValue = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds);
+		app->m_startInterval = duration.parse(app->m_startIntervalValue);
+		assert(app->m_startInterval > 0);
+
+		if (app->m_startIntervalValueIsCronExpr)
+		{
+			app->m_timer = std::make_shared<AppTimerCron>(app->m_startTimeValue, app->m_endTimeValue, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
+			app->m_timer->nextTime(); // test to validate cron expression
+		}
+		else
+		{
+			app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTimeValue, app->m_endTimeValue, app->m_dailyLimit, app->m_startInterval);
+		}
+	}
+	else
+	{
+		// long running
+		app->m_timer = std::make_shared<AppTimer>(app->m_startTimeValue, app->m_endTimeValue, app->m_dailyLimit);
+	}
 }
 
-void Application::refreshPid(void *ptree)
+void Application::refreshStatus(void *ptree)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	// Try to get return code.
+	// 1. Try to get return code.
 	if (m_process != nullptr)
 	{
 		if (m_process->running())
 		{
 			m_pid = m_process->getpid();
-			ACE_Time_Value tv;
-			tv.msec(10);
-			int ret = m_process->wait(tv);
-			if (ret > 0)
+			if (m_process->wait(m_waitTimeout) > 0)
 			{
 				m_return = std::make_shared<int>(m_process->return_value());
 				m_pid = ACE_INVALID_PID;
-				setLastError(Utility::stringFormat("exited with return code: %d, error: %s", *m_return, m_process->startError().c_str()));
+				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
+				onExit(*m_return);
 			}
 		}
 		else if (m_pid > 0)
 		{
 			m_return = std::make_shared<int>(m_process->return_value());
 			m_pid = ACE_INVALID_PID;
-			setLastError(Utility::stringFormat("exited with return code: %d, error: %s", *m_return, m_process->startError().c_str()));
+			setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
+			onExit(*m_return);
 		}
-		checkAndUpdateHealth();
 	}
 
+	// 2. Try to get return code from Buffer process again
+	//    If there have buffer process, current process is still running, so get return code from buffer process
+	if (m_bufferProcess && m_bufferProcess->running())
+	{
+		if (m_bufferProcess->wait(m_waitTimeout) > 0)
+		{
+			m_return = std::make_shared<int>(m_process->return_value());
+			setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
+		}
+	}
+
+	// health check
+	checkAndUpdateHealth();
+
+	// 4. Prometheus
 	if (PrometheusRest::instance()->collected())
 	{
-		if (m_metricMemory)
+		if (m_metricMemory && m_process)
 		{
 			auto usage = m_process->getProcUsage(ptree);
 			m_metricMemory->metric().Set(std::get<1>(usage));
@@ -225,6 +321,11 @@ bool Application::attach(int pid)
 	if (pid > 1)
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		if (m_process && m_process->running())
+		{
+			m_process->killgroup();
+		}
+		m_process.reset(new AppProcess());
 		m_process->attach(pid);
 		m_pid = m_process->getpid();
 		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
@@ -232,50 +333,106 @@ bool Application::attach(int pid)
 	return true;
 }
 
-void Application::invoke(void *ptree)
+void Application::execute(void *ptree)
 {
-	const static char fname[] = "Application::invoke() ";
-	if (isWorkingState())
+	const static char fname[] = "Application::execute() ";
+	auto now = std::chrono::system_clock::now();
+	bool startNextRun = false;
+	if (this->available(now))
 	{
+		auto inDailyRange = m_timer->isInDailyTimeRange(now);
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		if (this->available())
+		if (m_process && m_process->running() && !inDailyRange)
 		{
-			if (!m_process->running())
-			{
-				LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
-				m_process.reset(); //m_process->killgroup();
-				m_process = allocProcess(false, m_dockerImage, m_name);
-				m_procStartTime = std::chrono::system_clock::now();
-				m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
-				setLastError(m_process->startError());
-				if (m_metricStartCount)
-					m_metricStartCount->metric().Increment();
-			}
-		}
-		else if (m_process->running())
-		{
+			// check run status and kill for invalid runs
 			LOG_INF << fname << "Application <" << m_name << "> was not in start time";
 			m_process->killgroup();
+			m_pid = ACE_INVALID_PID;
 			setInvalidError();
+			m_nextLaunchTime = nullptr;
 		}
+		startNextRun = (m_nextLaunchTime == nullptr);
 	}
 	else
 	{
-		setLastError("not in working state");
+		// not available
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		if (m_process && m_process->running())
+		{
+			LOG_INF << fname << "Application <" << m_name << "> was not available";
+			m_process->killgroup();
+			m_pid = ACE_INVALID_PID;
+			setInvalidError();
+			m_nextLaunchTime = nullptr;
+		}
+		setLastError("not in working state or working time");
 	}
 
-	refreshPid(ptree);
+	if (startNextRun)
+	{
+		// trigger next time run without app lock
+		scheduleNext(now);
+	}
+
+	refreshStatus(ptree);
 }
 
-void Application::invokeNow(int timerId)
+void Application::spawn(int timerId)
 {
-	Application::invoke();
+	const static char fname[] = "Application::spawn() ";
+	if (this->isEnabled())
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+
+		// 1. clean old process
+		if (m_process && m_process->running())
+		{
+			if (m_bufferTime > 0)
+			{
+				// give some time for buffer process
+				m_bufferProcess = m_process;
+				m_bufferProcess->delayKill(m_bufferTime, __FUNCTION__);
+			}
+			else
+			{
+				// direct kill old process
+				m_process->killgroup();
+			}
+		}
+
+		// 2. start new process
+		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
+		m_process.reset();
+		m_process = allocProcess(false, m_dockerImage, m_name);
+		m_procStartTime = std::chrono::system_clock::now();
+		m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
+
+		// 3. post process
+		setLastError(m_process->startError());
+		if (m_metricStartCount)
+			m_metricStartCount->metric().Increment();
+	}
+
+	// 4. schedule next run for period run
+	if (this->isEnabled() && m_startInterval > 0)
+	{
+		// note: timer lock can hold app lock, app lock should not hold timer lock
+		this->scheduleNext(std::chrono::system_clock::now() + std::chrono::seconds(1));
+	}
 }
 
 void Application::disable()
 {
 	const static char fname[] = "Application::stop() ";
 
+	// clean old timer
+	int timerId = 0;
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		timerId = m_nextStartTimerId;
+		m_nextStartTimerId = 0;
+	}
+	this->cancelTimer(timerId);
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_status == STATUS::ENABLED)
 	{
@@ -283,24 +440,18 @@ void Application::disable()
 		m_return = nullptr;
 		LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	}
+	// kill process
 	if (m_process != nullptr)
 		m_process->killgroup();
+	m_nextLaunchTime = nullptr;
 }
 
 void Application::enable()
 {
-	const static char fname[] = "Application::start() ";
-
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_status == STATUS::DISABLED)
 	{
 		m_status = STATUS::ENABLED;
-		//invokeNow(0);
-		//LOG_INF << fname << "Application <" << m_name << "> started.";
-	}
-	else if (!isWorkingState())
-	{
-		LOG_WAR << fname << "Application <" << m_name << "> is <" << GET_STATUS_STR(static_cast<int>(m_status)) << "> status, enable is forbidden.";
 	}
 }
 
@@ -383,23 +534,10 @@ void Application::checkAndUpdateHealth()
 {
 	if (m_healthCheckCmd.empty())
 	{
-		// judged by pid
-		setHealth(m_pid > 0);
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		auto health = (getpid() > 0) || (m_return && 0 == *m_return);
+		this->health(health);
 	}
-	else
-	{
-		// if pid is zero, always un-health
-		if (m_pid <= 0)
-		{
-			setHealth(false);
-		}
-		// if pid is none-zero, this will depend on health-script
-	}
-}
-
-pid_t Application::getpid() const
-{
-	return m_pid;
 }
 
 std::tuple<std::string, bool, int> Application::getOutput(long &position, int maxSize, const std::string &processUuid, int index)
@@ -463,23 +601,6 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	}
 }
 
-int Application::getVersion()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	return m_version;
-}
-
-void Application::setVersion(int version)
-{
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	m_version = version;
-}
-
-bool Application::isCloudApp() const
-{
-	return (m_metadata == CLOUD_STR_JSON);
-}
-
 web::json::value Application::AsJson(bool returnRuntimeInfo)
 {
 	web::json::value result = web::json::value::object();
@@ -512,7 +633,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		}
 		if (m_return != nullptr)
 			result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
-		if (m_pid > 0)
+		if (m_process && m_process->running())
 		{
 			auto usage = m_process->getProcUsage();
 			if (std::get<0>(usage))
@@ -523,11 +644,11 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		}
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[JSON_KEY_APP_last_start] = web::json::value::string(DateTime::formatLocalTime(m_procStartTime));
-		if (!m_process->containerId().empty())
+		if (m_process && !m_process->containerId().empty())
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
 		}
-		result[JSON_KEY_APP_health] = web::json::value::number(this->getHealth());
+		result[JSON_KEY_APP_health] = web::json::value::number(this->health());
 		if (m_stdoutFileQueue->size())
 			result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_stdoutFileQueue->size());
 		//result[JSON_KEY_APP_id] = web::json::value::string(m_appId);
@@ -574,6 +695,21 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (err.length())
 		result[JSON_KEY_APP_last_error] = web::json::value::string(err);
 	result[JSON_KEY_APP_starts] = web::json::value::number(m_starts);
+
+	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
+	if (m_bufferTime)
+		result[JSON_KEY_APP_retention] = web::json::value::string(m_bufferTimeValue);
+	if (m_startIntervalValueIsCronExpr)
+		result[JSON_KEY_SHORT_APP_cron_interval] = web::json::value::boolean(m_startIntervalValueIsCronExpr);
+	if (m_startIntervalValue.length())
+	{
+		result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_startIntervalValue);
+		if (returnRuntimeInfo)
+		{
+			if (m_nextLaunchTime != nullptr)
+				result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(DateTime::formatLocalTime(*m_nextLaunchTime));
+		}
+	}
 	return result;
 }
 
@@ -604,6 +740,11 @@ void Application::dump()
 	LOG_DBG << fname << "m_starts:" << m_starts;
 	LOG_DBG << fname << "m_version:" << m_version;
 	LOG_DBG << fname << "m_lastError:" << getLastError();
+
+	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
+	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
+	if (m_nextLaunchTime != nullptr)
+		LOG_DBG << fname << "m_nextLaunchTime:" << DateTime::formatLocalTime(*m_nextLaunchTime);
 	if (m_dailyLimit != nullptr)
 		m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr)
@@ -620,7 +761,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
 		m_shellAppFile = nullptr;
-		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, m_workdir);
+		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine);
 	}
 
 	// alloc process object
@@ -649,53 +790,25 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	return process;
 }
 
-bool Application::isInDailyTimeRange()
-{
-	//const static char fname[] = "Application::isInDailyTimeRange() ";
-	auto nowClock = std::chrono::system_clock::now();
-	// 1. check date range
-	if (nowClock < m_startTimeValue)
-		return false;
-	if (m_endTimeValue.time_since_epoch().count() && nowClock > m_endTimeValue)
-		return false;
-	// 2. check daily range
-	if (m_dailyLimit != nullptr)
-	{
-		// Convert now to day time [%H:%M:%S], less than 24h
-		auto now = DateTime::pickDayTimeUtcDuration(nowClock);
-		//LOG_DBG << fname << "now: " << now << ", startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue;
-		if (m_dailyLimit->m_startTimeValue < m_dailyLimit->m_endTimeValue)
-		{
-			// Start less than End means valid range should between start and end.
-			return (now >= m_dailyLimit->m_startTimeValue && now < m_dailyLimit->m_endTimeValue);
-		}
-		else if (m_dailyLimit->m_startTimeValue > m_dailyLimit->m_endTimeValue)
-		{
-			// Start greater than End means from end to start is invalid range (the valid range is across 0:00).
-			return !(now >= m_dailyLimit->m_endTimeValue && now < m_dailyLimit->m_startTimeValue);
-		}
-	}
-	return true;
-}
-
-bool Application::available()
-{
-	return (this->isEnabled() && this->isInDailyTimeRange());
-}
-
 void Application::destroy()
 {
+	int suicideTimerId = 0;
+	int timerId = 0;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		this->disable();
 		this->m_status = STATUS::NOTAVIALABLE;
+		suicideTimerId = m_suicideTimerId;
+		timerId = m_nextStartTimerId;
+		m_suicideTimerId = m_nextStartTimerId = 0;
 	}
-	this->cancelTimer(m_suicideTimerId);
+	this->cancelTimer(suicideTimerId);
+	this->cancelTimer(timerId);
 }
 
-void Application::onSuicideEvent(int timerId)
+void Application::onSuicide(int timerId)
 {
-	const static char fname[] = "Application::onSuicideEvent() ";
+	const static char fname[] = "Application::onSuicide() ";
 
 	try
 	{
@@ -711,11 +824,75 @@ void Application::onSuicideEvent(int timerId)
 	}
 }
 
+void Application::onExit(int code)
+{
+	const static char fname[] = "Application::onExit() ";
+
+	switch (this->exitAction(code))
+	{
+	case AppBehavior::Action::STANDBY:
+		// do nothing
+		LOG_DBG << fname << "next action for <" << m_name << "> is STANDBY";
+		break;
+	case AppBehavior::Action::RESTART:
+		// do restart
+		this->scheduleNext();
+		LOG_DBG << fname << "next action for <" << m_name << "> is RESTART";
+		break;
+	case AppBehavior::Action::KEEPALIVE:
+		// keep alive always
+		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+		this->registerTimer(0, 0, std::bind(&Application::spawn, this, std::placeholders::_1), fname);
+		LOG_DBG << fname << "next action for <" << m_name << "> is KEEPALIVE";
+		break;
+	case AppBehavior::Action::REMOVE:
+		this->regSuicideTimer(m_bufferTime);
+		LOG_DBG << fname << "next action for <" << m_name << "> is REMOVE";
+		break;
+	default:
+		break;
+	}
+}
+
+void Application::scheduleNext(std::chrono::system_clock::time_point now)
+{
+	const static char fname[] = "Application::scheduleNext() ";
+
+	int timerId = 0;
+	auto next = m_timer->nextTime(now);
+
+	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
+	if (next != AppTimer::EPOCH_ZERO_TIME)
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(next);
+		LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(*m_nextLaunchTime);
+	}
+
+	// 2. register timer
+	if (next != AppTimer::EPOCH_ZERO_TIME)
+	{
+		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - now).count();
+		timerId = this->registerTimer(delay, 0, std::bind(&Application::spawn, this, std::placeholders::_1), fname);
+	}
+
+	// 3. update timer id
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	if (timerId > 0)
+	{
+		m_nextStartTimerId = timerId;
+		LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(*m_nextLaunchTime);
+	}
+	else
+	{
+		m_nextLaunchTime = nullptr;
+	}
+}
+
 void Application::regSuicideTimer(int timeoutSeconds)
 {
 	const static char fname[] = "Application::regSuicideTimer() ";
-
-	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicideEvent, this, std::placeholders::_1), fname);
+	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicide, this, std::placeholders::_1), fname);
 }
 
 void Application::setLastError(const std::string &error)

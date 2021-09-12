@@ -10,8 +10,10 @@
 #include <cpprest/json.h>
 
 #include "../TimerHandler.h"
+#include "AppBehavior.h"
 #include "AppUtils.h"
 
+class AppTimer;
 class User;
 class CounterMetric;
 class GaugeMetric;
@@ -22,49 +24,48 @@ class ResourceLimitation;
 //////////////////////////////////////////////////////////////////////////
 /// An Application is used to define and manage a process job.
 //////////////////////////////////////////////////////////////////////////
-class Application : public TimerHandler
+class Application : public TimerHandler, public AppBehavior
 {
 public:
 	Application();
 	virtual ~Application();
 	virtual bool operator==(const std::shared_ptr<Application> &app);
 
-	virtual bool available();
-	const std::string getName() const;
+	const std::string &getName() const;
+	pid_t getpid() const;
+	void health(bool health);
+	int health() const;
+	const std::string &healthCheckCmd() const;
+	const std::shared_ptr<User> &getOwner() const;
+	int getOwnerPermission() const;
+	bool isCloudApp() const;
+
+	bool available(const std::chrono::system_clock::time_point &now = std::chrono::system_clock::now());
 	bool isEnabled() const;
-	bool isWorkingState() const;
 	bool attach(int pid);
 
 	static void FromJson(const std::shared_ptr<Application> &app, const web::json::value &obj) noexcept(false);
 	virtual web::json::value AsJson(bool returnRuntimeInfo);
 	virtual void dump();
 
-	// Invoke by scheduler
-	virtual void invoke(void *ptree = nullptr);
-	virtual void disable();
-	virtual void enable();
+	// operate
+	void execute(void *ptree = nullptr);
+	void enable();
+	void disable();
 	void destroy();
-	void onSuicideEvent(int timerId = 0);
+
+	// behavior
+	void scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
+	void onSuicide(int timerId = 0);
+	void onExit(int code);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
-
-	// health: 0-health, 1-unhealthy
-	void setHealth(bool health) { m_health = health; }
-	const std::string &getHealthCheck() { return m_healthCheckCmd; }
-	int getHealth() { return 1 - m_health; }
-	pid_t getpid() const;
-
-	// get normal stdout for running app
 	std::tuple<std::string, bool, int> getOutput(long &position, int maxSize, const std::string &processUuid = "", int index = 0);
 
+	// prometheus
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
-	int getVersion();
-	void setVersion(int version);
-	const std::shared_ptr<User> &getOwner() const { return m_owner; }
-	int getOwnerPermission() const { return m_ownerPermission; }
-	bool isCloudApp() const;
 
 protected:
 	// error
@@ -72,12 +73,12 @@ protected:
 	const std::string getLastError() const noexcept(false);
 	void setInvalidError() noexcept(false);
 
-	// Invoke immediately
-	virtual void invokeNow(int timerId);
-	virtual void refreshPid(void *ptree = nullptr);
+	// process
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
-	bool isInDailyTimeRange();
-	virtual void checkAndUpdateHealth();
+	void spawn(int timerId);
+	void refreshStatus(void *ptree = nullptr);
+	void checkAndUpdateHealth();
+
 	std::string runApp(int timeoutSeconds) noexcept(false);
 	const std::string getExecUser() const;
 	const std::string &getCmdLine() const;
@@ -85,6 +86,9 @@ protected:
 
 protected:
 	mutable std::recursive_mutex m_appMutex;
+	std::shared_ptr<AppTimer> m_timer;
+	static ACE_Time_Value m_waitTimeout;
+
 	STATUS m_status;
 	std::string m_name;
 	std::string m_commandLine;
@@ -105,6 +109,17 @@ protected:
 	std::string m_endTime;
 	std::chrono::system_clock::time_point m_startTimeValue;
 	std::chrono::system_clock::time_point m_endTimeValue;
+
+	// short running
+	std::string m_startIntervalValue;
+	int m_startInterval;
+	std::string m_bufferTimeValue;
+	int m_bufferTime;
+	bool m_startIntervalValueIsCronExpr;
+	std::shared_ptr<AppProcess> m_bufferProcess;
+	std::unique_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
+	int m_nextStartTimerId;
+
 	std::chrono::system_clock::time_point m_regTime;
 	bool m_health;
 	std::string m_healthCheckCmd;

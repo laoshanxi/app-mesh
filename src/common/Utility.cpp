@@ -226,7 +226,7 @@ void Utility::removeFile(const std::string &path)
 	}
 }
 
-void Utility::initLogging()
+void Utility::initLogging(std::string name)
 {
 	using namespace log4cpp;
 
@@ -242,7 +242,7 @@ void Utility::initLogging()
 	//	boolappend = true, mode_t mode = 00644);
 	auto rollingFileAppender = new RollingFileAppender(
 		"rollingFileAppender",
-		logDir.append(ACE_DIRECTORY_SEPARATOR_STR).append(getBinaryName()).append(".log"),
+		logDir.append(ACE_DIRECTORY_SEPARATOR_STR).append(name).append(".log"),
 		20 * 1024 * 1024,
 		5,
 		true,
@@ -323,7 +323,7 @@ std::string Utility::readFile(const std::string &path)
 	FILE *file = ::fopen(path.c_str(), "r");
 	if (nullptr == file)
 	{
-		LOG_ERR << fname << "Get file <" << path << "> failed with error : " << std::strerror(errno);
+		LOG_WAR << fname << "Get file <" << path << "> failed with error : " << std::strerror(errno);
 		return "";
 	}
 

@@ -340,11 +340,16 @@ void RestHandler::apiAppDisable(const HttpRequest &message)
 
 void RestHandler::apiAppDelete(const HttpRequest &message)
 {
-	permissionCheck(message, PERMISSION_KEY_app_delete);
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
 	if (Configuration::instance()->getApp(appName)->isCloudApp())
 		throw std::invalid_argument("not allowed for cloud application");
+
+	if (Configuration::instance()->getApp(appName)->getOwner()->getName() != getJwtUserName(message))
+	{
+		// only check delete permission for none-self app
+		permissionCheck(message, PERMISSION_KEY_app_delete);
+	}
 
 	checkAppAccessPermission(message, appName, true);
 
@@ -715,7 +720,7 @@ void RestHandler::apiHealth(const HttpRequest &message)
 {
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_HEALTH);
-	auto health = Configuration::instance()->getApp(appName)->getHealth();
+	auto health = Configuration::instance()->getApp(appName)->health();
 	message.reply(status_codes::OK, std::to_string(health));
 }
 
@@ -808,19 +813,24 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 {
 	auto jsonApp = message.extractJson();
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
+	if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_retention))
+	{
+		// without default retention, application might be removed before get output
+		jsonApp[JSON_KEY_APP_retention] = web::json::value::string(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION));
+	}
 	if (clientProvideAppName.length())
 	{
 		if (Configuration::instance()->isAppExist(clientProvideAppName))
 		{
+			// require app read permission
+			checkAppAccessPermission(message, clientProvideAppName, false);
+			// get application profile
+			auto existApp = Configuration::instance()->getApp(clientProvideAppName)->AsJson(false);
 			// CASE: copy existing application and run
 			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 			{
 				throw std::invalid_argument(Utility::stringFormat("Should not specify command for an existing application <%s>", clientProvideAppName.c_str()));
 			}
-			// require app read permission
-			checkAppAccessPermission(message, clientProvideAppName, false);
-			// get application profile
-			auto existApp = Configuration::instance()->getApp(clientProvideAppName)->AsJson(false);
 			// for run an existing app, only support re-define metadata and env
 			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_metadata))
 			{
@@ -834,6 +844,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 			{
 				existApp[JSON_KEY_APP_sec_env] = jsonApp[JSON_KEY_APP_sec_env];
 			}
+			existApp[JSON_KEY_APP_retention] = jsonApp[JSON_KEY_APP_retention];
 			existApp[JSON_KEY_APP_name] = web::json::value::string(Utility::createUUID()); // specify a UUID app name
 			jsonApp = existApp;
 		}
@@ -865,7 +876,6 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
-	int retention = getHttpQueryValue(message, HTTP_QUERY_KEY_retention, DEFAULT_RUN_APP_RETENTION_DURATION, 1, 60 * 60 * 24);
 	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, 60 * 60 * 24);
 	auto appObj = parseAndRegRunApp(message);
 
@@ -876,9 +886,6 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
 	message.reply(status_codes::OK, result);
-
-	// clean reference from timer
-	appObj->regSuicideTimer(timeout + retention);
 }
 
 void RestHandler::apiRunSync(const HttpRequest &message)
@@ -921,11 +928,6 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	if (finished)
 	{
 		resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
-		// remove temp app immediately
-		if (!appObj->isWorkingState())
-		{
-			Configuration::instance()->removeApp(appName);
-		}
 	}
 	message.reply(resp, output);
 }

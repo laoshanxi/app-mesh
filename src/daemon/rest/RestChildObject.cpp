@@ -38,7 +38,6 @@ void RestChildObject::connectAndRun(int port)
         {
             LOG_INF << fname << "connected to TCP REST port: " << localAddress.get_port_number();
             RestHandler::open();
-            //auto timerThread = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
             while (auto response = readMessageBlock(m_socketStream))
             {
                 this->replyResponse(response);

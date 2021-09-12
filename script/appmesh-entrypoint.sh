@@ -42,11 +42,11 @@ pre_reg_app() {
 }
 
 while true; do
-	case "$(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v grep | grep -v appsvc.json | wc -w)" in
+	case "$(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v rest | grep -v grep | grep -v appsvc.json | wc -w)" in
 
 	0)
 		sleep 0.1
-		result=$(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v grep | grep -v appsvc.json | awk '{print $2}')
+		result=$(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v rest | grep -v grep | grep -v appsvc.json | awk '{print $2}')
 		if [ -z "$result" ]; then
 			nohup /opt/appmesh/bin/appsvc &
 			sleep 1
@@ -61,7 +61,7 @@ while true; do
 		sleep 2
 		;;
 	*) # Only kill the process that was not started by this script
-		for i in $(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v grep | grep -v appsvc.json | awk '{print $2}'); do
+		for i in $(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v rest | grep -v grep | grep -v appsvc.json | awk '{print $2}'); do
 			if [ $(pstree -Ap $SCRIPT_PID | grep $i | wc -w) -eq 0 ]; then
 				log "Killed duplicate App Mesh $i: $(date)"
 				kill -9 $i

@@ -21,7 +21,7 @@ class ACE_Sig_Action;
 class ArgumentParser
 {
 public:
-	explicit ArgumentParser(int argc, const char *argv[], int listenPort, bool sslEnabled);
+	explicit ArgumentParser(int argc, const char *argv[]);
 	virtual ~ArgumentParser();
 
 	void parse();
@@ -85,10 +85,8 @@ private:
 	std::vector<po::option> m_parsedOptions;
 	const int m_argc;
 	const char **m_argv;
-	int m_listenPort;
-	bool m_sslEnabled;
 	int m_tokenTimeoutSeconds;
-	std::string m_hostname;
+	std::string m_url;
 	std::string m_username;
 	std::string m_userpwd;
 	std::shared_ptr<ACE_Sig_Action> m_sigAction;

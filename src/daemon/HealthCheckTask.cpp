@@ -20,24 +20,24 @@ void HealthCheckTask::doHealthCheck()
 	auto apps = Configuration::instance()->getApps();
 	for (auto &app : apps)
 	{
-		if (app->getHealthCheck().empty())
+		if (app->healthCheckCmd().empty())
 			continue;
 		try
 		{
 			if (app->available())
 			{
 				auto proc = std::make_shared<AppProcess>();
-				proc->spawnProcess(app->getHealthCheck(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0);
+				proc->spawnProcess(app->healthCheckCmd(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0);
 				proc->delayKill(DEFAULT_HEALTH_CHECK_INTERVAL, fname);
 				ACE_exitcode exitCode;
 				proc->wait(&exitCode);
-				app->setHealth(0 == exitCode);
+				app->health(0 == exitCode);
 				// proc->killgroup();
-				LOG_DBG << fname << app->getName() << " health check :" << app->getHealthCheck() << ", return " << exitCode << ", last error: " << proc->startError();
+				LOG_DBG << fname << app->getName() << " health check :" << app->healthCheckCmd() << ", return " << exitCode << ", last error: " << proc->startError();
 			}
 			else
 			{
-				app->setHealth(false);
+				app->health(false);
 			}
 		}
 		catch (const std::exception &ex)

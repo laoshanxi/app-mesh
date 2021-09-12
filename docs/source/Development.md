@@ -13,7 +13,7 @@ GET | /appmesh/app/${APP-NAME} | | Get an application information
 GET | /appmesh/app/${APP-NAME}/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
 GET | /appmesh/app/${APP-NAME}/output?stdout_position=128&stdout_index=0&process_uuid=uuidabc&stdout_maxsize=1024 | | Get app output <br> Optional: <br> stdout_position is the position value return by header 'Output-Position' <br> stdout_index to identify the process start index <br> process_uuid used to explicit lock a process
 POST| /appmesh/app/syncrun?timeout=5 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run application and wait in REST server side, return output in body.
-POST| /appmesh/app/run?timeout=5?retention=8 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
+POST| /appmesh/app/run?timeout=5 | {"command": "/bin/sleep 60", "working_dir": "/tmp", "env": {} } | Remote run the defined application, return process_uuid and application name in body.
 GET | /appmesh/applications | | Get all application information
 PUT | /appmesh/app/${APP-NAME} | {"command": "/bin/sleep 60", "name": "ping", "exec_user": "root", "working_dir": "/tmp" } | Register a new application
 POST| /appmesh/app/${APP-NAME}/enable | | Enable an application

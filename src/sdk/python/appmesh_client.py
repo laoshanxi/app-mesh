@@ -779,6 +779,7 @@ class AppMeshClient:
                     if (exit_code is not None) or (not success):
                         break
                     time.sleep(0.5)
+                self.remove_app(app_name)
         else:
             print(resp.text)
         return exit_code

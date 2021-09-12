@@ -24,7 +24,7 @@ copyright = "2021, laoshanxi"
 author = "laoshanxi"
 
 # The full version, including alpha/beta/rc tags
-release = "1.9.4"
+release = "2.0.0"
 
 
 # -- General configuration ---------------------------------------------------
