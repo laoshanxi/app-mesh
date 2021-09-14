@@ -1006,11 +1006,10 @@ void ArgumentParser::processExec()
 	bool currentRunFinished = true; // one submitted run finished
 	bool runOnce = false;			// if appc exec specify one cmd, then just run once
 	SIGINIT_BREAKING = false;		// if ctrl + c is triggered, stop run and start read input from stdin
+	// clean first
+	requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	if (initialCmd.length())
 	{
-		// clean first
-		requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
-
 		runOnce = true;
 		std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
 		std::string restPath = "/appmesh/app/run";
@@ -1040,9 +1039,14 @@ void ArgumentParser::processExec()
 		{
 			SIGINIT_BREAKING = false;
 			std::string input;
+			std::cout << "appmesh # ";
 			while (std::getline(std::cin, input) && input.length() > 0)
 			{
 				requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
+				if (input == "exit")
+				{
+					ACE_OS::_exit(0);
+				}
 				process_uuid.clear();
 				outputPosition = 0;
 				jsonObj[JSON_KEY_APP_command] = web::json::value::string(input);
@@ -1089,6 +1093,8 @@ void ArgumentParser::processExec()
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(150));
 	}
+	// clean
+	requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 }
 
 void ArgumentParser::processFileDownload()

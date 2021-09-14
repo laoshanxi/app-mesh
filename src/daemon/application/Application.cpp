@@ -353,7 +353,7 @@ void Application::execute(void *ptree)
 		}
 		startNextRun = (m_nextLaunchTime == nullptr);
 	}
-	else
+	else if (m_status != STATUS::NOTAVIALABLE)
 	{
 		// not available
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);

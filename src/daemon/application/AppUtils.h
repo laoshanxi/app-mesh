@@ -60,7 +60,7 @@ private:
 /// </summary>
 enum class STATUS : int
 {
-	DISABLED,
+	DISABLED = 0,
 	ENABLED,
 	NOTAVIALABLE // used for temp app from RestHandler::apiRunParseApp and destroyed app
 };
