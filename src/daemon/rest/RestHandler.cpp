@@ -345,7 +345,9 @@ void RestHandler::apiAppDelete(const HttpRequest &message)
 	if (Configuration::instance()->getApp(appName)->isCloudApp())
 		throw std::invalid_argument("not allowed for cloud application");
 
-	if (Configuration::instance()->getApp(appName)->getOwner()->getName() != getJwtUserName(message))
+	if (!(Configuration::instance()->getApp(appName)->getOwner() &&
+		  Configuration::instance()->getJwtEnabled() &&
+		  Configuration::instance()->getApp(appName)->getOwner()->getName() == getJwtUserName(message)))
 	{
 		// only check delete permission for none-self app
 		permissionCheck(message, PERMISSION_KEY_app_delete);
