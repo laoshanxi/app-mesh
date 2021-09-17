@@ -217,7 +217,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
 	int pid = -1;
-
+	bool dirChanged = false;
 	// check command file existence & permission
 	auto cmdRoot = std::get<1>(extractCommand(cmd));
 	bool checkCmd = true;
@@ -270,6 +270,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (workDir.length())
 	{
 		option.working_directory(workDir.c_str());
+		dirChanged = (ACE_OS::chdir(workDir.c_str()) >= 0);
 	}
 	else
 	{
@@ -339,6 +340,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	if (dummy != ACE_INVALID_HANDLE)
 		ACE_OS::close(dummy);
+	if (dirChanged)
+		ACE_OS::chdir(Configuration::instance()->getDefaultWorkDir().c_str());
 	return pid;
 }
 
