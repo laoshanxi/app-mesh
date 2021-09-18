@@ -7,7 +7,7 @@
 
 #include "detail/core_export.h"
 
-// IWYU pragma: private, include "summary.h"
+// IWYU pragma: private, include "prometheus/summary.h"
 
 namespace prometheus {
 namespace detail {

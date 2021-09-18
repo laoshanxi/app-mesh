@@ -14,10 +14,10 @@
 #include "detail/future_std.h"
 #include "metric_family.h"
 
-// IWYU pragma: no_include "counter.h"
-// IWYU pragma: no_include "gauge.h"
-// IWYU pragma: no_include "histogram.h"
-// IWYU pragma: no_include "summary.h"
+// IWYU pragma: no_include "prometheus/counter.h"
+// IWYU pragma: no_include "prometheus/gauge.h"
+// IWYU pragma: no_include "prometheus/histogram.h"
+// IWYU pragma: no_include "prometheus/summary.h"
 
 namespace prometheus {
 

@@ -4,7 +4,7 @@
 #include <string>
 
 // IWYU pragma: private
-// IWYU pragma: no_include "family.h"
+// IWYU pragma: no_include "prometheus/family.h"
 
 namespace prometheus {
 
