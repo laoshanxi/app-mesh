@@ -621,7 +621,8 @@ void ArgumentParser::processAppView()
 		("name,n", po::value<std::string>(), "application name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
-		("stdout_index,O", po::value<int>(), "application output index");
+		("stdout_index,O", po::value<int>(), "application output index")
+		("tail,t", "continue view the application output");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -645,10 +646,24 @@ void ArgumentParser::processAppView()
 			{
 				index = m_commandLineVariables["stdout_index"].as<int>();
 			}
+			long outputPosition = 0;
+			bool exit = false;
 			std::map<std::string, std::string> query;
 			query[HTTP_QUERY_KEY_stdout_index] = std::to_string(index);
-			auto response = requestHttp(true, methods::GET, restPath, query);
-			std::cout << response.extract_utf8string(true).get();
+			while (!exit)
+			{
+				query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
+				auto response = requestHttp(true, methods::GET, restPath, query);
+				std::cout << response.extract_utf8string(true).get();
+				if (response.headers().has(HTTP_HEADER_KEY_output_pos))
+				{
+					outputPosition = std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
+				}
+				// check continues failure
+				exit = response.headers().has(HTTP_HEADER_KEY_exit_code);
+				if (!exit)
+					std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			}
 		}
 	}
 	else
@@ -890,7 +905,7 @@ void ArgumentParser::processAppRun()
 				break;
 			}
 			continueFailure = 0;
-			std::this_thread::sleep_for(std::chrono::milliseconds(800));
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
 		// delete
 		restPath = std::string("/appmesh/app/").append(appName);
