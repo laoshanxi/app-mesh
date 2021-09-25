@@ -33,6 +33,12 @@ public:
 	virtual pid_t getpid(void) const;
 
 	/// <summary>
+	/// Get process exit code
+	/// </summary>
+	/// <returns></returns>
+	virtual int returnValue(void) const { return this->return_value(); };
+
+	/// <summary>
 	/// Process UUID
 	/// </summary>
 	/// <returns></returns>

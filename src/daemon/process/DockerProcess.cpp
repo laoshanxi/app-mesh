@@ -154,7 +154,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 		dockerProcess->wait();
 		dockerProcess->killgroup();
-		if (dockerProcess->return_value() == 0)
+		if (dockerProcess->returnValue() == 0)
 		{
 			const auto outmsg = dockerProcess->getOutputMsg(0, 10240, true);
 			containerId = Utility::stdStringTrim(outmsg);
@@ -183,7 +183,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 		dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 		dockerProcess->wait();
-		if (dockerProcess->return_value() == 0)
+		if (dockerProcess->returnValue() == 0)
 		{
 			auto pidStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(0, 10240, true));
 			if (Utility::isNumber(pidStr))
@@ -263,6 +263,33 @@ void DockerProcess::containerId(const std::string &containerId)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	m_containerId = containerId;
+}
+
+int DockerProcess::returnValue(void) const
+{
+	const static char fname[] = "DockerProcess::returnValue() ";
+
+	auto dockerCommand = Utility::stringFormat("docker inspect %s --format='{{.State.ExitCode}}'", m_containerId.c_str());
+	auto dockerProcess = std::make_shared<AppProcess>();
+	dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
+	dockerProcess->wait();
+	if (dockerProcess->returnValue() == 0)
+	{
+		auto msg = dockerProcess->getOutputMsg(0, 512, true);
+		if (Utility::isNumber(msg))
+		{
+			return std::atoi(msg.c_str());
+		}
+		else
+		{
+			LOG_WAR << fname << "docker inspect exit code from container " << m_containerId << " failed with output: " << msg;
+		}
+	}
+	else
+	{
+		LOG_WAR << fname << "docker inspect exit code from container " << m_containerId << " failed with exit code: " << dockerProcess->returnValue();
+	}
+	return -200;
 }
 
 int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const web::json::value &stdinFileContent, const int maxStdoutSize)

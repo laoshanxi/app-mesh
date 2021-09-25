@@ -98,11 +98,17 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp.extract_utf8string().get() << ">";
 	}
 
+	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerCreate
+	// POST /containers/create
 	auto createBody = stdinFileContent;
 	if (cmd.length())
 	{
-		auto array = web::json::value::array(1);
-		array[0] = web::json::value::string(cmd);
+		auto argv = Utility::str2argv(cmd);
+		auto array = web::json::value::array(argv.size());
+		for (size_t i = 0; i < argv.size(); i++)
+		{
+			array[i] = web::json::value::string(argv[i]);
+		}
 		createBody["Cmd"] = array;
 	}
 	if (m_dockerImage.length())
@@ -123,23 +129,30 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 			if (resp.status_code() == web::http::status_codes::OK)
 			{
 				auto pid = resp.extract_json().get()["State"]["Pid"].as_integer();
-				if (pid > 1)
-				{
-					// Success
-					this->attach(pid);
-					LOG_INF << fname << "started pid <" << pid << "> for container :" << this->containerId();
-					return this->getpid();
-				}
+				// Success
+				this->attach(pid);
+				LOG_INF << fname << "started pid <" << pid << "> for container :" << this->containerId();
+				return this->getpid();
+			}
+			else
+			{
+				auto errorMsg = resp.extract_utf8string().get();
+				this->startError(errorMsg);
+				LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 			}
 		}
 		else
 		{
-			LOG_WAR << fname << "Start container failed <" << resp.extract_utf8string().get() << ">";
+			auto errorMsg = resp.extract_utf8string().get();
+			this->startError(errorMsg);
+			LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 		}
 	}
 	else
 	{
-		LOG_WAR << fname << "Create container failed <" << resp.extract_utf8string().get() << ">";
+		auto errorMsg = resp.extract_utf8string().get();
+		this->startError(errorMsg);
+		LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 	}
 
 	// failed
@@ -168,6 +181,27 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 		return resp.extract_utf8string().get();
 	}
 	return std::string();
+}
+
+int DockerApiProcess::returnValue(void) const
+{
+	const static char fname[] = "DockerApiProcess::returnValue() ";
+
+	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerInspect
+	// GET /containers/{id}/json
+	auto resp = const_cast<DockerApiProcess *>(this)->requestHttp(
+		web::http::methods::GET,
+		Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
+		{}, {}, nullptr);
+	if (resp.status_code() == web::http::status_codes::OK)
+	{
+		return resp.extract_json().get().at("State").at("ExitCode").as_integer();
+	}
+	else
+	{
+		LOG_DBG << fname << "failed: " << resp.extract_utf8string(true).get();
+	}
+	return -200;
 }
 
 const web::http::http_response DockerApiProcess::requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)

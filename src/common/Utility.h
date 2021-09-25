@@ -164,6 +164,8 @@ public:
 	static std::string stringFormat(const std::string fmt_str, ...);
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
+	static std::string unEscape(const std::string &str);
+	static std::vector<std::string> str2argv(const std::string &commandLine);
 
 	static void initLogging(std::string name);
 	static bool setLogLevel(const std::string &level);

@@ -11,6 +11,7 @@
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/program_options/parsers.hpp>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/Category.hh>
 #include <log4cpp/FileAppender.hh>
@@ -764,6 +765,26 @@ std::string Utility::strTolower(std::string s)
 	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c)
 				   { return std::tolower(c); });
 	return s;
+}
+
+std::string Utility::unEscape(const std::string &str)
+{
+	// https://github.com/microsoft/cpprestsdk/blob/master/Release/tests/common/UnitTestpp/src/XmlTestReporter.cpp#L52
+	auto result = Utility::stringReplace(str, "&amp;", "&");
+	result = Utility::stringReplace(result, "&lt;", "<");
+	result = Utility::stringReplace(result, "&gt;", ">");
+	result = Utility::stringReplace(result, "&apos;", "\'");
+	result = Utility::stringReplace(result, "&quot;", "\"");
+
+	result = Utility::stringReplace(result, "&#39;", "\'");
+	return result;
+}
+
+std::vector<std::string> Utility::str2argv(const std::string &commandLine)
+{
+	// https://stackoverflow.com/questions/1511797/convert-string-to-argv-in-c
+	// backup: https://stackoverflow.com/questions/1706551/parse-string-into-argv-argc
+	return boost::program_options::split_unix(commandLine);
 }
 
 const std::string Utility::readStdin2End()

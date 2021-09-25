@@ -143,7 +143,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
 	if (jsonObj.has_field(JSON_KEY_APP_metadata))
 		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
-	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
+	app->m_commandLine = Utility::unEscape(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command)));
 	// TODO: consider i18n and  legal file name
 	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", Configuration::instance()->getDefaultWorkDir().c_str(), app->m_name.c_str());
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
@@ -269,7 +269,7 @@ void Application::refreshStatus(void *ptree)
 			m_pid = m_process->getpid();
 			if (m_process->wait(m_waitTimeout) > 0)
 			{
-				m_return = std::make_shared<int>(m_process->return_value());
+				m_return = std::make_shared<int>(m_process->returnValue());
 				m_pid = ACE_INVALID_PID;
 				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
 				onExit(*m_return);
@@ -277,7 +277,7 @@ void Application::refreshStatus(void *ptree)
 		}
 		else if (m_pid > 0)
 		{
-			m_return = std::make_shared<int>(m_process->return_value());
+			m_return = std::make_shared<int>(m_process->returnValue());
 			m_pid = ACE_INVALID_PID;
 			setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
 			onExit(*m_return);
@@ -290,7 +290,7 @@ void Application::refreshStatus(void *ptree)
 	{
 		if (m_bufferProcess->wait(m_waitTimeout) > 0)
 		{
-			m_return = std::make_shared<int>(m_process->return_value());
+			m_return = std::make_shared<int>(m_process->returnValue());
 			setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
 		}
 	}
@@ -558,7 +558,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, int ma
 		{
 			if (!m_process->running())
 			{
-				exitCode = m_process->return_value();
+				exitCode = m_process->returnValue();
 				finished = true;
 				LOG_DBG << fname << "process:" << processUuid << " finished with exit code: " << exitCode;
 			}
@@ -691,10 +691,13 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 	if (m_endTimeValue.time_since_epoch().count())
 		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_endTime);
 	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(DateTime::formatLocalTime(m_regTime));
-	auto err = getLastError();
-	if (err.length())
-		result[JSON_KEY_APP_last_error] = web::json::value::string(err);
-	result[JSON_KEY_APP_starts] = web::json::value::number(m_starts);
+	if (returnRuntimeInfo)
+	{
+		auto err = getLastError();
+		if (err.length())
+			result[JSON_KEY_APP_last_error] = web::json::value::string(err);
+		result[JSON_KEY_APP_starts] = web::json::value::number(m_starts);
+	}
 
 	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
 	if (m_bufferTime)

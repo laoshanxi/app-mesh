@@ -27,6 +27,7 @@ public:
 	virtual pid_t getpid(void) const override;
 	virtual std::string containerId() const override;
 	virtual void containerId(const std::string &containerId) override;
+	virtual int returnValue(void) const override;
 
 	/// <summary>
 	/// get all std out content from stdoutFile with given position

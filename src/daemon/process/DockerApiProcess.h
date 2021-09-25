@@ -47,6 +47,12 @@ public:
 	/// <returns></returns>
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
 
+	/// <summary>
+	/// get process exit code
+	/// </summary>
+	/// <returns></returns>
+	virtual int returnValue(void) const override;
+
 private:
 	/// <summary>
 	/// Request Docker HTTP

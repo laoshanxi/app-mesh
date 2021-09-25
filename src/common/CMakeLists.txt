@@ -15,4 +15,5 @@ target_link_libraries(common
     boost_regex
     boost_system
     boost_filesystem
+    boost_program_options
 )
