@@ -46,8 +46,8 @@ print(client.get_config())
 print(json.dumps(client.set_config({"REST": {"SSL": {"SSLEnabled": True}}}), indent=2))
 print(client.set_log_level("DEBUG"))
 # file
-print(client.download("/opt/appmesh/log/appsvc.log", "1.log"))
-print(client.upload(local_file="/opt/appmesh/log/appsvc.log", file_path="/tmp/2.log"))
+print(client.download("/opt/appmesh/log/server.log", "1.log"))
+print(client.upload(local_file="/opt/appmesh/log/server.log", file_path="/tmp/2.log"))
 # cloud
 print(json.dumps(client.get_cloud_apps(), indent=2))
 print(

@@ -8,16 +8,16 @@
 #include "DockerProcess.h"
 
 /// <summary>
-/// Docker Process Object
+/// Docker API Object
 /// </summary>
 class DockerApiProcess : public DockerProcess
 {
 public:
 	/// <summary>
-	/// constructor
+	/// Constructor
 	/// </summary>
 	/// <param name="dockerImage"></param>
-	/// <param name="appName"></param>
+	/// <param name="containerName"></param>
 	DockerApiProcess(const std::string &dockerImage, const std::string &containerName);
 	virtual ~DockerApiProcess();
 
@@ -44,12 +44,16 @@ public:
 	/// <summary>
 	/// get all std out content from stdoutFile with given position
 	/// </summary>
+	/// <param name="position"></param>
+	/// <param name="maxSize"></param>
+	/// <param name="readLine"></param>
 	/// <returns></returns>
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
 
 	/// <summary>
 	/// get process exit code
 	/// </summary>
+	/// <param name=""></param>
 	/// <returns></returns>
 	virtual int returnValue(void) const override;
 

@@ -843,7 +843,7 @@ void Application::onExit(int code)
 		LOG_DBG << fname << "next action for <" << m_name << "> is RESTART";
 		break;
 	case AppBehavior::Action::KEEPALIVE:
-		// keep alive always
+		// keep alive always, used for period run
 		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
 		this->registerTimer(0, 0, std::bind(&Application::spawn, this, std::placeholders::_1), fname);
 		LOG_DBG << fname << "next action for <" << m_name << "> is KEEPALIVE";

@@ -75,6 +75,10 @@ int main(int argc, char *argv[])
 
 		// init REST thread pool for [child REST server] and [parent REST client]
 		Utility::initCpprestThreadPool(Configuration::instance()->getThreadPoolSize());
+
+		// init security [both for server side and REST client side (file operation API)]
+		Security::init();
+
 		// init child REST process, the REST process will accept HTTP request and
 		// forward to TCP rest service in order to avoid fork() impact REST handler
 		if (argc == 2 && std::string("rest") == argv[1])
@@ -89,8 +93,6 @@ int main(int argc, char *argv[])
 			return -1;
 		}
 
-		// init security
-		Security::init();
 		// recover applications
 		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))
 		{
@@ -147,10 +149,10 @@ int main(int argc, char *argv[])
 		// reg prometheus
 		config->registerPrometheus();
 
-		// start one thread for timer (application & process event & healthcheck & consul report event)
+		// start the 1st thread for timer (application & process event & healthcheck & consul report event)
 		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-		// increase thread here
-		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		// start the 2nd thread for timer: TODO, scheduleNext have risk condition, comments for now
+		// auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// init consul
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
