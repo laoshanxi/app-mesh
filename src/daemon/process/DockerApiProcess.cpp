@@ -111,6 +111,16 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		}
 		createBody["Cmd"] = array;
 	}
+
+	if (limit != nullptr)
+	{
+		auto hostConfig = web::json::value();
+		hostConfig["Memory"] = web::json::value::number(limit->m_memoryMb);
+		hostConfig["MemorySwap"] = web::json::value::number(limit->m_memoryVirtMb);
+		hostConfig["CpuShares"] = web::json::value::number(limit->m_cpuShares);
+		createBody["HostConfig"] = hostConfig;
+	}
+
 	if (m_dockerImage.length())
 		createBody["Image"] = web::json::value::string(m_dockerImage);
 	// POST /containers/create

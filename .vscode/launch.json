@@ -5,7 +5,26 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "GDB: Attach appsvc",
+            "name": "GDB: launch appsvc",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/opt/appmesh/bin/appsvc",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "/opt/appmesh/",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "GDB: attach appsvc",
             "type": "cppdbg",
             "request": "attach",
             "program": "/opt/appmesh/bin/appsvc",
@@ -27,7 +46,7 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "g++ - Build and debug active file",
+            "name": "G++: Build and debug active file",
             "type": "cppdbg",
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
