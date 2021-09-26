@@ -703,6 +703,8 @@ std::string Utility::prettyJson(const std::string &jsonStr)
 		case '"':
 			if (!ignore_next)
 				in_string = !in_string;
+			else
+				ignore_next = false;
 			result << (c);
 			break;
 		case ' ':
