@@ -55,7 +55,7 @@ public:
 	void destroy();
 
 	// behavior
-	void scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
+	std::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
 	void onSuicide(int timerId = 0);
 	void onExit(int code);
@@ -76,8 +76,8 @@ protected:
 	// process
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
 	void spawn(int timerId);
-	void refreshStatus(void *ptree = nullptr);
-	void checkAndUpdateHealth();
+	std::shared_ptr<int> refresh(void *ptree = nullptr);
+	void healthCheck();
 
 	std::string runApp(int timeoutSeconds) noexcept(false);
 	const std::string getExecUser() const;
@@ -117,7 +117,7 @@ protected:
 	int m_bufferTime;
 	bool m_startIntervalValueIsCronExpr;
 	std::shared_ptr<AppProcess> m_bufferProcess;
-	std::unique_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
+	std::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	int m_nextStartTimerId;
 
 	std::chrono::system_clock::time_point m_regTime;

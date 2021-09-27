@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
 
 		// init child REST process, the REST process will accept HTTP request and
 		// forward to TCP rest service in order to avoid fork() impact REST handler
-		if (argc == 2 && std::string("rest") == argv[1])
+		if (argc == 2 && std::string("--rest") == argv[1])
 		{
 			RestChildObject::instance(std::make_shared<RestChildObject>());
 			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());
@@ -151,8 +151,8 @@ int main(int argc, char *argv[])
 
 		// start the 1st thread for timer (application & process event & healthcheck & consul report event)
 		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-		// start the 2nd thread for timer: TODO, scheduleNext have risk condition, comments for now
-		// auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		// start the 2nd thread for timer
+		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// init consul
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";

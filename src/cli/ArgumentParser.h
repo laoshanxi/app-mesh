@@ -89,5 +89,5 @@ private:
 	std::string m_url;
 	std::string m_username;
 	std::string m_userpwd;
-	std::shared_ptr<ACE_Sig_Action> m_sigAction;
+	std::unique_ptr<ACE_Sig_Action> m_sigAction;
 };

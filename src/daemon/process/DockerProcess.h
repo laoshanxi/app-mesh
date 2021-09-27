@@ -104,6 +104,6 @@ protected:
 	std::string m_dockerImage;
 	std::string m_containerId;
 	std::string m_containerName;
-	std::shared_ptr<AppProcess> m_imagePullProc;
+	std::unique_ptr<AppProcess> m_imagePullProc;
 	mutable std::recursive_mutex m_processMutex;
 };

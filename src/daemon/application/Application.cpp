@@ -258,45 +258,48 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	}
 }
 
-void Application::refreshStatus(void *ptree)
+std::shared_ptr<int> Application::refresh(void *ptree)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	// 1. Try to get return code.
-	if (m_process != nullptr)
+	std::shared_ptr<int> exitCode;
 	{
-		if (m_process->running())
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		// 1. Try to get return code.
+		if (m_process != nullptr)
 		{
-			m_pid = m_process->getpid();
-			if (m_process->wait(m_waitTimeout) > 0)
+			if (m_process->running())
+			{
+				m_pid = m_process->getpid();
+				if (m_process->wait(m_waitTimeout) > 0)
+				{
+					m_return = std::make_shared<int>(m_process->returnValue());
+					exitCode = m_return;
+					m_pid = ACE_INVALID_PID;
+					setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
+				}
+			}
+			else if (m_pid > 0)
 			{
 				m_return = std::make_shared<int>(m_process->returnValue());
+				exitCode = m_return;
 				m_pid = ACE_INVALID_PID;
 				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
-				onExit(*m_return);
 			}
 		}
-		else if (m_pid > 0)
-		{
-			m_return = std::make_shared<int>(m_process->returnValue());
-			m_pid = ACE_INVALID_PID;
-			setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
-			onExit(*m_return);
-		}
-	}
 
-	// 2. Try to get return code from Buffer process again
-	//    If there have buffer process, current process is still running, so get return code from buffer process
-	if (m_bufferProcess && m_bufferProcess->running())
-	{
-		if (m_bufferProcess->wait(m_waitTimeout) > 0)
+		// 2. Try to get return code from Buffer process again
+		//    If there have buffer process, current process is still running, so get return code from buffer process
+		if (m_bufferProcess && m_bufferProcess->running())
 		{
-			m_return = std::make_shared<int>(m_process->returnValue());
-			setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
+			if (m_bufferProcess->wait(m_waitTimeout) > 0)
+			{
+				m_return = std::make_shared<int>(m_process->returnValue());
+				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
+			}
 		}
 	}
 
 	// health check
-	checkAndUpdateHealth();
+	healthCheck();
 
 	// 4. Prometheus
 	if (PrometheusRest::instance()->collected())
@@ -312,6 +315,8 @@ void Application::refreshStatus(void *ptree)
 		if (m_metricFileDesc)
 			m_metricFileDesc->metric().Set(os::fileDescriptors(m_pid));
 	}
+
+	return exitCode;
 }
 
 bool Application::attach(int pid)
@@ -337,7 +342,7 @@ void Application::execute(void *ptree)
 {
 	const static char fname[] = "Application::execute() ";
 	auto now = std::chrono::system_clock::now();
-	bool startNextRun = false;
+	bool scheduleNextRun = false; // the first time to start the event chain
 	if (this->available(now))
 	{
 		auto inDailyRange = m_timer->isInDailyTimeRange(now);
@@ -351,7 +356,7 @@ void Application::execute(void *ptree)
 			setInvalidError();
 			m_nextLaunchTime = nullptr;
 		}
-		startNextRun = (m_nextLaunchTime == nullptr);
+		scheduleNextRun = (m_nextLaunchTime == nullptr);
 	}
 	else if (m_status != STATUS::NOTAVIALABLE)
 	{
@@ -368,13 +373,19 @@ void Application::execute(void *ptree)
 		setLastError("not in working state or working time");
 	}
 
-	if (startNextRun)
+	std::shared_ptr<std::chrono::system_clock::time_point> nextRunTime;
+	if (scheduleNextRun)
 	{
-		// trigger next time run without app lock
-		scheduleNext(now);
+		// trigger first run without app lock
+		nextRunTime = scheduleNext(now);
 	}
 
-	refreshStatus(ptree);
+	auto exitCode = refresh(ptree);
+	if (exitCode != nullptr && nextRunTime == nullptr)
+	{
+		// error handling
+		onExit(*exitCode);
+	}
 }
 
 void Application::spawn(int timerId)
@@ -530,7 +541,7 @@ const std::string &Application::getCmdLine() const
 	return m_commandLine;
 }
 
-void Application::checkAndUpdateHealth()
+void Application::healthCheck()
 {
 	if (m_healthCheckCmd.empty())
 	{
@@ -857,7 +868,7 @@ void Application::onExit(int code)
 	}
 }
 
-void Application::scheduleNext(std::chrono::system_clock::time_point now)
+std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext(std::chrono::system_clock::time_point now)
 {
 	const static char fname[] = "Application::scheduleNext() ";
 
@@ -890,6 +901,7 @@ void Application::scheduleNext(std::chrono::system_clock::time_point now)
 	{
 		m_nextLaunchTime = nullptr;
 	}
+	return m_nextLaunchTime;
 }
 
 void Application::regSuicideTimer(int timeoutSeconds)

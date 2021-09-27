@@ -203,7 +203,7 @@ public:
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
 #define DEFAULT_EXEC_USER "appmesh"
 #define SEPARATE_REST_APP_NAME "apprest"
-#define SEPARATE_DOCKER_PROXY_APP_NAME "dockerrest"
+#define SEPARATE_DOCKER_PROXY_APP_NAME "dockeragent"
 #define REST_ROOT_TEXT_MESSAGE "App Mesh"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 

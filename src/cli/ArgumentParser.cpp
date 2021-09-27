@@ -963,7 +963,7 @@ std::string ArgumentParser::parseOutputMessage(http_response &resp)
 
 void ArgumentParser::regSignal()
 {
-	m_sigAction = std::make_shared<ACE_Sig_Action>();
+	m_sigAction = std::make_unique<ACE_Sig_Action>();
 	m_sigAction->handler(SIGINT_Handler);
 	m_sigAction->register_action(SIGINT);
 }

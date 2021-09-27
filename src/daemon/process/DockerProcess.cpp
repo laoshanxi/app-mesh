@@ -238,7 +238,7 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 	{
 		LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
 	}
-	m_imagePullProc = std::make_shared<AppProcess>();
+	m_imagePullProc = std::make_unique<AppProcess>();
 	m_imagePullProc->spawnProcess("docker pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 	m_imagePullProc->delayKill(pullTimeout, fname);
 	this->attach(m_imagePullProc->getpid());
