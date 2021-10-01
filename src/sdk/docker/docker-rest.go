@@ -3,9 +3,14 @@ package main
 // Reference
 // https://github.com/open-cluster-management/rbac-query-proxy/blob/release-2.3/cmd/main.go
 // https://github.com/valyala/fasthttp/issues/64
+// Test:
+// curl --verbose --cert /opt/appmesh/ssl/client.pem --key /opt/appmesh/ssl/client-key.pem --cacert /opt/appmesh/ssl/ca.pem  https://localhost:6058/containers/json | python -m json.tool
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -24,14 +29,16 @@ var (
 		Dial: func(addr string) (net.Conn, error) {
 			return net.Dial("unix", addr)
 		}}
+	enableTLS = true
 )
 
 // http handler function
 func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
 	req := &ctx.Request
-	resp := &ctx.Response
+	log.Printf("\n---Request:---\n%v\n", req)
 	preCheckRequest(req)
 
+	resp := &ctx.Response
 	// do request
 	if err := proxyClient.Do(req, resp); err != nil {
 		ctx.Logger().Printf("Error when proxying the request: %s", err)
@@ -43,7 +50,7 @@ func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
 
 	postCheckResponse(resp)
 
-	log.Printf("Request: \n %v \n %v \n", req, resp)
+	log.Printf("\n---Response:---\n%v\n", resp)
 }
 
 func preCheckRequest(req *fasthttp.Request) {
@@ -78,9 +85,68 @@ func monitorParentExit() {
 	}
 }
 
+func listenHttp() {
+	if err := fasthttp.ListenAndServe(localListenAddr, reverseProxyHandler); err != nil {
+		log.Fatalf("Error in fasthttp server: %s", err)
+	}
+}
+
+func loadClientCA(caFile string) *x509.CertPool {
+	pool := x509.NewCertPool()
+
+	if ca, e := ioutil.ReadFile(caFile); e != nil {
+		log.Fatal("ReadFile: ", e)
+	} else {
+		pool.AppendCertsFromPEM(ca)
+	}
+	return pool
+}
+
+func loadServerCertificates(pem string, key string) tls.Certificate {
+	cert, err := tls.LoadX509KeyPair(pem, key)
+	if err != nil {
+		log.Fatalf("Error in LoadX509KeyPair: %s", err)
+		panic(err)
+	}
+	return cert
+}
+
+func listenHttps() {
+	// https://github.com/valyala/fasthttp/blob/master/examples/letsencrypt/letsencryptserver.go
+	// https://github.com/valyala/fasthttp/issues/804
+	// https://studygolang.com/articles/9329
+	// prepare TLS
+	cfg := &tls.Config{
+		MinVersion:               tls.VersionTLS12,
+		Certificates:             []tls.Certificate{loadServerCertificates("/opt/appmesh/ssl/server.pem", "/opt/appmesh/ssl/server-key.pem")},
+		ClientAuth:               tls.RequireAndVerifyClientCert,
+		ClientCAs:                loadClientCA("/opt/appmesh/ssl/client.pem"),
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}
+
+	// start listen
+	ln, err := net.Listen("tcp4", localListenAddr)
+	if err != nil {
+		log.Fatalf("Error in Listen tcp4: %s", err)
+		panic(err)
+	}
+	lnTls := tls.NewListener(ln, cfg)
+	if err := fasthttp.Serve(lnTls, reverseProxyHandler); err != nil {
+		log.Fatalf("Error in fasthttp Serve: %s", err)
+		panic(err)
+	}
+}
+
 // main
 func main() {
-	log.Println("Docker proxy")
+	log.Println("Docker Agent enter")
 
 	// parse arguments
 	addr := flag.String("url", localListenAddr, "The host URL used to listen")
@@ -97,7 +163,11 @@ func main() {
 	log.Println("Listening at:", localListenAddr)
 
 	// listen
-	if err := fasthttp.ListenAndServe(localListenAddr, reverseProxyHandler); err != nil {
-		log.Fatalf("Error in fasthttp server: %s", err)
+	if enableTLS {
+		listenHttps()
+	} else {
+		listenHttp()
 	}
+
+	log.Fatalln("Process exiting")
 }

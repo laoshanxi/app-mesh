@@ -219,17 +219,19 @@ const web::http::http_response DockerApiProcess::requestHttp(const web::http::me
 	const static char fname[] = "DockerApiProcess::requestHttp() ";
 
 	auto restURL = Configuration::instance()->getDockerProxyAddress();
-	web::uri_builder uri;
-	uri.set_host("127.0.0.1");
-	uri.set_scheme("http");
-	uri.set_port(6058);
-	auto arr = Utility::splitString(restURL, ":");
-	if (arr.size() == 2)
-		uri.set_port(std::atoi(arr[1].c_str()));
-
 	try
 	{
-		web::http::client::http_client client(uri.to_uri());
+		// enable certificate file verification
+		web::http::client::http_client_config cfg;
+		cfg.set_validate_certificates(true);
+		cfg.set_ssl_context_callback(
+			[](boost::asio::ssl::context &ctx)
+			{
+				ctx.load_verify_file("/opt/appmesh/ssl/ca.pem");
+				ctx.use_certificate_file("/opt/appmesh/ssl/client.pem", boost::asio::ssl::context::file_format::pem);
+				ctx.use_private_key_file("/opt/appmesh/ssl/client-key.pem", boost::asio::ssl::context::file_format::pem);
+			});
+		web::http::client::http_client client(restURL, cfg);
 
 		// Build request URI and start the request.
 		web::uri_builder builder(GET_STRING_T(path));
