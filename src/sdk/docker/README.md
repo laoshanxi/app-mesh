@@ -18,10 +18,10 @@ make test
 ```
 ## Solution2: Golang reverse proxy
 
-docker-rest.go implement a proxy to pass 127.0.0.1:6058 to unix:///var/run/docker.sock
+dockeragent.go implement a proxy to pass 127.0.0.1:6058 to unix:///var/run/docker.sock
 ```
-$ ./docker-rest -h
-Usage of ./docker-rest:
+$ ./dockeragent -h
+Usage of ./dockeragent:
   -socket string
         Docker unix domain socket file (default "/var/run/docker.sock")
   -url string

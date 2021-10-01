@@ -124,11 +124,11 @@ add_custom_target(pack
 )
 
 ##########################################################################
-# Golang docker-rest build
+# Golang dockeragent build
 ##########################################################################
 add_custom_target(dockeragent
-    COMMENT "Golang build docker-rest"
-    COMMAND go build -o ${CMAKE_CURRENT_BINARY_DIR}/docker-rest ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/docker/docker-rest.go
+    COMMENT "Golang build dockeragent"
+    COMMAND go build -o ${CMAKE_CURRENT_BINARY_DIR}/dockeragent ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/docker/dockeragent.go
 )
 
 ##########################################################################

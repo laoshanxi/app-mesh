@@ -28,8 +28,8 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/container_monitor.py ${CMAKE_CURRENT_BINA
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appmesh_arm.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
 cp /usr/bin/cfssl ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 cp /usr/bin/cfssljson ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
-cp ${CMAKE_CURRENT_BINARY_DIR}/docker-rest ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
-# upx ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/docker-rest
+cp ${CMAKE_CURRENT_BINARY_DIR}/dockeragent ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
+# upx ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/dockeragent
 chmod +x ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/*.sh
 
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/
