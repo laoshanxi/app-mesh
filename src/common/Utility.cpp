@@ -555,18 +555,17 @@ std::string Utility::humanReadableSize(long double bytesSize)
 	return stringReplace(str, ".0", "");
 }
 
-std::string Utility::humanReadableDuration(const std::chrono::system_clock::time_point &time)
+std::string Utility::humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime)
 {
 	std::string result;
 	std::list<std::string> steps;
-	const auto now = std::chrono::system_clock::now();
 
-	if (now < time)
+	if (endTime < startTime)
 	{
 		result = "N/A";
 		return result;
 	}
-	const auto duration = now - time;
+	const auto duration = endTime - startTime;
 
 	const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count() % 60;
 	if (seconds)

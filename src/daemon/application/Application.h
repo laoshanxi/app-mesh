@@ -134,6 +134,7 @@ protected:
 	std::map<std::string, std::string> m_secEnvMap;
 	std::string m_dockerImage;
 	std::chrono::system_clock::time_point m_procStartTime;
+	std::chrono::system_clock::time_point m_procExitTime;
 
 	// Prometheus
 	std::shared_ptr<CounterMetric> m_metricStartCount;

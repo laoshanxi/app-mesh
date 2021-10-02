@@ -1704,7 +1704,11 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 					  std::cout << std::setw(9);
 					  {
 						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start))
-							  std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start)));
+						  {
+							  auto startTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start));
+							  auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();
+							  std::cout << Utility::humanReadableDuration(startTime, endTime);
+						  }
 						  else
 							  std::cout << slash;
 					  }

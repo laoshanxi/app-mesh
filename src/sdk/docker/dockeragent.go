@@ -35,7 +35,7 @@ var (
 // http handler function
 func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
 	req := &ctx.Request
-	log.Printf("\n---Request:---\n%v\n", req)
+	log.Printf("---Request:---\n%v\n", req)
 	preCheckRequest(req)
 
 	resp := &ctx.Response
@@ -50,7 +50,7 @@ func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
 
 	postCheckResponse(resp)
 
-	log.Printf("\n---Response:---\n%v\n", resp)
+	log.Printf("---Response:---\n%v\n", resp)
 }
 
 func preCheckRequest(req *fasthttp.Request) {

@@ -274,6 +274,7 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 					m_return = std::make_shared<int>(m_process->returnValue());
 					exitCode = m_return;
 					m_pid = ACE_INVALID_PID;
+					m_procExitTime = std::chrono::system_clock::now();
 					setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
 				}
 			}
@@ -282,6 +283,7 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 				m_return = std::make_shared<int>(m_process->returnValue());
 				exitCode = m_return;
 				m_pid = ACE_INVALID_PID;
+				m_procExitTime = std::chrono::system_clock::now();
 				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
 			}
 		}
@@ -293,6 +295,7 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 			if (m_bufferProcess->wait(m_waitTimeout) > 0)
 			{
 				m_return = std::make_shared<int>(m_process->returnValue());
+				m_procExitTime = std::chrono::system_clock::now();
 				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
 			}
 		}
@@ -353,6 +356,7 @@ void Application::execute(void *ptree)
 			LOG_INF << fname << "Application <" << m_name << "> was not in start time";
 			m_process->killgroup();
 			m_pid = ACE_INVALID_PID;
+			m_procExitTime = now;
 			setInvalidError();
 			m_nextLaunchTime = nullptr;
 		}
@@ -367,6 +371,7 @@ void Application::execute(void *ptree)
 			LOG_INF << fname << "Application <" << m_name << "> was not available";
 			m_process->killgroup();
 			m_pid = ACE_INVALID_PID;
+			m_procExitTime = now;
 			setInvalidError();
 			m_nextLaunchTime = nullptr;
 		}
@@ -655,6 +660,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		}
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[JSON_KEY_APP_last_start] = web::json::value::string(DateTime::formatLocalTime(m_procStartTime));
+		if (std::chrono::time_point_cast<std::chrono::hours>(m_procExitTime).time_since_epoch().count() > 24)
+			result[JSON_KEY_APP_last_exit] = web::json::value::string(DateTime::formatLocalTime(m_procExitTime));
 		if (m_process && !m_process->containerId().empty())
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
