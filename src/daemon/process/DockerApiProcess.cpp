@@ -223,14 +223,17 @@ const web::http::http_response DockerApiProcess::requestHttp(const web::http::me
 	{
 		// enable certificate file verification
 		web::http::client::http_client_config cfg;
-		cfg.set_validate_certificates(true);
-		cfg.set_ssl_context_callback(
-			[](boost::asio::ssl::context &ctx)
-			{
-				ctx.load_verify_file("/opt/appmesh/ssl/ca.pem");
-				ctx.use_certificate_file("/opt/appmesh/ssl/client.pem", boost::asio::ssl::context::file_format::pem);
-				ctx.use_private_key_file("/opt/appmesh/ssl/client-key.pem", boost::asio::ssl::context::file_format::pem);
-			});
+		if (Utility::startWith(restURL, "https://"))
+		{
+			cfg.set_validate_certificates(true);
+			cfg.set_ssl_context_callback(
+				[](boost::asio::ssl::context &ctx)
+				{
+					ctx.load_verify_file("/opt/appmesh/ssl/ca.pem");
+					ctx.use_certificate_file("/opt/appmesh/ssl/client.pem", boost::asio::ssl::context::file_format::pem);
+					ctx.use_private_key_file("/opt/appmesh/ssl/client-key.pem", boost::asio::ssl::context::file_format::pem);
+				});
+		}
 		web::http::client::http_client client(restURL, cfg);
 
 		// Build request URI and start the request.

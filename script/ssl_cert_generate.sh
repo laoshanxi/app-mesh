@@ -60,9 +60,10 @@ EOF
 
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
 
-IPADDRS=$(ifconfig -a | grep inet | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | tr -d "addr:" | paste -d "," -s)
-HOSTNAM=$(hostname --fqdn)
-HOSTS="$IPADDRS,$HOSTNAM,localhost,127.0.0.1"
+# https://stackoverflow.com/questions/13322485/how-to-get-the-primary-ip-address-of-the-local-machine-on-linux-and-os-x
+IPADDR=$(hostname -I | cut -d' ' -f1)
+HOSTNAME=$(hostname --fqdn)
+HOSTS="$IPADDR,$HOSTNAME,localhost,127.0.0.1"
 echo $HOSTS
 
 echo '{"CN":"appmesh-server","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server -hostname=$HOSTS - | cfssljson -bare server

@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 )
 
 var (
-	localListenAddr = "127.0.0.1:6058"
+	localListenAddr = "https://127.0.0.1:6058"
 	dockerSocket    = "/var/run/docker.sock"
 	parentProPid    = os.Getppid()
 	proxyClient     = &fasthttp.HostClient{
@@ -29,7 +30,6 @@ var (
 		Dial: func(addr string) (net.Conn, error) {
 			return net.Dial("unix", addr)
 		}}
-	enableTLS = true
 )
 
 // http handler function
@@ -161,8 +161,13 @@ func main() {
 	localListenAddr = *addr
 	log.Println("Docker socket:", dockerSocket)
 	log.Println("Listening at:", localListenAddr)
+	enableTLS := strings.HasPrefix(localListenAddr, "https://")
 
-	// listen
+	// clean schema prefix for Listen
+	localListenAddr = strings.Replace(localListenAddr, "https://", "", 1)
+	localListenAddr = strings.Replace(localListenAddr, "http://", "", 1)
+
+	// start listen
 	if enableTLS {
 		listenHttps()
 	} else {
