@@ -305,7 +305,7 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 	healthCheck();
 
 	// 4. Prometheus
-	if (PrometheusRest::instance()->collected())
+	if (PrometheusRest::instance() != nullptr && PrometheusRest::instance()->collected())
 	{
 		if (m_metricMemory && m_process)
 		{

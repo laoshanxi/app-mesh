@@ -16,10 +16,10 @@ public:
 	explicit RestHandler(bool forward2TcpServer);
 	virtual ~RestHandler();
 
-protected:
 	virtual void open() override;
 	void close();
 
+protected:
 	void checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite);
 	long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max) const;
 	std::string getHttpQueryString(const HttpRequest &message, const std::string &key) const;

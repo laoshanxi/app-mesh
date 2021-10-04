@@ -28,7 +28,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 	auto apps = Configuration::instance()->getApps();
 	for (auto &app : apps)
 	{
-		if (!app->isEnabled())
+		if (!app->isEnabled() || app->getName() == SEPARATE_DOCKER_PROXY_APP_NAME || app->getName() == SEPARATE_REST_APP_NAME)
 			continue;
 
 		auto pid = app->getpid();

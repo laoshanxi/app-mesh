@@ -728,7 +728,14 @@ void RestHandler::apiHealth(const HttpRequest &message)
 
 void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
-	message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
+	if (PrometheusRest::instance() != nullptr)
+	{
+		message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
+	}
+	else
+	{
+		throw std::invalid_argument("Prometheus export not enabled or configured correctly");
+	}
 }
 
 void RestHandler::apiUserLogin(const HttpRequest &message)

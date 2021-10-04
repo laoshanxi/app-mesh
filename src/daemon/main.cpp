@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
 		// recover applications
 		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))
 		{
-			config->deSerializeApp(configJsonValue.at(JSON_KEY_Applications));
+			config->deSerializeApps(configJsonValue.at(JSON_KEY_Applications));
 		}
 
 		// working dir
@@ -107,21 +107,38 @@ int main(int argc, char *argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		Configuration::instance()->dump();
 
-		// init TCP rest service
-		std::shared_ptr<RestTcpServer> httpServer;
-		if (config->getRestEnabled())
-		{
-			httpServer = std::make_shared<RestTcpServer>();
-			RestTcpServer::instance(httpServer);
-			PrometheusRest::instance(httpServer);
-			RestTcpServer::instance()->startTcpServer();
-			Configuration::instance()->addApp(RestTcpServer::instance()->getRestAppJson());
-		}
+		// start the 1st thread for timer (application & process event & healthcheck & consul report event)
+		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		// start the 2nd thread for timer
+		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// register docker proxy
 		if (config->getDockerProxyAddress().length())
 		{
-			Configuration::instance()->addApp(config->getDockerProxyAppJson());
+			Configuration::instance()->addApp(config->getDockerProxyAppJson())->execute();
+		}
+
+		// init REST
+		if (config->getRestEnabled())
+		{
+
+			std::shared_ptr<RestHandler> httpServer;
+			if (config->tcpRestProcessEnabled())
+			{
+				RestTcpServer::instance(std::make_shared<RestTcpServer>());
+				httpServer = RestTcpServer::instance();
+				RestTcpServer::instance()->startTcpServer();
+				Configuration::instance()->addApp(RestTcpServer::instance()->getRestAppJson())->execute();
+			}
+			else
+			{
+				httpServer = std::make_shared<RestHandler>(false);
+				httpServer->open();
+			}
+			PrometheusRest::instance(httpServer);
+
+			// reg prometheus
+			config->registerPrometheus();
 		}
 
 		// HA attach process to App
@@ -136,7 +153,8 @@ int main(int argc, char *argv[])
 		{
 			LOG_ERR << "Recover from snapshot failed with error " << std::strerror(errno);
 		}
-		std::for_each(apps.begin(), apps.end(), [&snap](std::vector<std::shared_ptr<Application>>::reference p)
+		std::for_each(apps.begin(), apps.end(),
+					  [&snap](std::vector<std::shared_ptr<Application>>::reference p)
 					  {
 						  if (snap && snap->m_apps.count(p->getName()))
 						  {
@@ -146,13 +164,6 @@ int main(int argc, char *argv[])
 								  p->attach(appSnapshot.m_pid);
 						  }
 					  });
-		// reg prometheus
-		config->registerPrometheus();
-
-		// start the 1st thread for timer (application & process event & healthcheck & consul report event)
-		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-		// start the 2nd thread for timer
-		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
 
 		// init consul
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";

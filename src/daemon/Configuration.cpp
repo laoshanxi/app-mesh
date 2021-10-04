@@ -247,6 +247,12 @@ int Configuration::getSeparateRestInternalPort()
 	return m_rest->m_separateRestInternalPort;
 }
 
+bool Configuration::tcpRestProcessEnabled()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_tcpRestProcessEnabled;
+}
+
 web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -267,7 +273,7 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	return result;
 }
 
-void Configuration::deSerializeApp(const web::json::value &jsonObj)
+void Configuration::deSerializeApps(const web::json::value &jsonObj)
 {
 	for (auto jsonApp : jsonObj.as_array())
 	{
@@ -745,6 +751,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	rest->m_separateRestInternalPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_SeparateRestInternalPort);
+	rest->m_tcpRestProcessEnabled = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SeparateRestProcess);
 	rest->m_dockerProxyListenAddr = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DockerProxyListenAddr);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
@@ -780,6 +787,7 @@ web::json::value Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_restListenAddress);
 	result[JSON_KEY_SeparateRestInternalPort] = web::json::value::number(m_separateRestInternalPort);
+	result[JSON_KEY_SeparateRestProcess] = web::json::value::boolean(m_tcpRestProcessEnabled);
 	result[JSON_KEY_DockerProxyListenAddr] = web::json::value::string(m_dockerProxyListenAddr);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
@@ -792,7 +800,7 @@ web::json::value Configuration::JsonRest::AsJson() const
 Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_httpThreadPoolSize(DEFAULT_HTTP_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
-	  m_separateRestInternalPort(DEFAULT_TCP_REST_LISTEN_PORT)
+	  m_separateRestInternalPort(DEFAULT_TCP_REST_LISTEN_PORT), m_tcpRestProcessEnabled(false)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 	m_jwt = std::make_shared<JsonJwt>();

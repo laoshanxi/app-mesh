@@ -209,7 +209,7 @@ int DockerApiProcess::returnValue(void) const
 	}
 	else
 	{
-		LOG_DBG << fname << "failed: " << resp.extract_utf8string(true).get();
+		LOG_DBG << fname << "failed: " << resp.status_code();
 	}
 	return -200;
 }

@@ -51,6 +51,7 @@ public:
 		int m_promListenPort;
 		std::string m_restListenAddress;
 		int m_separateRestInternalPort;
+		bool m_tcpRestProcessEnabled;
 		std::string m_dockerProxyListenAddr;
 		std::shared_ptr<JsonSsl> m_ssl;
 		std::shared_ptr<JsonJwt> m_jwt;
@@ -90,7 +91,7 @@ public:
 
 	static std::shared_ptr<Configuration> FromJson(const std::string &str, bool applyEnv = false) noexcept(false);
 	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user);
-	void deSerializeApp(const web::json::value &jsonObj);
+	void deSerializeApps(const web::json::value &jsonObj);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value &config);
 	static void readConfigFromEnv(web::json::value &jsonConfig);
@@ -108,6 +109,7 @@ public:
 	std::string getRestListenAddress();
 	std::string getDockerProxyAddress() const;
 	int getSeparateRestInternalPort();
+	bool tcpRestProcessEnabled();
 	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user) const;
 	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
 	bool isAppExist(const std::string &appName);

@@ -1,6 +1,6 @@
 {
   "Description": "MYHOST",
-  "ScheduleIntervalSeconds": 2,
+  "ScheduleIntervalSeconds": 1,
   "LogLevel": "DEBUG",
   "DefaultExecUser": "root",
   "WorkingDirectory": "",
