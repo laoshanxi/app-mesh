@@ -64,8 +64,8 @@ int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalS
 	}
 
 	int *timerIdPtr = new int(0);
-	(*timerIdPtr) = m_reactor->schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
+	(*timerIdPtr) = m_reactor->schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	assert(m_timers.find(timerIdPtr) == m_timers.end());
 	m_timers[timerIdPtr] = std::make_shared<TimerEvent>(timerIdPtr, handler, this->shared_from_this(), callOnce);
 	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";

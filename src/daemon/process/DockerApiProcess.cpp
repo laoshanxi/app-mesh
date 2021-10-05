@@ -131,17 +131,17 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		this->containerId(resp.extract_json().get().at("Id").as_string());
 
 		// POST /containers/{id}/start
-		resp = this->requestHttp(web::http::methods::POST, Utility::stringFormat("/containers/%s/start", this->containerId().c_str()), {}, {}, nullptr);
+		resp = this->requestHttp(web::http::methods::POST, Utility::stringFormat("/containers/%s/start", m_containerName.c_str()), {}, {}, nullptr);
 		if (resp.status_code() < web::http::status_codes::BadRequest)
 		{
 			// GET /containers/{id}/json
-			resp = this->requestHttp(web::http::methods::GET, Utility::stringFormat("/containers/%s/json", this->containerId().c_str()), {}, {}, nullptr);
+			resp = this->requestHttp(web::http::methods::GET, Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
 			if (resp.status_code() == web::http::status_codes::OK)
 			{
 				auto pid = resp.extract_json().get()["State"]["Pid"].as_integer();
 				// Success
 				this->attach(pid);
-				LOG_INF << fname << "started pid <" << pid << "> for container :" << this->containerId();
+				LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerName;
 				return this->getpid();
 			}
 			else
@@ -209,7 +209,7 @@ int DockerApiProcess::returnValue(void) const
 	}
 	else
 	{
-		LOG_DBG << fname << "failed: " << resp.status_code();
+		LOG_WAR << fname << "failed: " << resp.extract_utf8string().get();
 	}
 	return -200;
 }
@@ -219,6 +219,7 @@ const web::http::http_response DockerApiProcess::requestHttp(const web::http::me
 	const static char fname[] = "DockerApiProcess::requestHttp() ";
 
 	auto restURL = Configuration::instance()->getDockerProxyAddress();
+	std::string errorMsg = std::string("exception call: ").append(path);
 	try
 	{
 		// enable certificate file verification
@@ -260,13 +261,15 @@ const web::http::http_response DockerApiProcess::requestHttp(const web::http::me
 	}
 	catch (const std::exception &ex)
 	{
-		LOG_WAR << fname << path << " got exception: " << ex.what();
+		errorMsg = ex.what();
+		LOG_ERR << fname << path << " got exception: " << ex.what();
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << path << " exception";
+		LOG_ERR << fname << path << " exception";
 	}
 
 	web::http::http_response response(web::http::status_codes::ResetContent);
+	response.set_body(errorMsg);
 	return response;
 }
