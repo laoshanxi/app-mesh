@@ -307,7 +307,7 @@ void ArgumentParser::processLogoff()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string tokenFile = std::string(m_tokenFilePrefix) + m_url;
+	std::string tokenFile = std::string(m_tokenFilePrefix) + web::uri(m_url).host();
 	if (Utility::isFileExist(tokenFile))
 	{
 		std::ofstream ofs(tokenFile, std::ios::trunc);

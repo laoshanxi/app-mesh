@@ -219,7 +219,7 @@ const web::http::http_response DockerApiProcess::requestHttp(const web::http::me
 	const static char fname[] = "DockerApiProcess::requestHttp() ";
 
 	auto restURL = Configuration::instance()->getDockerProxyAddress();
-	std::string errorMsg = std::string("exception call: ").append(path);
+	std::string errorMsg = std::string("exception caught: ").append(path);
 	try
 	{
 		// enable certificate file verification
@@ -269,7 +269,7 @@ const web::http::http_response DockerApiProcess::requestHttp(const web::http::me
 		LOG_ERR << fname << path << " exception";
 	}
 
-	web::http::http_response response(web::http::status_codes::ResetContent);
+	web::http::http_response response(web::http::status_codes::ServiceUnavailable);
 	response.set_body(errorMsg);
 	return response;
 }
