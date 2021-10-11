@@ -92,6 +92,7 @@ protected:
 	STATUS m_status;
 	std::string m_name;
 	std::string m_commandLine;
+	std::string m_description;
 	/// @brief TODO: when user is removed, need remove associated app, otherwise, app invoke will fail
 	std::shared_ptr<User> m_owner;
 	int m_ownerPermission;

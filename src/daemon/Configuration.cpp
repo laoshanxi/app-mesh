@@ -736,6 +736,7 @@ const web::json::value Configuration::getDockerProxyAppJson() const
 	web::json::value restApp;
 	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_DOCKER_PROXY_APP_NAME);
 	restApp[JSON_KEY_APP_command] = web::json::value::string(std::string("/opt/appmesh/bin/dockeragent -url ") + this->getDockerProxyAddress());
+	restApp[JSON_KEY_APP_description] = web::json::value::string("Docker Engine agent with X.509 authentication");
 	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
 	auto objBehavior = web::json::value::object();
 	objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::RESTART));

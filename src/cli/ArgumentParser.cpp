@@ -345,6 +345,7 @@ void ArgumentParser::processAppAdd()
 	desc.add_options()
 		COMMON_OPTIONS
 		("name,n", po::value<std::string>(), "application name")
+		("desc,a", po::value<std::string>(), "application description")
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
@@ -450,6 +451,8 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count("cmd"))
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+	if (m_commandLineVariables.count("desc"))
+		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
 	if (m_commandLineVariables.count("shell_mode"))
 		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("health_check"))
@@ -772,6 +775,7 @@ void ArgumentParser::processAppRun()
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
+		("desc,a", po::value<std::string>(), "application description")
 		("cmd,c", po::value<std::string>(), "full command line with arguments (run application do not need specify command line)")
 		("name,n", po::value<std::string>(), "existing application name to run or specify a application name for run, empty will generate a random name in server")
 		("metadata,g", po::value<std::string>(), "application metadata string/JSON (input for application, pass to application process stdin)")
@@ -799,17 +803,13 @@ void ArgumentParser::processAppRun()
 	jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
 	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("cmd"))
-	{
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
-	}
+	if (m_commandLineVariables.count("desc"))
+		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
 	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
-	{
 		jsonObj[JSON_KEY_APP_retention] = web::json::value::string(m_commandLineVariables["retention"].as<std::string>());
-	}
 	if (m_commandLineVariables.count(JSON_KEY_APP_name))
-	{
 		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
-	}
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
 	{
 		auto metaData = m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>();
@@ -1010,6 +1010,7 @@ void ArgumentParser::processExec()
 	jsonObj[JSON_KEY_APP_name] = web::json::value::string(APPC_EXEC_APP_NAME);
 	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	jsonObj[JSON_KEY_APP_command] = web::json::value::string(initialCmd);
+	jsonObj[JSON_KEY_APP_description] = web::json::value::string("App Mesh exec environment");
 	jsonObj[JSON_KEY_APP_env] = objEnvs;
 	jsonObj[JSON_KEY_APP_working_dir] = web::json::value::string(getcwd(buff, sizeof(buff)));
 	web::json::value behavior;

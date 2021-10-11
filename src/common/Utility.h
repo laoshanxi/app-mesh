@@ -257,6 +257,7 @@ public:
 #define JSON_KEY_APP_metadata "metadata"
 #define JSON_KEY_APP_shell_mode "shell_mode"
 #define JSON_KEY_APP_command "command"
+#define JSON_KEY_APP_description "description"
 #define JSON_KEY_APP_stdout_cache_num "stdout_cache_num"
 #define JSON_KEY_APP_health_check_cmd "health_check_cmd"
 #define JSON_KEY_APP_working_dir "working_dir"

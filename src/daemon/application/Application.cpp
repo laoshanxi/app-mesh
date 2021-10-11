@@ -144,6 +144,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	if (jsonObj.has_field(JSON_KEY_APP_metadata))
 		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
 	app->m_commandLine = Utility::unEscape(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command)));
+	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 	// TODO: consider i18n and  legal file name
 	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", Configuration::instance()->getDefaultWorkDir().c_str(), app->m_name.c_str());
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
@@ -631,6 +632,8 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[JSON_KEY_APP_shell_mode] = web::json::value::boolean(m_shellApp);
 	if (m_commandLine.length())
 		result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
+	if (m_description.length())
+		result[GET_STRING_T(JSON_KEY_APP_description)] = web::json::value::string(GET_STRING_T(m_description));
 	if (m_healthCheckCmd.length())
 		result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
 	if (m_workdir.length())
@@ -742,6 +745,7 @@ void Application::dump()
 
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
+	LOG_DBG << fname << "m_description:" << m_description;
 	LOG_DBG << fname << "m_metadata:" << m_metadata;
 	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
