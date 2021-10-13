@@ -142,7 +142,26 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
 	if (jsonObj.has_field(JSON_KEY_APP_metadata))
-		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
+	{
+		if (jsonObj.at(JSON_KEY_APP_metadata).is_object())
+		{
+			app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
+		}
+		else
+		{
+			try
+			{
+				// try to load as JSON
+				app->m_metadata = web::json::value::parse(jsonObj.at(JSON_KEY_APP_metadata).as_string());
+			}
+			catch (...)
+			{
+				// use text field in case of not JSON format
+				app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
+			}
+		}
+	}
+
 	app->m_commandLine = Utility::unEscape(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command)));
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 	// TODO: consider i18n and  legal file name
@@ -557,7 +576,7 @@ void Application::healthCheck()
 	}
 }
 
-std::tuple<std::string, bool, int> Application::getOutput(long &position, int maxSize, const std::string &processUuid, int index)
+std::tuple<std::string, bool, int> Application::getOutput(long &position, long maxSize, const std::string &processUuid, int index)
 {
 	const static char fname[] = "Application::getOutput() ";
 

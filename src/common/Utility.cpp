@@ -387,7 +387,7 @@ std::string Utility::readFileCpp(const std::string &path)
 	return str;
 }
 
-std::string Utility::readFileCpp(const std::string &path, long *position, int maxSize, bool readLine)
+std::string Utility::readFileCpp(const std::string &path, long *position, long maxSize, bool readLine)
 {
 	const static char fname[] = "Utility::readFileCPP() ";
 
@@ -402,9 +402,9 @@ std::string Utility::readFileCpp(const std::string &path, long *position, int ma
 	{
 		if (position && stdoutReadStream.seekg(0, std::ios_base::end) && *position > stdoutReadStream.tellg())
 		{
-			throw std::invalid_argument(Utility::stringFormat("Input invalid output position <%d>", *position));
+			throw std::invalid_argument(Utility::stringFormat("Input invalid output position <%ld>", *position));
 		}
-
+		const std::ifstream::pos_type positionBegin = stdoutReadStream.tellg();
 		// adjust read position
 		std::stringstream buffer;
 		if (position)
@@ -416,7 +416,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, int ma
 			stdoutReadStream.seekg(0, std::ios_base::beg);
 		}
 		// read to buffer
-		if (maxSize)
+		if (maxSize > 0)
 		{
 			auto temp = make_shared_array<char>(maxSize);
 			memset(temp.get(), '\0', maxSize);
@@ -430,7 +430,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, int ma
 			}
 			buffer << temp.get();
 		}
-		else
+		else if (maxSize == 0)
 		{
 			if (readLine)
 			{
@@ -442,6 +442,53 @@ std::string Utility::readFileCpp(const std::string &path, long *position, int ma
 			{
 				buffer << stdoutReadStream.rdbuf();
 			}
+		}
+		else // maxSize < 0
+		{
+			maxSize = -maxSize;
+			// change to end for reverse read if the position is beginning
+			if (position && *position == 0)
+			{
+				stdoutReadStream.seekg(0, std::ios_base::end);
+			}
+
+			auto temp = make_shared_array<char>(maxSize);
+			memset(temp.get(), '\0', maxSize);
+
+			if (readLine)
+			{
+				std::string strLine;
+				long readSize = 0;
+				while (stdoutReadStream.tellg() != positionBegin && ++readSize < maxSize)
+				{
+					char oneChar[1];
+					stdoutReadStream.seekg(-1, ios::cur);
+					stdoutReadStream.read(oneChar, 1);
+					stdoutReadStream.seekg(-1, ios::cur);
+					if (oneChar[0] == '\n')
+					{
+						break;
+					}
+					strLine.append(oneChar);
+				}
+				std::reverse(strLine.begin(), strLine.end());
+				std::copy(strLine.begin(), strLine.end(), temp.get());
+			}
+			else
+			{
+				if (stdoutReadStream.tellg() > maxSize)
+				{
+					stdoutReadStream.seekg(-maxSize, ios::cur);
+					stdoutReadStream.readsome(temp.get(), maxSize);
+				}
+				else
+				{
+					maxSize = stdoutReadStream.tellg();
+					stdoutReadStream.seekg(0, std::ios_base::beg);
+					stdoutReadStream.readsome(temp.get(), maxSize);
+				}
+			}
+			buffer << temp.get();
 		}
 
 		if (position)

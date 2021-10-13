@@ -658,6 +658,8 @@ void ArgumentParser::processAppView()
 				query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 				auto response = requestHttp(true, methods::GET, restPath, query);
 				std::cout << response.extract_utf8string(true).get();
+				if (m_commandLineVariables.count("tail") == 0)
+					break;
 				if (response.headers().has(HTTP_HEADER_KEY_output_pos))
 				{
 					outputPosition = std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
@@ -1704,7 +1706,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 					  }
 					  std::cout << std::setw(9);
 					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start))
+						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start) && HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
 						  {
 							  auto startTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start));
 							  auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();

@@ -183,7 +183,7 @@ public:
 	// Read file to string
 	static std::string readFile(const std::string &path);
 	static std::string readFileCpp(const std::string &path);
-	static std::string readFileCpp(const std::string &path, long *position, int maxSize, bool readLine = false);
+	static std::string readFileCpp(const std::string &path, long *position, long maxSize, bool readLine = false);
 
 	static std::string createUUID();
 

@@ -62,7 +62,7 @@ public:
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
-	std::tuple<std::string, bool, int> getOutput(long &position, int maxSize, const std::string &processUuid = "", int index = 0);
+	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0);
 
 	// prometheus
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);

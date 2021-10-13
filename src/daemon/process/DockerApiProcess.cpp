@@ -98,6 +98,14 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp.extract_utf8string().get() << ">";
 	}
 
+	if (!stdinFileContent.is_object())
+	{
+		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.serialize();
+		LOG_WAR << fname << msg;
+		this->startError(msg);
+		return ACE_INVALID_PID;
+	}
+
 	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerCreate
 	// POST /containers/create
 	auto createBody = stdinFileContent;
