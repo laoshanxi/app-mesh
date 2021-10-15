@@ -143,21 +143,20 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
 	if (jsonObj.has_field(JSON_KEY_APP_metadata))
 	{
-		if (jsonObj.at(JSON_KEY_APP_metadata).is_object())
-		{
-			app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
-		}
-		else
+		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
+		if (!jsonObj.at(JSON_KEY_APP_metadata).is_object())
 		{
 			try
 			{
+				const auto str = Utility::unEscape(jsonObj.at(JSON_KEY_APP_metadata).as_string());
+				// handle escape
+				app->m_metadata = web::json::value::string(str);
 				// try to load as JSON
-				app->m_metadata = web::json::value::parse(jsonObj.at(JSON_KEY_APP_metadata).as_string());
+				app->m_metadata = web::json::value::parse(str);
 			}
 			catch (...)
 			{
 				// use text field in case of not JSON format
-				app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
 			}
 		}
 	}
