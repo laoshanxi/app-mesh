@@ -26,6 +26,7 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yaml ${CMAKE_CURRENT_BINARY_DIR}/bin/opt
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/appmesh_client.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/sdk/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/container_monitor.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appmesh_arm.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
 cp /usr/bin/cfssl ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 cp /usr/bin/cfssljson ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/ssl/
 cp ${CMAKE_CURRENT_BINARY_DIR}/dockeragent ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/

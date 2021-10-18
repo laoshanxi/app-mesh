@@ -824,6 +824,8 @@ std::string Utility::unEscape(const std::string &str)
 	result = Utility::stringReplace(result, "&gt;", ">");
 	result = Utility::stringReplace(result, "&apos;", "\'");
 	result = Utility::stringReplace(result, "&quot;", "\"");
+	result = Utility::stringReplace(result, "&#40;", "(");
+	result = Utility::stringReplace(result, "&#41;", ")");
 
 	result = Utility::stringReplace(result, "&#39;", "\'");
 	return result;

@@ -40,6 +40,7 @@ Welcome to AppMesh's documentation!
    success/secure_REST_file_server.md
    success/standalone_JWT_server.md
    success/kubernetes_run_native_application.md
+   success/remote_run_cli_and_python.md
 
 Indices and tables
 ==================

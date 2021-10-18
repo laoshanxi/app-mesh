@@ -117,6 +117,7 @@ int main(int argc, char *argv[])
 		{
 			Configuration::instance()->addApp(config->getDockerProxyAppJson())->execute();
 		}
+		Configuration::instance()->addApp(config->getPythonExecAppJson());
 
 		// init REST
 		if (config->getRestEnabled())

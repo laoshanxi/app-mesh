@@ -195,7 +195,7 @@ public:
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
-#define DEFAULT_RUN_APP_TIMEOUT_SECONDS 10				// run app default timeout
+#define DEFAULT_RUN_APP_TIMEOUT_SECONDS -10				// run app default timeout
 #define MAX_RUN_APP_TIMEOUT_SECONDS 3 * (60 * 60 * 24)	// run app max timeout 3 days
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
@@ -204,6 +204,7 @@ public:
 #define DEFAULT_EXEC_USER "appmesh"
 #define SEPARATE_REST_APP_NAME "apprest"
 #define SEPARATE_DOCKER_PROXY_APP_NAME "dockeragent"
+#define SEPARATE_PYTHON_EXEC_APP_NAME "pyrun"
 #define REST_ROOT_TEXT_MESSAGE "App Mesh"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 

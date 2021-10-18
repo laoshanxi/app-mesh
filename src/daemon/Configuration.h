@@ -116,6 +116,7 @@ public:
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
 	const web::json::value getDockerProxyAppJson() const;
+	const web::json::value getPythonExecAppJson() const;
 
 	std::shared_ptr<Label> getLabel() { return m_label; }
 
