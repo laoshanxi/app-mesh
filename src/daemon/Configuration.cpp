@@ -159,11 +159,11 @@ void Configuration::handleSignal()
 	}
 }
 
-web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string &user)
+web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp)
 {
 	web::json::value result = web::json::value::object();
 	// Applications
-	result[JSON_KEY_Applications] = serializeApplication(false, user);
+	result[JSON_KEY_Applications] = serializeApplication(false, user, returnUnPeresistApp);
 
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
@@ -253,14 +253,15 @@ bool Configuration::tcpRestProcessEnabled()
 	return m_rest->m_tcpRestProcessEnabled;
 }
 
-web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user) const
+web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
 	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
-				 [this, &user](std::shared_ptr<Application> app)
+				 [this, &user, returnUnPeresistApp](std::shared_ptr<Application> app)
 				 {
 					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&					// access permission check
+							 (returnUnPeresistApp || app->isPersistAable()) &&													// status filter
 							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_DOCKER_PROXY_APP_NAME)); // not expose rest process
 				 });
 
@@ -453,7 +454,8 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 	// Write to disk
 	{
 		app->initMetrics(PrometheusRest::instance());
-		saveConfigToDisk();
+		if (app->isPersistAable())
+			saveConfigToDisk();
 		// invoke immediately
 		app->execute();
 	}
@@ -477,7 +479,9 @@ void Configuration::removeApp(const std::string &appName)
 				app = (*iterA);
 				iterA = m_apps.erase(iterA);
 				// Write to disk
-				saveConfigToDisk();
+				if ((*iterA)->isPersistAable())
+
+					saveConfigToDisk();
 				LOG_DBG << fname << "removed " << appName;
 			}
 			else
@@ -496,7 +500,7 @@ void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = GET_STD_STRING(this->AsJson(false, "").serialize());
+	auto content = GET_STD_STRING(this->AsJson(false, "", false).serialize());
 	if (content.length())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);

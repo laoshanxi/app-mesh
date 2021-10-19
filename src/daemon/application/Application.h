@@ -39,6 +39,9 @@ public:
 	const std::shared_ptr<User> &getOwner() const;
 	int getOwnerPermission() const;
 	bool isCloudApp() const;
+	STATUS getStatus() const;
+	bool isPersistAable() const;
+	void setUnPersistable();
 
 	bool available(const std::chrono::system_clock::time_point &now = std::chrono::system_clock::now());
 	bool isEnabled() const;
@@ -88,6 +91,7 @@ protected:
 	mutable std::recursive_mutex m_appMutex;
 	std::shared_ptr<AppTimer> m_timer;
 	static ACE_Time_Value m_waitTimeout;
+	bool m_persistAble;
 
 	STATUS m_status;
 	std::string m_name;

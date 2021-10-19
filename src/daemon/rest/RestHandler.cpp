@@ -878,7 +878,9 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
-	return Configuration::instance()->addApp(jsonApp);
+	auto app = Configuration::instance()->addApp(jsonApp);
+	app->setUnPersistable();
+	return app;
 }
 
 void RestHandler::apiRunAsync(const HttpRequest &message)
@@ -945,7 +947,7 @@ void RestHandler::apiAppsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	auto tokenUserName = getJwtUserName(message);
-	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName));
+	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName, true));
 }
 
 void RestHandler::apiCloudAppsView(const HttpRequest &message)

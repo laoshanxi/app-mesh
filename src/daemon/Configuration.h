@@ -90,7 +90,7 @@ public:
 	static void handleSignal();
 
 	static std::shared_ptr<Configuration> FromJson(const std::string &str, bool applyEnv = false) noexcept(false);
-	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user);
+	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp = true);
 	void deSerializeApps(const web::json::value &jsonObj);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value &config);
@@ -110,7 +110,7 @@ public:
 	std::string getDockerProxyAddress() const;
 	int getSeparateRestInternalPort();
 	bool tcpRestProcessEnabled();
-	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user) const;
+	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
 	bool isAppExist(const std::string &appName);
 	void disableApp(const std::string &appName);

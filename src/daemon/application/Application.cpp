@@ -24,7 +24,7 @@
 ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(std::chrono::milliseconds(20));
 
 Application::Application()
-	: m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
+	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false), m_nextStartTimerId(0),
 	  m_health(true), m_appId(Utility::createUUID()), m_version(0), m_pid(ACE_INVALID_PID),
 	  m_suicideTimerId(0), m_continueFails(0), m_starts(0)
@@ -119,6 +119,22 @@ int Application::getOwnerPermission() const
 bool Application::isCloudApp() const
 {
 	return (m_metadata == CLOUD_STR_JSON);
+}
+
+STATUS Application::getStatus() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	return m_status;
+}
+
+bool Application::isPersistAable() const
+{
+	return m_persistAble;
+}
+
+void Application::setUnPersistable()
+{
+	m_persistAble = false;
 }
 
 bool Application::available(const std::chrono::system_clock::time_point &now)
