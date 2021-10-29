@@ -16,6 +16,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24)  # default 7 days
 DEFAULT_RUN_APP_TIMEOUT_SECONDS = 10
 DEFAULT_RUN_APP_RETENTION_DURATION = 10
+REST_TEXT_MESSAGE_JSON_KEY = "message"
 
 
 class AppMeshClient:
@@ -35,7 +36,7 @@ class AppMeshClient:
         self,
         server_url="https://127.0.0.1:6060",
         jwt_auth_enable=True,
-    ):
+    ) -> None:
         """Construction function"""
         self.server_url = server_url
         self.jwt_auth_enable = jwt_auth_enable
@@ -44,7 +45,7 @@ class AppMeshClient:
     ########################################
     # Authentication
     ########################################
-    def login(self, user_name, user_pwd, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS):
+    def login(self, user_name, user_pwd, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
         """
         User Login with password
 
@@ -82,7 +83,7 @@ class AppMeshClient:
                 # resp.raise_for_status()
         return self.__jwt_token
 
-    def authentication(self, token, permission=None):
+    def authentication(self, token, permission=None) -> bool:
         """
         Verify User token and permission id
 
@@ -201,7 +202,7 @@ class AppMeshClient:
                 0 is heathy, 1 is unhealthy
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/app/{0}/health".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return (resp.status_code == HTTPStatus.OK), resp.text
 
     ########################################
     # Application manage
@@ -236,7 +237,7 @@ class AppMeshClient:
             Message : JSON
         """
         resp = self.__request_http(AppMeshClient.Method.DELETE, path="/appmesh/app/{0}".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     def enable_app(self, app_name):
         """
@@ -252,7 +253,7 @@ class AppMeshClient:
             Message : JSON
         """
         resp = self.__request_http(AppMeshClient.Method.POST, path="/appmesh/app/{0}/enable".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     def disable_app(self, app_name):
         """
@@ -268,7 +269,7 @@ class AppMeshClient:
             Message : JSON
         """
         resp = self.__request_http(AppMeshClient.Method.POST, path="/appmesh/app/{0}/disable".format(app_name))
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     ########################################
     # Cloud API
@@ -285,7 +286,7 @@ class AppMeshClient:
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def remove_cloud_app(self, app_name):
+    def remove_cloud_app(self, app_name) -> bool:
         """
         Delete a cloud application
 
@@ -400,9 +401,9 @@ class AppMeshClient:
             path="/appmesh/user/{0}/passwd".format(new_password),
             header={"New-Password": base64.b64encode(new_password.encode())},
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
-    def add_user(self, user_name, user_json):
+    def add_user(self, user_name, user_json) -> bool:
         """
         Add a new user, not available for LDAP user
 
@@ -422,9 +423,9 @@ class AppMeshClient:
             path="/appmesh/user/{0}".format(user_name),
             body=user_json,
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return resp.status_code == HTTPStatus.OK
 
-    def delete_user(self, user_name):
+    def delete_user(self, user_name) -> bool:
         """
         Delete an existing user
 
@@ -441,9 +442,9 @@ class AppMeshClient:
             method=AppMeshClient.Method.DELETE,
             path="/appmesh/user/{0}".format(user_name),
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return resp.status_code == HTTPStatus.OK
 
-    def lock_user(self, user_name):
+    def lock_user(self, user_name) -> bool:
         """
         Lock an existing user
 
@@ -460,9 +461,9 @@ class AppMeshClient:
             method=AppMeshClient.Method.POST,
             path="/appmesh/user/{0}/lock".format(user_name),
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return resp.status_code == HTTPStatus.OK
 
-    def unlock_user(self, user_name):
+    def unlock_user(self, user_name) -> bool:
         """
         Unlock an existing user
 
@@ -479,7 +480,7 @@ class AppMeshClient:
             method=AppMeshClient.Method.POST,
             path="/appmesh/user/{0}/unlock".format(user_name),
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return resp.status_code == HTTPStatus.OK
 
     def get_users(self):
         """
@@ -541,7 +542,7 @@ class AppMeshClient:
         resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/permissions")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def update_role(self, role_name, role_json):
+    def update_role(self, role_name, role_json) -> bool:
         """
         Update (or add) a role with defined permissions
         The permission ID can be App Mesh pre-defined or other permission ID
@@ -557,9 +558,9 @@ class AppMeshClient:
             Message : JSON
         """
         resp = self.__request_http(method=AppMeshClient.Method.POST, path="/appmesh/role/{0}".format(role_name), body=role_json)
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return resp.status_code == HTTPStatus.OK
 
-    def delete_role(self, role_name):
+    def delete_role(self, role_name) -> bool:
         """
         Delete an existing role
 
@@ -576,7 +577,7 @@ class AppMeshClient:
             method=AppMeshClient.Method.DELETE,
             path="/appmesh/role/{0}".format(role_name),
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return resp.status_code == HTTPStatus.OK
 
     ########################################
     # Tag management API
@@ -600,9 +601,9 @@ class AppMeshClient:
             query={"value": tag_value},
             path="/appmesh/label/{0}".format(tag_name),
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
-    def remove_tag(self, tag_name):
+    def remove_tag(self, tag_name) -> bool:
         """
         Delete a tag(label) for current logon node
 
@@ -616,7 +617,7 @@ class AppMeshClient:
             Message : JSON
         """
         resp = self.__request_http(AppMeshClient.Method.DELETE, path="/appmesh/label/{0}".format(tag_name))
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        return resp.status_code == HTTPStatus.OK
 
     def get_tags(self):
         """
@@ -647,7 +648,7 @@ class AppMeshClient:
     ########################################
     # File management
     ########################################
-    def download(self, file_path, local_file):
+    def download(self, file_path, local_file) -> bool:
         """
         Copy a remote file to local, local file will have the same permission with remote file
 
@@ -704,7 +705,7 @@ class AppMeshClient:
             )
             if resp.status_code == HTTPStatus.OK:
                 return True, ""
-            return False, resp.text
+            return False, resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     ########################################
     # Run command or Application and get output
@@ -715,7 +716,7 @@ class AppMeshClient:
         synchronized=True,
         max_exec_time=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
         async_retention=DEFAULT_RUN_APP_RETENTION_DURATION,
-    ):
+    ) -> int:
         """Wrapper of self.run() used for asyncio"""
         return self.run(app_json, synchronized, max_exec_time, async_retention)
 
@@ -725,7 +726,7 @@ class AppMeshClient:
         synchronized=True,
         max_exec_time=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
         async_retention=DEFAULT_RUN_APP_RETENTION_DURATION,
-    ):
+    ) -> int:
         """
         Run a command remotely, app_json specify 'name' attributes used to run a existing application
 
@@ -784,7 +785,7 @@ class AppMeshClient:
             print(resp.text)
         return exit_code
 
-    def __request_http(self, method, path, query={}, header={}, body=None):
+    def __request_http(self, method, path, query={}, header={}, body=None) -> requests.Response:
         """http request"""
         rest_url = parse.urljoin(self.server_url, path)
 

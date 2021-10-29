@@ -19,15 +19,15 @@ import appmesh_client
 client = appmesh_client.AppMeshClient()
 # authentication
 token = client.login("admin", "Admin123")
-client.authentication(token, "app-view")
-client.change_passwd("Admin123")
+print(client.authentication(token, "app-view"))
+print(client.change_passwd("Admin123"))
 print(json.dumps(client.get_permissions(), indent=2))
 # view application
 print(json.dumps(client.get_app("ping"), indent=2))
 print(json.dumps(client.get_app("ping2"), indent=2))
 print(json.dumps(client.get_apps(), indent=2))
-print(json.dumps(client.get_app_output("cron"), indent=2))
-print(json.dumps(client.get_app_health("ping"), indent=2))
+print(client.get_app_output("docker"))
+print(client.get_app_health("ping"))
 # manage application
 print(json.dumps(client.add_app({"command": "ping www.baidu.com -w 5", "name": "SDK"}), indent=2))
 print(client.remove_app("SDK"))
@@ -38,8 +38,8 @@ print(json.dumps(client.get_resource(), indent=2))
 
 print(client.add_tag("MyTag", "TagValue"))
 print(client.get_tags())
-print(client.get_app_output("loki"))
-print(client.get_app_health("ping"))
+print(client.get_app_output("docker"))
+print(client.get_app_health("docker"))
 print(client.get_metrics())
 # config
 print(client.get_config())
