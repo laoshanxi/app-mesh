@@ -27,7 +27,7 @@ Application::Application()
 	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false), m_nextStartTimerId(0),
 	  m_health(true), m_appId(Utility::createUUID()), m_version(0), m_pid(ACE_INVALID_PID),
-	  m_suicideTimerId(0), m_continueFails(0), m_starts(0)
+	  m_suicideTimerId(0), m_starts(std::make_shared<prometheus::Counter>())
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -127,7 +127,7 @@ STATUS Application::getStatus() const
 	return m_status;
 }
 
-bool Application::isPersistAable() const
+bool Application::isPersistAble() const
 {
 	return m_persistAble;
 }
@@ -652,6 +652,29 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	}
 }
 
+void Application::initMetrics(std::shared_ptr<Application> fromApp)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	// must clean first, otherwise the duplicate one will create
+	m_metricStartCount = nullptr;
+	m_metricAppPid = nullptr;
+	m_metricMemory = nullptr;
+	m_metricCpu = nullptr;
+	m_metricFileDesc = nullptr;
+
+	// update
+	if (fromApp)
+	{
+		// use uuid in label here to avoid same name app use the same metric cause issue
+		m_metricStartCount = fromApp->m_metricStartCount;
+		m_metricAppPid = fromApp->m_metricAppPid;
+		m_metricMemory = fromApp->m_metricMemory;
+		m_metricCpu = fromApp->m_metricCpu;
+		m_metricFileDesc = fromApp->m_metricFileDesc;
+		m_starts = fromApp->m_starts;
+	}
+}
+
 web::json::value Application::AsJson(bool returnRuntimeInfo)
 {
 	web::json::value result = web::json::value::object();
@@ -751,7 +774,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		auto err = getLastError();
 		if (err.length())
 			result[JSON_KEY_APP_last_error] = web::json::value::string(err);
-		result[JSON_KEY_APP_starts] = web::json::value::number(m_starts);
+		result[JSON_KEY_APP_starts] = web::json::value::number(m_starts->Value());
 	}
 
 	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
@@ -796,7 +819,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;
-	LOG_DBG << fname << "m_starts:" << m_starts;
+	LOG_DBG << fname << "m_starts:" << m_starts->Value();
 	LOG_DBG << fname << "m_version:" << m_version;
 	LOG_DBG << fname << "m_lastError:" << getLastError();
 
@@ -814,7 +837,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 {
 	std::shared_ptr<AppProcess> process;
 	m_stdoutFileQueue->enqueue();
-	++m_starts;
+	m_starts->Increment();
 
 	// prepare shell mode script
 	if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))

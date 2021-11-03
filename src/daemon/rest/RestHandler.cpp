@@ -827,6 +827,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 		// without default retention, application might be removed before get output
 		jsonApp[JSON_KEY_APP_retention] = web::json::value::string(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION));
 	}
+	std::shared_ptr<Application> fromApp;
 	if (clientProvideAppName.length())
 	{
 		if (Configuration::instance()->isAppExist(clientProvideAppName))
@@ -834,7 +835,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 			// require app read permission
 			checkAppAccessPermission(message, clientProvideAppName, false);
 			// get application profile
-			auto existApp = Configuration::instance()->getApp(clientProvideAppName)->AsJson(false);
+			fromApp = Configuration::instance()->getApp(clientProvideAppName);
+			auto existApp = fromApp->AsJson(false);
 			// CASE: copy existing application and run
 			if (HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 			{
@@ -878,7 +880,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
-	auto app = Configuration::instance()->addApp(jsonApp);
+	auto app = Configuration::instance()->addApp(jsonApp, fromApp);
 	app->setUnPersistable();
 	return app;
 }

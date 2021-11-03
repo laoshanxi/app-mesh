@@ -21,6 +21,10 @@ class PrometheusRest;
 class AppProcess;
 class DailyLimitation;
 class ResourceLimitation;
+namespace prometheus
+{
+	class Counter;
+};
 //////////////////////////////////////////////////////////////////////////
 /// An Application is used to define and manage a process job.
 //////////////////////////////////////////////////////////////////////////
@@ -40,7 +44,7 @@ public:
 	int getOwnerPermission() const;
 	bool isCloudApp() const;
 	STATUS getStatus() const;
-	bool isPersistAable() const;
+	bool isPersistAble() const;
 	void setUnPersistable();
 
 	bool available(const std::chrono::system_clock::time_point &now = std::chrono::system_clock::now());
@@ -69,6 +73,7 @@ public:
 
 	// prometheus
 	void initMetrics(std::shared_ptr<PrometheusRest> prom);
+	void initMetrics(std::shared_ptr<Application> fromApp);
 
 protected:
 	// error
@@ -147,8 +152,7 @@ protected:
 	std::shared_ptr<GaugeMetric> m_metricCpu;
 	std::shared_ptr<GaugeMetric> m_metricAppPid;
 	std::shared_ptr<GaugeMetric> m_metricFileDesc;
-	std::atomic<int> m_continueFails;
-	std::atomic<int> m_starts;
+	std::shared_ptr<prometheus::Counter> m_starts;
 
 	// error
 	mutable std::recursive_mutex m_errorMutex;

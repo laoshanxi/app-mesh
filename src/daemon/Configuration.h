@@ -90,7 +90,7 @@ public:
 	static void handleSignal();
 
 	static std::shared_ptr<Configuration> FromJson(const std::string &str, bool applyEnv = false) noexcept(false);
-	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp = true);
+	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp = true);
 	void deSerializeApps(const web::json::value &jsonObj);
 	void saveConfigToDisk();
 	void hotUpdate(const web::json::value &config);
@@ -99,7 +99,7 @@ public:
 	void registerPrometheus();
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const web::json::value &jsonApp);
+	std::shared_ptr<Application> addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp = nullptr);
 	void removeApp(const std::string &appName);
 	std::shared_ptr<Application> parseApp(const web::json::value &jsonApp);
 
@@ -110,7 +110,7 @@ public:
 	std::string getDockerProxyAddress() const;
 	int getSeparateRestInternalPort();
 	bool tcpRestProcessEnabled();
-	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp) const;
+	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
 	bool isAppExist(const std::string &appName);
 	void disableApp(const std::string &appName);

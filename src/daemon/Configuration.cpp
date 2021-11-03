@@ -159,11 +159,11 @@ void Configuration::handleSignal()
 	}
 }
 
-web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp)
+web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp)
 {
 	web::json::value result = web::json::value::object();
 	// Applications
-	result[JSON_KEY_Applications] = serializeApplication(false, user, returnUnPeresistApp);
+	result[JSON_KEY_Applications] = serializeApplication(false, user, returnUnPersistApp);
 
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
@@ -253,15 +253,15 @@ bool Configuration::tcpRestProcessEnabled()
 	return m_rest->m_tcpRestProcessEnabled;
 }
 
-web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPeresistApp) const
+web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
 	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
-				 [this, &user, returnUnPeresistApp](std::shared_ptr<Application> app)
+				 [this, &user, returnUnPersistApp](std::shared_ptr<Application> app)
 				 {
 					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&					// access permission check
-							 (returnUnPeresistApp || app->isPersistAable()) &&													// status filter
+							 (returnUnPersistApp || app->isPersistAble()) &&													// status filter
 							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_DOCKER_PROXY_APP_NAME)); // not expose rest process
 				 });
 
@@ -429,7 +429,7 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonApp)
+std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp)
 {
 	auto app = parseApp(jsonApp);
 	bool update = false;
@@ -453,8 +453,11 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 	}
 	// Write to disk
 	{
-		app->initMetrics(PrometheusRest::instance());
-		if (app->isPersistAable())
+		if (fromApp)
+			app->initMetrics(fromApp);
+		else
+			app->initMetrics(PrometheusRest::instance());
+		if (app->isPersistAble())
 			saveConfigToDisk();
 		// invoke immediately
 		app->execute();
@@ -479,7 +482,7 @@ void Configuration::removeApp(const std::string &appName)
 				app = (*iterA);
 				iterA = m_apps.erase(iterA);
 				// Write to disk
-				if ((*iterA)->isPersistAable())
+				if ((*iterA)->isPersistAble())
 
 					saveConfigToDisk();
 				LOG_DBG << fname << "removed " << appName;
