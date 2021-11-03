@@ -184,7 +184,9 @@ int main(int argc, char *argv[])
 			PerfLog perf("main while loop");
 
 			// monitor application
-			const std::list<os::Process> ptree = os::processes();
+			std::list<os::Process> ptree;
+			if (PrometheusRest::instance() != nullptr && PrometheusRest::instance()->collected())
+				ptree = os::processes();
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
