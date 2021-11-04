@@ -60,7 +60,7 @@ void Security::save()
 
     // distinguish security.json and ldap.json
     std::string securityFile = APPMESH_SECURITY_JSON_FILE;
-    if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_local)
+    if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_ldap)
     {
         securityFile = APPMESH_SECURITY_LDAP_JSON_FILE;
     }
