@@ -61,11 +61,11 @@ EOF
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
 
 # https://stackoverflow.com/questions/13322485/how-to-get-the-primary-ip-address-of-the-local-machine-on-linux-and-os-x
-IPADDR=$(hostname -I | cut -d' ' -f1)
+IPADDR=$(hostname -i | cut -d' ' -f1)
 HOSTNAME=$(hostname --fqdn)
 HOSTS="$IPADDR,$HOSTNAME,localhost,127.0.0.1"
 echo $HOSTS
 
-echo '{"CN":"appmesh-server","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server -hostname=$HOSTS - | cfssljson -bare server
+echo '{"CN":"'"$HOSTNAME"'","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server -hostname=$HOSTS - | cfssljson -bare server
 
 echo '{"CN":"appmesh-client","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client -hostname=$HOSTS - | cfssljson -bare client
