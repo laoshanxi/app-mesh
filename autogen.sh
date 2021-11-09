@@ -25,7 +25,7 @@ if [ -f "/usr/bin/yum" ]; then
 	#RHEL
 	RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
 	yum install -y epel-release
-	if [[ $systemver = "7" ]]; then
+	if [[ $RHEL_VER = "7" ]]; then
 		yum install -y https://repo.ius.io/ius-release-el7.rpm
 		yum remove git -y
 		yum install git222 -y
@@ -162,7 +162,7 @@ if [ true ]; then
 	export ACE_ROOT=$(pwd)
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
-	make
+	make -j6
 	make install INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
 fi

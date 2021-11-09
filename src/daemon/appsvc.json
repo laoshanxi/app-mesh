@@ -28,7 +28,13 @@
     {
       "command": "ping www.baidu.com -w 300",
       "name": "ping",
-      "cache_lines": 30
+      "cache_lines": 30,
+      "behavior": {
+        "control": {
+          "0": "standby"
+        },
+        "exit": "restart"
+      }
     }
   ],
   "Consul": {

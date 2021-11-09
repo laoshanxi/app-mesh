@@ -31,7 +31,7 @@ constexpr auto REST_PATH_APP_HEALTH = R"(/appmesh/app/([^/\*]+)/health)";
 
 // 3. Cloud Application
 constexpr auto REST_PATH_CLOUD_APP_ALL_VIEW = "/appmesh/cloud/applications";
-constexpr auto REST_PATH_CLOUD_APP_VIEW = R"(/appmesh/cloud/application/([^/\*]+))";
+constexpr auto REST_PATH_CLOUD_APP_VIEW = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_APP_ADD = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_APP_DELETE = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_NODES_VIEW = "/appmesh/cloud/nodes";
@@ -1015,12 +1015,16 @@ void RestHandler::apiResourceView(const HttpRequest &message)
 
 void RestHandler::apiAppAdd(const HttpRequest &message)
 {
+	const static char fname[] = "RestHandler::apiAppAdd() ";
+
 	permissionCheck(message, PERMISSION_KEY_app_reg);
 	auto jsonApp = message.extractJson();
 	if (jsonApp.is_null())
 	{
 		throw std::invalid_argument("Empty json input");
 	}
+	LOG_DBG << fname << jsonApp;
+
 	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->getApp(appName)->isCloudApp())
 	{

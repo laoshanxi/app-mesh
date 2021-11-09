@@ -1,7 +1,7 @@
 #include <atomic>
 #include <chrono>
-#include <thread>
 #include <termios.h>
+#include <thread>
 #include <unistd.h>
 
 #include <ace/Signal.h>
@@ -19,10 +19,10 @@
 #include "ArgumentParser.h"
 
 #define OPTION_URL \
-	("url,b", po::value<std::string>()->default_value(DEFAULT_SERVER_URL), "server URL")
+	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "server URL")
 
-#define COMMON_OPTIONS \
-	OPTION_URL         \
+#define COMMON_OPTIONS                                                                                              \
+	OPTION_URL                                                                                                      \
 	("user,u", po::value<std::string>(), "Specifies the name of the user to connect to App Mesh for this command.") \
 	("password,x", po::value<std::string>(), "Specifies the user password to connect to App Mesh for this command.")
 
@@ -57,6 +57,7 @@ ArgumentParser::ArgumentParser(int argc, const char *argv[])
 	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(0)
 {
 	WORK_PARSE = this;
+	m_defaultUrl = this->getAppMeshUrl();
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
 	global.add_options()
 	("command", po::value<std::string>(), "command to execute")
@@ -341,6 +342,7 @@ void ArgumentParser::processLoginfo()
 // appName is null means this is a normal application (not a shell application)
 void ArgumentParser::processAppAdd()
 {
+	const std::string default_control_string = "0:standby";
 	po::options_description desc("Register a new application", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
@@ -368,7 +370,8 @@ void ArgumentParser::processAppAdd()
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')")
 		("cron", "indicate interval parameter use cron expression")
 		("retention,q", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "exit behavior [restart,standby,keepalive,remove]")
+		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_restart), "default exit behavior [restart,standby,keepalive,remove]")
+		("control", po::value<std::vector<std::string>>()->default_value(std::vector<std::string>(), default_control_string), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
 		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing Time)")
 		("force,f", "force without confirm")
 		("stdin", "accept json from stdin")
@@ -432,20 +435,48 @@ void ArgumentParser::processAppAdd()
 
 	if (m_commandLineVariables.count("exit"))
 	{
-		auto exit = m_commandLineVariables["exit"].as<std::string>();
-		if (exit == JSON_KEY_APP_behavior_standby ||
-			exit == JSON_KEY_APP_behavior_restart ||
-			exit == JSON_KEY_APP_behavior_keepalive ||
-			exit == JSON_KEY_APP_behavior_remove)
+		auto hebavior = m_commandLineVariables["exit"].as<std::string>();
+		if (hebavior == JSON_KEY_APP_behavior_standby ||
+			hebavior == JSON_KEY_APP_behavior_restart ||
+			hebavior == JSON_KEY_APP_behavior_keepalive ||
+			hebavior == JSON_KEY_APP_behavior_remove)
 		{
 			web::json::value jsonBehavior;
-			jsonBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(exit);
+			jsonBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(hebavior);
 			jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
 		}
 		else
 		{
-			throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", exit.c_str()));
+			throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", hebavior.c_str()));
 		}
+	}
+	if (m_commandLineVariables.count(JSON_KEY_APP_behavior_control))
+	{
+		auto controls = m_commandLineVariables[JSON_KEY_APP_behavior_control].as<std::vector<std::string>>();
+		if (controls.size() == 0)
+			controls.push_back(default_control_string);
+		web::json::value objControl = web::json::value::object();
+		for (const auto &control : controls)
+		{
+			auto find = control.find_first_of(':');
+			if (find != std::string::npos)
+			{
+				auto code = Utility::stdStringTrim(control.substr(0, find));
+				auto hebavior = Utility::stdStringTrim(control.substr(find + 1));
+				if (hebavior == JSON_KEY_APP_behavior_standby ||
+					hebavior == JSON_KEY_APP_behavior_restart ||
+					hebavior == JSON_KEY_APP_behavior_keepalive ||
+					hebavior == JSON_KEY_APP_behavior_remove)
+				{
+					objControl[code] = web::json::value::string(hebavior);
+				}
+				else
+				{
+					throw std::invalid_argument(Utility::stringFormat("invalid behavior <%s> for <exit> event", hebavior.c_str()));
+				}
+			}
+		}
+		jsonObj[JSON_KEY_APP_behavior][JSON_KEY_APP_behavior_control] = objControl;
 	}
 	if (m_commandLineVariables.count("name"))
 		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
@@ -692,7 +723,7 @@ void ArgumentParser::processCloudAppView()
 	std::string restPath = "/appmesh/cloud/applications";
 	if (m_commandLineVariables.count("name") > 0)
 	{
-		restPath = std::string("/appmesh/cloud/application/").append(m_commandLineVariables["name"].as<std::string>());
+		restPath = std::string("/appmesh/cloud/app/").append(m_commandLineVariables["name"].as<std::string>());
 	}
 	auto resp = requestHttp(true, methods::GET, restPath);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
@@ -1143,7 +1174,7 @@ void ArgumentParser::processFileDownload()
 	auto local = m_commandLineVariables["local"].as<std::string>();
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_KEY_file_path] = file;
-	auto response = requestHttp(true, methods::GET, restPath, query, nullptr, &headers);
+	auto response = requestHttp(true, methods::GET, restPath, query, nullptr, headers);
 
 	auto stream = concurrency::streams::fstream::open_ostream(local, std::ios::out | std::ios::binary | std::ios::trunc).get();
 	response.body().read_to_end(stream.streambuf()).wait();
@@ -1206,7 +1237,7 @@ void ArgumentParser::processFileUpload()
 	config.set_validate_certificates(false);
 	http_client client(m_url, config);
 	std::string restPath = "/appmesh/file/upload";
-	auto request = createRequest(methods::POST, restPath, query, &header);
+	auto request = createRequest(methods::POST, restPath, query, header);
 	request.set_body(fileStream, length);
 	http_response response = client.request(request).get();
 	fileStream.close();
@@ -1246,7 +1277,7 @@ void ArgumentParser::processTags()
 			{
 				std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
 				std::map<std::string, std::string> query = {{"value", envVec.at(1)}};
-				requestHttp(true, methods::PUT, restPath, query, nullptr, nullptr);
+				requestHttp(true, methods::PUT, restPath, query);
 			}
 		}
 	}
@@ -1392,7 +1423,7 @@ void ArgumentParser::processUserChangePwd()
 	std::string restPath = std::string("/appmesh/user/") + user + "/passwd";
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
-	http_response response = requestHttp(true, methods::POST, restPath, query, nullptr, &headers);
+	http_response response = requestHttp(true, methods::POST, restPath, query, nullptr, headers);
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
@@ -1466,7 +1497,7 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 	return requestHttp(throwAble, mtd, path, query, &body);
 }
 
-http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body, std::map<std::string, std::string> *header)
+http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body, std::map<std::string, std::string> header)
 {
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
@@ -1486,7 +1517,7 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 	return response;
 }
 
-http_request ArgumentParser::createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> *header)
+http_request ArgumentParser::createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> &headers)
 {
 	// Build request URI and start the request.
 	uri_builder builder(GET_STRING_T(path));
@@ -1494,15 +1525,12 @@ http_request ArgumentParser::createRequest(const method &mtd, const std::string 
 				  { builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second)); });
 
 	http_request request(mtd);
-	if (header)
-	{
-		for (auto h : *header)
-		{
-			request.headers().add(h.first, h.second);
-		}
-	}
-	auto jwtToken = getAuthenToken();
-	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + jwtToken);
+
+	// headers
+	for (const auto &h : headers)
+		request.headers().add(h.first, h.second);
+	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken());
+
 	request.set_request_uri(builder.to_uri());
 	return request;
 }
@@ -1835,4 +1863,29 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 				__func__, sz - 1);
 
 	return idx; /* number of chars in passwd    */
+}
+
+const std::string ArgumentParser::getAppMeshUrl()
+{
+	std::string url = DEFAULT_SERVER_URL;
+	auto file = Utility::readFileCpp(Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE);
+	if (file.length() > 0)
+	{
+		auto jsonValue = web::json::value::parse(GET_STRING_T(file));
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST) &&
+			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_RestListenPort))
+		{
+			auto rest = jsonValue.at(JSON_KEY_REST);
+			auto port = GET_JSON_INT_VALUE(rest, JSON_KEY_RestListenPort);
+			auto ssl = HAS_JSON_FIELD(rest, JSON_KEY_SSL) &&
+					   HAS_JSON_FIELD(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled) &&
+					   GET_JSON_BOOL_VALUE(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled);
+			web::http::uri_builder builder;
+			builder.set_host("localhost");
+			builder.set_port(port);
+			builder.set_scheme(ssl ? "https" : "http");
+			return builder.to_string();
+		}
+	}
+	return url;
 }

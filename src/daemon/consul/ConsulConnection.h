@@ -26,7 +26,7 @@ public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection> &instance();
-	void init(std::string recoverSsnId = "");
+	void init(const std::string &recoverSsnId = "");
 	void saveSecurity(bool checkExistence = false);
 	std::string consulSessionId();
 	web::json::value viewCloudApps();
@@ -45,8 +45,8 @@ private:
 	long long getModifyIndex(const std::string &path, bool recurse = false);
 	std::shared_ptr<Configuration::JsonConsul> getConfig();
 
-	web::http::http_response requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body);
-	web::http::http_response requestHttp(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd);
+	web::http::http_response requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body);
+	web::http::http_response requestAppMesh(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd);
 
 	std::tuple<bool, long long> blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse = false);
 	void watchSecurityThread();

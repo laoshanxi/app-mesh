@@ -39,7 +39,7 @@ void DockerApiProcess::killgroup(int timerId)
 		try
 		{
 			// DELETE /containers/{id}?force=true
-			auto resp = this->requestHttp(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
+			auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
 			if (resp.status_code() >= web::http::status_codes::BadRequest)
 			{
 				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp.extract_utf8string().get() << ">";
@@ -60,7 +60,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	LOG_DBG << fname << "Entered";
 
 	// GET /images/{name}/json
-	if (this->requestHttp(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr).status_code() != web::http::status_codes::OK)
+	if (this->requestDocker(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr).status_code() != web::http::status_codes::OK)
 	{
 		// pull docker image
 		return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
@@ -74,7 +74,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	auto nameArray = web::json::value::array(1);
 	nameArray[0] = web::json::value::string(m_containerName);
 	filters["name"] = nameArray;
-	auto resp = this->requestHttp(web::http::methods::GET, "/containers/json", {{"filters", filters.serialize()}}, {}, nullptr);
+	auto resp = this->requestDocker(web::http::methods::GET, "/containers/json", {{"filters", filters.serialize()}}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_json().get();
@@ -92,7 +92,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	*/
 	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerDelete
 	// DELETE /containers/{id}?force=true
-	auto resp = this->requestHttp(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}}, {}, nullptr);
+	auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}}, {}, nullptr);
 	if (resp.status_code() >= web::http::status_codes::BadRequest)
 	{
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp.extract_utf8string().get() << ">";
@@ -133,17 +133,17 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		createBody["Image"] = web::json::value::string(m_dockerImage);
 	// POST /containers/create
 	LOG_DBG << fname << "Create Container: " << createBody.serialize();
-	resp = this->requestHttp(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
+	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
 	if (resp.status_code() == web::http::status_codes::Created)
 	{
 		this->containerId(resp.extract_json().get().at("Id").as_string());
 
 		// POST /containers/{id}/start
-		resp = this->requestHttp(web::http::methods::POST, Utility::stringFormat("/containers/%s/start", m_containerName.c_str()), {}, {}, nullptr);
+		resp = this->requestDocker(web::http::methods::POST, Utility::stringFormat("/containers/%s/start", m_containerName.c_str()), {}, {}, nullptr);
 		if (resp.status_code() < web::http::status_codes::BadRequest)
 		{
 			// GET /containers/{id}/json
-			resp = this->requestHttp(web::http::methods::GET, Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
+			resp = this->requestDocker(web::http::methods::GET, Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
 			if (resp.status_code() == web::http::status_codes::OK)
 			{
 				auto pid = resp.extract_json().get()["State"]["Pid"].as_integer();
@@ -187,7 +187,7 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 		auto secondsUTC = 0L;
 		if (position)
 			secondsUTC = *position;
-		auto resp = this->requestHttp(
+		auto resp = this->requestDocker(
 			web::http::methods::GET,
 			Utility::stringFormat("/containers/%s/logs", this->containerId().c_str()),
 			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}, {"tail", readLine ? "1" : "all"}},
@@ -207,7 +207,7 @@ int DockerApiProcess::returnValue(void) const
 
 	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerInspect
 	// GET /containers/{id}/json
-	auto resp = const_cast<DockerApiProcess *>(this)->requestHttp(
+	auto resp = const_cast<DockerApiProcess *>(this)->requestDocker(
 		web::http::methods::GET,
 		Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
 		{}, {}, nullptr);
@@ -222,9 +222,9 @@ int DockerApiProcess::returnValue(void) const
 	return -200;
 }
 
-const web::http::http_response DockerApiProcess::requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
+const web::http::http_response DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
 {
-	const static char fname[] = "DockerApiProcess::requestHttp() ";
+	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
 	auto restURL = Configuration::instance()->getDockerProxyAddress();
 	std::string errorMsg = std::string("exception caught: ").append(path);

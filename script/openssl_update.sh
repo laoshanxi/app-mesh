@@ -6,6 +6,7 @@
 set -x
 OPEN_SSL_VERSION=openssl-1.1.1h
 
+export ROOTDIR=$(pwd)
 mkdir -p ssl_build
 cd ssl_build
 if [ -f "/usr/bin/yum" ]; then
@@ -22,7 +23,7 @@ tar zxvf ${OPEN_SSL_VERSION}.tar.gz
 cd ${OPEN_SSL_VERSION}
 
 ./config shared zlib
-make
+make -j6
 make install
 
 # include files
@@ -58,3 +59,18 @@ ln -s libcrypto.so.1.1 libcrypto.so
 find / -name ssl.h | xargs ls -al
 find / -name libssl.so | xargs ls -al
 find / -name libcrypto.so | xargs ls -al
+
+# https://github.com/vagrant-libvirt/vagrant-libvirt/issues/1127
+if [ -f "/usr/bin/yum" ]; then
+  RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
+  if [[ $RHEL_VER = "8" ]]; then
+    cd $ROOTDIR/ssl_build
+    wget https://vault.centos.org/8.4.2105/BaseOS/Source/SPackages/krb5-1.18.2-8.el8.src.rpm
+    rpm2cpio krb5-1.18.2-8.el8.src.rpm | cpio -imdV
+    tar xf krb5-1.18.2.tar.gz
+    cd krb5-1.18.2/src
+    ./configure
+    make -j6
+    make install
+  fi
+fi

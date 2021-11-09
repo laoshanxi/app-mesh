@@ -295,7 +295,7 @@ class AppMeshClient:
             Success : bool
             CloudApplicationsJson : JSON
         """
-        resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/application/{0}".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/app/{0}".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def remove_cloud_app(self, app_name) -> bool:

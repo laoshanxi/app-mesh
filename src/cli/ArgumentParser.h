@@ -58,8 +58,8 @@ private:
 public:
 	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path);
 	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value &body);
-	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body = nullptr, std::map<std::string, std::string> *header = nullptr);
-	http_request createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> *header);
+	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body = nullptr, std::map<std::string, std::string> header = {});
+	http_request createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> &headers);
 
 private:
 	std::string getAuthenToken();
@@ -79,6 +79,7 @@ private:
 	void regSignal();
 	void unregSignal();
 	std::string parseOutputMessage(http_response &resp);
+	const std::string getAppMeshUrl();
 
 private:
 	po::variables_map m_commandLineVariables;
@@ -86,6 +87,7 @@ private:
 	const int m_argc;
 	const char **m_argv;
 	int m_tokenTimeoutSeconds;
+	std::string m_defaultUrl;
 	std::string m_url;
 	std::string m_username;
 	std::string m_userpwd;

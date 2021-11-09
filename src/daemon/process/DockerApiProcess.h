@@ -67,5 +67,5 @@ private:
 	/// <param name="header"></param>
 	/// <param name="body"></param>
 	/// <returns></returns>
-	const web::http::http_response requestHttp(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body);
+	const web::http::http_response requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body);
 };
