@@ -30,7 +30,8 @@ constexpr auto REST_PATH_APP_ALL_VIEW = "/appmesh/applications";
 constexpr auto REST_PATH_APP_HEALTH = R"(/appmesh/app/([^/\*]+)/health)";
 
 // 3. Cloud Application
-constexpr auto REST_PATH_CLOUD_APP_VIEW = "/appmesh/cloud/applications";
+constexpr auto REST_PATH_CLOUD_APP_ALL_VIEW = "/appmesh/cloud/applications";
+constexpr auto REST_PATH_CLOUD_APP_VIEW = R"(/appmesh/cloud/application/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_APP_ADD = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_APP_DELETE = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_NODES_VIEW = "/appmesh/cloud/nodes";
@@ -89,7 +90,8 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::GET, REST_PATH_APP_HEALTH, std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
 	// 3. Cloud Application
-	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_APP_VIEW, std::bind(&RestHandler::apiCloudAppsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_APP_ALL_VIEW, std::bind(&RestHandler::apiCloudAppsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_APP_VIEW, std::bind(&RestHandler::apiCloudAppView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, REST_PATH_CLOUD_APP_ADD, std::bind(&RestHandler::apiCloudAppAdd, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_CLOUD_APP_DELETE, std::bind(&RestHandler::apiCloudAppDel, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_NODES_VIEW, std::bind(&RestHandler::apiCloudHostView, this, std::placeholders::_1));
@@ -820,6 +822,8 @@ void RestHandler::apiAppView(const HttpRequest &message)
 
 std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &message)
 {
+	const static char fname[] = "RestHandler::parseAndRegRunApp() ";
+
 	auto jsonApp = message.extractJson();
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_retention))
@@ -882,6 +886,10 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
 	auto app = Configuration::instance()->addApp(jsonApp, fromApp);
 	app->setUnPersistable();
+	if (fromApp)
+		LOG_INF << fname << "Run application <" << app->getName() << "> from " << fromApp->getName();
+	else
+		LOG_INF << fname << "Run application <" << app->getName() << ">";
 	return app;
 }
 
@@ -956,6 +964,15 @@ void RestHandler::apiCloudAppsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
 	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApps());
+}
+
+void RestHandler::apiCloudAppView(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_VIEW);
+
+	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApp(appName));
 }
 
 void RestHandler::apiCloudAppAdd(const HttpRequest &message)

@@ -30,6 +30,7 @@ public:
 	void saveSecurity(bool checkExistence = false);
 	std::string consulSessionId();
 	web::json::value viewCloudApps();
+	web::json::value viewCloudApp(const std::string &app);
 	web::json::value addCloudApp(const std::string &app, web::json::value &content);
 	web::json::value getCloudNodes();
 	void deleteCloudApp(const std::string &app);

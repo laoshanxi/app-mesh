@@ -286,6 +286,18 @@ class AppMeshClient:
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
+    def get_cloud_app(self, app_name):
+        """
+        Get one cloud application
+
+        Returns
+        -------
+            Success : bool
+            CloudApplicationsJson : JSON
+        """
+        resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/application/{0}".format(app_name))
+        return (resp.status_code == HTTPStatus.OK), resp.json()
+
     def remove_cloud_app(self, app_name) -> bool:
         """
         Delete a cloud application

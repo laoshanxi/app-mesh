@@ -3,6 +3,7 @@
 #include <cpprest/json.h>
 #include <thread>
 
+#include "../../common/DateTime.h"
 #include "../../common/PerfLog.h"
 #include "../../common/Utility.h"
 #include "../../common/os/linux.hpp"
@@ -181,6 +182,43 @@ web::json::value ConsulConnection::viewCloudApps()
 			}
 		}
 	}
+	return result;
+}
+
+web::json::value ConsulConnection::viewCloudApp(const std::string &app)
+{
+	const static char fname[] = "ConsulConnection::viewCloudApp() ";
+	LOG_DBG << fname;
+
+	if (!getConfig()->consulEnabled())
+	{
+		throw std::runtime_error("Consul not enabled");
+	}
+	web::json::value result;
+	const auto topology = this->retrieveTopology("");
+	const auto cloudTasks = this->retrieveTask();
+	const auto iter = cloudTasks.find(app);
+	web::json::value scheduleResult;
+	if (iter != cloudTasks.end())
+	{
+		result = iter->second->AsJson();
+		for (const auto &node : topology)
+		{
+			if (node.second->m_scheduleApps.count(app) > 0)
+			{
+				scheduleResult[node.first] = web::json::value::string(DateTime::formatLocalTime(node.second->m_scheduleApps[app]));
+			}
+		}
+	}
+	if (result.is_null())
+	{
+		throw std::runtime_error("No such cloud application found");
+	}
+	else
+	{
+		result["schedule"] = scheduleResult;
+	}
+
 	return result;
 }
 
@@ -1021,6 +1059,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::http::method &
 	}
 
 	web::http::http_response response(web::http::status_codes::ResetContent);
+	response.set_body(std::string("failed access ").append(restURL));
 	return response;
 }
 
@@ -1053,6 +1092,7 @@ web::http::http_response ConsulConnection::requestHttp(const web::uri &baseUri, 
 	}
 
 	web::http::http_response response(web::http::status_codes::ResetContent);
+	response.set_body(std::string("failed access ").append(baseUri.to_string()));
 	return response;
 }
 

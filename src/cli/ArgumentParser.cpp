@@ -683,11 +683,17 @@ void ArgumentParser::processCloudAppView()
 {
 	po::options_description desc("List cloud applications usage:", BOOST_DESC_WIDTH);
 	desc.add_options()
-		COMMON_OPTIONS("help,h", "Prints command usage to stdout and exits");
+		COMMON_OPTIONS
+		("name,n", po::value<std::string>(), "application name.")
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/appmesh/cloud/applications";
+	if (m_commandLineVariables.count("name") > 0)
+	{
+		restPath = std::string("/appmesh/cloud/application/").append(m_commandLineVariables["name"].as<std::string>());
+	}
 	auto resp = requestHttp(true, methods::GET, restPath);
 	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
 }
