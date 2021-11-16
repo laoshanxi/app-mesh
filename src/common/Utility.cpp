@@ -597,7 +597,7 @@ std::string Utility::humanReadableSize(long double bytesSize)
 		n /= base;
 	}
 	char buffer[64] = {0};
-	sprintf(buffer, "%.1Lf %s", n, fmt[units]);
+	snprintf(buffer, sizeof(buffer), "%.1Lf %s", n, fmt[units]);
 	std::string str = buffer;
 	return stringReplace(str, ".0", "");
 }

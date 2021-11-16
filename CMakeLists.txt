@@ -5,7 +5,7 @@ string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ")
 # project
 ##########################################################################
 cmake_policy(SET CMP0048 NEW)
-project(appmesh LANGUAGES CXX VERSION 2.0.0)
+project(appmesh LANGUAGES CXX VERSION 2.0.1)
 
 ##########################################################################
 # C++ flag
@@ -16,6 +16,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(BUILD_TAG ${PROJECT_NAME}_${PROJECT_VERSION}_${APPMESH_BUILD_DATE})
 add_compile_options(-DBUILD_TAG=${BUILD_TAG})
 message(BUILD_TAG=${BUILD_TAG})
+# set(CMAKE_C_COMPILER "/usr/bin/gcc")
+# set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 
 ##########################################################################
 # debug / release

@@ -17,7 +17,7 @@ This Docker image `laoshanxi/appmesh_agent` is used to forward container start c
 $ tee Dockerfile <<-'EOF'
 FROM ubuntu
 
-ENV APP_MESH_VER=2.0.0
+ENV APP_MESH_VER=2.0.1
 
 RUN apt update && apt install wget net-tools -y && \
     wget  https://github.com/laoshanxi/app-mesh/releases/download/${APP_MESH_VER}/appmesh_${APP_MESH_VER}_amd64.deb && \

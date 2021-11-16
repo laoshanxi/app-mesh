@@ -221,7 +221,7 @@ public:
 
 	// length is 2, header and body
 	iovec data[2];
-	const size_t length() { return data[0].iov_len + data[1].iov_len; };
+	size_t length() { return data[0].iov_len + data[1].iov_len; };
 
 private:
 	ACE_OutputCDR m_headerCdr;
