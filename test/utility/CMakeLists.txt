@@ -15,6 +15,7 @@ target_link_libraries(${PROJECT_NAME}
     Threads::Threads
     cpprest
     rest
+    boost_regex
     ${OPENSSL_LIBRARIES}
     security
     application

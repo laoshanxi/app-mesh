@@ -222,16 +222,30 @@ web::json::value ConsulConnection::viewCloudApp(const std::string &app)
 	return result;
 }
 
-int ConsulConnection::getHealthStatus(const std::string &host, const std::string &app)
+web::http::http_response ConsulConnection::viewCloudAppOutput(const std::string &app, const std::string &hostName, const std::map<std::string, std::string> &query, const web::http::http_headers &headers)
+{
+	const static char fname[] = "ConsulConnection::viewCloudAppOutput() ";
+	LOG_DBG << fname;
+
+	web::uri_builder baseUri;
+	baseUri.set_host(hostName);
+	baseUri.set_port(Configuration::instance()->getRestListenPort());
+	baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
+	auto restPath = Utility::stringFormat("/appmesh/app/%s/output", app.c_str());
+	// TODO: credention to target host
+	return requestAppMesh(baseUri.to_uri(), restPath, web::http::methods::GET, query, headers);
+}
+
+int ConsulConnection::getHealthStatus(const std::string &hostName, const std::string &app)
 {
 	const static char fname[] = "ConsulConnection::getHealthStatus() ";
 
 	web::uri_builder baseUri;
-	baseUri.set_host(host);
+	baseUri.set_host(hostName);
 	baseUri.set_port(Configuration::instance()->getRestListenPort());
 	baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
 	auto restPath = Utility::stringFormat("/appmesh/app/%s/health", app.c_str());
-	auto resp = requestAppMesh(baseUri.to_uri(), restPath, web::http::methods::GET);
+	auto resp = requestAppMesh(baseUri.to_uri(), restPath, web::http::methods::GET, {}, {});
 	if (resp.status_code() != web::http::status_codes::OK)
 	{
 		LOG_WAR << fname << "failed to get health status: " << resp.status_code() << " with host: " << baseUri.to_string() << restPath << ", app: " << app;
@@ -1063,17 +1077,24 @@ web::http::http_response ConsulConnection::requestConsul(const web::http::method
 	return response;
 }
 
-web::http::http_response ConsulConnection::requestAppMesh(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd)
+web::http::http_response ConsulConnection::requestAppMesh(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const web::http::http_headers &headers)
 {
 	const static char fname[] = "ConsulConnection::requestAppMesh() ";
 
+	// Build request URI and start the request.
+	web::uri_builder builder(baseUri);
+	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair)
+				  { builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second)); });
+
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
-	//config.set_timeout(std::chrono::seconds(5));
 	config.set_validate_certificates(false);
-	web::http::client::http_client client(baseUri, config);
+	web::http::client::http_client client(builder.to_uri(), config);
 	web::http::http_request request(mtd);
 	request.set_request_uri(requestPath);
+	// headers
+	for (const auto &h : headers)
+		request.headers().add(h.first, h.second);
 	try
 	{
 		// In case of REST server crash or block query timeout, will throw exception:

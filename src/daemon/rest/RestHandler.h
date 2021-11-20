@@ -24,6 +24,7 @@ protected:
 	long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max) const;
 	std::string getHttpQueryString(const HttpRequest &message, const std::string &key) const;
 	std::string regexSearch(const std::string &value, const char *regex);
+	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
 	void apiUserLogin(const HttpRequest &message);
 	void apiUserAuth(const HttpRequest &message);
@@ -37,6 +38,7 @@ protected:
 
 	void apiCloudAppsView(const HttpRequest &message);
 	void apiCloudAppView(const HttpRequest &message);
+	void apiCloudAppOutputView(const HttpRequest &message);
 	void apiCloudAppAdd(const HttpRequest &message);
 	void apiCloudAppDel(const HttpRequest &message);
 	void apiCloudHostView(const HttpRequest &message);

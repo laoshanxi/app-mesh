@@ -1,24 +1,25 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
-#include "../catch.hpp"
-#include <iostream>
-#include <string>
-#include <chrono>
-#include <thread>
-#include <time.h>
-#include <set>
-#include <fstream>
-#include <ace/Init_ACE.h>
-#include <ace/OS.h>
-#include <cpprest/json.h>
-#include <log4cpp/Category.hh>
-#include <log4cpp/Appender.hh>
-#include <log4cpp/FileAppender.hh>
-#include <log4cpp/Priority.hh>
-#include <log4cpp/PatternLayout.hh>
-#include <log4cpp/RollingFileAppender.hh>
-#include <log4cpp/OstreamAppender.hh>
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
+#include "../catch.hpp"
+#include <ace/Init_ACE.h>
+#include <ace/OS.h>
+#include <boost/algorithm/string_regex.hpp>
+#include <chrono>
+#include <cpprest/json.h>
+#include <fstream>
+#include <iostream>
+#include <log4cpp/Appender.hh>
+#include <log4cpp/Category.hh>
+#include <log4cpp/FileAppender.hh>
+#include <log4cpp/OstreamAppender.hh>
+#include <log4cpp/PatternLayout.hh>
+#include <log4cpp/Priority.hh>
+#include <log4cpp/RollingFileAppender.hh>
+#include <set>
+#include <string>
+#include <thread>
+#include <time.h>
 
 void init()
 {
@@ -149,4 +150,25 @@ TEST_CASE("cpprestsdk", "[Utility]")
     a = web::json::value::parse("{\"a\":2, \"b\":2}");
     LOG_INF << "web::json::value: " << a;
     LOG_INF << "web::json::value: " << a.serialize();
+}
+
+TEST_CASE("boost_regex", "[boost_regex]")
+{
+    constexpr auto REST_PATH_CLOUD_APP_OUT_VIEW = R"(/appmesh/cloud/app/([^/\*]+)/output/([^/\*]+))";
+    //constexpr auto REST_PATH_CLOUD_APP_ADD = R"(/appmesh/cloud/app/([^/\*]+))";
+
+    boost::regex expression(REST_PATH_CLOUD_APP_OUT_VIEW);
+    boost::smatch what;
+    REQUIRE((boost::regex_search(std::string("/appmesh/cloud/app/a1/output/2b"), what, expression) && what.size() > 1));
+    {
+        // NOTE: start from position 1, skip the REST patch prefix
+        for (size_t i = 1; i < what.size(); ++i)
+        {
+            REQUIRE(what[i].matched);
+            {
+                auto result = Utility::stdStringTrim(what[i].str());
+                LOG_INF << "regex_search matched: " << result;
+            }
+        }
+    }
 }

@@ -1664,12 +1664,13 @@ std::string ArgumentParser::requestToken(const std::string &user, const std::str
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)
 {
+	constexpr int NAME_COL_WIDTH = 15;
 	boost::io::ios_all_saver guard(std::cout);
 	// Title:
 	std::cout << std::left;
 	std::cout
 		<< std::setw(3) << Utility::strToupper("id")
-		<< std::setw(12) << Utility::strToupper(JSON_KEY_APP_name)
+		<< std::setw(NAME_COL_WIDTH) << Utility::strToupper(JSON_KEY_APP_name)
 		<< std::setw(6) << Utility::strToupper(JSON_KEY_APP_owner)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_status)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_health)
@@ -1686,16 +1687,16 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 	int index = 1;
 	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
-	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce](web::json::value &jsonObj)
+	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce, NAME_COL_WIDTH](web::json::value &jsonObj)
 				  {
 					  const char *slash = "-";
 					  auto name = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
 					  if (reduce)
-						  name = reduceFunc(name, 12);
-					  else if (name.length() >= 12)
+						  name = reduceFunc(name, NAME_COL_WIDTH);
+					  else if (name.length() >= NAME_COL_WIDTH)
 						  name += " ";
 					  std::cout << std::setw(3) << index++;
-					  std::cout << std::setw(12) << name;
+					  std::cout << std::setw(NAME_COL_WIDTH) << name;
 					  std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
 					  std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
 					  std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);

@@ -32,6 +32,7 @@ constexpr auto REST_PATH_APP_HEALTH = R"(/appmesh/app/([^/\*]+)/health)";
 // 3. Cloud Application
 constexpr auto REST_PATH_CLOUD_APP_ALL_VIEW = "/appmesh/cloud/applications";
 constexpr auto REST_PATH_CLOUD_APP_VIEW = R"(/appmesh/cloud/app/([^/\*]+))";
+constexpr auto REST_PATH_CLOUD_APP_OUT_VIEW = R"(/appmesh/cloud/app/([^/\*]+)/output/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_APP_ADD = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_APP_DELETE = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_NODES_VIEW = "/appmesh/cloud/nodes";
@@ -310,6 +311,33 @@ std::string RestHandler::regexSearch(const std::string &value, const char *expr)
 					return result;
 				}
 				throw std::invalid_argument(Utility::stringFormat("no data from path <%s>", value.c_str()));
+			}
+		}
+	}
+	throw std::invalid_argument(Utility::stringFormat("failed parse data from path <%s>", value.c_str()));
+}
+
+std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string &value, const char *expr)
+{
+	std::string first, second;
+	boost::regex expression(expr);
+	boost::smatch what;
+	if (boost::regex_search(value, what, expression) && what.size() > 1)
+	{
+		// NOTE: start from position 1, skip the REST patch prefix
+		for (size_t i = 1; i < what.size(); ++i)
+		{
+			if (what[i].matched)
+			{
+				if (first.empty())
+				{
+					first = Utility::stdStringTrim(what[i].str());
+				}
+				else if (second.empty())
+				{
+					second = Utility::stdStringTrim(what[i].str());
+					return std::make_tuple(first, second);
+				}
 			}
 		}
 	}
@@ -973,6 +1001,19 @@ void RestHandler::apiCloudAppView(const HttpRequest &message)
 	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_VIEW);
 
 	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApp(appName));
+}
+
+void RestHandler::apiCloudAppOutputView(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_cloud_app_out_view);
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
+	auto tp = regexSearch2(path, REST_PATH_CLOUD_APP_OUT_VIEW);
+	auto appName = std::get<0>(tp);
+	auto hostName = std::get<1>(tp);
+
+	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
+	auto resp = ConsulConnection::instance()->viewCloudAppOutput(appName, hostName, querymap, message.headers());
+	message.reply(resp);
 }
 
 void RestHandler::apiCloudAppAdd(const HttpRequest &message)

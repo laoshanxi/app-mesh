@@ -22,6 +22,7 @@ DELETE| /appmesh/app/${APP-NAME} | | Deregister an application
 -|-|-|-
 GET | /appmesh/cloud/applications | | Get cloud applications
 GET | /appmesh/cloud/app/${APP-NAME} | | Get a cloud application
+GET | /appmesh/cloud/app/${APP-NAME}/output/${HOST-NAME} | | View cloud application output through master
 PUT | /appmesh/cloud/app/${APP-NAME} | Body: <br> cloud application definition | Add cloud application
 DEL | /appmesh/cloud/app/${APP-NAME} | | Delete cloud application
 GET | /appmesh/cloud/nodes | | Get cloud node list
