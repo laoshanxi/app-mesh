@@ -29,6 +29,30 @@
             ]
         },
         {
+            "name": "GDB: launch appc",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/opt/appmesh/bin/appc",
+            "args": ["logon"],
+            "stopAtEntry": false,
+            "cwd": "/opt/appmesh/",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
             "name": "GDB: attach appsvc",
             "type": "cppdbg",
             "request": "attach",

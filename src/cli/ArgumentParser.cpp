@@ -42,7 +42,7 @@
 	m_url = m_commandLineVariables["url"].as<std::string>();
 
 // Each user should have its own token path
-const static std::string m_tokenFilePrefix = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/._appmesh_";
+const static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
 static std::string m_jwtToken;
 extern char **environ;
 
@@ -272,30 +272,14 @@ void ArgumentParser::processLogon()
 		std::cout << std::endl;
 	}
 
-	std::string tokenFile = std::string(m_tokenFilePrefix) + web::uri(m_url).host();
-	// clear token first
-	if (Utility::isFileExist(tokenFile))
-	{
-		std::ofstream ofs(tokenFile, std::ios::trunc);
-		ofs.close();
-	}
 	// get token from REST
 	m_jwtToken = getAuthenToken();
 
 	// write token to disk
 	if (m_jwtToken.length())
 	{
-		std::ofstream ofs(tokenFile, std::ios::trunc);
-		if (ofs.is_open())
-		{
-			ofs << m_jwtToken;
-			ofs.close();
-			std::cout << "User <" << m_username << "> logon to " << m_url << " success." << std::endl;
-		}
-		else
-		{
-			std::cout << "Failed to open token file " << tokenFile << std::endl;
-		}
+		persistAuthToken(web::uri(m_url).host(), m_jwtToken);
+		std::cout << "User <" << m_username << "> logon to " << m_url << " success." << std::endl;
 	}
 }
 
@@ -308,12 +292,7 @@ void ArgumentParser::processLogoff()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string tokenFile = std::string(m_tokenFilePrefix) + web::uri(m_url).host();
-	if (Utility::isFileExist(tokenFile))
-	{
-		std::ofstream ofs(tokenFile, std::ios::trunc);
-		ofs.close();
-	}
+	persistAuthToken(web::uri(m_url).host(), std::string());
 	std::cout << "User logoff from " << m_url << " success." << std::endl;
 }
 
@@ -1567,7 +1546,7 @@ std::string ArgumentParser::getAuthenToken()
 	else
 	{
 		// 2. try to read from token file
-		token = readAuthenToken();
+		token = readAuthToken();
 
 		// 3. try to get get default token from REST
 		if (token.empty())
@@ -1589,7 +1568,7 @@ std::string ArgumentParser::getAuthenUser()
 	else
 	{
 		// 2. try to read from token file
-		token = readAuthenToken();
+		token = readAuthToken();
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
@@ -1621,21 +1600,70 @@ std::string ArgumentParser::getOsUser()
 	return userName;
 }
 
-std::string ArgumentParser::readAuthenToken()
+std::string ArgumentParser::readAuthToken()
 {
 	std::string jwtToken;
 	auto hostName = web::uri(m_url).host();
-	std::string tokenFile = std::string(m_tokenFilePrefix) + hostName;
+	std::string tokenFile = std::string(m_tokenFile);
 	if (Utility::isFileExist(tokenFile) && hostName.length())
 	{
-		std::ifstream ifs(tokenFile);
-		if (ifs.is_open())
+		try
 		{
-			ifs >> jwtToken;
-			ifs.close();
+			auto config = web::json::value::parse(Utility::readFile(tokenFile));
+			if (config.has_object_field("auths") && config["auths"].has_object_field(hostName))
+			{
+				jwtToken = config.at("auths").at(hostName).at("auth").as_string();
+			}
+		}
+		catch (const std::exception &e)
+		{
+			std::cerr << "failed to parse " << m_tokenFile << " as json format" << '\n';
 		}
 	}
 	return jwtToken;
+}
+
+void ArgumentParser::persistAuthToken(const std::string &hostName, const std::string &token)
+{
+	web::json::value config = EMPTY_STR_JSON;
+	try
+	{
+		std::string configFile;
+		if (Utility::isFileExist(m_tokenFile))
+		{
+			configFile = Utility::readFile(m_tokenFile);
+		}
+		config = web::json::value::parse(configFile);
+	}
+	catch (const std::exception &e)
+	{
+		std::cerr << "failed to parse " << m_tokenFile << " as json format" << '\n';
+	}
+	if (!config.has_object_field("auths"))
+		config["auths"] = web::json::value::object();
+
+	if (token.length())
+	{
+		config["auths"][hostName] = web::json::value::object();
+		config["auths"][hostName]["auth"] = web::json::value::string(token);
+	}
+	else if (config["auths"].has_field(hostName))
+	{
+		config["auths"].erase(hostName);
+	}
+
+	std::ofstream ofs(m_tokenFile, std::ios::trunc);
+	if (ofs.is_open())
+	{
+		ofs << Utility::prettyJson(config.serialize());
+		ofs.close();
+		// only owner to read and write for token file
+		os::chmod(m_tokenFile, 600);
+	}
+	else
+	{
+		std::cerr << "Failed to write config file " << m_tokenFile << std::endl;
+	}
 }
 
 std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd)
