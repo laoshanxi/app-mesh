@@ -805,6 +805,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_description:" << m_description;
 	LOG_DBG << fname << "m_metadata:" << m_metadata;
 	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
+	LOG_DBG << fname << "behavior:" << behaviorAsJson();
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	if (m_owner)
 		LOG_DBG << fname << "m_owner:" << m_owner->getName();

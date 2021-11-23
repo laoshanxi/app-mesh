@@ -813,7 +813,7 @@ void ArgumentParser::processAppRun()
 	std::map<std::string, std::string> query;
 	int timeout = DurationParse::parse(m_commandLineVariables["timeout"].as<std::string>());
 	if (m_commandLineVariables.count("timeout"))
-		query[HTTP_QUERY_KEY_timeout] = std::to_string(timeout);
+		query[HTTP_QUERY_KEY_timeout] = std::to_string(std::abs(timeout));
 
 	web::json::value jsonObj;
 	web::json::value jsonBehavior;
@@ -888,8 +888,6 @@ void ArgumentParser::processAppRun()
 	{
 		// Use run and output
 		// /app/run?timeout=5
-		if (m_commandLineVariables.count(HTTP_QUERY_KEY_timeout))
-			query[HTTP_QUERY_KEY_timeout] = m_commandLineVariables[HTTP_QUERY_KEY_timeout].as<std::string>();
 		std::string restPath = "/appmesh/app/run";
 		auto response = requestHttp(true, methods::POST, restPath, query, &jsonObj);
 		auto result = response.extract_json(true).get();
@@ -1785,7 +1783,8 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 						  else
 							  std::cout << slash;
 					  }
-					  std::cout << GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
+					  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_command))
+						  std::cout << jsonObj.at(JSON_KEY_APP_command);
 					  std::cout << std::endl;
 				  });
 }

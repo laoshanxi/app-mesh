@@ -298,6 +298,47 @@ class AppMeshClient:
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/app/{0}".format(app_name))
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
+    def get_cloud_app_output(self, app_name, host_name, output_position=0, stdout_index=0, stdout_maxsize=10240, process_uuid=""):
+        """
+        Get cloud application stdout from master agent
+
+        Parameters
+        ----------
+            app_name : str
+                The application name
+            host_name : str
+                The target host name where the application is running
+            output_position : int
+                Output start position, 0 means start from beginning
+            stdout_index : str
+                Index of history process stdout, 0 means current running process
+                The history number depend by 'stdout_cache_num' of a application
+            stdout_maxsize : int
+                Max buffer size
+            process_uuid : str
+                Used to lock a process
+
+        Returns
+        -------
+            Success : bool
+            Output Text : str
+            Output Position : None or int
+            Exit Code : None or int
+        """
+        resp = self.__request_http(
+            AppMeshClient.Method.GET,
+            path="/appmesh/cloud/app/{0}/output/{1}".format(app_name, host_name),
+            query={
+                "stdout_position": str(output_position),
+                "stdout_index": str(stdout_index),
+                "stdout_maxsize": str(stdout_maxsize),
+                "process_uuid": process_uuid,
+            },
+        )
+        out_position = None if not resp.headers.__contains__("Output-Position") else int(resp.headers["Output-Position"])
+        exit_code = None if not resp.headers.__contains__("Exit-Code") else int(resp.headers["Exit-Code"])
+        return (resp.status_code == HTTPStatus.OK), resp.text, out_position, exit_code
+
     def remove_cloud_app(self, app_name) -> bool:
         """
         Delete a cloud application

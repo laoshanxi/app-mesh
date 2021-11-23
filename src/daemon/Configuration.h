@@ -99,7 +99,7 @@ public:
 	void registerPrometheus();
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp = nullptr);
+	std::shared_ptr<Application> addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp = nullptr, bool persistable = true);
 	void removeApp(const std::string &appName);
 	std::shared_ptr<Application> parseApp(const web::json::value &jsonApp);
 

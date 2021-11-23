@@ -912,8 +912,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 
 	jsonApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
-	auto app = Configuration::instance()->addApp(jsonApp, fromApp);
-	app->setUnPersistable();
+	auto app = Configuration::instance()->addApp(jsonApp, fromApp, false);
 	if (fromApp)
 		LOG_INF << fname << "Run application <" << app->getName() << "> from " << fromApp->getName();
 	else
@@ -925,11 +924,9 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, 60 * 60 * 24);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 3, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
-	if (timeout < 0)
-		timeout = MAX_RUN_APP_TIMEOUT_SECONDS;
 	auto processUuid = appObj->runAsyncrize(timeout);
 	auto result = web::json::value::object();
 	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
@@ -941,7 +938,7 @@ void RestHandler::apiRunSync(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
 
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, 60 * 60 * 24);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 3, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
 	// Use async reply here

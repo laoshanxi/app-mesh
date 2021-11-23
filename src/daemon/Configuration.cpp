@@ -261,7 +261,7 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 				 [this, &user, returnUnPersistApp](std::shared_ptr<Application> app)
 				 {
 					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&					// access permission check
-							 (returnUnPersistApp || app->isPersistAble()) &&													// status filter
+							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) &&							// status filter
 							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_DOCKER_PROXY_APP_NAME)); // not expose rest process
 				 });
 
@@ -429,7 +429,7 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp)
+std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp, bool persistable)
 {
 	auto app = parseApp(jsonApp);
 	bool update = false;
@@ -453,12 +453,23 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 	}
 	// Write to disk
 	{
+		if (!persistable)
+		{
+			app->setUnPersistable();
+		}
 		if (fromApp)
+		{
 			app->initMetrics(fromApp);
+		}
 		else
+		{
 			app->initMetrics(PrometheusRest::instance());
+		}
+
 		if (app->isPersistAble())
+		{
 			saveConfigToDisk();
+		}
 		// invoke immediately
 		app->execute();
 	}
@@ -482,9 +493,10 @@ void Configuration::removeApp(const std::string &appName)
 				app = (*iterA);
 				iterA = m_apps.erase(iterA);
 				// Write to disk
-				if ((*iterA)->isPersistAble())
-
+				if (app->isPersistAble())
+				{
 					saveConfigToDisk();
+				}
 				LOG_DBG << fname << "removed " << appName;
 			}
 			else
@@ -528,6 +540,7 @@ void Configuration::saveConfigToDisk()
 	{
 		LOG_ERR << fname << "Configuration content is empty";
 	}
+	LOG_DBG << fname;
 }
 
 void Configuration::hotUpdate(const web::json::value &jsonValue)

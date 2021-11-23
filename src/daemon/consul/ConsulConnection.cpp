@@ -543,7 +543,7 @@ void ConsulConnection::syncTopology()
 					auto &currentRunningApp = *it;
 					if (!currentRunningApp->operator==(topologyAppObj))
 					{
-						Configuration::instance()->addApp(currentRunningApp->AsJson(false))->setUnPersistable();
+						Configuration::instance()->addApp(currentRunningApp->AsJson(false), nullptr, false);
 						LOG_INF << fname << "Consul application <" << currentRunningApp->getName() << "> updated";
 
 						registerService(appName, consulTask->m_consulServicePort);
@@ -552,7 +552,7 @@ void ConsulConnection::syncTopology()
 				else
 				{
 					// New add app
-					Configuration::instance()->addApp(topologyAppObj->AsJson(false))->setUnPersistable();
+					Configuration::instance()->addApp(topologyAppObj->AsJson(false), nullptr, false);
 					LOG_INF << fname << "Consul application <" << topologyAppObj->getName() << "> added";
 
 					registerService(appName, consulTask->m_consulServicePort);

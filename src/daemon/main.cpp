@@ -115,11 +115,10 @@ int main(int argc, char *argv[])
 		// register docker proxy
 		if (config->getDockerProxyAddress().length())
 		{
-			auto app = Configuration::instance()->addApp(config->getDockerProxyAppJson());
-			app->setUnPersistable();
+			auto app = Configuration::instance()->addApp(config->getDockerProxyAppJson(), nullptr, false);
 			app->execute();
 		}
-		Configuration::instance()->addApp(config->getPythonExecAppJson())->setUnPersistable();
+		Configuration::instance()->addApp(config->getPythonExecAppJson(), nullptr, false);
 
 		// init REST
 		if (config->getRestEnabled())
@@ -131,8 +130,7 @@ int main(int argc, char *argv[])
 				RestTcpServer::instance(std::make_shared<RestTcpServer>());
 				httpServer = RestTcpServer::instance();
 				RestTcpServer::instance()->startTcpServer();
-				auto app = Configuration::instance()->addApp(RestTcpServer::instance()->getRestAppJson());
-				app->setUnPersistable();
+				auto app = Configuration::instance()->addApp(RestTcpServer::instance()->getRestAppJson(), nullptr, false);
 				app->execute();
 			}
 			else
