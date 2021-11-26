@@ -34,7 +34,7 @@ client.run(
 # TODO: pass container mem/cpu limitation to App Mesh
 # TODO: pass container specific Environments to App Mesh
 rt = client.run(
-    app_json={"name": shadow_app_name, "command": command, "shell_mode": True},
+    app_json={"name": shadow_app_name, "command": command, "shell": True},
     synchronized=False,
     max_exec_time=65535,
     block_async_run=True,

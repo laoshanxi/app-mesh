@@ -981,10 +981,13 @@ void Application::regSuicideTimer(int timeoutSeconds)
 
 void Application::setLastError(const std::string &error)
 {
+	const static char fname[] = "Application::setLastError() ";
+
 	std::lock_guard<std::recursive_mutex> guard(m_errorMutex);
 	if (error.length())
 	{
 		m_lastError = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
+		LOG_DBG << fname << "last error for <" << getName() << ">: " << m_lastError;
 	}
 	else
 	{

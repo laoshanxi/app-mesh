@@ -62,7 +62,10 @@ fi
 # start service
 # systemctl enable appmesh
 # systemctl start appmesh
-/usr/bin/appc appmginit
+if [[ "$APPMESH_SECURE_INSTALLATION" = "Y" ]]; then
+	# gernerate password for secure installation
+	/usr/bin/appc appmginit
+fi
 
 # add user appmesh
 id appmesh >&/dev/null

@@ -24,7 +24,7 @@ public:
 	explicit ArgumentParser(int argc, const char *argv[]);
 	virtual ~ArgumentParser();
 
-	void parse();
+	int parse();
 
 private:
 	void printMainHelp();
@@ -36,8 +36,8 @@ private:
 	void processAppDel();
 	void processAppView();
 	void processAppControl(bool start);
-	void processAppRun();
-	void processExec();
+	int processAppRun();
+	int processExec();
 
 	void processCloudAppView();
 	void processCloudNodesView();
@@ -54,6 +54,7 @@ private:
 	void processUserChangePwd();
 	void processUserLock();
 	void processUserPwdEncrypt();
+	void initRadomPassword();
 
 public:
 	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path);
@@ -81,7 +82,6 @@ private:
 	void unregSignal();
 	std::string parseOutputMessage(http_response &resp);
 	const std::string getAppMeshUrl();
-	void initRadomPassword();
 
 private:
 	po::variables_map m_commandLineVariables;

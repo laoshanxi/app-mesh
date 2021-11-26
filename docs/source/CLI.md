@@ -108,7 +108,7 @@ Register a new application:
   --perm arg                     application user permission, value is 2 bit integer: [group & other], each bit can be deny:1,
                                  read:2, write: 3.
   -c [ --cmd ] arg               full command line with arguments
-  -S [ --shell_mode ]            use shell mode, cmd can be more commands
+  -S [ --shell ]                 use shell mode, cmd can be more commands
   -I [ --init ] arg              initial command line with arguments
   -F [ --fini ] arg              fini command line with arguments
   -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)
@@ -234,7 +234,7 @@ $ appc cloud
       "metadata": "cloud-app",
       "name": "myapp",
       "register_time": "2021-02-18 20:24:03+08",
-      "shell_mode": true,
+      "shell": true,
       "status": 1
     },
     "port": 6666,

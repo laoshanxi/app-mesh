@@ -331,7 +331,7 @@ type Application struct {
 
 	Owner      *string `json:"owner"`
 	Permission *int    `json:"permission"`
-	ShellMode  *bool   `json:"shell_mode"`
+	ShellMode  *bool   `json:"shell"`
 
 	StdoutCacheNum *int    `json:"stdout_cache_num"`
 	Metadata       *string `json:"metadata"`

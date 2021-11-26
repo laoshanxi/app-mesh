@@ -58,7 +58,7 @@ print(
                 "command": "sleep 30",
                 "metadata": "cloud-sdk-app",
                 "name": "cloud",
-                "shell_mode": True,
+                "shell": True,
             },
             "port": 6667,
             "priority": 0,
@@ -70,9 +70,9 @@ print(
 print(json.dumps(client.remove_cloud_app("cloud"), indent=2))
 print(json.dumps(client.get_cloud_nodes(), indent=2))
 # run app
-print(client.run({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False, max_exec_time=3))
-task1 = asyncio.ensure_future(client.run_asyncio({"command": "ping www.baidu.com -w 5", "shell_mode": True}, False, max_exec_time=3))
-task2 = asyncio.ensure_future(client.run_asyncio({"command": "ping www.163.com -w 3", "shell_mode": True}, True, max_exec_time=3))
+print(client.run({"command": "ping www.baidu.com -w 5", "shell": True}, False, max_exec_time=3))
+task1 = asyncio.ensure_future(client.run_asyncio({"command": "ping www.baidu.com -w 5", "shell": True}, False, max_exec_time=3))
+task2 = asyncio.ensure_future(client.run_asyncio({"command": "ping www.163.com -w 3", "shell": True}, True, max_exec_time=3))
 results, _ = asyncio.get_event_loop().run_until_complete(asyncio.wait([task1, task2]))
 for r in results:
     print(r.result())

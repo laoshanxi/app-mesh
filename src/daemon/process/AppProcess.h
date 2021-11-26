@@ -36,7 +36,7 @@ public:
 	/// Get process exit code
 	/// </summary>
 	/// <returns></returns>
-	virtual int returnValue(void) const { return this->return_value(); };
+	virtual int returnValue(void) const;
 
 	/// <summary>
 	/// Process UUID

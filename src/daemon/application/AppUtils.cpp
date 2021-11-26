@@ -16,13 +16,14 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	if (shellFile.is_open() && shellFile.good())
 	{
 		shellFile << "#!/bin/sh" << std::endl;
-		shellFile << "#application <" << name << ">" << std::endl;
+		shellFile << "# App Mesh app: <" << name << ">" << std::endl;
 		shellFile << "set -e" << std::endl;
 		shellFile << cmd << std::endl;
 		shellFile.close();
-		os::chmod(fileName, 755);
+		// only read permission
+		os::chmod(fileName, 400);
 		m_fileName = fileName;
-		m_shellCmd = Utility::stringFormat("sh -l '%s'", m_fileName.c_str());
+		m_shellCmd = Utility::stringFormat("/bin/sh -l '%s'", m_fileName.c_str());
 
 		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> run in shell mode";
 	}

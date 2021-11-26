@@ -105,7 +105,7 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m
     "memoryMB": 1024,
     "content": {
         "name": "myapp",
-        "shell_mode": true,
+        "shell": true,
         "command": "sleep 30"
     },
     "condition": {

@@ -13,7 +13,7 @@ int main(int argc, const char *argv[])
 	{
 		Utility::initCpprestThreadPool(1);
 		ArgumentParser parser(argc, argv);
-		parser.parse();
+		return parser.parse();
 	}
 	catch (const std::exception &e)
 	{

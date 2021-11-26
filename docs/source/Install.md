@@ -4,8 +4,6 @@
 
 App Mesh can deploy with multiple ways, generally, App Mesh run on a host as a daemon service managed by native systemd or docker container.
 
-Note: The default installation contain two build-in users: `user` with password `User123` and `admin` with random password which need get from security.json.
-
 ### Quick install by docker container
 Start App Mesh daemon docker container with 4g memory limited:
 ```
@@ -43,10 +41,11 @@ appc reg -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/
 Note:
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
 2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host)
-3. The installation will create `appmesh` Linux user for default app running
-4. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
-5. For centos 8, install dependency: `sudo yum install libnsl`
-6. The installation media structure is like this:
+3. Use env `APPMESH_SECURE_INSTALLATION=Y` to generate random initial password for user `admin`
+4. The installation will create `appmesh` Linux user for default app running
+5. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
+6. For centos 8, install dependency: `sudo yum install libnsl`
+7. The installation media structure is like this:
 ```
     $ tree -L 1 /opt/appmesh/
     ├── config.json                  ====> configuration file (can be modified manually or update from GUI)

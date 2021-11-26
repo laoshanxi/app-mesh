@@ -63,6 +63,18 @@ pid_t AppProcess::getpid(void) const
 	return ACE_Process::getpid();
 }
 
+int AppProcess::returnValue(void) const
+{
+	// TODO: thread safe?
+	if (WIFEXITED(this->exit_code_) > 0)
+	{
+		// exit normally
+		return this->return_value();
+	}
+	// exit unexpected
+	return this->exit_code();
+}
+
 void AppProcess::killgroup(int timerId)
 {
 	const static char fname[] = "AppProcess::killgroup() ";
@@ -100,6 +112,10 @@ void AppProcess::killgroup(int timerId)
 				{
 					LOG_INF << fname << "Retry wait process <" << getpid() << "> success";
 				}
+			}
+			if (timerId > 0)
+			{
+				LOG_DBG << fname << "process killed due to timeout";
 			}
 		}
 	}

@@ -33,7 +33,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/opt/appmesh/bin/appc",
-            "args": ["logon"],
+            "args": ["run", "-c", "sh -c 'exit 2'", "-t", "5"],
             "stopAtEntry": false,
             "cwd": "/opt/appmesh/",
             "environment": [

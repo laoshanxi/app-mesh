@@ -41,7 +41,14 @@
 		return;                                   \
 	}                                             \
 	m_url = m_commandLineVariables["url"].as<std::string>();
-
+#define HELP_ARG_CHECK_WITH_RETURN_ZERO           \
+	GET_USER_NAME_PASS                            \
+	if (m_commandLineVariables.count("help") > 0) \
+	{                                             \
+		std::cout << desc << std::endl;           \
+		return 0;                                 \
+	}                                             \
+	m_url = m_commandLineVariables["url"].as<std::string>();
 // Each user should have its own token path
 const static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
 static std::string m_jwtToken;
@@ -80,12 +87,13 @@ ArgumentParser::~ArgumentParser()
 	WORK_PARSE = nullptr;
 }
 
-void ArgumentParser::parse()
+int ArgumentParser::parse()
 {
+	int result = 0;
 	if (m_commandLineVariables.size() == 0)
 	{
 		printMainHelp();
-		return;
+		return result;
 	}
 
 	std::string cmd = m_commandLineVariables["command"].as<std::string>();
@@ -142,7 +150,7 @@ void ArgumentParser::parse()
 	}
 	else if (cmd == "run")
 	{
-		processAppRun();
+		return processAppRun();
 	}
 	else if (cmd == "exec")
 	{
@@ -192,6 +200,7 @@ void ArgumentParser::parse()
 	{
 		printMainHelp();
 	}
+	return result;
 }
 
 void ArgumentParser::printMainHelp()
@@ -335,7 +344,7 @@ void ArgumentParser::processAppAdd()
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("shell_mode,S", "use shell mode, cmd can be more commands")
+		("shell,S", "use shell mode, cmd can be more commands")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (for docker container application)")
 		("workdir,w", po::value<std::string>(), "working directory")
@@ -468,7 +477,7 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
 		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
-	if (m_commandLineVariables.count("shell_mode"))
+	if (m_commandLineVariables.count("shell"))
 		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("health_check"))
 		jsonObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
@@ -675,10 +684,7 @@ void ArgumentParser::processAppView()
 				std::cout << response.extract_utf8string(true).get();
 				if (m_commandLineVariables.count("tail") == 0)
 					break;
-				if (response.headers().has(HTTP_HEADER_KEY_output_pos))
-				{
-					outputPosition = std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
-				}
+				outputPosition = response.headers().has(HTTP_HEADER_KEY_output_pos) ? std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
 				// check continues failure
 				exit = response.headers().has(HTTP_HEADER_KEY_exit_code);
 				if (!exit)
@@ -792,7 +798,7 @@ void ArgumentParser::processAppControl(bool start)
 	}
 }
 
-void ArgumentParser::processAppRun()
+int ArgumentParser::processAppRun()
 {
 	po::options_description desc("Run commands or application:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -800,19 +806,21 @@ void ArgumentParser::processAppRun()
 		COMMON_OPTIONS
 		("desc,a", po::value<std::string>(), "application description")
 		("cmd,c", po::value<std::string>(), "full command line with arguments (run application do not need specify command line)")
+		("shell,S", "use shell mode, cmd can be more commands")
 		("name,n", po::value<std::string>(), "existing application name to run or specify a application name for run, empty will generate a random name in server")
-		("metadata,g", po::value<std::string>(), "application metadata string/JSON (input for application, pass to application process stdin)")
+		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention time[seconds] for app cleanup after finished (default 10s), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	shiftCommandLineArgs(desc);
-	HELP_ARG_CHECK_WITH_RETURN;
+	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
+	int returnCode = 0;
 	if (m_commandLineVariables.count("help") || (m_commandLineVariables.count("name") == 0 && m_commandLineVariables.count("cmd") == 0))
 	{
 		std::cout << desc << std::endl;
-		return;
+		return returnCode;
 	}
 
 	std::map<std::string, std::string> query;
@@ -829,6 +837,8 @@ void ArgumentParser::processAppRun()
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
 		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
+	if (m_commandLineVariables.count("shell"))
+		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
 		jsonObj[JSON_KEY_APP_retention] = web::json::value::string(m_commandLineVariables["retention"].as<std::string>());
 	if (m_commandLineVariables.count(JSON_KEY_APP_name))
@@ -888,6 +898,7 @@ void ArgumentParser::processAppRun()
 		std::string restPath = "/appmesh/app/syncrun";
 		auto response = requestHttp(true, methods::POST, restPath, query, &jsonObj);
 		std::cout << response.extract_utf8string(true).get();
+		returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 	}
 	else
 	{
@@ -909,10 +920,8 @@ void ArgumentParser::processAppRun()
 			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 			response = requestHttp(false, methods::GET, restPath, query);
 			std::cout << response.extract_utf8string(true).get();
-			if (response.headers().has(HTTP_HEADER_KEY_output_pos))
-			{
-				outputPosition = std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
-			}
+			outputPosition = response.headers().has(HTTP_HEADER_KEY_output_pos) ? std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
+			returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 
 			// check continues failure
 			if (response.status_code() != http::status_codes::OK && !response.headers().has(HTTP_HEADER_KEY_exit_code))
@@ -921,6 +930,7 @@ void ArgumentParser::processAppRun()
 				std::this_thread::sleep_for(std::chrono::milliseconds(500));
 				continue;
 			}
+
 			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
 			{
 				break;
@@ -936,6 +946,7 @@ void ArgumentParser::processAppRun()
 			std::cerr << response.extract_utf8string(true).get() << std::endl;
 		}
 	}
+	return returnCode;
 }
 
 void SIGINT_Handler(int signo)
@@ -995,8 +1006,9 @@ void ArgumentParser::unregSignal()
 		m_sigAction = nullptr;
 }
 
-void ArgumentParser::processExec()
+int ArgumentParser::processExec()
 {
+	int returnCode = 0;
 	m_url = DEFAULT_SERVER_URL;
 	// Get current session id (bash pid)
 	auto bashId = getppid();
@@ -1082,7 +1094,7 @@ void ArgumentParser::processExec()
 				requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 				if (input == "exit")
 				{
-					ACE_OS::_exit(0);
+					ACE_OS::_exit(returnCode);
 				}
 				process_uuid.clear();
 				outputPosition = 0;
@@ -1102,6 +1114,7 @@ void ArgumentParser::processExec()
 					currentRunFinished = true;
 					process_uuid.clear();
 				}
+				returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 				// always exit loop when get one input
 				break;
 			}
@@ -1114,10 +1127,8 @@ void ArgumentParser::processExec()
 			auto restPath = Utility::stringFormat("/appmesh/app/%s/output", APPC_EXEC_APP_NAME.c_str());
 			auto response = requestHttp(false, methods::GET, restPath, query);
 			std::cout << response.extract_utf8string(true).get();
-			if (response.headers().has(HTTP_HEADER_KEY_output_pos))
-			{
-				outputPosition = std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str());
-			}
+			outputPosition = response.headers().has(HTTP_HEADER_KEY_output_pos) ? std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
+			returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
 			{
 				currentRunFinished = true;
@@ -1132,6 +1143,7 @@ void ArgumentParser::processExec()
 	}
 	// clean
 	requestHttp(false, methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
+	return returnCode;
 }
 
 void ArgumentParser::processFileDownload()
@@ -1461,37 +1473,37 @@ void ArgumentParser::processUserPwdEncrypt()
 
 void ArgumentParser::initRadomPassword()
 {
+	// only for root user generate password for admin user after installation
+	// for docker container, this is done when docker image building
 	if (geteuid() != 0)
 	{
 		std::cerr << "only root user can generate a initial password" << std::endl;
 		return;
 	}
 	
-	auto configFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
-	auto fileContent = Utility::readFileCpp(configFile);
-	if (fileContent.length() > 0)
+	auto configFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
+	auto fileContentJsonObj = web::json::value::parse(Utility::readFileCpp(configFilePath));
+	// check JWT enabled
+	if (HAS_JSON_FIELD(fileContentJsonObj, JSON_KEY_REST) &&
+		HAS_JSON_FIELD(fileContentJsonObj.at(JSON_KEY_REST), JSON_KEY_JWT))
 	{
-		auto jsonValue = web::json::value::parse(GET_STRING_T(fileContent));
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST) &&
-			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_JWT))
+		auto jwtSection = fileContentJsonObj[JSON_KEY_REST][JSON_KEY_JWT];
+		// check JWT configured as local JSON plugin
+		if (GET_JSON_STR_VALUE(jwtSection, JSON_KEY_SECURITY_Interface) == JSON_KEY_USER_key_method_local)
 		{
-			auto jwt = jsonValue[JSON_KEY_REST][JSON_KEY_JWT];
-			if (GET_JSON_STR_VALUE(jwt, JSON_KEY_SECURITY_Interface) == JSON_KEY_USER_key_method_local)
+			auto securityFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_JSON_FILE;
+			auto jsonObj = web::json::value::parse(Utility::readFileCpp(securityFilePath));
+			// update with generated password
+			std::string genPassword = generatePassword(8, true, true, true, true);
+			jsonObj[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = web::json::value::string(genPassword);
+
+			// serialize and save security JSON config
+			std::ofstream ofs(securityFilePath, ios::trunc);
+			if (ofs.is_open())
 			{
-				std::string password = generatePassword(8, true, true, true, true);
-				auto securityFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_JSON_FILE;
-				auto jsonValue = web::json::value::parse(Utility::readFileCpp(securityFile));
-				if (GET_JSON_STR_VALUE(jsonValue[JSON_KEY_JWT_Users][JWT_ADMIN_NAME], JSON_KEY_USER_key) == "Admin123")
-				{
-					// update with generated password
-					jsonValue[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = web::json::value::string(password);
-					std::ofstream ofs(securityFile, ios::trunc);
-					if (ofs.is_open())
-					{
-						ofs << Utility::prettyJson(jsonValue.serialize());
-						ofs.close();
-					}
-				}
+				ofs << Utility::prettyJson(jsonObj.serialize());
+				ofs.close();
+				std::cout << "password generated" << std::endl;
 			}
 		}
 	}
@@ -1826,7 +1838,15 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 							  std::cout << slash;
 					  }
 					  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_command))
+					  {
+						  if (reduce)
+						  {
+							  const int commandColMaxLength = 40;
+							  auto command = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
+							  jsonObj[JSON_KEY_APP_command] = web::json::value::string(reduceFunc(command, commandColMaxLength));
+						  }
 						  std::cout << jsonObj.at(JSON_KEY_APP_command);
+					  }
 					  std::cout << std::endl;
 				  });
 }
