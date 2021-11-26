@@ -101,7 +101,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 		}                                                 \
 	} while (false)
 
-#define APPMESH_CONFIG_JSON_FILE "appsvc.json"
+#define APPMESH_CONFIG_JSON_FILE "config.json"
 #define APPMESH_SECURITY_JSON_FILE "security.json"
 #define APPMESH_SECURITY_LDAP_JSON_FILE "ldap.json"
 #define DEFAULT_PROM_LISTEN_PORT 0

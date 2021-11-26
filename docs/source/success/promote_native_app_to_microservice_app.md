@@ -13,7 +13,7 @@ The interactive with native application can use std input, App Mesh support pass
 ```
 docker run -d -m 8g --restart=always -v /usr/share/myapp.py:/usr/share/myapp.py:ro --name=myapp -p 6060:6060 -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
 ```
-* If we have any special configuration changes for App Mesh container, we can add `-v /opt/user/appsvc.json:/opt/appmesh/appsvc.json:ro`.
+* If we have any special configuration changes for App Mesh container, we can add `-v /opt/user/config.json:/opt/appmesh/config.json:ro`.
 * mount docker.sock to container so that App Mesh will also support manage container app.
 
 ## Use native application
@@ -22,7 +22,7 @@ App Mesh by default enable JWT authentication for all REST requests, we need get
 ```
 curl -X POST -k -H "username:$(echo -n admin | base64)" -H "password:$(echo -n Admin123 | base64)" https://localhost:6060/appmesh/login
 ``` 
-BTW, the admin user password can be changed by appsvc.json or override with container(laoshanxi/appmesh) startup environment like `-e APPMESH_Security_Users_admin_key=MyNewPwd`
+BTW, the admin user password can be changed by config.json or override with container(laoshanxi/appmesh) startup environment like `-e APPMESH_Security_Users_admin_key=MyNewPwd`
 
 ### Call micro service
 With JWT token, you can call native app by App Mesh REST now, the body can include you remote application start command and metadata for stdin:

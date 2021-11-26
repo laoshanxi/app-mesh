@@ -13,7 +13,7 @@ mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/sdk
 mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin
 cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
 cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/bin/
-cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/appsvc.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/config.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/security.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/ldapplugin/ldap.json ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/app*.sh ${CMAKE_CURRENT_BINARY_DIR}/bin/opt/appmesh/script/

@@ -4,6 +4,8 @@
 
 App Mesh can deploy with multiple ways, generally, App Mesh run on a host as a daemon service managed by native systemd or docker container.
 
+Note: The default installation contain two build-in users: `user` with password `User123` and `admin` with random password which need get from security.json.
+
 ### Quick install by docker container
 Start App Mesh daemon docker container with 4g memory limited:
 ```
@@ -47,7 +49,7 @@ Note:
 6. The installation media structure is like this:
 ```
     $ tree -L 1 /opt/appmesh/
-    ├── appsvc.json                  ====> configuration file (can be modified manually or update from GUI)
+    ├── config.json                  ====> configuration file (can be modified manually or update from GUI)
     ├── security.json                ====> local JSON security configuration file
     ├── bin                          ====> execution binaries dir
     ├── lib64
@@ -95,13 +97,13 @@ For production environment, Consul is better to be a cluster with 3+ server agen
 ### Join a App Mesh node to a Consul cluster
 
 #### Option 1: Update configuration
-When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/appsvc.json`:
+When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/config.json`:
 ```
   "Consul": {
     "Url": "https://192.168.3.1",
   }
 ```
-If App Mesh is running in Docker container, need mount `/opt/appmesh/appsvc.json` out of container to persist the configuration. After configuration change, just restart App Mesh container. 
+If App Mesh is running in Docker container, need mount `/opt/appmesh/config.json` out of container to persist the configuration. After configuration change, just restart App Mesh container. 
 
 #### Option 2: Update from UI
 All configuration update from UI support hot-update, no need restart App Mesh process to take effect. Click `Configuration` -> `Consul` and set `Consul URL`, Click `Submit` to take effect.

@@ -27,7 +27,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # mount this to enable configuration persist
-      #- /opt/appmesh/appsvc.json:/opt/appmesh/appsvc.json
+      #- /opt/appmesh/config.json:/opt/appmesh/config.json
     privileged: true
     user: root
     network_mode: host

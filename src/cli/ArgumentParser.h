@@ -81,6 +81,7 @@ private:
 	void unregSignal();
 	std::string parseOutputMessage(http_response &resp);
 	const std::string getAppMeshUrl();
+	void initRadomPassword();
 
 private:
 	po::variables_map m_commandLineVariables;

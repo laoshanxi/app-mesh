@@ -411,7 +411,7 @@ class AppMeshClient:
 
     def set_config(self, cfg_json):
         """
-        Update App Mesh configuration, the format follow 'appsvc.json', support update fragment config
+        Update App Mesh configuration, the format follow 'config.json', support update fragment config
 
         Returns
         -------

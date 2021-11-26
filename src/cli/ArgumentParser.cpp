@@ -17,6 +17,7 @@
 #include "../common/os/chown.hpp"
 #include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
+#include "Password.h"
 
 #define OPTION_URL \
 	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "server URL")
@@ -182,6 +183,10 @@ void ArgumentParser::parse()
 	else if (cmd == "appmgpwd")
 	{
 		processUserPwdEncrypt();
+	}
+	else if (cmd == "appmginit")
+	{
+		initRadomPassword();
 	}
 	else
 	{
@@ -1454,6 +1459,44 @@ void ArgumentParser::processUserPwdEncrypt()
 	}
 }
 
+void ArgumentParser::initRadomPassword()
+{
+	if (geteuid() != 0)
+	{
+		std::cerr << "only root user can generate a initial password" << std::endl;
+		return;
+	}
+	
+	auto configFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
+	auto fileContent = Utility::readFileCpp(configFile);
+	if (fileContent.length() > 0)
+	{
+		auto jsonValue = web::json::value::parse(GET_STRING_T(fileContent));
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST) &&
+			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_JWT))
+		{
+			auto jwt = jsonValue[JSON_KEY_REST][JSON_KEY_JWT];
+			if (GET_JSON_STR_VALUE(jwt, JSON_KEY_SECURITY_Interface) == JSON_KEY_USER_key_method_local)
+			{
+				std::string password = generatePassword(8, true, true, true, true);
+				auto securityFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_JSON_FILE;
+				auto jsonValue = web::json::value::parse(Utility::readFileCpp(securityFile));
+				if (GET_JSON_STR_VALUE(jsonValue[JSON_KEY_JWT_Users][JWT_ADMIN_NAME], JSON_KEY_USER_key) == "Admin123")
+				{
+					// update with generated password
+					jsonValue[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = web::json::value::string(password);
+					std::ofstream ofs(securityFile, ios::trunc);
+					if (ofs.is_open())
+					{
+						ofs << Utility::prettyJson(jsonValue.serialize());
+						ofs.close();
+					}
+				}
+			}
+		}
+	}
+}
+
 bool ArgumentParser::confirmInput(const char *msg)
 {
 	std::cout << msg;
@@ -1602,12 +1645,11 @@ std::string ArgumentParser::readAuthToken()
 {
 	std::string jwtToken;
 	auto hostName = web::uri(m_url).host();
-	std::string tokenFile = std::string(m_tokenFile);
-	if (Utility::isFileExist(tokenFile) && hostName.length())
+	if (Utility::isFileExist(m_tokenFile) && hostName.length())
 	{
 		try
 		{
-			auto config = web::json::value::parse(Utility::readFile(tokenFile));
+			auto config = web::json::value::parse(Utility::readFile(m_tokenFile));
 			if (config.has_object_field("auths") && config["auths"].has_object_field(hostName))
 			{
 				jwtToken = config.at("auths").at(hostName).at("auth").as_string();

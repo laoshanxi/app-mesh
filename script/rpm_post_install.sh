@@ -31,11 +31,11 @@ if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "$INSTALL_DIR/ssl/server.pem"
 	cd $INSTALL_DIR/ssl/
 	sh $INSTALL_DIR/ssl/ssl_cert_generate.sh
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.appsvc.json" ]; then
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.config.json" ]; then
 	# restore previous configuration file
-	mv $INSTALL_DIR/.appsvc.json $INSTALL_DIR/appsvc.json
+	mv $INSTALL_DIR/.config.json $INSTALL_DIR/config.json
 else
-	sed -i "s/MYHOST/$(hostname -f)/g" $INSTALL_DIR/appsvc.json
+	sed -i "s/MYHOST/$(hostname -f)/g" $INSTALL_DIR/config.json
 	rm -rf $INSTALL_DIR/work
 fi
 if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.security.json" ]; then
@@ -48,7 +48,7 @@ if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.ldap.json" ]; th
 fi
 # only allow root access config json file
 # 600 rw-------
-chmod 600 $INSTALL_DIR/appsvc.json
+chmod 600 $INSTALL_DIR/config.json
 chmod 600 $INSTALL_DIR/security.json
 
 # create appc softlink
@@ -62,6 +62,7 @@ fi
 # start service
 # systemctl enable appmesh
 # systemctl start appmesh
+/usr/bin/appc appmginit
 
 # add user appmesh
 id appmesh >&/dev/null

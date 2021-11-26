@@ -1,7 +1,7 @@
 ##########################################################################
 # appc
 ##########################################################################
-set(SRC_LIST main.cpp ArgumentParser.cpp)
+aux_source_directory(. SRC_LIST)
 add_executable(appc ${SRC_LIST})
 add_executable(${PROJECT_NAME}::appc ALIAS appc)
 

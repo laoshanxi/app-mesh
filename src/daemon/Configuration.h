@@ -13,7 +13,7 @@ class Label;
 class Application;
 
 /// <summary>
-/// Configuration file <appsvc.json> parse/update
+/// Configuration file <config.json> parse/update
 /// </summary>
 class Configuration
 {
