@@ -66,18 +66,26 @@ int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalS
 	int *timerIdPtr = new int(0);
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	(*timerIdPtr) = m_reactor->schedule_timer(this, (void *)timerIdPtr, delay, interval);
-	assert(m_timers.find(timerIdPtr) == m_timers.end());
-	m_timers[timerIdPtr] = std::make_shared<TimerEvent>(timerIdPtr, handler, this->shared_from_this(), callOnce);
-	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
-	return *timerIdPtr;
+	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
+	if ((*timerIdPtr) >= 0)
+	{
+		assert(m_timers.find(timerIdPtr) == m_timers.end());
+		m_timers[timerIdPtr] = std::make_shared<TimerEvent>(timerIdPtr, handler, this->shared_from_this(), callOnce);
+		LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
+		return *timerIdPtr;
+	}
+	else
+	{
+		std::unique_ptr<int> autoRelease(timerIdPtr);
+		LOG_ERR << fname << from << " failed with error: " << std::strerror(errno);
+		return -1;
+	}
 }
 
 bool TimerHandler::cancelTimer(int &timerId)
 {
 	const static char fname[] = "TimerHandler::cancelTimer() ";
 
-	if (0 == timerId)
-		return false;
 	auto cancled = m_reactor->cancel_timer(timerId);
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
@@ -104,7 +112,7 @@ void TimerHandler::runReactorEvent(ACE_Reactor *reactor)
 	while (!reactor->reactor_event_loop_done())
 	{
 		// set the owner of the reactor to the identity of the thread that runs the event loop
-		reactor->owner(ACE_OS::thr_self());
+		// reactor->owner(ACE_OS::thr_self());
 		reactor->run_reactor_event_loop();
 		LOG_ERR << fname << "run_reactor_event_loop exited";
 	}

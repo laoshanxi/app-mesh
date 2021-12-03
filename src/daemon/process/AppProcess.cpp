@@ -20,7 +20,7 @@ AppProcess::AppProcess()
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID())
 {
 	const static char fname[] = "AppProcess::AppProcess() ";
-	LOG_DBG << fname << "Entered";
+	LOG_DBG << fname << "Entered, ID: " << m_uuid;
 }
 
 AppProcess::~AppProcess()
