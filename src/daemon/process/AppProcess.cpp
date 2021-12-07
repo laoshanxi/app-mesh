@@ -118,6 +118,9 @@ void AppProcess::killgroup(int timerId)
 				LOG_DBG << fname << "process killed due to timeout";
 			}
 		}
+
+		CLOSE_ACE_HANDLER(m_stdoutHandler);
+		CLOSE_ACE_HANDLER(m_stdinHandler);
 	}
 	this->cancelTimer(m_stdOutSizeTimerId);
 }

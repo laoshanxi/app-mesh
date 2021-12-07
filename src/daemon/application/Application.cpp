@@ -342,6 +342,7 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 	// 4. Prometheus
 	if (PrometheusRest::instance() != nullptr && PrometheusRest::instance()->collected())
 	{
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		if (m_metricMemory && m_process)
 		{
 			auto usage = m_process->getProcUsage(ptree);
@@ -484,6 +485,7 @@ void Application::disable()
 		m_nextStartTimerId = 0;
 	}
 	this->cancelTimer(timerId);
+
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_status == STATUS::ENABLED)
 	{
