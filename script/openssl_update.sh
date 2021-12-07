@@ -4,7 +4,7 @@
 ## CentOS 7.x and Ubuntu 16.04
 ################################################################################
 set -x
-OPEN_SSL_VERSION=openssl-1.1.1h
+OPEN_SSL_VERSION=openssl-1.1.1k
 
 export ROOTDIR=$(pwd)
 mkdir -p ssl_build
