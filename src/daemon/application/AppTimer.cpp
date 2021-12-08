@@ -43,15 +43,15 @@ std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono
             {
                 if (now < m_dailyLimit->m_startTimeValue)
                 {
-                    auto diff = (m_dailyLimit->m_startTimeValue - now).total_seconds();
-                    target += std::chrono::seconds(diff);
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << diff << ">";
+                    auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
+                    target += std::chrono::seconds(offset);
+                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset << ">";
                 }
                 else if (now > m_dailyLimit->m_endTimeValue)
                 {
-                    auto diff = std::chrono::hours(24) - std::chrono::seconds((m_dailyLimit->m_endTimeValue - now).total_seconds());
-                    target += diff;
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << diff.count() << ">";
+                    auto offset = std::chrono::hours(24) - std::chrono::seconds((m_dailyLimit->m_endTimeValue - now).total_seconds());
+                    target += offset;
+                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset.count() << ">";
                 }
             }
         }
@@ -62,15 +62,15 @@ std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono
             {
                 if (now < m_dailyLimit->m_startTimeValue)
                 {
-                    auto diff = (m_dailyLimit->m_startTimeValue - now).total_seconds();
-                    target += std::chrono::seconds(diff);
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << diff << ">";
+                    auto offset = (m_dailyLimit->m_startTimeValue - now).total_seconds();
+                    target += std::chrono::seconds(offset);
+                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset << ">";
                 }
                 else if (now > m_dailyLimit->m_endTimeValue)
                 {
-                    auto diff = std::chrono::hours(24) - std::chrono::seconds((m_dailyLimit->m_endTimeValue + now).total_seconds());
-                    target += diff;
-                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << diff.count() << ">";
+                    auto offset = std::chrono::hours(24) - std::chrono::seconds((m_dailyLimit->m_endTimeValue + now).total_seconds());
+                    target += offset;
+                    LOG_DBG << fname << "target: " << now << " with startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue << " adjust seconds: <" << offset.count() << ">";
                 }
             }
         }
@@ -135,10 +135,24 @@ std::chrono::system_clock::time_point AppTimerPeriod::nextTime(const std::chrono
     // check end
     if (nextTime < m_endTime)
     {
-        auto startTime = std::chrono::system_clock::to_time_t(m_startTime);
-        auto nowTime = std::chrono::system_clock::to_time_t(nextTime);
-        auto diff = m_intervalSeconds % startTime;
-        nextTime = std::chrono::system_clock::from_time_t(nowTime + diff);
+        auto distanceSeconds = std::abs(std::chrono::duration_cast<std::chrono::seconds>(m_startTime - nextTime).count());
+        if (distanceSeconds <= 1)
+        {
+            // startTime == nowTime
+            // nextTime = now;
+        }
+        else if (m_startTime > nextTime)
+        {
+            // startTime > nowTime
+            nextTime = m_startTime;
+        }
+        else
+        {
+            // startTime < nowTime
+            auto offsetSeconds = m_intervalSeconds - (distanceSeconds % m_intervalSeconds);
+            nextTime += std::chrono::seconds(offsetSeconds);
+        }
+
         // again, make sure the target is in daily range
         nextTime = adjustDailyTimeRange(nextTime);
         if (nextTime <= m_endTime)
@@ -167,8 +181,8 @@ std::chrono::system_clock::time_point AppTimerCron::nextTime(const std::chrono::
     {
         auto nextStartTimeT = std::chrono::system_clock::to_time_t(nextTime);
         auto nextTimeT = cron::cron_next(m_cron, nextStartTimeT);
-        auto diffSeconds = std::abs(nextTimeT - nextStartTimeT);
-        if (diffSeconds == 1)
+        auto offsetSeconds = std::abs(nextTimeT - nextStartTimeT);
+        if (offsetSeconds == 1)
         {
             // cron min unit is 1 minute, add 1 minutes to start to calculate again
             auto beginTime = nextTime + std::chrono::minutes(1);

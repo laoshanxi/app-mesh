@@ -239,6 +239,12 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 		app->m_startTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time);
 		app->m_startTimeValue = DateTime::parseISO8601DateTime(app->m_startTime, app->m_posixTimeZone);
 	}
+	else if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds))
+	{
+		// for periodic run, set default startTime to now in case of no specified
+		app->m_startTime = DateTime::formatLocalTime(std::chrono::system_clock::now());
+		app->m_startTimeValue = DateTime::parseISO8601DateTime(app->m_startTime, app->m_posixTimeZone);
+	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_end_time))
 	{
 		app->m_endTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_end_time);
@@ -411,7 +417,6 @@ void Application::execute(void *ptree)
 			setInvalidError();
 			m_nextLaunchTime = nullptr;
 		}
-		setLastError("not in working state or working time");
 	}
 
 	std::shared_ptr<std::chrono::system_clock::time_point> nextRunTime;
@@ -816,8 +821,8 @@ void Application::dump()
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
 	LOG_DBG << fname << "m_startTime:" << m_startTime;
-	LOG_DBG << fname << "m_endTime:" << m_endTime;
 	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTimeValue);
+	LOG_DBG << fname << "m_endTime:" << m_endTime;
 	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTimeValue);
 	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
@@ -986,14 +991,17 @@ void Application::setLastError(const std::string &error)
 	const static char fname[] = "Application::setLastError() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_errorMutex);
-	if (error.length())
+	if (error != m_lastError)
 	{
-		m_lastError = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
-		LOG_DBG << fname << "last error for <" << getName() << ">: " << m_lastError;
-	}
-	else
-	{
-		m_lastError.clear();
+		if (error.length())
+		{
+			m_lastError = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
+			LOG_DBG << fname << "last error for <" << getName() << ">: " << m_lastError;
+		}
+		else
+		{
+			m_lastError.clear();
+		}
 	}
 }
 

@@ -6,7 +6,8 @@
 #include <boost/date_time/local_time/local_time.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-#define ISO8601FORMAT_IN "%Y-%m-%d %H:%M:%S%F%ZP"
+#define ISO8601FORMAT_IN_SECONDS "%Y-%m-%d %H:%M:%S%F%ZP"
+#define ISO8601FORMAT_IN_MINUTES "%Y-%m-%d %H:%M%F%ZP"
 #define ISO8601FORMAT_OUT "%Y-%m-%dT%H:%M:%S%F%Q"
 #define RFC3339FORMAT "%Y-%m-%dT%H:%M:%S%FZ"
 

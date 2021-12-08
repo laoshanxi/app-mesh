@@ -62,11 +62,23 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
 
     // covert now to seconds
     auto now = std::chrono::system_clock::now();
+
     std::string timeStr = "2020-10-08T14:14:00+08";
     LOG_DBG << timeStr << " is " << DateTime::formatISO8601Time(DateTime::parseISO8601DateTime(timeStr, ""));
     auto localTime = std::chrono::system_clock::from_time_t(std::chrono::system_clock::to_time_t(now));
-    LOG_DBG << "now: " << DateTime::formatISO8601Time(localTime);
+    LOG_DBG << "now formatISO8601Time: " << DateTime::formatISO8601Time(localTime);
+    LOG_DBG << "now formatLocalTime: " << DateTime::formatLocalTime(localTime);
     REQUIRE(localTime == DateTime::parseISO8601DateTime(DateTime::formatISO8601Time(localTime), ""));
+
+    // test different input parse
+    auto testStr1 = "2021-12-08T21:00:00+08";
+    auto testTimeP1 = DateTime::parseISO8601DateTime(testStr1, "");
+    LOG_DBG << testStr1 << " formatLocalTime: " << DateTime::formatLocalTime(testTimeP1);
+
+    auto testStr2 = "2021-12-08T21:00+08";
+    auto testTimeP2 = DateTime::parseISO8601DateTime(testStr2, "");
+    LOG_DBG << testStr2 << " formatLocalTime: " << DateTime::formatLocalTime(testTimeP2);
+    REQUIRE(DateTime::formatLocalTime(testTimeP1) == DateTime::formatLocalTime(testTimeP2));
 
     // parseISO8601DateTime
     try

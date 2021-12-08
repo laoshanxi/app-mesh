@@ -60,19 +60,22 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	}
 
 	std::string iso8601TimeStr = strTime;
-	if (DateTime::getISO8601TimeZone(iso8601TimeStr).length())
+	std::string zoneStr = DateTime::getISO8601TimeZone(iso8601TimeStr);
+	if (zoneStr.length() > 0)
 	{
 		// have build-in posix zone
 	}
-	else if (posixTimeZone.length())
+	else if (posixTimeZone.length() > 0)
 	{
 		// provide posix zone by parameter
-		iso8601TimeStr.append(posixTimeZone);
+		zoneStr = posixTimeZone;
+		iso8601TimeStr.append(zoneStr);
 	}
 	else
 	{
 		// use host zone
-		iso8601TimeStr.append(DateTime::getLocalZoneUTCOffset());
+		zoneStr = DateTime::getLocalZoneUTCOffset();
+		iso8601TimeStr.append(zoneStr);
 	}
 
 	try
@@ -87,7 +90,21 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 		std::istringstream iss(iso8601TimeStr);
 		iss.exceptions(std::ios_base::failbit);
 		//iss.imbue(std::locale(std::locale::classic(), output_facet));
-		iss.imbue(std::locale(iss.getloc(), new boost::local_time::local_time_input_facet(ISO8601FORMAT_IN)));
+
+		// determine format
+		std::string format = ISO8601FORMAT_IN_MINUTES;
+		if (zoneStr.length() > 0 && iso8601TimeStr.length() > zoneStr.length())
+		{
+			// remove zone part
+			auto dateTimeSectionStr = iso8601TimeStr.substr(0, iso8601TimeStr.length() - zoneStr.length());
+			// if contain 2 colons, use second format
+			if (Utility::charCount(dateTimeSectionStr, ':') == 2)
+			{
+				format = ISO8601FORMAT_IN_SECONDS;
+			}
+		}
+
+		iss.imbue(std::locale(iss.getloc(), new boost::local_time::local_time_input_facet(format)));
 		iss >> localDateTime;
 		LOG_DBG << fname << "<" << iso8601TimeStr << "> covert to local <" << localDateTime << ">";
 		auto ptime = localDateTime.utc_time();
