@@ -22,7 +22,7 @@ public:
 	void setAsyncHttpRequest(void *httpRequest) { m_httpRequest = httpRequest; }
 
 protected:
-	virtual void waitThread(int timerId = 0);
+	virtual void waitThread(int timerId = INVALID_TIMER_ID);
 	void runPipeReaderThread();
 
 private:

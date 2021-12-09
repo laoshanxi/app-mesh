@@ -63,7 +63,7 @@ int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalS
 		callOnce = true;
 	}
 
-	int *timerIdPtr = new int(0);
+	int *timerIdPtr = new int(INVALID_TIMER_ID);
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	(*timerIdPtr) = m_reactor->schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
@@ -86,6 +86,11 @@ bool TimerHandler::cancelTimer(int &timerId)
 {
 	const static char fname[] = "TimerHandler::cancelTimer() ";
 
+	if (timerId <= INVALID_TIMER_ID)
+	{
+		return false;
+	}
+
 	auto cancled = m_reactor->cancel_timer(timerId);
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
@@ -100,7 +105,7 @@ bool TimerHandler::cancelTimer(int &timerId)
 		m_timers.erase(it);
 		LOG_DBG << fname << "Timer removed <" << timerId << ">.";
 	}
-	timerId = 0;
+	timerId = INVALID_TIMER_ID;
 	return cancled;
 }
 

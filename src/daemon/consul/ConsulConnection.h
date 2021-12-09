@@ -54,7 +54,7 @@ private:
 	void watchTopologyThread();
 	void watchScheduleThread();
 
-	void refreshSession(int timerId = 0);
+	void refreshSession(int timerId = INVALID_TIMER_ID);
 	std::string requestSessionId();
 	std::string renewSessionId();
 	void consulSessionId(const std::string &sessionId);

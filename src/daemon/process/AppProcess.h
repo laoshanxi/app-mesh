@@ -82,7 +82,7 @@ public:
 	/// kill the process group
 	/// </summary>
 	/// <param name="timerId"></param>
-	virtual void killgroup(int timerId = 0);
+	virtual void killgroup(int timerId = INVALID_TIMER_ID);
 
 	/// <summary>
 	/// set resource limitation

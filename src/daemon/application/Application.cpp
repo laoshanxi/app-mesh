@@ -25,9 +25,9 @@ ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(std::chrono::millisec
 
 Application::Application()
 	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
-	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false), m_nextStartTimerId(0),
+	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false), m_nextStartTimerId(INVALID_TIMER_ID),
 	  m_health(true), m_appId(Utility::createUUID()), m_version(0), m_pid(ACE_INVALID_PID),
-	  m_suicideTimerId(0), m_starts(std::make_shared<prometheus::Counter>())
+	  m_suicideTimerId(INVALID_TIMER_ID), m_starts(std::make_shared<prometheus::Counter>())
 {
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
@@ -483,11 +483,11 @@ void Application::disable()
 	const static char fname[] = "Application::stop() ";
 
 	// clean old timer
-	int timerId = 0;
+	int timerId = INVALID_TIMER_ID;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		timerId = m_nextStartTimerId;
-		m_nextStartTimerId = 0;
+		m_nextStartTimerId = INVALID_TIMER_ID;
 	}
 	this->cancelTimer(timerId);
 
@@ -571,7 +571,7 @@ std::string Application::runApp(int timeoutSeconds)
 
 const std::string Application::getExecUser() const
 {
-	if (m_owner)
+	if (m_owner && !(m_owner->getExecUser().empty()))
 	{
 		return m_owner->getExecUser();
 	}
@@ -882,15 +882,15 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 
 void Application::destroy()
 {
-	int suicideTimerId = 0;
-	int timerId = 0;
+	int suicideTimerId = INVALID_TIMER_ID;
+	int timerId = INVALID_TIMER_ID;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		this->disable();
 		this->m_status = STATUS::NOTAVIALABLE;
 		suicideTimerId = m_suicideTimerId;
 		timerId = m_nextStartTimerId;
-		m_suicideTimerId = m_nextStartTimerId = 0;
+		m_suicideTimerId = m_nextStartTimerId = INVALID_TIMER_ID;
 	}
 	this->cancelTimer(suicideTimerId);
 	this->cancelTimer(timerId);
@@ -948,7 +948,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 {
 	const static char fname[] = "Application::scheduleNext() ";
 
-	int timerId = 0;
+	int timerId = INVALID_TIMER_ID;
 	auto next = m_timer->nextTime(now);
 
 	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
@@ -968,7 +968,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 
 	// 3. update timer id
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (timerId > 0)
+	if (timerId > INVALID_TIMER_ID)
 	{
 		m_nextStartTimerId = timerId;
 		LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(*m_nextLaunchTime);

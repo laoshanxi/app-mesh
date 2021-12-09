@@ -63,7 +63,7 @@ public:
 	// behavior
 	std::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
-	void onSuicide(int timerId = 0);
+	void onSuicide(int timerId = INVALID_TIMER_ID);
 	void onExit(int code);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);

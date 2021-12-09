@@ -15,7 +15,7 @@
 constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
 AppProcess::AppProcess()
-	: m_delayKillTimerId(0), m_stdOutSizeTimerId(0), m_stdOutMaxSize(0),
+	: m_delayKillTimerId(INVALID_TIMER_ID), m_stdOutSizeTimerId(INVALID_TIMER_ID), m_stdOutMaxSize(0),
 	  m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID())
 {
@@ -81,7 +81,7 @@ void AppProcess::killgroup(int timerId)
 
 	LOG_INF << fname << "kill process <" << getpid() << ">.";
 
-	if (timerId == 0)
+	if (timerId == INVALID_TIMER_ID)
 	{
 		// killed before timer event, cancel timer event
 		this->cancelTimer(m_delayKillTimerId);
@@ -89,10 +89,10 @@ void AppProcess::killgroup(int timerId)
 
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-		if (m_delayKillTimerId > 0 && m_delayKillTimerId == timerId)
+		if (m_delayKillTimerId > INVALID_TIMER_ID && m_delayKillTimerId == timerId)
 		{
 			// clean timer id, trigger-ing this time.
-			m_delayKillTimerId = 0;
+			m_delayKillTimerId = INVALID_TIMER_ID;
 		}
 
 		if (this->running() && this->getpid() > 1)
@@ -113,7 +113,7 @@ void AppProcess::killgroup(int timerId)
 					LOG_INF << fname << "Retry wait process <" << getpid() << "> success";
 				}
 			}
-			if (timerId > 0)
+			if (timerId > INVALID_TIMER_ID)
 			{
 				LOG_DBG << fname << "process killed due to timeout";
 			}
@@ -145,7 +145,7 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 	const static char fname[] = "AppProcess::delayKill() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-	if (0 == m_delayKillTimerId)
+	if (INVALID_TIMER_ID == m_delayKillTimerId)
 	{
 		m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
 	}
@@ -159,7 +159,7 @@ void AppProcess::regCheckStdout()
 {
 	const static char fname[] = "AppProcess::regCheckStdout() ";
 
-	if (0 == m_stdOutSizeTimerId)
+	if (INVALID_TIMER_ID == m_stdOutSizeTimerId)
 	{
 		int timeoutSec = 5;
 		m_stdOutSizeTimerId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::checkStdout, this, std::placeholders::_1), fname);

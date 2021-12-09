@@ -17,7 +17,7 @@
 #define CONSUL_BASE_PATH "/v1/kv/appmesh/"
 
 ConsulConnection::ConsulConnection()
-	: m_ssnRenewTimerId(0), m_leader(0), m_config(std::make_shared<Configuration::JsonConsul>())
+	: m_ssnRenewTimerId(INVALID_TIMER_ID), m_leader(0), m_config(std::make_shared<Configuration::JsonConsul>())
 {
 }
 

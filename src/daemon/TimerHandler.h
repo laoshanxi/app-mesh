@@ -9,6 +9,7 @@
 #include <ace/Event_Handler.h>
 #include <ace/Reactor.h>
 
+#define INVALID_TIMER_ID -1
 //////////////////////////////////////////////////////////////////////////
 /// Timer Event base class
 /// The class which use timer event should implement from this class.
