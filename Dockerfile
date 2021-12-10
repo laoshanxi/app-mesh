@@ -1,6 +1,14 @@
+FROM laoshanxi/appmesh:build_centos7 AS builder
+
+WORKDIR /workspace
+
+COPY . .
+
+RUN mkdir build;cd build;cmake ..;make;make pack;make test ARG='-V'
+
 FROM ubuntu:20.04
 
-ADD ./appmesh*.deb /opt
+COPY --from=builder /workspace/build/appmesh_2.0.1_amd64.deb /opt/appmesh_2.0.1_amd64.deb
 
 RUN apt update && \
     apt install -y /opt/appmesh*.deb && rm -f /opt/appmesh*.deb && \
