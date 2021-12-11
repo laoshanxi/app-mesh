@@ -267,7 +267,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	//option.avoid_zombies(1);
 	if (user.empty())
 		user = Configuration::instance()->getDefaultExecUser();
-	if (user != "root")
+	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
 		if (Utility::getUid(user, uid, gid))
@@ -308,11 +308,22 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	m_stdoutFileName = stdoutFile;
 	if (m_stdoutFileName.length() || stdinFileContent != EMPTY_STR_JSON)
 	{
+		/*
+		* 
+			444 r--r--r--
+			600 rw-------
+			644 rw-r--r--
+			666 rw-rw-rw-
+			700 rwx------
+			744 rwxr--r--
+			755 rwxr-xr-x
+			777 rwxrwxrwx
+		*/
 		dummy = ACE_OS::open("/dev/null", O_RDWR);
 		m_stdoutHandler = m_stdinHandler = dummy;
 		if (m_stdoutFileName.length())
 		{
-			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 00664);
+			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 0666);
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName;
 		}
 		if (stdinFileContent != EMPTY_STR_JSON && stdinFileContent != CLOUD_STR_JSON)
@@ -325,7 +336,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 				inputFile << stdinFileContent.serialize();
 			inputFile.close();
 			assert(Utility::isFileExist(m_stdinFileName));
-			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY, 00664);
+			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY, 0444);
 			LOG_DBG << fname << "std_in: " << m_stdinFileName << " : " << stdinFileContent;
 		}
 		option.set_handles(m_stdinHandler, m_stdoutHandler, m_stdoutHandler);

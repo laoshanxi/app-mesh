@@ -13,6 +13,7 @@ log() {
 # prepare work dir
 if [ ! -d "/opt/appmesh/work" ]; then
 	mkdir /opt/appmesh/work
+	chmod 777 /opt/appmesh/work
 fi
 cd /opt/appmesh/work
 
@@ -42,7 +43,7 @@ pre_reg_app() {
 }
 
 while true; do
-	case "$(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v rest | grep -v grep | grep -v config.json | wc -w)" in
+	case "$(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v rest | grep -v grep | grep -v config.json | wc -l)" in
 
 	0)
 		sleep 0.1
@@ -62,7 +63,7 @@ while true; do
 		;;
 	*) # Only kill the process that was not started by this script
 		for i in $(ps aux | grep -w /opt/appmesh/bin/appsvc | grep -v rest | grep -v grep | grep -v config.json | awk '{print $2}'); do
-			if [ $(pstree -Ap $SCRIPT_PID | grep $i | wc -w) -eq 0 ]; then
+			if [ $(pstree -Ap $SCRIPT_PID | grep $i | wc -l) -eq 0 ]; then
 				log "Killed duplicate App Mesh $i: $(date)"
 				kill -9 $i
 			fi

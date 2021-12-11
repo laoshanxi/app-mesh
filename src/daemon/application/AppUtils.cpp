@@ -21,9 +21,9 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		shellFile << cmd << std::endl;
 		shellFile.close();
 		// only read permission
-		os::chmod(fileName, 400);
+		os::chmod(fileName, 444);
 		m_fileName = fileName;
-		m_shellCmd = Utility::stringFormat("/bin/sh -l '%s'", m_fileName.c_str());
+		m_shellCmd = Utility::stringFormat("/bin/sh '%s'", m_fileName.c_str());
 
 		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> run in shell mode";
 	}

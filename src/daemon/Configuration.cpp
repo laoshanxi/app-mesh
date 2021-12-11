@@ -75,10 +75,9 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
-	if (config->m_defaultExecUser.empty())
-		config->m_defaultExecUser = DEFAULT_EXEC_USER;
+
 	unsigned int gid, uid;
-	if (!Utility::getUid(config->m_defaultExecUser, uid, gid))
+	if (!config->m_defaultExecUser.empty() && !Utility::getUid(config->m_defaultExecUser, uid, gid))
 	{
 		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
 		throw std::invalid_argument(Utility::stringFormat("No such OS user found <%s>", config->m_defaultExecUser.c_str()));
@@ -758,6 +757,7 @@ const web::json::value Configuration::getDockerProxyAppJson() const
 	restApp[JSON_KEY_APP_command] = web::json::value::string(std::string("/opt/appmesh/bin/dockeragent -url ") + this->getDockerProxyAddress());
 	restApp[JSON_KEY_APP_description] = web::json::value::string("Docker Engine agent with X.509 authentication");
 	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
+	restApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_ADMIN_NAME);
 	auto objBehavior = web::json::value::object();
 	objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
 	restApp[JSON_KEY_APP_behavior] = objBehavior;
@@ -772,6 +772,7 @@ const web::json::value Configuration::getPythonExecAppJson() const
 	pyApp[JSON_KEY_APP_description] = web::json::value::string("run Python script from metadata");
 	pyApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::DISABLED));
 	pyApp[JSON_KEY_APP_owner_permission] = web::json::value::number(12);
+	pyApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_USER_NAME);
 	auto objBehavior = web::json::value::object();
 	objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::STANDBY));
 	pyApp[JSON_KEY_APP_behavior] = objBehavior;
@@ -799,6 +800,11 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	{
 		rest->m_restListenPort = DEFAULT_REST_LISTEN_PORT;
 		LOG_INF << fname << "Default value <" << rest->m_restListenPort << "> will by used for RestListenPort";
+	}
+	if (!Utility::isFileExist("/var/run/docker.sock"))
+	{
+		LOG_INF << fname << "Docker not installed or started, will not start dockeragent.";
+		rest->m_dockerProxyListenAddr.clear();
 	}
 	// SSL
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSL))

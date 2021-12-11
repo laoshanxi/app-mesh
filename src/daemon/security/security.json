@@ -46,7 +46,7 @@
         "admin": {
             "key": "Admin123",
             "group": "admin",
-            "exec_user": "root",
+            "exec_user": "",
             "locked": false,
             "roles": [
                 "manage",

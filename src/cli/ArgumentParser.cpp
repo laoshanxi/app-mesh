@@ -344,7 +344,7 @@ void ArgumentParser::processAppAdd()
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("shell,S", "use shell mode, cmd can be more commands")
+		("shell,S", po::value<bool>()->default_value(false), "use shell mode, cmd can be more commands")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (for docker container application)")
 		("workdir,w", po::value<std::string>(), "working directory")
@@ -477,7 +477,7 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
 		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
-	if (m_commandLineVariables.count("shell"))
+	if (m_commandLineVariables["shell"].as<bool>())
 		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("health_check"))
 		jsonObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
@@ -806,7 +806,7 @@ int ArgumentParser::processAppRun()
 		COMMON_OPTIONS
 		("desc,a", po::value<std::string>(), "application description")
 		("cmd,c", po::value<std::string>(), "full command line with arguments (run application do not need specify command line)")
-		("shell,S", "use shell mode, cmd can be more commands")
+		("shell,S", po::value<bool>()->default_value(true), "use shell mode, cmd can be more commands")
 		("name,n", po::value<std::string>(), "existing application name to run or specify a application name for run, empty will generate a random name in server")
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
@@ -832,12 +832,11 @@ int ArgumentParser::processAppRun()
 	web::json::value jsonBehavior;
 	jsonBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(JSON_KEY_APP_behavior_remove);
 	jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
-	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count("cmd"))
 		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
 		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
-	if (m_commandLineVariables.count("shell"))
+	if (m_commandLineVariables["shell"].as<bool>())
 		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
 	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
 		jsonObj[JSON_KEY_APP_retention] = web::json::value::string(m_commandLineVariables["retention"].as<std::string>());

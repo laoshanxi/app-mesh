@@ -2,7 +2,7 @@
   "Description": "MYHOST",
   "ScheduleIntervalSeconds": 1,
   "LogLevel": "DEBUG",
-  "DefaultExecUser": "root",
+  "DefaultExecUser": "",
   "WorkingDirectory": "",
   "REST": {
     "RestEnabled": true,
@@ -29,6 +29,8 @@
       "command": "ping www.baidu.com -w 300",
       "name": "ping",
       "cache_lines": 30,
+      "owner": "user",
+      "permission": 33,
       "behavior": {
         "control": {
           "0": "standby"

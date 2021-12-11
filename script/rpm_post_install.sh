@@ -48,7 +48,7 @@ if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "$INSTALL_DIR/.ldap.json" ]; th
 fi
 # only allow root access config json file
 # 600 rw-------
-chmod 600 $INSTALL_DIR/config.json
+chmod 644 $INSTALL_DIR/config.json
 chmod 600 $INSTALL_DIR/security.json
 
 # create appc softlink
@@ -57,6 +57,7 @@ ln -s $INSTALL_DIR/script/appc.sh /usr/bin/appc
 chmod +x $INSTALL_DIR/script/appc.sh
 if [ ! -d "$INSTALL_DIR/work" ]; then
 	mkdir $INSTALL_DIR/work
+	chmod 777 $INSTALL_DIR/work
 fi
 
 # start service
@@ -70,5 +71,5 @@ fi
 # add user appmesh
 id appmesh >&/dev/null
 if [ $? -ne 0 ]; then
-	useradd appmesh -s /usr/sbin/nologin --no-create-home || true
+	useradd appmesh --user-group || true
 fi

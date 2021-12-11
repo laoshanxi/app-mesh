@@ -17,6 +17,6 @@ if [ -f "$INSTALL_DIR/ldap.json" ]; then
 	cp -f $INSTALL_DIR/ldap.json $INSTALL_DIR/.ldap.json
 fi
 # stop all running applications
-#if [ -f "$INSTALL_DIR/appc" ];then
-#	$INSTALL_DIR/appc view -l | awk '{if (NR>1){cmd="$INSTALL_DIR/appc disable -n "$2;print(cmd);system(cmd)}}'
-#fi
+if [ -f "$INSTALL_DIR/appc" ];then
+	$INSTALL_DIR/appc view -l | awk '{if (NR>1){cmd="$INSTALL_DIR/appc disable -n "$2;print(cmd);system(cmd)}}'
+fi

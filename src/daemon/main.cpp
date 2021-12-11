@@ -29,7 +29,7 @@
 #include "../common/Valgrind.h"
 #endif
 
-void initCpprestThreadPool(int);
+static std::vector<std::unique_ptr<std::thread>> m_threadPool;
 
 int main(int argc, char *argv[])
 {
@@ -44,8 +44,11 @@ int main(int argc, char *argv[])
 	{
 		ACE::init();
 
+		// https://www.cnblogs.com/shelmean/p/9436425.html
 		// umask 0022 => 644(rw,r,r)
-		ACE_OS::umask(0022);
+		// umask 0002 => 664(-rw-rw-r--)
+		// umask 0000 => 666
+		ACE_OS::umask(0000);
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
 		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
@@ -107,10 +110,9 @@ int main(int argc, char *argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		Configuration::instance()->dump();
 
-		// start the 1st thread for timer (application & process event & healthcheck & consul report event)
-		auto timerThreadA = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
-		// start the 2nd thread for timer
-		auto timerThreadB = std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance()));
+		// start the 2 threads for timer (application & process event & healthcheck & consul report event)
+		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
+		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
 
 		// register docker proxy
 		if (config->getDockerProxyAddress().length())
