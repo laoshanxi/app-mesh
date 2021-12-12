@@ -18,9 +18,9 @@ import appmesh_client
 
 client = appmesh_client.AppMeshClient()
 # authentication
-token = client.login("admin", "Admin123")
+token = client.login("admin", "admin123")
 print(client.authentication(token, "app-view"))
-print(client.change_passwd("Admin123"))
+print(client.change_passwd("admin123"))
 print(json.dumps(client.get_permissions(), indent=2))
 # view application
 print(json.dumps(client.get_app("ping"), indent=2))

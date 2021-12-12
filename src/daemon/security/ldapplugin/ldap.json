@@ -51,7 +51,7 @@
                 "usermgr"
             ]
         },
-        "user": {
+        "mesh": {
             "BindDN": "cn={USER},ou=users,dc=example,dc=org",
             "roles": [
                 "view",

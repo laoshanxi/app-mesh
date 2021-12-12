@@ -66,7 +66,7 @@ User and Role design for App Mesh
     },
     "Users": {
       "admin": {
-        "key": "Admin123",
+        "key": "admin123",
         "group": "admin",
         "exec_user": "root",
         "locked": false,
@@ -78,14 +78,14 @@ User and Role design for App Mesh
         ]
       },
       "test": {
-        "key": "123",
+        "key": "test123",
         "group": "user",
         "exec_user": "appmesh",
         "locked": false,
         "roles": []
       },
-      "user": {
-        "key": "User123",
+      "mesh": {
+        "key": "mesh123",
         "group": "user",
         "exec_user": "appmesh",
         "locked": false,

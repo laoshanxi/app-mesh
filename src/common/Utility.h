@@ -110,8 +110,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_SCHEDULE_INTERVAL 2
 #define DEFAULT_HTTP_THREAD_POOL_SIZE 6
 
-#define JWT_USER_KEY "User123"
-#define JWT_USER_NAME "user"
+#define JWT_USER_KEY "mesh123"
+#define JWT_USER_NAME "mesh"
 #define JWT_ADMIN_NAME "admin"
 #define APPMESH_PASSWD_MIN_LENGTH 3
 #define DEFAULT_RUN_APP_RETENTION_DURATION 10

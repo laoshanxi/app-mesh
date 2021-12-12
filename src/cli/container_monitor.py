@@ -15,7 +15,7 @@ container_name = args[0]
 
 # login appmesh
 appmesh = appmesh_client.AppMeshClient()
-print(appmesh.login("admin", "Admin123"))
+print(appmesh.login("admin", "admin123"))
 
 # wait docker finish and ignore container not exist error
 # https://docker-py.readthedocs.io/en/stable/containers.html#docker.models.containers.Container.wait

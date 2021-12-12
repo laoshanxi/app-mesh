@@ -27,7 +27,4 @@ rm -f $INSTALL_DIR/work/appmesh.*
 #rm -rf $INSTALL_DIR
 
 # clean user appmesh
-id appmesh >&/dev/null
-if [ $? -eq 0 ]; then
-	userdel -r appmesh -f || true
-fi
+userdel -r appmesh -f || true

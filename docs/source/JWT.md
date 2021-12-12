@@ -64,6 +64,6 @@ The REST will response bellow json when authentication success:
 {
     "permission": "app-view",
     "success": true,
-    "user": "user"
+    "user": "mesh"
 }
 ```

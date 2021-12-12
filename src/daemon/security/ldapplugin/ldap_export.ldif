@@ -70,17 +70,17 @@ uid: test
 uidnumber: 1002
 userpassword: {MD5}ICy5YqxZB1uWSwcVLSNLcA==
 
-# Entry 8: cn=user,ou=users,dc=example,dc=org
-dn: cn=user,ou=users,dc=example,dc=org
-cn:  user
+# Entry 8: cn=mesh,ou=users,dc=example,dc=org
+dn: cn=mesh,ou=users,dc=example,dc=org
+cn:  mesh
 gidnumber: 501
-homedirectory: /home/users/user
+homedirectory: /home/users/mesh
 loginshell: /usr/sbin/nologin
 objectclass: inetOrgPerson
 objectclass: posixAccount
 objectclass: top
-sn: user
-uid: user
+sn: mesh
+uid: mesh
 uidnumber: 1001
 userpassword: {MD5}WjDJYJtS/jSPtpJYluBh3g==
 

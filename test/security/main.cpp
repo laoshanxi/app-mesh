@@ -30,11 +30,11 @@ TEST_CASE("ldapcpp Test", "[security]")
         ldap.Connect("ldap://127.0.0.1:389");
         std::cout << "ldap connect: " << ldap.Message() << std::endl;
 
-        success = ldap.Bind("cn=admin,ou=users,dc=example,dc=org", "Admin123");
+        success = ldap.Bind("cn=admin,ou=users,dc=example,dc=org", "admin123");
         std::cout << "user <admin> bind success: " << success << std::endl;
 
-        success = ldap.Bind("cn=user,ou=users,dc=example,dc=org", "User123");
-        std::cout << "user <user> bind success: " << success << std::endl;
+        success = ldap.Bind("cn=mesh,ou=users,dc=example,dc=org", "mesh123");
+        std::cout << "user <mesh> bind success: " << success << std::endl;
 
         success = ldap.Bind("cn=test,ou=users,dc=example,dc=org", "123");
         std::cout << "user <test> bind success: " << success << std::endl;

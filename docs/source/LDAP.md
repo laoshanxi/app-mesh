@@ -26,7 +26,7 @@ AppMesh can manage user with groups, each group map to a LDAP organization unit 
                 "usermgr"
             ]
         },
-        "user": {
+        "mesh": {
             "BindDN": "cn={USER},ou=users,dc=example,dc=org",
             "roles": [
                 "view",

@@ -69,7 +69,4 @@ if [[ "$APPMESH_SECURE_INSTALLATION" = "Y" ]]; then
 fi
 
 # add user appmesh
-id appmesh >&/dev/null
-if [ $? -ne 0 ]; then
-	useradd appmesh --user-group || true
-fi
+useradd appmesh -s /usr/sbin/nologin --no-create-home --user-group || true

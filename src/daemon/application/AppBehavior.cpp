@@ -62,6 +62,10 @@ AppBehavior::Action AppBehavior::str2action(const std::string &action2str)
     {
         return AppBehavior::Action::RESTART;
     }
+    else if (Utility::strTolower(action2str) == JSON_KEY_APP_behavior_keepalive)
+    {
+        return AppBehavior::Action::KEEPALIVE;
+    }
     else if (Utility::strTolower(action2str) == JSON_KEY_APP_behavior_remove)
     {
         return AppBehavior::Action::REMOVE;

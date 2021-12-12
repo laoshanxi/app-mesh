@@ -14,7 +14,7 @@ func TestAppmeshLogin(t *testing.T) {
 	fmt.Println("main")
 	client, _ := appmesh.NewClient("localhost", 6060, true)
 
-	_, token, _ := client.Login("admin", "Admin123", appmesh.DEFAULT_TOKEN_EXPIRE_SECONDS)
+	_, token, _ := client.Login("admin", "admin123", appmesh.DEFAULT_TOKEN_EXPIRE_SECONDS)
 	client.Authentication(token, "")
 	labels, err := client.GetTags()
 	fmt.Printf("HTTP error %v, returns %v\n", err, labels)

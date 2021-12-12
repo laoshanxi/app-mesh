@@ -15,7 +15,7 @@ shadow_app_name = socket.gethostname()  # used as shadow native app name
 monitor_app_name = str(uuid.uuid1())  # used as monitor app name
 client = appmesh_client.AppMeshClient(server_host=host_ip)
 # authentication
-client.login("admin", "Admin123")
+client.login("admin", "admin123")
 
 # prepare command line for native application
 args = sys.argv
