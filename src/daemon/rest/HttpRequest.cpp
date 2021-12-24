@@ -74,6 +74,7 @@ void HttpRequest::reply(http_response &response) const
 	}
 	else
 	{
+		addHeaders(response);
 		http_request::reply(response).wait();
 	}
 }
@@ -86,16 +87,15 @@ void HttpRequest::reply(http_response &response, const std::string &body_data) c
 	}
 	else
 	{
+		addHeaders(response);
 		http_request::reply(response).wait();
 	}
 }
 
 void HttpRequest::reply(http::status_code status) const
 {
-	// give empty JSON str for client to decode JSON always
-	web::json::value emptyBody;
-	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string("");
-	reply(status, emptyBody);
+	// give empty JSON str for empty json serialize/deserialize
+	reply(status, emptyJson());
 }
 
 void HttpRequest::reply(http::status_code status, const json::value &body_data) const
@@ -107,7 +107,10 @@ void HttpRequest::reply(http::status_code status, const json::value &body_data) 
 	else
 	{
 		http_response response(status);
-		response.set_body(body_data);
+		if (body_data != emptyJson())
+		{
+			response.set_body(body_data);
+		}
 		return reply(response);
 	}
 }
@@ -266,6 +269,20 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(ACE_InputCDR &input)
 		return std::shared_ptr<HttpRequest>(new HttpRequest(uuid, method, uri, address, body, headerStr, query));
 	}
 	return nullptr;
+}
+
+const web::json::value HttpRequest::emptyJson() const
+{
+	web::json::value emptyBody;
+	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string("");
+	return emptyBody;
+}
+
+void HttpRequest::addHeaders(http_response &response) const
+{
+	response.headers().add("Access-Control-Allow-Origin", "*");
+	response.headers().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
+	response.headers().add("Access-Control-Allow-Headers", "*");
 }
 
 ////////////////////////////////////////////////////////////////////////////////

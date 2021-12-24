@@ -78,7 +78,6 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 ### Component diagram
 
 ![block-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/block_diagram.png)
-![mind-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/mind.png)
 
 ---
 

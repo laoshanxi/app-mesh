@@ -50,6 +50,7 @@ protected:
     void handle_post(const HttpRequest &message);
     void handle_delete(const HttpRequest &message);
     void handle_options(const HttpRequest &message);
+    void handle_head(const HttpRequest &message);
 
     // tuple: username, usergroup
     const std::tuple<std::string, std::string> verifyToken(const HttpRequest &message);
