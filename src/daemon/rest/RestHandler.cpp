@@ -234,6 +234,7 @@ void RestHandler::open()
 	m_listener->support(methods::POST, std::bind(&RestHandler::handle_post, this, std::placeholders::_1));
 	m_listener->support(methods::DEL, std::bind(&RestHandler::handle_delete, this, std::placeholders::_1));
 	m_listener->support(methods::OPTIONS, std::bind(&RestHandler::handle_options, this, std::placeholders::_1));
+	m_listener->support(methods::HEAD, std::bind(&RestHandler::handle_head, this, std::placeholders::_1));
 
 	m_listener->open().wait();
 	LOG_INF << fname << "Listening for requests at: " << uri.to_string();

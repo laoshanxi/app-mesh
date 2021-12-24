@@ -61,3 +61,7 @@ See document [Build App Mesh guidance](https://app-mesh.readthedocs.io/en/latest
 ## How to enable valgrind memory test
 
 App Mesh can test memory issue by valgrind to find potential memory leaks. build `/opt/appmesh/bin/appsvc` binary with debug mode `cmake -DCMAKE_BUILD_TYPE=Debug ..`, use `touch /opt/appmesh/bin/appsvc.valgrind` to enable and restart `/opt/appmesh/bin/appsvc` to run some cases, use `touch /opt/appmesh/bin/appsvc.valgrind.stop` to finish memory test and check memory report in dir `/opt/appmesh/bin/`.
+
+## Mind diagram
+
+![mind-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/mind.png)

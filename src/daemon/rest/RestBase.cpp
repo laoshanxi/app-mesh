@@ -74,6 +74,11 @@ void RestBase::handle_options(const HttpRequest &message)
     message.reply(web::http::status_codes::OK);
 }
 
+void RestBase::handle_head(const HttpRequest &message)
+{
+    message.reply(web::http::status_codes::OK);
+}
+
 void RestBase::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
 {
     const static char fname[] = "RestHandler::handleRest() ";

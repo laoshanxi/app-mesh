@@ -150,6 +150,9 @@ TEST_CASE("cpprestsdk", "[Utility]")
     a = web::json::value::parse("{\"a\":2, \"b\":2}");
     LOG_INF << "web::json::value: " << a;
     LOG_INF << "web::json::value: " << a.serialize();
+
+    web::json::value nullBody;
+    REQUIRE(nullBody.is_null());
 }
 
 TEST_CASE("boost_regex", "[boost_regex]")

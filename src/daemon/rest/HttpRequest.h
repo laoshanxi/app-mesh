@@ -157,6 +157,8 @@ public:
 
 	const std::shared_ptr<ACE_OutputCDR> serialize() const;
 	static std::shared_ptr<HttpRequest> deserialize(ACE_InputCDR &input);
+	const web::json::value emptyJson() const;
+	void addHeaders(http_response &response) const;
 
 	// serializeable, always use those variables intead of method(), headers()
 	std::string m_uuid;
@@ -196,10 +198,10 @@ class HttpTcpResponse
 {
 public:
 	explicit HttpTcpResponse(const std::string &uuid,
-					const std::string &body,
-					const std::string &bodyType,
-					const std::map<std::string, std::string> &headers,
-					const http::status_code &status);
+							 const std::string &body,
+							 const std::string &bodyType,
+							 const std::map<std::string, std::string> &headers,
+							 const http::status_code &status);
 	const std::shared_ptr<ACE_OutputCDR> serialize() const;
 	static std::shared_ptr<HttpTcpResponse> deserialize(ACE_InputCDR &input);
 
