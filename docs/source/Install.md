@@ -41,11 +41,13 @@ appc reg -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/
 Note:
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
 2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host)
-3. Use env `APPMESH_SECURE_INSTALLATION=Y` to generate random initial password for user `admin`
-4. The installation will create `appmesh` Linux user for default app running
-5. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
-6. For centos 8, install dependency: `sudo yum install libnsl`
-7. The installation media structure is like this:
+3. Use env `export APPMESH_SECURE_INSTALLATION=Y` to generate random initial password for user `admin`
+4. Use env `export APPMESH_DisableExecUser=true` to disable customized process user
+5. Set env `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user
+6. The installation will create `appmesh` Linux user for default app running
+7. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
+8. For centos 8, install dependency: `sudo yum install libnsl`
+9. The installation media structure is like this:
 ```
     $ tree -L 1 /opt/appmesh/
     ├── config.json                  ====> configuration file (can be modified manually or update from GUI)

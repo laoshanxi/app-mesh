@@ -157,7 +157,7 @@ public:
 
 	const std::shared_ptr<ACE_OutputCDR> serialize() const;
 	static std::shared_ptr<HttpRequest> deserialize(ACE_InputCDR &input);
-	const web::json::value emptyJson() const;
+	static const web::json::value emptyJson();
 	void addHeaders(http_response &response) const;
 
 	// serializeable, always use those variables intead of method(), headers()

@@ -3,6 +3,7 @@
   "ScheduleIntervalSeconds": 1,
   "LogLevel": "DEBUG",
   "DefaultExecUser": "",
+  "DisableExecUser": false,
   "WorkingDirectory": "",
   "REST": {
     "RestEnabled": true,

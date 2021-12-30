@@ -122,6 +122,7 @@ public:
 
 	const std::string getLogLevel() const;
 	const std::string getDefaultExecUser() const;
+	bool getDisableExecUser() const;
 	const std::string getDefaultWorkDir() const;
 	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;
@@ -146,6 +147,7 @@ private:
 	std::string m_defaultExecUser;
 	std::string m_defaultWorkDir;
 	int m_scheduleInterval;
+	bool m_disableExecUser;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonConsul> m_consul;
 

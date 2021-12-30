@@ -458,11 +458,12 @@ void Application::spawn(int timerId)
 		}
 
 		// 2. start new process
-		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << getExecUser();
+		const auto execUser = getExecUser();
+		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
 		m_process.reset();
 		m_process = allocProcess(false, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
-		m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
+		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
 
 		// 3. post process
 		setLastError(m_process->startError());
@@ -549,9 +550,10 @@ std::string Application::runApp(int timeoutSeconds)
 	}
 	assert(m_status != STATUS::ENABLED);
 
+	const auto execUser = getExecUser();
 	LOG_INF << fname << "Running application <" << m_name << ">.";
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(getCmdLine(), getExecUser(), m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
+	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
 	setLastError(m_process->startError());
 	if (m_metricStartCount)
 		m_metricStartCount->metric().Increment();
@@ -571,14 +573,18 @@ std::string Application::runApp(int timeoutSeconds)
 
 const std::string Application::getExecUser() const
 {
-	if (m_owner && !(m_owner->getExecUser().empty()))
+	if (!Configuration::instance()->getDisableExecUser())
 	{
-		return m_owner->getExecUser();
+		if (m_owner && !(m_owner->getExecUser().empty()))
+		{
+			return m_owner->getExecUser();
+		}
+		else
+		{
+			return Configuration::instance()->getDefaultExecUser();
+		}
 	}
-	else
-	{
-		return Configuration::instance()->getDefaultExecUser();
-	}
+	return std::string();
 }
 
 const std::string &Application::getCmdLine() const

@@ -95,7 +95,8 @@ void HttpRequest::reply(http_response &response, const std::string &body_data) c
 void HttpRequest::reply(http::status_code status) const
 {
 	// give empty JSON str for empty json serialize/deserialize
-	reply(status, emptyJson());
+	const static auto emptyJson = HttpRequest::emptyJson();
+	reply(status, emptyJson);
 }
 
 void HttpRequest::reply(http::status_code status, const json::value &body_data) const
@@ -106,8 +107,9 @@ void HttpRequest::reply(http::status_code status, const json::value &body_data) 
 	}
 	else
 	{
+		const static auto emptyJson = HttpRequest::emptyJson();
 		http_response response(status);
-		if (body_data != emptyJson())
+		if (body_data != emptyJson)
 		{
 			response.set_body(body_data);
 		}
@@ -271,7 +273,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(ACE_InputCDR &input)
 	return nullptr;
 }
 
-const web::json::value HttpRequest::emptyJson() const
+const web::json::value HttpRequest::emptyJson()
 {
 	web::json::value emptyBody;
 	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string("");
@@ -280,8 +282,9 @@ const web::json::value HttpRequest::emptyJson() const
 
 void HttpRequest::addHeaders(http_response &response) const
 {
-	response.headers().add("Access-Control-Allow-Origin", "*");
+	// TODO: collect http method dynamicly
 	response.headers().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
+	response.headers().add("Access-Control-Allow-Origin", "*");
 	response.headers().add("Access-Control-Allow-Headers", "*");
 }
 

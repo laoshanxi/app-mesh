@@ -17,6 +17,15 @@
 #
 ### END INIT INFO
 
+# initd user
+if [ -n ${APPMESH_DAEMON_EXEC_USER+1} ]]; then
+	if [ -n ${APPMESH_DAEMON_EXEC_USER_GROUP+1} ]; then
+		su ${APPMESH_DAEMON_EXEC_USER} -g ${APPMESH_DAEMON_EXEC_USER_GROUP}
+	else
+		su ${APPMESH_DAEMON_EXEC_USER}
+	fi
+fi
+
 ## Fill in name of program here.
 PROG="appsvc"
 PROG_WATCHDOG="appmesh-entrypoint.sh"
@@ -24,6 +33,7 @@ PROGC="appc"
 PROG_PATH="/opt/appmesh" ## Not need, but sometimes helpful (if $PROG resides in /opt for example).
 PROG_ARGS=""
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/
+source ${PROG_PATH}/script/appmesh.environment || true
 
 log() {
 	logger "[$(date)]""$1"

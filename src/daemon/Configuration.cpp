@@ -22,7 +22,7 @@ extern char **environ; // unistd.h
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
-	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL)
+	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL), m_disableExecUser(false)
 {
 	m_jsonFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
 	m_label = std::make_unique<Label>();
@@ -72,6 +72,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	// Global Parameters
 	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
 	config->m_defaultExecUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
+	config->m_disableExecUser = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_DisableExecUser);
 	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
@@ -169,6 +170,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	// Global parameters
 	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
 	result[JSON_KEY_DefaultExecUser] = web::json::value::string(m_defaultExecUser);
+	result[JSON_KEY_DisableExecUser] = web::json::value::boolean(m_disableExecUser);
 	result[JSON_KEY_WorkingDirectory] = web::json::value::string(m_defaultWorkDir);
 	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
@@ -306,6 +308,11 @@ const std::string Configuration::getDefaultExecUser() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_defaultExecUser;
+}
+
+bool Configuration::getDisableExecUser() const
+{
+	return m_disableExecUser;
 }
 
 const std::string Configuration::getDefaultWorkDir() const
@@ -570,6 +577,8 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 			SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser))
 			SET_COMPARE(this->m_defaultExecUser, newConfig->m_defaultExecUser);
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DisableExecUser))
+			SET_COMPARE(this->m_disableExecUser, newConfig->m_disableExecUser);
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_WorkingDirectory))
 			SET_COMPARE(this->m_defaultWorkDir, newConfig->m_defaultWorkDir);
 		// REST

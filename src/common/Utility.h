@@ -210,6 +210,7 @@ public:
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
+#define JSON_KEY_DisableExecUser "DisableExecUser"
 #define JSON_KEY_WorkingDirectory "WorkingDirectory"
 
 #define JSON_KEY_REST "REST"

@@ -9,6 +9,7 @@
 #include <list>
 #include <string>
 
+#include <ace/OS.h>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 
@@ -147,7 +148,7 @@ namespace net
 		std::set<std::string> result;
 		boost::filesystem::path virtNetDir("/sys/devices/virtual/net/");
 		boost::filesystem::directory_iterator itEnd;
-		if (boost::filesystem::exists(virtNetDir))
+		if (boost::filesystem::exists(virtNetDir) && ACE_OS::access(virtNetDir.string().c_str(), R_OK) == 0)
 		{
 			for (boost::filesystem::directory_iterator it(virtNetDir); it != itEnd; it++)
 			{

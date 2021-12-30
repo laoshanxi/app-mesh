@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/filesystem.hpp>
 #include <chrono>
 #include <list>
 #include <memory>
@@ -9,6 +8,9 @@
 #include <sstream>
 #include <string>
 #include <sys/types.h> // For pid_t.
+
+#include <ace/OS.h>
+#include <boost/filesystem.hpp>
 
 #include "../../common/Utility.h"
 
@@ -213,13 +215,13 @@ namespace os
 		size_t result = 0;
 		// 1. /proc/pid/fd/
 		std::string path = "/proc/" + std::to_string(pid) + "/fd/";
-		if (boost::filesystem::exists(path))
+		if (boost::filesystem::exists(path) && ACE_OS::access(path.c_str(), R_OK) == 0)
 		{
 			result += std::distance(boost::filesystem::directory_iterator(path),
 									boost::filesystem::directory_iterator());
 		}
 		// 2. /proc/pid/maps
-		path = "/proc/" + std::to_string(pid) + "maps";
+		path = "/proc/" + std::to_string(pid) + "/maps";
 		std::ifstream maps(path);
 		if (maps.is_open())
 		{

@@ -265,8 +265,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	//option.avoid_zombies(1);
-	if (user.empty())
-		user = Configuration::instance()->getDefaultExecUser();
 	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;

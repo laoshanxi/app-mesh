@@ -20,6 +20,9 @@ RUN apt update && \
 
 EXPOSE 6060
 
+# not enable exec user in container
+ENV APPMESH_DisableExecUser=true
+
 ENTRYPOINT ["tini", "--", "/opt/appmesh/script/appmesh-entrypoint.sh"]
 
 # reference:
