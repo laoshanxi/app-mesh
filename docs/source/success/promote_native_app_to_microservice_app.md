@@ -20,7 +20,7 @@ docker run -d -m 8g --restart=always -v /usr/share/myapp.py:/usr/share/myapp.py:
 ### Security
 App Mesh by default enable JWT authentication for all REST requests, we need get JWT token:
 ```
-curl -X POST -k -H "username:$(echo -n admin | base64)" -H "password:$(echo -n Admin123 | base64)" https://localhost:6060/appmesh/login
+curl -X POST -k -H "username:$(echo -n admin | base64)" -H "password:$(echo -n admin123 | base64)" https://localhost:6060/appmesh/login
 ``` 
 BTW, the admin user password can be changed by config.json or override with container(laoshanxi/appmesh) startup environment like `-e APPMESH_Security_Users_admin_key=MyNewPwd`
 

@@ -146,13 +146,13 @@ namespace net
 		const static char fname[] = "net::virtLinks() ";
 
 		std::set<std::string> result;
-		boost::filesystem::path virtNetDir("/sys/devices/virtual/net/");
-		boost::filesystem::directory_iterator itEnd;
-		if (boost::filesystem::exists(virtNetDir) && ACE_OS::access(virtNetDir.string().c_str(), R_OK) == 0)
+		const fs::path virtNetDir("/sys/devices/virtual/net/");
+		const boost::filesystem::directory_iterator itEnd;
+		if (fs::exists(virtNetDir) && ACE_OS::access(virtNetDir.c_str(), R_OK) == 0)
 		{
 			for (boost::filesystem::directory_iterator it(virtNetDir); it != itEnd; it++)
 			{
-				if (boost::filesystem::is_directory(*it))
+				if (fs::is_directory(*it))
 				{
 					auto deviceName = it->path().leaf().c_str();
 					result.insert(deviceName);

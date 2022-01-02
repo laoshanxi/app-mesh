@@ -25,8 +25,8 @@ void LdapImpl::init()
 
     if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_ldap)
     {
-        auto securityJsonFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_LDAP_JSON_FILE;
-        auto security = LdapImpl::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
+        const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_LDAP_JSON_FILE).string();
+        const auto security = LdapImpl::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
         Security::instance(security);
     }
     else

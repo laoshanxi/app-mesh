@@ -3,20 +3,22 @@
 ## RPM pre uninstallation script file, will be executed before installation
 ################################################################################
 
-INSTALL_DIR=/opt/appmesh
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/
+PROG_HOME=/opt/appmesh
+
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
 
 # backup configuration file to avoid overide when next installation
-if [ -f "$INSTALL_DIR/config.json" ]; then
-	cp -f $INSTALL_DIR/config.json $INSTALL_DIR/.config.json
+if [ -f "${PROG_HOME}/config.json" ]; then
+	cp -f ${PROG_HOME}/config.json ${PROG_HOME}/.config.json
 fi
-if [ -f "$INSTALL_DIR/security.json" ]; then
-	cp -f $INSTALL_DIR/security.json $INSTALL_DIR/.security.json
+if [ -f "${PROG_HOME}/security.json" ]; then
+	cp -f ${PROG_HOME}/security.json ${PROG_HOME}/.security.json
 fi
-if [ -f "$INSTALL_DIR/ldap.json" ]; then
-	cp -f $INSTALL_DIR/ldap.json $INSTALL_DIR/.ldap.json
+if [ -f "${PROG_HOME}/ldap.json" ]; then
+	cp -f ${PROG_HOME}/ldap.json ${PROG_HOME}/.ldap.json
 fi
+
 # stop all running applications
-if [ -f "$INSTALL_DIR/appc" ];then
-	$INSTALL_DIR/appc view -l | awk '{if (NR>1){cmd="$INSTALL_DIR/appc disable -n "$2;print(cmd);system(cmd)}}'
+if [ -f "${PROG_HOME}/bin/appc" ]; then
+	${PROG_HOME}/bin/appc view -l | awk '{if (NR>1){cmd="${PROG_HOME}/bin/appc disable -n "$2;print(cmd);system(cmd)}}'
 fi

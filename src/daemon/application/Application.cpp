@@ -180,7 +180,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_commandLine = Utility::unEscape(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command)));
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 	// TODO: consider i18n and  legal file name
-	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", Configuration::instance()->getDefaultWorkDir().c_str(), app->m_name.c_str());
+	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", Configuration::instance()->getWorkDir().c_str(), app->m_name.c_str());
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)

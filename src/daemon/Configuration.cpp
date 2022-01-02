@@ -24,7 +24,7 @@ std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
 	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL), m_disableExecUser(false)
 {
-	m_jsonFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
+	m_jsonFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string();
 	m_label = std::make_unique<Label>();
 	m_rest = std::make_shared<JsonRest>();
 	m_consul = std::make_shared<JsonConsul>();
@@ -114,8 +114,8 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 
 std::string Configuration::readConfiguration()
 {
-	std::string jsonPath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
-	return Utility::readFileCpp(jsonPath);
+	const auto jsonPath = fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE;
+	return Utility::readFileCpp(jsonPath.string());
 }
 
 void SigHupHandler(int signo)
@@ -315,13 +315,13 @@ bool Configuration::getDisableExecUser() const
 	return m_disableExecUser;
 }
 
-const std::string Configuration::getDefaultWorkDir() const
+const std::string Configuration::getWorkDir() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	if (m_defaultWorkDir.length())
 		return m_defaultWorkDir;
 	else
-		return DEFAULT_WORKING_DIR;
+		return (fs::path(Utility::getParentDir()) / "work").string();
 }
 
 bool Configuration::getSslEnabled() const
@@ -763,7 +763,7 @@ const web::json::value Configuration::getDockerProxyAppJson() const
 {
 	web::json::value restApp;
 	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_DOCKER_PROXY_APP_NAME);
-	restApp[JSON_KEY_APP_command] = web::json::value::string(std::string("/opt/appmesh/bin/dockeragent -url ") + this->getDockerProxyAddress());
+	restApp[JSON_KEY_APP_command] = web::json::value::string(Utility::getSelfDir() + "/dockeragent -url " + this->getDockerProxyAddress());
 	restApp[JSON_KEY_APP_description] = web::json::value::string("Docker Engine agent with X.509 authentication");
 	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
 	restApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_ADMIN_NAME);
@@ -777,7 +777,7 @@ const web::json::value Configuration::getPythonExecAppJson() const
 {
 	web::json::value pyApp;
 	pyApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_PYTHON_EXEC_APP_NAME);
-	pyApp[JSON_KEY_APP_command] = web::json::value::string("python /opt/appmesh/bin/py_exec.py");
+	pyApp[JSON_KEY_APP_command] = web::json::value::string(std::string("python ") + Utility::getSelfDir() + "/py_exec.py");
 	pyApp[JSON_KEY_APP_description] = web::json::value::string("run Python script from metadata");
 	pyApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::DISABLED));
 	pyApp[JSON_KEY_APP_owner_permission] = web::json::value::number(12);

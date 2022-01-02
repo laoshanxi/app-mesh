@@ -184,8 +184,8 @@ void AppProcess::checkStdout(int timerId)
 				if (stat.st_size > m_stdOutMaxSize)
 				{
 					// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
-					auto backupFile = boost::filesystem::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
-					boost::filesystem::copy_file(boost::filesystem::path(m_stdoutFileName), backupFile, boost::filesystem::copy_option::overwrite_if_exists);
+					const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+					fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_option::overwrite_if_exists);
 					ACE_OS::ftruncate(m_stdoutHandler, 0);
 					LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
 				}
@@ -236,7 +236,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
 	int pid = -1;
-	bool dirChanged = false;
 	// check command file existence & permission
 	auto cmdRoot = std::get<1>(extractCommand(cmd));
 	bool checkCmd = true;
@@ -284,15 +283,12 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	option.setgroup(0); // set group id with the process id, used to kill process group
 	option.inherit_environment(true);
 	option.handle_inheritance(0);
-	if (workDir.length())
+
+	if (workDir.empty())
 	{
-		option.working_directory(workDir.c_str());
-		dirChanged = (ACE_OS::chdir(workDir.c_str()) >= 0);
+		workDir = Configuration::instance()->getWorkDir();
 	}
-	else
-	{
-		option.working_directory(Configuration::instance()->getDefaultWorkDir().c_str()); // set default working dir
-	}
+	option.working_directory(workDir.c_str());
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
 				  {
 					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
@@ -344,8 +340,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (!ldEnv.empty() && !envMap.count("LD_LIBRARY_PATH"))
 	{
 		std::string env = ldEnv;
-		env = Utility::stringReplace(env, "/opt/appmesh/lib64:", "");
-		env = Utility::stringReplace(env, ":/opt/appmesh/lib64", "");
+		env = Utility::stringReplace(env, Utility::getParentDir() + "/lib64:", "");
+		env = Utility::stringReplace(env, Utility::getParentDir() + "/lib64", "");
 		option.setenv("LD_LIBRARY_PATH", "%s", env.c_str());
 		LOG_DBG << fname << "replace LD_LIBRARY_PATH with " << env.c_str();
 	}
@@ -368,8 +364,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	if (dummy != ACE_INVALID_HANDLE)
 		ACE_OS::close(dummy);
-	if (dirChanged)
-		ACE_OS::chdir(Configuration::instance()->getDefaultWorkDir().c_str());
 	return pid;
 }
 

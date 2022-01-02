@@ -238,9 +238,9 @@ const web::http::http_response DockerApiProcess::requestDocker(const web::http::
 			cfg.set_ssl_context_callback(
 				[](boost::asio::ssl::context &ctx)
 				{
-					ctx.load_verify_file("/opt/appmesh/ssl/ca.pem");
-					ctx.use_certificate_file("/opt/appmesh/ssl/client.pem", boost::asio::ssl::context::file_format::pem);
-					ctx.use_private_key_file("/opt/appmesh/ssl/client-key.pem", boost::asio::ssl::context::file_format::pem);
+					ctx.load_verify_file(Utility::getParentDir() + "/ssl/ca.pem");
+					ctx.use_certificate_file(Utility::getParentDir() + "/ssl/client.pem", boost::asio::ssl::context::file_format::pem);
+					ctx.use_private_key_file(Utility::getParentDir() + "/ssl/client-key.pem", boost::asio::ssl::context::file_format::pem);
 				});
 		}
 		web::http::client::http_client client(restURL, cfg);

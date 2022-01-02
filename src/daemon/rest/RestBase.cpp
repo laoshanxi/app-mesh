@@ -302,7 +302,7 @@ bool RestBase::permissionCheck(const HttpRequest &message, const std::string &pe
     const auto userName = std::get<0>(result);
     const auto groupName = std::get<1>(result);
     // check user role permission
-    if (Security::instance()->getUserPermissions(userName, groupName).count(permission))
+    if (permission.empty() || Security::instance()->getUserPermissions(userName, groupName).count(permission))
     {
         LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
         return true;

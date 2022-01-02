@@ -10,7 +10,7 @@
 #include <sys/types.h> // For pid_t.
 
 #include <ace/OS.h>
-#include <boost/filesystem.hpp>
+#include <boost/filesystem.hpp> // directory_iterator
 
 #include "../../common/Utility.h"
 
@@ -212,22 +212,32 @@ namespace os
 	// get process open file descriptors
 	inline size_t fileDescriptors(pid_t pid = ::getpid())
 	{
+		const static char fname[] = "os::fileDescriptors() ";
+
 		size_t result = 0;
 		// 1. /proc/pid/fd/
-		std::string path = "/proc/" + std::to_string(pid) + "/fd/";
-		if (boost::filesystem::exists(path) && ACE_OS::access(path.c_str(), R_OK) == 0)
+		const auto procFdPath = fs::path("/proc") / std::to_string(pid) / "fd";
+		if (fs::exists(procFdPath.string()) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
 		{
-			result += std::distance(boost::filesystem::directory_iterator(path),
+			result += std::distance(boost::filesystem::directory_iterator(procFdPath),
 									boost::filesystem::directory_iterator());
 		}
+		else
+		{
+			LOG_WAR << fname << "no such path or no permission: " << procFdPath;
+		}
 		// 2. /proc/pid/maps
-		path = "/proc/" + std::to_string(pid) + "/maps";
-		std::ifstream maps(path);
+		const auto procMapsPath = fs::path("/proc") / std::to_string(pid) / "maps";
+		std::ifstream maps(procMapsPath.string());
 		if (maps.is_open())
 		{
 			std::string line;
 			for (; std::getline(maps, line); result++)
 				;
+		}
+		else
+		{
+			LOG_WAR << fname << "failed to open: " << procMapsPath;
 		}
 		return result;
 	};

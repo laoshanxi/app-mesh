@@ -11,7 +11,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
-	auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", Configuration::instance()->getDefaultWorkDir().c_str(), name.c_str());
+	auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", Configuration::instance()->getWorkDir().c_str(), name.c_str());
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (shellFile.is_open() && shellFile.good())
 	{

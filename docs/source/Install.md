@@ -34,7 +34,7 @@ $ systemctl status appmesh
 
 Deploy Web UI (access https://host-name)
 ```
-appc logon -u admin -x Admin123
+appc logon -u admin -x admin123
 appc reg -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -d laoshanxi/appmesh-ui:2.0.1 -f
 ```
 
@@ -91,7 +91,7 @@ apppmesh_consul_1       docker-entrypoint.sh consu ...   Up
 
 By default, App Mesh will connect to local Consul URL with "https://127.0.0.1:443", this address is configured with `Nginx` reverse proxy route to "http://127.0.0.1:8500".
 
-App Mesh UI is listen at `443` port with SSL protocol, open `https://appmesh_node` to access with `admin` user and Admin123 for initial password.
+App Mesh UI is listen at `443` port with SSL protocol, open `https://appmesh_node` to access with `admin` user and admin123 for initial password.
 
 For production environment, Consul is better to be a cluster with 3+ server agent, one Consul agent is used for test scenario.
 

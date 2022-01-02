@@ -22,6 +22,7 @@
 #include <pplx/threadpool.h>
 
 #include "Utility.h"
+#include "os/chown.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)
 {
@@ -125,16 +126,16 @@ const std::string Utility::getSelfFullPath()
 	return buf;
 }
 
-const std::string Utility::getSelfDir()
+const std::string &Utility::getSelfDir()
 {
-	auto path = boost::filesystem::path(getSelfFullPath());
-	return path.parent_path().string();
+	static const auto selfBinDir = fs::path(getSelfFullPath()).parent_path().string();
+	return selfBinDir;
 }
 
-const std::string Utility::getParentDir()
+const std::string &Utility::getParentDir()
 {
-	auto path = boost::filesystem::path(getSelfFullPath());
-	return path.parent_path().parent_path().string();
+	static const auto homeDir = fs::path(getSelfDir()).parent_path().string();
+	return homeDir;
 }
 
 // program_name from errno.h
@@ -144,49 +145,50 @@ const std::string Utility::getBinaryName()
 	return program_invocation_short_name;
 }
 
-bool Utility::isDirExist(std::string path)
+bool Utility::isDirExist(const std::string &path)
 {
-	boost::filesystem::path p(path);
-	return boost::filesystem::exists(p) && boost::filesystem::is_directory(p);
+	fs::path p(path);
+	return fs::exists(p) && fs::is_directory(p);
 }
 
-bool Utility::isFileExist(std::string path)
+bool Utility::isFileExist(const std::string &path)
 {
-	boost::filesystem::path p(path);
-	return boost::filesystem::exists(p) && !boost::filesystem::is_directory(p);
+	fs::path p(path);
+	return fs::exists(p) && !fs::is_directory(p);
 }
 
-bool Utility::createDirectory(const std::string &path, mode_t mode)
+bool Utility::createDirectory(const std::string &path, fs::perms perms)
 {
 	const static char fname[] = "Utility::createDirectory() ";
 
 	if (!isDirExist(path))
 	{
-		if (ACE_OS::mkdir(path.c_str(), mode) < 0)
+		const fs::path directoryPath = fs::path(path);
+		if (!fs::create_directory(directoryPath))
 		{
 			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << std::strerror(errno);
 			return false;
 		}
+		// os::chown(getuid(), getgid(), path, false);
+		LOG_DBG << fname << "Created directory: " << path;
+		fs::permissions(directoryPath, perms);
 	}
 	return true;
 }
 
-bool Utility::createRecursiveDirectory(const std::string &path, mode_t mode)
+bool Utility::createRecursiveDirectory(const std::string &path, fs::perms perms)
 {
-	auto dirVec = splitString(path, ACE_DIRECTORY_SEPARATOR_STR);
-	std::string pstr;
-	if (path.length() && path[0] == ACE_DIRECTORY_SEPARATOR_CHAR)
-		pstr = ACE_DIRECTORY_SEPARATOR_STR;
-	for (auto str : dirVec)
+	const static char fname[] = "Utility::createRecursiveDirectory() ";
+
+	if (!isDirExist(path))
 	{
-		if (str.length() == 0)
-			continue;
-		pstr += str;
-		pstr += ACE_DIRECTORY_SEPARATOR_STR;
-		if (!createDirectory(pstr, mode))
+		const fs::path directoryPath = fs::path(path);
+		if (!fs::create_directories(directoryPath))
 		{
+			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << std::strerror(errno);
 			return false;
 		}
+		fs::permissions(directoryPath, perms);
 	}
 	return true;
 }
@@ -203,7 +205,7 @@ bool Utility::removeDir(const std::string &path)
 		}
 		else
 		{
-			LOG_WAR << fname << "Failed to remove directory : " << path;
+			LOG_WAR << fname << "Remove directory <" << path << "> failed with error: " << std::strerror(errno);
 			return false;
 		}
 	}
@@ -216,7 +218,7 @@ void Utility::removeFile(const std::string &path)
 
 	if (path.length() && isFileExist(path))
 	{
-		if (boost::filesystem::remove(path))
+		if (fs::remove(path))
 		{
 			LOG_DBG << fname << "file <" << path << "> removed";
 		}
@@ -227,12 +229,12 @@ void Utility::removeFile(const std::string &path)
 	}
 }
 
-void Utility::initLogging(std::string name)
+void Utility::initLogging(const std::string &name)
 {
 	using namespace log4cpp;
 
-	auto logDir = Utility::stringFormat("%s/%s", Utility::getParentDir().c_str(), "log");
-	createDirectory(logDir);
+	auto logDir = fs::path(Utility::getParentDir()) / "log";
+	createDirectory(logDir.string());
 	auto consoleLayout = new PatternLayout();
 	consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
 	auto consoleAppender = new OstreamAppender("console", &std::cout);
@@ -243,7 +245,7 @@ void Utility::initLogging(std::string name)
 	//	boolappend = true, mode_t mode = 00644);
 	auto rollingFileAppender = new RollingFileAppender(
 		"rollingFileAppender",
-		logDir.append(ACE_DIRECTORY_SEPARATOR_STR).append(name).append(".log"),
+		logDir.operator/=(name + ".log").string(),
 		20 * 1024 * 1024,
 		5,
 		true,
@@ -677,6 +679,25 @@ bool Utility::getUid(std::string userName, unsigned int &uid, unsigned int &grou
 		LOG_ERR << "User does not exist: <" << userName << ">.";
 	}
 	return rt;
+}
+
+std::string Utility::getOsUserName()
+{
+	static std::string userName;
+	static std::atomic_flag lock = ATOMIC_FLAG_INIT;
+	if (!lock.test_and_set())
+	{
+		struct passwd *pw_ptr;
+		if ((pw_ptr = getpwuid(getuid())) != NULL)
+		{
+			userName = pw_ptr->pw_name;
+		}
+		else
+		{
+			throw std::runtime_error("Failed to get current user name");
+		}
+	}
+	return userName;
 }
 
 void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs)

@@ -824,17 +824,20 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 	{
 		message.reply(status_codes::OK, convertText2Json("JWT authentication not enabled"));
 	}
-	else if (permissionCheck(message, permission))
-	{
-		auto result = web::json::value::object();
-		result["user"] = web::json::value::string(getJwtUserName(message));
-		result["success"] = web::json::value::boolean(true);
-		result["permission"] = web::json::value::string(permission);
-		message.reply(status_codes::OK, result);
-	}
 	else
 	{
-		message.reply(status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
+		if (permissionCheck(message, permission))
+		{
+			auto result = web::json::value::object();
+			result["user"] = web::json::value::string(getJwtUserName(message));
+			result["success"] = web::json::value::boolean(true);
+			result["permission"] = web::json::value::string(permission);
+			message.reply(status_codes::OK, result);
+		}
+		else
+		{
+			message.reply(status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
+		}
 	}
 }
 

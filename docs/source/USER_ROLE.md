@@ -165,17 +165,17 @@ invalid token supplied
 
 ### REST API authentication
 
- - Get token from API  `/login`
+ - Get token from API  `/appmesh/login`
 
 ```shell
-$ curl -X POST -k https://127.0.0.1:6060/login -H "Username:`echo -n admin | base64`" -H "Password:`echo -n Admin123$ | base64`"
+$ curl -X POST -k https://127.0.0.1:6060/appmesh/login -H "Username:`echo -n admin | base64`" -H "Password:`echo -n admin123 | base64`"
 {"Access-Token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NzA3MDc3NzYsImlhdCI6MTU3MDcwNzE3NiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.CF_jXy4IrGpl0HKvM8Vh_T7LsGTGO-K73OkRxQ-BFF8","expire_time":1570707176508714400,"profile":{"auth_time":1570707176508711100,"name":"admin"},"token_type":"Bearer"}
 ```
 
  - All other API should add token in header `Authorization:Bearer xxx`
- Use `POST` `/auth/$user-name` to verify token from above:
+ Use `POST` `/appmesh/auth` to verify token from above:
 ```shell
-$ curl -X POST -k -i -H "Authorization:Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NzA3MDc3NzYsImlhdCI6MTU3MDcwNzE3NiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.CF_jXy4IrGpl0HKvM8Vh_T7LsGTGO-K73OkRxQ-BFF8" https://127.0.0.1:6060/auth/admin
+$ curl -X POST -k -i -H "Authorization:Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NDE4MTM1NzQsImdyb3VwIjoiYWRtaW4iLCJpYXQiOjE2NDEyMDg3NzQsImlzcyI6ImFwcG1lc2gtYXV0aDAiLCJuYW1lIjoiYWRtaW4ifQ.BfiNR2JOk8lB_q3pwwfl8j3PlA3Jxhccrbq2cx-HHtE" https://127.0.0.1:6060/appmesh/auth
 HTTP/1.1 200 OK
 Content-Length: 7
 Content-Type: text/plain; charset=utf-8

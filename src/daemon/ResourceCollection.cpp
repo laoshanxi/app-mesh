@@ -127,6 +127,7 @@ void ResourceCollection::dump()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	LOG_DBG << fname << "host_name:" << getHostName();
+	LOG_DBG << fname << "os_user:" << Utility::getOsUserName();
 	for (auto &pair : m_resources.m_ipaddress)
 	{
 		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv4 << "," << pair.address;
@@ -150,6 +151,7 @@ web::json::value ResourceCollection::AsJson()
 
 	web::json::value result = web::json::value::object();
 	result[GET_STRING_T("host_name")] = web::json::value::string(GET_STRING_T(getHostName()));
+	result[GET_STRING_T("os_user")] = web::json::value::string(GET_STRING_T(Utility::getOsUserName()));
 	result[GET_STRING_T("host_description")] = web::json::value::string(Configuration::instance()->getDescription());
 	auto arr = web::json::value::array(m_resources.m_ipaddress.size());
 	int idx = 0;

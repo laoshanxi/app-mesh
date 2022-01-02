@@ -15,7 +15,7 @@ Type=simple
 Environment="LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64:/usr/local/lib64:/usr/local/lib/"
 EnvironmentFile=-/opt/appmesh/script/appmesh.environment
 # work dir will force set to /opt/appmesh/work in main.cpp
-WorkingDirectory=/opt/appmesh/work
+WorkingDirectory=/opt/appmesh/
 ExecStart=/opt/appmesh/bin/appsvc
 ExecStop=/bin/killall /opt/appmesh/bin/appsvc
 Restart=on-failure

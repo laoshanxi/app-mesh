@@ -3,7 +3,6 @@
 ## RPM post uninstallation script file, will be executed when uninstalled
 ################################################################################
 
-INSTALL_DIR=/opt/appmesh
 SYSTEMD_PATH=/etc/systemd/system/appmesh.service
 systemctl stop appmesh
 systemctl disable appmesh
@@ -23,8 +22,6 @@ rm -f /usr/share/bash-completion/completions/appc
 
 rm -rf ~/._appmesh_*
 rm -f /usr/bin/appc
-rm -f $INSTALL_DIR/work/appmesh.*
-#rm -rf $INSTALL_DIR
 
 # clean user appmesh
 userdel -r appmesh -f || true

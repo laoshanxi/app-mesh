@@ -117,7 +117,7 @@ const web::json::value RestTcpServer::getRestAppJson() const
     auto objEnvs = web::json::value::object();
     auto objBehavior = web::json::value::object();
     restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_REST_APP_NAME);
-    restApp[JSON_KEY_APP_command] = web::json::value::string("/opt/appmesh/bin/appsvc --rest");
+    restApp[JSON_KEY_APP_command] = web::json::value::string(Utility::getSelfDir() + "/appsvc --rest");
     restApp[JSON_KEY_APP_description] = web::json::value::string("REST Service for App Mesh");
     restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
     restApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_ADMIN_NAME);

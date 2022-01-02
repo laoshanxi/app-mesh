@@ -65,7 +65,6 @@ public:
 private:
 	std::string getAuthenToken();
 	std::string getAuthenUser();
-	std::string getOsUser();
 	std::string readAuthToken();
 	void persistAuthToken(const std::string &hostName, const std::string &token);
 	std::string requestToken(const std::string &user, const std::string &passwd);

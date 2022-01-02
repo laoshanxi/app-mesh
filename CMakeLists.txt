@@ -130,7 +130,7 @@ add_custom_target(pack
 ##########################################################################
 add_custom_target(dockeragent
     COMMENT "Golang build dockeragent"
-    COMMAND go build -o ${CMAKE_CURRENT_BINARY_DIR}/dockeragent ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/docker/dockeragent.go
+    COMMAND go build -o ${CMAKE_CURRENT_BINARY_DIR}/bin/dockeragent ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/docker/dockeragent.go
 )
 
 ##########################################################################

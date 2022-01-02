@@ -23,8 +23,8 @@ void Security::init()
 
     if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_local)
     {
-        auto securityJsonFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_JSON_FILE;
-        auto security = Security::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
+        const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
+        const auto security = Security::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
         Security::instance(security);
     }
     else if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_ldap)
@@ -68,9 +68,9 @@ void Security::save()
     auto content = this->AsJson().serialize();
     if (content.length())
     {
-        auto securityJsonFile = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + securityFile;
-        auto tmpFile = securityJsonFile + "." + std::to_string(Utility::getThreadId());
-        std::ofstream ofs(tmpFile, ios::trunc);
+        const auto securityJsonFile = fs::path(Utility::getParentDir()) / securityFile;
+        const auto tmpFile = securityJsonFile / (std::string(".") + std::to_string(Utility::getThreadId()));
+        std::ofstream ofs(tmpFile.string(), ios::trunc);
         if (ofs.is_open())
         {
             auto formatJson = Utility::prettyJson(content);

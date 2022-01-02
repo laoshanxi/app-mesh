@@ -70,20 +70,21 @@ void LinuxCgroup::setCgroup(const std::string &appName, int pid, int index)
 		return;
 
 	m_pid = pid;
-	m_cgroupMemoryPath = CGROUP_MEMORY_ROOT_DIR + "/" + CGROUP_APPMESH_DIR + "/" + appName + "/" + std::to_string(index);
-	m_cgroupCpuPath = CGROUP_CPU_ROOT_DIR + "/" + CGROUP_APPMESH_DIR + "/" + appName + "/" + std::to_string(index);
+	m_cgroupMemoryPath = (fs::path(CGROUP_MEMORY_ROOT_DIR) / CGROUP_APPMESH_DIR / appName / std::to_string(index)).string();
+	m_cgroupCpuPath = (fs::path(CGROUP_CPU_ROOT_DIR) / CGROUP_APPMESH_DIR / appName / std::to_string(index)).string();
 
-	if (m_memLimitMb > 0 && Utility::createRecursiveDirectory(m_cgroupMemoryPath, 0711))
+	const auto perm = fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe;
+	if (m_memLimitMb > 0 && Utility::createRecursiveDirectory(m_cgroupMemoryPath, perm))
 	{
 		this->setPhysicalMemory(m_cgroupMemoryPath, m_memLimitMb * 1024 * 1024);
 	}
 
-	if (m_memSwapMb > 0 && Utility::createRecursiveDirectory(m_cgroupMemoryPath, 0711))
+	if (m_memSwapMb > 0 && Utility::createRecursiveDirectory(m_cgroupMemoryPath, perm))
 	{
 		this->setSwapMemory(m_cgroupMemoryPath, m_memSwapMb * 1024 * 1024);
 	}
 
-	if (m_cpuShares > 0 && Utility::createRecursiveDirectory(m_cgroupCpuPath, 0711))
+	if (m_cpuShares > 0 && Utility::createRecursiveDirectory(m_cgroupCpuPath, perm))
 	{
 		this->setCpuShares(m_cgroupCpuPath, m_cpuShares);
 	}

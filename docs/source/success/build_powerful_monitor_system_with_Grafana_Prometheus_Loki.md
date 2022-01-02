@@ -34,7 +34,7 @@ Creating script_appmesh-ui_1    ... done
 
 ```
 
-Then you can access App Mesh UI (https://192.168.3.24/) with initial user (admin/Admin123).
+Then you can access App Mesh UI (https://192.168.3.24/) with initial user (admin/admin123).
 
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/appmesh/1.png" />
 

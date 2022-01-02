@@ -45,9 +45,9 @@ int main(int argc, char *argv[])
 		ACE::init();
 
 		// https://www.cnblogs.com/shelmean/p/9436425.html
-		// umask 0022 => 644(rw,r,r)
+		// umask 0022 => 644(-rw-r--r--)
 		// umask 0002 => 664(-rw-rw-r--)
-		// umask 0000 => 666
+		// umask 0000 => 666(-rw-rw-rw-)
 		ACE_OS::umask(0000);
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
 
 		// init log
 		Utility::initLogging((argc == 2 && std::string("rest") == argv[1]) ? "rest" : "server");
-		LOG_INF << fname << "Entered working dir: " << boost::filesystem::current_path().string();
+		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
 
 		// catch SIGHUP for 'systemctl reload'
 		Configuration::handleSignal();
@@ -103,8 +103,8 @@ int main(int argc, char *argv[])
 		}
 
 		// working dir
-		Utility::createDirectory(config->getDefaultWorkDir(), 00655);
-		boost::filesystem::current_path(config->getDefaultWorkDir());
+		Utility::createDirectory(config->getWorkDir());
+		fs::current_path(config->getWorkDir());
 
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());

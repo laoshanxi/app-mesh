@@ -1014,7 +1014,7 @@ int ArgumentParser::processExec()
 	// Get appmesh user
 	auto appmeshUser = getAuthenUser();
 	// Get current user name
-	auto osUser = getOsUser();
+	auto osUser = Utility::getOsUserName();
 	// Unique session id as appname
 	APPC_EXEC_APP_NAME = appmeshUser + "_" + osUser + "_" + std::to_string(bashId);
 
@@ -1480,7 +1480,7 @@ void ArgumentParser::initRadomPassword()
 		return;
 	}
 	
-	auto configFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE;
+	const auto configFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string();
 	auto fileContentJsonObj = web::json::value::parse(Utility::readFileCpp(configFilePath));
 	// check JWT enabled
 	if (HAS_JSON_FIELD(fileContentJsonObj, JSON_KEY_REST) &&
@@ -1490,7 +1490,7 @@ void ArgumentParser::initRadomPassword()
 		// check JWT configured as local JSON plugin
 		if (GET_JSON_STR_VALUE(jwtSection, JSON_KEY_SECURITY_Interface) == JSON_KEY_USER_key_method_local)
 		{
-			auto securityFilePath = Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_SECURITY_JSON_FILE;
+			const auto securityFilePath = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
 			auto jsonObj = web::json::value::parse(Utility::readFileCpp(securityFilePath));
 			// update with generated password
 			std::string genPassword = generatePassword(8, true, true, true, true);
@@ -1635,21 +1635,6 @@ std::string ArgumentParser::getAuthenUser()
 		}
 		throw std::invalid_argument("Failed to get token");
 	}
-}
-
-std::string ArgumentParser::getOsUser()
-{
-	std::string userName;
-	struct passwd *pw_ptr;
-	if ((pw_ptr = getpwuid(getuid())) != NULL)
-	{
-		userName = pw_ptr->pw_name;
-	}
-	else
-	{
-		throw std::runtime_error("Failed to get current user name");
-	}
-	return userName;
 }
 
 std::string ArgumentParser::readAuthToken()
@@ -1957,7 +1942,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 const std::string ArgumentParser::getAppMeshUrl()
 {
 	std::string url = DEFAULT_SERVER_URL;
-	auto file = Utility::readFileCpp(Utility::getParentDir() + ACE_DIRECTORY_SEPARATOR_STR + APPMESH_CONFIG_JSON_FILE);
+	auto file = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string());
 	if (file.length() > 0)
 	{
 		auto jsonValue = web::json::value::parse(GET_STRING_T(file));

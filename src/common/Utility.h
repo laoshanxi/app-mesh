@@ -13,6 +13,14 @@
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
 
+#if __cplusplus >= 201703L
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#include <boost/filesystem.hpp>
+namespace fs = boost::filesystem;
+#endif
+
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
 #define LOG_DBG log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG
@@ -120,7 +128,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
-#define DEFAULT_WORKING_DIR "/opt/appmesh/work"
 #define DEFAULT_SERVER_URL "https://localhost:6060"
 
 const web::json::value EMPTY_STR_JSON = web::json::value::object();
@@ -139,13 +146,13 @@ public:
 
 	// OS related
 	static const std::string getSelfFullPath();
-	static const std::string getSelfDir();
-	static const std::string getParentDir();
+	static const std::string &getSelfDir();
+	static const std::string &getParentDir();
 	static const std::string getBinaryName();
-	static bool isDirExist(std::string path);
-	static bool isFileExist(std::string path);
-	static bool createDirectory(const std::string &path, mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-	static bool createRecursiveDirectory(const std::string &path, mode_t mode = 0775);
+	static bool isDirExist(const std::string &path);
+	static bool isFileExist(const std::string &path);
+	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read);
+	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read);
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 
@@ -168,13 +175,14 @@ public:
 	static std::string unEscape(const std::string &str);
 	static std::vector<std::string> str2argv(const std::string &commandLine);
 
-	static void initLogging(std::string name);
+	static void initLogging(const std::string &name);
 	static bool setLogLevel(const std::string &level);
 	static void initCpprestThreadPool(int threads);
 
 	// OS related
 	static unsigned long long getThreadId();
 	static bool getUid(std::string userName, unsigned int &uid, unsigned int &groupid);
+	static std::string getOsUserName();
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 
 	// Base64

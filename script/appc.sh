@@ -4,7 +4,12 @@
 ## with this script can avoid source environment before execute appc
 ################################################################################
 
+# dynamic get script path and parent dir path
+SCRIPT_ABS=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname $SCRIPT_ABS)
+PROG_HOME=$(cd "${SCRIPT_DIR}/.."; pwd)
+
 # by default, IFS is space which means space is string spliter
 IFS=$'\n'
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/appmesh/lib64
-/opt/appmesh/bin/appc $@
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64
+${PROG_HOME}/bin/appc $@

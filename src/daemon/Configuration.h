@@ -123,7 +123,7 @@ public:
 	const std::string getLogLevel() const;
 	const std::string getDefaultExecUser() const;
 	bool getDisableExecUser() const;
-	const std::string getDefaultWorkDir() const;
+	const std::string getWorkDir() const;
 	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
