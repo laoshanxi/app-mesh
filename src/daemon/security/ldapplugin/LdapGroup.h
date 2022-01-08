@@ -10,6 +10,11 @@
 
 class Role;
 class Roles;
+class User;
+namespace Ldap
+{
+    class Server;
+}
 //////////////////////////////////////////////////////////////////////////
 /// LDAP Group
 //////////////////////////////////////////////////////////////////////////
@@ -24,12 +29,16 @@ public:
     // de-serialize
     static std::shared_ptr<LdapGroup> FromJson(const std::string &groupName, const web::json::value &obj, const std::shared_ptr<Roles> roles) noexcept(false);
     void updateGroup(std::shared_ptr<LdapGroup> group);
+    // sync LDAP
+    void syncGroupUsers(std::shared_ptr<Ldap::Server> ldap, std::shared_ptr<Roles> roles);
+    std::shared_ptr<User> getUser(const std::string &userName);
 
 public:
     mutable std::recursive_mutex m_mutex;
     const std::string m_groupName;
     std::string m_bindDN;
     std::set<std::shared_ptr<Role>> m_roles;
+    std::map<std::string, std::shared_ptr<User>> m_users;
 };
 //////////////////////////////////////////////////////////////////////////
 /// LDAP Groups
@@ -63,6 +72,9 @@ struct JsonLdap
     web::json::value AsJson() const;
 
     std::string m_ldapUri;
+    std::string m_ldapAdmin;
+    std::string m_ldapAdminPwd;
+    int m_syncSeconds;
     std::shared_ptr<LdapGroups> m_groups;
     std::shared_ptr<Roles> m_roles;
 };

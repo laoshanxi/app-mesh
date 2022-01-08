@@ -129,6 +129,7 @@ web::json::value User::AsJson() const
 	web::json::value result = web::json::value::object();
 
 	result[JSON_KEY_USER_key] = web::json::value::string(m_key);
+	result[JSON_KEY_USER_email] = web::json::value::string(m_email);
 	result[JSON_KEY_USER_group] = web::json::value::string(m_group);
 	result[JSON_KEY_USER_exec_user] = web::json::value::string(m_execUser);
 	result[JSON_KEY_USER_locked] = web::json::value::boolean(m_locked);
@@ -149,12 +150,9 @@ std::shared_ptr<User> User::FromJson(const std::string &userName, const web::jso
 	std::shared_ptr<User> result;
 	if (!obj.is_null())
 	{
-		if (!HAS_JSON_FIELD(obj, JSON_KEY_USER_key))
-		{
-			throw std::invalid_argument("user should have key attribute");
-		}
 		result = std::make_shared<User>(userName);
 		result->m_key = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_key);
+		result->m_email = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_email);
 		result->m_group = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_group);
 		result->m_execUser = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_exec_user);
 		result->m_metadata = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_metadata);
@@ -188,6 +186,7 @@ void User::updateUser(std::shared_ptr<User> user)
 	this->m_metadata = user->m_metadata;
 	//this->m_key = user->m_key;
 	this->m_locked = user->m_locked;
+	this->m_email = user->m_email;
 }
 
 void User::updateKey(const std::string &passwd)

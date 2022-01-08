@@ -62,7 +62,7 @@ Start LDAP service with Docker container
 ```
 docker run --restart=always --name ldap-appmesh --hostname ldap-appmesh -p 389:389 -p 636:636 --detach osixia/openldap
 
-docker run --restart=always --name ldap-appmesh-ui -p 443:443 --hostname ldap-appmesh-ui --link ldap-appmesh:ldap-appmesh --env PHPLDAPADMIN_LDAP_HOSTS=ldap-appmesh --detach osixia/phpldapadmin
+docker run --restart=always --name ldap-appmesh-ui -p 8443:443 --hostname ldap-appmesh-ui --link ldap-appmesh:ldap-appmesh --env PHPLDAPADMIN_LDAP_HOSTS=ldap-appmesh --detach osixia/phpldapadmin
 ```
 
-Open https://<docker-host-name>, login with "cn=admin,dc=example,dc=org":"admin" and choose "import" to init LDAP group and users from file [ldif](https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/security/ldapplugin/ldap_export.ldif).
+Open https://<docker-host-name>:8443, login with "cn=admin,dc=example,dc=org":"admin" and choose "import" to init LDAP group and users from file [ldif](https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/security/ldapplugin/ldap_export.ldif).

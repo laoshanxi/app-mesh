@@ -125,6 +125,8 @@ TEST_CASE("Utility Test", "[Utility]")
             REQUIRE(envVal == "https://127.0.0.1");
             auto keys = Utility::splitString(envKey, "_");
         }
+        LOG_INF << "stdStringTrim:" << Utility::stdStringTrim(env, "APP");
+        LOG_INF << "stdStringTrim:" << Utility::stdStringTrim(env, "0.1");
     }
     // teardown
 }

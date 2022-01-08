@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 
+#include "../../TimerHandler.h"
 #include "../Security.h"
 
 #define NOT_APPLICABLE_THROW                                                   \
@@ -20,7 +21,7 @@ class JsonLdap;
 //////////////////////////////////////////////////////////////////////////
 /// LdapImpl
 //////////////////////////////////////////////////////////////////////////
-class LdapImpl : public Security
+class LdapImpl : public Security, public TimerHandler
 {
 public:
     explicit LdapImpl(std::shared_ptr<JsonLdap> ldap);
@@ -32,12 +33,13 @@ public:
     static std::shared_ptr<LdapImpl> FromJson(const web::json::value &obj) noexcept(false);
 
     static void init();
+    void syncGroupUsers(int timerId = INVALID_TIMER_ID);
 
 public:
     virtual bool verifyUserKey(const std::string &userName, const std::string &userKey, std::string &outUserGroup) override;
     virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd) NOT_APPLICABLE_THROW;
 
-    virtual std::shared_ptr<User> getUserInfo(const std::string &userName) const;
+    virtual std::shared_ptr<User> getUserInfo(const std::string &userName);
     virtual std::map<std::string, std::shared_ptr<User>> getUsers() const NOT_APPLICABLE_THROW;
     virtual web::json::value getUsersJson() const NOT_APPLICABLE_THROW;
     virtual std::shared_ptr<User> addUser(const std::string &userName, const web::json::value &userJson) NOT_APPLICABLE_THROW;
@@ -56,4 +58,5 @@ private:
 
 private:
     std::shared_ptr<JsonLdap> m_ldap;
+    int m_syncTimerId;
 };

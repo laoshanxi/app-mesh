@@ -56,6 +56,7 @@ private:
 	std::string m_key;
 	bool m_locked;
 	std::string m_name;
+	std::string m_email;
 	std::string m_group;
 	std::string m_metadata;
 	std::string m_execUser;

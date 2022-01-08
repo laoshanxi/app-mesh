@@ -10,7 +10,7 @@
 /// LDAP wrapper
 //////////////////////////////////////////////////////////////////////
 LdapImpl::LdapImpl(std::shared_ptr<JsonLdap> ldap)
-    : Security(nullptr), m_ldap(ldap)
+    : Security(nullptr), m_ldap(ldap), m_syncTimerId(INVALID_TIMER_ID)
 {
 }
 
@@ -28,6 +28,8 @@ void LdapImpl::init()
         const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_LDAP_JSON_FILE).string();
         const auto security = LdapImpl::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
         Security::instance(security);
+
+        security->syncGroupUsers();
     }
     else
     {
@@ -52,25 +54,18 @@ std::shared_ptr<LdapImpl> LdapImpl::FromJson(const web::json::value &obj) noexce
     return security;
 }
 
-std::shared_ptr<User> LdapImpl::getUserInfo(const std::string &userName) const
+std::shared_ptr<User> LdapImpl::getUserInfo(const std::string &userName)
 {
-    web::json::value result = web::json::value::object();
-
-    result[JSON_KEY_USER_key] = web::json::value::string("");
-    result[JSON_KEY_USER_group] = web::json::value::string("");
-    // TODO: make sure the host have such user
-    result[JSON_KEY_USER_exec_user] = web::json::value::string(userName);
-    result[JSON_KEY_USER_locked] = web::json::value::boolean(false);
-    // result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
-    auto allRoles = m_ldap->m_roles->getRoles();
-    auto roles = web::json::value::array(allRoles.size());
-    int i = 0;
-    for (const auto &role : allRoles)
+    auto groups = this->m_ldap->m_groups->getGroups();
+    for (const auto &group : groups)
     {
-        roles[i++] = web::json::value::string(role.second->getName());
+        auto user = group.second->getUser(userName);
+        if (user)
+        {
+            return user;
+        }
     }
-    result[JSON_KEY_USER_roles] = roles;
-    return User::FromJson(userName, result, m_ldap->m_roles);
+    throw std::invalid_argument(Utility::stringFormat("No such user <%s> exist in LDAP", userName.c_str()));
 }
 
 std::set<std::string> LdapImpl::getUserPermissions(const std::string &userName, const std::string &userGroup)
@@ -101,6 +96,55 @@ std::shared_ptr<Ldap::Server> LdapImpl::connect()
     }
 
     return nullptr;
+}
+
+void LdapImpl::syncGroupUsers(int timerId)
+{
+    const static char fname[] = "LdapImpl::syncGroupUsers() ";
+    LOG_DBG << fname;
+
+    try
+    {
+        auto ldap = connect();
+        if (ldap)
+        {
+            char prefix[5] = {'A', 'P', 'P', '_', '\0'};
+            char postfix[6] = {'_', 'M', 'E', 'S', 'H', '\0'};
+            auto pwd = Utility::stdStringTrim(Utility::decode64(m_ldap->m_ldapAdminPwd), std::string(prefix), true, false);
+            pwd = Utility::stdStringTrim(pwd, std::string(postfix), false, true);
+            // LOG_ERR << fname << "bind " << m_ldap->m_ldapAdmin << " with " << pwd;
+            if (ldap->Bind(m_ldap->m_ldapAdmin, pwd))
+            {
+                auto groups = m_ldap->m_groups->getGroups();
+                for (const auto &group : groups)
+                {
+                    group.second->syncGroupUsers(ldap, m_ldap->m_roles);
+                }
+            }
+            else if (timerId == INVALID_TIMER_ID)
+            {
+                throw std::invalid_argument("Failed to sync LDAP users due to incorrect password");
+            }
+        }
+        else if (timerId == INVALID_TIMER_ID)
+        {
+            throw std::invalid_argument("Failed to sync LDAP users due to can not connect to LDAP Server");
+        }
+    }
+    catch (const std::exception &ex)
+    {
+        LOG_WAR << fname << ex.what();
+
+        if (timerId == INVALID_TIMER_ID)
+        {
+            throw ex;
+        }
+    }
+
+    if (timerId == INVALID_TIMER_ID && m_ldap->m_syncSeconds > 0)
+    {
+        m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, std::bind(&LdapImpl::syncGroupUsers, this, std::placeholders::_1), fname);
+    }
 }
 
 bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &userKey, std::string &outUserGroup)

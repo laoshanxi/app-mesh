@@ -152,7 +152,7 @@ void Security::changeUserPasswd(const std::string &userName, const std::string &
     throw std::invalid_argument(Utility::stringFormat("user %s not exist", userName.c_str()));
 }
 
-std::shared_ptr<User> Security::getUserInfo(const std::string &userName) const
+std::shared_ptr<User> Security::getUserInfo(const std::string &userName)
 {
     return m_securityConfig->m_users->getUser(userName);
 }

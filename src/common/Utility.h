@@ -160,6 +160,7 @@ public:
 	static bool isNumber(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
 	static std::string stdStringTrim(const std::string &str, char trimChar, bool trimStart = true, bool trimEnd = true);
+	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool trimStart = true, bool trimEnd = true);
 	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
 	static bool startWith(const std::string &str, const std::string &head);
 	static bool endWith(const std::string &str, const std::string &end);
@@ -320,6 +321,7 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
 
 #define JSON_KEY_USER_key "key"
+#define JSON_KEY_USER_email "email"
 #define JSON_KEY_USER_group "group"
 #define JSON_KEY_USER_roles "roles"
 #define JSON_KEY_USER_locked "locked"
@@ -329,6 +331,9 @@ public:
 #define JSON_KEY_USER_key_method_local "json"
 #define JSON_KEY_USER_key_method_ldap "ldap"
 #define JSON_KEY_USER_LDAP_ldap_uri "Uri"
+#define JSON_KEY_USER_LDAP_ldap_LoginDN "LoginDN"
+#define JSON_KEY_USER_LDAP_ldap_LoginPWD "LoginPWD"
+#define JSON_KEY_USER_LDAP_ldap_SyncPeriodSeconds "SyncPeriodSeconds"
 #define JSON_KEY_USER_LDAP_bind_dn "BindDN"
 #define JSON_KEY_USER_LDAP_USER_REPLACE_HOLDER "{USER}"
 

@@ -45,6 +45,7 @@
     "Users": {
         "admin": {
             "key": "admin123",
+            "email": "admin@appmesh.com",
             "group": "admin",
             "exec_user": "",
             "locked": false,
@@ -57,6 +58,7 @@
         },
         "test": {
             "key": "test123",
+            "email": "test@appmesh.com",
             "group": "user",
             "exec_user": "appmesh",
             "locked": false,
@@ -64,6 +66,7 @@
         },
         "mesh": {
             "key": "mesh123",
+            "email": "mesh@appmesh.com",
             "group": "user",
             "exec_user": "appmesh",
             "locked": false,

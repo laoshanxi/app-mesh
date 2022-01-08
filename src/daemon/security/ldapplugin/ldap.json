@@ -1,5 +1,8 @@
 {
     "Uri": "ldap://127.0.0.1:389",
+    "LoginDN": "cn=admin,dc=example,dc=org",
+    "LoginPWD": "QVBQX2FkbWluX01FU0g=",
+    "SyncPeriodSeconds": 3600,
     "Roles": {
         "manage": [
             "app-control",

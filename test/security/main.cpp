@@ -36,8 +36,8 @@ TEST_CASE("ldapcpp Test", "[security]")
         success = ldap.Bind("cn=mesh,ou=users,dc=example,dc=org", "mesh123");
         std::cout << "user <mesh> bind success: " << success << std::endl;
 
-        success = ldap.Bind("cn=test,ou=users,dc=example,dc=org", "123");
-        std::cout << "user <test> bind success: " << success << std::endl;
+        success = ldap.Bind("cn=user,ou=users,dc=example,dc=org", "user123");
+        std::cout << "user <user> bind success: " << success << std::endl;
     }
 
     SECTION("search")
@@ -50,7 +50,11 @@ TEST_CASE("ldapcpp Test", "[security]")
         success = ldap.Bind("cn=admin,dc=example,dc=org", "admin");
         std::cout << "user <admin> bind success: " << success << std::endl;
 
+        //success = ldap.Bind("cn=admin,ou=users,dc=example,dc=org", "admin123");
+        //std::cout << "user <admin> bind success: " << success << std::endl;
+
         //Base64::SetBinaryOnly(true);
+        // Search mush bind LDAP Administrator user
         auto result = ldap.Search("ou=users,dc=example,dc=org", Ldap::ScopeTree, "sn=*");
         std::cout << "search developers: " << result.size() << std::endl;
         for (auto &entry : result)
@@ -58,6 +62,7 @@ TEST_CASE("ldapcpp Test", "[security]")
             std::cout << "user: " << entry.DN() << std::endl;
             std::cout << " - sn:" << entry.GetStringValue("sn") << std::endl;
             std::cout << " - gidNumber:" << entry.GetStringValue("gidNumber") << std::endl;
+            std::cout << " - mail:" << entry.GetStringValue("mail") << std::endl;
         }
     }
 }

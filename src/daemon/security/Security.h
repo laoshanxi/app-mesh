@@ -31,7 +31,7 @@ public:
     virtual bool verifyUserKey(const std::string &userName, const std::string &userKey, std::string &outUserGroup);
     virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd);
 
-    virtual std::shared_ptr<User> getUserInfo(const std::string &userName) const;
+    virtual std::shared_ptr<User> getUserInfo(const std::string &userName);
     virtual std::map<std::string, std::shared_ptr<User>> getUsers() const;
     virtual web::json::value getUsersJson() const;
     virtual std::shared_ptr<User> addUser(const std::string &userName, const web::json::value &userJson);
