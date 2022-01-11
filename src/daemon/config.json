@@ -27,9 +27,9 @@
   },
   "Applications": [
     {
-      "command": "ping www.baidu.com -w 300",
       "name": "ping",
-      "cache_lines": 30,
+      "description": "appmesh ping test",
+      "command": "ping www.baidu.com -w 300",
       "owner": "mesh",
       "permission": 33,
       "behavior": {
@@ -37,6 +37,16 @@
           "0": "standby"
         },
         "exit": "restart"
+      }
+    },
+    {
+      "name": "pyrun",
+      "description": "execute Python string script from metadata input",
+      "command": "python3 /opt/appmesh/bin/py_exec.py",
+      "owner": "mesh",
+      "permission": 12,
+      "behavior": {
+        "exit": "standby"
       }
     }
   ],

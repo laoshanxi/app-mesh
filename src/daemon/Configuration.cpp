@@ -773,21 +773,6 @@ const web::json::value Configuration::getDockerProxyAppJson() const
 	return restApp;
 }
 
-const web::json::value Configuration::getPythonExecAppJson() const
-{
-	web::json::value pyApp;
-	pyApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_PYTHON_EXEC_APP_NAME);
-	pyApp[JSON_KEY_APP_command] = web::json::value::string(std::string("python ") + Utility::getSelfDir() + "/py_exec.py");
-	pyApp[JSON_KEY_APP_description] = web::json::value::string("run Python script from metadata");
-	pyApp[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(STATUS::DISABLED));
-	pyApp[JSON_KEY_APP_owner_permission] = web::json::value::number(12);
-	pyApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_USER_NAME);
-	auto objBehavior = web::json::value::object();
-	objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::STANDBY));
-	pyApp[JSON_KEY_APP_behavior] = objBehavior;
-	return pyApp;
-}
-
 std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value &jsonValue)
 {
 	const static char fname[] = "Configuration::JsonRest::FromJson() ";

@@ -120,7 +120,6 @@ int main(int argc, char *argv[])
 			auto app = Configuration::instance()->addApp(config->getDockerProxyAppJson(), nullptr, false);
 			app->execute();
 		}
-		Configuration::instance()->addApp(config->getPythonExecAppJson(), nullptr, false);
 
 		// init REST
 		if (config->getRestEnabled())
