@@ -1,10 +1,12 @@
-#include <ace/CDR_Stream.h>
 #include <ace/INET_Addr.h>
 #include <ace/SOCK_Connector.h>
 #include <ace/SOCK_Stream.h>
 
 #include "../../common/Utility.h"
 #include "RestChildObject.h"
+#include "protoc/ProtobufHelper.h"
+#include "protoc/Request.pb.h"
+#include "protoc/Response.pb.h"
 
 std::shared_ptr<RestChildObject> RestChildObject::m_instance = nullptr;
 RestChildObject::RestChildObject()
@@ -38,10 +40,29 @@ void RestChildObject::connectAndRun(int port)
         {
             LOG_INF << fname << "connected to TCP REST port: " << localAddress.get_port_number();
             RestHandler::open();
-            while (auto response = readMessageBlock(m_socketStream))
+
+            while (true)
             {
-                this->replyResponse(response);
-                response->release();
+                auto tup = ProtobufHelper::readMessageBlock(m_socketStream);
+                const auto data = std::shared_ptr<char>(std::get<0>(tup), std::default_delete<char[]>());
+                // const auto length = std::get<1>(tup);
+                if (data)
+                {
+                    appmesh::Response response;
+                    if (ProtobufHelper::deserialize(response, data.get()))
+                    {
+                        this->replyResponse(response);
+                    }
+                    else
+                    {
+                        LOG_ERR << fname << "failed to deserialize appmesh::Response";
+                    }
+                }
+                else
+                {
+                    LOG_ERR << fname << "failed read message block with error :" << std::strerror(errno);
+                    break;
+                }
             }
         }
         else
@@ -64,127 +85,77 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
 {
     const static char fname[] = "RestChildObject::sendRequest2Server() ";
 
-    IoVector io(message.serialize());
-    auto msgLength = io.length();
+    const auto req = message.serialize();
+    const auto tup = ProtobufHelper::serialize(*req);
+    const auto buffer = std::get<0>(tup);
+    const auto length = std::get<1>(tup);
 
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
-    auto sendSize = m_socketStream.sendv_n(io.data, 2);
-    if (sendSize == -1)
+    if (m_socketStream.get_handle() != ACE_INVALID_HANDLE)
     {
-        LOG_ERR << fname << "send response failed with error :" << std::strerror(errno);
-    }
-    else
-    {
-        LOG_DBG << fname << "Cache message: " << message.m_uuid << " header len: " << 8 << " body len: " << msgLength << " sent len:" << sendSize;
-        m_sentMessages.insert(std::pair<std::string, HttpRequest>(message.m_uuid, HttpRequest(message)));
-    }
-}
-
-void RestChildObject::replyResponse(ACE_Message_Block *response)
-{
-    const static char fname[] = "RestChildObject::replyResponse() ";
-
-    ACE_InputCDR cdrData(response);
-    auto respData = HttpTcpResponse::deserialize(cdrData);
-    if (respData)
-    {
-        std::lock_guard<std::recursive_mutex> guard(m_mutex);
-        if (m_sentMessages.count(respData->m_uuid))
+        const auto sendSize = (size_t)m_socketStream.send_n((void *)buffer.get(), length);
+        if (sendSize == length)
         {
-            auto &msg = m_sentMessages.find(respData->m_uuid)->second;
-            web::http::http_response resp(respData->m_status);
-            resp.set_status_code(respData->m_status);
-            if (respData->m_bodyType == CONTENT_TYPE_APPLICATION_JSON && respData->m_body.length())
-            {
-                try
-                {
-                    resp.set_body(web::json::value::parse(respData->m_body));
-                }
-                catch (...)
-                {
-                    LOG_ERR << fname << "failed to parse body to JSON :" << respData->m_body;
-                    resp.set_body(respData->m_body);
-                }
-            }
-            else
-            {
-                resp.set_body(respData->m_body);
-            }
-            for (const auto &h : respData->m_headers)
-            {
-                resp.headers().add(h.first, h.second);
-            }
-
-            try
-            {
-                msg.reply(resp);
-            }
-            catch (const std::exception &e)
-            {
-                LOG_ERR << fname << "reply to client failed: " << e.what();
-            }
-            catch (...)
-            {
-                LOG_ERR << fname << "reply to client failed";
-            }
-
-            m_sentMessages.erase(respData->m_uuid);
-            LOG_DBG << fname << "reply message success: " << respData->m_uuid << " left pending request size: " << m_sentMessages.size();
+            m_sentMessages.insert(std::pair<std::string, HttpRequest>(message.m_uuid, HttpRequest(message)));
+            LOG_DBG << fname << "Cache message: " << message.m_uuid << " header len: " << 8 << " total len: " << length << " sent len:" << sendSize;
+            // TODO: set a timer to force reply in case of no resp from server.
+        }
+        else
+        {
+            LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
         }
     }
     else
     {
-        LOG_ERR << fname << "deserialize response failed, failed to reply to client and clean related memory";
+        LOG_WAR << fname << "Socket not available, ignore message: " << message.m_uuid;
     }
 }
 
-ACE_Message_Block *RestChildObject::readMessageBlock(const ACE_SOCK_Stream &socket)
+void RestChildObject::replyResponse(const appmesh::Response &response)
 {
-    const static char fname[] = "RestChildObject::readMessageBlock() ";
-    LOG_DBG << fname << "entered";
+    const static char fname[] = "RestChildObject::replyResponse() ";
 
-    // https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Logger/simple-server/Logging_Handler.cpp
-    // We need to use the old two-read trick here since TCP sockets
-    // don't support framing natively.  Allocate a message block for the
-    // payload; initially at least large enough to hold the header, but
-    // needs some room for alignment.
-    auto header = std::make_shared<ACE_Message_Block>(ACE_DEFAULT_CDR_BUFSIZE);
-    // Align the Message Block for a CDR stream
-    ACE_CDR::mb_align(header.get());
-
-    ACE_CDR::Boolean byte_order;
-    ACE_CDR::ULong length;
-    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(header->wr_ptr(), 8) <= 0)
+    std::lock_guard<std::recursive_mutex> guard(m_mutex);
+    if (m_sentMessages.count(response.uuid()))
     {
-        LOG_ERR << fname << "read header length failed";
-        return nullptr;
+        auto &msg = m_sentMessages.find(response.uuid())->second;
+        web::http::http_response resp(response.http_status());
+        resp.set_status_code(response.http_status());
+        if (response.http_body_msg_type() == CONTENT_TYPE_APPLICATION_JSON && response.http_body().length())
+        {
+            try
+            {
+                resp.set_body(web::json::value::parse(response.http_body()));
+            }
+            catch (...)
+            {
+                LOG_ERR << fname << "failed to parse body to JSON :" << response.http_body();
+                resp.set_body(response.http_body());
+            }
+        }
+        else
+        {
+            resp.set_body(response.http_body());
+        }
+        for (const auto &h : response.headers())
+        {
+            resp.headers().add(h.first, h.second);
+        }
+
+        try
+        {
+            msg.reply(resp);
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERR << fname << "reply to client failed: " << e.what();
+        }
+        catch (...)
+        {
+            LOG_ERR << fname << "reply to client failed";
+        }
+
+        m_sentMessages.erase(response.uuid());
+        LOG_DBG << fname << "reply message success: " << response.uuid() << " left pending request size: " << m_sentMessages.size();
     }
-
-    header->wr_ptr(8); // Reflect addition of 8 bytes.
-    // Create a CDR stream to parse the 8-byte header.
-    ACE_InputCDR header_cdr(header.get());
-    // Extract the byte-order and use helper methods to disambiguate
-    // octet, booleans, and chars.
-    header_cdr >> ACE_InputCDR::to_boolean(byte_order);
-    // Set the byte-order on the stream...
-    // header_cdr.reset_byte_order(byte_order);
-    // Extract the length
-    header_cdr >> length;
-
-    std::shared_ptr<ACE_Message_Block> payload = std::make_shared<ACE_Message_Block>(length);
-    // Ensure there's sufficient room for payload.
-    ACE_CDR::grow(payload.get(), 8 + ACE_CDR::MAX_ALIGNMENT + length);
-
-    // Use <recv_n> to obtain the contents.
-    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(payload->wr_ptr(), length) <= 0)
-    {
-        LOG_ERR << fname << "read body failed";
-        return nullptr;
-    }
-
-    payload->wr_ptr(length); // Reflect additional bytes
-    //ACE_InputCDR payload_cdr(payload.get());
-    //payload_cdr.reset_byte_order(byte_order);
-    LOG_DBG << fname << "read message header len: " << 8 << " body len: " << length;
-    return payload->duplicate();
 }

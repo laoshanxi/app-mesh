@@ -1,6 +1,8 @@
 ##########################################################################
 # rest
 ##########################################################################
+add_subdirectory(protoc)
+
 aux_source_directory(. SRC_LIST)
 add_library(rest STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::rest ALIAS rest)
@@ -11,4 +13,5 @@ add_library(${PROJECT_NAME}::rest ALIAS rest)
 target_link_libraries(rest
   PRIVATE
     boost_regex
+    protoc
 )

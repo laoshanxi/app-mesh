@@ -269,3 +269,5 @@ build/
 .vscode
 b/
 _build
+*.pb.h
+*.pb.cc

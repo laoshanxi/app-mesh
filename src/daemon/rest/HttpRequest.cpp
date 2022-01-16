@@ -1,9 +1,9 @@
-#include <ace/CDR_Stream.h>
-
+#include "HttpRequest.h"
 #include "../../common/Utility.h"
 #include "../../daemon/application/Application.h"
-#include "HttpRequest.h"
 #include "RestTcpServer.h"
+#include "protoc/ProtobufHelper.h"
+#include "protoc/Request.pb.h"
 
 HttpRequest::HttpRequest(const web::http::http_request &message)
 	: http_request(message), m_uuid(Utility::createUUID()), m_forwardResponse2RestServer(false)
@@ -13,7 +13,7 @@ HttpRequest::HttpRequest(const web::http::http_request &message)
 	this->m_remote_address = message.remote_address();
 	this->m_query = message.relative_uri().query();
 	// do not read body for file download/upload
-	if (this->m_relative_uri.find("/appmesh/file/download") == std::string::npos && this->m_relative_uri.find("/appmesh/file/upload") == std::string::npos)
+	if (!Utility::startWith(this->m_relative_uri, "/appmesh/file"))
 	{
 		this->m_body = const_cast<web::http::http_request &>(message).extract_utf8string(true).get();
 	}
@@ -34,25 +34,17 @@ HttpRequest::HttpRequest(const HttpRequest &message)
 	this->m_query = message.m_query;
 }
 
-HttpRequest::HttpRequest(const std::string &uuid,
-						 const std::string &method,
-						 const std::string &uri,
-						 const std::string &address,
-						 const std::string &body,
-						 const std::string &headers,
-						 const std::string &query)
+HttpRequest::HttpRequest(const appmesh::Request &request)
 {
-	//const static char fname[] = "HttpRequest::HttpRequest() ";
-	this->m_uuid = uuid;
-	this->m_method = method;
-	this->m_relative_uri = uri;
-	this->m_remote_address = address;
-	this->m_body = body;
-	this->m_headers = parseHeaders(headers);
-	this->m_query = query;
+	this->m_uuid = request.uuid();
+	this->m_method = request.http_method();
+	this->m_relative_uri = request.request_uri();
+	this->m_remote_address = request.client_address();
+	this->m_body = request.http_body();
+	this->m_headers.insert(request.headers().begin(), request.headers().end());
+	this->m_query = request.querys();
 
 	this->m_forwardResponse2RestServer = true;
-	//LOG_DBG << "HttpRequest headers: " << Utility::serializeHeaders(this->m_headers);
 }
 
 HttpRequest::~HttpRequest()
@@ -192,83 +184,34 @@ void HttpRequest::reply(status_code status, const concurrency::streams::istream 
 	}
 }
 
-// TODO: assume base 64 have no "|" character
-std::map<std::string, std::string> HttpRequest::parseHeaders(const std::string &str)
+const std::shared_ptr<appmesh::Request> HttpRequest::serialize() const
 {
-	std::map<std::string, std::string> result;
-	const auto headerList = Utility::splitString(str, "||");
-	for (const auto &header : headerList)
+	auto req = std::make_shared<appmesh::Request>();
+	// fill data
+	req->set_uuid(m_uuid);
+	req->set_http_method(m_method);
+	req->set_request_uri(m_relative_uri);
+	req->set_client_address(m_remote_address);
+	req->set_http_body(m_body);
+	req->mutable_headers()->insert(m_headers.begin(), m_headers.end());
+	req->set_querys(m_query);
+
+	return req;
+}
+
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input)
+{
+	const static char fname[] = "HttpRequest::deserialize() ";
+
+	// https://blog.csdn.net/u010601662/article/details/78353206
+	appmesh::Request req;
+	if (ProtobufHelper::deserialize(req, input))
 	{
-		auto oneHeader = Utility::splitString(header, "|");
-		if (oneHeader.size() == 2)
-		{
-			result[oneHeader[0]] = oneHeader[1];
-		}
+		return std::shared_ptr<HttpRequest>(new HttpRequest(req));
 	}
-	return result;
-}
-
-std::string HttpRequest::serializeHeaders(const std::map<std::string, std::string> &map)
-{
-	std::ostringstream oss;
-	for (const auto &pair : map)
+	else
 	{
-		oss << pair.first << "|" << pair.second << "||";
-	}
-	return oss.str();
-}
-
-std::string HttpRequest::serializeHeaders(const web::http::http_headers &map)
-{
-	std::ostringstream oss;
-	for (const auto &pair : map)
-	{
-		oss << pair.first << "|" << pair.second << "||";
-	}
-	return oss.str();
-}
-
-const std::shared_ptr<ACE_OutputCDR> HttpRequest::serialize() const
-{
-	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Logger/client/logging_app.cpp
-	auto headerStr = serializeHeaders(m_headers);
-	const size_t max_payload_size =
-		m_uuid.length() +
-		m_method.length() +
-		m_relative_uri.length() +
-		m_remote_address.length() +
-		m_body.length() +
-		headerStr.length() +
-		m_query.length() +
-		8 + 7 * ACE_CDR::MAX_ALIGNMENT; // each item need one padding
-
-	// Insert contents into payload stream.
-	auto payload = std::make_shared<ACE_OutputCDR>(max_payload_size);
-	*payload << m_uuid;
-	*payload << m_method;
-	*payload << m_relative_uri;
-	*payload << m_remote_address;
-	*payload << m_body;
-	*payload << headerStr;
-	*payload << m_query;
-
-	// LOG_DBG << "HttpRequest::serialize() headers: " << headerStr;
-	return payload;
-}
-
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(ACE_InputCDR &input)
-{
-	std::string uuid, method, uri, address, body, headerStr, query;
-	if (input >> uuid &&
-		input >> method &&
-		input >> uri &&
-		input >> address &&
-		input >> body &&
-		input >> headerStr &&
-		input >> query)
-	{
-		// use std::make_shared call private constructor will face compile error
-		return std::shared_ptr<HttpRequest>(new HttpRequest(uuid, method, uri, address, body, headerStr, query));
+		LOG_ERR << fname << "failed to decode protobuf data";
 	}
 	return nullptr;
 }
@@ -286,74 +229,6 @@ void HttpRequest::addHeaders(http_response &response) const
 	response.headers().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
 	response.headers().add("Access-Control-Allow-Origin", "*");
 	response.headers().add("Access-Control-Allow-Headers", "*");
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// HttpTcpResponse transfer REST response from RestTcpServer to RestChildObject
-////////////////////////////////////////////////////////////////////////////////
-HttpTcpResponse::HttpTcpResponse(const std::string &uuid,
-								 const std::string &body,
-								 const std::string &bodyType,
-								 const std::map<std::string, std::string> &headers,
-								 const http::status_code &status)
-	: m_uuid(uuid), m_body(body), m_bodyType(bodyType), m_headers(headers), m_status(status)
-{
-}
-
-const std::shared_ptr<ACE_OutputCDR> HttpTcpResponse::serialize() const
-{
-	auto headerStr = HttpRequest::serializeHeaders(m_headers);
-	const size_t max_payload_size =
-		m_uuid.length() +
-		m_body.length() +
-		m_bodyType.length() +
-		headerStr.length() +
-		8 +
-		8 + 5 * ACE_CDR::MAX_ALIGNMENT; // each item need one padding
-	// Insert contents into payload stream.
-	auto payload = std::make_shared<ACE_OutputCDR>(max_payload_size);
-	*payload << m_uuid;
-	*payload << m_body;
-	*payload << m_bodyType;
-	*payload << headerStr;
-	*payload << m_status;
-	return payload;
-}
-
-std::shared_ptr<HttpTcpResponse> HttpTcpResponse::deserialize(ACE_InputCDR &input)
-{
-	std::string uuid, body, bodyType, headerStr;
-	http::status_code status;
-	if (input >> uuid &&
-		input >> body &&
-		input >> bodyType &&
-		input >> headerStr &&
-		input >> status)
-	{
-		// use std::make_shared call private constructor will face compile error
-		return std::shared_ptr<HttpTcpResponse>(new HttpTcpResponse(uuid, body, bodyType, HttpRequest::parseHeaders(headerStr), status));
-	}
-	return nullptr;
-}
-
-IoVector::IoVector(std::shared_ptr<ACE_OutputCDR> body)
-	: m_headerCdr(ACE_CDR::MAX_ALIGNMENT + 8), m_bodyCdr(body)
-{
-	// Get the number of bytes used by the CDR stream.
-	ACE_CDR::ULong length = ACE_Utils::truncate_cast<ACE_CDR::ULong>(body->total_length());
-
-	// Send a header so the receiver can determine the byte order and
-	// size of the incoming CDR stream.
-	m_headerCdr << ACE_OutputCDR::from_boolean(ACE_CDR_BYTE_ORDER);
-	// Store the size of the payload that follows
-	m_headerCdr << ACE_CDR::ULong(length);
-
-	// Use an iovec to send both buffer and payload simultaneously.
-	// iovec iov[2];
-	data[0].iov_base = m_headerCdr.begin()->rd_ptr();
-	data[0].iov_len = 8;
-	data[1].iov_base = m_bodyCdr->begin()->rd_ptr();
-	data[1].iov_len = length;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

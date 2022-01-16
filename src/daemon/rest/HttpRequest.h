@@ -4,8 +4,9 @@
 #include <map>
 #include <memory>
 
-#include <ace/CDR_Stream.h>
 #include <cpprest/http_client.h>
+
+#include "protoc/Request.pb.h"
 
 using namespace web;
 using namespace http;
@@ -26,13 +27,7 @@ private:
 	/// Construction for deserialize
 	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
 	/// </summary>
-	HttpRequest(const std::string &uuid,
-				const std::string &method,
-				const std::string &uri,
-				const std::string &address,
-				const std::string &body,
-				const std::string &headers,
-				const std::string &query);
+	HttpRequest(const appmesh::Request &request);
 
 public:
 	HttpRequest(const web::http::http_request &message);
@@ -150,13 +145,8 @@ public:
 			   utility::size64_t content_length,
 			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
 
-	// serialize header
-	static std::map<std::string, std::string> parseHeaders(const std::string &str);
-	static std::string serializeHeaders(const std::map<std::string, std::string> &map);
-	static std::string serializeHeaders(const web::http::http_headers &map);
-
-	const std::shared_ptr<ACE_OutputCDR> serialize() const;
-	static std::shared_ptr<HttpRequest> deserialize(ACE_InputCDR &input);
+	const std::shared_ptr<appmesh::Request> serialize() const;
+	static std::shared_ptr<HttpRequest> deserialize(const char *input);
 	static const web::json::value emptyJson();
 	void addHeaders(http_response &response) const;
 
@@ -189,45 +179,6 @@ private:
 	{
 		return web::http::http_request::extract_json(ignore_content_type);
 	};
-};
-
-/// <summary>
-/// HttpTcpResponse is the data of REST response used to transfer to REST process
-/// </summary>
-class HttpTcpResponse
-{
-public:
-	explicit HttpTcpResponse(const std::string &uuid,
-							 const std::string &body,
-							 const std::string &bodyType,
-							 const std::map<std::string, std::string> &headers,
-							 const http::status_code &status);
-	const std::shared_ptr<ACE_OutputCDR> serialize() const;
-	static std::shared_ptr<HttpTcpResponse> deserialize(ACE_InputCDR &input);
-
-public:
-	const std::string m_uuid;
-	const std::string m_body;
-	const std::string m_bodyType;
-	const std::map<std::string, std::string> m_headers;
-	const http::status_code m_status;
-};
-
-/// <summary>
-/// IoVector used prepare sendout data to header and body
-/// </summary>
-struct IoVector
-{
-public:
-	explicit IoVector(std::shared_ptr<ACE_OutputCDR> body);
-
-	// length is 2, header and body
-	iovec data[2];
-	size_t length() { return data[0].iov_len + data[1].iov_len; };
-
-private:
-	ACE_OutputCDR m_headerCdr;
-	std::shared_ptr<ACE_OutputCDR> m_bodyCdr;
 };
 
 class Application;

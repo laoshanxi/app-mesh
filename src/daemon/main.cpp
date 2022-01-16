@@ -30,6 +30,7 @@
 #endif
 
 static std::vector<std::unique_ptr<std::thread>> m_threadPool;
+const std::string REST_PROCESS_ARGS = "--rest";
 
 int main(int argc, char *argv[])
 {
@@ -60,7 +61,7 @@ int main(int argc, char *argv[])
 		}
 
 		// init log
-		Utility::initLogging((argc == 2 && std::string("rest") == argv[1]) ? "rest" : "server");
+		Utility::initLogging((argc == 2 && REST_PROCESS_ARGS == argv[1]) ? "rest" : "server");
 		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
 
 		// catch SIGHUP for 'systemctl reload'
@@ -84,7 +85,7 @@ int main(int argc, char *argv[])
 
 		// init child REST process, the REST process will accept HTTP request and
 		// forward to TCP rest service in order to avoid fork() impact REST handler
-		if (argc == 2 && std::string("--rest") == argv[1])
+		if (argc == 2 && REST_PROCESS_ARGS == argv[1])
 		{
 			RestChildObject::instance(std::make_shared<RestChildObject>());
 			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());

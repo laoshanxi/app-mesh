@@ -1030,7 +1030,7 @@ web::http::http_response ConsulConnection::requestConsul(const web::http::method
 
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
-	//config.set_timeout(std::chrono::seconds(5));
+	// config.set_timeout(std::chrono::seconds(60)); // default is 30 seconds
 	web::credentials cred(getConfig()->m_basicAuthUser, getConfig()->m_basicAuthPass);
 	if (getConfig()->m_basicAuthUser.length())
 	{
@@ -1131,7 +1131,7 @@ std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kv
 	{
 		config.set_credentials(cred);
 	}
-	config.set_timeout(std::chrono::seconds(waitTimeout)); // set block pull to 30s timeout
+	config.set_timeout(std::chrono::seconds(waitTimeout + 3)); // set block pull to 30s timeout
 	config.set_validate_certificates(false);
 	web::http::client::http_client client(restURL, config);
 

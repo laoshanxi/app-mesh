@@ -11,6 +11,7 @@
 
 #include "HttpRequest.h"
 #include "RestHandler.h"
+#include "protoc/Response.pb.h"
 
 /// <summary>
 /// REST Server Object, forward http REST request to TCP Server side
@@ -40,14 +41,7 @@ public:
     /// Reply REST Response
     /// </summary>
     /// <param name="msg"></param>
-    void replyResponse(ACE_Message_Block *response);
-
-    /// <summary>
-    /// Read Message Block from Socket Stream
-    /// </summary>
-    /// <param name="socket"></param>
-    /// <returns></returns>
-    static ACE_Message_Block *readMessageBlock(const ACE_SOCK_Stream &socket);
+    void replyResponse(const appmesh::Response &response);
 
 private:
     ACE_SOCK_Stream m_socketStream;

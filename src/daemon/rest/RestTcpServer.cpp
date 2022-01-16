@@ -1,6 +1,5 @@
 #include <atomic>
 
-#include <ace/CDR_Stream.h>
 #include <ace/INET_Addr.h>
 #include <ace/SOCK_Acceptor.h>
 #include <ace/SOCK_Stream.h>
@@ -12,6 +11,8 @@
 #include "RestChildObject.h"
 #include "RestHandler.h"
 #include "RestTcpServer.h"
+#include "protoc/ProtobufHelper.h"
+#include "protoc/Response.pb.h"
 
 std::shared_ptr<RestTcpServer> RestTcpServer::m_instance = nullptr;
 RestTcpServer::RestTcpServer() : RestHandler(false)
@@ -54,20 +55,25 @@ int RestTcpServer::svc(void)
     try
     {
         LOG_DBG << fname << "thread handle message queue";
-        ACE_Message_Block *msg;
-        while (this->getq(msg) > -1)
+
+        while (true)
         {
-            ACE_InputCDR cdr(msg);
-            auto message = HttpRequest::deserialize(cdr);
-            if (message)
+            ACE_Message_Block *msg = nullptr;
+            if (this->getq(msg) >= -1 && msg)
             {
-                handleTcpRest(*message);
+                auto buffer = std::shared_ptr<char>(msg->base(), std::default_delete<char[]>());
+                auto httpRequest = HttpRequest::deserialize(msg->base());
+                msg->release();
+                msg = nullptr;
+                if (httpRequest)
+                {
+                    handleTcpRest(*httpRequest);
+                }
+                else
+                {
+                    LOG_ERR << fname << "message deserialize failed";
+                }
             }
-            else
-            {
-                LOG_ERR << fname << "message deserialize failed";
-            }
-            msg->release();
         }
     }
     catch (const std::exception &e)
@@ -86,15 +92,31 @@ int RestTcpServer::svc(void)
 void RestTcpServer::socketThread()
 {
     const static char fname[] = "RestTcpServer::socketThread() ";
-    while (accept(m_socketStream) != -1)
+
+    ACE_INET_Addr localAddress(Configuration::instance()->getSeparateRestInternalPort(), ACE_LOCALHOST);
+    while (ACE_SOCK_Acceptor::accept(m_socketStream) != -1)
     {
-        while (auto msg = RestChildObject::readMessageBlock(m_socketStream))
+        while (true)
         {
-            this->putq(msg);
+            auto tup = ProtobufHelper::readMessageBlock(m_socketStream);
+            const auto data = std::get<0>(tup);
+            // const auto length = std::get<1>(tup);
+            if (data)
+            {
+                this->putq(new ACE_Message_Block(data));
+            }
+            else
+            {
+                break;
+            }
         }
         m_socketStream.close();
+
+        // close all to re-init
+        ACE_SOCK_Acceptor::close();
+        ACE_SOCK_Acceptor::open(localAddress, 1);
     }
-    LOG_ERR << fname << "socket listhen thread exited";
+    LOG_ERR << fname << "socket listhen thread exited with error :" << std::strerror(errno);
 }
 
 void RestTcpServer::startTcpServer()
@@ -134,22 +156,32 @@ void RestTcpServer::backforwardResponse(const std::string &uuid, const std::stri
 {
     const static char fname[] = "RestTcpServer::backforwardResponse() ";
 
-    std::map<std::string, std::string> stdHeaders;
-    for (const auto &kv : headers)
-        stdHeaders[kv.first] = kv.second;
-    HttpTcpResponse resp(uuid, body, bodyType, stdHeaders, status);
-    IoVector io(resp.serialize());
-    auto msgLength = io.length();
+    appmesh::Response resp;
+    // fill data
+    resp.set_uuid(uuid);
+    resp.set_http_body(body);
+    resp.mutable_headers()->insert(headers.begin(), headers.end());
+    resp.set_http_status(status);
+    resp.set_http_body_msg_type(bodyType);
+
+    // construct stream
+    const auto data = ProtobufHelper::serialize(resp);
+    const auto buffer = std::get<0>(data);
+    const auto length = std::get<1>(data);
 
     std::lock_guard<std::recursive_mutex> guard(m_socketSendLock);
-    size_t sendSize = 0;
-    if (m_socketStream.get_handle() == ACE_INVALID_HANDLE || (sendSize = m_socketStream.sendv_n(io.data, 2)) < msgLength)
+    if (m_socketStream.get_handle() != ACE_INVALID_HANDLE)
     {
-        LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
+        const auto sendSize = (size_t)m_socketStream.send_n((void *)buffer.get(), length);
+        LOG_DBG << fname << "send response: " << uuid << " with length: " << length << " sent len:" << sendSize;
+        if (sendSize != length)
+        {
+            LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
+        }
     }
     else
     {
-        LOG_DBG << fname << "send response: " << uuid << " with header length: " << 8 << " body length: " << msgLength << " sent len:" << sendSize;
+        LOG_WAR << fname << "Socket not available, ignore message: " << uuid;
     }
 }
 

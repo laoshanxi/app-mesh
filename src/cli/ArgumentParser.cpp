@@ -1226,7 +1226,7 @@ void ArgumentParser::processFileUpload()
 
 	// Create http_client to send the request.
 	http_client_config config;
-	config.set_timeout(std::chrono::seconds(200));
+	config.set_timeout(std::chrono::seconds(200)); // default is 30 seconds
 	config.set_validate_certificates(false);
 	http_client client(m_url, config);
 	std::string restPath = "/appmesh/file/upload";
@@ -1532,7 +1532,7 @@ http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, con
 {
 	// Create http_client to send the request.
 	web::http::client::http_client_config config;
-	config.set_timeout(std::chrono::seconds(65));
+	config.set_timeout(std::chrono::seconds(60)); // default is 30 seconds
 	config.set_validate_certificates(false);
 	web::http::client::http_client client(m_url, config);
 	http_request request = createRequest(mtd, path, query, header);

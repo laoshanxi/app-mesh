@@ -198,3 +198,21 @@ else
 	mv cfssl_linux-amd64 /usr/bin/cfssl
 	mv cfssljson_linux-amd64 /usr/bin/cfssljson
 fi
+
+# protocol buffer
+PROTOCOL_BUFFER_VER=3.19.3
+# https://developers.google.com/protocol-buffers
+if [ true ]; then
+	cd $ROOTDIR
+	# $WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip
+	# unzip protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip -d /usr/local/
+	$WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protobuf-cpp-${PROTOCOL_BUFFER_VER}.zip
+	unzip protobuf-cpp-${PROTOCOL_BUFFER_VER}.zip
+	cd protobuf-${PROTOCOL_BUFFER_VER}
+	./autogen.sh
+	./configure
+	make -j6
+	make check
+	make install
+	ldconfig
+fi

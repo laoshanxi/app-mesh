@@ -47,6 +47,7 @@ ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep cpprest | awk '{cmd="cp "$3" $
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libssl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libcrypto | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep protobuf | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 
 GLIBC_VERION=$(ldd --version | head -n 1 | tr ' ' '\n' | tail -n 1)
 GCC_VERION=$(gcc -dumpversion)
