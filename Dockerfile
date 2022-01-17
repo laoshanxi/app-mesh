@@ -1,4 +1,4 @@
-FROM laoshanxi/appmesh:build_centos7 AS builder
+FROM laoshanxi/appmesh:build_centos8 AS builder
 
 WORKDIR /workspace
 
@@ -23,7 +23,7 @@ EXPOSE 6060
 # not enable exec user in container
 ENV APPMESH_DisableExecUser=true
 
-ENTRYPOINT ["tini", "--", "/opt/appmesh/script/appmesh-entrypoint.sh"]
+CMD ["tini", "--", "/opt/appmesh/script/appmesh-entrypoint.sh"]
 
 # reference:
 #   https://blog.csdn.net/alex_yangchuansheng/article/details/106394119?utm_term=linuxsbintini&utm_medium=distribute.pc_aggpage_search_result.none-task-blog-2~all~sobaiduweb~default-0-106394119&spm=3001.4430

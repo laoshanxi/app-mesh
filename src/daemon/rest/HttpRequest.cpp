@@ -68,7 +68,6 @@ void HttpRequest::reply(http_response &response) const
 	{
 		addHeaders(response);
 		http_request::reply(response).wait();
-		this->_get_impl()
 	}
 }
 
