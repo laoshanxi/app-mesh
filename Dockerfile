@@ -1,4 +1,4 @@
-FROM laoshanxi/appmesh:build_centos8 AS builder
+FROM laoshanxi/appmesh:build_ubuntu20 AS builder
 
 WORKDIR /workspace
 

@@ -330,6 +330,12 @@ bool Configuration::getSslEnabled() const
 	return m_rest->m_ssl->m_sslEnabled;
 }
 
+bool Configuration::getSslVerifyPeer() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_ssl->m_sslVerifyPeer;
+}
+
 std::string Configuration::getSSLCertificateFile() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -611,6 +617,8 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_VerifyPeer))
+					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyPeer, newConfig->m_rest->m_ssl->m_sslVerifyPeer);
 			}
 
 			// JWT
@@ -845,6 +853,7 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const w
 {
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, ssl->m_sslEnabled);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_VerifyPeer, ssl->m_sslVerifyPeer);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
 	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certFile))
@@ -862,13 +871,14 @@ web::json::value Configuration::JsonSsl::AsJson() const
 {
 	auto result = web::json::value::object();
 	result[JSON_KEY_SSLEnabled] = web::json::value::boolean(m_sslEnabled);
+	result[JSON_KEY_VerifyPeer] = web::json::value::boolean(m_sslVerifyPeer);
 	result[JSON_KEY_SSLCertificateFile] = web::json::value::string(m_certFile);
 	result[JSON_KEY_SSLCertificateKeyFile] = web::json::value::string(m_certKeyFile);
 	return result;
 }
 
 Configuration::JsonSsl::JsonSsl()
-	: m_sslEnabled(false)
+	: m_sslEnabled(false), m_sslVerifyPeer(false)
 {
 }
 

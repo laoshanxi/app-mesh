@@ -14,13 +14,16 @@
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
 
 PrometheusRest::PrometheusRest(bool forward2TcpServer)
-	: RestBase(forward2TcpServer), m_promEnabled(true), m_scrapeCounter(0)
+	: RestBase(forward2TcpServer), m_promEnabled(false), m_scrapeCounter(0)
 {
 	m_promRegistry = std::make_shared<prometheus::Registry>();
-	bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
-	if (Configuration::instance()->getPromListenPort())
+	if (!forward2TcpServer)
 	{
-		initMetrics();
+		bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
+		if (Configuration::instance()->getPromListenPort())
+		{
+			initMetrics();
+		}
 	}
 }
 
@@ -54,6 +57,7 @@ void PrometheusRest::open()
 		m_promListener->support(methods::OPTIONS, std::bind(&PrometheusRest::handle_options, this, std::placeholders::_1));
 
 		m_promListener->open().wait();
+		m_promEnabled = true;
 		LOG_INF << fname << "Prometheus Exporter listening for requests at:" << uri.to_string();
 	}
 	else

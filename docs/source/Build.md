@@ -23,18 +23,35 @@ $ mkdir build; cd build; cmake ..; make; make pack; make test ARGS="-V"
 
 ### Option 2: Build by docker image
 
-The simple way is use docker container `laoshanxi/appmesh:build_centos7` to build App Mesh directly which already have compiler and dependencies installed.
-
+The simple way is use docker image `laoshanxi/appmesh:build_centos7` to build App Mesh directly which already have compiler and dependencies installed.
 ```shell
 $ cd app-mesh
 $ docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_centos7 sh -c "mkdir build;cd build;cmake ..;make;make pack;make test ARGS='-V'"
 ```
 
-docker image `laoshanxi/appmesh:build_centos7` was built with bellow steps:
-https://github.com/laoshanxi/app-mesh/issues/97
+Build a Docker image to compile C++ application is a reliable and easy way to handle third party dependencies, anyone could use this docker image to build package without prepare a C++ environment.
 
+There are different Dockerfile(s) with different compiler version could be selected to generate the Docker image:
+- docker/Dockerfile.build_centos7
+- docker/Dockerfile.build_centos8
+- docker/Dockerfile.build_ubuntu18
+- docker/Dockerfile.build_ubuntu20
 
-All available build docker images (each one use the default g++ version):
+The Docker image build process is simple with this:
+```shell
+TAG_NAME=build_ubuntu20
+MAGE_NAME=laoshanxi/appmesh:${TAG_NAME}
+
+git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
+cd app-mesh
+
+! docker rmi -f ${IMAGE_NAME}
+! docker rmi ubuntu:20.04
+docker build --no-cache -f docker/Dockerfile.${TAG_NAME} -t ${IMAGE_NAME} .
+docker push ${IMAGE_NAME}
+```
+
+The public pre-build Docker images can be used to build binary directly:
 
 - laoshanxi/appmesh:build_centos7
 - laoshanxi/appmesh:build_centos8

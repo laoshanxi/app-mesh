@@ -157,7 +157,10 @@ void RestHandler::open()
 {
 	const static char fname[] = "RestHandler::open() ";
 
-	PrometheusRest::open();
+	if (!m_forward2TcpServer)
+	{
+		PrometheusRest::open();
+	}
 
 	const std::string ipaddress = Configuration::instance()->getRestListenAddress();
 	const int port = Configuration::instance()->getRestListenPort();
@@ -181,8 +184,9 @@ void RestHandler::open()
 		if (!sslContextCreated)
 		{
 			sslContextCreated = true;
+			const auto verifyPeer = Configuration::instance()->getSslVerifyPeer();
 			server_config->set_ssl_context_callback(
-				[&](boost::asio::ssl::context &ctx)
+				[verifyPeer](boost::asio::ssl::context &ctx)
 				{
 					boost::system::error_code ec;
 					// https://github.com/zaphoyd/websocketpp/blob/c5510d6de04917812b910a8dd44735c1f17061d9/examples/echo_server_tls/echo_server_tls.cpp
@@ -195,6 +199,11 @@ void RestHandler::open()
 										SSL_OP_CIPHER_SERVER_PREFERENCE,
 									ec);
 					// LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
+
+					if (verifyPeer)
+					{
+						ctx.set_verify_mode(boost::asio::ssl::verify_peer | boost::asio::ssl::verify_fail_if_no_peer_cert);
+					}
 
 					ec = ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
 					if (ec.failed())

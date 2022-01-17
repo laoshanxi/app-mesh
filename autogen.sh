@@ -64,7 +64,16 @@ elif [ -f "/usr/bin/apt" ]; then
 	apt install -y ruby ruby-dev rubygems
 	# reduce binary size
 	apt install -y upx-ucl
-	apt install -y golang
+	apt-get update && apt-get install -y lsb-release
+	if [ "$(lsb_release -r --short)" = "18.04" ]; then
+		GO_VER=1.16.13
+		$WGWT_A https://go.dev/dl/go${GO_VER}.linux-amd64.tar.gz
+		rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-amd64.tar.gz
+		ln -s /usr/local/go/bin/go /usr/bin/go
+	else
+		apt install -y golang
+	fi
+	go version
 
 	# https://gemfury.com/help/could-not-verify-ssl-certificate/
 	apt install -y ca-certificates
@@ -72,7 +81,11 @@ elif [ -f "/usr/bin/apt" ]; then
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 fi
 
-go get github.com/valyala/fasthttp
+# go env -w GOPROXY=https://goproxy.io,direct
+# go env -w GO111MODULE=on
+export GO111MODULE=on
+export GOPROXY=https://goproxy.io,direct
+go get github.com/valyala/fasthttp@v1.31.0
 
 # check libssl in case of openssl_update.sh not executed
 if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then
@@ -211,8 +224,7 @@ if [ true ]; then
 	cd protobuf-${PROTOCOL_BUFFER_VER}
 	./autogen.sh
 	./configure
-	make -j6
-	make check
+	make -j 6
 	make install
 	ldconfig
 fi

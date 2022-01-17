@@ -1,0 +1,7 @@
+FROM centos:8
+
+COPY autogen.sh autogen.sh
+
+USER root
+
+RUN sh autogen.sh && rm -f autogen.sh

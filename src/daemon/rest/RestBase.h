@@ -66,7 +66,7 @@ protected:
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restPstFunctions;
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restDelFunctions;
 
-private:
+protected:
     const bool m_forward2TcpServer;
 };
 

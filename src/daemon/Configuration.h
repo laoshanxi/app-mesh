@@ -23,6 +23,7 @@ public:
 		static std::shared_ptr<JsonSsl> FromJson(const web::json::value &jsonObj);
 		web::json::value AsJson() const;
 		bool m_sslEnabled;
+		bool m_sslVerifyPeer;
 		std::string m_certFile;
 		std::string m_certKeyFile;
 		JsonSsl();
@@ -124,6 +125,7 @@ public:
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
 	bool getSslEnabled() const;
+	bool getSslVerifyPeer() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;

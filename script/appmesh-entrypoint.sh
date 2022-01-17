@@ -31,12 +31,13 @@ pre_reg_app() {
 		# wait for app mesh service ready
 		until [ $(curl -sL -k -w "%{http_code}" -o /dev/null https://localhost:6060/) -eq 200 ]; do sleep 0.25; done
 		${PROG_HOME}/bin/appc logon -u admin -x admin123
+		# remove default ping app for container
+		${PROG_HOME}/bin/appc unreg -n ping -f || true
 		if [ $1 = "appc" ]; then
 			# if arguments start with appc, then just run this appc command
 			/bin/sh -c "$*"
 		else
 			# if arguments start with command, then reg as long running application
-			${PROG_HOME}/bin/appc unreg -n ping -f || true
 			${PROG_HOME}/bin/appc reg -n start_app -c "$*" -f
 		fi
 	fi

@@ -21,6 +21,7 @@
     "PrometheusExporterListenPort": 6061,
     "SSL": {
       "SSLEnabled": true,
+      "VerifyPeer": false,
       "SSLCertificateFile": "/opt/appmesh/ssl/server.pem",
       "SSLCertificateKeyFile": "/opt/appmesh/ssl/server-key.pem"
     }
@@ -44,6 +45,7 @@
       "description": "execute Python string script from metadata input",
       "command": "python3 /opt/appmesh/bin/py_exec.py",
       "owner": "mesh",
+      "status": 0,
       "permission": 12,
       "behavior": {
         "exit": "standby"

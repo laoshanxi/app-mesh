@@ -236,6 +236,7 @@ public:
 
 #define JSON_KEY_SSL "SSL"
 #define JSON_KEY_SSLEnabled "SSLEnabled"
+#define JSON_KEY_VerifyPeer "VerifyPeer"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
 

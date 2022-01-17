@@ -65,12 +65,15 @@ int main(int argc, char *argv[])
 		Utility::initLogging(thisIsRestProcess ? "rest" : "server");
 		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
 
-		// catch SIGHUP for 'systemctl reload'
-		Configuration::handleSignal();
+		if (!thisIsRestProcess)
+		{
+			// catch SIGHUP for 'systemctl reload'
+			Configuration::handleSignal();
 
-		// Resource init
-		ResourceCollection::instance()->getHostResource();
-		ResourceCollection::instance()->dump();
+			// Resource init
+			ResourceCollection::instance()->getHostResource();
+			ResourceCollection::instance()->dump();
+		}
 
 		// get configuration
 		const auto configTxt = Configuration::readConfiguration();
