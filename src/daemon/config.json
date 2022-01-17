@@ -15,7 +15,7 @@
     "SeparateRestProcess": true,
     "SeparateRestInternalPort": 6059,
     "DockerProxyListenAddr": "https://127.0.0.1:6058",
-    "HttpThreadPoolSize": 5,
+    "HttpThreadPoolSize": 4,
     "RestListenPort": 6060,
     "RestListenAddress": "0.0.0.0",
     "PrometheusExporterListenPort": 6061,

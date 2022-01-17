@@ -68,6 +68,7 @@ void HttpRequest::reply(http_response &response) const
 	{
 		addHeaders(response);
 		http_request::reply(response).wait();
+		this->_get_impl()
 	}
 }
 
@@ -226,6 +227,7 @@ const web::json::value HttpRequest::emptyJson()
 void HttpRequest::addHeaders(http_response &response) const
 {
 	// TODO: collect http method dynamicly
+	// For external origins restrict Access-Control-Allow-Origin to the trusted domains
 	response.headers().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
 	response.headers().add("Access-Control-Allow-Origin", "*");
 	response.headers().add("Access-Control-Allow-Headers", "*");

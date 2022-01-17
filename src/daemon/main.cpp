@@ -43,6 +43,7 @@ int main(int argc, char *argv[])
 
 	try
 	{
+		const bool thisIsRestProcess = (argc == 2 && REST_PROCESS_ARGS == argv[1]);
 		ACE::init();
 
 		// https://www.cnblogs.com/shelmean/p/9436425.html
@@ -61,7 +62,7 @@ int main(int argc, char *argv[])
 		}
 
 		// init log
-		Utility::initLogging((argc == 2 && REST_PROCESS_ARGS == argv[1]) ? "rest" : "server");
+		Utility::initLogging(thisIsRestProcess ? "rest" : "server");
 		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
 
 		// catch SIGHUP for 'systemctl reload'
@@ -75,17 +76,23 @@ int main(int argc, char *argv[])
 		const auto configTxt = Configuration::readConfiguration();
 		auto config = Configuration::FromJson(configTxt, true);
 		Configuration::instance(config);
-		auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
+		const auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
 
 		// init REST thread pool for [child REST server] and [parent REST client]
-		Utility::initCpprestThreadPool(Configuration::instance()->getThreadPoolSize());
+		auto threadNum = Configuration::instance()->getThreadPoolSize();
+		if (config->tcpRestProcessEnabled())
+		{
+			// TCP server has its own thread pool, no need too much for cpprestsdk
+			threadNum = Configuration::instance()->getThreadPoolSize() / 2;
+		}
+		Utility::initCpprestThreadPool(threadNum);
 
 		// init security [both for server side and REST client side (file operation API)]
 		Security::init();
 
 		// init child REST process, the REST process will accept HTTP request and
 		// forward to TCP rest service in order to avoid fork() impact REST handler
-		if (argc == 2 && REST_PROCESS_ARGS == argv[1])
+		if (thisIsRestProcess)
 		{
 			RestChildObject::instance(std::make_shared<RestChildObject>());
 			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());
