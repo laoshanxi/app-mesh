@@ -130,9 +130,9 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define DEFAULT_SERVER_URL "https://localhost:6060"
 
+const std::string REST_PROCESS_ARGS = "--rest";
 const web::json::value EMPTY_STR_JSON = web::json::value::object();
 const web::json::value CLOUD_STR_JSON = web::json::value::string("APPMESH-CLOUD-APP-FLAG");
-
 const char *GET_STATUS_STR(unsigned int status);
 
 /// <summary>
@@ -200,6 +200,7 @@ public:
 	static const std::string readStdin2End();
 };
 
+#define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
 #define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds

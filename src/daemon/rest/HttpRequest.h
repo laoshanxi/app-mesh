@@ -183,7 +183,7 @@ private:
 
 class Application;
 /// <summary>
-/// HttpRequest used to remove template Application when finished reply
+/// HttpRequest used to remove Application when finished reply
 /// </summary>
 class HttpRequestWithAppRef : public HttpRequest
 {

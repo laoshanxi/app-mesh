@@ -336,13 +336,13 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		option.set_handles(m_stdinHandler, m_stdoutHandler, m_stdoutHandler);
 	}
 	// do not inherit LD_LIBRARY_PATH to child
-	static const std::string ldEnv = ACE_OS::getenv("LD_LIBRARY_PATH") ? ACE_OS::getenv("LD_LIBRARY_PATH") : "";
-	if (!ldEnv.empty() && !envMap.count("LD_LIBRARY_PATH"))
+	static const std::string ldEnv = ACE_OS::getenv(ENV_LD_LIBRARY_PATH) ? ACE_OS::getenv(ENV_LD_LIBRARY_PATH) : "";
+	if (!ldEnv.empty() && !envMap.count(ENV_LD_LIBRARY_PATH))
 	{
 		std::string env = ldEnv;
 		env = Utility::stringReplace(env, Utility::getParentDir() + "/lib64:", "");
 		env = Utility::stringReplace(env, Utility::getParentDir() + "/lib64", "");
-		option.setenv("LD_LIBRARY_PATH", "%s", env.c_str());
+		option.setenv(ENV_LD_LIBRARY_PATH, "%s", env.c_str());
 		LOG_DBG << fname << "replace LD_LIBRARY_PATH with " << env.c_str();
 	}
 	if (this->spawn(option) >= 0)

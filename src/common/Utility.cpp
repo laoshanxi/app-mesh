@@ -343,7 +343,7 @@ std::string Utility::readFile(const std::string &path)
 	FILE *file = ::fopen(path.c_str(), "r");
 	if (nullptr == file)
 	{
-		if (strncmp("/proc/", path.c_str(), strlen("/proc/")) != 0)
+		if (!startWith(path, "/proc/"))
 			LOG_WAR << fname << "Get file <" << path << "> failed with error : " << std::strerror(errno);
 		return "";
 	}

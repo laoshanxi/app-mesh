@@ -1,17 +1,19 @@
 ##########################################################################
 # protoc buffer
 # https://www.fatalerrors.org/a/the-correct-use-of-protobuf-in-cmake.html
+# https://www.yht7.com/news/136962
 # protoc http_request.proto --cpp_out=./
 ##########################################################################
-file(GLOB PROTOBUF_FILELIST *.proto)
-
-set(PROTO_META_BASE_DIR ${CMAKE_CURRENT_BINARY_DIR})
+# Generate output dir
+set(PROTO_META_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+# Find .proto file include dir
 list(APPEND PROTO_FLAGS -I${CMAKE_CURRENT_SOURCE_DIR})
 
+file(GLOB PROTOBUF_FILELIST *.proto)
 foreach(FIL ${PROTOBUF_FILELIST})
-  message(STATUS "Generating: ${FIL} with <${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} ${FIL} --cpp_out=${CMAKE_CURRENT_SOURCE_DIR}>")
+  message(STATUS "Generating: ${FIL} with <${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} ${FIL} --cpp_out=${PROTO_META_BASE_DIR}>")
   execute_process(
-    COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} ${FIL} --cpp_out=${CMAKE_CURRENT_SOURCE_DIR}
+    COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} --cpp_out=${PROTO_META_BASE_DIR} ${FIL}
   )
 endforeach()
 

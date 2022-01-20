@@ -30,7 +30,6 @@
 #endif
 
 static std::vector<std::unique_ptr<std::thread>> m_threadPool;
-const std::string REST_PROCESS_ARGS = "--rest";
 
 int main(int argc, char *argv[])
 {

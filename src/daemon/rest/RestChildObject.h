@@ -46,7 +46,7 @@ public:
 private:
     ACE_SOCK_Stream m_socketStream;
     // key: message uuid; value: message
-    std::map<std::string, HttpRequest> m_sentMessages;
+    std::map<std::string, HttpRequest> m_clientRequests;
     mutable std::recursive_mutex m_mutex;
     static std::shared_ptr<RestChildObject> m_instance;
 };

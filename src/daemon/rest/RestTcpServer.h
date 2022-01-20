@@ -52,14 +52,14 @@ private:
     /// </summary>
     /// <param name=""></param>
     /// <returns></returns>
-    int open(void *);
+    virtual int open(void *) override;
 
     /// <summary>
     /// Thread pool to handle TCP REST request asynchronous
     /// </summary>
     /// <param name=""></param>
     /// <returns></returns>
-    int svc(void);
+    virtual int svc(void) override;
 
     /// <summary>
     /// Thread to accept and read socket message

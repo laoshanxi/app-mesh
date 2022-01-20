@@ -9,8 +9,7 @@
 #include "protoc/Response.pb.h"
 
 std::shared_ptr<RestChildObject> RestChildObject::m_instance = nullptr;
-RestChildObject::RestChildObject()
-    : RestHandler(true)
+RestChildObject::RestChildObject() : RestHandler(true)
 {
 }
 
@@ -53,10 +52,6 @@ void RestChildObject::connectAndRun(int port)
                     {
                         this->replyResponse(response);
                     }
-                    else
-                    {
-                        LOG_ERR << fname << "failed to deserialize appmesh::Response";
-                    }
                 }
                 else
                 {
@@ -96,7 +91,7 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
         const auto sendSize = (size_t)m_socketStream.send_n((void *)buffer.get(), length);
         if (sendSize == length)
         {
-            m_sentMessages.insert(std::pair<std::string, HttpRequest>(message.m_uuid, HttpRequest(message)));
+            m_clientRequests.insert(std::pair<std::string, HttpRequest>(message.m_uuid, HttpRequest(message)));
             LOG_DBG << fname << "Cache message: " << message.m_uuid << " header len: " << 8 << " total len: " << length << " sent len:" << sendSize;
             // TODO: set a timer to force reply in case of no resp from server.
         }
@@ -116,9 +111,9 @@ void RestChildObject::replyResponse(const appmesh::Response &response)
     const static char fname[] = "RestChildObject::replyResponse() ";
 
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
-    if (m_sentMessages.count(response.uuid()))
+    if (m_clientRequests.count(response.uuid()))
     {
-        auto &msg = m_sentMessages.find(response.uuid())->second;
+        auto &msg = m_clientRequests.find(response.uuid())->second;
         web::http::http_response resp(response.http_status());
         resp.set_status_code(response.http_status());
         if (response.http_body_msg_type() == CONTENT_TYPE_APPLICATION_JSON && response.http_body().length())
@@ -155,7 +150,7 @@ void RestChildObject::replyResponse(const appmesh::Response &response)
             LOG_ERR << fname << "reply to client failed";
         }
 
-        m_sentMessages.erase(response.uuid());
-        LOG_DBG << fname << "reply message success: " << response.uuid() << " left pending request size: " << m_sentMessages.size();
+        m_clientRequests.erase(response.uuid());
+        LOG_DBG << fname << "reply message success: " << response.uuid() << " left pending request size: " << m_clientRequests.size();
     }
 }
