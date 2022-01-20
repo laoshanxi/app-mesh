@@ -22,6 +22,7 @@
 #include <pplx/threadpool.h>
 
 #include "Utility.h"
+#include "json.hpp"
 #include "os/chown.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)
@@ -741,83 +742,7 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMa
 
 std::string Utility::prettyJson(const std::string &jsonStr)
 {
-	// https://github.com/KrzysztofSzewczyk/json-beautifier/blob/master/beautify.c
-	std::ostringstream result;
-	std::stringstream stream;
-	stream << jsonStr;
-
-	static const char *ident = "  "; // '\t'
-	std::size_t level = 0;
-	char c;
-	bool ignore_next = false, in_string = false;
-
-	while (!stream.eof() && stream.get(c))
-	{
-		switch (c)
-		{
-		case '[':
-		case '{':
-			result << (c);
-			if (!in_string)
-			{
-				++level;
-				result << ('\n');
-				for (std::size_t i = 0; i < level; i++)
-					result << (ident);
-			}
-			break;
-		case ']':
-		case '}':
-			if (!in_string)
-			{
-				if (level != 0)
-					level--;
-				result << ('\n');
-				for (std::size_t i = 0; i < level; i++)
-					result << (ident);
-			}
-			result << (c);
-			break;
-		case ',':
-			result << (c);
-			if (!in_string)
-			{
-				result << ('\n');
-				for (std::size_t i = 0; i < level; i++)
-					result << (ident);
-			}
-			break;
-		case '\\':
-			ignore_next = !ignore_next;
-			result << (c);
-			break;
-		case '"':
-			if (!ignore_next)
-				in_string = !in_string;
-			else
-				ignore_next = false;
-			result << (c);
-			break;
-		case ' ':
-			if (in_string)
-				result << (c);
-			break;
-		case ':':
-			result << (c);
-			if (!in_string)
-				result << (' ');
-			break;
-		case '\r':
-		case '\n':
-			break;
-		default:
-			if (ignore_next)
-				ignore_next = false;
-			result << (c);
-			break;
-		}
-	}
-	return result.str();
+	return nlohmann::json::parse(jsonStr).dump(2, ' ');
 }
 
 std::string Utility::hash(const std::string &str)

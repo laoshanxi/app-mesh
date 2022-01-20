@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -9,6 +8,7 @@
 #include "collectable.h"
 #include "detail/core_export.h"
 #include "family.h"
+#include "labels.h"
 #include "metric_family.h"
 
 namespace prometheus {
@@ -50,10 +50,6 @@ class PROMETHEUS_CPP_CORE_EXPORT Registry : public Collectable {
     Merge,
     /// \brief Throws if a family with the same name already exists.
     Throw,
-    /// \brief Never merge and always create a new family. This violates the
-    /// prometheus specification but was the default behavior in earlier
-    /// versions
-    NonStandardAppend,
   };
 
   /// \brief name Create a new registry.
@@ -61,8 +57,20 @@ class PROMETHEUS_CPP_CORE_EXPORT Registry : public Collectable {
   /// \param insert_behavior How to handle families with the same name.
   explicit Registry(InsertBehavior insert_behavior = InsertBehavior::Merge);
 
+  /// \brief Deleted copy constructor.
+  Registry(const Registry&) = delete;
+
+  /// \brief Deleted copy assignment.
+  Registry& operator=(const Registry&) = delete;
+
+  /// \brief Deleted move constructor.
+  Registry(Registry&&) = delete;
+
+  /// \brief Deleted move assignment.
+  Registry& operator=(Registry&&) = delete;
+
   /// \brief name Destroys a registry.
-  ~Registry();
+  ~Registry() override;
 
   /// \brief Returns a list of metrics and their samples.
   ///
@@ -71,6 +79,19 @@ class PROMETHEUS_CPP_CORE_EXPORT Registry : public Collectable {
   ///
   /// \return Zero or more metrics and their samples.
   std::vector<MetricFamily> Collect() const override;
+
+  /// \brief Removes a metrics family from the registry.
+  ///
+  /// Please note that this operation invalidates the previously
+  /// returned reference to the Family and all of their added
+  /// metric objects.
+  ///
+  /// \tparam T One of the metric types Counter, Gauge, Histogram or Summary.
+  /// \param family The family to remove
+  ///
+  /// \return True if the family was found and removed.
+  template <typename T>
+  bool Remove(const Family<T>& family);
 
  private:
   template <typename T>
@@ -84,7 +105,7 @@ class PROMETHEUS_CPP_CORE_EXPORT Registry : public Collectable {
 
   template <typename T>
   Family<T>& Add(const std::string& name, const std::string& help,
-                 const std::map<std::string, std::string>& labels);
+                 const Labels& labels);
 
   const InsertBehavior insert_behavior_;
   std::vector<std::unique_ptr<Family<Counter>>> counters_;

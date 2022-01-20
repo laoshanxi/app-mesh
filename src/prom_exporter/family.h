@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstddef>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -12,6 +10,8 @@
 #include "collectable.h"
 #include "detail/core_export.h"
 #include "detail/future_std.h"
+#include "detail/utils.h"
+#include "labels.h"
 #include "metric_family.h"
 
 // IWYU pragma: no_include "prometheus/counter.h"
@@ -89,7 +89,7 @@ class PROMETHEUS_CPP_CORE_EXPORT Family : public Collectable {
   /// metric.
   /// \throw std::runtime_exception on invalid metric or label names.
   Family(const std::string& name, const std::string& help,
-         const std::map<std::string, std::string>& constant_labels);
+         const Labels& constant_labels);
 
   /// \brief Add a new dimensional data.
   ///
@@ -109,7 +109,7 @@ class PROMETHEUS_CPP_CORE_EXPORT Family : public Collectable {
   /// labels already exists - the already existing dimensional data.
   /// \throw std::runtime_exception on invalid label names.
   template <typename... Args>
-  T& Add(const std::map<std::string, std::string>& labels, Args&&... args) {
+  T& Add(const Labels& labels, Args&&... args) {
     return Add(labels, detail::make_unique<T>(args...));
   }
 
@@ -122,7 +122,7 @@ class PROMETHEUS_CPP_CORE_EXPORT Family : public Collectable {
   /// \brief Returns true if the dimensional data with the given labels exist
   ///
   /// \param labels A set of key-value pairs (= labels) of the dimensional data.
-  bool Has(const std::map<std::string, std::string>& labels) const;
+  bool Has(const Labels& labels) const;
 
   /// \brief Returns the name for this family.
   ///
@@ -132,7 +132,7 @@ class PROMETHEUS_CPP_CORE_EXPORT Family : public Collectable {
   /// \brief Returns the constant labels for this family.
   ///
   /// \return All constant labels as key-value pairs.
-  const std::map<std::string, std::string> GetConstantLabels() const;
+  const Labels GetConstantLabels() const;
 
   /// \brief Returns the current value of each dimensional data.
   ///
@@ -142,18 +142,15 @@ class PROMETHEUS_CPP_CORE_EXPORT Family : public Collectable {
   std::vector<MetricFamily> Collect() const override;
 
  private:
-  std::unordered_map<std::size_t, std::unique_ptr<T>> metrics_;
-  std::unordered_map<std::size_t, std::map<std::string, std::string>> labels_;
-  std::unordered_map<T*, std::size_t> labels_reverse_lookup_;
+  std::unordered_map<Labels, std::unique_ptr<T>, detail::LabelHasher> metrics_;
 
   const std::string name_;
   const std::string help_;
-  const std::map<std::string, std::string> constant_labels_;
+  const Labels constant_labels_;
   mutable std::mutex mutex_;
 
-  ClientMetric CollectMetric(std::size_t hash, T* metric) const;
-  T& Add(const std::map<std::string, std::string>& labels,
-         std::unique_ptr<T> object);
+  ClientMetric CollectMetric(const Labels& labels, T* metric) const;
+  T& Add(const Labels& labels, std::unique_ptr<T> object);
 };
 
 }  // namespace prometheus

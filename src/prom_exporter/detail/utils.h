@@ -1,23 +1,21 @@
 #pragma once
 
 #include <cstddef>
-#include <map>
-#include <string>
 
-#include "detail/core_export.h"
+#include "../labels.h"
 
 namespace prometheus {
-
 namespace detail {
 
-/// \brief Compute the hash value of a map of labels.
-///
-/// \param labels The map that will be computed the hash value.
-///
-/// \returns The hash value of the given labels.
-PROMETHEUS_CPP_CORE_EXPORT std::size_t hash_labels(
-    const std::map<std::string, std::string>& labels);
+/// \brief Label hasher for use in STL containers.
+struct LabelHasher {
+  /// \brief Compute the hash value of a map of labels.
+  ///
+  /// \param labels The map that will be computed the hash value.
+  ///
+  /// \returns The hash value of the given labels.
+  std::size_t operator()(const Labels& labels) const;
+};
 
 }  // namespace detail
-
 }  // namespace prometheus

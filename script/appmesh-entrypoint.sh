@@ -15,7 +15,7 @@ SCRIPT_ABS=$(readlink -f "$0")
 SCRIPT_DIR=$(dirname $SCRIPT_ABS)
 PROG_HOME=$(cd "${SCRIPT_DIR}/.."; pwd)
 
-cd ${PROG_HOME}/work
+cd ${PROG_HOME}
 
 SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/

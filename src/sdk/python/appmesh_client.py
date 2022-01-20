@@ -7,11 +7,10 @@ import time
 from enum import Enum
 from http import HTTPStatus
 from urllib import parse
-
 import requests
-import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# set ssl_verify to False if you do not want to verify SSL
+ssl_verify = "/opt/appmesh/ssl/ca.pem"
 
 DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24)  # default 7 days
 DEFAULT_RUN_APP_TIMEOUT_SECONDS = 10
@@ -846,11 +845,11 @@ class AppMeshClient:
             header["Authorization"] = "Bearer " + self.__jwt_token
 
         if method is AppMeshClient.Method.GET:
-            return requests.get(url=rest_url, params=query, headers=header, verify=False)
+            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify)
         elif method is AppMeshClient.Method.GET_STREAM:
-            return requests.get(url=rest_url, params=query, headers=header, verify=False, stream=True)
+            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify, stream=True)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=False)
+            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify)
         elif method is AppMeshClient.Method.POST_STREAM:
             return requests.post(
                 url=rest_url,
@@ -861,8 +860,8 @@ class AppMeshClient:
                 stream=True,
             )
         elif method is AppMeshClient.Method.DELETE:
-            return requests.delete(url=rest_url, headers=header, verify=False)
+            return requests.delete(url=rest_url, headers=header, verify=ssl_verify)
         elif method is AppMeshClient.Method.PUT:
-            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=False)
+            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify)
         else:
             raise Exception("Invalid http method", method)
