@@ -1,0 +1,105 @@
+name: Build package and publish
+
+on:
+  push:
+    branches: [main]
+
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: docker.io
+  APPMESH_VERSION: "2.0.1"
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      # This is used to complete the identity challenge
+      # with sigstore/fulcio when running outside of PRs.
+      id-token: write
+
+    steps:
+      - name: Checkout Github code
+        uses: actions/checkout@v2
+
+      # https://github.com/marketplace/actions/docker-run-action
+      # docker run --rm -v $(pwd):/workspace -w /workspace laoshanxi/appmesh:build_centos7 sh -c "mkdir build7;cd build7;cmake ..;make -j6;make pack;make test ARGS='-V'"
+      - name: build with centos7
+        uses: addnab/docker-run-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          image: laoshanxi/appmesh:build_centos7
+          options: --rm -v ${{ github.workspace }}:/workspace -w /workspace
+          run: |
+            mkdir centos7
+            cd centos7
+            cmake ..
+            make -j6
+            make pack
+            ls
+            make test ARGS='-V'
+
+      # docker run --rm -v $(pwd):/workspace -w /workspace laoshanxi/appmesh:build_centos8 sh -c "mkdir build8;cd build8;cmake ..;make -j6;make pack;make test ARGS='-V'"
+      - name: build with centos8
+        uses: addnab/docker-run-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          image: laoshanxi/appmesh:build_centos8
+          options: --rm -v ${{ github.workspace }}:/workspace -w /workspace
+          run: |
+            mkdir centos8
+            cd centos8
+            cmake ..
+            make -j6
+            make pack
+            ls
+            make test ARGS='-V'
+
+      - name: Generate Changelog
+        run: |
+          echo "1. API: get cloud application output from master node" >> CHANGELOG.txt
+          echo "2. `appc` cache local token in json file" >> CHANGELOG.txt
+          echo "3. Generate password for `admin` after installation" >> CHANGELOG.txt
+          echo "4. CLI return app exit code" >> CHANGELOG.txt
+          echo "5. HTTP head method" >> CHANGELOG.txt
+          echo "6. Add config: DisableExecUser" >> CHANGELOG.txt
+          echo "7. Support specify daemon exec user" >> CHANGELOG.txt
+          echo "8. SSL: VerifyPeer" >> CHANGELOG.txt
+
+      # publish Github release
+      # https://github.com/softprops/action-gh-release
+      - name: Publish Github release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: CHANGELOG.txt
+          name: "Cloud feature enhancement"
+          tag_name: ${{ env.APPMESH_VERSION }}
+          fail_on_unmatched_files: true
+          # note you'll typically need to create a personal access token
+          # with permissions to create releases in the other repo
+          token: ${{ secrets.PUBLISH_RELEASE }}
+          files: |
+            CHANGELOG.txt
+            LICENSE
+            centos*/*.deb
+            centos*/*.rpm
+
+      # #- name: wget
+      #  uses: wei/wget@v1
+      #  with:
+      #    args: -O ghr.tar.gz https://github.com/tcnksm/ghr/releases/download/v0.14.0/ghr_v0.14.0_linux_amd64.tar.gz
+      #- name: Publish Github release
+      #  run: |
+      #    mkdir artifacts
+      #    cp build*/appmesh*.deb artifacts/
+      #    cp build*/appmesh*.rpm artifacts/
+      #    cp Release.txt artifacts/
+      #    cp CHANGELOG.txt artifacts/
+      #    tar zxvf ghr.tar.gz
+      #    TITLE="Cloud feature enhancement"
+      #    CIRCLE_PROJECT_USERNAME=laoshanxi
+      #    CIRCLE_SHA1=main
+      #    VERSION=${{ env.APPMESH_VERSION }}
+      #    BODY="<br>1. API: get cloud application output from master node<br>2. 'appc' cache local token in json file<br>3. Generate password for 'admin' after installation<br>4. CLI return app exit code<br>5. HTTP head method<br>6. Add config: DisableExecUser<br>7. Support specify daemon exec user <br>8. SSL: VerifyPeer"
+      #    ghr_v0.14.0_linux_amd64/ghr -token ${{ secrets.PUBLISH_RELEASE }}  -debug -name "${TITLE}" -body "${BODY}" -commitish ${CIRCLE_SHA1} -replace -delete ${VERSION} ./artifacts/
