@@ -1,8 +1,12 @@
-name: DockerBuildPush
+name: Build docker image and publish
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "script/**"
 
 env:
   # Use docker.io for Docker Hub if empty
