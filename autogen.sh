@@ -7,12 +7,12 @@ set -e
 MACHINE_TYPE="$(uname -m)"
 ARM="arm"
 AARC="aarc"
-WGWT_A="wget --continue --backups=1 --tries=30 --no-check-certificate"
+WGWT_A="wget --continue --quiet --backups=1 --tries=30 --no-check-certificate"
 
-# prepare dep dir
-mkdir -p dep
-cd dep
-export ROOTDIR=$(pwd)
+SHELL_FOLDER=$(dirname $(readlink -f "$0"))
+export ROOTDIR=${SHELL_FOLDER}/dep
+mkdir -p ${ROOTDIR}
+cd ${ROOTDIR}
 
 # check root permission
 if [ "$(id -u)" != "0" ]; then
@@ -58,14 +58,14 @@ elif [ -f "/usr/bin/apt" ]; then
 	# sed -i s/security.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
-	apt install -y dos2unix g++ git wget make zlib1g-dev alien libldap2-dev
+	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap2-dev
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 	# reduce binary size
 	apt install -y upx-ucl
 	apt-get update && apt-get install -y lsb-release
-	if [ "$(lsb_release -r --short)" = "18.04" ]; then
+	if [ "$(lsb_release -r --short)" \< "19.04" ]; then
 		GO_VER=1.16.13
 		$WGWT_A https://go.dev/dl/go${GO_VER}.linux-amd64.tar.gz
 		rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-amd64.tar.gz
@@ -101,14 +101,11 @@ fi
 # install cmake (depend on g++, make, openssl-devel)
 # https://askubuntu.com/questions/355565/how-do-i-install-the-latest-version-of-cmake-from-the-command-line
 if [ true ]; then
-	version=3.20
-	build=5
-	$WGWT_A https://cmake.org/files/v$version/cmake-$version.$build.tar.gz
-	tar -xzvf cmake-$version.$build.tar.gz
-	cd cmake-$version.$build/
-	./bootstrap
-	make -j6
-	make install
+	version=3.22
+	build=1
+	os="linux"
+	$WGWT_A https://cmake.org/files/v$version/cmake-$version.$build-$os-x86_64.sh
+	sh cmake-$version.$build-$os-x86_64.sh --prefix=/usr/local/ --skip-license
 fi
 
 #install fpm
@@ -169,12 +166,14 @@ if [ true ]; then
 	# ACE:
 	# https://www.cnblogs.com/tanzi-888/p/5342431.html
 	# http://download.dre.vanderbilt.edu/
+	# https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#aceinstall
 	$WGWT_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
 	tar zxvf ACE-6.5.16.tar.gz
 	cd ACE_wrappers
 	export ACE_ROOT=$(pwd)
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
+	cd ${ACE_ROOT}/ace
 	make -j6
 	make install INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so

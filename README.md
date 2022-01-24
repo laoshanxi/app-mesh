@@ -82,17 +82,19 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 ---
 
 ## Library dependency
-- [ACE](https://github.com/DOCGroup/ACE_TAO)
+
 - [Microsoft/cpprestsdk](https://github.com/Microsoft/cpprestsdk)
-- [boost](https://github.com/boostorg/boost)
-- [log4cpp](http://log4cpp.sourceforge.net)
+- [Google/protobuf](https://github.com/protocolbuffers/protobuf)
+- [boostorg/boost](https://github.com/boostorg/boost)
+- [DOCGroup/ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
-- [Crypto++](https://www.cryptopp.com)
 - [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
+- [log4cpp](http://log4cpp.sourceforge.net)
+- [Crypto++](https://www.cryptopp.com)
 - [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
-- [google/protobuf](https://github.com/protocolbuffers/protobuf)
+
 
 [language.url]:   https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

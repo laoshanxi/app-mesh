@@ -1,7 +1,7 @@
 FROM ubuntu:20.04
 
-COPY autogen.sh autogen.sh
+COPY autogen.sh /opt/autogen.sh
 
 USER root
 
-RUN sh autogen.sh && rm -f autogen.sh
+RUN sh /opt/autogen.sh && rm -rf /opt/*
