@@ -3,6 +3,9 @@ name: Build package and publish
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "script/**"
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -59,8 +62,8 @@ jobs:
       - name: Generate Changelog
         run: |
           echo "1. API: get cloud application output from master node" >> CHANGELOG.txt
-          echo "2. `appc` cache local token in json file" >> CHANGELOG.txt
-          echo "3. Generate password for `admin` after installation" >> CHANGELOG.txt
+          echo "2. \`appc\` cache local token in json file" >> CHANGELOG.txt
+          echo "3. Generate password for \`admin\` after installation" >> CHANGELOG.txt
           echo "4. CLI return app exit code" >> CHANGELOG.txt
           echo "5. HTTP head method" >> CHANGELOG.txt
           echo "6. Add config: DisableExecUser" >> CHANGELOG.txt
