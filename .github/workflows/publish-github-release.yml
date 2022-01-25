@@ -6,6 +6,7 @@ on:
     paths:
       - "src/**"
       - "script/**"
+      - ".github/workflows/publish-github-release.yml"
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -28,31 +29,45 @@ jobs:
 
       # https://github.com/marketplace/actions/docker-run-action
       # docker run --rm -v $(pwd):/workspace -w /workspace laoshanxi/appmesh:build_centos7 sh -c "mkdir build7;cd build7;cmake ..;make -j6;make pack;make test ARGS='-V'"
-      - name: build with centos7
+      - name: build with ubuntu16
         uses: addnab/docker-run-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          image: laoshanxi/appmesh:build_centos7
+          image: laoshanxi/appmesh:build_ubuntu16
           options: --rm -v ${{ github.workspace }}:/workspace -w /workspace
           run: |
-            mkdir centos7
-            cd centos7
+            mkdir ubuntu16
+            cd ubuntu16
             cmake ..
             make -j6
             make pack
             ls
             make test ARGS='-V'
 
-      # docker run --rm -v $(pwd):/workspace -w /workspace laoshanxi/appmesh:build_centos8 sh -c "mkdir build8;cd build8;cmake ..;make -j6;make pack;make test ARGS='-V'"
-      - name: build with centos8
+      - name: build with ubuntu18
         uses: addnab/docker-run-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          image: laoshanxi/appmesh:build_centos8
+          image: laoshanxi/appmesh:build_ubuntu18
           options: --rm -v ${{ github.workspace }}:/workspace -w /workspace
           run: |
-            mkdir centos8
-            cd centos8
+            mkdir ubuntu18
+            cd ubuntu18
+            cmake ..
+            make -j6
+            make pack
+            ls
+            make test ARGS='-V'
+
+      - name: build with ubuntu20
+        uses: addnab/docker-run-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          image: laoshanxi/appmesh:build_ubuntu20
+          options: --rm -v ${{ github.workspace }}:/workspace -w /workspace
+          run: |
+            mkdir ubuntu20
+            cd ubuntu20
             cmake ..
             make -j6
             make pack
@@ -85,8 +100,8 @@ jobs:
           files: |
             CHANGELOG.txt
             LICENSE
-            centos*/*.deb
-            centos*/*.rpm
+            ubuntu*/*.deb
+            ubuntu*/*.rpm
 
       # #- name: wget
       #  uses: wei/wget@v1

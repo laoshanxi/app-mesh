@@ -1,12 +1,19 @@
 name: Build docker image and publish
 
 on:
+  # trigger when code changes
   push:
     branches:
       - main
     paths:
       - "src/**"
       - "script/**"
+      - ".github/workflows/build-push-appmesh-image.yml"
+  # trigger when the workflow "build ubuntu20 image for build appmesh" succeeded
+  workflow_run:
+    workflows: ["build ubuntu20 image for build appmesh"]
+    types:
+      - completed
 
 env:
   # Use docker.io for Docker Hub if empty

@@ -1,4 +1,4 @@
-name: Build docker image for build appmesh engine
+name: build ubuntu18 image for build appmesh
 
 on:
   push:
