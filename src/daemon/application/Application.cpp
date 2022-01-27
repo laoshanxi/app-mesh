@@ -351,14 +351,14 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		if (m_metricMemory && m_process)
 		{
-			auto usage = m_process->getProcUsage(ptree);
+			auto usage = m_process->getProcessDetails(ptree);
 			m_metricMemory->metric().Set(std::get<1>(usage));
 			m_metricCpu->metric().Set(std::get<2>(usage));
+			if (m_metricFileDesc)
+				m_metricFileDesc->metric().Set(std::get<3>(usage));
 		}
 		if (m_metricAppPid)
 			m_metricAppPid->metric().Set(m_pid);
-		if (m_metricFileDesc)
-			m_metricFileDesc->metric().Set(os::fileDescriptors(m_pid));
 	}
 
 	return exitCode;
@@ -715,20 +715,18 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[JSON_KEY_APP_metadata] = m_metadata;
 	if (returnRuntimeInfo)
 	{
-		if (m_pid > 0)
-		{
-			result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
-			result[JSON_KEY_APP_open_fd] = web::json::value::number(os::fileDescriptors(m_pid));
-		}
 		if (m_return != nullptr)
 			result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
 		if (m_process && m_process->running())
 		{
-			auto usage = m_process->getProcUsage();
+			result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
+			auto usage = m_process->getProcessDetails();
 			if (std::get<0>(usage))
 			{
 				result[JSON_KEY_APP_memory] = web::json::value::number(std::get<1>(usage));
 				result[JSON_KEY_APP_cpu] = web::json::value::number(std::get<2>(usage));
+				result[JSON_KEY_APP_open_fd] = web::json::value::number(std::get<3>(usage));
+				result[JSON_KEY_APP_pstree] = web::json::value::string(std::get<4>(usage));
 			}
 		}
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00

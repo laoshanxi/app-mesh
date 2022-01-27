@@ -84,6 +84,7 @@ jobs:
           echo "6. Add config: DisableExecUser" >> CHANGELOG.txt
           echo "7. Support specify daemon exec user" >> CHANGELOG.txt
           echo "8. SSL: VerifyPeer" >> CHANGELOG.txt
+          echo "9. pstree text output for application" >> CHANGELOG.txt
 
       # publish Github release
       # https://github.com/softprops/action-gh-release

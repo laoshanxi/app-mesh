@@ -64,8 +64,10 @@ public:
 	/// - bool: get success or fail
 	/// - uint64_t: total memory bytes
 	/// - float: cpu usage
+	/// - uint64_t: total file descriptors
+	/// - std::string: pstree string
 	/// </returns>
-	std::tuple<bool, uint64_t, float> getProcUsage(void *ptree = nullptr);
+	std::tuple<bool, uint64_t, float, uint64_t, std::string> getProcessDetails(void *ptree = nullptr);
 
 	/// <summary>
 	/// Attach a existing pid to AppProcess to manage

@@ -648,6 +648,7 @@ void ArgumentParser::processAppView()
 		("name,n", po::value<std::string>(), "application name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
+		("pstree,p", "view the application pstree")
 		("stdout_index,O", po::value<int>(), "application output index")
 		("tail,t", "continue view the application output");
 
@@ -662,7 +663,14 @@ void ArgumentParser::processAppView()
 			// view app info
 			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
 			auto resp = requestHttp(true, methods::GET, restPath);
-			std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+			if (m_commandLineVariables.count("pstree"))
+			{
+				std::cout << GET_JSON_STR_T_VALUE(resp.extract_json(true).get(), JSON_KEY_APP_pstree) << std::endl;
+			}
+			else
+			{
+				std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+			}
 		}
 		else
 		{

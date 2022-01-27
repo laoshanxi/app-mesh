@@ -3,6 +3,7 @@
 
 #include "../../common/Utility.h"
 #include "../../common/os/process.hpp"
+#include "../../common/os/pstree.hpp"
 #include "../../prom_exporter/counter.h"
 #include "../../prom_exporter/registry.h"
 #include "../../prom_exporter/text_serializer.h"
@@ -174,7 +175,7 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 	}
 	if (m_appmeshFileDesc)
 	{
-		m_appmeshFileDesc->metric().Set(os::fileDescriptors());
+		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
 	}
 
 	message.reply(status_codes::OK, collectData(), "text/plain; version=0.0.4");

@@ -281,6 +281,7 @@ public:
 #define JSON_KEY_APP_env "env"
 #define JSON_KEY_APP_sec_env "sec_env"
 #define JSON_KEY_APP_open_fd "fd" // open_file_descriptors
+#define JSON_KEY_APP_pstree "pstree"
 #define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
 #define JSON_KEY_APP_last_error "last_error"

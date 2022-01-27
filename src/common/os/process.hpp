@@ -16,6 +16,40 @@
 
 namespace os
 {
+	// https://stackoverflow.com/questions/6583158/finding-open-file-descriptors-for-a-process-linux-c-code
+	// https://stackoverflow.com/questions/4470121/how-to-use-lsoflist-opened-files-in-a-c-c-application
+	// get process open file descriptors
+	inline size_t fileDescriptors(pid_t pid = ::getpid())
+	{
+		const static char fname[] = "os::fileDescriptors() ";
+
+		size_t result = 0;
+		// 1. /proc/pid/fd/
+		const auto procFdPath = fs::path("/proc") / std::to_string(pid) / "fd";
+		if (fs::exists(procFdPath.string()) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
+		{
+			result += std::distance(boost::filesystem::directory_iterator(procFdPath),
+									boost::filesystem::directory_iterator());
+		}
+		else
+		{
+			LOG_WAR << fname << "no such path or no permission: " << procFdPath;
+		}
+		// 2. /proc/pid/maps
+		const auto procMapsPath = fs::path("/proc") / std::to_string(pid) / "maps";
+		std::ifstream maps(procMapsPath.string());
+		if (maps.is_open())
+		{
+			std::string line;
+			for (; std::getline(maps, line); result++)
+				;
+		}
+		else
+		{
+			LOG_WAR << fname << "failed to open: " << procMapsPath;
+		}
+		return result;
+	};
 
 	struct Process
 	{
@@ -91,17 +125,32 @@ namespace os
 		// Count the total RES memory usage in the process tree
 		uint64_t totalRssMemBytes() const
 		{
-			uint64_t result = std::accumulate(children.begin(), children.end(), process.rss_bytes);
+			uint64_t result = std::accumulate(
+				children.begin(), children.end(),
+				process.rss_bytes,
+				[](const uint64_t &bytes, const ProcessTree &process)
+				{ return bytes + process.totalRssMemBytes(); });
+			return result;
+		}
+
+		uint64_t totalFileDescriptors() const
+		{
+			uint64_t result = std::accumulate(
+				children.begin(), children.end(),
+				os::fileDescriptors(process.pid),
+				[](const size_t &files, const ProcessTree &process)
+				{ return files + process.totalFileDescriptors(); });
 			return result;
 		}
 
 		// get total CPU time
 		uint64_t totalCpuTime() const
 		{
-			auto result = std::accumulate(children.begin(), children.end(), process.utime) +
-						  std::accumulate(children.begin(), children.end(), process.stime) +
-						  std::accumulate(children.begin(), children.end(), process.cutime) +
-						  std::accumulate(children.begin(), children.end(), process.cstime);
+			uint64_t result = std::accumulate(
+				children.begin(), children.end(),
+				process.utime + process.stime + process.cutime + process.cstime,
+				[](const size_t &files, const ProcessTree &process)
+				{ return files + process.totalCpuTime(); });
 			return result;
 		}
 
@@ -138,11 +187,10 @@ namespace os
 	private:
 		friend std::shared_ptr<ProcessTree> pstree(pid_t, const std::list<Process> &);
 
-		ProcessTree(
-			const Process &_process,
-			const std::list<ProcessTree> &_children)
-			: process(_process),
-			  children(_children) {}
+		ProcessTree(const Process &_process, const std::list<ProcessTree> &_children)
+			: process(_process), children(_children)
+		{
+		}
 	};
 
 	inline std::ostream &operator<<(std::ostream &stream, const ProcessTree &tree)
@@ -206,40 +254,5 @@ namespace os
 			   << "]";
 		return stream;
 	}
-
-	// https://stackoverflow.com/questions/6583158/finding-open-file-descriptors-for-a-process-linux-c-code
-	// https://stackoverflow.com/questions/4470121/how-to-use-lsoflist-opened-files-in-a-c-c-application
-	// get process open file descriptors
-	inline size_t fileDescriptors(pid_t pid = ::getpid())
-	{
-		const static char fname[] = "os::fileDescriptors() ";
-
-		size_t result = 0;
-		// 1. /proc/pid/fd/
-		const auto procFdPath = fs::path("/proc") / std::to_string(pid) / "fd";
-		if (fs::exists(procFdPath.string()) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
-		{
-			result += std::distance(boost::filesystem::directory_iterator(procFdPath),
-									boost::filesystem::directory_iterator());
-		}
-		else
-		{
-			LOG_WAR << fname << "no such path or no permission: " << procFdPath;
-		}
-		// 2. /proc/pid/maps
-		const auto procMapsPath = fs::path("/proc") / std::to_string(pid) / "maps";
-		std::ifstream maps(procMapsPath.string());
-		if (maps.is_open())
-		{
-			std::string line;
-			for (; std::getline(maps, line); result++)
-				;
-		}
-		else
-		{
-			LOG_WAR << fname << "failed to open: " << procMapsPath;
-		}
-		return result;
-	};
 
 } // namespace os
