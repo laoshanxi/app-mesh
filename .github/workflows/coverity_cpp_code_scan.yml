@@ -1,0 +1,40 @@
+name: Coverity CPP code scan
+
+on:
+  # trigger when code changes
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/coverity_cpp_code_scan.yml"
+
+env:
+  APPMESH_VERSION: "2.0.1"
+
+jobs:
+  coverity-cpp-code-scan:
+    runs-on: ubuntu-latest
+    container: laoshanxi/appmesh:build_ubuntu20
+
+    steps:
+      - name: Checkout Github code
+        uses: actions/checkout@v2
+
+      - name: Setup curl
+        run: apt-get install -y curl
+
+      - name: Cmake init with Debug mode
+        run: |
+          mkdir build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=Debug ..
+
+      # https://github.com/laoshanxi/coverity-scan-action
+      - name: Coverity scan
+        uses: laoshanxi/coverity-scan-action@v1
+        with:
+          project: laoshanxi%2Fapp-mesh
+          token: ${{ secrets.COVERITY_SCAN_TOKEN }}
+          email: 178029200@qq.com
+          version: ${{ env.APPMESH_VERSION }}
+          description: "Ubuntu 9.3.0-17ubuntu1~20.04"
