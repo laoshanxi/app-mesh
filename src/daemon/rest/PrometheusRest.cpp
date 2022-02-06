@@ -13,9 +13,10 @@
 #include "RestBase.h"
 
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
+const static char* CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
 
 PrometheusRest::PrometheusRest(bool forward2TcpServer)
-	: RestBase(forward2TcpServer), m_promEnabled(false), m_scrapeCounter(0)
+	: RestBase(forward2TcpServer), m_scrapeCounter(0)
 {
 	m_promRegistry = std::make_shared<prometheus::Registry>();
 	if (!forward2TcpServer)
@@ -58,12 +59,10 @@ void PrometheusRest::open()
 		m_promListener->support(methods::OPTIONS, std::bind(&PrometheusRest::handle_options, this, std::placeholders::_1));
 
 		m_promListener->open().wait();
-		m_promEnabled = true;
 		LOG_INF << fname << "Prometheus Exporter listening for requests at:" << uri.to_string();
 	}
 	else
 	{
-		m_promEnabled = false;
 		LOG_INF << fname << "Listen port not specified, Prometheus exporter will not enabled";
 	}
 }
@@ -121,15 +120,11 @@ void PrometheusRest::initMetrics()
 
 std::shared_ptr<CounterMetric> PrometheusRest::createPromCounter(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
 {
-	if (!m_promEnabled)
-		return nullptr;
 	return std::make_shared<CounterMetric>(m_promRegistry, metricName, metricHelp, labels);
 }
 
 std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &metricName, const std::string &metricHelp, const std::map<std::string, std::string> &labels)
 {
-	if (!m_promEnabled)
-		return nullptr;
 	return std::make_shared<GaugeMetric>(m_promRegistry, metricName, metricHelp, labels);
 }
 
@@ -178,7 +173,7 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
 	}
 
-	message.reply(status_codes::OK, collectData(), "text/plain; version=0.0.4");
+	message.reply(status_codes::OK, collectData(), CONTENT_TYPE);
 }
 
 CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, const std::string &name, const std::string &help, std::map<std::string, std::string> label)

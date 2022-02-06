@@ -133,7 +133,6 @@ private:
 	void initMetrics();
 
 private:
-	bool m_promEnabled;
 	std::atomic_long m_collectTime = ATOMIC_FLAG_INIT; // std::atomic_flag should be initialized in declare
 	static std::shared_ptr<PrometheusRest> m_instance;
 

@@ -17,8 +17,8 @@ App Mesh is similar with Kubernetes but much light weight, support both containe
 
 Scope | Behavior
 ---|---
-Support applications | Long running <br> Short running <br> Periodic long running <br> Cron schedule
-Application attributes | Extra init and cleanup commands <br> Available time range in a day and more rich time options <br> Environment variables <br> Health check command to identify app health <br> Pipe input string data to pass data to application <br> Resource (memory & CPU) limitation (cgroup on Linux) to request resources <br> Support Docker container app
+Application schedule | Long running <br> Short running <br> Periodic long running <br> Cron schedule
+Application attributes | Available time range in a day and more rich time options <br> Environment variables <br> Health check command to identify app health <br> Pipe input string data to pass data to application <br> Resource (memory & CPU) limitation (cgroup on Linux) to request resources <br> Docker container app <br> Error handling
 Security |  ⚡️ [JWT authentication](https://app-mesh.readthedocs.io/en/latest/JWT.html) for CLI and REST interface <br> ⚡️ [LDAP support](https://app-mesh.readthedocs.io/en/latest/LDAP.html) <br> ⚡️ [Role based permission control](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html) <br> SSL support (ECDH and secure ciphers) for REST http connection <br> Multi-tenant support 
 Cloud native | ⚡️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> ⚡️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br> REST service with IPv4/IPv6 support 
 Micro service application | ⚡️ [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html) 

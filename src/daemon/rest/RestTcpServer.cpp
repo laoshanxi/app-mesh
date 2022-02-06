@@ -140,7 +140,10 @@ const web::json::value RestTcpServer::getRestAppJson() const
     restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
     restApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_ADMIN_NAME);
     // if do not define LD_LIBRARY_PATH here, appmesh will replace to none-appmesh environment
-    objEnvs[ENV_LD_LIBRARY_PATH] = web::json::value::string(ACE_OS::getenv(ENV_LD_LIBRARY_PATH));
+    if (ACE_OS::getenv(ENV_LD_LIBRARY_PATH))
+    {
+        objEnvs[ENV_LD_LIBRARY_PATH] = web::json::value::string(ACE_OS::getenv(ENV_LD_LIBRARY_PATH));
+    }
     objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
     restApp[JSON_KEY_APP_env] = objEnvs;
     restApp[JSON_KEY_APP_behavior] = objBehavior;

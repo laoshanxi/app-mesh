@@ -518,7 +518,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 {
 	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << "Entered.";
-	m_process.reset(); //m_process->killgroup();
+	m_process.reset(); // m_process->killgroup();
 	m_process = allocProcess(false, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
 }
@@ -529,7 +529,7 @@ std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
 	LOG_DBG << fname << "Entered.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	m_process.reset(); //m_process->killgroup();
+	m_process.reset(); // m_process->killgroup();
 	m_process = allocProcess(true, m_dockerImage, m_name);
 	auto monitorProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
 	assert(monitorProc != nullptr);
@@ -740,7 +740,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		result[JSON_KEY_APP_health] = web::json::value::number(this->health());
 		if (m_stdoutFileQueue->size())
 			result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_stdoutFileQueue->size());
-		//result[JSON_KEY_APP_id] = web::json::value::string(m_appId);
+		// result[JSON_KEY_APP_id] = web::json::value::string(m_appId);
 	}
 	if (m_dailyLimit != nullptr)
 	{
