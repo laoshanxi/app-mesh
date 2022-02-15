@@ -56,7 +56,7 @@ services:
   appmesh_s1:
     restart: always
     image: laoshanxi/appmesh
-    command: appc unreg -n ping -f
+    command: tini -- /opt/appmesh/script/appmesh-entrypoint.sh appc unreg -n ping -f
     mem_limit: 4G
     hostname: appmesh_s1
     environment:
@@ -79,7 +79,7 @@ services:
   appmesh_s2:
     restart: always
     image: laoshanxi/appmesh
-    command: appc unreg -n ping -f
+    command: tini -- /opt/appmesh/script/appmesh-entrypoint.sh appc unreg -n ping -f
     mem_limit: 3G
     hostname: appmesh_s2
     environment:

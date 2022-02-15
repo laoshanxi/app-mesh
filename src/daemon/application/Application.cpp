@@ -335,9 +335,9 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 		{
 			if (m_bufferProcess->wait(m_waitTimeout) > 0)
 			{
-				m_return = std::make_shared<int>(m_process->returnValue());
+				m_return = std::make_shared<int>(m_bufferProcess->returnValue());
 				m_procExitTime = std::chrono::system_clock::now();
-				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
+				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_bufferProcess->startError().c_str()));
 			}
 		}
 	}
@@ -764,8 +764,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair)
 					  {
 						  auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
-						  envs[GET_STRING_T(pair.first)] = web::json::value::string(encryptedEnvValue);
-					  });
+						  envs[GET_STRING_T(pair.first)] = web::json::value::string(encryptedEnvValue); });
 		result[JSON_KEY_APP_sec_env] = envs;
 	}
 	if (m_posixTimeZone.length() && m_posixTimeZone != DateTime::getLocalZoneUTCOffset())

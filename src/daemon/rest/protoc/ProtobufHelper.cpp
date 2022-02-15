@@ -60,7 +60,7 @@ size_t ProtobufHelper::deserializeHeader(const char *data)
     const static char fname[] = "ProtobufHelper::deserializeHeader() ";
 
     char buffer[PROTOBUF_HEADER_LENGTH];
-    memcpy(buffer, data, PROTOBUF_HEADER_LENGTH); //copy to local buffer to parse header
+    memcpy(buffer, data, PROTOBUF_HEADER_LENGTH); // copy to local buffer to parse header
 
     google::protobuf::io::ArrayInputStream arrayInput(buffer, PROTOBUF_HEADER_LENGTH);
     google::protobuf::io::CodedInputStream codedInput(&arrayInput);
@@ -81,8 +81,8 @@ const std::tuple<char *, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK
     const static char fname[] = "ProtobufHelper::readMessageBlock() ";
     LOG_DBG << fname << "entered";
 
-    //1. read header socket data (4 bytes), use MSG_PEEK to not clear data from cache
-    char header[PROTOBUF_HEADER_LENGTH];
+    // 1. read header socket data (4 bytes), use MSG_PEEK to not clear data from cache
+    char header[PROTOBUF_HEADER_LENGTH] = {0};
     if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(header, PROTOBUF_HEADER_LENGTH, MSG_PEEK) <= 0)
     {
         LOG_ERR << fname << "read header length failed with error :" << std::strerror(errno);

@@ -660,16 +660,20 @@ void ArgumentParser::processAppView()
 	{
 		if (!m_commandLineVariables.count("output"))
 		{
-			// view app info
 			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
-			auto resp = requestHttp(true, methods::GET, restPath);
+			auto resp = requestHttp(true, methods::GET, restPath).extract_json().get();
 			if (m_commandLineVariables.count("pstree"))
 			{
-				std::cout << GET_JSON_STR_T_VALUE(resp.extract_json(true).get(), JSON_KEY_APP_pstree) << std::endl;
+				// view app process tree
+				if (HAS_JSON_FIELD(resp, JSON_KEY_APP_pstree))
+				{
+					std::cout << resp.at(JSON_KEY_APP_pstree).as_string() << std::endl;
+				}
 			}
 			else
 			{
-				std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+				// view app json
+				std::cout << Utility::prettyJson(resp.serialize()) << std::endl;
 			}
 		}
 		else
