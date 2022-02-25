@@ -404,7 +404,7 @@ void Application::execute(void *ptree)
 		}
 		scheduleNextRun = (m_nextLaunchTime == nullptr);
 	}
-	else if (m_status != STATUS::NOTAVIALABLE)
+	else if (getStatus() != STATUS::NOTAVIALABLE)
 	{
 		// not available
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -427,7 +427,7 @@ void Application::execute(void *ptree)
 	}
 
 	auto exitCode = refresh(ptree);
-	if (exitCode != nullptr && nextRunTime == nullptr)
+	if (exitCode != nullptr && nextRunTime == nullptr && getStatus() == STATUS::ENABLED)
 	{
 		// error handling
 		onExit(*exitCode);
@@ -481,7 +481,7 @@ void Application::spawn(int timerId)
 
 void Application::disable()
 {
-	const static char fname[] = "Application::stop() ";
+	const static char fname[] = "Application::disable() ";
 
 	// clean old timer
 	int timerId = INVALID_TIMER_ID;
@@ -503,6 +503,7 @@ void Application::disable()
 	if (m_process != nullptr)
 		m_process->killgroup();
 	m_nextLaunchTime = nullptr;
+	setInvalidError();
 }
 
 void Application::enable()
@@ -974,7 +975,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 	if (timerId > INVALID_TIMER_ID)
 	{
 		m_nextStartTimerId = timerId;
-		LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(*m_nextLaunchTime);
+		LOG_DBG << fname << "next start timer id <" << m_nextStartTimerId << ">";
 	}
 	else
 	{
