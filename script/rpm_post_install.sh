@@ -3,9 +3,9 @@
 ## RPM post installation script file, will be executed while installation
 ################################################################################
 
-PROG_HOME=/opt/appmesh
+export PROG_HOME=/opt/appmesh
+export SYSTEMD_FILE=/etc/systemd/system/appmesh.service
 
-SYSTEMD_FILE=/etc/systemd/system/appmesh.service
 if [ ! -d ${PROG_HOME} ]; then
 	mkdir -p ${PROG_HOME}
 elif [[ -f $SYSTEMD_FILE ]] || [[ -f "/etc/init.d/appmesh" ]]; then

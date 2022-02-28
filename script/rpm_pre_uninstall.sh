@@ -3,8 +3,7 @@
 ## RPM pre uninstallation script file, will be executed before installation
 ################################################################################
 
-PROG_HOME=/opt/appmesh
-
+export PROG_HOME=/opt/appmesh
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
 
 # backup configuration file to avoid overide when next installation
