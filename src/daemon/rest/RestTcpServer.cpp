@@ -150,7 +150,7 @@ const web::json::value RestTcpServer::getRestAppJson() const
     return restApp;
 }
 
-void RestTcpServer::backforwardResponse(const std::string &uuid, const std::string &body,
+void RestTcpServer::backforwardResponse(const std::string &requestUri, const std::string &uuid, const std::string &body,
                                         const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType)
 {
     const static char fname[] = "RestTcpServer::backforwardResponse() ";
@@ -172,7 +172,7 @@ void RestTcpServer::backforwardResponse(const std::string &uuid, const std::stri
     if (m_socketStream.get_handle() != ACE_INVALID_HANDLE)
     {
         const auto sendSize = (size_t)m_socketStream.send_n((void *)buffer.get(), length);
-        LOG_DBG << fname << "send response: " << uuid << " with length: " << length << " sent len:" << sendSize;
+        LOG_DBG << fname << requestUri << " response: " << uuid << " with length: " << length << " sent len:" << sendSize;
         if (sendSize != length)
         {
             LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);

@@ -51,7 +51,7 @@ public:
 	bool attach(int pid);
 
 	static void FromJson(const std::shared_ptr<Application> &app, const web::json::value &obj) noexcept(false);
-	virtual web::json::value AsJson(bool returnRuntimeInfo);
+	virtual web::json::value AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
 	virtual void dump();
 
 	// operate

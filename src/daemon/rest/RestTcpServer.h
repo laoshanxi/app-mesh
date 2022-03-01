@@ -32,12 +32,13 @@ public:
     /// <summary>
     /// Response REST response to client
     /// </summary>
+    /// <param name="requestUri"></param>
     /// <param name="uuid"></param>
     /// <param name="body"></param>
     /// <param name="headers"></param>
     /// <param name="status"></param>
     /// <param name="bodyType"></param>
-    void backforwardResponse(const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType);
+    void backforwardResponse(const std::string &requestUri, const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType);
 
     /// <summary>
     /// Generate Application json for rest process

@@ -75,7 +75,7 @@ void HttpRequest::reply(http_response &response, const std::string &body_data) c
 {
 	if (m_forwardResponse2RestServer)
 	{
-		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
+		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
 	}
 	else
 	{
@@ -95,7 +95,7 @@ void HttpRequest::reply(http::status_code status, const json::value &body_data) 
 {
 	if (m_forwardResponse2RestServer)
 	{
-		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
+		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 	}
 	else
 	{
@@ -113,7 +113,7 @@ void HttpRequest::reply(http::status_code status, utf8string &&body_data, const 
 {
 	if (m_forwardResponse2RestServer)
 	{
-		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data, {}, status, content_type);
+		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 	}
 	else
 	{
@@ -127,7 +127,7 @@ void HttpRequest::reply(http::status_code status, const utf8string &body_data, c
 {
 	if (m_forwardResponse2RestServer)
 	{
-		RestTcpServer::instance()->backforwardResponse(m_uuid, body_data, {}, status, content_type);
+		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 	}
 	else
 	{
@@ -141,7 +141,7 @@ void HttpRequest::reply(http::status_code status, const utf16string &body_data, 
 {
 	if (m_forwardResponse2RestServer)
 	{
-		RestTcpServer::instance()->backforwardResponse(m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
+		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
 	}
 	else
 	{

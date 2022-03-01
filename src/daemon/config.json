@@ -56,6 +56,8 @@
     "IsMainNode": true,
     "IsWorkerNode": true,
     "Url": "",
+    "User": "",
+    "Pass": "",
     "AppmeshProxyUrl": "",
     "SessionTTL": 30,
     "EnableConsulSecurity": false

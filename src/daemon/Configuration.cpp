@@ -17,6 +17,7 @@
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
+#include "../common/os/pstree.hpp"
 
 extern char **environ; // unistd.h
 
@@ -266,12 +267,24 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_DOCKER_PROXY_APP_NAME)); // not expose rest process
 				 });
 
-	// Build Json
 	auto result = web::json::value::array(apps.size());
-	for (std::size_t i = 0; i < apps.size(); ++i)
+	// Build Json
+	if (returnRuntimeInfo)
 	{
-		result[i] = apps[i]->AsJson(returnRuntimeInfo);
+		std::list<os::Process> ptree = os::processes();
+		for (std::size_t i = 0; i < apps.size(); ++i)
+		{
+			result[i] = apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree));
+		}
 	}
+	else
+	{
+		for (std::size_t i = 0; i < apps.size(); ++i)
+		{
+			result[i] = apps[i]->AsJson(returnRuntimeInfo);
+		}
+	}
+
 	return result;
 }
 
@@ -455,8 +468,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 						  mapApp = app;
 						  update = true;
 						  return;
-					  }
-				  });
+					  } });
 
 	if (!update)
 	{

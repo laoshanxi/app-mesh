@@ -689,7 +689,7 @@ void Application::initMetrics(std::shared_ptr<Application> fromApp)
 	}
 }
 
-web::json::value Application::AsJson(bool returnRuntimeInfo)
+web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 {
 	web::json::value result = web::json::value::object();
 
@@ -721,7 +721,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo)
 		if (m_process && m_process->running())
 		{
 			result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
-			auto usage = m_process->getProcessDetails();
+			auto usage = m_process->getProcessDetails(ptree);
 			if (std::get<0>(usage))
 			{
 				result[JSON_KEY_APP_memory] = web::json::value::number(std::get<1>(usage));
