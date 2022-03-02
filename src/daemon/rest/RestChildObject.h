@@ -9,6 +9,7 @@
 #include <ace/SOCK_Connector.h>
 #include <ace/SOCK_Stream.h>
 
+#include "../TimerHandler.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
 #include "protoc/Response.pb.h"
@@ -16,7 +17,7 @@
 /// <summary>
 /// REST Server Object, forward http REST request to TCP Server side
 /// </summary>
-class RestChildObject : public ACE_SOCK_Connector, public RestHandler
+class RestChildObject : public ACE_SOCK_Connector, public RestHandler, public TimerHandler
 {
 public:
     RestChildObject();
@@ -43,10 +44,14 @@ public:
     /// <param name="msg"></param>
     void replyResponse(const appmesh::Response &response);
 
+    void onResponseTimeout(int timerId);
+
 private:
     ACE_SOCK_Stream m_socketStream;
     // key: message uuid; value: message
     std::map<std::string, HttpRequest> m_clientRequests;
+    // key: message uuid; value: timer id
+    std::map<std::string, int> m_clientRequestsTimer;
     mutable std::recursive_mutex m_mutex;
     static std::shared_ptr<RestChildObject> m_instance;
 };

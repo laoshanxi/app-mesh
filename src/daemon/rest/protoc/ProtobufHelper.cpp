@@ -103,8 +103,8 @@ const std::tuple<char *, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK
     // 3. read header + body socket data
     const auto bufferSize = bodySize + PROTOBUF_HEADER_LENGTH;
     auto bodyBuffer = new char[bufferSize];
-    static const ACE_Time_Value timeout(std::chrono::seconds(10));
-    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(bodyBuffer, bufferSize, &timeout) <= 0)
+    // static const ACE_Time_Value timeout(std::chrono::seconds(10));
+    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(bodyBuffer, bufferSize) <= 0)
     {
         LOG_ERR << fname << "read body socket data failed with error :" << std::strerror(errno);
         return std::make_tuple(nullptr, 0);

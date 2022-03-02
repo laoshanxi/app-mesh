@@ -96,6 +96,8 @@ int main(int argc, char *argv[])
 		// forward to TCP rest service in order to avoid fork() impact REST handler
 		if (thisIsRestProcess)
 		{
+			// start the 1 thread for timer (timeout check)
+			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
 			RestChildObject::instance(std::make_shared<RestChildObject>());
 			RestChildObject::instance()->connectAndRun(config->getSeparateRestInternalPort());
 			return 0;
