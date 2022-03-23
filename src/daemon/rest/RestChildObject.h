@@ -9,7 +9,7 @@
 #include <ace/SOCK_Connector.h>
 #include <ace/SOCK_Stream.h>
 
-#include "../TimerHandler.h"
+#include "../../common/TimerHandler.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
 #include "protoc/Response.pb.h"

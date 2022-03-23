@@ -34,6 +34,7 @@ public:
 		JsonJwt();
 		static std::shared_ptr<JsonJwt> FromJson(const web::json::value &jsonObj);
 		web::json::value AsJson() const;
+		std::string getJwtInterface() const;
 
 		bool m_jwtEnabled;
 		std::string m_jwtSalt;

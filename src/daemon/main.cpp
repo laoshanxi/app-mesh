@@ -9,6 +9,7 @@
 #include <boost/filesystem.hpp>
 
 #include "../common/PerfLog.h"
+#include "../common/TimerHandler.h"
 #include "../common/Utility.h"
 #include "../common/os/linux.hpp"
 #include "../common/os/pstree.hpp"
@@ -16,7 +17,6 @@
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
 #include "ResourceCollection.h"
-#include "TimerHandler.h"
 #include "application/Application.h"
 #include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 		Utility::initCpprestThreadPool(threadNum);
 
 		// init security [both for server side and REST client side (file operation API)]
-		Security::init();
+		Security::init(Configuration::instance()->getJwt()->m_jwtInterface);
 
 		// init child REST process, the REST process will accept HTTP request and
 		// forward to TCP rest service in order to avoid fork() impact REST handler

@@ -16,4 +16,5 @@ add_library(${PROJECT_NAME}::ldapplugin ALIAS ldapplugin)
 target_link_libraries(ldapplugin
   PRIVATE
     ldapcpp
+    common
 )

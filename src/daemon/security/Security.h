@@ -21,9 +21,9 @@ public:
     virtual ~Security();
     virtual web::json::value AsJson() const;
     static std::shared_ptr<Security> FromJson(const web::json::value &obj) noexcept(false);
-    virtual void save();
+    virtual void save(const std::string &interface);
     virtual bool encryptKey();
-    static void init();
+    static void init(const std::string &interface);
     static std::shared_ptr<Security> instance();
     static void instance(std::shared_ptr<Security> instance);
 

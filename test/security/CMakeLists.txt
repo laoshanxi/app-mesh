@@ -14,7 +14,12 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
     cpprest
+    rest
     ${OPENSSL_LIBRARIES}
-    ldapcpp
+    security
+    application
+    process
+    prometheus
+    consul
     common
 )

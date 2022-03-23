@@ -917,6 +917,11 @@ web::json::value Configuration::JsonJwt::AsJson() const
 	return result;
 }
 
+std::string Configuration::JsonJwt::getJwtInterface() const
+{
+	return m_jwtInterface;
+}
+
 std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jsonObj, int appmeshRestPort, bool sslEnabled)
 {
 	auto consul = std::make_shared<JsonConsul>();

@@ -1,7 +1,6 @@
 #include <ace/OS.h>
 
 #include "../../common/Utility.h"
-#include "../Configuration.h"
 #include "./ldapplugin/LdapImpl.h"
 #include "Security.h"
 
@@ -16,24 +15,24 @@ Security::~Security()
 {
 }
 
-void Security::init()
+void Security::init(const std::string &interface)
 {
     const static char fname[] = "Security::init() ";
-    LOG_INF << fname << "Security plugin:" << Configuration::instance()->getJwt()->m_jwtInterface;
+    LOG_INF << fname << "Security plugin:" << interface;
 
-    if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_local)
+    if (interface == JSON_KEY_USER_key_method_local)
     {
         const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
         const auto security = Security::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
         Security::instance(security);
     }
-    else if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_ldap)
+    else if (interface == JSON_KEY_USER_key_method_ldap)
     {
-        LdapImpl::init();
+        LdapImpl::init(interface);
     }
     else
     {
-        throw std::invalid_argument(Utility::stringFormat("not supported security plugin <%s>", Configuration::instance()->getJwt()->m_jwtInterface.c_str()));
+        throw std::invalid_argument(Utility::stringFormat("not supported security plugin <%s>", interface.c_str()));
     }
 }
 
@@ -54,13 +53,13 @@ bool Security::encryptKey()
     return m_securityConfig->m_encryptKey;
 }
 
-void Security::save()
+void Security::save(const std::string &interface)
 {
     const static char fname[] = "Security::save() ";
 
     // distinguish security.json and ldap.json
     std::string securityFile = APPMESH_SECURITY_JSON_FILE;
-    if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_ldap)
+    if (interface == JSON_KEY_USER_key_method_ldap)
     {
         securityFile = APPMESH_SECURITY_LDAP_JSON_FILE;
     }

@@ -4,7 +4,7 @@
 #include <mutex>
 #include <string>
 
-#include "../../TimerHandler.h"
+#include "../../../common/TimerHandler.h"
 #include "../Security.h"
 
 #define NOT_APPLICABLE_THROW                                                   \
@@ -32,7 +32,7 @@ public:
     virtual web::json::value AsJson() const override;
     static std::shared_ptr<LdapImpl> FromJson(const web::json::value &obj) noexcept(false);
 
-    static void init();
+    static void init(const std::string &interface);
     void syncGroupUsers(int timerId = INVALID_TIMER_ID);
 
 public:

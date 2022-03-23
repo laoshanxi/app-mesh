@@ -8,6 +8,7 @@ on:
       - ".github/workflows/docker_build/build-ubuntu-20.yml"
       - "docker/Dockerfile.build_ubuntu20"
       - "autogen.sh"
+      - "go.*"
 
 env:
   # Use docker.io for Docker Hub if empty

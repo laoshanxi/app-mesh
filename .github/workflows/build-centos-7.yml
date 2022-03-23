@@ -8,6 +8,7 @@ on:
       - ".github/workflows/docker_build/build-centos-7.yml"
       - "docker/Dockerfile.build_centos7"
       - "autogen.sh"
+      - "go.*"
 
 env:
   # Use docker.io for Docker Hub if empty

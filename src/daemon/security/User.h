@@ -27,6 +27,8 @@ public:
 	void unlock();
 	void updateUser(std::shared_ptr<User> user);
 	void updateKey(const std::string &passwd);
+	const std::string generateMfaKey();
+	const std::string getMfaKey();
 
 	// get user info
 	bool locked() const;
@@ -60,6 +62,7 @@ private:
 	std::string m_group;
 	std::string m_metadata;
 	std::string m_execUser;
+	std::string m_mfaKey;
 	mutable std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
 };

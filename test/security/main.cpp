@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
+#include "../../src/daemon/security/Security.h"
 #include "../../src/daemon/security/ldapplugin/ldapcpp/cldap.h"
 #include "../catch.hpp"
 #include <ace/Init_ACE.h>
@@ -22,6 +23,12 @@
 
 TEST_CASE("ldapcpp Test", "[security]")
 {
+
+    SECTION("MFA")
+    {
+        User u("2fa");
+        std::cout << "MFA secret key: " << u.generateMfaKey() << std::endl;
+    }
 
     SECTION("password verification")
     {

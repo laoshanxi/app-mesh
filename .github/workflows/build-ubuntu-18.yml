@@ -8,6 +8,7 @@ on:
       - ".github/workflows/docker_build/build-ubuntu-18.yml"
       - "docker/Dockerfile.build_ubuntu18"
       - "autogen.sh"
+      - "go.*"
 
 env:
   # Use docker.io for Docker Hub if empty

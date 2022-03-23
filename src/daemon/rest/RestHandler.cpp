@@ -596,7 +596,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 	}
 
 	Security::instance()->changeUserPasswd(tokenUserName, newPasswd);
-	Security::instance()->save();
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << tokenUserName << "> changed password";
@@ -618,7 +618,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	}
 
 	Security::instance()->getUserInfo(pathUserName)->lock();
-	Security::instance()->save();
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
@@ -635,7 +635,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->getUserInfo(pathUserName)->unlock();
-	Security::instance()->save();
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
@@ -652,7 +652,7 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->addUser(pathUserName, message.extractJson());
-	Security::instance()->save();
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
@@ -669,7 +669,7 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->delUser(pathUserName);
-	Security::instance()->save();
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
@@ -685,6 +685,8 @@ void RestHandler::apiUsersView(const HttpRequest &message)
 	{
 		if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
 			user.second.erase(JSON_KEY_USER_key);
+		if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_mfa_key))
+			user.second.erase(JSON_KEY_USER_mfa_key);
 	}
 
 	message.reply(status_codes::OK, users);
@@ -707,7 +709,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 	auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->addRole(message.extractJson(), pathRoleName);
-	Security::instance()->save();
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
@@ -725,7 +727,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 	auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->delRole(pathRoleName);
-	Security::instance()->save();
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;

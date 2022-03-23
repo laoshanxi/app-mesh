@@ -1,9 +1,11 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/default.h>
+#include <liboath/oath.h>
 
 #include "../../common/Utility.h"
 #include "Security.h"
 #include "User.h"
+#include "randombytes.h"
 
 //////////////////////////////////////////////////////////////////////
 /// Users
@@ -135,6 +137,8 @@ web::json::value User::AsJson() const
 	result[JSON_KEY_USER_locked] = web::json::value::boolean(m_locked);
 	if (m_metadata.length())
 		result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
+	if (m_mfaKey.length())
+		result[JSON_KEY_USER_mfa_key] = web::json::value::string(m_mfaKey);
 	auto roles = web::json::value::array(m_roles.size());
 	int i = 0;
 	for (auto role : m_roles)
@@ -156,6 +160,7 @@ std::shared_ptr<User> User::FromJson(const std::string &userName, const web::jso
 		result->m_group = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_group);
 		result->m_execUser = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_exec_user);
 		result->m_metadata = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_metadata);
+		result->m_mfaKey = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_mfa_key);
 		result->m_locked = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_locked);
 		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
 		{
@@ -184,7 +189,8 @@ void User::updateUser(std::shared_ptr<User> user)
 	this->m_execUser = user->m_execUser;
 	this->m_group = user->m_group;
 	this->m_metadata = user->m_metadata;
-	//this->m_key = user->m_key;
+	// this->m_mfaKey = user->m_mfaKey;
+	// this->m_key = user->m_key;
 	this->m_locked = user->m_locked;
 	this->m_email = user->m_email;
 }
@@ -200,6 +206,26 @@ void User::updateKey(const std::string &passwd)
 	{
 		m_key = passwd;
 	}
+}
+
+const std::string User::generateMfaKey()
+{
+	// https://github.com/dsprenkels/randombytes
+	uint8_t buffer[64];
+	int ret = randombytes(&buffer[0], sizeof(buffer));
+	if (ret != 0)
+	{
+		throw std::runtime_error(Utility::stringFormat("error in randombytes: %s", std::strerror(errno)));
+	}
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_mfaKey = Utility::b64encode(&buffer[0], sizeof(buffer));
+	return m_mfaKey;
+}
+
+const std::string User::getMfaKey()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_mfaKey;
 }
 
 bool User::locked() const
@@ -237,9 +263,9 @@ const std::string User::encrypt(const std::string &message)
 	// https://github.com/shanet/Crypto-Example/blob/master/crypto_example.cpp
 
 	//#include <cryptopp/osrng.h>
-	//AutoSeededRandomPool rnd;
-	//Generate a random key
-	//rnd.GenerateBlock(key, key.size());
+	// AutoSeededRandomPool rnd;
+	// Generate a random key
+	// rnd.GenerateBlock(key, key.size());
 
 	using namespace CryptoPP;
 	// prepare Key & IV

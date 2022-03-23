@@ -9,9 +9,9 @@
 #include <cpprest/http_msg.h>
 #include <cpprest/json.h>
 
+#include "../../common/TimerHandler.h"
 #include "../Configuration.h"
 #include "../Label.h"
-#include "../TimerHandler.h"
 #include "ConsulEntity.h"
 
 /// <summary>

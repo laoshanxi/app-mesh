@@ -24,6 +24,10 @@ fi
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
 	RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
+	if [[ $RHEL_VER = "8" ]]; then
+		sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
+		sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*
+	fi
 	yum install -y epel-release
 	if [[ $RHEL_VER = "7" ]]; then
 		yum install -y https://repo.ius.io/ius-release-el7.rpm

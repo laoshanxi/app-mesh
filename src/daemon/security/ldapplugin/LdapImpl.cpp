@@ -1,7 +1,6 @@
 #include <ace/OS.h>
 
 #include "../../../common/Utility.h"
-#include "../../Configuration.h"
 #include "LdapGroup.h"
 #include "LdapImpl.h"
 #include "ldapcpp/cldap.h"
@@ -18,12 +17,12 @@ LdapImpl::~LdapImpl()
 {
 }
 
-void LdapImpl::init()
+void LdapImpl::init(const std::string &interface)
 {
     const static char fname[] = "LdapImpl::init() ";
     LOG_DBG << fname;
 
-    if (Configuration::instance()->getJwt()->m_jwtInterface == JSON_KEY_USER_key_method_ldap)
+    if (interface == JSON_KEY_USER_key_method_ldap)
     {
         const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_LDAP_JSON_FILE).string();
         const auto security = LdapImpl::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
@@ -33,7 +32,7 @@ void LdapImpl::init()
     }
     else
     {
-        throw std::invalid_argument(Utility::stringFormat("not supported security plugin <%s>", Configuration::instance()->getJwt()->m_jwtInterface.c_str()));
+        throw std::invalid_argument(Utility::stringFormat("not supported security plugin <%s>", interface.c_str()));
     }
 }
 
