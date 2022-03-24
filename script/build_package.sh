@@ -35,6 +35,7 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appmesh_arm.py ${PACKAGE_HOME}/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py ${PACKAGE_HOME}/bin/
 cp /usr/bin/cfssl ${PACKAGE_HOME}/ssl/
 cp /usr/bin/cfssljson ${PACKAGE_HOME}/ssl/
+cp /usr/bin/qrc ${PACKAGE_HOME}/bin/
 
 # upx ${CMAKE_CURRENT_BINARY_DIR}/home/bin/dockeragent
 chmod +x ${PACKAGE_HOME}/script/*.sh

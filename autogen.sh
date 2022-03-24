@@ -36,7 +36,7 @@ if [ -f "/usr/bin/yum" ]; then
 	else
 		yum install git -y
 	fi
-	yum install -y make gcc-c++ libtool openldap-devel
+	yum install -y make gcc-c++ libtool openldap-devel liboath-devel
 	yum install -y dos2unix wget which
 	yum install -y golang
 
@@ -62,7 +62,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	# sed -i s/security.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
-	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap2-dev
+	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap2-dev liboath-dev
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
@@ -197,6 +197,11 @@ cd $ROOTDIR
 if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
 	# cfssl have no arm64 binary, just use package instead
 	apt install -y golang-cfssl
+
+	# qrc
+	wget https://github.com/fumiyas/qrc/releases/download/v0.1.1/qrc_linux_arm
+	chmod +x qrc_linux_arm
+	mv qrc_linux_arm /usr/bin/qrc
 else
 	# SSL
 	# https://www.cnblogs.com/fanqisoft/p/10765038.html
@@ -213,6 +218,11 @@ else
 	upx cfssl-certinfo_linux-amd64
 	mv cfssl_linux-amd64 /usr/bin/cfssl
 	mv cfssljson_linux-amd64 /usr/bin/cfssljson
+
+	# qrc
+	wget https://github.com/fumiyas/qrc/releases/download/v0.1.1/qrc_linux_amd64
+	chmod +x qrc_linux_amd64
+	mv qrc_linux_amd64 /usr/bin/qrc
 fi
 
 # protocol buffer

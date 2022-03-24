@@ -9,7 +9,7 @@ on:
       - ".github/workflows/coverity_cpp_code_scan.yml"
 
 env:
-  APPMESH_VERSION: "2.0.1"
+  APPMESH_VERSION: "2.0.2"
 
 jobs:
   coverity-cpp-code-scan:

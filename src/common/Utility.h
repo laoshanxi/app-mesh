@@ -189,11 +189,6 @@ public:
 	// Base64
 	static std::string encode64(const std::string &val);
 	static std::string decode64(const std::string &val);
-	// Base 64 new
-	static const std::string b64encode(const void *data, const size_t &len);
-	static const std::string b64decode(const void *data, const size_t &len);
-	// static std::string b64encode(const std::string& str);
-	// static std::string b64decode(const std::string &str64);
 
 	// Read file to string
 	static std::string readFile(const std::string &path);
@@ -336,6 +331,7 @@ public:
 #define JSON_KEY_USER_metadata "metadata"
 #define JSON_KEY_USER_exec_user "exec_user"
 #define JSON_KEY_USER_mfa_key "mfa_key"
+#define JSON_KEY_USER_mfa_enabled "mfa_enabled"
 
 #define JSON_KEY_USER_key_method_local "json"
 #define JSON_KEY_USER_key_method_ldap "ldap"
@@ -357,6 +353,7 @@ public:
 #define HTTP_HEADER_JWT_expire_seconds "Expire-Seconds"
 #define HTTP_HEADER_JWT_username "Username"
 #define HTTP_HEADER_JWT_password "Password"
+#define HTTP_HEADER_JWT_totp "totp"
 #define HTTP_HEADER_JWT_new_password "New-Password"
 #define HTTP_HEADER_JWT_auth_permission "Auth-Permission"
 #define HTTP_HEADER_KEY_exit_code "Exit-Code"
