@@ -68,7 +68,7 @@ void Security::save(const std::string &interface)
     if (content.length())
     {
         const auto securityJsonFile = fs::path(Utility::getParentDir()) / securityFile;
-        const auto tmpFile = securityJsonFile / (std::string(".") + std::to_string(Utility::getThreadId()));
+        const auto tmpFile = fs::path(Utility::getParentDir()) / (securityFile + (std::string(".") + std::to_string(Utility::getThreadId())));
         std::ofstream ofs(tmpFile.string(), ios::trunc);
         if (ofs.is_open())
         {
@@ -102,7 +102,7 @@ web::json::value Security::AsJson() const
     return this->m_securityConfig->AsJson();
 }
 
-bool Security::verifyUserKey(const std::string &userName, const std::string &userKey, std::string &outUserGroup)
+bool Security::verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup)
 {
     auto key = userKey;
     if (m_securityConfig->m_encryptKey)
@@ -113,7 +113,7 @@ bool Security::verifyUserKey(const std::string &userName, const std::string &use
     if (user)
     {
         outUserGroup = user->getGroup();
-        return (user->getKey() == key) && !user->locked();
+        return (user->getKey() == key) && !user->locked() && user->validateMfaCode(totp);
     }
     throw std::invalid_argument(Utility::stringFormat("user %s not exist", userName.c_str()));
 }

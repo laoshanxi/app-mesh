@@ -49,6 +49,8 @@
             "group": "admin",
             "exec_user": "",
             "locked": false,
+            "mfa_enabled": true,
+            "mfa_key": "",
             "roles": [
                 "manage",
                 "view",

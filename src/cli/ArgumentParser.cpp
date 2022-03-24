@@ -180,6 +180,10 @@ int ArgumentParser::parse()
 	{
 		processUserChangePwd();
 	}
+	else if (cmd == "mfa")
+	{
+		processUserMfaView();
+	}
 	else if (cmd == "lock")
 	{
 		processUserLock();
@@ -254,6 +258,7 @@ void ArgumentParser::processLogon()
 	po::options_description desc("Log on to App Mesh:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
+		("totp,o", po::value<std::string>(), "time based one time password")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in 'seconds' or 'ISO 8601 durations'.")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
@@ -268,6 +273,16 @@ void ArgumentParser::processLogon()
 	else
 	{
 		m_username = m_commandLineVariables["user"].as<std::string>();
+	}
+
+	if (!m_commandLineVariables.count("totp"))
+	{
+		std::cout << "TOTP: ";
+		std::cin >> m_totp;
+	}
+	else
+	{
+		m_totp = m_commandLineVariables["totp"].as<std::string>();
 	}
 
 	if (!m_commandLineVariables.count("password"))
@@ -1482,6 +1497,37 @@ void ArgumentParser::processUserPwdEncrypt()
 	}
 }
 
+void ArgumentParser::processUserMfaView()
+{
+	po::options_description desc("View user MFA:", BOOST_DESC_WIDTH);
+	desc.add_options()
+		COMMON_OPTIONS;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	// TODO: move this to server for security consideration
+	std::string restPath = std::string("/appmesh/user/self");
+	http_response response = requestHttp(true, methods::GET, restPath);
+	auto users = response.extract_json().get();
+	auto jsonOj = users.as_object();
+	std::string userName;
+	std::string mfaSecret;
+	for (auto user : jsonOj)
+	{
+		userName = GET_STD_STRING(user.first);
+		mfaSecret = GET_JSON_STR_VALUE(user.second, JSON_KEY_USER_mfa_key);
+	}
+	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
+	auto totpUri = Utility::stringFormat(
+		"otpauth://totp/%s?secret=%s&issuer=%s",
+		userName.c_str(), mfaSecret.c_str(), "AppMesh");
+
+	std::string totpCmd = "/opt/appmesh/bin/qrc '";
+	totpCmd.append(totpUri);
+	totpCmd.append("'");
+	system(totpCmd.c_str());
+}
+
 void ArgumentParser::initRadomPassword()
 {
 	// only for root user generate password for admin user after installation
@@ -1605,7 +1651,7 @@ std::string ArgumentParser::getAuthenToken()
 	// 1. try to get from REST
 	if (m_username.length() && m_userpwd.length())
 	{
-		token = requestToken(m_username, m_userpwd);
+		token = requestToken(m_username, m_userpwd, m_totp);
 	}
 	else
 	{
@@ -1615,7 +1661,7 @@ std::string ArgumentParser::getAuthenToken()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY));
+			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp);
 		}
 	}
 	return token;
@@ -1636,7 +1682,7 @@ std::string ArgumentParser::getAuthenUser()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY));
+			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp);
 		}
 		auto decoded_token = jwt::decode(token);
 		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
@@ -1714,7 +1760,7 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	}
 }
 
-std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd)
+std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd, const std::string &totp)
 {
 	http_client_config config;
 	config.set_validate_certificates(false);
@@ -1724,6 +1770,7 @@ std::string ArgumentParser::requestToken(const std::string &user, const std::str
 	requestLogin.set_request_uri("/appmesh/login");
 	requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(user));
 	requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(passwd));
+	requestLogin.headers().add(HTTP_HEADER_JWT_totp, Utility::encode64(totp));
 	if (m_tokenTimeoutSeconds)
 		requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
 	http_response response = client.request(requestLogin).get();

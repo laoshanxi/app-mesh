@@ -5,7 +5,6 @@
 #include "../../common/Utility.h"
 #include "Security.h"
 #include "User.h"
-#include "randombytes.h"
 
 //////////////////////////////////////////////////////////////////////
 /// Users
@@ -117,7 +116,7 @@ void Users::delUser(const std::string &name)
 //////////////////////////////////////////////////////////////////////
 /// User
 //////////////////////////////////////////////////////////////////////
-User::User(const std::string &name) : m_locked(false), m_name(name)
+User::User(const std::string &name) : m_locked(false), m_enableMfa(false), m_name(name)
 {
 }
 
@@ -135,9 +134,9 @@ web::json::value User::AsJson() const
 	result[JSON_KEY_USER_group] = web::json::value::string(m_group);
 	result[JSON_KEY_USER_exec_user] = web::json::value::string(m_execUser);
 	result[JSON_KEY_USER_locked] = web::json::value::boolean(m_locked);
-	if (m_metadata.length())
+	if (!m_metadata.empty())
 		result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
-	if (m_mfaKey.length())
+	if (!m_mfaKey.empty())
 		result[JSON_KEY_USER_mfa_key] = web::json::value::string(m_mfaKey);
 	auto roles = web::json::value::array(m_roles.size());
 	int i = 0;
@@ -162,6 +161,7 @@ std::shared_ptr<User> User::FromJson(const std::string &userName, const web::jso
 		result->m_metadata = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_metadata);
 		result->m_mfaKey = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_mfa_key);
 		result->m_locked = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_locked);
+		result->m_enableMfa = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_mfa_enabled);
 		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
 		{
 			auto arr = obj.at(JSON_KEY_USER_roles).as_array();
@@ -192,6 +192,7 @@ void User::updateUser(std::shared_ptr<User> user)
 	// this->m_mfaKey = user->m_mfaKey;
 	// this->m_key = user->m_key;
 	this->m_locked = user->m_locked;
+	this->m_enableMfa = user->m_enableMfa;
 	this->m_email = user->m_email;
 }
 
@@ -210,22 +211,74 @@ void User::updateKey(const std::string &passwd)
 
 const std::string User::generateMfaKey()
 {
-	// https://github.com/dsprenkels/randombytes
-	uint8_t buffer[64];
-	int ret = randombytes(&buffer[0], sizeof(buffer));
-	if (ret != 0)
+	const static char fname[] = "User::generateMfaKey() ";
+	// generate a secret
+	// https://github.com/unxs0/unxsVZ/blob/master/tauthorizefunc.h#L108
+	// https://github.com/UndernetIRC/gnuworld/blob/master/mod.cservice/SETCommand.cc#L346
+	// https://github.com/alfieo/gnuworld/blob/master/mod.cservice/sqlUser.cc
+	char *secret = NULL;
+	char randomBuffer[32];
+	int fd = open("/dev/urandom", O_RDONLY);
+	if (fd < 0)
 	{
-		throw std::runtime_error(Utility::stringFormat("error in randombytes: %s", std::strerror(errno)));
+		throw std::runtime_error(Utility::stringFormat("Failed to open /dev/urandom: %s", std::strerror(errno)));
 	}
+	if (read(fd, randomBuffer, sizeof(randomBuffer)) != sizeof(randomBuffer))
+	{
+		close(fd);
+		throw std::runtime_error(Utility::stringFormat("Failed to read /dev/urandom: %s", std::strerror(errno)));
+	}
+	close(fd);
+
+	// oath_base32_encode(const char *in, size_t inlen, char **out, size_t *outlen);
+	auto res = oath_base32_encode(randomBuffer, sizeof(randomBuffer), &secret, NULL);
+	if (res != OATH_OK)
+	{
+		throw std::runtime_error(Utility::stringFormat("Failed to oath_base32_encode: %s", oath_strerror(res)));
+	}
+
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_mfaKey = Utility::b64encode(&buffer[0], sizeof(buffer));
+	m_mfaKey = secret;
+	delete secret;
+	constexpr int mfaKeyLen = 16;
+	if (m_mfaKey.length() > mfaKeyLen)
+	{
+		m_mfaKey = m_mfaKey.substr(0, mfaKeyLen);
+	}
+	LOG_INF << fname << "2FA secret generated for user: " << m_name;
 	return m_mfaKey;
 }
 
-const std::string User::getMfaKey()
+bool User::validateMfaCode(const std::string &totpCode)
 {
+	const static char fname[] = "User::validateMfaCode() ";
+
+	if (!m_enableMfa || m_mfaKey.empty())
+	{
+		LOG_DBG << fname << "MFA is not enabled for user: " << m_name << " or user have not registered 2fa";
+		return true;
+	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	return m_mfaKey;
+	char *key = NULL;
+	size_t keyLen = 0;
+	constexpr int totp_time_duration_seconds = 30;
+	// int oath_base32_decode(const char *in, size_t inlen, char **out, size_t *outlen);
+	int res = oath_base32_decode(m_mfaKey.c_str(), m_mfaKey.length(), &key, &keyLen);
+	if (res != OATH_OK)
+	{
+		delete key;
+		LOG_WAR << fname << "oath_base32_decode failed: " << oath_strerror(res);
+		throw std::runtime_error(Utility::stringFormat("Failed to oath_base32_decode: %s", oath_strerror(res)));
+	}
+	res = oath_totp_validate(key, keyLen, time(NULL), totp_time_duration_seconds, 0, 1, totpCode.c_str());
+	delete key;
+	if (res < 0)
+	{
+		LOG_WAR << fname << "invalid token <" << totpCode << ">:" << oath_strerror(res);
+		throw std::runtime_error(Utility::stringFormat("%s", oath_strerror(res)));
+	}
+	LOG_INF << fname << "2FA validate success for user: " << m_name;
+	return true;
 }
 
 bool User::locked() const
