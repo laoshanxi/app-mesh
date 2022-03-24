@@ -146,7 +146,7 @@ void LdapImpl::syncGroupUsers(int timerId)
     }
 }
 
-bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &userKey, std::string &outUserGroup)
+bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup)
 {
     const static char fname[] = "LdapImpl::verifyUserKey() ";
     LOG_DBG << fname;
@@ -164,6 +164,7 @@ bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &use
                 outUserGroup = group.second->m_groupName;
                 return true;
             }
+            // TODO: validate TOTP
         }
         throw std::invalid_argument("verify user password failed");
     }

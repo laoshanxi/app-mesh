@@ -24,7 +24,6 @@
         ],
         "shell": [
             "app-run-async",
-            "app-run-async-output",
             "app-run-sync"
         ],
         "view": [
@@ -49,6 +48,8 @@
             "group": "admin",
             "exec_user": "",
             "locked": false,
+            "mfa_enabled": true,
+            "mfa_key": "",
             "roles": [
                 "manage",
                 "view",

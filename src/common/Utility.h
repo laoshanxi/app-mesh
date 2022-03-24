@@ -109,6 +109,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 		}                                                 \
 	} while (false)
 
+#define GET_HTTP_HEADER(message, headerName) \
+	message.m_headers.count(headerName) > 0 ? message.m_headers.find(headerName)->second : utility::string_t()
 #define APPMESH_CONFIG_JSON_FILE "config.json"
 #define APPMESH_SECURITY_JSON_FILE "security.json"
 #define APPMESH_SECURITY_LDAP_JSON_FILE "ldap.json"
@@ -189,11 +191,6 @@ public:
 	// Base64
 	static std::string encode64(const std::string &val);
 	static std::string decode64(const std::string &val);
-	// Base 64 new
-	static const std::string b64encode(const void *data, const size_t &len);
-	static const std::string b64decode(const void *data, const size_t &len);
-	// static std::string b64encode(const std::string& str);
-	// static std::string b64decode(const std::string &str64);
 
 	// Read file to string
 	static std::string readFile(const std::string &path);
@@ -336,6 +333,7 @@ public:
 #define JSON_KEY_USER_metadata "metadata"
 #define JSON_KEY_USER_exec_user "exec_user"
 #define JSON_KEY_USER_mfa_key "mfa_key"
+#define JSON_KEY_USER_mfa_enabled "mfa_enabled"
 
 #define JSON_KEY_USER_key_method_local "json"
 #define JSON_KEY_USER_key_method_ldap "ldap"
@@ -357,6 +355,7 @@ public:
 #define HTTP_HEADER_JWT_expire_seconds "Expire-Seconds"
 #define HTTP_HEADER_JWT_username "Username"
 #define HTTP_HEADER_JWT_password "Password"
+#define HTTP_HEADER_JWT_totp "Totp"
 #define HTTP_HEADER_JWT_new_password "New-Password"
 #define HTTP_HEADER_JWT_auth_permission "Auth-Permission"
 #define HTTP_HEADER_KEY_exit_code "Exit-Code"
@@ -365,6 +364,7 @@ public:
 #define HTTP_HEADER_KEY_file_mode "File-Mode"
 #define HTTP_HEADER_KEY_file_user "File-User"
 #define HTTP_HEADER_KEY_file_group "File-Group"
+#define HTTP_BODY_KEY_MFA_URI "Mfa-Uri"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"
@@ -396,7 +396,6 @@ public:
 #define PERMISSION_KEY_label_view "label-view"
 #define PERMISSION_KEY_label_set "label-set"
 #define PERMISSION_KEY_label_delete "label-delete"
-#define PERMISSION_KEY_loglevel "log-level"
 #define PERMISSION_KEY_config_view "config-view"
 #define PERMISSION_KEY_config_set "config-set"
 #define PERMISSION_KEY_change_passwd "passwd-change"

@@ -23,6 +23,7 @@ Welcome to AppMesh's documentation!
    Loki.md
    PROMETHEUS.md
    Security.md
+   MFA.md
    USER_ROLE.md
    Coverity.md
 

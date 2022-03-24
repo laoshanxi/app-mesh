@@ -66,6 +66,7 @@ constexpr auto REST_PATH_SEC_USER_LOCK = R"(/appmesh/user/([^/\*]+)/lock)";
 constexpr auto REST_PATH_SEC_USER_UNLOCK = R"(/appmesh/user/([^/\*]+)/unlock)";
 constexpr auto REST_PATH_SEC_USER_ADD = R"(/appmesh/user/([^/\*]+))";
 constexpr auto REST_PATH_SEC_USER_DELETE = R"(/appmesh/user/([^/\*]+))";
+constexpr auto REST_PATH_SEC_USER_MFA = R"(/appmesh/user/([^/\*]+)/mfa)";
 constexpr auto REST_PATH_SEC_USER_VIEW_ALL = "/appmesh/users";
 constexpr auto REST_PATH_SEC_ROLE_VIEW_ALL = "/appmesh/roles";
 constexpr auto REST_PATH_SEC_ROLE_UPDATE = R"(/appmesh/role/([^/\*]+))";
@@ -126,6 +127,7 @@ RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpSer
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_UNLOCK, std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, REST_PATH_SEC_USER_ADD, std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_USER_DELETE, std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_MFA, std::bind(&RestHandler::apiUserActiveMFA, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_VIEW_ALL, std::bind(&RestHandler::apiUsersView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_ROLE_VIEW_ALL, std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE, std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
@@ -434,8 +436,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 				  resp.headers().add(HTTP_HEADER_KEY_file_user, std::get<1>(fileInfo));
 				  resp.headers().add(HTTP_HEADER_KEY_file_group, std::get<2>(fileInfo));
 				  message.reply(resp);
-				  fileStream.close();
-			  })
+				  fileStream.close(); })
 		.then([=](pplx::task<void> t)
 			  {
 				  try
@@ -447,8 +448,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 					  // opening the file (open_istream) failed.
 					  // Reply with an error.
 					  message.reply(status_codes::InternalError);
-				  }
-			  });
+				  } });
 }
 
 void RestHandler::apiFileUpload(const HttpRequest &message)
@@ -630,7 +630,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserUnlock() ";
 
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
-	permissionCheck(message, PERMISSION_KEY_lock_user);
+	permissionCheck(message, PERMISSION_KEY_unlock_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_UNLOCK);
 	auto tokenUserName = getJwtUserName(message);
 
@@ -674,6 +674,31 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
 	message.reply(status_codes::OK);
+}
+
+void RestHandler::apiUserActiveMFA(const HttpRequest &message)
+{
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
+	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_MFA);
+	auto tokenUserName = getJwtUserName(message);
+	if (pathUserName != tokenUserName)
+	{
+		// only allow user active and generate 2FA key for him self
+		throw std::invalid_argument("can only active 2FA for user self");
+	}
+
+	const auto user = Security::instance()->getUserInfo(pathUserName);
+	const auto mfaSecret = user->generateMfaKey();
+	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
+	const auto totpUri = Utility::stringFormat("otpauth://totp/%s?secret=%s&issuer=%s",
+											   pathUserName.c_str(), mfaSecret.c_str(), "AppMesh");
+
+	auto result = web::json::value();
+	result[HTTP_BODY_KEY_MFA_URI] = web::json::value(Utility::encode64(totpUri));
+	message.reply(status_codes::OK, result);
+
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
+	ConsulConnection::instance()->saveSecurity();
 }
 
 void RestHandler::apiUsersView(const HttpRequest &message)
@@ -785,10 +810,11 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserLogin() ";
 	if (message.m_headers.count(HTTP_HEADER_JWT_username) && message.m_headers.count(HTTP_HEADER_JWT_password))
 	{
-		std::string uname = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_username)->second));
-		std::string passwd = Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_password)->second));
+		std::string uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
+		std::string passwd = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_password));
+		std::string totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
 		std::string userGroup;
-		if (Configuration::instance()->getJwtEnabled() && !Security::instance()->verifyUserKey(uname, passwd, userGroup))
+		if (Configuration::instance()->getJwtEnabled() && !Security::instance()->verifyUserKey(uname, passwd, totp, userGroup))
 		{
 			message.reply(status_codes::Unauthorized, convertText2Json("Incorrect user password"));
 		}
@@ -825,11 +851,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 
 void RestHandler::apiUserAuth(const HttpRequest &message)
 {
-	std::string permission;
-	if (message.m_headers.count(HTTP_HEADER_JWT_auth_permission))
-	{
-		permission = message.m_headers.find(HTTP_HEADER_JWT_auth_permission)->second;
-	}
+	std::string permission = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_auth_permission);
 
 	if (!Configuration::instance()->getJwtEnabled())
 	{

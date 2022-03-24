@@ -67,6 +67,7 @@ protected:
 	void apiUserUnlock(const HttpRequest &message);
 	void apiUserAdd(const HttpRequest &message);
 	void apiUserDel(const HttpRequest &message);
+	void apiUserActiveMFA(const HttpRequest &message);
 	void apiUsersView(const HttpRequest &message);
 	void apiUserGroupsView(const HttpRequest &message);
 

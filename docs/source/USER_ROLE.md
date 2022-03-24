@@ -48,7 +48,6 @@ User and Role design for App Mesh
       ],
       "shell": [
         "app-run-async",
-        "app-run-async-output",
         "app-run-sync"
       ],
       "view": [

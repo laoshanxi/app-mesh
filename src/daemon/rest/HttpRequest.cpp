@@ -67,7 +67,7 @@ void HttpRequest::reply(http_response &response) const
 	else
 	{
 		addHeaders(response);
-		http_request::reply(response).wait();
+		http_request::reply(response);
 	}
 }
 
@@ -80,7 +80,7 @@ void HttpRequest::reply(http_response &response, const std::string &body_data) c
 	else
 	{
 		addHeaders(response);
-		http_request::reply(response).wait();
+		http_request::reply(response);
 	}
 }
 

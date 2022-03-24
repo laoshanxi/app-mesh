@@ -28,7 +28,7 @@ public:
 	void updateUser(std::shared_ptr<User> user);
 	void updateKey(const std::string &passwd);
 	const std::string generateMfaKey();
-	const std::string getMfaKey();
+	bool validateMfaCode(const std::string &totpCode);
 
 	// get user info
 	bool locked() const;
@@ -57,6 +57,7 @@ public:
 private:
 	std::string m_key;
 	bool m_locked;
+	bool m_enableMfa;
 	std::string m_name;
 	std::string m_email;
 	std::string m_group;

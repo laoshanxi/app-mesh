@@ -87,15 +87,14 @@ void RestChildObject::sendRequest2Server(const HttpRequest &message)
 
     const auto timerId = this->registerTimer(1000L * 100, 0, std::bind(&RestChildObject::onResponseTimeout, this, std::placeholders::_1), fname);
 
-    std::lock_guard<std::recursive_mutex> guard(m_mutex);
+    std::lock_guard<std::recursive_mutex> guard(m_socketMutex);
     if (m_socketStream.get_handle() != ACE_INVALID_HANDLE)
     {
         const auto sendSize = (size_t)m_socketStream.send_n((void *)buffer.get(), length);
         if (sendSize == length)
         {
-            m_clientRequests.insert(std::pair<std::string, HttpRequest>(message.m_uuid, HttpRequest(message)));
-            // set a timer to force reply in case of no resp from server.
-            m_clientRequestsTimer.insert(std::pair<std::string, int>(message.m_uuid, timerId));
+            m_clientRequests.bind(message.m_uuid, std::make_shared<HttpRequest>(message));
+            m_clientRequestsTimer.bind(message.m_uuid, timerId); // set a timer to force reply in case of no resp from server.
             LOG_DBG << fname << "Cache message: " << message.m_uuid << " header len: " << 8 << " total len: " << length << " sent len:" << sendSize;
         }
         else
@@ -115,10 +114,9 @@ void RestChildObject::replyResponse(const appmesh::Response &response)
 
     int timerId = INVALID_TIMER_ID;
     {
-        std::lock_guard<std::recursive_mutex> guard(m_mutex);
-        if (m_clientRequests.count(response.uuid()))
+        std::shared_ptr<HttpRequest> msg;
+        if (m_clientRequests.find(response.uuid(), msg) == 0 && msg != nullptr)
         {
-            auto &msg = m_clientRequests.find(response.uuid())->second;
             web::http::http_response resp(response.http_status());
             resp.set_status_code(response.http_status());
             if (response.http_body_msg_type() == CONTENT_TYPE_APPLICATION_JSON && response.http_body().length())
@@ -144,7 +142,7 @@ void RestChildObject::replyResponse(const appmesh::Response &response)
 
             try
             {
-                msg.reply(resp);
+                msg->reply(resp);
             }
             catch (const std::exception &e)
             {
@@ -155,16 +153,11 @@ void RestChildObject::replyResponse(const appmesh::Response &response)
                 LOG_ERR << fname << "reply to client failed";
             }
 
-            m_clientRequests.erase(response.uuid());
-            // clean timer map
-            const auto iter = m_clientRequestsTimer.find(response.uuid());
-            if (iter != m_clientRequestsTimer.end())
-            {
-                timerId = iter->second;
-                m_clientRequestsTimer.erase(iter);
-            }
+            m_clientRequests.unbind(response.uuid());
+            m_clientRequestsTimer.rebind(response.uuid(), INVALID_TIMER_ID, timerId);
+            m_clientRequestsTimer.unbind(response.uuid()); // clean timer map
 
-            LOG_DBG << fname << "reply message success: " << response.uuid() << " left pending request size: " << m_clientRequests.size() << " request timer map size: " << m_clientRequestsTimer.size();
+            LOG_DBG << fname << "reply message success: " << response.uuid() << " left pending request size: " << m_clientRequests.current_size() << " request timer map size: " << m_clientRequestsTimer.current_size();
         }
     }
     this->cancelTimer(timerId);
@@ -174,28 +167,26 @@ void RestChildObject::onResponseTimeout(int timerId)
 {
     const static char fname[] = "RestChildObject::onResponseTimeout() ";
 
-    std::lock_guard<std::recursive_mutex> guard(m_mutex);
-
-    auto iter = std::find_if(
-        m_clientRequestsTimer.begin(),
-        m_clientRequestsTimer.end(),
-        [timerId](const std::map<std::string, int>::value_type &pair)
-        {
-            return timerId == pair.second;
-        });
-    if (iter != m_clientRequestsTimer.end())
+    std::string uuid;
+    for (auto iter = m_clientRequestsTimer.begin(); iter != m_clientRequestsTimer.end(); iter++)
     {
-        const auto &uuid = iter->first;
-        const auto requestIter = m_clientRequests.find(uuid);
-        if (requestIter != m_clientRequests.end())
+        if (timerId == (*iter).int_id_)
         {
-            const auto &request = requestIter->second;
-            LOG_ERR << fname << "timeout for request: " << uuid << " URI: " << request.m_relative_uri;
-            request.reply(web::http::status_codes::RequestTimeout);
-            m_clientRequests.erase(uuid);
+            uuid = (*iter).ext_id_;
+        }
+    }
+
+    if (!uuid.empty())
+    {
+        std::shared_ptr<HttpRequest> request;
+        if (m_clientRequests.find(uuid, request) == 0 && request != nullptr)
+        {
+            LOG_ERR << fname << "timeout for request: " << uuid << " URI: " << request->m_relative_uri;
+            request->reply(web::http::status_codes::RequestTimeout);
+            m_clientRequests.unbind(uuid);
 
             ACE_OS::_exit(-1);
         }
-        m_clientRequestsTimer.erase(iter);
+        m_clientRequestsTimer.unbind(uuid);
     }
 }

@@ -31,6 +31,7 @@ private:
 	void processLogon();
 	void processLogoff();
 	void processLoginfo();
+	std::string getLoginUser();
 
 	void processAppAdd();
 	void processAppDel();
@@ -54,6 +55,7 @@ private:
 	void processUserChangePwd();
 	void processUserLock();
 	void processUserPwdEncrypt();
+	void processUserMfaActive();
 	void initRadomPassword();
 
 public:
@@ -67,7 +69,7 @@ private:
 	std::string getAuthenUser();
 	std::string readAuthToken();
 	void persistAuthToken(const std::string &hostName, const std::string &token);
-	std::string requestToken(const std::string &user, const std::string &passwd);
+	std::string requestToken(const std::string &user, const std::string &passwd, const std::string &totp);
 
 private:
 	bool isAppExist(const std::string &appName);
@@ -92,5 +94,6 @@ private:
 	std::string m_url;
 	std::string m_username;
 	std::string m_userpwd;
+	std::string m_totp;
 	std::unique_ptr<ACE_Sig_Action> m_sigAction;
 };

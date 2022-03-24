@@ -20,7 +20,7 @@ env:
   REGISTRY: docker.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: laoshanxi/appmesh
-  APPMESH_VERSION: "2.0.1"
+  APPMESH_VERSION: "2.0.2"
 
 jobs:
   build-and-push-image:

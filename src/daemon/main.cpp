@@ -82,10 +82,10 @@ int main(int argc, char *argv[])
 
 		// init REST thread pool for [child REST server] and [parent REST client]
 		auto threadNum = Configuration::instance()->getThreadPoolSize();
-		if (config->tcpRestProcessEnabled())
+		if (thisIsRestProcess)
 		{
-			// TCP server has its own thread pool, no need too much for cpprestsdk
-			threadNum = Configuration::instance()->getThreadPoolSize() / 2;
+			// keep at least 10 REST thread
+			threadNum = std::max((size_t)10, threadNum);
 		}
 		Utility::initCpprestThreadPool(threadNum);
 

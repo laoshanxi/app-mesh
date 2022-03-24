@@ -11,7 +11,7 @@ on:
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: docker.io
-  APPMESH_VERSION: "2.0.1"
+  APPMESH_VERSION: "2.0.2"
 
 jobs:
   build-and-push-image:
@@ -76,15 +76,7 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. API: get cloud application output from master node" >> CHANGELOG.txt
-          echo "2. \`appc\` cache local token in json file" >> CHANGELOG.txt
-          echo "3. Generate password for \`admin\` after installation" >> CHANGELOG.txt
-          echo "4. CLI return app exit code" >> CHANGELOG.txt
-          echo "5. HTTP head method" >> CHANGELOG.txt
-          echo "6. Add config: DisableExecUser" >> CHANGELOG.txt
-          echo "7. Support specify daemon exec user" >> CHANGELOG.txt
-          echo "8. SSL: VerifyPeer" >> CHANGELOG.txt
-          echo "9. pstree text output for application" >> CHANGELOG.txt
+          echo "1. Multi factor authentication" >> CHANGELOG.txt
 
       # publish Github release
       # https://github.com/softprops/action-gh-release
@@ -92,7 +84,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           body_path: CHANGELOG.txt
-          name: "Cloud feature enhancement"
+          name: "Security enhance"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: true
           # note you'll typically need to create a personal access token

@@ -534,6 +534,25 @@ class AppMeshClient:
         )
         return resp.status_code == HTTPStatus.OK
 
+    def active_user_mfa(self, user_name) -> bool:
+        """
+        Active 2FA for a user and return MFA URI with JSON body
+
+        Parameters
+        ----------
+            user_name : str
+
+        Returns
+        -------
+            Success : bool
+            Message : JSON
+        """
+        resp = self.__request_http(
+            method=AppMeshClient.Method.POST,
+            path="/appmesh/user/{0}/mfa".format(user_name),
+        )
+        return resp.status_code == HTTPStatus.OK
+
     def get_users(self):
         """
         Get all users

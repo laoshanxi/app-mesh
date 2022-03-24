@@ -180,6 +180,10 @@ int ArgumentParser::parse()
 	{
 		processUserChangePwd();
 	}
+	else if (cmd == "mfa")
+	{
+		processUserMfaActive();
+	}
 	else if (cmd == "lock")
 	{
 		processUserLock();
@@ -254,6 +258,7 @@ void ArgumentParser::processLogon()
 	po::options_description desc("Log on to App Mesh:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
+		("totp,o", po::value<std::string>(), "time based one time password")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in 'seconds' or 'ISO 8601 durations'.")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
@@ -268,6 +273,16 @@ void ArgumentParser::processLogon()
 	else
 	{
 		m_username = m_commandLineVariables["user"].as<std::string>();
+	}
+
+	if (!m_commandLineVariables.count("totp"))
+	{
+		std::cout << "TOTP(enter any char to skip when 2FA not activated): ";
+		std::cin >> m_totp;
+	}
+	else
+	{
+		m_totp = m_commandLineVariables["totp"].as<std::string>();
 	}
 
 	if (!m_commandLineVariables.count("password"))
@@ -319,6 +334,12 @@ void ArgumentParser::processLoginfo()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
+	std::cout << getLoginUser() << std::endl;
+}
+
+std::string ArgumentParser::getLoginUser()
+{
+	std::string userName;
 	auto token = getAuthenToken();
 	if (token.length())
 	{
@@ -326,10 +347,10 @@ void ArgumentParser::processLoginfo()
 		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
 		{
 			// get user info
-			auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
-			std::cout << userName << std::endl;
+			userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
 		}
 	}
+	return userName;
 }
 
 // appName is null means this is a normal application (not a shell application)
@@ -1482,6 +1503,37 @@ void ArgumentParser::processUserPwdEncrypt()
 	}
 }
 
+void ArgumentParser::processUserMfaActive()
+{
+	po::options_description desc("Active MFA:", BOOST_DESC_WIDTH);
+	desc.add_options()
+		COMMON_OPTIONS;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	std::string userName = getLoginUser();
+	if (m_commandLineVariables.count("user"))
+	{
+		userName = m_commandLineVariables["user"].as<std::string>();
+	}
+	if (userName.empty())
+	{
+		std::cout << "No user name specified" << std::endl;
+		return;
+	}
+
+	if (this->confirmInput(Utility::stringFormat("Do you want active 2FA for <%s>: ", userName.c_str()).c_str()))
+	{
+		std::string restPath = std::string("/appmesh/user/").append(userName).append("/mfa");
+		http_response response = requestHttp(true, methods::POST, restPath);
+		auto result = response.extract_json().get();
+		auto totpUri = Utility::decode64(GET_JSON_STR_VALUE(result, HTTP_BODY_KEY_MFA_URI));
+
+		const auto totpCmd = std::string("/opt/appmesh/bin/qrc '").append(totpUri).append("'");
+		system(totpCmd.c_str());
+	}
+}
+
 void ArgumentParser::initRadomPassword()
 {
 	// only for root user generate password for admin user after installation
@@ -1605,7 +1657,7 @@ std::string ArgumentParser::getAuthenToken()
 	// 1. try to get from REST
 	if (m_username.length() && m_userpwd.length())
 	{
-		token = requestToken(m_username, m_userpwd);
+		token = requestToken(m_username, m_userpwd, m_totp);
 	}
 	else
 	{
@@ -1615,7 +1667,7 @@ std::string ArgumentParser::getAuthenToken()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY));
+			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp);
 		}
 	}
 	return token;
@@ -1636,7 +1688,7 @@ std::string ArgumentParser::getAuthenUser()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY));
+			token = requestToken(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp);
 		}
 		auto decoded_token = jwt::decode(token);
 		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
@@ -1714,7 +1766,7 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	}
 }
 
-std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd)
+std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd, const std::string &totp)
 {
 	http_client_config config;
 	config.set_validate_certificates(false);
@@ -1724,6 +1776,7 @@ std::string ArgumentParser::requestToken(const std::string &user, const std::str
 	requestLogin.set_request_uri("/appmesh/login");
 	requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(user));
 	requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(passwd));
+	requestLogin.headers().add(HTTP_HEADER_JWT_totp, Utility::encode64(totp));
 	if (m_tokenTimeoutSeconds)
 		requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
 	http_response response = client.request(requestLogin).get();

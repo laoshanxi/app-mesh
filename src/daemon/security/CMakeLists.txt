@@ -17,4 +17,5 @@ target_link_libraries(security
   PRIVATE
     cryptopp
     ldapplugin
+    oath
 )

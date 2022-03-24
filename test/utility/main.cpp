@@ -3,7 +3,12 @@
 #include "../../src/common/Utility.h"
 #include "../catch.hpp"
 #include <ace/Init_ACE.h>
+#include <ace/Map_Manager.h>
+#include <ace/Message_Block.h>
 #include <ace/OS.h>
+#include <ace/Recursive_Thread_Mutex.h>
+#include <ace/SOCK_Connector.h>
+#include <ace/SOCK_Stream.h>
 #include <boost/algorithm/string_regex.hpp>
 #include <chrono>
 #include <cpprest/json.h>
@@ -160,7 +165,7 @@ TEST_CASE("cpprestsdk", "[Utility]")
 TEST_CASE("boost_regex", "[boost_regex]")
 {
     constexpr auto REST_PATH_CLOUD_APP_OUT_VIEW = R"(/appmesh/cloud/app/([^/\*]+)/output/([^/\*]+))";
-    //constexpr auto REST_PATH_CLOUD_APP_ADD = R"(/appmesh/cloud/app/([^/\*]+))";
+    // constexpr auto REST_PATH_CLOUD_APP_ADD = R"(/appmesh/cloud/app/([^/\*]+))";
 
     boost::regex expression(REST_PATH_CLOUD_APP_OUT_VIEW);
     boost::smatch what;
@@ -176,4 +181,14 @@ TEST_CASE("boost_regex", "[boost_regex]")
             }
         }
     }
+}
+
+TEST_CASE("ACE_Map_Manager", "[ACE]")
+{
+    ACE_Map_Manager<std::string, int, ACE_Recursive_Thread_Mutex> aceMap;
+    aceMap.bind("123", 123);
+    REQUIRE(aceMap.current_size() == 1);
+    REQUIRE(aceMap.unbind("321") != 0);
+    REQUIRE(aceMap.unbind("123") == 0);
+    REQUIRE(aceMap.current_size() == 0);
 }

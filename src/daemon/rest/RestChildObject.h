@@ -5,7 +5,9 @@
 #include <mutex>
 #include <string>
 
+#include <ace/Map_Manager.h>
 #include <ace/Message_Block.h>
+#include <ace/Recursive_Thread_Mutex.h>
 #include <ace/SOCK_Connector.h>
 #include <ace/SOCK_Stream.h>
 
@@ -49,9 +51,9 @@ public:
 private:
     ACE_SOCK_Stream m_socketStream;
     // key: message uuid; value: message
-    std::map<std::string, HttpRequest> m_clientRequests;
+    ACE_Map_Manager<std::string, std::shared_ptr<HttpRequest>, ACE_Recursive_Thread_Mutex> m_clientRequests;
     // key: message uuid; value: timer id
-    std::map<std::string, int> m_clientRequestsTimer;
-    mutable std::recursive_mutex m_mutex;
+    ACE_Map_Manager<std::string, int, ACE_Recursive_Thread_Mutex> m_clientRequestsTimer;
+    mutable std::recursive_mutex m_socketMutex;
     static std::shared_ptr<RestChildObject> m_instance;
 };
