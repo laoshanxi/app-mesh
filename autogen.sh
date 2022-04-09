@@ -2,12 +2,17 @@
 ################################################################################
 ## This script is used to install all 3rd-party dependency libraries
 ################################################################################
-set -x
+set +x
 set -e
-MACHINE_TYPE="$(uname -m)"
-ARM="arm"
-AARC="aarc"
 WGWT_A="wget --continue --quiet --backups=1 --tries=30 --no-check-certificate"
+# https://stackoverflow.com/questions/48678152/how-to-detect-386-amd64-arm-or-arm64-os-architecture-via-shell-bash
+architecture=""
+case $(uname -m) in
+    i386)   architecture="386" ;;
+    i686)   architecture="386" ;;
+    x86_64) architecture="amd64" ;;
+    arm)    dpkg --print-architecture | grep -q "arm64" && architecture="arm64" || architecture="arm" ;;
+esac
 
 SHELL_FOLDER=$(dirname $(readlink -f "$0"))
 export ROOTDIR=${SHELL_FOLDER}/dep
@@ -38,7 +43,6 @@ if [ -f "/usr/bin/yum" ]; then
 	fi
 	yum install -y make gcc-c++ libtool openldap-devel liboath-devel
 	yum install -y dos2unix wget which
-	yum install -y golang
 
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -51,8 +55,8 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y rpm-build
 	# reduce binary size
 	# https://stackoverflow.com/questions/15996699/what-modifications-will-lead-to-size-reduction-of-binary-size-in-c-code
-	yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/ucl-1.03-2.el7.rf.x86_64.rpm
-	yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/upx-3.91-1.el7.rf.x86_64.rpm
+	# yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/ucl-1.03-2.el7.rf.x86_64.rpm
+	# yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/upx-3.91-1.el7.rf.x86_64.rpm
 	# other platform package download
 	# https://centos.pkgs.org/7/repoforge-x86_64/upx-3.91-1.el7.rf.x86_64.rpm.html
 elif [ -f "/usr/bin/apt" ]; then
@@ -67,24 +71,29 @@ elif [ -f "/usr/bin/apt" ]; then
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 	# reduce binary size
-	apt install -y upx-ucl
 	apt-get update && apt-get install -y lsb-release
-	if [ "$(lsb_release -r --short)" \< "19.04" ]; then
-		GO_VER=1.16.13
-		$WGWT_A https://go.dev/dl/go${GO_VER}.linux-amd64.tar.gz
-		rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-amd64.tar.gz
-		ln -s /usr/local/go/bin/go /usr/bin/go
-	else
-		apt install -y golang
-	fi
-	go version
-
 	# https://gemfury.com/help/could-not-verify-ssl-certificate/
 	apt install -y ca-certificates
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 fi
 
+# apt install -y upx-ucl
+UPX_ARCH=$architecture
+UPX_VER=3.96 
+$WGWT_A https://github.com/upx/upx/releases/download/v${UPX_VER}/upx-${UPX_VER}-amd64_linux.tar.xz
+tar xf upx-${UPX_VER}-amd64_linux.tar.xz
+mv upx-${UPX_VER}-amd64_linux/upx /usr/bin/
+
+
+# yum install -y golang
+# apt install -y golang
+GO_ARCH=$architecture
+GO_VER=1.17
+$WGWT_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
+go version
 # go env -w GOPROXY=https://goproxy.io,direct
 # go env -w GO111MODULE=on
 export GO111MODULE=on
@@ -148,7 +157,7 @@ cd $ROOTDIR
 
 # build log4cpp:
 # https://my.oschina.net/u/1983790/blog/1587568
-if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
+if [[ "$architecture" = "arm64" ]]; then
 	# arm64 will failed with log4cpp build, use package directly
 	apt install -y liblog4cpp5-dev
 else
@@ -184,52 +193,47 @@ if [ true ]; then
 fi
 cd $ROOTDIR
 
-# cryptopp: AES encrypt
-$WGWT_A https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_3_0.zip
-unzip -o CRYPTOPP_8_3_0.zip
+# cryptopp: AES encrypt https://www.cryptopp.com/
+mkdir -p cryptopp
+cd cryptopp/
+$WGWT_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_6_0/cryptopp860.zip
+unzip -o cryptopp860.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
-cd cryptopp-CRYPTOPP_8_3_0/
 make -j6
 make install
-cd $ROOTDIR
 
+
+cd $ROOTDIR
 # cfssl: generate SSL certification file
-if [ -z "${MACHINE_TYPE##*$ARM*}" -o -z "${MACHINE_TYPE##*$AARC*}" ]; then
+if [[ "$architecture" = "arm64" ]]; then
 	# cfssl have no arm64 binary, just use package instead
 	apt install -y golang-cfssl
 
 	# qrc
-	wget https://github.com/fumiyas/qrc/releases/download/v0.1.1/qrc_linux_arm
-	chmod +x qrc_linux_arm
-	mv qrc_linux_arm /usr/bin/qrc
+	$WGWT_A --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_arm64
+	chmod +x qrc && upx qrc && mv qrc /usr/bin/
 else
 	# SSL
 	# https://www.cnblogs.com/fanqisoft/p/10765038.html
 	# https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
-	cd $ROOTDIR
-	$WGWT_A https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
-	chmod +x cfssl_linux-amd64
-	upx cfssl_linux-amd64
-	$WGWT_A https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
-	chmod +x cfssljson_linux-amd64
-	upx cfssljson_linux-amd64
-	$WGWT_A https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
-	chmod +x cfssl-certinfo_linux-amd64
-	upx cfssl-certinfo_linux-amd64
-	mv cfssl_linux-amd64 /usr/bin/cfssl
-	mv cfssljson_linux-amd64 /usr/bin/cfssljson
+	CFSSL_VER=1.6.1
+	$WGWT_A --output-document=cfssl https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VER}/cfssl_${CFSSL_VER}_linux_amd64
+	chmod +x cfssl && upx cfssl && mv cfssl /usr/bin/
+	$WGWT_A --output-document=cfssljson https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VER}/cfssljson_${CFSSL_VER}_linux_amd64
+	chmod +x cfssljson && upx cfssljson && mv cfssljson /usr/bin/
+	$WGWT_A --output-document=cfssl-certinfo https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VER}/cfssl-certinfo_${CFSSL_VER}_linux_amd64
+	chmod +x cfssl-certinfo && upx cfssl-certinfo
 
 	# qrc
-	wget https://github.com/fumiyas/qrc/releases/download/v0.1.1/qrc_linux_amd64
-	chmod +x qrc_linux_amd64
-	mv qrc_linux_amd64 /usr/bin/qrc
+	$WGWT_A --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_amd64
+	chmod +x qrc && upx qrc && mv qrc /usr/bin/
 fi
 
+cd $ROOTDIR
 # protocol buffer
 PROTOCOL_BUFFER_VER=3.19.3
 # https://developers.google.com/protocol-buffers
 if [ true ]; then
-	cd $ROOTDIR
 	# $WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip
 	# unzip protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip -d /usr/local/
 	$WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protobuf-cpp-${PROTOCOL_BUFFER_VER}.zip

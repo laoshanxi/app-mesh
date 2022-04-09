@@ -24,7 +24,7 @@ There are 3 steps for the whole TOTP authentication:
 1. When user logon, the authenticator will compute a 6 digital code, the code is changed every 30s (with the Truncate algorithm by the app, so the important is the mobile device should sync time with server). The code is the one time password used to validate for the server.
 
 
-<img src="https://davidwalsh.name/demo/2fa-google-auth.png" width="300" height="504" align="middle" />
+<img src="https://davidwalsh.name/demo/2fa-google-auth.png" width="260" height="400" align="middle" />
 
 ## 2FA in AppMesh
 User could active 2FA for itself, the registration will show a QR code for add the user account to the authenticator app. the administrator can also force enable 2FA for a user.

@@ -7,6 +7,10 @@ on:
       - "src/**"
       - "script/**"
       - ".github/workflows/publish-github-release.yml"
+  workflow_run:
+    workflows: ["build ubuntu20 image for build appmesh"]
+    types:
+      - completed
 
 env:
   # Use docker.io for Docker Hub if empty
