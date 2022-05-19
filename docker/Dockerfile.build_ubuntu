@@ -1,0 +1,7 @@
+FROM ubuntu:latest
+
+COPY autogen.sh.apt.sh /opt/autogen.sh
+
+USER root
+
+RUN sh /opt/autogen.sh && rm -rf /opt/* && apt-get clean

@@ -85,7 +85,7 @@ func monitorParentExit() {
 	}
 }
 
-func listenHttp() {
+func listenDockerAgent() {
 	if err := fasthttp.ListenAndServe(localListenAddr, reverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp server: %s", err)
 	}
@@ -111,7 +111,7 @@ func loadServerCertificates(pem string, key string) tls.Certificate {
 	return cert
 }
 
-func listenHttps() {
+func listenDockerAgentTls() {
 	// https://github.com/valyala/fasthttp/blob/master/examples/letsencrypt/letsencryptserver.go
 	// https://github.com/valyala/fasthttp/issues/804
 	// https://studygolang.com/articles/9329
@@ -169,9 +169,9 @@ func main() {
 
 	// start listen
 	if enableTLS {
-		listenHttps()
+		listenDockerAgentTls()
 	} else {
-		listenHttp()
+		listenDockerAgent()
 	}
 
 	log.Fatalln("Process exiting")

@@ -20,11 +20,27 @@ export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 gem install fpm
 
-# golang
+# Golang
 apt install -y golang
+# Golang third party library
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp@v1.34.0
+go get -v github.com/valyala/fasthttp@v1.37.0
+# Golang tools for VSCode
+go get -v github.com/cweill/gotests/gotests
+go get -v github.com/fatih/gomodifytags
+go get -v github.com/josharian/impl
+go get -v github.com/haya14busa/goplay/cmd/goplay
+go get -v github.com/go-delve/delve/cmd/dlv
+go get -v honnef.co/go/tools/cmd/staticcheck
+go get -v golang.org/x/tools/gopls
+go install -v github.com/cweill/gotests/gotests
+go install -v github.com/fatih/gomodifytags
+go install -v github.com/josharian/impl
+go install -v github.com/haya14busa/goplay/cmd/goplay
+go install -v github.com/go-delve/delve/cmd/dlv
+go install -v honnef.co/go/tools/cmd/staticcheck
+go install -v golang.org/x/tools/gopls
 
 # cpplint tools
 apt install -y clang
