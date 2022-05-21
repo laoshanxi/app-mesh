@@ -262,9 +262,9 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
 				 [this, &user, returnUnPersistApp](std::shared_ptr<Application> app)
 				 {
-					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&					// access permission check
-							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) &&							// status filter
-							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_DOCKER_PROXY_APP_NAME)); // not expose rest process
+					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&			 // access permission check
+							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) &&					 // status filter
+							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_AGENT_APP_NAME)); // not expose rest process
 				 });
 
 	auto result = web::json::value::array(apps.size());
@@ -779,11 +779,11 @@ bool Configuration::isAppExist(const std::string &appName)
 					   { return app->getName() == appName; });
 }
 
-const web::json::value Configuration::getDockerProxyAppJson() const
+const web::json::value Configuration::getAgentAppJson() const
 {
 	web::json::value restApp;
-	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_DOCKER_PROXY_APP_NAME);
-	restApp[JSON_KEY_APP_command] = web::json::value::string(Utility::getSelfDir() + "/dockeragent -url " + this->getDockerProxyAddress());
+	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_AGENT_APP_NAME);
+	restApp[JSON_KEY_APP_command] = web::json::value::string(Utility::getSelfDir() + "/agent -url " + this->getDockerProxyAddress());
 	restApp[JSON_KEY_APP_description] = web::json::value::string("Docker Engine agent with X.509 authentication");
 	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
 	restApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_ADMIN_NAME);
@@ -817,7 +817,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	}
 	if (!Utility::isFileExist("/var/run/docker.sock"))
 	{
-		LOG_INF << fname << "Docker not installed or started, will not start dockeragent.";
+		LOG_INF << fname << "Docker not installed or started, will not start agent.";
 		rest->m_dockerProxyListenAddr.clear();
 	}
 	// SSL

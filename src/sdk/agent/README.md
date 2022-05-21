@@ -20,10 +20,10 @@ make test
 
 dockeragent.go implement a proxy to pass 127.0.0.1:6058 to unix:///var/run/docker.sock
 ```
-$ ./dockeragent -h
-Usage of ./dockeragent:
-  -socket string
+$ ./agent -h
+Usage of ./agent:
+  -docker_socket string
         Docker unix domain socket file (default "/var/run/docker.sock")
-  -url string
+  -docker_agent_url string
         The host URL used to listen (default "127.0.0.1:6058")
 ```

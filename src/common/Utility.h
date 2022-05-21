@@ -215,7 +215,7 @@ public:
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
 #define SEPARATE_REST_APP_NAME "apprest"
-#define SEPARATE_DOCKER_PROXY_APP_NAME "dockeragent"
+#define SEPARATE_AGENT_APP_NAME "agent"
 #define SEPARATE_PYTHON_EXEC_APP_NAME "pyrun"
 #define REST_ROOT_TEXT_MESSAGE "App Mesh"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"

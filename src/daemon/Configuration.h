@@ -117,7 +117,7 @@ public:
 	bool isAppExist(const std::string &appName);
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
-	const web::json::value getDockerProxyAppJson() const;
+	const web::json::value getAgentAppJson() const;
 
 	std::shared_ptr<Label> getLabel() { return m_label; }
 

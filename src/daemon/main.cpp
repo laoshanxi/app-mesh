@@ -126,16 +126,10 @@ int main(int argc, char *argv[])
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
 
-		// register docker proxy
-		if (config->getDockerProxyAddress().length())
-		{
-			auto app = Configuration::instance()->addApp(config->getDockerProxyAppJson(), nullptr, false);
-			app->execute();
-		}
-
 		// init REST
 		if (config->getRestEnabled())
 		{
+			Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
 
 			std::shared_ptr<RestHandler> httpServer;
 			if (config->tcpRestProcessEnabled())

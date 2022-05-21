@@ -9,28 +9,18 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"flag"
 	"io/ioutil"
 	"log"
 	"net"
-	"os"
-	"strings"
-	"syscall"
-	"time"
 
 	"github.com/valyala/fasthttp"
 )
 
-var (
-	localListenAddr = "https://127.0.0.1:6058"
-	dockerSocket    = "/var/run/docker.sock"
-	parentProPid    = os.Getppid()
-	proxyClient     = &fasthttp.HostClient{
-		Addr: dockerSocket,
-		Dial: func(addr string) (net.Conn, error) {
-			return net.Dial("unix", addr)
-		}}
-)
+var proxyClient = &fasthttp.HostClient{
+	Addr: dockerSocketFile,
+	Dial: func(addr string) (net.Conn, error) {
+		return net.Dial("unix", addr)
+	}}
 
 // http handler function
 func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
@@ -67,26 +57,8 @@ func postCheckResponse(resp *fasthttp.Response) {
 	// alter other response data if needed
 }
 
-func monitorParentExit() {
-	// 1. Force process exit when parent was exited
-	_, _, errno := syscall.RawSyscall(uintptr(syscall.SYS_PRCTL), uintptr(syscall.PR_SET_PDEATHSIG), uintptr(syscall.SIGKILL), 0)
-	if errno != 0 {
-		log.Println("Failed to call prctl with error:", errno)
-	}
-
-	// 2. Period check parent exit and exit itself
-	oneSecond := time.Duration(1) * time.Second
-	for {
-		if os.Getppid() != parentProPid {
-			log.Println("Parent exit")
-			os.Exit(0)
-		}
-		time.Sleep(oneSecond)
-	}
-}
-
 func listenDockerAgent() {
-	if err := fasthttp.ListenAndServe(localListenAddr, reverseProxyHandler); err != nil {
+	if err := fasthttp.ListenAndServe(dockerAgentAddr, reverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp server: %s", err)
 	}
 }
@@ -132,7 +104,7 @@ func listenDockerAgentTls() {
 	}
 
 	// start listen
-	ln, err := net.Listen("tcp4", localListenAddr)
+	ln, err := net.Listen("tcp4", dockerAgentAddr)
 	if err != nil {
 		log.Fatalf("Error in Listen tcp4: %s", err)
 		panic(err)
@@ -142,37 +114,4 @@ func listenDockerAgentTls() {
 		log.Fatalf("Error in fasthttp Serve: %s", err)
 		panic(err)
 	}
-}
-
-// main
-func main() {
-	log.Println("Docker Agent enter")
-
-	// parse arguments
-	addr := flag.String("url", localListenAddr, "The host URL used to listen")
-	socket := flag.String("socket", dockerSocket, "Unix domain socket file path")
-	flag.Parse()
-
-	// exit when parent not exist
-	go monitorParentExit()
-
-	// read arguments
-	dockerSocket = *socket
-	localListenAddr = *addr
-	log.Println("Docker socket:", dockerSocket)
-	log.Println("Listening at:", localListenAddr)
-	enableTLS := strings.HasPrefix(localListenAddr, "https://")
-
-	// clean schema prefix for Listen
-	localListenAddr = strings.Replace(localListenAddr, "https://", "", 1)
-	localListenAddr = strings.Replace(localListenAddr, "http://", "", 1)
-
-	// start listen
-	if enableTLS {
-		listenDockerAgentTls()
-	} else {
-		listenDockerAgent()
-	}
-
-	log.Fatalln("Process exiting")
 }
