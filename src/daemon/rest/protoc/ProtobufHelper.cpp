@@ -68,6 +68,7 @@ size_t ProtobufHelper::deserializeHeader(const char *data)
     google::protobuf::uint32 bodySize = 0;
     if (codedInput.ReadVarint32(&bodySize))
     {
+        LOG_INF << fname << "read body size from header:" << bodySize;
         return bodySize;
     }
     else

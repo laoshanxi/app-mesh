@@ -1,7 +1,9 @@
 #include <atomic>
+#include <errno.h>
 #include <fstream>
 #include <list>
 #include <string>
+#include <sys/file.h>
 #include <thread>
 
 #include <ace/OS.h>
@@ -534,6 +536,34 @@ std::string Utility::createUUID()
 	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
 	auto str = std::string(uuid.to_string()->c_str());
 	return str;
+}
+
+bool Utility::createPidFile()
+{
+	const static char fname[] = "Utility::createPidFile() ";
+
+	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
+	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
+	auto fd = open(PID_FILE_PATH, O_CREAT | O_RDWR, 0666);
+	if (fd < 0)
+	{
+		LOG_ERR << fname << "Failed to create PID file:" << PID_FILE_PATH << " with error: " << std::strerror(errno);
+		return false;
+	}
+	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
+	{
+		LOG_INF << fname << "New process running";
+		auto pid = std::to_string(getpid());
+		return write(fd, pid.c_str(), pid.length() + 1) > 0;
+	}
+	else
+	{
+		if (EWOULDBLOCK == errno)
+			LOG_ERR << fname << "process already running";
+		else
+			LOG_ERR << fname << "Failed with error: " << std::strerror(errno);
+	}
+	return false;
 }
 
 std::vector<std::string> Utility::splitString(const std::string &source, const std::string &splitFlag)

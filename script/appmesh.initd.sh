@@ -29,9 +29,9 @@ else
 fi
 
 ## Fill in name of program here.
-PROG="appsvc"
+PROG="bin/appsvc"
+PROGC="bin/appc"
 PROG_WATCHDOG="appmesh-entrypoint.sh"
-PROGC="appc"
 PROG_ARGS=""
 
 # dynamic get script path and parent dir path
@@ -40,7 +40,7 @@ SCRIPT_DIR=$(dirname $SCRIPT_ABS)
 PROG_HOME=$(cd "${SCRIPT_DIR}/.."; pwd)
 
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
-source ${PROG_HOME}/script/appmesh.environment || true
+. ${PROG_HOME}/script/appmesh.environment || true
 
 log() {
 	logger "[$(date)]""$1"

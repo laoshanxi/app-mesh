@@ -14,7 +14,8 @@ log() {
 SCRIPT_ABS=$(readlink -f "$0")
 SCRIPT_DIR=$(dirname $SCRIPT_ABS)
 PROG_HOME=$(cd "${SCRIPT_DIR}/.."; pwd)
-
+PROG="bin/appsvc"
+PROGC="bin/appc"
 cd ${PROG_HOME}
 
 SCRIPT_PID="$$"
@@ -30,27 +31,27 @@ pre_reg_app() {
 	if [[ $# -gt 0 ]]; then
 		# wait for app mesh service ready
 		until [ $(curl -sL -k -w "%{http_code}" -o /dev/null https://localhost:6060/) -eq 200 ]; do sleep 0.25; done
-		${PROG_HOME}/bin/appc logon -u admin -x admin123
+		${PROG_HOME}/${PROGC} logon -u admin -x admin123 -o ""
 		# remove default ping app for container
-		${PROG_HOME}/bin/appc unreg -n ping -f || true
+		${PROG_HOME}/${PROGC} unreg -n ping -f || true
 		if [ $1 = "appc" ]; then
 			# if arguments start with appc, then just run this appc command
 			/bin/sh -c "$*"
 		else
 			# if arguments start with command, then reg as long running application
-			${PROG_HOME}/bin/appc reg -n start_app -c "$*" -f
+			${PROG_HOME}/${PROGC} reg -n start_app -c "$*" -f
 		fi
 	fi
 }
 
 while true; do
-	case "$(ps aux | grep -w ${PROG_HOME}/bin/appsvc | grep -v rest | grep -v grep | grep -v config.json | wc -l)" in
+	case "$(ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v rest | grep -v grep | grep -v config.json | wc -l)" in
 
 	0)
 		sleep 0.1
-		result=$(ps aux | grep -w ${PROG_HOME}/bin/appsvc | grep -v rest | grep -v grep | grep -v config.json | awk '{print $2}')
+		result=$(ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v rest | grep -v grep | grep -v config.json | awk '{print $2}')
 		if [ -z "$result" ]; then
-			nohup ${PROG_HOME}/bin/appsvc &
+			nohup ${PROG_HOME}/${PROG} &
 			sleep 1
 			pre_reg_app $*
 			log "Starting App Mesh:     $(date)"
@@ -63,7 +64,7 @@ while true; do
 		sleep 2
 		;;
 	*) # Only kill the process that was not started by this script
-		for i in $(ps aux | grep -w ${PROG_HOME}/bin/appsvc | grep -v rest | grep -v grep | grep -v config.json | awk '{print $2}'); do
+		for i in $(ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v rest | grep -v grep | grep -v config.json | awk '{print $2}'); do
 			if [ $(pstree -Ap $SCRIPT_PID | grep $i | wc -w) -eq 0 ]; then
 				log "Killed duplicate App Mesh $i: $(date)"
 				kill -9 $i

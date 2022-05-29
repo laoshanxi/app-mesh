@@ -43,6 +43,7 @@ int main(int argc, char *argv[])
 	try
 	{
 		const bool thisIsRestProcess = (argc == 2 && REST_PROCESS_ARGS == argv[1]);
+
 		ACE::init();
 
 		// https://www.cnblogs.com/shelmean/p/9436425.html
@@ -50,6 +51,12 @@ int main(int argc, char *argv[])
 		// umask 0002 => 664(-rw-rw-r--)
 		// umask 0000 => 666(-rw-rw-rw-)
 		ACE_OS::umask(0000);
+
+		// create pid file: /var/run/appmesh.pid
+		if (!Utility::createPidFile())
+		{
+			return -1;
+		}
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
 		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));

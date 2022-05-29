@@ -198,10 +198,12 @@ public:
 	static std::string readFileCpp(const std::string &path, long *position, long maxSize, bool readLine = false);
 
 	static std::string createUUID();
+	static bool createPidFile();
 
 	static const std::string readStdin2End();
 };
 
+#define PID_FILE_PATH "/var/run/appmesh.pid"
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 #define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
