@@ -37,7 +37,7 @@ if [ -f "/usr/bin/yum" ]; then
 	if [[ $RHEL_VER = "7" ]]; then
 		yum install -y https://repo.ius.io/ius-release-el7.rpm
 		yum remove git -y
-		yum install git222 -y
+		yum install git236 -y
 	else
 		yum install git -y
 	fi
@@ -99,6 +99,19 @@ go version
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
 go get github.com/valyala/fasthttp@v1.37.0
+# Golang tools for VSCode
+go install -v github.com/cweill/gotests/gotests@latest
+go install -v github.com/fatih/gomodifytags@latest
+go install -v github.com/josharian/impl@latest
+go install -v github.com/haya14busa/goplay/cmd/goplay@latest
+go install -v github.com/go-delve/delve/cmd/dlv@latest
+go install -v honnef.co/go/tools/cmd/staticcheck@latest
+go install -v golang.org/x/tools/gopls@latest
+# protoc
+go get -v google.golang.org/protobuf@latest
+go install -v github.com/golang/protobuf/protoc-gen-go@latest
+ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
+
 
 # check libssl in case of openssl_update.sh not executed
 if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then

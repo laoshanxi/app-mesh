@@ -13,9 +13,9 @@
       "SecurityInterface": "json"
     },
     "SeparateRestProcess": true,
-    "SeparateRestInternalPort": 6059,
+    "RestTcpPort": 6059,
     "DockerProxyListenAddr": "https://127.0.0.1:6058",
-    "HttpThreadPoolSize": 4,
+    "HttpThreadPoolSize": 3,
     "RestListenPort": 6060,
     "RestListenAddress": "0.0.0.0",
     "PrometheusExporterListenPort": 6061,

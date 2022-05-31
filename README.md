@@ -11,7 +11,7 @@ App Mesh is a `Multi Tenant`, `Cloud Native`, `Micro Service` application manage
 
 App Mesh is similar with Kubernetes but much light weight, support both container app and native app.
 
-<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/diagram.jpg" align=center /></div>
+<div align=center><img src="docs/source/diagram.jpg" align=center /></div>
 
 ## Features
 
@@ -77,7 +77,7 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ### Component diagram
 
-![block-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/block_diagram.png)
+![block-diagram](docs/source/block_diagram.png)
 
 ---
 

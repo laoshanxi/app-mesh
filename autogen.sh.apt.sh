@@ -20,36 +20,34 @@ export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 gem install fpm
 
+# protobuf
+apt install -y libprotobuf-dev
+apt install -y protobuf-compiler
+
 # Golang
 apt install -y golang
 # Golang third party library
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
 go get -v github.com/valyala/fasthttp@v1.37.0
+go get -v github.com/rs/xid
 # Golang tools for VSCode
-go get -v github.com/cweill/gotests/gotests
-go get -v github.com/fatih/gomodifytags
-go get -v github.com/josharian/impl
-go get -v github.com/haya14busa/goplay/cmd/goplay
-go get -v github.com/go-delve/delve/cmd/dlv
-go get -v honnef.co/go/tools/cmd/staticcheck
-go get -v golang.org/x/tools/gopls
-go install -v github.com/cweill/gotests/gotests
-go install -v github.com/fatih/gomodifytags
-go install -v github.com/josharian/impl
-go install -v github.com/haya14busa/goplay/cmd/goplay
-go install -v github.com/go-delve/delve/cmd/dlv
-go install -v honnef.co/go/tools/cmd/staticcheck
-go install -v golang.org/x/tools/gopls
+go install -v github.com/cweill/gotests/gotests@latest
+go install -v github.com/fatih/gomodifytags@latest
+go install -v github.com/josharian/impl@latest
+go install -v github.com/haya14busa/goplay/cmd/goplay@latest
+go install -v github.com/go-delve/delve/cmd/dlv@latest
+go install -v honnef.co/go/tools/cmd/staticcheck@latest
+go install -v golang.org/x/tools/gopls@latest
+# protoc
+go get -v google.golang.org/protobuf@latest
+go install -v github.com/golang/protobuf/protoc-gen-go@latest
+ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
 
 # cpplint tools
 apt install -y clang
 apt install -y cppcheck
 apt install -y gh git
-
-# protobuf
-apt install -y libprotobuf-dev
-apt install -y protobuf-compiler
 
 # dependency libraries
 apt install -y liblog4cpp5-dev

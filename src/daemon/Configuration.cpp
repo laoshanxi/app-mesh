@@ -243,7 +243,7 @@ std::string Configuration::getDockerProxyAddress() const
 	return m_rest->m_dockerProxyListenAddr;
 }
 
-int Configuration::getSeparateRestInternalPort()
+int Configuration::getRestTcpPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_separateRestInternalPort;
@@ -781,12 +781,31 @@ bool Configuration::isAppExist(const std::string &appName)
 
 const web::json::value Configuration::getAgentAppJson() const
 {
+	const static char fname[] = "Configuration::getAgentAppJson() ";
+
+	web::uri_builder restUri;
+	restUri.set_host(Configuration::instance()->getRestListenAddress());
+	restUri.set_port(Configuration::instance()->getRestListenPort());
+	restUri.set_scheme(this->m_rest->m_ssl->m_sslEnabled ? "https" : "http");
+	auto cmd = (fs::path(Utility::getSelfDir()) / "agent").string();
+	if (Configuration::instance()->getRestEnabled())
+	{
+		cmd += std::string(" -rest_tcp_port ") + std::to_string(Configuration::instance()->getRestTcpPort()) +
+			   " -agent_url " + restUri.to_uri().to_string();
+	}
+	if (Configuration::instance()->getDockerProxyAddress().length())
+	{
+		cmd += std::string(" -docker_agent_url ") + this->getDockerProxyAddress();
+	}
+	LOG_INF << fname << " agent start command <" << cmd << ">";
+
 	web::json::value restApp;
 	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_AGENT_APP_NAME);
-	restApp[JSON_KEY_APP_command] = web::json::value::string(Utility::getSelfDir() + "/agent -url " + this->getDockerProxyAddress());
-	restApp[JSON_KEY_APP_description] = web::json::value::string("Docker Engine agent with X.509 authentication");
+	restApp[JSON_KEY_APP_command] = web::json::value::string(cmd);
+	restApp[JSON_KEY_APP_description] = web::json::value::string("REST agent for App Mesh");
 	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
 	restApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_ADMIN_NAME);
+	restApp[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(3);
 	auto objBehavior = web::json::value::object();
 	objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
 	restApp[JSON_KEY_APP_behavior] = objBehavior;

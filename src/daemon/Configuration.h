@@ -110,7 +110,7 @@ public:
 	int getPromListenPort();
 	std::string getRestListenAddress();
 	std::string getDockerProxyAddress() const;
-	int getSeparateRestInternalPort();
+	int getRestTcpPort();
 	bool tcpRestProcessEnabled();
 	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);

@@ -271,3 +271,4 @@ b/
 _build
 *.pb.h
 *.pb.cc
+*.pb.go

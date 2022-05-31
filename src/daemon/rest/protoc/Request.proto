@@ -1,5 +1,6 @@
 syntax = "proto3";
 package appmesh;
+option go_package = "./;main";
 
 message Request {
   string uuid = 1;

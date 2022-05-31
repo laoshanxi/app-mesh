@@ -12,6 +12,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"path/filepath"
+	"strings"
 
 	"github.com/valyala/fasthttp"
 )
@@ -23,10 +25,9 @@ var proxyClient = &fasthttp.HostClient{
 	}}
 
 // http handler function
-func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
+func dockerReverseProxyHandler(ctx *fasthttp.RequestCtx) {
 	req := &ctx.Request
 	log.Printf("---Request:---\n%v\n", req)
-	preCheckRequest(req)
 
 	resp := &ctx.Response
 	// do request
@@ -38,27 +39,11 @@ func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
 		resp.SetBodyString(err.Error())
 	}
 
-	postCheckResponse(resp)
-
 	log.Printf("---Response:---\n%v\n", resp)
 }
 
-func preCheckRequest(req *fasthttp.Request) {
-	// do not proxy "Connection" header.
-	req.Header.Del("Connection")
-	// strip other unneeded headers.
-	// alter other request params before sending them to upstream host
-}
-
-func postCheckResponse(resp *fasthttp.Response) {
-	// do not proxy "Connection" header
-	resp.Header.Del("Connection")
-	// strip other unneeded headers
-	// alter other response data if needed
-}
-
 func listenDockerAgent() {
-	if err := fasthttp.ListenAndServe(dockerAgentAddr, reverseProxyHandler); err != nil {
+	if err := fasthttp.ListenAndServe(dockerAgentAddr, dockerReverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp server: %s", err)
 	}
 }
@@ -90,9 +75,9 @@ func listenDockerAgentTls() {
 	// prepare TLS
 	cfg := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
-		Certificates:             []tls.Certificate{loadServerCertificates("/opt/appmesh/ssl/server.pem", "/opt/appmesh/ssl/server-key.pem")},
+		Certificates:             []tls.Certificate{loadServerCertificates(filepath.Join(getAppMeshHomeDir(), "ssl/server.pem"), filepath.Join(getAppMeshHomeDir(), "ssl/server-key.pem"))},
 		ClientAuth:               tls.RequireAndVerifyClientCert,
-		ClientCAs:                loadClientCA("/opt/appmesh/ssl/client.pem"),
+		ClientCAs:                loadClientCA(filepath.Join(getAppMeshHomeDir(), "ssl/client.pem")),
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
@@ -110,8 +95,22 @@ func listenDockerAgentTls() {
 		panic(err)
 	}
 	lnTls := tls.NewListener(ln, cfg)
-	if err := fasthttp.Serve(lnTls, reverseProxyHandler); err != nil {
+	if err := fasthttp.Serve(lnTls, dockerReverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp Serve: %s", err)
 		panic(err)
+	}
+}
+
+func listenDocker() {
+	enableTLS := strings.HasPrefix(dockerAgentAddr, "https://")
+
+	// clean schema prefix for Listen
+	dockerAgentAddr = strings.Replace(dockerAgentAddr, "https://", "", 1)
+	dockerAgentAddr = strings.Replace(dockerAgentAddr, "http://", "", 1)
+
+	if enableTLS {
+		listenDockerAgentTls()
+	} else {
+		listenDockerAgent()
 	}
 }

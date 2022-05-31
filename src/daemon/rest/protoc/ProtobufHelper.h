@@ -37,11 +37,4 @@ public:
      */
     static const std::tuple<char *, size_t> readMessageBlock(const ACE_SOCK_Stream &socket);
 
-private:
-    /**
-     * Read protocol buffer header from raw data.
-     * @param data the message to read
-     * @return size of next message body
-     */
-    static size_t deserializeHeader(const char *data);
 };

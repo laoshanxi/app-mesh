@@ -1,29 +1,24 @@
-# Docker REST Proxy
 
-Implement a proxy to access /var/run/docker.sock
+## Golang REST agent
 
+### Docker proxy
 
-## Solution1: Nginx
+`dockeragent.go` implement a proxy to pass 127.0.0.1:6058 to unix:///var/run/docker.sock
+`docker_nginx` implement a docker proxy demo with Nginx
 
-### Start Nginx reverse proxy
+### AppMesh REST entrypoint
 
-```
-make
-```
-
-### Test reverse proxy
+`restagent.go` impelment REST server pass request to backend C++ TCP server tcp:127.0.0.1:6059
 
 ```
-make test
-```
-## Solution2: Golang reverse proxy
-
-dockeragent.go implement a proxy to pass 127.0.0.1:6058 to unix:///var/run/docker.sock
-```
-$ ./agent -h
-Usage of ./agent:
-  -docker_socket string
-        Docker unix domain socket file (default "/var/run/docker.sock")
+$ /opt/appmesh/bin/agent -h
+Usage of /opt/appmesh/bin/agent:
+  -agent_url string
+        The host URL used to listen REST proxy (default "https://0.0.0.0:6060")
   -docker_agent_url string
-        The host URL used to listen (default "127.0.0.1:6058")
+        The host URL used to listen docker proxy (default "https://127.0.0.1:6058")
+  -docker_socket_file string
+        Docker unix domain socket file path used to forward docker proxy (default "/var/run/docker.sock")
+  -rest_tcp_port int
+        The host port used to forward REST proxy (default 6059)
 ```

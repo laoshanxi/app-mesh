@@ -8,7 +8,6 @@
 #include "../security/Security.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
-#include "RestChildObject.h"
 
 RestBase::RestBase(bool forward2TcpServer)
     : m_forward2TcpServer(forward2TcpServer)
@@ -26,47 +25,24 @@ web::json::value RestBase::convertText2Json(const std::string &msg)
     return result;
 }
 
-bool RestBase::forwardRestRequest(const HttpRequest &message)
-{
-    // file download/upload do not forward to server
-    if (m_forward2TcpServer && !Utility::startWith(message.m_relative_uri, "/appmesh/file"))
-    {
-        RestChildObject::instance()->sendRequest2Server(message);
-        return true;
-    }
-    return false;
-}
-
 void RestBase::handle_get(const HttpRequest &message)
 {
-    if (!forwardRestRequest(message))
-    {
-        handleRest(message, m_restGetFunctions);
-    }
+    handleRest(message, m_restGetFunctions);
 }
 
 void RestBase::handle_put(const HttpRequest &message)
 {
-    if (!forwardRestRequest(message))
-    {
-        handleRest(message, m_restPutFunctions);
-    }
+    handleRest(message, m_restPutFunctions);
 }
 
 void RestBase::handle_post(const HttpRequest &message)
 {
-    if (!forwardRestRequest(message))
-    {
-        handleRest(message, m_restPstFunctions);
-    }
+    handleRest(message, m_restPstFunctions);
 }
 
 void RestBase::handle_delete(const HttpRequest &message)
 {
-    if (!forwardRestRequest(message))
-    {
-        handleRest(message, m_restDelFunctions);
-    }
+   handleRest(message, m_restDelFunctions);
 }
 
 void RestBase::handle_options(const HttpRequest &message)
@@ -104,7 +80,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     if (!findRest)
     {
-        message.reply(status_codes::NotFound, convertText2Json("Path not found"));
+        message.reply(status_codes::NotFound, convertText2Json(std::string("Path not found: ") + path));
         return;
     }
 
