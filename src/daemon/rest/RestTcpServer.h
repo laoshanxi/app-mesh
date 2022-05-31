@@ -40,12 +40,6 @@ public:
     /// <param name="bodyType"></param>
     void backforwardResponse(const std::string &requestUri, const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType);
 
-    /// <summary>
-    /// Generate Application json for rest process
-    /// </summary>
-    /// <returns></returns>
-    const web::json::value getRestAppJson() const;
-
 private:
     /// <summary>
     /// ACE_Task_Base::open()

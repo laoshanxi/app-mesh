@@ -11,9 +11,11 @@ list(APPEND PROTO_FLAGS -I${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB PROTOBUF_FILELIST *.proto)
 foreach(FIL ${PROTOBUF_FILELIST})
-  message(STATUS "Generating: ${FIL} with <${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} ${FIL} --cpp_out=${PROTO_META_BASE_DIR}>")
+  message(STATUS "Generating: protoc ${PROTO_FLAGS} --cpp_out=${PROTO_META_BASE_DIR} ${FIL}")
+  message(STATUS "Generating: protoc ${PROTO_FLAGS} --go_out=${CMAKE_SOURCE_DIR}/src/sdk/agent --go_opt=paths=source_relative ${FIL}")
   execute_process(
     COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} --cpp_out=${PROTO_META_BASE_DIR} ${FIL}
+    COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} --go_out=${CMAKE_SOURCE_DIR}/src/sdk/agent --go_opt=paths=source_relative ${FIL}
   )
 endforeach()
 

@@ -4,15 +4,18 @@ import (
 	"flag"
 	"log"
 	"os"
-	"strings"
 	"syscall"
 	"time"
 )
 
 var (
+	restAgentAddr = "https://0.0.0.0:6060"
+	restTcpPort   = 6059
+
 	dockerAgentAddr  = "https://127.0.0.1:6058"
 	dockerSocketFile = "/var/run/docker.sock"
-	parentProPid     = os.Getppid()
+
+	parentProPid = os.Getppid()
 )
 
 func monitorParentExit() {
@@ -38,30 +41,37 @@ func main() {
 	log.Println("Docker Agent enter")
 
 	// parse arguments
-	addr := flag.String("docker_agent_url", dockerAgentAddr, "The host URL used to listen")
-	socket := flag.String("docker_socket", dockerSocketFile, "Unix domain socket file path")
+	restAddr := flag.String("agent_url", restAgentAddr, "The host URL used to listen REST proxy")
+	tcpPort := flag.Int("rest_tcp_port", restTcpPort, "The host port used to forward REST proxy")
+	dockerAddr := flag.String("docker_agent_url", dockerAgentAddr, "The host URL used to listen docker proxy")
+	socket := flag.String("docker_socket_file", dockerSocketFile, "Docker unix domain socket file path used to forward docker proxy")
 	flag.Parse()
+
+	// read arguments
+	if restAddr != nil {
+		restAgentAddr = *restAddr
+	}
+	if tcpPort != nil {
+		restTcpPort = *tcpPort
+	}
+	if socket != nil {
+		dockerSocketFile = *socket
+	}
+	if dockerAddr != nil {
+		dockerAgentAddr = *dockerAddr
+	}
+	log.Println("REST agent listening at:", restAgentAddr)
+	log.Println("Docker agent listening at:", dockerAgentAddr, " forward to: ", dockerSocketFile)
 
 	// exit when parent not exist
 	go monitorParentExit()
 
-	// read arguments
-	dockerSocketFile = *socket
-	dockerAgentAddr = *addr
-	log.Println("Docker socket:", dockerSocketFile)
-	log.Println("Listening at:", dockerAgentAddr)
-	enableTLS := strings.HasPrefix(dockerAgentAddr, "https://")
+	// start listen docker proxy
+	go listenDocker()
 
-	// clean schema prefix for Listen
-	dockerAgentAddr = strings.Replace(dockerAgentAddr, "https://", "", 1)
-	dockerAgentAddr = strings.Replace(dockerAgentAddr, "http://", "", 1)
+	// start listen REST proxy
+	go listenRest()
 
-	// start listen
-	if enableTLS {
-		go listenDockerAgentTls()
-	} else {
-		go listenDockerAgent()
-	}
 	// Wait forever.
 	select {}
 }

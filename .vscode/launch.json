@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Go Launch file",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${file}"
+        },
+        {
             "name": "GDB: launch appsvc",
             "type": "cppdbg",
             "request": "launch",
@@ -33,7 +40,13 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/opt/appmesh/bin/appc",
-            "args": ["run", "-c", "sh -c 'exit 2'", "-t", "5"],
+            "args": [
+                "run",
+                "-c",
+                "sh -c 'exit 2'",
+                "-t",
+                "5"
+            ],
             "stopAtEntry": false,
             "cwd": "/opt/appmesh/",
             "environment": [
@@ -72,7 +85,10 @@
             "type": "python",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "dlvFlags": [
+                "--only-same-user=false"
+            ]
         },
         {
             "name": "G++: Build and debug active file",

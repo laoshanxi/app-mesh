@@ -27,12 +27,6 @@ public:
 
 protected:
     /// <summary>
-    /// Forward HTTP REST request to TCP Server
-    /// </summary>
-    /// <param name="message"></param>
-    /// <returns>true if need forward and forwared</returns>
-    bool forwardRestRequest(const HttpRequest &message);
-    /// <summary>
     /// Dispatch REST request to specific functions
     /// </summary>
     /// <param name="message"></param>

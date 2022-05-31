@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"strings"
 
 	"github.com/valyala/fasthttp"
 )
@@ -23,10 +24,9 @@ var proxyClient = &fasthttp.HostClient{
 	}}
 
 // http handler function
-func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
+func dockerReverseProxyHandler(ctx *fasthttp.RequestCtx) {
 	req := &ctx.Request
 	log.Printf("---Request:---\n%v\n", req)
-	preCheckRequest(req)
 
 	resp := &ctx.Response
 	// do request
@@ -38,27 +38,11 @@ func reverseProxyHandler(ctx *fasthttp.RequestCtx) {
 		resp.SetBodyString(err.Error())
 	}
 
-	postCheckResponse(resp)
-
 	log.Printf("---Response:---\n%v\n", resp)
 }
 
-func preCheckRequest(req *fasthttp.Request) {
-	// do not proxy "Connection" header.
-	req.Header.Del("Connection")
-	// strip other unneeded headers.
-	// alter other request params before sending them to upstream host
-}
-
-func postCheckResponse(resp *fasthttp.Response) {
-	// do not proxy "Connection" header
-	resp.Header.Del("Connection")
-	// strip other unneeded headers
-	// alter other response data if needed
-}
-
 func listenDockerAgent() {
-	if err := fasthttp.ListenAndServe(dockerAgentAddr, reverseProxyHandler); err != nil {
+	if err := fasthttp.ListenAndServe(dockerAgentAddr, dockerReverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp server: %s", err)
 	}
 }
@@ -110,8 +94,22 @@ func listenDockerAgentTls() {
 		panic(err)
 	}
 	lnTls := tls.NewListener(ln, cfg)
-	if err := fasthttp.Serve(lnTls, reverseProxyHandler); err != nil {
+	if err := fasthttp.Serve(lnTls, dockerReverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp Serve: %s", err)
 		panic(err)
+	}
+}
+
+func listenDocker() {
+	enableTLS := strings.HasPrefix(dockerAgentAddr, "https://")
+
+	// clean schema prefix for Listen
+	dockerAgentAddr = strings.Replace(dockerAgentAddr, "https://", "", 1)
+	dockerAgentAddr = strings.Replace(dockerAgentAddr, "http://", "", 1)
+
+	if enableTLS {
+		listenDockerAgentTls()
+	} else {
+		listenDockerAgent()
 	}
 }

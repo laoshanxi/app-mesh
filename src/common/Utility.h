@@ -132,7 +132,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define DEFAULT_SERVER_URL "https://localhost:6060"
 
-const std::string REST_PROCESS_ARGS = "--rest";
 const web::json::value EMPTY_STR_JSON = web::json::value::object();
 const web::json::value CLOUD_STR_JSON = web::json::value::string("APPMESH-CLOUD-APP-FLAG");
 const char *GET_STATUS_STR(unsigned int status);
@@ -232,7 +231,7 @@ public:
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
 #define JSON_KEY_SeparateRestProcess "SeparateRestProcess"
-#define JSON_KEY_SeparateRestInternalPort "SeparateRestInternalPort"
+#define JSON_KEY_SeparateRestInternalPort "RestTcpPort"
 #define JSON_KEY_DockerProxyListenAddr "DockerProxyListenAddr"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
