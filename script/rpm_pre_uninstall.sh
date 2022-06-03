@@ -19,5 +19,6 @@ fi
 
 # stop all running applications
 if [ -f "${PROG_HOME}/bin/appc" ]; then
+	${PROG_HOME}/${PROGC} logon -u admin -x admin123 -o "" || true
 	${PROG_HOME}/bin/appc view -l | awk '{if (NR>1){cmd="${PROG_HOME}/bin/appc disable -n "$2;print(cmd);system(cmd)}}'
 fi

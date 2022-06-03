@@ -5,17 +5,15 @@
 ## https://stackoverflow.com/questions/20162678/linux-script-to-check-if-process-is-running-and-act-on-the-result
 ################################################################################
 
+export PROG_HOME=/opt/appmesh
+export PROG=bin/appsvc
+export PROGC=bin/appc
+
 log() {
-	logger "[$(date)]""$1"
+	logger "$1"
 	echo $1
 }
 
-# dynamic get script path and parent dir path
-SCRIPT_ABS=$(readlink -f "$0")
-SCRIPT_DIR=$(dirname $SCRIPT_ABS)
-PROG_HOME=$(cd "${SCRIPT_DIR}/.."; pwd)
-PROG="bin/appsvc"
-PROGC="bin/appc"
 cd ${PROG_HOME}
 
 SCRIPT_PID="$$"
@@ -45,32 +43,17 @@ pre_reg_app() {
 }
 
 while true; do
-	case "$(ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v rest | grep -v grep | grep -v config.json | wc -l)" in
-
-	0)
-		sleep 0.1
-		result=$(ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v rest | grep -v grep | grep -v config.json | awk '{print $2}')
-		if [ -z "$result" ]; then
+	if [ ! -f /var/run/appmesh.pid ]; then
+		nohup ${PROG_HOME}/${PROG} &
+	else
+		PID=$(tr -d '\0' </var/run/appmesh.pid)
+		PID_EXIST=$(ps aux | awk '{print $2}' | grep -w $PID)
+		CMD_EXIST=$(ps aux | awk '{print $11}' | grep -w ${PROG_HOME}/${PROG})
+		if [[ ! PID_EXIST ]] && [[ ! CMD_EXIST ]]; then
 			nohup ${PROG_HOME}/${PROG} &
-			sleep 1
 			pre_reg_app $*
-			log "Starting App Mesh:     $(date)"
-		else
-			log "Double check App Mesh is alive: $(date)"
+			log "$(date --rfc-3339=seconds): Starting App Mesh"
 		fi
-		sleep 2
-		;;
-	1) # all ok
-		sleep 2
-		;;
-	*) # Only kill the process that was not started by this script
-		for i in $(ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v rest | grep -v grep | grep -v config.json | awk '{print $2}'); do
-			if [ $(pstree -Ap $SCRIPT_PID | grep $i | wc -w) -eq 0 ]; then
-				log "Killed duplicate App Mesh $i: $(date)"
-				kill -9 $i
-			fi
-		done
-		sleep 2
-		;;
-	esac
+	fi
+	sleep 2
 done

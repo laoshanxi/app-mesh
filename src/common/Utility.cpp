@@ -544,7 +544,7 @@ bool Utility::createPidFile()
 
 	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
 	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
-	auto fd = open(PID_FILE_PATH, O_CREAT | O_RDWR, 0666);
+	auto fd = open(PID_FILE_PATH, O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
 		LOG_ERR << fname << "Failed to create PID file:" << PID_FILE_PATH << " with error: " << std::strerror(errno);

@@ -3,18 +3,20 @@
 ## RPM post uninstallation script file, will be executed when uninstalled
 ################################################################################
 
-SYSTEMD_PATH=/etc/systemd/system/appmesh.service
-systemctl stop appmesh
-systemctl disable appmesh
+export SYSTEMD_FILE=/etc/systemd/system/appmesh.service
+export INITD_FILE=/etc/init.d/appmesh
 
 # remove systemd
-if [ -f $SYSTEMD_PATH ]; then
-	rm -f $SYSTEMD_PATH
+if [ -f $SYSTEMD_FILE ]; then
+	systemctl stop appmesh
+	systemctl disable appmesh
+	rm -f $SYSTEMD_FILE
 	systemctl daemon-reload
 fi
 
 # remove init.d
-if [ -f "/etc/init.d/appmesh" ]; then
+if [ -f $INITD_FILE ]; then
+	service appmesh stop
 	rm -f /etc/init.d/appmesh
 fi
 

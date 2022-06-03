@@ -5,6 +5,7 @@
 
 export PROG_HOME=/opt/appmesh
 export SYSTEMD_FILE=/etc/systemd/system/appmesh.service
+export INITD_FILE=/etc/init.d/appmesh
 
 if [ ! -d ${PROG_HOME} ]; then
 	mkdir -p ${PROG_HOME}
@@ -12,6 +13,7 @@ elif [[ -f $SYSTEMD_FILE ]] || [[ -f "/etc/init.d/appmesh" ]]; then
 	systemctl stop appmesh
 	sleep 1
 fi
+chmod +x ${PROG_HOME}/script/*.sh
 
 # systemd environment file: ${PROG_HOME}/script/appmesh.environment
 cat /dev/null >${PROG_HOME}/script/appmesh.environment
@@ -24,7 +26,7 @@ for e in $(env); do
 	fi
 done
 
-if [ -d "/etc/systemd/system/" ]; then
+if ($( systemd --test > /dev/null )) ; then
 	chmod 644 ${PROG_HOME}/script/appmesh.systemd.service
 	cp -f ${PROG_HOME}/script/appmesh.systemd.service $SYSTEMD_FILE
 	# systemd user
@@ -42,7 +44,7 @@ if [ -d "/etc/systemd/system/" ]; then
 	systemctl daemon-reload
 else
 	chmod 744 ${PROG_HOME}/script/appmesh.initd.sh
-	cp -f ${PROG_HOME}/script/appmesh.initd.sh /etc/init.d/appmesh
+	cp -f ${PROG_HOME}/script/appmesh.initd.sh ${INITD_FILE}
 fi
 
 # bash completion
@@ -55,18 +57,18 @@ if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "${PROG_HOME}/ssl/server.pem"
 	cd ${PROG_HOME}/ssl/
 	sh ${PROG_HOME}/ssl/ssl_cert_generate.sh
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "${PROG_HOME}/.config.json" ]; then
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [[ -f "${PROG_HOME}/.config.json" ]]; then
 	# restore previous configuration file
 	mv ${PROG_HOME}/.config.json ${PROG_HOME}/config.json
 else
 	sed -i "s/MYHOST/$(hostname -f)/g" ${PROG_HOME}/config.json
 	rm -rf ${PROG_HOME}/work
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "${PROG_HOME}/.security.json" ]; then
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [[ -f "${PROG_HOME}/.security.json" ]]; then
 	# restore previous security file
 	mv ${PROG_HOME}/.security.json ${PROG_HOME}/security.json
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [ -f "${PROG_HOME}/.ldap.json" ]; then
+if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [[ -f "${PROG_HOME}/.ldap.json" ]]; then
 	# restore previous security file
 	mv ${PROG_HOME}/.ldap.json ${PROG_HOME}/ldap.json
 fi
