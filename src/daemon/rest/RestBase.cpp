@@ -9,8 +9,7 @@
 #include "HttpRequest.h"
 #include "RestBase.h"
 
-RestBase::RestBase(bool forward2TcpServer)
-    : m_forward2TcpServer(forward2TcpServer)
+RestBase::RestBase()
 {
 }
 
@@ -42,7 +41,7 @@ void RestBase::handle_post(const HttpRequest &message)
 
 void RestBase::handle_delete(const HttpRequest &message)
 {
-   handleRest(message, m_restDelFunctions);
+    handleRest(message, m_restDelFunctions);
 }
 
 void RestBase::handle_options(const HttpRequest &message)
@@ -86,16 +85,13 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
     try
     {
-        if (message.m_forwardResponse2RestServer)
+        // this is REST handler service, defend XSS attach before enter to REST handler
+        const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
+        if (message.m_body.length())
         {
-            // this is REST handler service, defend XSS attach before enter to REST handler
-            const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
-            if (message.m_body.length())
-            {
-                auto body = web::json::value::parse(message.m_body);
-                tranverseJsonTree(body);
-                const_cast<HttpRequest *>(&message)->m_body = body.serialize();
-            }
+            auto body = web::json::value::parse(message.m_body);
+            tranverseJsonTree(body);
+            const_cast<HttpRequest *>(&message)->m_body = body.serialize();
         }
 
         stdFunction(message);

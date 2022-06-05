@@ -2,8 +2,6 @@
 
 #include <functional>
 
-#include <cpprest/http_listener.h> // HTTP server
-
 #include "PrometheusRest.h"
 
 class Application;
@@ -13,11 +11,8 @@ class Application;
 class RestHandler : public PrometheusRest
 {
 public:
-	explicit RestHandler(bool forward2TcpServer);
+	explicit RestHandler();
 	virtual ~RestHandler();
-
-	virtual void open() override;
-	void close();
 
 protected:
 	void checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite);
@@ -77,7 +72,4 @@ protected:
 
 	void apiHealth(const HttpRequest &message);
 	void apiRestMetrics(const HttpRequest &message); // not for Prometheus
-
-protected:
-	std::unique_ptr<web::http::experimental::listener::http_listener> m_listener;
 };

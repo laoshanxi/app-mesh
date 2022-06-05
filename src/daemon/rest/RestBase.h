@@ -3,7 +3,7 @@
 #include <map>
 #include <memory>
 
-#include <cpprest/http_listener.h> // HTTP server
+#include <cpprest/http_msg.h>
 
 class HttpRequest;
 
@@ -17,7 +17,7 @@ class HttpRequest;
 class RestBase
 {
 public:
-    explicit RestBase(bool forward2TcpServer);
+    explicit RestBase();
     virtual ~RestBase();
     web::json::value convertText2Json(const std::string &msg);
     // Security: replace XSS risk chars to safe charactor
@@ -59,9 +59,6 @@ protected:
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restPutFunctions;
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restPstFunctions;
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restDelFunctions;
-
-protected:
-    const bool m_forward2TcpServer;
 };
 
 #define REST_INFO_PRINT                       \

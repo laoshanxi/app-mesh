@@ -230,8 +230,7 @@ public:
 #define JSON_KEY_RestEnabled "RestEnabled"
 #define JSON_KEY_RestListenPort "RestListenPort"
 #define JSON_KEY_RestListenAddress "RestListenAddress"
-#define JSON_KEY_SeparateRestProcess "SeparateRestProcess"
-#define JSON_KEY_SeparateRestInternalPort "RestTcpPort"
+#define JSON_KEY_RestTcpPort "RestTcpPort"
 #define JSON_KEY_DockerProxyListenAddr "DockerProxyListenAddr"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 

@@ -52,8 +52,7 @@ public:
 		int m_restListenPort;
 		int m_promListenPort;
 		std::string m_restListenAddress;
-		int m_separateRestInternalPort;
-		bool m_tcpRestProcessEnabled;
+		int m_restTcpPort;
 		std::string m_dockerProxyListenAddr;
 		std::shared_ptr<JsonSsl> m_ssl;
 		std::shared_ptr<JsonJwt> m_jwt;
@@ -111,7 +110,6 @@ public:
 	std::string getRestListenAddress();
 	std::string getDockerProxyAddress() const;
 	int getRestTcpPort();
-	bool tcpRestProcessEnabled();
 	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
 	bool isAppExist(const std::string &appName);

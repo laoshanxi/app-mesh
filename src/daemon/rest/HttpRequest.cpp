@@ -6,32 +6,33 @@
 #include "protoc/Request.pb.h"
 
 HttpRequest::HttpRequest(const web::http::http_request &message)
-	: http_request(message), m_uuid(Utility::createUUID()), m_forwardResponse2RestServer(false)
+	: http_request(message), m_uuid(Utility::createUUID())
 {
 	this->m_method = message.method();
 	this->m_relative_uri = message.relative_uri().path();
 	this->m_remote_address = message.remote_address();
 	this->m_query = message.relative_uri().query();
-	// do not read body for file download/upload
-	if (!Utility::startWith(this->m_relative_uri, "/appmesh/file"))
-	{
-		this->m_body = const_cast<web::http::http_request &>(message).extract_utf8string(true).get();
-	}
+	this->m_body = const_cast<web::http::http_request &>(message).extract_utf8string(true).get();
 	for (const auto &header : message.headers())
 	{
 		this->m_headers[header.first] = header.second;
+		this->headers().add(header.first, header.second);
 	}
 }
 
 HttpRequest::HttpRequest(const HttpRequest &message)
-	: http_request(message), m_uuid(message.m_uuid), m_forwardResponse2RestServer(message.m_forwardResponse2RestServer)
+	: http_request(message), m_uuid(message.m_uuid)
 {
 	this->m_method = message.m_method;
 	this->m_relative_uri = message.m_relative_uri;
 	this->m_remote_address = message.m_remote_address;
 	this->m_body = message.m_body;
-	this->m_headers = message.m_headers;
 	this->m_query = message.m_query;
+	for (const auto &header : message.m_headers)
+	{
+		this->m_headers[header.first] = header.second;
+		this->headers().add(header.first, header.second);
+	}
 }
 
 HttpRequest::HttpRequest(const appmesh::Request &request)
@@ -41,10 +42,12 @@ HttpRequest::HttpRequest(const appmesh::Request &request)
 	this->m_relative_uri = request.request_uri();
 	this->m_remote_address = request.client_address();
 	this->m_body = request.http_body();
-	this->m_headers.insert(request.headers().begin(), request.headers().end());
 	this->m_query = request.querys();
-
-	this->m_forwardResponse2RestServer = true;
+	for (const auto &header : request.headers())
+	{
+		this->m_headers[header.first] = header.second;
+		this->headers().add(header.first, header.second);
+	}
 }
 
 HttpRequest::~HttpRequest()
@@ -58,130 +61,51 @@ web::json::value HttpRequest::extractJson() const
 
 void HttpRequest::reply(http_response &response) const
 {
-	const static char fname[] = "HttpRequest::reply() ";
-	if (m_forwardResponse2RestServer)
-	{
-		LOG_ERR << fname << "unsupported method";
-		throw std::runtime_error("not supported");
-	}
-	else
-	{
-		addHeaders(response);
-		http_request::reply(response);
-	}
+	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, "", response.headers(), response.status_code(), "");
 }
 
 void HttpRequest::reply(http_response &response, const std::string &body_data) const
 {
-	if (m_forwardResponse2RestServer)
-	{
-		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
-	}
-	else
-	{
-		addHeaders(response);
-		http_request::reply(response);
-	}
+	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
 }
 
 void HttpRequest::reply(http::status_code status) const
 {
-	// give empty JSON str for empty json serialize/deserialize
-	const static auto emptyJson = HttpRequest::emptyJson();
-	reply(status, emptyJson);
+	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, "", {}, status, "");
 }
 
 void HttpRequest::reply(http::status_code status, const json::value &body_data) const
 {
-	if (m_forwardResponse2RestServer)
-	{
-		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
-	}
-	else
-	{
-		const static auto emptyJson = HttpRequest::emptyJson();
-		http_response response(status);
-		if (body_data != emptyJson)
-		{
-			response.set_body(body_data);
-		}
-		return reply(response);
-	}
+	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 }
 
 void HttpRequest::reply(http::status_code status, utf8string &&body_data, const utf8string &content_type) const
 {
-	if (m_forwardResponse2RestServer)
-	{
-		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
-	}
-	else
-	{
-		http_response response(status);
-		response.set_body(body_data, content_type);
-		return reply(response);
-	}
+	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
 void HttpRequest::reply(http::status_code status, const utf8string &body_data, const utf8string &content_type) const
 {
-	if (m_forwardResponse2RestServer)
-	{
-		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
-	}
-	else
-	{
-		http_response response(status);
-		response.set_body(body_data, content_type);
-		return reply(response);
-	}
+	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
 void HttpRequest::reply(http::status_code status, const utf16string &body_data, const utf16string &content_type) const
 {
-	if (m_forwardResponse2RestServer)
-	{
-		RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
-	}
-	else
-	{
-		http_response response(status);
-		response.set_body(body_data, content_type);
-		return reply(response);
-	}
+	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
 }
 
 void HttpRequest::reply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) const
 {
-	const static char fname[] = "HttpRequest::reply() ";
-
-	if (m_forwardResponse2RestServer)
-	{
-		LOG_ERR << fname << "unsupported method";
-		throw std::runtime_error("not supported");
-	}
-	else
-	{
-		http_response response(status);
-		response.set_body(body, content_type);
-		return reply(response);
-	}
+	const static char fname[] = "HttpRequest::reply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) ";
+	LOG_ERR << fname << "unsupported method";
+	throw std::runtime_error("not supported");
 }
 
 void HttpRequest::reply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) const
 {
-	const static char fname[] = "HttpRequest::reply() ";
-	if (m_forwardResponse2RestServer)
-	{
-		LOG_ERR << fname << "unsupported method";
-		throw std::runtime_error("not supported");
-	}
-	else
-	{
-		http_response response(status);
-		response.set_body(body, content_type);
-		return reply(response);
-	}
+	const static char fname[] = "HttpRequest::reply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) ";
+	LOG_ERR << fname << "unsupported method";
+	throw std::runtime_error("not supported");
 }
 
 const std::shared_ptr<appmesh::Request> HttpRequest::serialize() const
@@ -221,15 +145,6 @@ const web::json::value HttpRequest::emptyJson()
 	web::json::value emptyBody;
 	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string("");
 	return emptyBody;
-}
-
-void HttpRequest::addHeaders(http_response &response) const
-{
-	// TODO: collect http method dynamicly
-	// For external origins restrict Access-Control-Allow-Origin to the trusted domains
-	response.headers().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
-	response.headers().add("Access-Control-Allow-Origin", "*");
-	response.headers().add("Access-Control-Allow-Headers", "*");
 }
 
 ////////////////////////////////////////////////////////////////////////////////

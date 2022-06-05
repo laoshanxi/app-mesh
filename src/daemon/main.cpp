@@ -109,22 +109,12 @@ int main(int argc, char *argv[])
 		if (config->getRestEnabled())
 		{
 			Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
-
-			std::shared_ptr<RestHandler> httpServer;
-			if (config->tcpRestProcessEnabled())
-			{
-				RestTcpServer::instance(std::make_shared<RestTcpServer>());
-				httpServer = RestTcpServer::instance();
-				RestTcpServer::instance()->startTcpServer();
-				// start agent
-				auto app = Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false);
-				app->execute();
-			}
-			else
-			{
-				httpServer = std::make_shared<RestHandler>(false);
-				httpServer->open();
-			}
+			RestTcpServer::instance(std::make_shared<RestTcpServer>());
+			std::shared_ptr<RestHandler> httpServer = RestTcpServer::instance();
+			RestTcpServer::instance()->startTcpServer();
+			// start agent
+			auto app = Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false);
+			app->execute();
 			PrometheusRest::instance(httpServer);
 
 			// reg prometheus

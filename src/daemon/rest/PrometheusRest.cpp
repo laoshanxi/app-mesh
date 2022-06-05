@@ -13,75 +13,21 @@
 #include "RestBase.h"
 
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
-const static char* CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
+constexpr auto CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
+constexpr auto METRIC_PATH = "/metrics";
 
-PrometheusRest::PrometheusRest(bool forward2TcpServer)
-	: RestBase(forward2TcpServer), m_scrapeCounter(0)
+PrometheusRest::PrometheusRest()
+	: RestBase(), m_scrapeCounter(0)
 {
 	m_promRegistry = std::make_shared<prometheus::Registry>();
-	if (!forward2TcpServer)
-	{
-		bindRestMethod(web::http::methods::GET, "/metrics", std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
-		if (Configuration::instance()->getPromListenPort())
-		{
-			initMetrics();
-		}
-	}
-}
-
-void PrometheusRest::open()
-{
-	const static char fname[] = "PrometheusRest::open() ";
-
-	std::string ipaddress = Configuration::instance()->getRestListenAddress();
-	ipaddress = ipaddress.empty() ? std::string("0.0.0.0") : ipaddress;
-	const int port = Configuration::instance()->getPromListenPort();
-	if (port)
-	{
-		// Construct URI
-		web::uri_builder uri;
-		if (ipaddress.empty())
-		{
-			uri.set_host("0.0.0.0");
-		}
-		else
-		{
-			uri.set_host(ipaddress);
-		}
-		uri.set_port(port);
-		uri.set_path("/");
-		uri.set_scheme("http");
-		m_promListener = std::make_unique<web::http::experimental::listener::http_listener>(uri.to_uri());
-		m_promListener->support(methods::GET, std::bind(&PrometheusRest::handle_get, this, std::placeholders::_1));
-		m_promListener->support(methods::PUT, std::bind(&PrometheusRest::handle_put, this, std::placeholders::_1));
-		m_promListener->support(methods::POST, std::bind(&PrometheusRest::handle_post, this, std::placeholders::_1));
-		m_promListener->support(methods::DEL, std::bind(&PrometheusRest::handle_delete, this, std::placeholders::_1));
-		m_promListener->support(methods::OPTIONS, std::bind(&PrometheusRest::handle_options, this, std::placeholders::_1));
-
-		m_promListener->open().wait();
-		LOG_INF << fname << "Prometheus Exporter listening for requests at:" << uri.to_string();
-	}
-	else
-	{
-		LOG_INF << fname << "Listen port not specified, Prometheus exporter will not enabled";
-	}
+	bindRestMethod(web::http::methods::GET, METRIC_PATH, std::bind(&PrometheusRest::apiMetrics, this, std::placeholders::_1));
+	initMetrics();
 }
 
 PrometheusRest::~PrometheusRest()
 {
 	const static char fname[] = "PrometheusRest::~PrometheusRest() ";
 	LOG_INF << fname << "Entered";
-	try
-	{
-		if (m_promListener)
-		{
-			m_promListener->close().wait();
-		}
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "failed";
-	}
 }
 
 void PrometheusRest::initMetrics()
@@ -130,7 +76,7 @@ std::shared_ptr<GaugeMetric> PrometheusRest::createPromGauge(const std::string &
 
 void PrometheusRest::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
 {
-	if (message.m_method == web::http::methods::GET)
+	if (message.m_method == web::http::methods::GET && message.m_relative_uri != METRIC_PATH)
 		PROM_COUNTER_INCREASE(m_restGetCounter)
 	else if (message.m_method == web::http::methods::PUT)
 		PROM_COUNTER_INCREASE(m_restPutCounter)

@@ -1,8 +1,6 @@
 #include <chrono>
 
 #include <boost/algorithm/string_regex.hpp>
-#include <cpprest/filestream.h>
-#include <cpprest/http_listener.h> // HTTP server
 
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
@@ -79,7 +77,7 @@ constexpr auto REST_PATH_SEC_USER_GROUPS_VIEW = "/appmesh/user/groups";
 constexpr auto REST_PATH_PROMETHEUS_METRICS = "/appmesh/metrics";
 constexpr auto REST_PATH_RESOURCE_VIEW = "/appmesh/resources";
 
-RestHandler::RestHandler(bool forward2TcpServer) : PrometheusRest(forward2TcpServer)
+RestHandler::RestHandler() : PrometheusRest()
 {
 	// 1. Authentication
 	bindRestMethod(web::http::methods::POST, REST_PATH_LOGIN, std::bind(&RestHandler::apiUserLogin, this, std::placeholders::_1));
@@ -145,115 +143,6 @@ RestHandler::~RestHandler()
 {
 	const static char fname[] = "RestHandler::~RestHandler() ";
 	LOG_INF << fname << "Entered";
-	try
-	{
-		this->close();
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "failed";
-	}
-}
-
-void RestHandler::open()
-{
-	const static char fname[] = "RestHandler::open() ";
-
-	if (!m_forward2TcpServer)
-	{
-		PrometheusRest::open();
-	}
-
-	const std::string ipaddress = Configuration::instance()->getRestListenAddress();
-	const int port = Configuration::instance()->getRestListenPort();
-	auto listenAddress = ipaddress.empty() ? std::string("0.0.0.0") : ipaddress;
-	// Construct URI
-	web::uri_builder uri;
-	uri.set_host(listenAddress);
-	uri.set_port(port);
-	uri.set_path("/");
-	if (Configuration::instance()->getSslEnabled())
-	{
-		if (!Utility::isFileExist(Configuration::instance()->getSSLCertificateFile()) ||
-			!Utility::isFileExist(Configuration::instance()->getSSLCertificateKeyFile()))
-		{
-			LOG_ERR << fname << "server.crt and server.key not exist";
-		}
-		// Support SSL
-		uri.set_scheme("https");
-		static bool sslContextCreated = false;
-		static auto server_config = new web::http::experimental::listener::http_listener_config();
-		if (!sslContextCreated)
-		{
-			sslContextCreated = true;
-			const auto verifyPeer = Configuration::instance()->getSslVerifyPeer();
-			server_config->set_ssl_context_callback(
-				[verifyPeer](boost::asio::ssl::context &ctx)
-				{
-					boost::system::error_code ec;
-					// https://github.com/zaphoyd/websocketpp/blob/c5510d6de04917812b910a8dd44735c1f17061d9/examples/echo_server_tls/echo_server_tls.cpp
-					ctx.set_options(boost::asio::ssl::context::default_workarounds |
-										boost::asio::ssl::context::no_sslv2 |	// disable SSL v2
-										boost::asio::ssl::context::no_sslv3 |	// disable SSL v3
-										boost::asio::ssl::context::no_tlsv1 |	// disable TLS v1.0
-										boost::asio::ssl::context::no_tlsv1_1 | // disable TLS v1.1
-										boost::asio::ssl::context::single_dh_use |
-										SSL_OP_CIPHER_SERVER_PREFERENCE,
-									ec);
-					// LOG_DBG << "lambda::set_options " << ec.value() << " " << ec.message();
-
-					if (verifyPeer)
-					{
-						ctx.set_verify_mode(boost::asio::ssl::verify_peer | boost::asio::ssl::verify_fail_if_no_peer_cert);
-					}
-
-					ec = ctx.use_certificate_chain_file(Configuration::instance()->getSSLCertificateFile(), ec);
-					if (ec.failed())
-					{
-						LOG_WAR << "ssl::context::use_certificate_chain_file failed: " << ec.message();
-					}
-					ec = ctx.use_private_key_file(Configuration::instance()->getSSLCertificateKeyFile(), boost::asio::ssl::context::pem, ec);
-					if (ec.failed())
-					{
-						LOG_WAR << "ssl::context::use_private_key_file failed: " << ec.message();
-					}
-
-					// Enable ECDH cipher
-					if (!SSL_CTX_set_ecdh_auto(ctx.native_handle(), 1))
-					{
-						LOG_WAR << "::SSL_CTX_set_ecdh_auto failed: " << std::strerror(errno);
-					}
-					// auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
-					auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
-					if (!SSL_CTX_set_cipher_list(ctx.native_handle(), ciphers))
-					{
-						LOG_WAR << "::SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
-					}
-					SSL_CTX_clear_options(ctx.native_handle(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
-				});
-		}
-		m_listener = std::make_unique<web::http::experimental::listener::http_listener>(uri.to_uri(), *server_config);
-	}
-	else
-	{
-		uri.set_scheme("http");
-		m_listener = std::make_unique<web::http::experimental::listener::http_listener>(uri.to_uri());
-	}
-
-	m_listener->support(methods::GET, std::bind(&RestHandler::handle_get, this, std::placeholders::_1));
-	m_listener->support(methods::PUT, std::bind(&RestHandler::handle_put, this, std::placeholders::_1));
-	m_listener->support(methods::POST, std::bind(&RestHandler::handle_post, this, std::placeholders::_1));
-	m_listener->support(methods::DEL, std::bind(&RestHandler::handle_delete, this, std::placeholders::_1));
-	m_listener->support(methods::OPTIONS, std::bind(&RestHandler::handle_options, this, std::placeholders::_1));
-	m_listener->support(methods::HEAD, std::bind(&RestHandler::handle_head, this, std::placeholders::_1));
-
-	m_listener->open().wait();
-	LOG_INF << fname << "Listening for requests at: " << uri.to_string();
-}
-
-void RestHandler::close()
-{
-	m_listener->close(); // .wait();
 }
 
 void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite)
@@ -406,12 +295,12 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiFileDownload() ";
 
 	permissionCheck(message, PERMISSION_KEY_file_download);
-	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
+	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
 		message.reply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
-	auto file = GET_STD_STRING(message.headers().find(HTTP_HEADER_KEY_file_path)->second);
+	auto file = GET_STD_STRING(message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
 		message.reply(status_codes::NotAcceptable, convertText2Json("file not found"));
@@ -420,47 +309,24 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
-	concurrency::streams::fstream::open_istream(file, std::ios::in | std::ios::binary)
-		.then([=](concurrency::streams::istream fileStream)
-			  {
-				  // Get the content length, which is used to set the
-				  // Content-Length property
-				  fileStream.seek(0, std::ios::end);
-				  auto length = static_cast<std::size_t>(fileStream.tell());
-				  fileStream.seek(0, std::ios::beg);
-				  auto fileInfo = os::fileStat(file);
-
-				  web::http::http_response resp(status_codes::OK);
-				  resp.set_body(fileStream, length);
-				  resp.headers().add(HTTP_HEADER_KEY_file_mode, std::get<0>(fileInfo));
-				  resp.headers().add(HTTP_HEADER_KEY_file_user, std::get<1>(fileInfo));
-				  resp.headers().add(HTTP_HEADER_KEY_file_group, std::get<2>(fileInfo));
-				  message.reply(resp);
-				  fileStream.close(); })
-		.then([=](pplx::task<void> t)
-			  {
-				  try
-				  {
-					  t.get();
-				  }
-				  catch (...)
-				  {
-					  // opening the file (open_istream) failed.
-					  // Reply with an error.
-					  message.reply(status_codes::InternalError);
-				  } });
+	auto fileInfo = os::fileStat(file);
+	web::http::http_response resp(status_codes::OK);
+	resp.headers().add(HTTP_HEADER_KEY_file_mode, std::get<0>(fileInfo));
+	resp.headers().add(HTTP_HEADER_KEY_file_user, std::get<1>(fileInfo));
+	resp.headers().add(HTTP_HEADER_KEY_file_group, std::get<2>(fileInfo));
+	message.reply(resp);
 }
 
 void RestHandler::apiFileUpload(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
 	permissionCheck(message, PERMISSION_KEY_file_upload);
-	if (!(message.headers().has(HTTP_HEADER_KEY_file_path)))
+	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
 		message.reply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
-	auto file = message.headers().find(HTTP_HEADER_KEY_file_path)->second;
+	auto file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
 	if (Utility::isFileExist(file))
 	{
 		message.reply(status_codes::Forbidden, convertText2Json("file already exist"));
@@ -468,22 +334,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	}
 
 	LOG_DBG << fname << "Uploading file <" << file << ">";
-
-	auto stream = concurrency::streams::fstream::open_ostream(file, std::ios::out | std::ios::binary | std::ios::trunc).get();
-	message.body().read_to_end(stream.streambuf()).get();
-	auto fileSize = stream.streambuf().size();
-	stream.close();
-	if (message.m_headers.count(HTTP_HEADER_KEY_file_mode))
-	{
-		os::fileChmod(file, std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_mode)->second));
-	}
-	if (message.m_headers.count(HTTP_HEADER_KEY_file_user) && message.m_headers.count(HTTP_HEADER_KEY_file_group))
-	{
-		os::chown(std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_user)->second),
-				  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
-				  file, false);
-	}
-	message.reply(status_codes::OK, convertText2Json(Utility::stringFormat("Success upload file with size %s", Utility::humanReadableSize(fileSize).c_str())));
+	message.reply(status_codes::OK);
 }
 
 void RestHandler::apiLabelsView(const HttpRequest &message)

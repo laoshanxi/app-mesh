@@ -246,13 +246,7 @@ std::string Configuration::getDockerProxyAddress() const
 int Configuration::getRestTcpPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_separateRestInternalPort;
-}
-
-bool Configuration::tcpRestProcessEnabled()
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_tcpRestProcessEnabled;
+	return m_rest->m_restTcpPort;
 }
 
 web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
@@ -607,8 +601,8 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_SeparateRestInternalPort))
-				SET_COMPARE(this->m_rest->m_separateRestInternalPort, newConfig->m_rest->m_separateRestInternalPort);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RestTcpPort))
+				SET_COMPARE(this->m_rest->m_restTcpPort, newConfig->m_rest->m_restTcpPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_DockerProxyListenAddr))
 				SET_COMPARE(this->m_rest->m_dockerProxyListenAddr, newConfig->m_rest->m_dockerProxyListenAddr);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
@@ -797,6 +791,10 @@ const web::json::value Configuration::getAgentAppJson() const
 	{
 		cmd += std::string(" -docker_agent_url ") + this->getDockerProxyAddress();
 	}
+	if (Configuration::instance()->getPromListenPort() > 1024)
+	{
+		cmd += std::string(" -prom_exporter_port ") + std::to_string(Configuration::instance()->getPromListenPort());
+	}
 	LOG_INF << fname << " agent start command <" << cmd << ">";
 
 	web::json::value restApp;
@@ -819,8 +817,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	auto rest = std::make_shared<JsonRest>();
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
-	rest->m_separateRestInternalPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_SeparateRestInternalPort);
-	rest->m_tcpRestProcessEnabled = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SeparateRestProcess);
+	rest->m_restTcpPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestTcpPort);
 	rest->m_dockerProxyListenAddr = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DockerProxyListenAddr);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
@@ -860,8 +857,7 @@ web::json::value Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_RestListenPort] = web::json::value::number(m_restListenPort);
 	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_restListenAddress);
-	result[JSON_KEY_SeparateRestInternalPort] = web::json::value::number(m_separateRestInternalPort);
-	result[JSON_KEY_SeparateRestProcess] = web::json::value::boolean(m_tcpRestProcessEnabled);
+	result[JSON_KEY_RestTcpPort] = web::json::value::number(m_restTcpPort);
 	result[JSON_KEY_DockerProxyListenAddr] = web::json::value::string(m_dockerProxyListenAddr);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
@@ -874,7 +870,7 @@ web::json::value Configuration::JsonRest::AsJson() const
 Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_httpThreadPoolSize(DEFAULT_HTTP_THREAD_POOL_SIZE),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
-	  m_separateRestInternalPort(DEFAULT_TCP_REST_LISTEN_PORT), m_tcpRestProcessEnabled(false)
+	  m_restTcpPort(DEFAULT_TCP_REST_LISTEN_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();
 	m_jwt = std::make_shared<JsonJwt>();

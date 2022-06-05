@@ -3,8 +3,6 @@
 #include <atomic>
 #include <memory>
 
-#include <cpprest/http_listener.h> // HTTP server
-
 #include "../../prom_exporter/family.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
@@ -77,7 +75,7 @@ private:
 class PrometheusRest : public RestBase
 {
 public:
-	explicit PrometheusRest(bool forward2TcpServer);
+	explicit PrometheusRest();
 	virtual ~PrometheusRest();
 
 	/// <summary>
@@ -111,10 +109,6 @@ public:
 
 protected:
 	/// <summary>
-	/// open REST listen port
-	/// </summary>
-	virtual void open();
-	/// <summary>
 	/// override RestBase::handleRest() to set REST related metrics
 	/// </summary>
 	/// <param name="message"></param>
@@ -136,7 +130,6 @@ private:
 	std::atomic_long m_collectTime = ATOMIC_FLAG_INIT; // std::atomic_flag should be initialized in declare
 	static std::shared_ptr<PrometheusRest> m_instance;
 
-	std::unique_ptr<web::http::experimental::listener::http_listener> m_promListener;
 	// prometheus registry
 	std::shared_ptr<prometheus::Registry> m_promRegistry;
 

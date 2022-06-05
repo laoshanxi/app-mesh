@@ -148,7 +148,6 @@ public:
 	const std::shared_ptr<appmesh::Request> serialize() const;
 	static std::shared_ptr<HttpRequest> deserialize(const char *input);
 	static const web::json::value emptyJson();
-	void addHeaders(http_response &response) const;
 
 	// serializeable, always use those variables intead of method(), headers()
 	std::string m_uuid;
@@ -158,8 +157,6 @@ public:
 	std::string m_body;
 	std::map<std::string, std::string> m_headers;
 	std::string m_query;
-
-	bool m_forwardResponse2RestServer; // not directly reply this endpoint, just forward to child rest side
 
 private:
 	// hide bellow extract functions, note extract_X function can only be called once, otherwise will hang

@@ -12,13 +12,14 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"net/url"
 	"path/filepath"
-	"strings"
 
 	"github.com/valyala/fasthttp"
 )
 
-var proxyClient = &fasthttp.HostClient{
+var dockerSocketFile = "/var/run/docker.sock"
+var dockerSocktClient = &fasthttp.HostClient{
 	Addr: dockerSocketFile,
 	Dial: func(addr string) (net.Conn, error) {
 		return net.Dial("unix", addr)
@@ -31,9 +32,9 @@ func dockerReverseProxyHandler(ctx *fasthttp.RequestCtx) {
 
 	resp := &ctx.Response
 	// do request
-	if err := proxyClient.Do(req, resp); err != nil {
+	if err := dockerSocktClient.Do(req, resp); err != nil {
 		ctx.Logger().Printf("Error when proxying the request: %s", err)
-		proxyClient.CloseIdleConnections()
+		dockerSocktClient.CloseIdleConnections()
 
 		resp.SetStatusCode(fasthttp.StatusForbidden)
 		resp.SetBodyString(err.Error())
@@ -42,7 +43,7 @@ func dockerReverseProxyHandler(ctx *fasthttp.RequestCtx) {
 	log.Printf("---Response:---\n%v\n", resp)
 }
 
-func listenDockerAgent() {
+func listenDockerAgent(dockerAgentAddr string) {
 	if err := fasthttp.ListenAndServe(dockerAgentAddr, dockerReverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp server: %s", err)
 	}
@@ -68,7 +69,7 @@ func loadServerCertificates(pem string, key string) tls.Certificate {
 	return cert
 }
 
-func listenDockerAgentTls() {
+func listenDockerAgentTls(dockerAgentAddr string) {
 	// https://github.com/valyala/fasthttp/blob/master/examples/letsencrypt/letsencryptserver.go
 	// https://github.com/valyala/fasthttp/issues/804
 	// https://studygolang.com/articles/9329
@@ -101,16 +102,22 @@ func listenDockerAgentTls() {
 	}
 }
 
-func listenDocker() {
-	enableTLS := strings.HasPrefix(dockerAgentAddr, "https://")
+func listenDocker(dockerAgentAddr string) {
 
-	// clean schema prefix for Listen
-	dockerAgentAddr = strings.Replace(dockerAgentAddr, "https://", "", 1)
-	dockerAgentAddr = strings.Replace(dockerAgentAddr, "http://", "", 1)
+	if IsFileExist(dockerSocketFile) {
+		addr, err := url.Parse(dockerAgentAddr)
+		if err != nil {
+			panic(err)
+		}
+		enableTLS := (addr.Scheme == "https")
+		dockerAgentAddr = addr.Hostname() + ":" + addr.Port()
 
-	if enableTLS {
-		listenDockerAgentTls()
+		if enableTLS {
+			listenDockerAgentTls(dockerAgentAddr)
+		} else {
+			listenDockerAgent(dockerAgentAddr)
+		}
 	} else {
-		listenDockerAgent()
+		log.Fatalf("Docker socket file not exist: %s", dockerSocketFile)
 	}
 }

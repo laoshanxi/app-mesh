@@ -14,7 +14,7 @@
 #include "protoc/Response.pb.h"
 
 std::shared_ptr<RestTcpServer> RestTcpServer::m_instance = nullptr;
-RestTcpServer::RestTcpServer() : RestHandler(false)
+RestTcpServer::RestTcpServer() : RestHandler()
 {
 }
 

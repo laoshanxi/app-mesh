@@ -49,7 +49,7 @@ while true; do
 		PID=$(tr -d '\0' </var/run/appmesh.pid)
 		PID_EXIST=$(ps aux | awk '{print $2}' | grep -w $PID)
 		CMD_EXIST=$(ps aux | awk '{print $11}' | grep -w ${PROG_HOME}/${PROG})
-		if [[ ! PID_EXIST ]] && [[ ! CMD_EXIST ]]; then
+		if [[ ! $PID_EXIST ]] && [[ ! $CMD_EXIST ]]; then
 			nohup ${PROG_HOME}/${PROG} &
 			pre_reg_app $*
 			log "$(date --rfc-3339=seconds): Starting App Mesh"
