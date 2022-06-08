@@ -12,7 +12,7 @@ const PROMETHEUS_METRIC_REST_PATH string = "/metrics"
 func prometheusProxyHandler(ctx *fasthttp.RequestCtx) {
 	// only allow GET /metrics
 	if string(ctx.Request.URI().Path()) == PROMETHEUS_METRIC_REST_PATH && string(ctx.Request.Header.Method()) == "GET" {
-		restAgentProxyHandler(ctx)
+		restProxyHandler(ctx)
 	} else {
 		ctx.Response.SetStatusCode(fasthttp.StatusBadRequest)
 	}
