@@ -17,6 +17,7 @@
 #include "../common/os/chown.hpp"
 #include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
+#include "MultipartParser.h"
 #include "Password.h"
 
 #define OPTION_URL \
@@ -1241,33 +1242,62 @@ void ArgumentParser::processFileUpload()
 		std::cout << "local file not exist" << std::endl;
 		return;
 	}
-	// https://msdn.microsoft.com/en-us/magazine/dn342869.aspx
-
-	auto fileStream = concurrency::streams::file_stream<uint8_t>::open_istream(local, std::ios_base::binary).get();
-	// Get the content length, which is used to set the
-	// Content-Length property
-	fileStream.seek(0, std::ios::end);
-	auto length = static_cast<std::size_t>(fileStream.tell());
-	fileStream.seek(0, std::ios::beg);
-	auto fileInfo = os::fileStat(local);
-
-	std::map<std::string, std::string> query, header;
-	header[HTTP_HEADER_KEY_file_path] = file;
-	header[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
-	header[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
-	header[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
-
-	// Create http_client to send the request.
-	http_client_config config;
-	config.set_timeout(std::chrono::seconds(200)); // default is 30 seconds
-	config.set_validate_certificates(false);
-	http_client client(m_url, config);
 	std::string restPath = "/appmesh/file/upload";
-	auto request = createRequest(methods::POST, restPath, query, header);
-	request.set_body(fileStream, length);
-	http_response response = client.request(request).get();
-	fileStream.close();
-	std::cout << parseOutputMessage(response) << std::endl;
+	auto fileStream = std::make_shared<concurrency::streams::ostream>();
+	// Open stream to output file.
+	pplx::task<void> requestTask = concurrency::streams::fstream::open_ostream(local).then([=](concurrency::streams::ostream outFile)
+																						   {
+        *fileStream = outFile;
+		auto fileInfo = os::fileStat(local);
+
+		std::map<std::string, std::string> query, header;
+		header[HTTP_HEADER_KEY_file_path] = file;
+		header[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
+		header[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
+		header[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
+
+		// https://github.com/AndsonYe/MultipartEncoder
+		// Use MultipartParser to get the encoded body content and boundary
+		MultipartParser parser;
+		parser.AddParameter("Filename", boost::filesystem::path(local).filename().string());
+		parser.AddFile("file", local);
+		std::string boundary = parser.boundary();
+		std::string body = parser.GenBodyContent();
+
+		// Create http_client to send the request.
+		web::http::client::http_client_config config;
+		config.set_timeout(std::chrono::seconds(200)); // default is 30 seconds
+		config.set_validate_certificates(false);
+		web::http::client::http_client client(m_url, config);
+		http_request request = createRequest(web::http::methods::POST, restPath, query, header);
+		 request.set_body(body, "multipart/form-data; boundary=" + boundary);
+        return client.request(request); })
+									   .then([=](pplx::task<http_response> response_task)
+											 {
+        web::http::http_response response = response_task.get();
+
+		if (response.headers().has(HTTP_HEADER_KEY_file_mode))
+			os::fileChmod(local, std::stoi(response.headers().find(HTTP_HEADER_KEY_file_mode)->second));
+		if (response.headers().has(HTTP_HEADER_KEY_file_user) && response.headers().has(HTTP_HEADER_KEY_file_group))
+			os::chown(std::stoi(response.headers().find(HTTP_HEADER_KEY_file_user)->second),
+					  std::stoi(response.headers().find(HTTP_HEADER_KEY_file_group)->second),
+					  local, false);
+		
+		return response.body().read_to_end(fileStream->streambuf()); })
+									   .then([=](size_t)
+											 { 
+												std::cout << "Uploaded file <" << local  << ">" << std::endl;
+												return fileStream->close(); });
+
+	// Wait for all the outstanding I/O to complete and handle any exceptions
+	try
+	{
+		requestTask.wait();
+	}
+	catch (const std::exception &e)
+	{
+		throw;
+	}
 }
 
 void ArgumentParser::processTags()

@@ -197,7 +197,11 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 }
 
 func listenAgent(restAgentAddr string) error {
-	return fasthttp.ListenAndServe(restAgentAddr, restProxyHandler)
+	s := &fasthttp.Server{
+		Handler:            restProxyHandler,
+		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
+	}
+	return s.ListenAndServe(restAgentAddr)
 }
 
 func listenAgentTls(restAgentAddr string) error {
@@ -220,8 +224,11 @@ func listenAgentTls(restAgentAddr string) error {
 		log.Fatalf("Error in Listen tcp4: %s", err)
 		panic(err)
 	}
-	lnTls := tls.NewListener(ln, cfg)
-	return fasthttp.Serve(lnTls, restProxyHandler)
+	s := &fasthttp.Server{
+		Handler:            restProxyHandler,
+		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
+	}
+	return s.Serve(tls.NewListener(ln, cfg))
 }
 
 func listenRest(restAgentAddr string, restTcpPort int) {
