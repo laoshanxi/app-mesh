@@ -29,7 +29,6 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/u
 
 # initd user
 if [ -z ${APPMESH_DAEMON_EXEC_USER+x} ]; then
-	# echo "APPMESH_DAEMON_EXEC_USER not set, run as current user"
 	:
 else
 	if [ -z ${APPMESH_DAEMON_EXEC_USER_GROUP+x} ]; then
@@ -38,6 +37,7 @@ else
 		su ${APPMESH_DAEMON_EXEC_USER} -g ${APPMESH_DAEMON_EXEC_USER_GROUP}
 	fi
 fi
+echo "App Mesh Service run as user: $USER"
 
 log() {
 	logger "[$(date)]""$1"

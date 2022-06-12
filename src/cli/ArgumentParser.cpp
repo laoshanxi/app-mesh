@@ -1739,10 +1739,14 @@ std::string ArgumentParser::readAuthToken()
 	{
 		try
 		{
-			auto config = web::json::value::parse(Utility::readFile(m_tokenFile));
-			if (config.has_object_field("auths") && config["auths"].has_object_field(hostName))
+			auto configFile = Utility::readFile(m_tokenFile);
+			if (configFile.length() > 0)
 			{
-				jwtToken = config.at("auths").at(hostName).at("auth").as_string();
+				auto config = web::json::value::parse(configFile);
+				if (config.has_object_field("auths") && config["auths"].has_object_field(hostName))
+				{
+					jwtToken = config.at("auths").at(hostName).at("auth").as_string();
+				}
 			}
 		}
 		catch (const std::exception &e)
@@ -1763,7 +1767,10 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 		{
 			configFile = Utility::readFile(m_tokenFile);
 		}
-		config = web::json::value::parse(configFile);
+		if (configFile.length() > 0)
+		{
+			config = web::json::value::parse(configFile);
+		}
 	}
 	catch (const std::exception &e)
 	{

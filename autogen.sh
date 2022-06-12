@@ -80,11 +80,10 @@ fi
 
 # apt install -y upx-ucl
 UPX_ARCH=$architecture
-UPX_VER=3.96 
+UPX_VER=3.96
 $WGWT_A https://github.com/upx/upx/releases/download/v${UPX_VER}/upx-${UPX_VER}-amd64_linux.tar.xz
 tar xf upx-${UPX_VER}-amd64_linux.tar.xz
 mv upx-${UPX_VER}-amd64_linux/upx /usr/bin/
-
 
 # yum install -y golang
 # apt install -y golang
@@ -99,6 +98,8 @@ go version
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
 go get github.com/valyala/fasthttp@v1.37.0
+go get github.com/buaazp/fasthttprouter
+go get -v github.com/rs/xid
 # Golang tools for VSCode
 go install -v github.com/cweill/gotests/gotests@latest
 go install -v github.com/fatih/gomodifytags@latest
@@ -111,7 +112,6 @@ go install -v golang.org/x/tools/gopls@latest
 go get -v google.golang.org/protobuf@latest
 go install -v github.com/golang/protobuf/protoc-gen-go@latest
 ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
-
 
 # check libssl in case of openssl_update.sh not executed
 if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then
@@ -214,7 +214,6 @@ unzip -o cryptopp860.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
 make -j6
 make install
-
 
 cd $ROOTDIR
 # cfssl: generate SSL certification file

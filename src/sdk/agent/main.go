@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var restAgentAddr = "" //"https://0.0.0.0:6060"
+
 func monitorParentExit(parentProPid int) {
 	// 1. Force process exit when parent was exited
 	_, _, errno := syscall.RawSyscall(uintptr(syscall.SYS_PRCTL), uintptr(syscall.PR_SET_PDEATHSIG), uintptr(syscall.SIGKILL), 0)
@@ -28,7 +30,6 @@ func monitorParentExit(parentProPid int) {
 
 // main
 func main() {
-	var restAgentAddr = ""   //"https://0.0.0.0:6060"
 	var restTcpPort = 0      //6059
 	var prometheusPort = 0   //6061
 	var dockerAgentAddr = "" //"https://127.0.0.1:6058"

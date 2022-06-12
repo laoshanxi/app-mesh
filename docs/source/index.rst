@@ -26,6 +26,7 @@ Welcome to AppMesh's documentation!
    MFA.md
    USER_ROLE.md
    Coverity.md
+   GrafanaSimpleJson.md
 
 .. toctree::
    :maxdepth: 1

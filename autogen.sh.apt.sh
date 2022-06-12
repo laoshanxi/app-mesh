@@ -30,6 +30,7 @@ apt install -y golang
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
 go get -v github.com/valyala/fasthttp@v1.37.0
+go get github.com/buaazp/fasthttprouter
 go get -v github.com/rs/xid
 # Golang tools for VSCode
 go install -v github.com/cweill/gotests/gotests@latest

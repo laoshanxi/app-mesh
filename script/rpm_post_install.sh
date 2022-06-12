@@ -26,20 +26,22 @@ for e in $(env); do
 	fi
 done
 
-if ($( systemd --test > /dev/null )) ; then
+if ($(systemd --test >/dev/null)); then
 	chmod 644 ${PROG_HOME}/script/appmesh.systemd.service
 	cp -f ${PROG_HOME}/script/appmesh.systemd.service $SYSTEMD_FILE
 	# systemd user
 	if [ -z ${APPMESH_DAEMON_EXEC_USER+x} ]; then
-		echo "APPMESH_DAEMON_EXEC_USER not set, daemon run as root user"
+		echo "App Mesh Service run as user: root"
 	else
 		sed -i "s#User=#User=${APPMESH_DAEMON_EXEC_USER}#g" $SYSTEMD_FILE
+		echo "App Mesh Service run as user: ${APPMESH_DAEMON_EXEC_USER}"
 	fi
 	# systemd user group
 	if [ -z ${APPMESH_DAEMON_EXEC_USER_GROUP+x} ]; then
-		echo "APPMESH_DAEMON_EXEC_USER_GROUP not set, daemon run as default user group"
+		:
 	else
 		sed -i "s#Group=#Group=${APPMESH_DAEMON_EXEC_USER_GROUP}#g" $SYSTEMD_FILE
+		echo "App Mesh Service run as user group: ${APPMESH_DAEMON_EXEC_USER_GROUP}"
 	fi
 	systemctl daemon-reload
 else
@@ -83,14 +85,14 @@ chmod +x ${PROG_HOME}/script/appc.sh
 chmod 644 ${PROG_HOME}/config.json
 chmod 600 ${PROG_HOME}/security.json
 if [ -z ${APPMESH_DAEMON_EXEC_USER+x} ]; then
-	echo "APPMESH_DAEMON_EXEC_USER not set"
+	:
 else
-	echo "APPMESH_DAEMON_EXEC_USER is set to $APPMESH_DAEMON_EXEC_USER"
+	echo "APPMESH_DAEMON_EXEC_USER=$APPMESH_DAEMON_EXEC_USER"
 	chown ${APPMESH_DAEMON_EXEC_USER} ${PROG_HOME} ${PROG_HOME}/ssl/* ${PROG_HOME}/*.json
 	if [ -z ${APPMESH_DAEMON_EXEC_USER_GROUP+x} ]; then
-		echo "APPMESH_DAEMON_EXEC_USER_GROUP not set"
+		:
 	else
-		echo "APPMESH_DAEMON_EXEC_USER_GROUP is set to $APPMESH_DAEMON_EXEC_USER_GROUP"
+		echo "APPMESH_DAEMON_EXEC_USER_GROUP=$APPMESH_DAEMON_EXEC_USER_GROUP"
 		chown ${APPMESH_DAEMON_EXEC_USER}:${APPMESH_DAEMON_EXEC_USER_GROUP} ${PROG_HOME} ${PROG_HOME}/ssl/* ${PROG_HOME}/*.json
 	fi
 fi

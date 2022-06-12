@@ -27,14 +27,12 @@ type Client struct {
 }
 
 // NewClient initializes client for interacting with an instance of REST server;
-func NewClient(host string, port int, sslEnable bool) (*Client, error) {
-	if sslEnable {
-		apiURL := fmt.Sprintf("https://%s:%d", host, port)
-		return &Client{baseURL: apiURL, client: defaultHTTPClient}, nil
-	} else {
-		apiURL := fmt.Sprintf("http://%s:%d", host, port)
-		return &Client{baseURL: apiURL, client: http.DefaultClient}, nil
-	}
+func NewClient(appmeshUri string) *Client {
+	return &Client{baseURL: appmeshUri, client: defaultHTTPClient}
+}
+
+func NewClientWithAuth(appmeshUri string, authenKey string) *Client {
+	return &Client{baseURL: appmeshUri, token: authenKey, client: defaultHTTPClient}
 }
 
 // REST GET
@@ -223,7 +221,7 @@ func (r *Client) RemoveApp(appName string) error {
 func (r *Client) AddApp(app Application) (*Application, error) {
 	appJson, err := json.Marshal(app)
 	if err == nil {
-		raw, code, err := r.put(fmt.Sprintf("/appmesh/app/%s", *app.Name), nil, nil, appJson)
+		raw, code, err := r.put(fmt.Sprintf("/appmesh/app/%s", app.Name), nil, nil, appJson)
 		if code == http.StatusOK {
 			resultApp := Application{}
 			json.Unmarshal(raw, &resultApp)
@@ -269,7 +267,7 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 						query.Add("process_uuid", *uuid)
 						query.Add("stdout_position", strconv.FormatInt(outputPosition, 10))
 
-						success, output, header, _ := r.GetAppOutput(*resultApp.Name, outputPosition, 0, 10240, *uuid)
+						success, output, header, _ := r.GetAppOutput(resultApp.Name, outputPosition, 0, 10240, *uuid)
 						if len(output) > 0 {
 							fmt.Print(string(output))
 						}
@@ -285,7 +283,7 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 						}
 						time.Sleep(time.Microsecond * 500)
 					}
-					r.RemoveApp(*resultApp.Name)
+					r.RemoveApp(resultApp.Name)
 				}
 			}
 		}
@@ -300,43 +298,44 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 // Application json
 type Application struct {
 	// main definition
-	Name           *string   `json:"name"`
-	Command        *string   `json:"command"`
-	InitCommand    *string   `json:"init_command"`
-	FiniCommand    *string   `json:"fini_command"`
-	HealthCheckCMD *string   `json:"health_check_cmd"`
-	WorkingDir     *string   `json:"working_dir"`
-	Status         *int      `json:"status"`
-	StartTime      *string   `json:"start_time"`
-	EndTime        *string   `json:"end_time"`
-	Retention      *int      `json:"retention"`
-	Behavior       *Behavior `json:"behavior"`
-
-	// short running definition
-	StartIntervalSeconds *string `json:"start_interval_seconds"`
-	Cron                 *bool   `json:"cron"`
-
-	// runtime attributes
-	Pid           *int    `json:"pid"`
-	Return        *int    `json:"return"`
-	Health        *int    `json:"health"`
-	Fd            *int    `json:"fd"`
-	ContainerID   *string `json:"container_id"`
-	LastStartTime *string `json:"last_start_time"`
-	NextStartTime *string `json:"next_start_time"`
-	RegisterTime  *string `json:"register_time"`
-	CPU           *int    `json:"cpu"`
-	Memory        *int    `json:"memory"`
-	Uuid          *string `json:"process_uuid"` // for run application
-
-	Owner      *string `json:"owner"`
-	Permission *int    `json:"permission"`
-	ShellMode  *bool   `json:"shell"`
-
+	Name           string  `json:"name"`
+	Owner          *string `json:"owner"`
+	Permission     *int    `json:"permission"`
+	ShellMode      *bool   `json:"shell"`
+	Command        *string `json:"command"`
+	Description    *string `json:"description"`
+	WorkingDir     *string `json:"working_dir"`
+	HealthCheckCMD *string `json:"health_check_cmd"`
+	Status         int     `json:"status"`
 	StdoutCacheNum *int    `json:"stdout_cache_num"`
 	Metadata       *string `json:"metadata"`
-	Version        *string `json:"version"`
-	LastError      *string `json:"last_error"`
+
+	StartTime     *string   `json:"start_time"`
+	EndTime       *string   `json:"end_time"`
+	StopRetention *string   `json:"retention"`
+	Behavior      *Behavior `json:"behavior"`
+	// short running definition
+	StartIntervalSeconds       *string `json:"start_interval_seconds"`
+	StartIntervalSecondsIsCron *bool   `json:"cron"`
+
+	// runtime attributes
+	Pid            *int     `json:"pid"`
+	ReturnCode     *int     `json:"return"`
+	Health         *int     `json:"health"`
+	FileDescritors *int     `json:"fd"`
+	Starts         *int     `json:"starts"`
+	PsTree         *string  `json:"pstree"`
+	ContainerID    *string  `json:"container_id"`
+	LastStartTime  *string  `json:"last_start_time"`
+	LastExitTime   *string  `json:"last_exit_time"`
+	NextStartTime  *string  `json:"next_start_time"`
+	RegisterTime   *string  `json:"register_time"`
+	CPU            *float64 `json:"cpu"`
+	Memory         *int     `json:"memory"`
+	Uuid           *string  `json:"process_uuid"` // for run application
+
+	Version   *int    `json:"version"`
+	LastError *string `json:"last_error"`
 
 	PosixTimeZone *string `json:"posix_timezone"`
 	DockerImage   *string `json:"docker_image"`

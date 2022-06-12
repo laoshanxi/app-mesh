@@ -4,6 +4,7 @@
 ################################################################################
 
 export PROG_HOME=/opt/appmesh
+export PROGC=bin/appc
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
 
 # backup configuration file to avoid overide when next installation
@@ -18,7 +19,7 @@ if [ -f "${PROG_HOME}/ldap.json" ]; then
 fi
 
 # stop all running applications
-if [ -f "${PROG_HOME}/bin/appc" ]; then
+if [ -f "${PROG_HOME}/${PROGC}" ]; then
 	${PROG_HOME}/${PROGC} logon -u admin -x admin123 -o "" || true
-	${PROG_HOME}/bin/appc view -l | awk '{if (NR>1){cmd="${PROG_HOME}/bin/appc disable -n "$2;print(cmd);system(cmd)}}'
+	${PROG_HOME}/${PROGC} view -l | awk '{if (NR>1){cmd="${PROG_HOME}/bin/appc disable -n "$2;print(cmd);system(cmd)}}'
 fi

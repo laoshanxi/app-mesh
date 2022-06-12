@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buaazp/fasthttprouter"
+	grafana "github.com/laoshanxi/app-mesh/src/sdk/agent/grafana"
 	"github.com/rs/xid"
 	"github.com/valyala/fasthttp"
 	"google.golang.org/protobuf/proto"
@@ -61,11 +63,7 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 	// https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 
 	req := &ctx.Request
-	ctx.Logger().Printf("Request entered")
-	ctx.Logger().Printf("Request method is %q\n", ctx.Method())
-	ctx.Logger().Printf("RequestURI is %q\n", ctx.RequestURI())
-	ctx.Logger().Printf("Requested path is %q\n", ctx.Path())
-	ctx.Logger().Printf("Client ip is %q\n", ctx.RemoteIP())
+	ctx.Logger().Printf("Requesting")
 
 	// prepare header and body
 	protocRequest := serializeRequest(req)
@@ -196,15 +194,15 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	}
 }
 
-func listenAgent(restAgentAddr string) error {
+func listenAgent(restAgentAddr string, router *fasthttprouter.Router) error {
 	s := &fasthttp.Server{
-		Handler:            restProxyHandler,
+		Handler:            router.Handler,
 		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
 	}
 	return s.ListenAndServe(restAgentAddr)
 }
 
-func listenAgentTls(restAgentAddr string) error {
+func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 	cfg := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
 		Certificates:             []tls.Certificate{loadServerCertificates(filepath.Join(getAppMeshHomeDir(), "ssl/server.pem"), filepath.Join(getAppMeshHomeDir(), "ssl/server-key.pem"))},
@@ -225,7 +223,7 @@ func listenAgentTls(restAgentAddr string) error {
 		panic(err)
 	}
 	s := &fasthttp.Server{
-		Handler:            restProxyHandler,
+		Handler:            router.Handler,
 		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
 	}
 	return s.Serve(tls.NewListener(ln, cfg))
@@ -236,8 +234,7 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 	if err != nil {
 		panic(err)
 	}
-	enableTLS := (addr.Scheme == "https")
-	restAgentAddr = addr.Hostname() + ":" + addr.Port()
+	addrForListen := addr.Hostname() + ":" + addr.Port()
 
 	// connect to TCP rest server
 	conn, err := connectServer(restTcpPort)
@@ -249,10 +246,13 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 	go readProtobufLoop()
 
 	// setup REST listener
-	if enableTLS {
-		err = listenAgentTls(restAgentAddr)
+	router := fasthttprouter.New()
+	router.NotFound = restProxyHandler // set all default router to restProxyHandler
+	grafana.RegGrafanaRestHandler(router, restAgentAddr)
+	if addr.Scheme == "https" {
+		err = listenAgentTls(addrForListen, router)
 	} else {
-		err = listenAgent(restAgentAddr)
+		err = listenAgent(addrForListen, router)
 	}
 	if err != nil {
 		log.Fatalf("Error in fasthttp Serve: %s", err)

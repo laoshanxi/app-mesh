@@ -25,5 +25,6 @@ rm -f /usr/share/bash-completion/completions/appc
 rm -rf ~/._appmesh_*
 rm -f /usr/bin/appc
 
-# clean user appmesh
+# clean user and the group
 userdel -r appmesh -f || true
+groupdel appmesh -f || true
