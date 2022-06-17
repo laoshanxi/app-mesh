@@ -38,19 +38,13 @@ func New(opts ...Opt) *GrafanaHandler {
 }
 
 func (h *GrafanaHandler) handleRestRouter(router *fasthttprouter.Router) {
-	router.GET("/", h.HandleRoot)
-	router.POST("/", h.HandleRoot)
-	router.GET("/query", h.HandleQuery)
-	router.POST("/query", h.HandleQuery)
-	router.GET("/annotations", h.HandleAnnotations)
-	router.POST("/annotations", h.HandleAnnotations)
-	router.OPTIONS("/annotations", h.HandleAnnotations)
-	router.GET("/search", h.HandleSearch)
-	router.POST("/search", h.HandleSearch)
-	router.GET("/tag-keys", h.HandleTagKeys)
-	router.POST("/tag-keys", h.HandleTagKeys)
-	router.GET("/tag-values", h.HandleTagValues)
-	router.POST("/tag-values", h.HandleTagValues)
+	router.GET("/", cors(h.HandleRoot))
+	router.POST("/query", cors(h.HandleQuery))
+	router.POST("/annotations", cors(h.HandleAnnotations))
+	router.OPTIONS("/annotations", cors(h.HandleAnnotations))
+	router.POST("/search", cors(h.HandleSearch))
+	router.POST("/tag-keys", cors(h.HandleTagKeys))
+	router.POST("/tag-values", cors(h.HandleTagValues))
 }
 
 // WithSource will attempt to use the datasource provided as
@@ -664,10 +658,6 @@ func (h *GrafanaHandler) HandleAnnotations(ctx *fasthttp.RequestCtx) {
 	}
 
 	if string(ctx.Method()) == http.MethodOptions {
-		// cross site header
-		ctx.Response.Header.Set("Access-Control-Allow-Methods", "POST,OPTIONS")
-		ctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
-		ctx.Response.Header.Set("Access-Control-Allow-Headers", "accept, content-type")
 		ctx.Response.SetBodyRaw([]byte("Allow: POST,OPTIONS"))
 		return
 	}

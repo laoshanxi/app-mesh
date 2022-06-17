@@ -5,6 +5,7 @@
 export DEBIAN_FRONTEND=noninteractive
 
 apt update
+# apt full-upgrade -q -y
 # apt install -y build-essential
 apt install -y wget
 apt install -y g++ cmake make

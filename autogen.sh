@@ -28,6 +28,7 @@ fi
 # install compiler and tools
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
+	# yum update -q -y
 	RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
 	if [[ $RHEL_VER = "8" ]]; then
 		sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
@@ -66,6 +67,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	# sed -i s/security.ubuntu/old-releases.ubuntu/g /etc/apt/sources.list
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
+	# apt full-upgrade -q -y
 	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap2-dev liboath-dev
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
