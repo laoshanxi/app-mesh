@@ -106,4 +106,9 @@ if [[ "$APPMESH_SECURE_INSTALLATION" = "Y" ]]; then
 fi
 
 # add user appmesh
-useradd appmesh -s /usr/sbin/nologin --no-create-home --user-group || true
+if [ $DOCKER_RUNNING ]; then
+	echo "installing in docker container"
+else
+	echo "installing in native host"
+	useradd appmesh -s /usr/sbin/nologin --no-create-home --user-group || true
+fi

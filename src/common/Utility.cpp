@@ -547,21 +547,21 @@ bool Utility::createPidFile()
 	auto fd = open(PID_FILE_PATH, O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
-		LOG_ERR << fname << "Failed to create PID file:" << PID_FILE_PATH << " with error: " << std::strerror(errno);
+		std::cerr << fname << "Failed to create PID file:" << PID_FILE_PATH << " with error: " << std::strerror(errno);
 		return false;
 	}
 	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
 	{
-		LOG_INF << fname << "New process running";
+		std::cout << fname << "New process running";
 		auto pid = std::to_string(getpid());
 		return write(fd, pid.c_str(), pid.length() + 1) > 0;
 	}
 	else
 	{
 		if (EWOULDBLOCK == errno)
-			LOG_ERR << fname << "process already running";
+			std::cerr << fname << "process already running";
 		else
-			LOG_ERR << fname << "Failed with error: " << std::strerror(errno);
+			std::cerr << fname << "Failed with error: " << std::strerror(errno);
 	}
 	return false;
 }

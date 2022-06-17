@@ -33,9 +33,9 @@ namespace fs = boost::filesystem;
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
 #define PRINT_VERSION()                                                                                                   \
+	std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                      \
 	if (argc >= 2 && (std::string("version") == argv[1] || std::string("-v") == argv[1] || std::string("-V") == argv[1])) \
 	{                                                                                                                     \
-		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                  \
 		return 0;                                                                                                         \
 	}
 
