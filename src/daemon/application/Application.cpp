@@ -24,7 +24,7 @@
 ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(std::chrono::milliseconds(20));
 
 Application::Application()
-	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0),
+	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false), m_nextStartTimerId(INVALID_TIMER_ID),
 	  m_health(true), m_appId(Utility::createUUID()), m_version(0), m_pid(ACE_INVALID_PID),
 	  m_suicideTimerId(INVALID_TIMER_ID), m_starts(std::make_shared<prometheus::Counter>())
@@ -183,6 +183,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", Configuration::instance()->getWorkDir().c_str(), app->m_name.c_str());
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
+	app->m_stdoutCacheSize = app->m_stdoutFileQueue->size();
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)
 		throw std::invalid_argument("command line length should less than 2048");
 	app->m_healthCheckCmd = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_health_check_cmd));
@@ -232,8 +233,10 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	if (app->m_dockerImage.length() == 0 && app->m_commandLine.length() == 0)
 		throw std::invalid_argument("no command line provide");
 	if (app->m_dockerImage.length()) // docker app does not support reserve more output backup files
+	{
 		app->m_stdoutCacheNum = 0;
-
+		app->m_stdoutCacheSize = 0;
+	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
 	{
 		app->m_startTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time);
@@ -711,7 +714,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
 	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
 	if (m_stdoutCacheNum)
-		result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(static_cast<int>(m_stdoutCacheNum));
+		result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_stdoutCacheNum);
 	if (m_metadata != EMPTY_STR_JSON)
 		result[JSON_KEY_APP_metadata] = m_metadata;
 	if (returnRuntimeInfo)
@@ -740,7 +743,7 @@ web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		}
 		result[JSON_KEY_APP_health] = web::json::value::number(this->health());
 		if (m_stdoutFileQueue->size())
-			result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_stdoutFileQueue->size());
+			result[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_stdoutFileQueue->size());
 		// result[JSON_KEY_APP_id] = web::json::value::string(m_appId);
 	}
 	if (m_dailyLimit != nullptr)

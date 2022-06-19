@@ -33,9 +33,9 @@ namespace fs = boost::filesystem;
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
 
 #define PRINT_VERSION()                                                                                                   \
-	std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                      \
 	if (argc >= 2 && (std::string("version") == argv[1] || std::string("-v") == argv[1] || std::string("-V") == argv[1])) \
 	{                                                                                                                     \
+		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                  \
 		return 0;                                                                                                         \
 	}
 
@@ -273,6 +273,7 @@ public:
 #define JSON_KEY_APP_shell_mode "shell"
 #define JSON_KEY_APP_command "command"
 #define JSON_KEY_APP_description "description"
+#define JSON_KEY_APP_stdout_cache_size "stdout_cache_size"
 #define JSON_KEY_APP_stdout_cache_num "stdout_cache_num"
 #define JSON_KEY_APP_health_check_cmd "health_check_cmd"
 #define JSON_KEY_APP_working_dir "working_dir"

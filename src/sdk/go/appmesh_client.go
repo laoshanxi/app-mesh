@@ -319,20 +319,21 @@ type Application struct {
 	StartIntervalSecondsIsCron *bool   `json:"cron"`
 
 	// runtime attributes
-	Pid            *int     `json:"pid"`
-	ReturnCode     *int     `json:"return"`
-	Health         *int     `json:"health"`
-	FileDescritors *int     `json:"fd"`
-	Starts         *int     `json:"starts"`
-	PsTree         *string  `json:"pstree"`
-	ContainerID    *string  `json:"container_id"`
-	LastStartTime  *string  `json:"last_start_time"`
-	LastExitTime   *string  `json:"last_exit_time"`
-	NextStartTime  *string  `json:"next_start_time"`
-	RegisterTime   *string  `json:"register_time"`
-	CPU            *float64 `json:"cpu"`
-	Memory         *int     `json:"memory"`
-	Uuid           *string  `json:"process_uuid"` // for run application
+	Pid             *int     `json:"pid"`
+	ReturnCode      *int     `json:"return"`
+	Health          *int     `json:"health"`
+	FileDescritors  *int     `json:"fd"`
+	Starts          *int     `json:"starts"`
+	PsTree          *string  `json:"pstree"`
+	ContainerID     *string  `json:"container_id"`
+	LastStartTime   *string  `json:"last_start_time"`
+	LastExitTime    *string  `json:"last_exit_time"`
+	NextStartTime   *string  `json:"next_start_time"`
+	RegisterTime    *string  `json:"register_time"`
+	CPU             *float64 `json:"cpu"`
+	Memory          *int     `json:"memory"`
+	Uuid            *string  `json:"process_uuid"` // for run application
+	StdoutCacheSize *int     `json:"stdout_cache_size"`
 
 	Version   *int    `json:"version"`
 	LastError *string `json:"last_error"`

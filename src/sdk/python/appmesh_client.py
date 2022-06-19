@@ -160,7 +160,7 @@ class AppMeshClient:
                 Output start position, 0 means start from beginning
             stdout_index : str
                 Index of history process stdout, 0 means current running process
-                The history number depend by 'stdout_cache_num' of a application
+                The history number depend by 'stdout_cache_size' of a application
             stdout_maxsize : int
                 Max buffer size
             process_uuid : str
@@ -311,7 +311,7 @@ class AppMeshClient:
                 Output start position, 0 means start from beginning
             stdout_index : str
                 Index of history process stdout, 0 means current running process
-                The history number depend by 'stdout_cache_num' of a application
+                The history number depend by 'stdout_cache_size' of a application
             stdout_maxsize : int
                 Max buffer size
             process_uuid : str

@@ -109,10 +109,10 @@ protected:
 	web::json::value m_metadata;
 	bool m_shellApp;
 	int m_stdoutCacheNum;
+	int m_stdoutCacheSize;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
-	//the exit code of last instance
-	std::shared_ptr<int> m_return;
+	std::shared_ptr<int> m_return; // the exit code of last instance
 	std::string m_posixTimeZone;
 	std::string m_startTime;
 	std::string m_endTime;

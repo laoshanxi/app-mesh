@@ -58,12 +58,13 @@ int main(int argc, char *argv[])
 		// check reactor
 		if (ACE_Reactor::instance()->initialized() == 0)
 		{
-			LOG_ERR << "Init reactor failed with error " << std::strerror(errno);
+			std::cerr << "Init reactor failed with error " << std::strerror(errno);
 			return -1;
 		}
 
-		// init log
+		// init log, before this, do not use logger
 		Utility::initLogging("server");
+		LOG_INF << fname << "Build: " << __MICRO_VAR__(BUILD_TAG);
 		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
 
 		{
