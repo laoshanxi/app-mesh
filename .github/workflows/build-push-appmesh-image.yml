@@ -9,9 +9,10 @@ on:
       - "src/**"
       - "script/**"
       - ".github/workflows/build-push-appmesh-image.yml"
-  # trigger when the workflow "build ubuntu20 image for build appmesh" succeeded
+      - "Dockerfile"
+  # trigger when the workflow "build with ubuntu:latest for appmesh build image" succeeded
   workflow_run:
-    workflows: ["build ubuntu20 image for build appmesh"]
+    workflows: ["build with ubuntu:latest for appmesh build image"]
     types:
       - completed
 
