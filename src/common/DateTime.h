@@ -96,9 +96,15 @@ public:
 	/// Parse day time string to UTC day time duration
 	/// </summary>
 	/// <param name="strTime">string with [%H:%M:%S] format</param>
-	/// <param name="posixTimezone">posix time zone, +08</param>
 	/// <returns>boost::posix_time::time_duration</returns>
-	static boost::posix_time::time_duration parseDayTimeUtcDuration(const std::string &strTime, const std::string &posixTimezone);
+	static boost::posix_time::time_duration parseDayTimeUtcDuration(std::string strTime);
+
+	/// <summary>
+	/// Format boost::posix_time::time_duration to day time string
+	/// </summary>
+	/// <param name="duration">boost::posix_time::time_duration</param>
+	/// <returns>string with [%H:%M:%S] format</returns>
+	static std::string formatDayTimeUtcDuration(boost::posix_time::time_duration &duration);
 
 	/// <summary>
 	/// Reduce posix zone (+08:00:00 -> +08), remove last ":00"

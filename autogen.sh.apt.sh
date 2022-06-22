@@ -2,6 +2,8 @@
 ################################################################################
 ## This script is used to install 3rd-party dependency libraries by apt
 ################################################################################
+set -x
+set -e
 export DEBIAN_FRONTEND=noninteractive
 
 apt update
@@ -11,7 +13,7 @@ apt install -y wget
 apt install -y g++ cmake make
 
 # security
-apt install -y libldap2-dev liboath-dev
+apt install -y libldap-dev liboath-dev
 
 # fpm
 apt install -y ruby ruby-dev rubygems alien
@@ -32,6 +34,7 @@ export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
 go get -v github.com/valyala/fasthttp@v1.37.0
 go get github.com/buaazp/fasthttprouter
+go get github.com/klauspost/compress@v1.15.5
 go get -v github.com/rs/xid
 # Golang tools for VSCode
 go install -v github.com/cweill/gotests/gotests@latest

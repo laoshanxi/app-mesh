@@ -48,7 +48,7 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 
 	for i := range apps {
 		meshApp := apps[i]
-		t, _ := time.Parse("2006-01-02T15:04:05+08", *meshApp.RegisterTime)
+		t := time.Unix(*meshApp.RegisterTime, 0)
 		regTimes = append(regTimes, t)
 		appNames = append(appNames, meshApp.Name)
 		if meshApp.Owner != nil {

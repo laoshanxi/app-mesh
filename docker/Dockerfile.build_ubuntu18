@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
-COPY autogen.sh /opt/autogen.sh
+COPY autogen.sh go.* /opt/
 
 USER root
 
-RUN sh /opt/autogen.sh && rm -rf /opt/* && apt-get clean
+RUN cd /opt/ && sh autogen.sh && rm -rf /opt/* && apt-get clean

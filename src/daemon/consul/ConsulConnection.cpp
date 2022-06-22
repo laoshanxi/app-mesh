@@ -59,7 +59,7 @@ void ConsulConnection::reportNode()
 	PerfLog perf(fname);
 	try
 	{
-		//report resource: /appmesh/cluster/nodes/myhost
+		// report resource: /appmesh/cluster/nodes/myhost
 		std::string path = std::string(CONSUL_BASE_PATH).append("cluster/nodes/").append(MY_HOST_NAME);
 
 		ConsulNode node;
@@ -206,7 +206,7 @@ web::json::value ConsulConnection::viewCloudApp(const std::string &app)
 		{
 			if (node.second->m_scheduleApps.count(app) > 0)
 			{
-				scheduleResult[node.first] = web::json::value::string(DateTime::formatLocalTime(node.second->m_scheduleApps[app]));
+				scheduleResult[node.first] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(node.second->m_scheduleApps[app].time_since_epoch()).count());
 			}
 		}
 	}
@@ -415,7 +415,7 @@ std::string ConsulConnection::requestSessionId()
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto json = resp.extract_json(true).get();
-		//LOG_DBG << fname << json.serialize();
+		// LOG_DBG << fname << json.serialize();
 		if (HAS_JSON_FIELD(json, "ID"))
 		{
 			sessionId = GET_JSON_STR_VALUE(json, "ID");
@@ -635,7 +635,7 @@ bool ConsulConnection::registerService(const std::string &appName, int port)
 {
 	const static char fname[] = "ConsulConnection::registerService() ";
 	// https://www.hashicorp.com/blog/consul-and-external-services/
-	//curl -X PUT -d
+	// curl -X PUT -d
 	//  '{"Node": "myhost", "Address": "myhost","Service": {"Service": "mysql", "tags": ["main","v1"], "Port": 3306}}'
 	//  http://127.0.0.1:8500/v1/catalog/register
 
@@ -783,7 +783,7 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 {
 	const static char fname[] = "ConsulConnection::writeTopology() ";
 
-	//topology: /appmesh/topology/myhost
+	// topology: /appmesh/topology/myhost
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
 	auto body = web::json::value::object();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
@@ -947,7 +947,7 @@ web::json::value ConsulConnection::retrieveNode(const std::string &host)
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto json = resp.extract_json(true).get();
-		//result = ConsulNode::FromJson(json, host);
+		// result = ConsulNode::FromJson(json, host);
 		LOG_DBG << fname << "got nodes : " << host;
 		return json;
 	}

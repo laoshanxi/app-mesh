@@ -32,7 +32,6 @@ Application::Application()
 	const static char fname[] = "Application::Application() ";
 	LOG_DBG << fname << "Entered.";
 	m_regTime = std::chrono::system_clock::now();
-	m_posixTimeZone = DateTime::getLocalZoneUTCOffset();
 	m_metadata = EMPTY_STR_JSON;
 }
 
@@ -141,7 +140,7 @@ bool Application::available(const std::chrono::system_clock::time_point &now)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// check expired
-	if (m_endTimeValue != AppTimer::EPOCH_ZERO_TIME && now >= m_endTimeValue)
+	if (m_endTime != AppTimer::EPOCH_ZERO_TIME && now >= m_endTime)
 	{
 		return false;
 	}
@@ -229,7 +228,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 		app->attach(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid));
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_version))
 		SET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_version, app->m_version);
-	app->m_posixTimeZone = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_posix_timezone);
 	if (app->m_dockerImage.length() == 0 && app->m_commandLine.length() == 0)
 		throw std::invalid_argument("no command line provide");
 	if (app->m_dockerImage.length()) // docker app does not support reserve more output backup files
@@ -239,28 +237,26 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_time))
 	{
-		app->m_startTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time);
-		app->m_startTimeValue = DateTime::parseISO8601DateTime(app->m_startTime, app->m_posixTimeZone);
+		app->m_startTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_time));
 	}
 	else if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds))
 	{
 		// for periodic run, set default startTime to now in case of no specified
-		app->m_startTime = DateTime::formatLocalTime(std::chrono::system_clock::now());
-		app->m_startTimeValue = DateTime::parseISO8601DateTime(app->m_startTime, app->m_posixTimeZone);
+		const auto startTime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		app->m_startTime = std::chrono::system_clock::from_time_t(startTime);
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_end_time))
 	{
-		app->m_endTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_end_time);
-		app->m_endTimeValue = DateTime::parseISO8601DateTime(app->m_endTime, app->m_posixTimeZone);
+		app->m_endTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_SHORT_APP_end_time));
 	}
-	if (app->m_endTimeValue.time_since_epoch().count())
+	if (app->m_endTime.time_since_epoch().count())
 	{
-		if (app->m_startTimeValue > app->m_endTimeValue)
+		if (app->m_startTime > app->m_endTime)
 			throw std::invalid_argument("end_time should greater than the start_time");
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_daily_limitation))
 	{
-		app->m_dailyLimit = DailyLimitation::FromJson(jsonObj.at(JSON_KEY_APP_daily_limitation), app->m_posixTimeZone);
+		app->m_dailyLimit = DailyLimitation::FromJson(jsonObj.at(JSON_KEY_APP_daily_limitation));
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
 	{
@@ -287,18 +283,18 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 
 		if (app->m_startIntervalValueIsCronExpr)
 		{
-			app->m_timer = std::make_shared<AppTimerCron>(app->m_startTimeValue, app->m_endTimeValue, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
+			app->m_timer = std::make_shared<AppTimerCron>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
 			app->m_timer->nextTime(); // test to validate cron expression
 		}
 		else
 		{
-			app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTimeValue, app->m_endTimeValue, app->m_dailyLimit, app->m_startInterval);
+			app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
 		}
 	}
 	else
 	{
 		// long running
-		app->m_timer = std::make_shared<AppTimer>(app->m_startTimeValue, app->m_endTimeValue, app->m_dailyLimit);
+		app->m_timer = std::make_shared<AppTimer>(app->m_startTime, app->m_endTime, app->m_dailyLimit);
 	}
 }
 
@@ -734,9 +730,9 @@ web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 			}
 		}
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[JSON_KEY_APP_last_start] = web::json::value::string(DateTime::formatLocalTime(m_procStartTime));
+			result[JSON_KEY_APP_last_start] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procExitTime).time_since_epoch().count() > 24)
-			result[JSON_KEY_APP_last_exit] = web::json::value::string(DateTime::formatLocalTime(m_procExitTime));
+			result[JSON_KEY_APP_last_exit] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procExitTime.time_since_epoch()).count());
 		if (m_process && !m_process->containerId().empty())
 		{
 			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
@@ -771,18 +767,16 @@ web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 						  envs[GET_STRING_T(pair.first)] = web::json::value::string(encryptedEnvValue); });
 		result[JSON_KEY_APP_sec_env] = envs;
 	}
-	if (m_posixTimeZone.length() && m_posixTimeZone != DateTime::getLocalZoneUTCOffset())
-		result[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_posixTimeZone);
 	if (m_dockerImage.length())
 		result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
 	if (m_version)
 		result[JSON_KEY_APP_version] = web::json::value::number(m_version);
 
-	if (m_startTimeValue.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_startTime);
-	if (m_endTimeValue.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_endTime);
-	result[JSON_KEY_APP_REG_TIME] = web::json::value::string(DateTime::formatLocalTime(m_regTime));
+	if (m_startTime.time_since_epoch().count())
+		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
+	if (m_endTime.time_since_epoch().count())
+		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
+	result[JSON_KEY_APP_REG_TIME] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
 	if (returnRuntimeInfo)
 	{
 		auto err = getLastError();
@@ -802,8 +796,21 @@ web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		if (returnRuntimeInfo)
 		{
 			if (m_nextLaunchTime != nullptr)
-				result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::string(DateTime::formatLocalTime(*m_nextLaunchTime));
+				result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_nextLaunchTime->time_since_epoch()).count());
 		}
+	}
+
+	// append extra string format for time values
+	Utility::appendStrTimeAttr(result, JSON_KEY_APP_REG_TIME);
+	Utility::appendStrTimeAttr(result, JSON_KEY_SHORT_APP_start_time);
+	Utility::appendStrTimeAttr(result, JSON_KEY_SHORT_APP_end_time);
+	Utility::appendStrTimeAttr(result, JSON_KEY_APP_last_start);
+	Utility::appendStrTimeAttr(result, JSON_KEY_APP_last_exit);
+	Utility::appendStrTimeAttr(result, JSON_KEY_SHORT_APP_next_start_time);
+	if (HAS_JSON_FIELD(result, JSON_KEY_APP_daily_limitation))
+	{
+		Utility::appendStrDayTimeAttr(result, JSON_KEY_DAILY_LIMITATION_daily_start);
+		Utility::appendStrDayTimeAttr(result, JSON_KEY_DAILY_LIMITATION_daily_end);
 	}
 	return result;
 }
@@ -826,11 +833,8 @@ void Application::dump()
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
 	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
 	LOG_DBG << fname << "m_pid:" << m_pid;
-	LOG_DBG << fname << "m_posixTimeZone:" << m_posixTimeZone;
-	LOG_DBG << fname << "m_startTime:" << m_startTime;
-	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTimeValue);
-	LOG_DBG << fname << "m_endTime:" << m_endTime;
-	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTimeValue);
+	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTime);
+	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTime);
 	LOG_DBG << fname << "m_regTime:" << DateTime::formatLocalTime(m_regTime);
 	LOG_DBG << fname << "m_dockerImage:" << m_dockerImage;
 	LOG_DBG << fname << "m_stdoutFile:" << m_stdoutFile;

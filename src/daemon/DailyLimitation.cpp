@@ -14,26 +14,26 @@ bool DailyLimitation::operator==(const std::shared_ptr<DailyLimitation> &obj) co
 {
 	if (obj == nullptr)
 		return false;
-	return (m_startTime == obj->m_startTime && m_endTime == obj->m_endTime);
+	return (m_startTimeValue == obj->m_startTimeValue && m_endTimeValue == obj->m_endTimeValue);
 }
 
 void DailyLimitation::dump()
 {
 	const static char fname[] = "DailyLimitation::dump() ";
 
-	LOG_DBG << fname << "m_startTime:" << m_startTime;
-	LOG_DBG << fname << "m_endTime:" << m_endTime;
+	LOG_DBG << fname << "m_startTime:" << m_startTimeValue;
+	LOG_DBG << fname << "m_endTime:" << m_endTimeValue;
 }
 
 web::json::value DailyLimitation::AsJson() const
 {
 	web::json::value result = web::json::value::object();
-	result[JSON_KEY_DAILY_LIMITATION_daily_start] = web::json::value::string(m_startTime);
-	result[JSON_KEY_DAILY_LIMITATION_daily_end] = web::json::value::string(m_endTime);
+	result[JSON_KEY_DAILY_LIMITATION_daily_start] = web::json::value::number(m_startTimeValue.total_seconds());
+	result[JSON_KEY_DAILY_LIMITATION_daily_end] = web::json::value::number(m_endTimeValue.total_seconds());
 	return result;
 }
 
-std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::value &jsonObj, const std::string &posixTimeZone)
+std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::value &jsonObj)
 {
 	std::shared_ptr<DailyLimitation> result;
 	if (!jsonObj.is_null())
@@ -43,10 +43,8 @@ std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::valu
 			throw std::invalid_argument("should both have daily_start and daily_end parameter");
 		}
 		result = std::make_shared<DailyLimitation>();
-		result->m_startTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_start);
-		result->m_endTime = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_end);
-		result->m_startTimeValue = DateTime::parseDayTimeUtcDuration(result->m_startTime, posixTimeZone);
-		result->m_endTimeValue = DateTime::parseDayTimeUtcDuration(result->m_endTime, posixTimeZone);
+		result->m_startTimeValue = boost::posix_time::seconds(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_start));
+		result->m_endTimeValue = boost::posix_time::seconds(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_DAILY_LIMITATION_daily_end));
 	}
 	return result;
 }

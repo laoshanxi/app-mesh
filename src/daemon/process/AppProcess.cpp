@@ -101,7 +101,7 @@ void AppProcess::killgroup(int timerId)
 			this->terminate();
 			if (this->wait() < 0 && errno != 10) // 10 is ECHILD:No child processes
 			{
-				//avoid  zombie process (Interrupted system call)
+				// avoid  zombie process (Interrupted system call)
 				LOG_WAR << fname << "Wait process <" << getpid() << "> to exit failed with error : " << std::strerror(errno);
 				std::this_thread::sleep_for(std::chrono::milliseconds(100));
 				if (this->wait() < 0)
@@ -256,14 +256,14 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		return ACE_INVALID_PID;
 	}
 
-	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = DateTime::formatLocalTime(std::chrono::system_clock::now());
+	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
 	int totalEnvArgs = 0;
 	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);
 	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
-	//option.avoid_zombies(1);
+	// option.avoid_zombies(1);
 	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
@@ -292,8 +292,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
 				  {
 					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-					  LOG_DBG << fname << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str();
-				  });
+					  LOG_DBG << fname << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str(); });
 	option.release_handles();
 	// clean if necessary
 	CLOSE_ACE_HANDLER(m_stdoutHandler);
@@ -303,7 +302,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (m_stdoutFileName.length() || stdinFileContent != EMPTY_STR_JSON)
 	{
 		/*
-		* 
+		*
 			444 r--r--r--
 			600 rw-------
 			644 rw-r--r--
@@ -401,7 +400,7 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string> AppProcess::getProcessD
 	auto curSysCpuTime = os::cpuTotalTime();
 	float cpuUsage(0);
 	auto curProcCpuTime = tree ? tree->totalCpuTime() : 0;
-	static auto cpuNumber = os::cpus().size(); //static int cpuNumber = sysconf(_SC_NPROCESSORS_ONLN);
+	static auto cpuNumber = os::cpus().size(); // static int cpuNumber = sysconf(_SC_NPROCESSORS_ONLN);
 	std::lock_guard<std::recursive_mutex> guard(m_cpuMutex);
 	// only calculate when there have previous cpu time record
 	if (m_lastSysCpuTime && curSysCpuTime && curProcCpuTime)

@@ -19,10 +19,8 @@ public:
 	void dump();
 
 	web::json::value AsJson() const;
-	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value &obj, const std::string &posixTimeZone) noexcept(false);
+	static std::shared_ptr<DailyLimitation> FromJson(const web::json::value &obj) noexcept(false);
 
-	std::string m_startTime;
-	std::string m_endTime;
 	boost::posix_time::time_duration m_startTimeValue;
 	boost::posix_time::time_duration m_endTimeValue;
 };

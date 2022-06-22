@@ -85,11 +85,11 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 		// https://www.boost.org/doc/libs/1_69_0/doc/html/date_time/date_time_io.html#date_time.io_tutorial
 		// https://stackoverflow.com/questions/28193719/boostlocal-time-does-not-read-correct-iso-extended-format/28194968#28194968
 		// "2005-10-15 13:12:11-07:00"
-		//local_time_facet *output_facet = new local_time_facet(format);
+		// local_time_facet *output_facet = new local_time_facet(format);
 		boost::local_time::local_date_time localDateTime(boost::date_time::special_values::not_a_date_time);
 		std::istringstream iss(iso8601TimeStr);
 		iss.exceptions(std::ios_base::failbit);
-		//iss.imbue(std::locale(std::locale::classic(), output_facet));
+		// iss.imbue(std::locale(std::locale::classic(), output_facet));
 
 		// determine format
 		std::string format = ISO8601FORMAT_IN_MINUTES;
@@ -231,10 +231,12 @@ boost::posix_time::time_duration DateTime::pickDayTimeUtcDuration(const std::chr
 	return ptime.time_of_day();
 }
 
-boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(const std::string &strTime, const std::string &posixTimezone)
+boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(std::string strTime)
 {
 	const static char fname[] = "DateTime::parseDayTimeUtcDuration() ";
 
+	const std::string posixTimezone = DateTime::getISO8601TimeZone(strTime);
+	strTime = Utility::stdStringTrim(strTime, posixTimezone, false, true);
 	// re-format to accept [%H:%M] and [%H], duration parse need provide [%H:%M:%S] for parseISO8601DateTime
 	auto duration = boost::posix_time::duration_from_string(strTime);
 	std::string fakeDate = Utility::stringFormat("2000-01-01T%02d:%02d:%02d", duration.hours(), duration.minutes(), duration.seconds());
@@ -242,6 +244,16 @@ boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(const std::st
 	duration = pickDayTimeUtcDuration(timePoint);
 	LOG_DBG << fname << "parse <" << fakeDate << "> with zone <" << posixTimezone << "> to <" << formatISO8601Time(timePoint) << "> with duration: " << duration;
 	return duration;
+}
+
+std::string DateTime::formatDayTimeUtcDuration(boost::posix_time::time_duration &duration)
+{
+	// use host zone
+	const auto posixTimezone = DateTime::getLocalZoneUTCOffset();
+	const std::string fakeDate = Utility::stringFormat("2000-01-01T%02d:%02d:%02d", duration.hours(), duration.minutes(), duration.seconds());
+	const auto timePoint = parseISO8601DateTime(fakeDate, posixTimezone);
+	auto timeStr = formatISO8601Time(timePoint);
+	return Utility::splitString(timeStr, "T").back();
 }
 
 std::string DateTime::reducePosixZone(const std::string &strTime)

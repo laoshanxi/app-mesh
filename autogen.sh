@@ -2,7 +2,7 @@
 ################################################################################
 ## This script is used to install all 3rd-party dependency libraries
 ################################################################################
-set +x
+set -x
 set -e
 WGWT_A="wget --continue --quiet --backups=1 --tries=30 --no-check-certificate"
 # https://stackoverflow.com/questions/48678152/how-to-detect-386-amd64-arm-or-arm64-os-architecture-via-shell-bash
@@ -68,7 +68,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
 	# apt full-upgrade -q -y
-	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap2-dev liboath-dev
+	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap-dev liboath-dev
 	#apt install -y libboost-all-dev libace-dev
 	#apt install -y libcpprest-dev liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
@@ -101,6 +101,7 @@ export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
 go get github.com/valyala/fasthttp@v1.37.0
 go get github.com/buaazp/fasthttprouter
+go get github.com/klauspost/compress@v1.15.5
 go get -v github.com/rs/xid
 # Golang tools for VSCode
 go install -v github.com/cweill/gotests/gotests@latest

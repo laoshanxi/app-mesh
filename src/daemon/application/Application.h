@@ -113,11 +113,8 @@ protected:
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
 	std::shared_ptr<int> m_return; // the exit code of last instance
-	std::string m_posixTimeZone;
-	std::string m_startTime;
-	std::string m_endTime;
-	std::chrono::system_clock::time_point m_startTimeValue;
-	std::chrono::system_clock::time_point m_endTimeValue;
+	std::chrono::system_clock::time_point m_startTime;
+	std::chrono::system_clock::time_point m_endTime;
 
 	// short running
 	std::string m_startIntervalValue;

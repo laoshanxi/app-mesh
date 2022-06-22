@@ -310,8 +310,14 @@ type Application struct {
 	StdoutCacheNum *int    `json:"stdout_cache_num"`
 	Metadata       *string `json:"metadata"`
 
-	StartTime     *string   `json:"start_time"`
-	EndTime       *string   `json:"end_time"`
+	// time
+	StartTime     *int64 `json:"start_time"`
+	EndTime       *int64 `json:"end_time"`
+	LastStartTime *int64 `json:"last_start_time"`
+	LastExitTime  *int64 `json:"last_exit_time"`
+	NextStartTime *int64 `json:"next_start_time"`
+	RegisterTime  *int64 `json:"register_time"`
+
 	StopRetention *string   `json:"retention"`
 	Behavior      *Behavior `json:"behavior"`
 	// short running definition
@@ -319,17 +325,14 @@ type Application struct {
 	StartIntervalSecondsIsCron *bool   `json:"cron"`
 
 	// runtime attributes
-	Pid             *int     `json:"pid"`
-	ReturnCode      *int     `json:"return"`
-	Health          *int     `json:"health"`
-	FileDescritors  *int     `json:"fd"`
-	Starts          *int     `json:"starts"`
-	PsTree          *string  `json:"pstree"`
-	ContainerID     *string  `json:"container_id"`
-	LastStartTime   *string  `json:"last_start_time"`
-	LastExitTime    *string  `json:"last_exit_time"`
-	NextStartTime   *string  `json:"next_start_time"`
-	RegisterTime    *string  `json:"register_time"`
+	Pid            *int    `json:"pid"`
+	ReturnCode     *int    `json:"return"`
+	Health         *int    `json:"health"`
+	FileDescritors *int    `json:"fd"`
+	Starts         *int    `json:"starts"`
+	PsTree         *string `json:"pstree"`
+	ContainerID    *string `json:"container_id"`
+
 	CPU             *float64 `json:"cpu"`
 	Memory          *int     `json:"memory"`
 	Uuid            *string  `json:"process_uuid"` // for run application

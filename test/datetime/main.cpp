@@ -102,7 +102,8 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
 
     // getLocalZoneUTCOffset
     LOG_DBG << DateTime::getLocalZoneUTCOffset();
-    REQUIRE(boost::posix_time::to_simple_string(DateTime::parseDayTimeUtcDuration("20:33:00", "+08")) == "12:33:00");
+    LOG_DBG << "parseDayTimeUtcDuration:" << DateTime::parseDayTimeUtcDuration("20:33:00+08");
+    REQUIRE(boost::posix_time::to_simple_string(DateTime::parseDayTimeUtcDuration("20:33:00+08")) == "12:33:00");
 
     // time in different zone
     REQUIRE(DateTime::parseISO8601DateTime("2020-10-07T21:19:00+07", "") == DateTime::parseISO8601DateTime("2020-10-07T22:19:00+08", ""));

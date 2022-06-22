@@ -1,7 +1,7 @@
 FROM ubuntu:latest
 
-COPY autogen.sh.apt.sh /opt/autogen.sh
+COPY autogen.sh.apt.sh go.* /opt/
 
 USER root
 
-RUN sh /opt/autogen.sh && rm -rf /opt/* && apt-get clean
+RUN cd /opt/ && sh autogen.sh.apt.sh && rm -rf /opt/* && apt-get clean

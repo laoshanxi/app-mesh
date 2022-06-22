@@ -23,6 +23,7 @@
 #include <log4cpp/RollingFileAppender.hh>
 #include <pplx/threadpool.h>
 
+#include "DateTime.h"
 #include "Utility.h"
 #include "json.hpp"
 #include "os/chown.hpp"
@@ -564,6 +565,22 @@ bool Utility::createPidFile()
 			std::cerr << fname << "Failed with error: " << std::strerror(errno);
 	}
 	return false;
+}
+
+void Utility::appendStrTimeAttr(web::json::value &jsonObj, const std::string &key)
+{
+	if (HAS_JSON_FIELD(jsonObj, key))
+	{
+		jsonObj[key + "_ref_str"] = web::json::value::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
+	}
+}
+
+void Utility::appendStrDayTimeAttr(web::json::value &jsonObj, const std::string &key)
+{
+	if (HAS_JSON_FIELD(jsonObj, key))
+	{
+		jsonObj[key + "_ref_str"] = web::json::value::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
+	}
 }
 
 std::vector<std::string> Utility::splitString(const std::string &source, const std::string &splitFlag)

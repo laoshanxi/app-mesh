@@ -73,6 +73,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))
 #define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_integer() : 0)
+#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? static_cast<long>(jsonObj.at(GET_STRING_T(key)).as_double()) : 0L)
 #define GET_JSON_NUMBER_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_number().to_int64() : 0L)
 #define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_double() : 0.0L)
 #define SET_JSON_INT_VALUE(jsonObj, key, value) \
@@ -198,6 +199,8 @@ public:
 
 	static std::string createUUID();
 	static bool createPidFile();
+	static void appendStrTimeAttr(web::json::value &jsonObj, const std::string &key);
+	static void appendStrDayTimeAttr(web::json::value &jsonObj, const std::string &key);
 
 	static const std::string readStdin2End();
 };
@@ -285,7 +288,6 @@ public:
 #define JSON_KEY_APP_sec_env "sec_env"
 #define JSON_KEY_APP_open_fd "fd" // open_file_descriptors
 #define JSON_KEY_APP_pstree "pstree"
-#define JSON_KEY_APP_posix_timezone "posix_timezone"
 #define JSON_KEY_APP_docker_image "docker_image"
 #define JSON_KEY_APP_last_error "last_error"
 #define JSON_KEY_APP_from_recover "from_recover"

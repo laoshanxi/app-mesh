@@ -56,7 +56,7 @@ GCC_VERION=$(gcc -dumpversion)
 
 fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,openldap-devel' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${CMAKE_CURRENT_BINARY_DIR}/home/script/rpm_post_install.sh \
   --before-remove ${PACKAGE_HOME}/script/rpm_pre_uninstall.sh --after-remove ${PACKAGE_HOME}/script/rpm_post_uninstall.sh -C ${PACKAGE_HOME} --prefix ${INSTALL_LOCATION}
-fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,libldap2-dev' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${CMAKE_CURRENT_BINARY_DIR}/home/script/rpm_post_install.sh \
+fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,libldap-dev' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${CMAKE_CURRENT_BINARY_DIR}/home/script/rpm_post_install.sh \
   --before-remove ${PACKAGE_HOME}/script/rpm_pre_uninstall.sh --after-remove ${PACKAGE_HOME}/script/rpm_post_uninstall.sh -C ${PACKAGE_HOME} --prefix ${INSTALL_LOCATION}
 
 mv appmesh*.rpm ${PROJECT_NAME}_${PROJECT_VERSION}_gcc_${GCC_VERION}_glibc_${GLIBC_VERION}_$(arch).rpm

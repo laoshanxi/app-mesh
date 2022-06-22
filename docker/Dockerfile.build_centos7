@@ -1,7 +1,7 @@
 FROM centos/ruby-25-centos7
 
-COPY autogen.sh /opt/autogen.sh
+COPY autogen.sh go.* /opt/
 
 USER root
 
-RUN sh /opt/autogen.sh && rm -rf /opt/*
+RUN cd /opt/ && sh autogen.sh && rm -rf /opt/*

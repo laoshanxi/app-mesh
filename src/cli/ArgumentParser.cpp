@@ -373,8 +373,8 @@ void ArgumentParser::processAppAdd()
 		("status,s", po::value<bool>()->default_value(true), "initial application status (true is enable, false is disabled)")
 		("start_time,t", po::value<std::string>(), "start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')")
 		("end_time,E", po::value<std::string>(), "end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')")
-		("daily_start,j", po::value<std::string>(), "daily start time (e.g., '09:00:00')")
-		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00')")
+		("daily_start,j", po::value<std::string>(), "daily start time (e.g., '09:00:00+08')")
+		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00+08')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
 		("pid,p", po::value<int>(), "process id used to attach")
 		("stdout_cache_num,O", po::value<int>(), "stdout file cache number")
@@ -387,7 +387,6 @@ void ArgumentParser::processAppAdd()
 		("retention,q", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "default exit behavior [restart,standby,keepalive,remove]")
 		("control", po::value<std::vector<std::string>>()->default_value(std::vector<std::string>(), default_control_string), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
-		("timezone,z", po::value<std::string>(), "posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g., 'GMT+08:00' is Beijing Time)")
 		("force,f", "force without confirm")
 		("stdin", "accept json from stdin")
 		("help,h", "Prints command usage to stdout and exits");
@@ -537,12 +536,10 @@ void ArgumentParser::processAppAdd()
 	}
 	if (m_commandLineVariables.count("docker_image"))
 		jsonObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
-	if (m_commandLineVariables.count("timezone"))
-		jsonObj[JSON_KEY_APP_posix_timezone] = web::json::value::string(m_commandLineVariables["timezone"].as<std::string>());
 	if (m_commandLineVariables.count("start_time"))
-		jsonObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::string(m_commandLineVariables["start_time"].as<std::string>());
+		jsonObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["start_time"].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count("end_time"))
-		jsonObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::string(m_commandLineVariables["end_time"].as<std::string>());
+		jsonObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["end_time"].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count("interval"))
 	{
 		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
@@ -556,8 +553,8 @@ void ArgumentParser::processAppAdd()
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
 		web::json::value objDailyLimitation = web::json::value::object();
-		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_start] = web::json::value::string(m_commandLineVariables["daily_start"].as<std::string>());
-		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_end] = web::json::value::string(m_commandLineVariables["daily_end"].as<std::string>());
+		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_start] = web::json::value::number(DateTime::parseDayTimeUtcDuration(m_commandLineVariables["daily_start"].as<std::string>()).total_seconds());
+		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_end] = web::json::value::number(DateTime::parseDayTimeUtcDuration(m_commandLineVariables["daily_end"].as<std::string>()).total_seconds());
 		jsonObj[JSON_KEY_APP_daily_limitation] = objDailyLimitation;
 	}
 
@@ -1876,7 +1873,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 					  std::cout << std::setw(9);
 					  {
 						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
-							  std::cout << Utility::humanReadableSize(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_memory));
+							  std::cout << Utility::humanReadableSize(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_memory));
 						  else
 							  std::cout << slash;
 					  }
@@ -1901,7 +1898,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 					  std::cout << std::setw(7);
 					  {
 						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
-							  std::cout << Utility::humanReadableDuration(DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
+							  std::cout << Utility::humanReadableDuration(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
 						  else
 							  std::cout << slash;
 					  }
@@ -1909,8 +1906,8 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 					  {
 						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start) && HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
 						  {
-							  auto startTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_start));
-							  auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();
+							  auto startTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_start));
+							  auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();
 							  std::cout << Utility::humanReadableDuration(startTime, endTime);
 						  }
 						  else

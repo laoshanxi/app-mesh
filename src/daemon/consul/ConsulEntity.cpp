@@ -89,8 +89,7 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value 
 		for (const auto &app : jsonObj.as_array())
 		{
 			auto appName = GET_JSON_STR_VALUE(app, "app");
-			auto appScheduleTime = GET_JSON_STR_VALUE(app, "schedule_time");
-			topology->m_scheduleApps[appName] = DateTime::parseISO8601DateTime(appScheduleTime);
+			topology->m_scheduleApps[appName] = std::chrono::system_clock::from_time_t(GET_JSON_INT_VALUE(app, "schedule_time"));
 		}
 	}
 	return topology;
@@ -104,7 +103,7 @@ web::json::value ConsulTopology::AsJson() const
 	{
 		auto appJson = web::json::value::object();
 		appJson["app"] = web::json::value::string(app.first);
-		appJson["schedule_time"] = web::json::value::string(DateTime::formatLocalTime(app.second));
+		appJson["schedule_time"] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(app.second.time_since_epoch()).count());
 		result[appIndex++] = appJson;
 	}
 	return result;
