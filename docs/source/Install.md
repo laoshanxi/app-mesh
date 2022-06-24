@@ -44,10 +44,11 @@ Note:
 3. Use env `export APPMESH_SECURE_INSTALLATION=Y` to generate random initial password for user `admin`
 4. Use env `export APPMESH_DisableExecUser=true` to disable customized process user
 5. Set env `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user
-6. The installation will create `appmesh` Linux user for default app running
-7. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
-8. For centos 8, install dependency: `sudo yum install libnsl`
-9. The installation media structure is like this:
+6. Set env `APPMESH_POSIX_TIMEZONE` with posix timezone (E.g. export APPMESH_POSIX_TIMEZONE="+08") for CLI and Server
+7. The installation will create `appmesh` Linux user for default app running
+8. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
+9. For centos 8, install dependency: `sudo yum install libnsl`
+10. The installation media structure is like this:
 ```
     $ tree -L 1 /opt/appmesh/
     ├── config.json                  ====> configuration file (can be modified manually or update from GUI)

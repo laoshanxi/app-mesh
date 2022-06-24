@@ -571,7 +571,7 @@ void Utility::appendStrTimeAttr(web::json::value &jsonObj, const std::string &ke
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{
-		jsonObj[key + "_ref_str"] = web::json::value::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
+		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = web::json::value::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
 	}
 }
 
@@ -579,7 +579,33 @@ void Utility::appendStrDayTimeAttr(web::json::value &jsonObj, const std::string 
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{
-		jsonObj[key + "_ref_str"] = web::json::value::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
+		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = web::json::value::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
+	}
+}
+
+void Utility::addExtraAppTimeReferStr(web::json::value &appJson)
+{
+	// append extra string format for time values
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_REG_TIME);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_SHORT_APP_start_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_SHORT_APP_end_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_start);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_exit);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_SHORT_APP_next_start_time);
+	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_daily_limitation))
+	{
+		Utility::appendStrDayTimeAttr(appJson.at(JSON_KEY_APP_daily_limitation), JSON_KEY_DAILY_LIMITATION_daily_start);
+		Utility::appendStrDayTimeAttr(appJson.at(JSON_KEY_APP_daily_limitation), JSON_KEY_DAILY_LIMITATION_daily_end);
+	}
+}
+
+void Utility::initDateTimeZone(bool writeLog)
+{
+	const std::string posixTimeZone = ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) ? ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) : "";
+	const auto &zone = DateTime::initOutputFormatPosixZone(posixTimeZone);
+	if (writeLog)
+	{
+		LOG_INF << "Set timezone to: " << zone->to_posix_string();
 	}
 }
 

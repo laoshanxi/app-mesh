@@ -45,7 +45,7 @@ public:
 	/// default use LOCAL_POSIX_ZONE without set
 	/// </summary>
 	/// <param name="posixZone">posix zone: +08:00:00 with format [%H:%M:%S]</param>
-	static void setOutputFormatPosixZone(const std::string &posixZone);
+	static const boost::local_time::time_zone_ptr& initOutputFormatPosixZone(const std::string &posixZone);
 
 	/// <summary>
 	/// Parse ISO8601 date time from string, if the parameter strTime have zone info, will ignore posixTimeZone
@@ -56,14 +56,14 @@ public:
 	static std::chrono::system_clock::time_point parseISO8601DateTime(const std::string &strTime, const std::string &posixTimeZone = "");
 
 	/// <summary>
-	/// Format time_point with [%Y-%m-%d %H:%M:%S%F%Q] flags and LOCAL_POSIX_ZONE (set from setOutputFormatPosixZone()) offset
+	/// Format time_point with [%Y-%m-%d %H:%M:%S%F%Q] flags and LOCAL_POSIX_ZONE (set from initOutputFormatPosixZone()) offset
 	/// </summary>
 	/// <param name="time">std::chrono::system_clock::time_point</param>
 	/// <returns>ISO8601 date time string: 2017-09-11 21:52:13+00:00</returns>
 	static std::string formatISO8601Time(const std::chrono::system_clock::time_point &time);
 
 	/// <summary>
-	/// Format time_point with provided flags and LOCAL_POSIX_ZONE (set from setOutputFormatPosixZone()) offset
+	/// Format time_point with provided flags and LOCAL_POSIX_ZONE (set from initOutputFormatPosixZone()) offset
 	/// The format is using boost::local_time::local_date_time, only seconds will be taken.
 	/// </summary>
 	/// <param name="time">std::chrono::system_clock::time_point</param>

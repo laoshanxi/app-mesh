@@ -692,6 +692,7 @@ void ArgumentParser::processAppView()
 			else
 			{
 				// view app json
+				Utility::addExtraAppTimeReferStr(resp);
 				std::cout << Utility::prettyJson(resp.serialize()) << std::endl;
 			}
 		}

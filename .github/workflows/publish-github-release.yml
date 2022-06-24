@@ -81,6 +81,8 @@ jobs:
       - name: Generate Changelog
         run: |
           echo "1. Golang re-write REST agent" >> CHANGELOG.txt
+          echo "2. env APPMESH_POSIX_TIMEZONE for specify timezone for cli/server" >> CHANGELOG.txt
+          echo "2. Support Grafana SimpleJson data source" >> CHANGELOG.txt
 
       # publish Github release
       # https://github.com/softprops/action-gh-release
@@ -88,7 +90,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           body_path: CHANGELOG.txt
-          name: "REST enhance"
+          name: "Golang REST agent"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: true
           # note you'll typically need to create a personal access token

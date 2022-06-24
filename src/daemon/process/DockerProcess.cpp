@@ -93,7 +93,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	dockerCommand = Utility::stringFormat("docker run -d --name %s ", containerName.c_str());
 	for (auto env : envMap)
 	{
-		if (env.first == ENV_APP_MANAGER_DOCKER_PARAMS)
+		if (env.first == ENV_APPMESH_DOCKER_PARAMS)
 		{
 			// used for -p -v parameter
 			dockerCommand.append(" ");
@@ -230,9 +230,9 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 	const static char fname[] = "DockerProcess::execPullDockerImage() ";
 
 	int pullTimeout = 5 * 60; //set default image pull timeout to 5 minutes
-	if (envMap.count(ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]))
+	if (envMap.count(ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT]))
 	{
-		pullTimeout = std::stoi(envMap[ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT]);
+		pullTimeout = std::stoi(envMap[ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT]);
 	}
 	else
 	{

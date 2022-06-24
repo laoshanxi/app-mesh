@@ -833,7 +833,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	}
 	if (!Utility::isFileExist("/var/run/docker.sock"))
 	{
-		LOG_INF << fname << "Docker not installed or started, will not start agent.";
+		LOG_INF << fname << "Docker not installed or started, will not start docker agent.";
 		rest->m_dockerProxyListenAddr.clear();
 	}
 	// SSL

@@ -256,7 +256,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		return ACE_INVALID_PID;
 	}
 
-	envMap[ENV_APP_MANAGER_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
 	int totalEnvArgs = 0;

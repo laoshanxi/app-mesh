@@ -73,7 +73,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
 #define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))
 #define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_integer() : 0)
-#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? static_cast<long>(jsonObj.at(GET_STRING_T(key)).as_double()) : 0L)
+#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? static_cast<int64_t>(jsonObj.at(GET_STRING_T(key)).as_double()) : 0L)
 #define GET_JSON_NUMBER_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_number().to_int64() : 0L)
 #define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_double() : 0.0L)
 #define SET_JSON_INT_VALUE(jsonObj, key, value) \
@@ -201,16 +201,19 @@ public:
 	static bool createPidFile();
 	static void appendStrTimeAttr(web::json::value &jsonObj, const std::string &key);
 	static void appendStrDayTimeAttr(web::json::value &jsonObj, const std::string &key);
+	static void addExtraAppTimeReferStr(web::json::value &jsonObj);
+	static void initDateTimeZone(bool writeLog = false);
 
 	static const std::string readStdin2End();
 };
 
 #define PID_FILE_PATH "/var/run/appmesh.pid"
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
-#define ENV_APP_MANAGER_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
-#define ENV_APP_MANAGER_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
-#define ENV_APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
+#define ENV_APPMESH_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
+#define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
+#define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define ENV_APPMESH_PREFIX "APPMESH_"
+#define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 60				// run app default timeout
 #define MAX_RUN_APP_TIMEOUT_SECONDS 1 * (60 * 60 * 24)	// run app max timeout 1 day
@@ -327,6 +330,8 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_memory_mb "memory_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb "memory_virt_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
+
+#define JSON_KEY_TIME_POSTTIX_STR "_ref_str"
 
 #define JSON_KEY_USER_key "key"
 #define JSON_KEY_USER_email "email"

@@ -139,10 +139,8 @@ const std::string DateTime::getLocalZoneUTCOffset()
 	return zone;
 }
 
-void DateTime::setOutputFormatPosixZone(const std::string &posixZone)
+const boost::local_time::time_zone_ptr &DateTime::initOutputFormatPosixZone(const std::string &posixZone)
 {
-	const static char fname[] = "DateTime::setOutputFormatPosixZone() ";
-
 	if (posixZone.length())
 	{
 		auto duration = boost::posix_time::duration_from_string(posixZone);
@@ -152,10 +150,8 @@ void DateTime::setOutputFormatPosixZone(const std::string &posixZone)
 	else
 	{
 		OUTPUT_POSIX_ZONE = LOCAL_POSIX_ZONE;
-		LOG_INF << fname << "reset output posix zone";
 	}
-
-	LOG_INF << fname << "output zone was set to: " << OUTPUT_POSIX_ZONE->to_posix_string();
+	return OUTPUT_POSIX_ZONE;
 }
 
 std::string DateTime::formatISO8601Time(const std::chrono::system_clock::time_point &time)
@@ -180,6 +176,10 @@ std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_poin
 
 	try
 	{
+		if (OUTPUT_POSIX_ZONE == nullptr)
+		{
+			initOutputFormatPosixZone("");
+		}
 		struct tm local_tm;
 		memset(&local_tm, 0, sizeof(local_tm));
 		auto timeT = std::chrono::system_clock::to_time_t(time);

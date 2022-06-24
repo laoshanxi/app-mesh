@@ -12,6 +12,7 @@ int main(int argc, const char *argv[])
 	try
 	{
 		Utility::initCpprestThreadPool(1);
+		Utility::initDateTimeZone();
 		ArgumentParser parser(argc, argv);
 		return parser.parse();
 	}

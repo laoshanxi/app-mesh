@@ -66,6 +66,7 @@ int main(int argc, char *argv[])
 		Utility::initLogging("server");
 		LOG_INF << fname << "Build: " << __MICRO_VAR__(BUILD_TAG);
 		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
+		Utility::initDateTimeZone(true);
 
 		{
 			// catch SIGHUP for 'systemctl reload'

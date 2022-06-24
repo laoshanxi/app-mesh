@@ -260,7 +260,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
 	{
-		app->m_regTime = DateTime::parseISO8601DateTime(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_REG_TIME));
+		app->m_regTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_REG_TIME));
 	}
 
 	// init error handling
@@ -793,25 +793,13 @@ web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_startIntervalValue.length())
 	{
 		result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_startIntervalValue);
-		if (returnRuntimeInfo)
-		{
-			if (m_nextLaunchTime != nullptr)
-				result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_nextLaunchTime->time_since_epoch()).count());
-		}
+	}
+	if (returnRuntimeInfo && m_nextLaunchTime != nullptr)
+	{
+		result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_nextLaunchTime->time_since_epoch()).count());
 	}
 
-	// append extra string format for time values
-	Utility::appendStrTimeAttr(result, JSON_KEY_APP_REG_TIME);
-	Utility::appendStrTimeAttr(result, JSON_KEY_SHORT_APP_start_time);
-	Utility::appendStrTimeAttr(result, JSON_KEY_SHORT_APP_end_time);
-	Utility::appendStrTimeAttr(result, JSON_KEY_APP_last_start);
-	Utility::appendStrTimeAttr(result, JSON_KEY_APP_last_exit);
-	Utility::appendStrTimeAttr(result, JSON_KEY_SHORT_APP_next_start_time);
-	if (HAS_JSON_FIELD(result, JSON_KEY_APP_daily_limitation))
-	{
-		Utility::appendStrDayTimeAttr(result, JSON_KEY_DAILY_LIMITATION_daily_start);
-		Utility::appendStrDayTimeAttr(result, JSON_KEY_DAILY_LIMITATION_daily_end);
-	}
+	Utility::addExtraAppTimeReferStr(result);
 	return result;
 }
 
@@ -868,7 +856,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	// alloc process object
 	if (dockerImage.length())
 	{
-		if (Configuration::instance()->getDockerProxyAddress().length() && m_envMap.count(ENV_APP_MANAGER_DOCKER_PARAMS) == 0)
+		if (Configuration::instance()->getDockerProxyAddress().length() && m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
 		{
 			process.reset(new DockerApiProcess(dockerImage, appName));
 		}
