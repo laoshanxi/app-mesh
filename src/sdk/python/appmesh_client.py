@@ -653,7 +653,7 @@ class AppMeshClient:
     ########################################
     # Tag management API
     ########################################
-    def add_tag(self, tag_name, tag_value):
+    def add_tag(self, tag_name, tag_value) -> bool:
         """
         Add a tag(label) for current logon node
 
@@ -672,7 +672,7 @@ class AppMeshClient:
             query={"value": tag_value},
             path="/appmesh/label/{0}".format(tag_name),
         )
-        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
+        return resp.status_code == HTTPStatus.OK
 
     def remove_tag(self, tag_name) -> bool:
         """
@@ -743,7 +743,10 @@ class AppMeshClient:
             if resp.headers.__contains__("File-User") and resp.headers.__contains__("File-Group"):
                 file_uid = int(resp.headers["File-User"])
                 file_gid = int(resp.headers["File-Group"])
-                os.chown(path=local_file, uid=file_uid, gid=file_gid)
+                try:
+                    os.chown(path=local_file, uid=file_uid, gid=file_gid)
+                except Exception as ex:
+                    print(ex)
             return True
         return False
 
@@ -751,6 +754,10 @@ class AppMeshClient:
         """
         Upload a local file to remote, remote file will have the same permission with local file
 
+        Dependency:
+        ----------
+            sudo apt install python3-pip
+            pip install requests-toolbelt
         Parameters
         ----------
             file_path : str
@@ -760,19 +767,23 @@ class AppMeshClient:
         -------
             Success : bool
         """
+        from requests_toolbelt import MultipartEncoder
+
         with open(file=local_file, mode="rb") as fp:
+            encoder = MultipartEncoder(fields={"filename": os.path.basename(file_path), "file": ("filename", fp, "application/octet-stream")})
             file_stat = os.stat(local_file)
             header = {}
             header["File-Path"] = file_path
             header["File-Mode"] = str(file_stat.st_mode)
             header["File-User"] = str(file_stat.st_uid)
             header["File-Group"] = str(file_stat.st_gid)
+            header["Content-Type"] = encoder.content_type
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self.__request_http(
                 AppMeshClient.Method.POST_STREAM,
                 path="/appmesh/file/upload",
                 header=header,
-                body=fp,
+                body=encoder,
             )
             if resp.status_code == HTTPStatus.OK:
                 return True, ""
