@@ -20,6 +20,8 @@ After that, you could see simplejson data source plugin from Grafana.
 
 ## Add App Mesh data source to monitor applications
 
+Add simplejson data source with URL `http://appmesh_server:6060/appmesh/grafana`
+
 ![datasource](https://raw.githubusercontent.com/laoshanxi/picture/master/grafana/02_add_appmesh.png)
 
 Note: Add authentication token as Custom HTTP Headers `Authorization` without `Bearer ` prefix for authenticate with App Mesh, the result just show the applications visible to the token user.

@@ -63,7 +63,9 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
     if (path == "/" || path.empty())
     {
-        message.reply(status_codes::OK, REST_ROOT_TEXT_MESSAGE);
+        auto msg = web::json::value::object();
+        msg[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string(REST_ROOT_TEXT_MESSAGE);
+        message.reply(status_codes::OK, msg.serialize());
         return;
     }
 

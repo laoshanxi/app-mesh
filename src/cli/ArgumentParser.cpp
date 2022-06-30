@@ -1828,7 +1828,7 @@ std::string ArgumentParser::requestToken(const std::string &user, const std::str
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)
 {
-	constexpr int NAME_COL_WIDTH = 15;
+	constexpr size_t NAME_COL_WIDTH = 15;
 	boost::io::ios_all_saver guard(std::cout);
 	// Title:
 	std::cout << std::left;

@@ -38,13 +38,13 @@ func New(opts ...Opt) *GrafanaHandler {
 }
 
 func (h *GrafanaHandler) handleRestRouter(router *fasthttprouter.Router) {
-	router.GET("/", cors(h.HandleRoot))
-	router.POST("/query", cors(h.HandleQuery))
-	router.POST("/annotations", cors(h.HandleAnnotations))
-	router.OPTIONS("/annotations", cors(h.HandleAnnotations))
-	router.POST("/search", cors(h.HandleSearch))
-	router.POST("/tag-keys", cors(h.HandleTagKeys))
-	router.POST("/tag-values", cors(h.HandleTagValues))
+	router.GET("/appmesh/grafana", cors(h.HandleRoot))
+	router.POST("/appmesh/grafana/query", cors(h.HandleQuery))
+	router.POST("/appmesh/grafana/annotations", cors(h.HandleAnnotations))
+	router.OPTIONS("/appmesh/grafana/annotations", cors(h.HandleAnnotations))
+	router.POST("/appmesh/grafana/search", cors(h.HandleSearch))
+	router.POST("/appmesh/grafana/tag-keys", cors(h.HandleTagKeys))
+	router.POST("/appmesh/grafana/tag-values", cors(h.HandleTagValues))
 }
 
 // WithSource will attempt to use the datasource provided as
@@ -258,10 +258,8 @@ type Annotation struct {
 
 // HandleRoot serves a plain 200 OK for /, required by Grafana
 func (h *GrafanaHandler) HandleRoot(ctx *fasthttp.RequestCtx) {
-	if string(ctx.Request.URI().Path()) != "/" {
-		ctx.Error("File not found", http.StatusNotFound)
-	}
-	ctx.Response.SetBodyRaw([]byte("App Mesh"))
+	ctx.Logger().Printf("Requesting")
+	ctx.Response.SetBodyRaw([]byte("{\"App Mesh Grafana SimpleJson data source\"}"))
 }
 
 // simpleJSONTime is a wrapper for time.Time that reformats for
@@ -556,11 +554,12 @@ func (h *GrafanaHandler) jsonQuery(ctx context.Context, req simpleJSONQuery, tar
 // HandleQuery hands the /query endpoint, calling the appropriate timeserie
 // or table handler.
 func (h *GrafanaHandler) HandleQuery(ctx *fasthttp.RequestCtx) {
+	ctx.Logger().Printf("Requesting")
+
 	if h.query == nil && h.tableQuery == nil {
 		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
-	ctx.Logger().Printf("Requesting")
 	// ctx.Logger().Printf("Header is %q\n", ctx.Request.Header.Header())
 	// ctx.Logger().Printf("Body is \n%q\n", ctx.Request.Body())
 
@@ -652,6 +651,8 @@ type simpleJSONAnnotationsQuery struct {
 
 // HandleAnnotations responds to the /annotation requests.
 func (h *GrafanaHandler) HandleAnnotations(ctx *fasthttp.RequestCtx) {
+	ctx.Logger().Printf("Requesting")
+
 	if h.annotations == nil {
 		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusBadRequest)
 		return
@@ -726,9 +727,10 @@ type simpleJSONSearchQuery struct {
 
 // HandleSearch implements the /search endpoint.
 func (h *GrafanaHandler) HandleSearch(ctx *fasthttp.RequestCtx) {
+	ctx.Logger().Printf("Requesting")
+
 	if h.search == nil {
 		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusBadRequest)
-
 		return
 	}
 
@@ -760,6 +762,8 @@ type simpleJSONQueryAdhocKey struct {
 
 // HandleTagKeys implements the /tag-keys endpoint.
 func (h *GrafanaHandler) HandleTagKeys(ctx *fasthttp.RequestCtx) {
+	ctx.Logger().Printf("Requesting")
+
 	if h.tags == nil {
 		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -793,6 +797,8 @@ type simpleJSONTagValuesQuery struct {
 
 // HandleTagValues implements the /tag-values endpoint.
 func (h *GrafanaHandler) HandleTagValues(ctx *fasthttp.RequestCtx) {
+	ctx.Logger().Printf("Requesting")
+
 	if h.tags == nil {
 		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusBadRequest)
 		return
