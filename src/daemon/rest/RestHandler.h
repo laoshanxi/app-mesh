@@ -60,9 +60,11 @@ protected:
 	void apiUserChangePwd(const HttpRequest &message);
 	void apiUserLock(const HttpRequest &message);
 	void apiUserUnlock(const HttpRequest &message);
+	void apiUserView(const HttpRequest &message);
 	void apiUserAdd(const HttpRequest &message);
 	void apiUserDel(const HttpRequest &message);
 	void apiUserActiveMFA(const HttpRequest &message);
+	void apiUserDeActiveMFA(const HttpRequest &message);
 	void apiUsersView(const HttpRequest &message);
 	void apiUserGroupsView(const HttpRequest &message);
 

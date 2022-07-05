@@ -189,6 +189,10 @@ int ArgumentParser::parse()
 	{
 		processUserLock();
 	}
+	else if (cmd == "user")
+	{
+		processUserView();
+	}
 	else if (cmd == "join")
 	{
 		processCloudJoinMaster();
@@ -245,6 +249,7 @@ void ArgumentParser::printMainHelp()
 
 	std::cout << "  passwd      Change user password" << std::endl;
 	std::cout << "  lock        Lock/Unlock a user" << std::endl;
+	std::cout << "  user        View user" << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
@@ -1014,7 +1019,7 @@ std::string ArgumentParser::parseOutputMessage(http_response &resp)
 		}
 		else
 		{
-			result = respJson.serialize();
+			result = Utility::prettyJson(respJson.serialize());
 		}
 	}
 	catch(...)
@@ -1506,6 +1511,21 @@ void ArgumentParser::processUserLock()
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
+void ArgumentParser::processUserView()
+{
+	po::options_description desc("View users:", BOOST_DESC_WIDTH);
+	desc.add_options()
+		COMMON_OPTIONS
+		("all,a", "all users")
+		("help,h", "Prints command usage to stdout and exits");
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN;
+
+	std::string restPath = m_commandLineVariables.count("all") ? "/appmesh/users" : "/appmesh/user/self";
+	http_response response = requestHttp(true, methods::GET, restPath);
+	std::cout << parseOutputMessage(response) << std::endl;
+}
+
 void ArgumentParser::processUserPwdEncrypt()
 {
 	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
@@ -1533,9 +1553,10 @@ void ArgumentParser::processUserPwdEncrypt()
 
 void ArgumentParser::processUserMfaActive()
 {
-	po::options_description desc("Active MFA:", BOOST_DESC_WIDTH);
+	po::options_description desc("Manage MFA:", BOOST_DESC_WIDTH);
 	desc.add_options()
-		COMMON_OPTIONS;
+		COMMON_OPTIONS
+		("delete,d", "deactive MFA");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1550,15 +1571,27 @@ void ArgumentParser::processUserMfaActive()
 		return;
 	}
 
-	if (this->confirmInput(Utility::stringFormat("Do you want active 2FA for <%s>: ", userName.c_str()).c_str()))
+	if (m_commandLineVariables.count("delete") == 0)
 	{
-		std::string restPath = std::string("/appmesh/user/").append(userName).append("/mfa");
-		http_response response = requestHttp(true, methods::POST, restPath);
-		auto result = response.extract_json().get();
-		auto totpUri = Utility::decode64(GET_JSON_STR_VALUE(result, HTTP_BODY_KEY_MFA_URI));
+		if (this->confirmInput(Utility::stringFormat("Do you want active 2FA for <%s>: ", userName.c_str()).c_str()))
+		{
+			std::string restPath = std::string("/appmesh/user/self/mfa");
+			http_response response = requestHttp(true, methods::POST, restPath);
+			auto result = response.extract_json().get();
+			auto totpUri = Utility::decode64(GET_JSON_STR_VALUE(result, HTTP_BODY_KEY_MFA_URI));
 
-		const auto totpCmd = std::string("/opt/appmesh/bin/qrc '").append(totpUri).append("'");
-		system(totpCmd.c_str());
+			const auto totpCmd = std::string("/opt/appmesh/bin/qrc '").append(totpUri).append("'");
+			system(totpCmd.c_str());
+		}
+	}
+	else
+	{
+		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s>: ", userName.c_str()).c_str()))
+		{
+			std::string restPath = std::string("/appmesh/user/") + userName + "/mfa";
+			http_response response = requestHttp(true, methods::DEL, restPath);
+			std::cout << parseOutputMessage(response) << std::endl;
+		}
 	}
 }
 

@@ -38,10 +38,12 @@ DELETE| /appmesh/label/abc |  | Delete a label
 GET | /appmesh/config |  | Get basic configurations
 POST| /appmesh/config |  | Set basic configurations
 -|-|-|-
-POST| /appmesh/user/admin/passwd | New-Password=base64(passwd) | Change user password
+POST| /appmesh/user/admin/passwd | New-Password=base64(passwd) | Change user password, username can be `self`
 POST| /appmesh/user/usera/lock | | admin user to lock a user
 POST| /appmesh/user/usera/unlock | | admin user to unlock a user
-POST| /appmesh/user/usera/mfa | | active 2fa for a usera
+POST| /appmesh/user/self/mfa | | active 2fa for current user
+DEL| /appmesh/user/usera/mfa | | deactive 2fa for a user, username can be `self`
+GET | /appmesh/user/self | | View user self
 PUT | /appmesh/user/usera | | Add usera to Users
 DEL | /appmesh/user/usera | | Delete usera
 GET | /appmesh/users | | Get user list

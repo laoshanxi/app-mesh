@@ -21,6 +21,7 @@ public:
 	// serialize
 	web::json::value AsJson() const;
 	static std::shared_ptr<User> FromJson(const std::string &userName, const web::json::value &obj, const std::shared_ptr<Roles> roles) noexcept(false);
+	static web::json::value &clearConfidentialInfo(web::json::value &userJson);
 
 	// user update
 	void lock();
@@ -28,6 +29,7 @@ public:
 	void updateUser(std::shared_ptr<User> user);
 	void updateKey(const std::string &passwd);
 	const std::string generateMfaKey();
+	void deactiveMfa();
 	bool validateMfaCode(const std::string &totpCode);
 
 	// get user info

@@ -37,7 +37,7 @@ else
 		su ${APPMESH_DAEMON_EXEC_USER} -g ${APPMESH_DAEMON_EXEC_USER_GROUP}
 	fi
 fi
-echo "App Mesh Service run as user: $USER"
+echo "App Mesh Service run with user: $(whoami)"
 
 log() {
 	logger "[$(date)]""$1"
@@ -63,7 +63,7 @@ start() {
 }
 
 stop() {
-	log "Begin stop $PROG"
+	log "try stop $PROG"
 	APPMESH_PROC_NUMBER=$(ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v grep | wc -l)
 	WATCHDOG_PROC_NUMBER=$(ps aux | grep -w ${PROG_HOME}/${PROG_WATCHDOG} | grep -v grep | wc -l)
 	#echo "APPMESH_PROC_NUMBER:${APPMESH_PROC_NUMBER}  WATCHDOG_PROC_NUMBER:${WATCHDOG_PROC_NUMBER}"
@@ -72,9 +72,9 @@ stop() {
 	fi
 	if [ "${APPMESH_PROC_NUMBER}" -ge "1" ]; then
 		ps aux | grep -w ${PROG_HOME}/${PROG} | grep -v grep | awk '{print $2}' | xargs kill -9
-		log "$PROG stopped"
+		log "stopped $PROG"
 	else
-		log "$PROG not started"
+		log "not started"
 	fi
 }
 

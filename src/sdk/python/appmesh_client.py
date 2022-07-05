@@ -132,7 +132,7 @@ class AppMeshClient:
             Application JSON
                 The application JSON both contain static configuration and runtime infomation
         """
-        resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/app/{0}".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_apps(self):
@@ -175,7 +175,7 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             AppMeshClient.Method.GET,
-            path="/appmesh/app/{0}/output".format(app_name),
+            path=f"/appmesh/app/{app_name}/output",
             query={
                 "stdout_position": str(output_position),
                 "stdout_index": str(stdout_index),
@@ -200,7 +200,7 @@ class AppMeshClient:
             HeathStatus : str
                 0 is heathy, 1 is unhealthy
         """
-        resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/app/{0}/health".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}/health")
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     ########################################
@@ -235,7 +235,7 @@ class AppMeshClient:
             Success : bool
             Message : JSON
         """
-        resp = self.__request_http(AppMeshClient.Method.DELETE, path="/appmesh/app/{0}".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     def enable_app(self, app_name):
@@ -251,7 +251,7 @@ class AppMeshClient:
             Success : bool
             Message : JSON
         """
-        resp = self.__request_http(AppMeshClient.Method.POST, path="/appmesh/app/{0}/enable".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/enable")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     def disable_app(self, app_name):
@@ -267,7 +267,7 @@ class AppMeshClient:
             Success : bool
             Message : JSON
         """
-        resp = self.__request_http(AppMeshClient.Method.POST, path="/appmesh/app/{0}/disable".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/disable")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     ########################################
@@ -294,7 +294,7 @@ class AppMeshClient:
             Success : bool
             CloudApplicationsJson : JSON
         """
-        resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/app/{0}".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.GET, path=f"/appmesh/cloud/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_cloud_app_output(self, app_name, host_name, output_position=0, stdout_index=0, stdout_maxsize=10240, process_uuid=""):
@@ -326,7 +326,7 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             AppMeshClient.Method.GET,
-            path="/appmesh/cloud/app/{0}/output/{1}".format(app_name, host_name),
+            path=f"/appmesh/cloud/app/{app_name}/output/{host_name}",
             query={
                 "stdout_position": str(output_position),
                 "stdout_index": str(stdout_index),
@@ -350,7 +350,7 @@ class AppMeshClient:
         -------
             Success : bool
         """
-        resp = self.__request_http(AppMeshClient.Method.DELETE, path="/appmesh/cloud/app/{0}".format(app_name))
+        resp = self.__request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/cloud/app/{app_name}")
         return resp.status_code == HTTPStatus.OK
 
     def add_cloud_app(self, app_json):
@@ -435,9 +435,9 @@ class AppMeshClient:
     ########################################
     # User Management
     ########################################
-    def change_passwd(self, new_password):
+    def change_passwd(self, new_password, user_name="self"):
         """
-        Change current user password
+        Change user password
 
         Parameters
         ----------
@@ -450,7 +450,7 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.POST,
-            path="/appmesh/user/{0}/passwd".format(new_password),
+            path=f"/appmesh/user/{user_name}/passwd",
             header={"New-Password": base64.b64encode(new_password.encode())},
         )
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
@@ -472,7 +472,7 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.PUT,
-            path="/appmesh/user/{0}".format(user_name),
+            path=f"/appmesh/user/{user_name}",
             body=user_json,
         )
         return resp.status_code == HTTPStatus.OK
@@ -492,7 +492,7 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.DELETE,
-            path="/appmesh/user/{0}".format(user_name),
+            path=f"/appmesh/user/{user_name}",
         )
         return resp.status_code == HTTPStatus.OK
 
@@ -511,7 +511,7 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.POST,
-            path="/appmesh/user/{0}/lock".format(user_name),
+            path=f"/appmesh/user/{user_name}/lock",
         )
         return resp.status_code == HTTPStatus.OK
 
@@ -530,13 +530,28 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.POST,
-            path="/appmesh/user/{0}/unlock".format(user_name),
+            path=f"/appmesh/user/{user_name}/unlock",
         )
         return resp.status_code == HTTPStatus.OK
 
-    def active_user_mfa(self, user_name) -> bool:
+    def active_user_mfa(self) -> bool:
         """
-        Active 2FA for a user and return MFA URI with JSON body
+        Active 2FA for current login user and return MFA URI with JSON body
+
+        Returns
+        -------
+            Success : bool
+            Message : JSON
+        """
+        resp = self.__request_http(
+            method=AppMeshClient.Method.POST,
+            path="/appmesh/user/self/mfa",
+        )
+        return resp.status_code == HTTPStatus.OK
+
+    def deactive_user_mfa(self, user_name="self") -> bool:
+        """
+        DeActive 2FA for a user
 
         Parameters
         ----------
@@ -548,8 +563,8 @@ class AppMeshClient:
             Message : JSON
         """
         resp = self.__request_http(
-            method=AppMeshClient.Method.POST,
-            path="/appmesh/user/{0}/mfa".format(user_name),
+            method=AppMeshClient.Method.DELETE,
+            path=f"/appmesh/user/{user_name}/mfa",
         )
         return resp.status_code == HTTPStatus.OK
 
@@ -563,6 +578,18 @@ class AppMeshClient:
             UserList : JSON
         """
         resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/users")
+        return (resp.status_code == HTTPStatus.OK), resp.json()
+
+    def get_user_self(self):
+        """
+        Get all users
+
+        Returns
+        -------
+            Success : bool
+            UserList : JSON
+        """
+        resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/self")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def get_roles(self):
@@ -628,7 +655,7 @@ class AppMeshClient:
             Success : bool
             Message : JSON
         """
-        resp = self.__request_http(method=AppMeshClient.Method.POST, path="/appmesh/role/{0}".format(role_name), body=role_json)
+        resp = self.__request_http(method=AppMeshClient.Method.POST, path=f"/appmesh/role/{role_name}", body=role_json)
         return resp.status_code == HTTPStatus.OK
 
     def delete_role(self, role_name) -> bool:
@@ -646,7 +673,7 @@ class AppMeshClient:
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.DELETE,
-            path="/appmesh/role/{0}".format(role_name),
+            path=f"/appmesh/role/{role_name}",
         )
         return resp.status_code == HTTPStatus.OK
 
@@ -670,7 +697,7 @@ class AppMeshClient:
         resp = self.__request_http(
             AppMeshClient.Method.PUT,
             query={"value": tag_value},
-            path="/appmesh/label/{0}".format(tag_name),
+            path=f"/appmesh/label/{tag_name}",
         )
         return resp.status_code == HTTPStatus.OK
 
@@ -687,7 +714,7 @@ class AppMeshClient:
             Success : bool
             Message : JSON
         """
-        resp = self.__request_http(AppMeshClient.Method.DELETE, path="/appmesh/label/{0}".format(tag_name))
+        resp = self.__request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/label/{tag_name}")
         return resp.status_code == HTTPStatus.OK
 
     def get_tags(self):

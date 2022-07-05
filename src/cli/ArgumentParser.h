@@ -54,6 +54,7 @@ private:
 
 	void processUserChangePwd();
 	void processUserLock();
+	void processUserView();
 	void processUserPwdEncrypt();
 	void processUserMfaActive();
 	void initRadomPassword();

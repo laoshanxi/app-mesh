@@ -63,8 +63,10 @@ constexpr auto REST_PATH_SEC_USER_CHANGE_PWD = R"(/appmesh/user/([^/\*]+)/passwd
 constexpr auto REST_PATH_SEC_USER_LOCK = R"(/appmesh/user/([^/\*]+)/lock)";
 constexpr auto REST_PATH_SEC_USER_UNLOCK = R"(/appmesh/user/([^/\*]+)/unlock)";
 constexpr auto REST_PATH_SEC_USER_ADD = R"(/appmesh/user/([^/\*]+))";
+constexpr auto REST_PATH_SEC_USER_VIEW = "/appmesh/user/self";
 constexpr auto REST_PATH_SEC_USER_DELETE = R"(/appmesh/user/([^/\*]+))";
-constexpr auto REST_PATH_SEC_USER_MFA = R"(/appmesh/user/([^/\*]+)/mfa)";
+constexpr auto REST_PATH_SEC_USER_MFA = "/appmesh/user/self/mfa";
+constexpr auto REST_PATH_SEC_USER_MFA_DEL = R"(/appmesh/user/([^/\*]+)/mfa)";
 constexpr auto REST_PATH_SEC_USER_VIEW_ALL = "/appmesh/users";
 constexpr auto REST_PATH_SEC_ROLE_VIEW_ALL = "/appmesh/roles";
 constexpr auto REST_PATH_SEC_ROLE_UPDATE = R"(/appmesh/role/([^/\*]+))";
@@ -124,8 +126,10 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_LOCK, std::bind(&RestHandler::apiUserLock, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_UNLOCK, std::bind(&RestHandler::apiUserUnlock, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, REST_PATH_SEC_USER_ADD, std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_VIEW, std::bind(&RestHandler::apiUserView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_USER_DELETE, std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_MFA, std::bind(&RestHandler::apiUserActiveMFA, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_USER_MFA_DEL, std::bind(&RestHandler::apiUserDeActiveMFA, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_VIEW_ALL, std::bind(&RestHandler::apiUsersView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_ROLE_VIEW_ALL, std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE, std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
@@ -334,7 +338,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	}
 
 	LOG_DBG << fname << "Uploading file <" << file << ">";
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("File upload success"));
 }
 
 void RestHandler::apiLabelsView(const HttpRequest &message)
@@ -358,7 +362,7 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();
 
-		message.reply(status_codes::OK);
+		message.reply(status_codes::OK, convertText2Json("Add label success"));
 	}
 	else
 	{
@@ -376,7 +380,7 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 	Configuration::instance()->getLabel()->delLabel(labelKey);
 	Configuration::instance()->saveConfigToDisk();
 
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("Label delete success"));
 }
 
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
@@ -431,16 +435,16 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_CHANGE_PWD);
 	auto tokenUserName = getJwtUserName(message);
+	if (pathUserName == "self")
+	{
+		pathUserName = tokenUserName;
+	}
 	if (!(message.m_headers.count(HTTP_HEADER_JWT_new_password)))
 	{
 		throw std::invalid_argument("can not find new password from header");
 	}
 	auto newPasswd = Utility::stdStringTrim(Utility::decode64(GET_STD_STRING(message.m_headers.find(HTTP_HEADER_JWT_new_password)->second)));
 
-	if (pathUserName != tokenUserName)
-	{
-		throw std::invalid_argument("user can only change its own password");
-	}
 	if (newPasswd.length() < APPMESH_PASSWD_MIN_LENGTH)
 	{
 		throw std::invalid_argument("password length should be greater than 3");
@@ -473,7 +477,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("Lock user success"));
 }
 
 void RestHandler::apiUserUnlock(const HttpRequest &message)
@@ -490,7 +494,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("Unlock user success"));
 }
 
 void RestHandler::apiUserAdd(const HttpRequest &message)
@@ -507,7 +511,29 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("User add success"));
+}
+
+void RestHandler::apiUserView(const HttpRequest &message)
+{
+	if (Configuration::instance()->getJwtEnabled())
+	{
+		auto tokenUserName = getJwtUserName(message);
+		auto user = Security::instance()->getUserInfo(tokenUserName);
+		if (user != nullptr)
+		{
+			auto userJson = user->AsJson();
+			message.reply(status_codes::OK, User::clearConfidentialInfo(userJson));
+		}
+		else
+		{
+			throw std::invalid_argument(Utility::stringFormat("No such user: %s", tokenUserName.c_str()));
+		}
+	}
+	else
+	{
+		throw std::invalid_argument("JWT authentication not enabled");
+	}
 }
 
 void RestHandler::apiUserDel(const HttpRequest &message)
@@ -524,25 +550,23 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("User delete success"));
 }
 
 void RestHandler::apiUserActiveMFA(const HttpRequest &message)
 {
-	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
-	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_MFA);
-	auto tokenUserName = getJwtUserName(message);
-	if (pathUserName != tokenUserName)
+	permissionCheck(message, PERMISSION_KEY_user_mfa_active);
+	if (!Configuration::instance()->getJwtEnabled())
 	{
-		// only allow user active and generate 2FA key for him self
-		throw std::invalid_argument("can only active 2FA for user self");
+		throw std::invalid_argument("JWT authentication not enabled");
 	}
+	auto userName = getJwtUserName(message);
 
-	const auto user = Security::instance()->getUserInfo(pathUserName);
+	const auto user = Security::instance()->getUserInfo(userName);
 	const auto mfaSecret = user->generateMfaKey();
 	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
 	const auto totpUri = Utility::stringFormat("otpauth://totp/%s?secret=%s&issuer=%s",
-											   pathUserName.c_str(), mfaSecret.c_str(), "AppMesh");
+											   userName.c_str(), mfaSecret.c_str(), "AppMesh");
 
 	auto result = web::json::value();
 	result[HTTP_BODY_KEY_MFA_URI] = web::json::value(Utility::encode64(totpUri));
@@ -552,6 +576,37 @@ void RestHandler::apiUserActiveMFA(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 }
 
+void RestHandler::apiUserDeActiveMFA(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_user_mfa_delete);
+	if (!Configuration::instance()->getJwtEnabled())
+	{
+		throw std::invalid_argument("JWT authentication not enabled");
+	}
+	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
+	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_MFA_DEL);
+	auto tokenUserName = getJwtUserName(message);
+	auto userName = (pathUserName == "self") ? tokenUserName : pathUserName;
+
+	auto user = Security::instance()->getUserInfo(userName);
+	if (user != nullptr)
+	{
+		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" || pathUserName != tokenUserName))
+		{
+			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
+		}
+		user->deactiveMfa();
+		message.reply(status_codes::OK, convertText2Json("2FA deactive success"));
+
+		Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
+		ConsulConnection::instance()->saveSecurity();
+	}
+	else
+	{
+		throw std::invalid_argument(Utility::stringFormat("No such user exist <%s>", userName.c_str()));
+	}
+}
+
 void RestHandler::apiUsersView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_get_users);
@@ -559,10 +614,7 @@ void RestHandler::apiUsersView(const HttpRequest &message)
 	auto users = Security::instance()->getUsersJson();
 	for (auto &user : users.as_object())
 	{
-		if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_key))
-			user.second.erase(JSON_KEY_USER_key);
-		if (HAS_JSON_FIELD(user.second, JSON_KEY_USER_mfa_key))
-			user.second.erase(JSON_KEY_USER_mfa_key);
+		User::clearConfidentialInfo(user.second);
 	}
 
 	message.reply(status_codes::OK, users);
@@ -589,7 +641,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("Role update success"));
 }
 
 void RestHandler::apiRoleDelete(const HttpRequest &message)
@@ -607,7 +659,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("Role delete success"));
 }
 
 void RestHandler::apiUserGroupsView(const HttpRequest &message)
@@ -924,7 +976,7 @@ void RestHandler::apiCloudAppDel(const HttpRequest &message)
 	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_DELETE);
 
 	ConsulConnection::instance()->deleteCloudApp(appName);
-	message.reply(status_codes::OK);
+	message.reply(status_codes::OK, convertText2Json("Delete cloud application success"));
 }
 
 void RestHandler::apiCloudHostView(const HttpRequest &message)
@@ -964,3 +1016,4 @@ void RestHandler::apiAppAdd(const HttpRequest &message)
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, app->AsJson(false));
 }
+

@@ -124,6 +124,15 @@ User::~User()
 {
 }
 
+web::json::value &User::clearConfidentialInfo(web::json::value &userJson)
+{
+	if (HAS_JSON_FIELD(userJson, JSON_KEY_USER_key))
+		userJson.erase(JSON_KEY_USER_key);
+	if (HAS_JSON_FIELD(userJson, JSON_KEY_USER_mfa_key))
+		userJson.erase(JSON_KEY_USER_mfa_key);
+	return userJson;
+}
+
 web::json::value User::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -208,6 +217,13 @@ void User::updateKey(const std::string &passwd)
 	{
 		m_key = passwd;
 	}
+}
+
+void User::deactiveMfa()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_mfaKey.clear();
+	m_enableMfa = false;
 }
 
 const std::string User::generateMfaKey()

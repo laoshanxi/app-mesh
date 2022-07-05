@@ -20,6 +20,7 @@
             "user-lock",
             "role-delete",
             "role-set",
+            "user_mfa_delete",
             "user-unlock"
         ],
         "shell": [
@@ -38,6 +39,7 @@
             "cloud-host-view",
             "app-view",
             "app-output-view",
+            "user-mfa-active",
             "host-resource-view"
         ]
     },

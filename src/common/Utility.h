@@ -411,6 +411,8 @@ public:
 #define PERMISSION_KEY_unlock_user "user-unlock"
 #define PERMISSION_KEY_add_user "user-add"
 #define PERMISSION_KEY_delete_user "user-delete"
+#define PERMISSION_KEY_user_mfa_delete "user-mfa-delete"
+#define PERMISSION_KEY_user_mfa_active "user-mfa-active"
 #define PERMISSION_KEY_get_users "user-list"
 #define PERMISSION_KEY_role_update "role-set"
 #define PERMISSION_KEY_role_delete "role-delete"

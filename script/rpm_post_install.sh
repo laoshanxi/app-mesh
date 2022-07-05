@@ -31,17 +31,17 @@ if ($(systemd --test >/dev/null)); then
 	cp -f ${PROG_HOME}/script/appmesh.systemd.service $SYSTEMD_FILE
 	# systemd user
 	if [ -z ${APPMESH_DAEMON_EXEC_USER+x} ]; then
-		echo "App Mesh Service run as user: root"
+		echo "App Mesh Service run with user: root"
 	else
 		sed -i "s#User=#User=${APPMESH_DAEMON_EXEC_USER}#g" $SYSTEMD_FILE
-		echo "App Mesh Service run as user: ${APPMESH_DAEMON_EXEC_USER}"
+		echo "App Mesh Service run with user: ${APPMESH_DAEMON_EXEC_USER}"
 	fi
 	# systemd user group
 	if [ -z ${APPMESH_DAEMON_EXEC_USER_GROUP+x} ]; then
 		:
 	else
 		sed -i "s#Group=#Group=${APPMESH_DAEMON_EXEC_USER_GROUP}#g" $SYSTEMD_FILE
-		echo "App Mesh Service run as user group: ${APPMESH_DAEMON_EXEC_USER_GROUP}"
+		echo "App Mesh Service run with user group: ${APPMESH_DAEMON_EXEC_USER_GROUP}"
 	fi
 	systemctl daemon-reload
 else

@@ -126,6 +126,8 @@ User and Role design for App Mesh
 |    POST     | /appmesh/user/usera/unlock     | `unlock-user`        |
 |     DEL     | /appmesh/user/usera            | `delete-user`        |
 |     PUT     | /appmesh/user/usera            | `add-user`           |
+|     PUT     | /appmesh/user/self/mfa         | `user-mfa-active`    |
+|     DEL     | /appmesh/user/self/mfa         | `user-mfa-delete`    |
 |     GET     | /appmesh/users                 | `get-users`          |
 
 

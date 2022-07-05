@@ -37,13 +37,22 @@ func readProtobufLoop() {
 	for {
 		// read header 4 bytes (int)
 		buf := make([]byte, PROTOBUF_HEADER_LENGTH)
-		_, _ = tcpConnect.Read(buf)
+		_, err := tcpConnect.Read(buf)
+		if err != nil {
+			log.Fatalf("Failed read header from TCP Server: %v", err)
+		}
 		bodyLength := binary.LittleEndian.Uint32(buf)
 		// read body buffer
 		buf = make([]byte, bodyLength)
-		_, _ = tcpConnect.Read(buf)
+		_, err = tcpConnect.Read(buf)
+		if err != nil {
+			log.Fatalf("Failed read body from TCP Server: %v", err)
+		}
 		protocResponse := new(Response)
-		_ = proto.Unmarshal(buf, protocResponse)
+		err = proto.Unmarshal(buf, protocResponse)
+		if err != nil {
+			log.Fatalf("Failed de-serialize protoc respon: %v", err)
+		}
 
 		// forward to channel and release map
 		if t, ok := requestMap.LoadAndDelete(protocResponse.GetUuid()); !ok {
@@ -79,9 +88,9 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 		socketMutex.Lock()
 		defer socketMutex.Unlock()
 		sendCount, sendErr = tcpConnect.Write(headerData)
-		ctx.Logger().Printf("sent header size %d = %d to TCP, error %v", uint32(len(headerData)), sendCount, sendErr)
+		ctx.Logger().Printf("sent header size %d = %d to TCP, error: %v", uint32(len(headerData)), sendCount, sendErr)
 		sendCount, sendErr = tcpConnect.Write(bodyData)
-		ctx.Logger().Printf("sent body size %d = %d to TCP, error %v", uint32(len(bodyData)), sendCount, sendErr)
+		ctx.Logger().Printf("sent body size %d = %d to TCP, error: %v", uint32(len(bodyData)), sendCount, sendErr)
 	}
 	if sendErr == nil {
 		// create a chan and store in map
@@ -95,7 +104,7 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 		applyResponse(ctx, protocResponse)
 		// ctx.Logger().Printf("---Response Protoc:---\n%v\n", protocResponse)
 	} else {
-		ctx.Logger().Printf("Failed to send request to TCP Server: %s", sendErr)
+		ctx.Logger().Printf("Failed to send request to TCP Server: %v", sendErr)
 		os.Exit(-1)
 	}
 }
@@ -219,7 +228,7 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 	// start listen
 	ln, err := net.Listen("tcp4", restAgentAddr)
 	if err != nil {
-		log.Fatalf("Error in Listen tcp4: %s", err)
+		log.Fatalf("Error in Listen tcp4: %v", err)
 		panic(err)
 	}
 	s := &fasthttp.Server{
@@ -239,7 +248,7 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 	// connect to TCP rest server
 	conn, err := connectServer(restTcpPort)
 	if err != nil {
-		log.Fatalf("Failed to connected to TCP server <%s> with error: %s", strconv.Itoa(restTcpPort), err)
+		log.Fatalf("Failed to connected to TCP server <%d> with error: %v", restTcpPort, err)
 		os.Exit(-1)
 	}
 	tcpConnect = conn
@@ -255,7 +264,7 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 		err = listenAgent(addrForListen, router)
 	}
 	if err != nil {
-		log.Fatalf("Error in fasthttp Serve: %s", err)
+		log.Fatalf("Error in fasthttp Serve: %v", err)
 		os.Exit(-1)
 	}
 }
