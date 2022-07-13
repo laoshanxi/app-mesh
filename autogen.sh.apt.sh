@@ -27,6 +27,26 @@ gem install fpm
 apt install -y libprotobuf-dev
 apt install -y protobuf-compiler
 
+# cpplint tools
+apt install -y clang
+apt install -y cppcheck
+apt install -y git
+
+# dependency libraries
+apt install -y liblog4cpp5-dev
+apt install -y libace-dev
+apt install -y libcpprest-dev
+apt install -y libboost-all-dev
+apt install -y libcrypto++-dev
+
+# tool
+apt install -y golang-cfssl
+apt install -y upx-ucl
+
+# qr code
+wget --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_amd64
+chmod +x qrc && mv qrc /usr/bin/
+
 # Golang
 apt install -y golang
 # Golang third party library
@@ -48,23 +68,3 @@ go install -v golang.org/x/tools/gopls@latest
 go get -v google.golang.org/protobuf@latest
 go install -v github.com/golang/protobuf/protoc-gen-go@latest
 ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
-
-# cpplint tools
-apt install -y clang
-apt install -y cppcheck
-apt install -y gh git
-
-# dependency libraries
-apt install -y liblog4cpp5-dev
-apt install -y libace-dev
-apt install -y libcpprest-dev
-apt install -y libboost-all-dev
-apt install -y libcrypto++-dev
-
-# tool
-apt install -y golang-cfssl
-apt install -y upx-ucl
-
-# qr code
-wget --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_amd64
-chmod +x qrc && mv qrc /usr/bin/

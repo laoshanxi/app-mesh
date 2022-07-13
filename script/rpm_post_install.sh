@@ -26,7 +26,11 @@ for e in $(env); do
 	fi
 done
 
-if ($(systemd --test >/dev/null)); then
+# check systemd or initd (systemd --test can not run with root)
+# https://unix.stackexchange.com/questions/121654/convenient-way-to-check-if-system-is-using-systemd-or-sysvinit-in-bash
+# https://www.linuxquestions.org/questions/linux-newbie-8/checking-if-i-have-systemd-or-init-d-4175639948/
+if [ $(ps --no-headers -o comm 1) = "systemd" ]; then
+	echo "installing systemd service"
 	chmod 644 ${PROG_HOME}/script/appmesh.systemd.service
 	cp -f ${PROG_HOME}/script/appmesh.systemd.service $SYSTEMD_FILE
 	# systemd user
@@ -45,6 +49,7 @@ if ($(systemd --test >/dev/null)); then
 	fi
 	systemctl daemon-reload
 else
+	echo "installing initd service"
 	chmod 744 ${PROG_HOME}/script/appmesh.initd.sh
 	cp -f ${PROG_HOME}/script/appmesh.initd.sh ${INITD_FILE}
 fi
