@@ -850,7 +850,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
 		m_shellAppFile = nullptr;
-		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine);
+		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, m_owner->getExecUser());
 	}
 
 	// alloc process object

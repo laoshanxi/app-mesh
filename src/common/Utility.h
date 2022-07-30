@@ -153,8 +153,8 @@ public:
 	static const std::string getBinaryName();
 	static bool isDirExist(const std::string &path);
 	static bool isFileExist(const std::string &path);
-	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read);
-	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read);
+	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
+	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 

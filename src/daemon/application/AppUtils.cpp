@@ -4,10 +4,11 @@
 #include <memory>
 
 #include "../../common/Utility.h"
+#include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 
-ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd)
+ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
@@ -22,10 +23,14 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		shellFile.close();
 		// only read permission
 		os::chmod(fileName, 444);
+		if (execUser.length() > 0 && Utility::getOsUserName() != execUser)
+		{
+			os::chown(fileName, execUser);
+		}
 		m_fileName = fileName;
 		m_shellCmd = Utility::stringFormat("/bin/sh '%s'", m_fileName.c_str());
 
-		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> run in shell mode";
+		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> run in shell mode";
 	}
 	else
 	{

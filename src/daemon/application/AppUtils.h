@@ -9,7 +9,7 @@
 /// </summary>
 struct ShellAppFileGen
 {
-	explicit ShellAppFileGen(const std::string &name, const std::string &cmd);
+	explicit ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser);
 	virtual ~ShellAppFileGen();
 	const std::string &getShellStartCmd() const { return m_shellCmd; };
 	const std::string &getShellFileName() const { return m_fileName; };
