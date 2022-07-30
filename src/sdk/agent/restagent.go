@@ -41,7 +41,7 @@ func readProtobufLoop() {
 		if err != nil {
 			log.Fatalf("Failed read header from TCP Server: %v", err)
 		}
-		bodyLength := binary.LittleEndian.Uint32(buf)
+		bodyLength := binary.BigEndian.Uint32(buf)
 		// read body buffer
 		buf = make([]byte, bodyLength)
 		_, err = tcpConnect.Read(buf)
@@ -78,7 +78,7 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 	protocRequest := serializeRequest(req)
 	bodyData, _ := proto.Marshal(protocRequest)
 	headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
-	binary.LittleEndian.PutUint32(headerData, uint32(len(bodyData)))
+	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
 	// ctx.Logger().Printf("---Request Protoc:---\n%v\n", protocRequest)
 
 	var sendCount int

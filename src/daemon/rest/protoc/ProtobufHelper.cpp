@@ -12,8 +12,7 @@ const std::tuple<std::shared_ptr<char>, size_t> ProtobufHelper::serialize(const 
     const auto msgLength = msg.ByteSizeLong();
     const auto totalLength = PROTOBUF_HEADER_LENGTH + msgLength;
     const auto buffer = make_shared_array<char>(totalLength);
-    // TODO: user network bytes order
-    *((uint32_t *)buffer.get()) = msgLength;
+    *((uint32_t *)buffer.get()) = htonl(msgLength); // host to network byte order
     msg.SerializeToArray(buffer.get() + 4, msgLength);
 
     return std::make_tuple(buffer, totalLength); // return buffer and length pair
@@ -23,10 +22,7 @@ bool ProtobufHelper::deserialize(google::protobuf::Message &msg, const char *dat
 {
     const static char fname[] = "ProtobufHelper::deserialize() ";
 
-    // TODO: sizeof(data) should pass from outside, due to ACE_Message_Block can not pass
-    //  more parameters, so parse header again
-    const auto dataSize = *((uint32_t *)(data));
-
+    const auto dataSize = ntohl(*((uint32_t *)(data)));
     // De-Serialize
     if (!msg.ParseFromArray(data + PROTOBUF_HEADER_LENGTH, dataSize))
     {
@@ -50,8 +46,8 @@ const std::tuple<char *, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK
         return std::make_tuple(nullptr, 0);
     }
 
-    // 2. parse header data (get body length)
-    const auto bodySize = *((int *)(header)); // TODO: user network bytes order
+    // 2. parse header data (get body length). network to host byte order
+    const auto bodySize = ntohl(*((int *)(header))); // host to network byte order
     if (bodySize == 0)
     {
         socket.dump();
