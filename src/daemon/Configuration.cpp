@@ -225,7 +225,7 @@ int Configuration::getRestListenPort()
 	return m_rest->m_restListenPort;
 }
 
-int Configuration::getPromListenPort()
+int Configuration::getPromListenPort() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_promListenPort;
@@ -481,7 +481,7 @@ std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonA
 		}
 		else
 		{
-			app->initMetrics(PrometheusRest::instance());
+			app->initMetrics();
 		}
 
 		if (app->isPersistAble())
@@ -745,7 +745,12 @@ void Configuration::registerPrometheus()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p)
-				  { p->initMetrics(PrometheusRest::instance()); });
+				  { p->initMetrics(); });
+}
+
+bool Configuration::prometheusEnabled() const
+{
+	return getRestEnabled() && getPromListenPort() > 1024;
 }
 
 std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jsonApp)
@@ -791,7 +796,7 @@ const web::json::value Configuration::getAgentAppJson() const
 	{
 		cmd += std::string(" -docker_agent_url ") + this->getDockerProxyAddress();
 	}
-	if (Configuration::instance()->getPromListenPort() > 1024)
+	if (Configuration::instance()->prometheusEnabled())
 	{
 		cmd += std::string(" -prom_exporter_port ") + std::to_string(Configuration::instance()->getPromListenPort());
 	}

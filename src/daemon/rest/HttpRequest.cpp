@@ -1,7 +1,6 @@
 #include "HttpRequest.h"
 #include "../../common/Utility.h"
 #include "../../daemon/application/Application.h"
-#include "RestTcpServer.h"
 #include "protoc/ProtobufHelper.h"
 #include "protoc/Request.pb.h"
 
@@ -61,37 +60,37 @@ web::json::value HttpRequest::extractJson() const
 
 void HttpRequest::reply(http_response &response) const
 {
-	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, "", response.headers(), response.status_code(), "");
+	persistResponse(m_relative_uri, m_uuid, "", response.headers(), response.status_code(), "");
 }
 
 void HttpRequest::reply(http_response &response, const std::string &body_data) const
 {
-	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
+	persistResponse(m_relative_uri, m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
 }
 
 void HttpRequest::reply(http::status_code status) const
 {
-	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, "", {}, status, "");
+	persistResponse(m_relative_uri, m_uuid, "", {}, status, "");
 }
 
 void HttpRequest::reply(http::status_code status, const json::value &body_data) const
 {
-	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
+	persistResponse(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 }
 
 void HttpRequest::reply(http::status_code status, utf8string &&body_data, const utf8string &content_type) const
 {
-	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
+	persistResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
 void HttpRequest::reply(http::status_code status, const utf8string &body_data, const utf8string &content_type) const
 {
-	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
+	persistResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
 void HttpRequest::reply(http::status_code status, const utf16string &body_data, const utf16string &content_type) const
 {
-	RestTcpServer::instance()->backforwardResponse(m_relative_uri, m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
+	persistResponse(m_relative_uri, m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
 }
 
 void HttpRequest::reply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) const
@@ -147,6 +146,17 @@ const web::json::value HttpRequest::emptyJson()
 	return emptyBody;
 }
 
+void HttpRequest::persistResponse(const std::string &requestUri, const std::string &uuid, const std::string &body,
+								  const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType) const
+{
+	m_response = std::make_shared<appmesh::Response>();
+	// fill data
+	m_response->set_uuid(uuid);
+	m_response->set_http_body(body);
+	m_response->mutable_headers()->insert(headers.begin(), headers.end());
+	m_response->set_http_status(status);
+	m_response->set_http_body_msg_type(bodyType);
+}
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequest with remove app from global map
 ////////////////////////////////////////////////////////////////////////////////

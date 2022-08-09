@@ -698,9 +698,9 @@ void RestHandler::apiHealth(const HttpRequest &message)
 
 void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
-	if (PrometheusRest::instance() != nullptr)
+	if (Configuration::instance()->prometheusEnabled())
 	{
-		message.reply(status_codes::OK, PrometheusRest::instance()->collectData(), "text/plain; version=0.0.4");
+		message.reply(status_codes::OK, this->collectData(), "text/plain; version=0.0.4");
 	}
 	else
 	{
@@ -1016,4 +1016,3 @@ void RestHandler::apiAppAdd(const HttpRequest &message)
 	auto app = Configuration::instance()->addApp(jsonApp);
 	message.reply(status_codes::OK, app->AsJson(false));
 }
-

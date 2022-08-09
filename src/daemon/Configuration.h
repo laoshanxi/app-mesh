@@ -98,6 +98,7 @@ public:
 	static void readConfigFromEnv(web::json::value &jsonConfig);
 	static bool applyEnvConfig(web::json::value &jsonValue, std::string envValue);
 	void registerPrometheus();
+	bool prometheusEnabled() const;
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
 	std::shared_ptr<Application> addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp = nullptr, bool persistable = true);
@@ -106,7 +107,7 @@ public:
 
 	int getScheduleInterval();
 	int getRestListenPort();
-	int getPromListenPort();
+	int getPromListenPort() const;
 	std::string getRestListenAddress();
 	std::string getDockerProxyAddress() const;
 	int getRestTcpPort();

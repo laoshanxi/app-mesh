@@ -2,6 +2,9 @@
 
 #include <functional>
 
+#include <ace/Null_Mutex.h>
+#include <ace/Singleton.h>
+
 #include "PrometheusRest.h"
 
 class Application;
@@ -75,3 +78,5 @@ protected:
 	void apiHealth(const HttpRequest &message);
 	void apiRestMetrics(const HttpRequest &message); // not for Prometheus
 };
+
+typedef ACE_Singleton<RestHandler, ACE_Null_Mutex> RESTHANDLER;

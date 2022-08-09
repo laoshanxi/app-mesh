@@ -7,7 +7,14 @@
 #include <string>
 
 #include <ace/Event_Handler.h>
+#include <ace/Null_Mutex.h>
 #include <ace/Reactor.h>
+#include <ace/Recursive_Thread_Mutex.h>
+#include <ace/Singleton.h>
+#include <ace/Test_and_Set.h>
+
+// ACE_Test_and_Set Singleton.
+typedef ACE_Singleton<ACE_Test_and_Set<ACE_Recursive_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex> QUIT_HANDLER;
 
 #define INVALID_TIMER_ID -1
 //////////////////////////////////////////////////////////////////////////
@@ -39,12 +46,12 @@ private:
 	};
 
 	/**
-	* Timer expire call back function, override from ACE
-	* Called when timer expires.  @a current_time represents the current
-	* time that the Event_Handler was selected for timeout
-	* dispatching and @a act is the asynchronous completion token that
-	* was passed in when <schedule_timer> was invoked.
-	*/
+	 * Timer expire call back function, override from ACE
+	 * Called when timer expires.  @a current_time represents the current
+	 * time that the Event_Handler was selected for timeout
+	 * dispatching and @a act is the asynchronous completion token that
+	 * was passed in when <schedule_timer> was invoked.
+	 */
 	virtual int handle_timeout(const ACE_Time_Value &current_time, const void *act = 0) override final;
 
 public:
@@ -75,12 +82,14 @@ public:
 	/// </summary>
 	static int endReactorEvent(ACE_Reactor *reactor);
 
+	static ACE_Reactor *timerReactor();
+
 private:
 	// key: timer ID point, must unique, value: function point
 	std::map<const int *, std::shared_ptr<TimerEvent>> m_timers;
 
 protected:
 	// this reactor can be init as none-default one
-	ACE_Reactor *m_reactor;
+	static ACE_Reactor m_reactor;
 	mutable std::recursive_mutex m_timerMutex;
 };

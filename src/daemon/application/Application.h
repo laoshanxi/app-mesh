@@ -71,7 +71,7 @@ public:
 	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0);
 
 	// prometheus
-	void initMetrics(std::shared_ptr<PrometheusRest> prom);
+	void initMetrics();
 	void initMetrics(std::shared_ptr<Application> fromApp);
 
 protected:

@@ -15,13 +15,13 @@
 #include "../process/DockerApiProcess.h"
 #include "../process/DockerProcess.h"
 #include "../process/MonitoredProcess.h"
-#include "../rest/PrometheusRest.h"
+#include "../rest/RestHandler.h"
 #include "../security/Security.h"
 #include "../security/User.h"
 #include "AppTimer.h"
 #include "Application.h"
 
-ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(std::chrono::milliseconds(20));
+ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(0, 1000L * 30); // 30 millisecond
 
 Application::Application()
 	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
@@ -345,7 +345,7 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 	healthCheck();
 
 	// 4. Prometheus
-	if (PrometheusRest::instance() != nullptr && PrometheusRest::instance()->collected())
+	if (Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		if (m_metricMemory && m_process)
@@ -633,7 +633,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	return std::make_tuple(Utility::readFileCpp(file, &position, maxSize), finished, exitCode);
 }
 
-void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
+void Application::initMetrics()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// must clean first, otherwise the duplicate one will create
@@ -644,22 +644,22 @@ void Application::initMetrics(std::shared_ptr<PrometheusRest> prom)
 	m_metricFileDesc = nullptr;
 
 	// update
-	if (prom)
+	if (Configuration::instance()->prometheusEnabled())
 	{
 		// use uuid in label here to avoid same name app use the same metric cause issue
-		m_metricStartCount = prom->createPromCounter(
+		m_metricStartCount = RESTHANDLER::instance()->createPromCounter(
 			PROM_METRIC_NAME_appmesh_prom_process_start_count, PROM_METRIC_HELP_appmesh_prom_process_start_count,
 			{{"application", getName()}, {"id", m_appId}});
-		m_metricAppPid = prom->createPromGauge(
+		m_metricAppPid = RESTHANDLER::instance()->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_id_gauge, PROM_METRIC_HELP_appmesh_prom_process_start_count,
 			{{"application", getName()}, {"id", m_appId}});
-		m_metricMemory = prom->createPromGauge(
+		m_metricMemory = RESTHANDLER::instance()->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_memory_gauge, PROM_METRIC_HELP_appmesh_prom_process_memory_gauge,
 			{{"application", getName()}, {"id", m_appId}});
-		m_metricCpu = prom->createPromGauge(
+		m_metricCpu = RESTHANDLER::instance()->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_cpu_gauge, PROM_METRIC_HELP_appmesh_prom_process_cpu_gauge,
 			{{"application", getName()}, {"id", m_appId}});
-		m_metricFileDesc = prom->createPromGauge(
+		m_metricFileDesc = RESTHANDLER::instance()->createPromGauge(
 			PROM_METRIC_NAME_appmesh_prom_process_file_descriptors, PROM_METRIC_HELP_appmesh_prom_process_file_descriptors,
 			{{"application", getName()}, {"id", m_appId}});
 	}

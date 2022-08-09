@@ -24,11 +24,11 @@ namespace web
       }
       inline void AddParameter(const std::string &name, const std::string &value)
       {
-        params_.push_back(std::move(std::pair<std::string, std::string>(name, value)));
+        params_.push_back(std::pair<std::string, std::string>(name, value));
       }
       inline void AddFile(const std::string &name, const std::string &value)
       {
-        files_.push_back(std::move(std::pair<std::string, std::string>(name, value)));
+        files_.push_back(std::pair<std::string, std::string>(name, value));
       }
       const std::string &GenBodyContent();
 

@@ -7,6 +7,7 @@
 #include <cpprest/http_client.h>
 
 #include "protoc/Request.pb.h"
+#include "protoc/Response.pb.h"
 
 using namespace web;
 using namespace http;
@@ -149,6 +150,17 @@ public:
 	static std::shared_ptr<HttpRequest> deserialize(const char *input);
 	static const web::json::value emptyJson();
 
+	/// <summary>
+	/// Response REST response to client
+	/// </summary>
+	/// <param name="requestUri"></param>
+	/// <param name="uuid"></param>
+	/// <param name="body"></param>
+	/// <param name="headers"></param>
+	/// <param name="status"></param>
+	/// <param name="bodyType"></param>
+	void persistResponse(const std::string &requestUri, const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType) const;
+
 	// serializeable, always use those variables intead of method(), headers()
 	std::string m_uuid;
 	web::http::method m_method;
@@ -157,6 +169,8 @@ public:
 	std::string m_body;
 	std::map<std::string, std::string> m_headers;
 	std::string m_query;
+
+	mutable std::shared_ptr<appmesh::Response> m_response;
 
 private:
 	// hide bellow extract functions, note extract_X function can only be called once, otherwise will hang

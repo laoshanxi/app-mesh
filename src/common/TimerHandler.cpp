@@ -1,14 +1,15 @@
 
 #include <ace/OS.h>
 #include <ace/Reactor.h>
+#include <ace/TP_Reactor.h>
 #include <ace/Time_Value.h>
 #include <assert.h>
 
 #include "../common/Utility.h"
 #include "TimerHandler.h"
 
+ACE_Reactor TimerHandler::m_reactor(new ACE_TP_Reactor(), true);
 TimerHandler::TimerHandler()
-	: m_reactor(ACE_Reactor::instance())
 {
 }
 
@@ -65,7 +66,7 @@ int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalS
 
 	int *timerIdPtr = new int(INVALID_TIMER_ID);
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
-	(*timerIdPtr) = m_reactor->schedule_timer(this, (void *)timerIdPtr, delay, interval);
+	(*timerIdPtr) = m_reactor.schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
 	if ((*timerIdPtr) >= 0)
 	{
@@ -91,7 +92,7 @@ bool TimerHandler::cancelTimer(int &timerId)
 		return false;
 	}
 
-	auto cancled = m_reactor->cancel_timer(timerId);
+	auto cancled = m_reactor.cancel_timer(timerId);
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
@@ -114,12 +115,9 @@ void TimerHandler::runReactorEvent(ACE_Reactor *reactor)
 	const static char fname[] = "TimerHandler::runReactorEvent() ";
 	LOG_DBG << fname << "Entered";
 
-	while (!reactor->reactor_event_loop_done())
+	while (!reactor->reactor_event_loop_done() && QUIT_HANDLER::instance()->is_set() == 0)
 	{
-		// set the owner of the reactor to the identity of the thread that runs the event loop
-		// reactor->owner(ACE_OS::thr_self());
-		reactor->run_reactor_event_loop();
-		LOG_ERR << fname << "run_reactor_event_loop exited";
+		reactor->handle_events();
 	}
 	LOG_WAR << fname << "Exit";
 }
@@ -130,6 +128,11 @@ int TimerHandler::endReactorEvent(ACE_Reactor *reactor)
 	LOG_DBG << fname << "Entered";
 
 	return reactor->end_reactor_event_loop();
+}
+
+ACE_Reactor *TimerHandler::timerReactor()
+{
+	return &m_reactor;
 }
 
 TimerHandler::TimerEvent::TimerEvent(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)

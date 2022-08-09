@@ -17,7 +17,7 @@ namespace Ldap
 {
     class Server;
 }
-class JsonLdap;
+struct JsonLdap;
 //////////////////////////////////////////////////////////////////////////
 /// LdapImpl
 //////////////////////////////////////////////////////////////////////////
@@ -39,7 +39,7 @@ public:
     virtual bool verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup) override;
     virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd) NOT_APPLICABLE_THROW;
 
-    virtual std::shared_ptr<User> getUserInfo(const std::string &userName);
+    virtual std::shared_ptr<User> getUserInfo(const std::string &userName) override;
     virtual std::map<std::string, std::shared_ptr<User>> getUsers() const NOT_APPLICABLE_THROW;
     virtual web::json::value getUsersJson() const NOT_APPLICABLE_THROW;
     virtual std::shared_ptr<User> addUser(const std::string &userName, const web::json::value &userJson) NOT_APPLICABLE_THROW;

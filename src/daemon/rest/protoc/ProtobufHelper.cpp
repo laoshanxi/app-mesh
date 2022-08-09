@@ -32,7 +32,7 @@ bool ProtobufHelper::deserialize(google::protobuf::Message &msg, const char *dat
     return true;
 }
 
-const std::tuple<char *, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stream &socket)
+const std::shared_ptr<char> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stream &socket)
 {
     const static char fname[] = "ProtobufHelper::readMessageBlock() ";
     LOG_DBG << fname << "entered";
@@ -43,7 +43,7 @@ const std::tuple<char *, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK
     {
         socket.dump();
         LOG_ERR << fname << "read header length failed with error :" << std::strerror(errno);
-        return std::make_tuple(nullptr, 0);
+        return nullptr;
     }
 
     // 2. parse header data (get body length). network to host byte order
@@ -52,18 +52,18 @@ const std::tuple<char *, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK
     {
         socket.dump();
         LOG_ERR << fname << "parse header length with error :" << std::strerror(errno);
-        return std::make_tuple(nullptr, 0);
+        return nullptr;
     }
 
     // 3. read header + body socket data
     const auto bufferSize = bodySize + PROTOBUF_HEADER_LENGTH;
-    auto bodyBuffer = new char[bufferSize];
+    auto bodyBuffer = make_shared_array<char>(bufferSize);
     // static const ACE_Time_Value timeout(std::chrono::seconds(10));
-    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(bodyBuffer, bufferSize) <= 0)
+    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(bodyBuffer.get(), bufferSize) <= 0)
     {
         LOG_ERR << fname << "read body socket data failed with error :" << std::strerror(errno);
-        return std::make_tuple(nullptr, 0);
+        return nullptr;
     }
     LOG_DBG << fname << "read message block data with length: " << bufferSize;
-    return std::make_tuple(bodyBuffer, bufferSize);
+    return bodyBuffer;
 }

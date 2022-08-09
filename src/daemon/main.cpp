@@ -3,6 +3,8 @@
 #include <string>
 #include <thread>
 
+#include "ace/SOCK_Acceptor.h"
+#include <ace/Acceptor.h>
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
 #include <ace/TP_Reactor.h>
@@ -20,14 +22,14 @@
 #include "application/Application.h"
 #include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
-#include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
-#include "rest/RestTcpServer.h"
+#include "rest/TcpServer.h"
 #include "security/Security.h"
 #ifndef NDEBUG
 #include "../common/Valgrind.h"
 #endif
 
+typedef ACE_Acceptor<TcpHandler, ACE_SOCK_ACCEPTOR> TcpAcceptor; // Specialize a Tcp Acceptor.
 static std::vector<std::unique_ptr<std::thread>> m_threadPool;
 
 int main(int argc, char *argv[])
@@ -51,12 +53,12 @@ int main(int argc, char *argv[])
 		// umask 0022 => 644(-rw-r--r--)
 		// umask 0002 => 664(-rw-rw-r--)
 		// umask 0000 => 666(-rw-rw-rw-)
-		ACE_OS::umask(0000);
+		// ACE_OS::umask(0000);
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
 		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
-		// check reactor
-		if (ACE_Reactor::instance()->initialized() == 0)
+		TimerHandler::timerReactor()->open(ACE::max_handles());
+		if (!ACE_Reactor::instance()->initialized() || !TimerHandler::timerReactor()->initialized())
 		{
 			std::cerr << "Init reactor failed with error " << std::strerror(errno);
 			return -1;
@@ -103,21 +105,30 @@ int main(int argc, char *argv[])
 		Utility::setLogLevel(config->getLogLevel());
 		Configuration::instance()->dump();
 
-		// start the 2 threads for timer (application & process event & healthcheck & consul report event)
-		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
-		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
+		// Register QUIT_HANDLER to receive SIGINT commands.
+		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
+		ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
+		// threads for timer (application & process event & healthcheck & consul report event)
+		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, TimerHandler::timerReactor())));
+		// threads for REST pool
+		for (size_t i = 0; i < Configuration::instance()->getThreadPoolSize(); i++)
+		{
+			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
+		}
+		LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
 		// init REST
+		TcpAcceptor acceptor; // Acceptor factory.
 		if (config->getRestEnabled())
 		{
+			if (acceptor.open(ACE_INET_Addr(Configuration::instance()->getRestTcpPort(), INADDR_LOOPBACK), ACE_Reactor::instance()) == -1)
+			{
+				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
+			}
 			Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
-			RestTcpServer::instance(std::make_shared<RestTcpServer>());
-			std::shared_ptr<RestHandler> httpServer = RestTcpServer::instance();
-			RestTcpServer::instance()->startTcpServer();
 			// start agent
 			auto app = Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false);
 			app->execute();
-			PrometheusRest::instance(httpServer);
 
 			// reg prometheus
 			config->registerPrometheus();
@@ -133,7 +144,7 @@ int main(int argc, char *argv[])
 		}
 		catch (...)
 		{
-			LOG_ERR << "Recover from snapshot failed with error " << std::strerror(errno);
+			LOG_ERR << fname << "Recover from snapshot failed with error " << std::strerror(errno);
 		}
 		std::for_each(apps.begin(), apps.end(),
 					  [&snap](std::vector<std::shared_ptr<Application>>::reference p)
@@ -155,14 +166,14 @@ int main(int argc, char *argv[])
 		}
 
 		// monitor applications
-		while (true)
+		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
 			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
 			PerfLog perf("main while loop");
 
 			// monitor application
 			std::list<os::Process> ptree;
-			if (PrometheusRest::instance() != nullptr && PrometheusRest::instance()->collected())
+			if (Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected())
 				ptree = os::processes();
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
@@ -174,7 +185,7 @@ int main(int argc, char *argv[])
 				}
 				catch (...)
 				{
-					LOG_ERR << "Recover from snapshot failed with error " << std::strerror(errno);
+					LOG_ERR << fname << "Recover from snapshot failed with error " << std::strerror(errno);
 				}
 			}
 
@@ -191,6 +202,7 @@ int main(int argc, char *argv[])
 	{
 		LOG_ERR << fname << "unknown exception";
 	}
+	PersistManager::instance()->persistSnapshot();
 	LOG_ERR << fname << "ERROR exited";
 	ACE_OS::_exit(0);
 	return 0;

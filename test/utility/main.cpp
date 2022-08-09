@@ -191,4 +191,11 @@ TEST_CASE("ACE_Map_Manager", "[ACE]")
     REQUIRE(aceMap.unbind("321") != 0);
     REQUIRE(aceMap.unbind("123") == 0);
     REQUIRE(aceMap.current_size() == 0);
+
+    auto start = std::chrono::system_clock::now();
+    ACE_Time_Value waitTimeout = ACE_Time_Value(0, 1000L * 30);
+    ACE_OS::sleep(waitTimeout);
+    auto end = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    REQUIRE(duration.count() == 30);
 }

@@ -39,6 +39,8 @@ protected:
     /// <param name="path">support regex</param>
     /// <param name="func"></param>
     void bindRestMethod(const web::http::method &method, const std::string &path, std::function<void(const HttpRequest &)> func);
+
+public:
     void handle_get(const HttpRequest &message);
     void handle_put(const HttpRequest &message);
     void handle_post(const HttpRequest &message);
@@ -46,6 +48,7 @@ protected:
     void handle_options(const HttpRequest &message);
     void handle_head(const HttpRequest &message);
 
+protected:
     // tuple: username, usergroup
     const std::tuple<std::string, std::string> verifyToken(const HttpRequest &message);
     const std::string getJwtUserName(const HttpRequest &message);

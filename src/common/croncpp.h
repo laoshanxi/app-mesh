@@ -348,7 +348,7 @@ namespace cron
          }
       }
 
-      static std::string replace_ordinals(
+      static inline std::string replace_ordinals(
           std::string text,
           std::vector<std::string> const &replacement)
       {
@@ -362,7 +362,7 @@ namespace cron
          return text;
       }
 
-      static std::pair<cron_int, cron_int> make_range(
+      static inline std::pair<cron_int, cron_int> make_range(
           STRING_VIEW field,
           cron_int const minval,
           cron_int const maxval)

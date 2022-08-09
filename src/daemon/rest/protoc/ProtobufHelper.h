@@ -35,6 +35,5 @@ public:
      * @return char *: The complete data buffer according to a Protocbuf message
      * @return size_t: the number of bytes received
      */
-    static const std::tuple<char *, size_t> readMessageBlock(const ACE_SOCK_Stream &socket);
-
+    static const std::shared_ptr<char> readMessageBlock(const ACE_SOCK_Stream &socket);
 };
