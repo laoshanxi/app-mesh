@@ -823,7 +823,7 @@ std::string Utility::hash(const std::string &str)
 	return std::to_string(std::hash<std::string>()(str));
 }
 
-std::string Utility::stringFormat(const std::string fmt_str, ...)
+std::string Utility::stringFormat(const std::string &fmt_str, ...)
 {
 	// https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
 	int final_n, n = ((int)fmt_str.size()) * 2; /* Reserve two times as much as the length of the fmt_str */

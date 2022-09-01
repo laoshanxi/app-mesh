@@ -32,18 +32,20 @@ bool ProtobufHelper::deserialize(google::protobuf::Message &msg, const char *dat
     return true;
 }
 
-const std::shared_ptr<char> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stream &socket)
+const std::tuple<std::shared_ptr<char>, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stream &socket)
 {
     const static char fname[] = "ProtobufHelper::readMessageBlock() ";
     LOG_DBG << fname << "entered";
 
+    int readCount = 0;
     // 1. read header socket data (4 bytes), use MSG_PEEK to not clear data from cache
     char header[PROTOBUF_HEADER_LENGTH] = {0};
-    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(header, PROTOBUF_HEADER_LENGTH, MSG_PEEK) <= 0)
+    readCount = socket.recv_n(header, PROTOBUF_HEADER_LENGTH, MSG_PEEK);
+    if (socket.get_handle() != ACE_INVALID_HANDLE && readCount <= 0)
     {
         socket.dump();
         LOG_ERR << fname << "read header length failed with error :" << std::strerror(errno);
-        return nullptr;
+        return std::make_tuple(nullptr, readCount);
     }
 
     // 2. parse header data (get body length). network to host byte order
@@ -52,18 +54,19 @@ const std::shared_ptr<char> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stre
     {
         socket.dump();
         LOG_ERR << fname << "parse header length with error :" << std::strerror(errno);
-        return nullptr;
+        return std::make_tuple(nullptr, readCount);
     }
 
     // 3. read header + body socket data
     const auto bufferSize = bodySize + PROTOBUF_HEADER_LENGTH;
     auto bodyBuffer = make_shared_array<char>(bufferSize);
     // static const ACE_Time_Value timeout(std::chrono::seconds(10));
-    if (socket.get_handle() != ACE_INVALID_HANDLE && socket.recv_n(bodyBuffer.get(), bufferSize) <= 0)
+    readCount = socket.recv_n(bodyBuffer.get(), bufferSize);
+    if (socket.get_handle() != ACE_INVALID_HANDLE && readCount <= 0)
     {
         LOG_ERR << fname << "read body socket data failed with error :" << std::strerror(errno);
-        return nullptr;
+        return std::make_tuple(nullptr, readCount);
     }
     LOG_DBG << fname << "read message block data with length: " << bufferSize;
-    return bodyBuffer;
+    return std::make_tuple(bodyBuffer, readCount);
 }

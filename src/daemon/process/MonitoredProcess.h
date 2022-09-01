@@ -20,6 +20,13 @@ public:
 	// overwrite ACE_Process spawn method
 	virtual pid_t spawn(ACE_Process_Options &options);
 	void setAsyncHttpRequest(void *httpRequest) { m_httpRequest = httpRequest; }
+	void replyAsyncRequest();
+
+	/// <summary>
+	/// kill the process group
+	/// </summary>
+	/// <param name="timerId"></param>
+	virtual void killgroup(int timerId = INVALID_TIMER_ID) override;
 
 protected:
 	virtual void waitThread(int timerId = INVALID_TIMER_ID);
@@ -27,5 +34,6 @@ protected:
 
 private:
 	void *m_httpRequest;
+	mutable std::recursive_mutex m_httpRequestMutex;
 	std::unique_ptr<std::thread> m_thread;
 };

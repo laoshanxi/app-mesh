@@ -193,6 +193,8 @@ int main(int argc, char *argv[])
 			// health-check
 			HealthCheckTask::instance()->doHealthCheck();
 		}
+		TimerHandler::timerReactor()->end_reactor_event_loop();
+		ACE_Reactor::instance()->end_reactor_event_loop();
 	}
 	catch (const std::exception &e)
 	{

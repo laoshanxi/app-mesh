@@ -171,6 +171,7 @@ public:
 	std::string m_query;
 
 	mutable std::shared_ptr<appmesh::Response> m_response;
+	void* m_clientTcpHandler;
 
 private:
 	// hide bellow extract functions, note extract_X function can only be called once, otherwise will hang

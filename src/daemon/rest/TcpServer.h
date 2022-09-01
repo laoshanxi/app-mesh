@@ -1,6 +1,8 @@
 #pragma once
 #include <mutex>
 
+#include <ace/Map_Manager.h>
+#include <ace/Recursive_Thread_Mutex.h>
 #include <ace/SOCK_Stream.h>
 #include <ace/Svc_Handler.h>
 
@@ -40,7 +42,12 @@ protected:
 	/// <param name="appmesh::Response"></param>
 	bool replyResponse(const appmesh::Response &resp);
 
+public:
+	static bool replyResponse(void *tcpHandler, const appmesh::Response &resp);
+
 private:
 	std::string m_clientHostName;
 	std::recursive_mutex m_socketSendLock;
+
+	static ACE_Map_Manager<void *, bool, ACE_Recursive_Thread_Mutex> m_handlers;
 };

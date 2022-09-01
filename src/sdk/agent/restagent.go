@@ -104,7 +104,7 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 		applyResponse(ctx, protocResponse)
 		// ctx.Logger().Printf("---Response Protoc:---\n%v\n", protocResponse)
 	} else {
-		ctx.Logger().Printf("Failed to send request to TCP Server: %v", sendErr)
+		ctx.Logger().Printf("Failed to send request to server with error:: %v", sendErr)
 		os.Exit(-1)
 	}
 }

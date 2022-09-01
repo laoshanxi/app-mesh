@@ -115,9 +115,10 @@ void TimerHandler::runReactorEvent(ACE_Reactor *reactor)
 	const static char fname[] = "TimerHandler::runReactorEvent() ";
 	LOG_DBG << fname << "Entered";
 
-	while (!reactor->reactor_event_loop_done() && QUIT_HANDLER::instance()->is_set() == 0)
+	if (QUIT_HANDLER::instance()->is_set() == 0)
 	{
-		reactor->handle_events();
+		reactor->owner(ACE_OS::thr_self());
+		reactor->run_reactor_event_loop();
 	}
 	LOG_WAR << fname << "Exit";
 }

@@ -5,6 +5,7 @@
 
 #include "../../common/Utility.h"
 #include "../rest/HttpRequest.h"
+#include "../rest/TcpServer.h"
 #include "MonitoredProcess.h"
 
 MonitoredProcess::MonitoredProcess() : m_httpRequest(nullptr)
@@ -54,7 +55,15 @@ void MonitoredProcess::runPipeReaderThread()
 	/// @brief if no wait, there will be no exit_code
 	this->wait();
 
-	///////////////////////////////////////////////////////////////////////
+	replyAsyncRequest();
+	LOG_DBG << fname << "Exited";
+	this->registerTimer(0, 0, std::bind(&MonitoredProcess::waitThread, this, std::placeholders::_1), fname);
+}
+
+void MonitoredProcess::replyAsyncRequest()
+{
+	const static char fname[] = "MonitoredProcess::replyAsyncRequest() ";
+	std::lock_guard<std::recursive_mutex> guard(m_httpRequestMutex);
 	if (m_httpRequest)
 	{
 		try
@@ -66,9 +75,10 @@ void MonitoredProcess::runPipeReaderThread()
 			resp.headers().add(HTTP_HEADER_KEY_output_pos, position);
 			std::unique_ptr<HttpRequest> response(static_cast<HttpRequest *>(m_httpRequest));
 			m_httpRequest = nullptr;
-			if (nullptr != response)
+			if (nullptr != response && response->m_clientTcpHandler != nullptr)
 			{
 				response->reply(resp, body);
+				TcpHandler::replyResponse(response->m_clientTcpHandler, *(response->m_response.get()));
 			}
 		}
 		catch (...)
@@ -76,7 +86,11 @@ void MonitoredProcess::runPipeReaderThread()
 			LOG_ERR << fname << "message reply failed, maybe the http connection broken with error: " << std::strerror(errno);
 		}
 	}
-	///////////////////////////////////////////////////////////////////////
-	LOG_DBG << fname << "Exited";
-	this->registerTimer(0, 0, std::bind(&MonitoredProcess::waitThread, this, std::placeholders::_1), fname);
+}
+
+void MonitoredProcess::killgroup(int timerId)
+{
+	AppProcess::killgroup(timerId);
+	replyAsyncRequest();
+	// TODO: sometimes, terminated process can not get stdout from file.
 }

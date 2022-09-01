@@ -881,7 +881,7 @@ class AppMeshClient:
                         app_name=app_name, output_position=output_position, stdout_index=0, process_uuid=process_uuid
                     )
                     if output is not None:
-                        print(resp.text, end="")
+                        print(output, end="")
                     if position is not None:
                         output_position = position
                     if exit_code is not None:

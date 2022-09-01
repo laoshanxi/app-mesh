@@ -5,7 +5,7 @@
 #include "protoc/Request.pb.h"
 
 HttpRequest::HttpRequest(const web::http::http_request &message)
-	: http_request(message), m_uuid(Utility::createUUID())
+	: http_request(message), m_uuid(Utility::createUUID()), m_clientTcpHandler(nullptr)
 {
 	this->m_method = message.method();
 	this->m_relative_uri = message.relative_uri().path();
@@ -22,6 +22,7 @@ HttpRequest::HttpRequest(const web::http::http_request &message)
 HttpRequest::HttpRequest(const HttpRequest &message)
 	: http_request(message), m_uuid(message.m_uuid)
 {
+	this->m_clientTcpHandler = message.m_clientTcpHandler;
 	this->m_method = message.m_method;
 	this->m_relative_uri = message.m_relative_uri;
 	this->m_remote_address = message.m_remote_address;
@@ -149,6 +150,9 @@ const web::json::value HttpRequest::emptyJson()
 void HttpRequest::persistResponse(const std::string &requestUri, const std::string &uuid, const std::string &body,
 								  const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType) const
 {
+	const static char fname[] = "HttpRequest::persistResponse() ";
+	LOG_DBG << fname;
+
 	m_response = std::make_shared<appmesh::Response>();
 	// fill data
 	m_response->set_uuid(uuid);

@@ -6,15 +6,21 @@
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 
+ACE_Map_Manager<void *, bool, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
+
 // Default constructor.
 TcpHandler::TcpHandler(void)
 {
+	const static char fname[] = "TcpHandler::TcpHandler() ";
+	m_handlers.bind(this, true);
+	LOG_DBG << fname << "TcpHandler client size: " << m_handlers.current_size();
 }
 
 TcpHandler::~TcpHandler()
 {
 	const static char fname[] = "TcpHandler::~TcpHandler() ";
 	LOG_DBG << fname << "from this =" << this;
+	m_handlers.unbind(this);
 }
 
 // Perform the tcp record receive.
@@ -24,12 +30,15 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	const static char fname[] = "TcpHandler::handle_input() ";
 	LOG_DBG << fname << "from this =" << this;
 
-	auto data = ProtobufHelper::readMessageBlock(this->peer());
+	auto result = ProtobufHelper::readMessageBlock(this->peer());
+	auto data = std::get<0>(result);
+	auto readCount = std::get<1>(result);
 	if (data != nullptr)
 	{
 		auto httpRequest = HttpRequest::deserialize(data.get());
 		if (httpRequest != nullptr)
 		{
+			httpRequest->m_clientTcpHandler = this;
 			handleTcpRest(*httpRequest);
 			if (httpRequest->m_response != nullptr)
 			{
@@ -37,8 +46,22 @@ int TcpHandler::handle_input(ACE_HANDLE)
 			}
 		}
 	}
-	LOG_ERR << fname << "Connection from " << m_clientHostName << " closing down";
-	return -1;
+
+	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Reactor/WFMO_Reactor/Network_Events.cpp#L66
+	if (readCount > 0)
+		return 0;
+	else if (readCount == 0)
+	{
+		LOG_ERR << fname << "Connection from " << m_clientHostName << " closing down";
+		return -1;
+	}
+	else if (errno == EWOULDBLOCK)
+		return 0;
+	else
+	{
+		LOG_ERR << fname << "Problems in receiving data from " << m_clientHostName;
+		return -1;
+	}
 }
 
 int TcpHandler::open(void *)
@@ -61,7 +84,7 @@ int TcpHandler::open(void *)
 		}
 		else
 		{
-			LOG_INF << fname << "Connected with " << m_clientHostName;
+			LOG_INF << fname << "client <" << m_clientHostName << ":" << addr.get_port_number() << "> connected";
 		}
 		return 0;
 	}
@@ -93,6 +116,7 @@ void TcpHandler::handleTcpRest(const HttpRequest &message)
 bool TcpHandler::replyResponse(const appmesh::Response &resp)
 {
 	const static char fname[] = "TcpHandler::replyResponse() ";
+	LOG_DBG << fname;
 
 	const auto data = ProtobufHelper::serialize(resp);
 	const auto buffer = std::get<0>(data);
@@ -115,4 +139,14 @@ bool TcpHandler::replyResponse(const appmesh::Response &resp)
 		return false;
 	}
 	return true;
+}
+
+bool TcpHandler::replyResponse(void *tcpHandler, const appmesh::Response &resp)
+{
+	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex(), false);
+	if (m_handlers.find(tcpHandler) == 0)
+	{
+		return (static_cast<TcpHandler *>(tcpHandler))->replyResponse(resp);
+	}
+	return false;
 }
