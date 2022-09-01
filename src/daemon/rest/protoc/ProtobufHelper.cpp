@@ -32,7 +32,7 @@ bool ProtobufHelper::deserialize(google::protobuf::Message &msg, const char *dat
     return true;
 }
 
-const std::tuple<std::shared_ptr<char>, size_t> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stream &socket)
+const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stream &socket)
 {
     const static char fname[] = "ProtobufHelper::readMessageBlock() ";
     LOG_DBG << fname << "entered";

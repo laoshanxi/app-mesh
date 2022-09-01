@@ -419,7 +419,7 @@ void ArgumentParser::processAppAdd()
 	{
 		jsonObj = web::json::value::parse(Utility::readStdin2End());
 	}
-	
+
 	std::string appName;
 	if (m_commandLineVariables.count("stdin"))
 	{
@@ -582,7 +582,7 @@ void ArgumentParser::processAppAdd()
 		if (envs.size())
 		{
 			web::json::value objEnvs = web::json::value::object();
-			for (auto env : envs)
+			for (auto &env : envs)
 			{
 				auto find = env.find_first_of('=');
 				if (find != std::string::npos)
@@ -601,7 +601,7 @@ void ArgumentParser::processAppAdd()
 		if (envs.size())
 		{
 			web::json::value objEnvs = web::json::value::object();
-			for (auto env : envs)
+			for (auto &env : envs)
 			{
 				auto find = env.find_first_of('=');
 				if (find != std::string::npos)
@@ -640,7 +640,7 @@ void ArgumentParser::processAppDel()
 	}
 
 	auto appNames = m_commandLineVariables["name"].as<std::vector<std::string>>();
-	for (auto appName : appNames)
+	for (auto &appName : appNames)
 	{
 		if (isAppExist(appName))
 		{
@@ -814,7 +814,7 @@ void ArgumentParser::processAppControl(bool start)
 	else
 	{
 		auto appNames = m_commandLineVariables["name"].as<std::vector<std::string>>();
-		for (auto appName : appNames)
+		for (auto &appName : appNames)
 		{
 			if (!isAppExist(appName))
 			{
@@ -823,7 +823,7 @@ void ArgumentParser::processAppControl(bool start)
 			appList.push_back(appName);
 		}
 	}
-	for (auto app : appList)
+	for (auto &app : appList)
 	{
 		std::string restPath = std::string("/appmesh/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(true, methods::POST, restPath);
@@ -913,7 +913,7 @@ int ArgumentParser::processAppRun()
 		if (envs.size())
 		{
 			web::json::value objEnvs = web::json::value::object();
-			for (auto env : envs)
+			for (auto &env : envs)
 			{
 				auto find = env.find_first_of('=');
 				if (find != std::string::npos)
@@ -1285,10 +1285,10 @@ void ArgumentParser::processFileUpload()
 			os::chown(std::stoi(response.headers().find(HTTP_HEADER_KEY_file_user)->second),
 					  std::stoi(response.headers().find(HTTP_HEADER_KEY_file_group)->second),
 					  local, false);
-		
+
 		return response.body().read_to_end(fileStream->streambuf()); })
 									   .then([=](size_t)
-											 { 
+											 {
 												std::cout << "Uploaded file <" << local  << ">" << std::endl;
 												return fileStream->close(); });
 
@@ -1329,7 +1329,7 @@ void ArgumentParser::processTags()
 			std::cout << "No label specified" << std::endl;
 			return;
 		}
-		for (auto str : inputTags)
+		for (auto &str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			if (envVec.size() == 2)
@@ -1349,7 +1349,7 @@ void ArgumentParser::processTags()
 			std::cout << "No label specified" << std::endl;
 			return;
 		}
-		for (auto str : inputTags)
+		for (auto &str : inputTags)
 		{
 			std::vector<std::string> envVec = Utility::splitString(str, "=");
 			std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
@@ -1371,7 +1371,7 @@ void ArgumentParser::processTags()
 	http_response response = requestHttp(true, methods::GET, restPath);
 	// Finally print current
 	auto tags = response.extract_json().get().as_object();
-	for (auto tag : tags)
+	for (auto &tag : tags)
 	{
 		std::cout << tag.first << "=" << tag.second.as_string() << std::endl;
 	}
@@ -1544,7 +1544,7 @@ void ArgumentParser::processUserPwdEncrypt()
 	}
 	else
 	{
-		for (auto optStr : opts)
+		for (auto &optStr : opts)
 		{
 			std::cout << std::hash<std::string>()(optStr) << std::endl;
 		}
@@ -1604,7 +1604,7 @@ void ArgumentParser::initRadomPassword()
 		std::cerr << "only root user can generate a initial password" << std::endl;
 		return;
 	}
-	
+
 	const auto configFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string();
 	auto fileContentJsonObj = web::json::value::parse(Utility::readFileCpp(configFilePath));
 	// check JWT enabled

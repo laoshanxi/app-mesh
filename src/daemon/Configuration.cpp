@@ -442,7 +442,7 @@ void Configuration::dump()
 			<< Utility::prettyJson(this->AsJson(false, "").serialize());
 
 	auto apps = getApps();
-	for (auto app : apps)
+	for (auto &app : apps)
 	{
 		app->dump();
 	}

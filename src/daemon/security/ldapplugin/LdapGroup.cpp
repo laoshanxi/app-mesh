@@ -41,7 +41,7 @@ std::shared_ptr<LdapGroup> LdapGroup::FromJson(const std::string &groupName, con
         if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
         {
             auto arr = obj.at(JSON_KEY_USER_roles).as_array();
-            for (auto jsonRole : arr)
+            for (auto &jsonRole : arr)
                 result->m_roles.insert(roles->getRole(jsonRole.as_string()));
         }
     }

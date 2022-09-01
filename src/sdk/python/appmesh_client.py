@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 """App Mesh Python SDK"""
-# import asyncio  # pip3 install asyncio
 import base64
 import os
 import time
@@ -35,11 +34,13 @@ class AppMeshClient:
         self,
         server_url="https://127.0.0.1:6060",
         jwt_auth_enable=True,
+        rest_timeout=(60, 300),
     ) -> None:
         """Construction function"""
         self.server_url = server_url
         self.jwt_auth_enable = jwt_auth_enable
         self.__jwt_token = None
+        self.rest_timeout = rest_timeout
 
     ########################################
     # Authentication
@@ -794,7 +795,7 @@ class AppMeshClient:
         -------
             Success : bool
         """
-        from requests_toolbelt import MultipartEncoder
+        from requests_toolbelt import MultipartEncoder  # pip3 install requests_toolbelt
 
         with open(file=local_file, mode="rb") as fp:
             encoder = MultipartEncoder(fields={"filename": os.path.basename(file_path), "file": ("filename", fp, "application/octet-stream")})
@@ -817,80 +818,128 @@ class AppMeshClient:
             return False, resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     ########################################
-    # Run command or Application and get output
+    # Run command or Application asyncrized
     ########################################
-    async def run_asyncio(
+    def run_async(
         self,
         app_json,
-        synchronized=True,
-        max_exec_time=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        async_retention=DEFAULT_RUN_APP_RETENTION_DURATION,
-    ) -> int:
-        """Wrapper of self.run() used for asyncio"""
-        return self.run(app_json, synchronized, max_exec_time, async_retention)
-
-    def run(
-        self,
-        app_json,
-        synchronized=True,
-        max_exec_time=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        async_retention=DEFAULT_RUN_APP_RETENTION_DURATION,
-    ) -> int:
+        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        retention_time_seconds=DEFAULT_RUN_APP_RETENTION_DURATION,
+    ):
         """
-        Run a command remotely, app_json specify 'name' attributes used to run a existing application
+        Asyncrized run a command remotely, app_json specify 'name' attributes used to run a existing application
+
+        Asyncrized run will not block process
 
         Parameters
         ----------
             app_json : JSON
                 Application JSON definition
-            synchronized : bool
-                Synchronized run will block process until the remote run finished and get result for one REST request
-            max_exec_time : int
+            max_time_seconds : int
                 Set a max run time for the remote process
-            async_retention : int
+            retention_time_seconds : int
                 Asynchronism run will keep process status for a while for client to fetch
 
         Returns
         -------
-            ProcessExitCode : int
+            app_name : str
+            process_uuid: str
         """
-        path = ""
-        if synchronized:
-            path = "/appmesh/app/syncrun"
-        else:
-            path = "/appmesh/app/run"
+        path = "/appmesh/app/run"
         resp = self.__request_http(
             AppMeshClient.Method.POST,
             body=app_json,
             path=path,
-            query={"timeout": str(max_exec_time), "retention": str(async_retention)},
+            query={"timeout": str(max_time_seconds), "retention": str(retention_time_seconds)},
         )
-        exit_code = 0
         if resp.status_code == HTTPStatus.OK:
-            if synchronized:
-                print(resp.text, end="")
-                if resp.headers.__contains__("Exit-Code"):
-                    exit_code = int(resp.headers.get("Exit-Code"))
-            else:
-                app_name = resp.json()["name"]
-                process_uuid = resp.json()["process_uuid"]
-                output_position = 0
-                # print(resp.json())
-                while len(process_uuid) > 0:
-                    success, output, position, exit_code = self.get_app_output(
-                        app_name=app_name, output_position=output_position, stdout_index=0, process_uuid=process_uuid
-                    )
-                    if output is not None:
-                        print(output, end="")
-                    if position is not None:
-                        output_position = position
-                    if exit_code is not None:
-                        exit_code = exit_code
-                    if (exit_code is not None) or (not success):
-                        break
-                    time.sleep(0.5)
-                self.remove_app(app_name)
+            app_name = resp.json()["name"]
+            process_uuid = resp.json()["process_uuid"]
+            return (app_name, process_uuid)
         else:
+            print(resp.text)
+        return None
+
+    ########################################
+    # Wait async run and get output
+    ########################################
+    def run_async_wait(self, async_tuple, print_stdout=True) -> int:
+        """
+        Block and wait an async run to be finished
+
+        Parameters
+        ----------
+            app_name : str
+                Application name from run_async
+            print_stdout: bool
+                Whether print remote stdout to local
+            process_uuid : str
+                process id name from run_async
+
+        Returns
+        -------
+            ProcessExitCode : None or int
+        """
+        exit_code = None
+        output_position = 0
+        app_name = async_tuple[0]
+        process_uuid = async_tuple[1]
+        while len(process_uuid) > 0:
+            success, output, position, exit_code = self.get_app_output(app_name=app_name, output_position=output_position, stdout_index=0, process_uuid=process_uuid)
+            if output is not None and print_stdout:
+                print(output, end="")
+            if position is not None:
+                output_position = position
+            if exit_code is not None:
+                exit_code = exit_code
+            if (exit_code is not None) or (not success):
+                break
+            time.sleep(0.5)
+        if len(app_name) > 0:
+            self.remove_app(app_name)
+        return exit_code
+
+    ########################################
+    # Run command or Application and get output
+    ########################################
+    def run_sync(
+        self,
+        app_json,
+        print_stdout=True,
+        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+    ) -> int:
+        """
+        Block run a command remotely, app_json specify 'name' attributes used to run a existing application
+
+        Synchronized run will block process until the remote run finished and get result for one REST request
+
+        Parameters
+        ----------
+            app_json : JSON
+                Application JSON definition
+            print_stdout: bool
+                Whether print remote stdout to local
+            max_time_seconds : int
+                Set a max run time for the remote process
+
+        Returns
+        -------
+            ProcessExitCode : None or int
+        """
+        path = "/appmesh/app/syncrun"
+        resp = self.__request_http(
+            AppMeshClient.Method.POST,
+            body=app_json,
+            path=path,
+            query={"timeout": str(max_time_seconds)},
+        )
+        exit_code = None
+        if resp.status_code == HTTPStatus.OK:
+            if print_stdout:
+                print(resp.text, end="")
+            if resp.headers.__contains__("Exit-Code"):
+                exit_code = int(resp.headers.get("Exit-Code"))
+        elif print_stdout:
             print(resp.text)
         return exit_code
 
@@ -902,11 +951,11 @@ class AppMeshClient:
             header["Authorization"] = "Bearer " + self.__jwt_token
 
         if method is AppMeshClient.Method.GET:
-            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify)
+            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.GET_STREAM:
-            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify, stream=True)
+            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify, stream=True, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify)
+            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST_STREAM:
             return requests.post(
                 url=rest_url,
@@ -917,8 +966,8 @@ class AppMeshClient:
                 stream=True,
             )
         elif method is AppMeshClient.Method.DELETE:
-            return requests.delete(url=rest_url, headers=header, verify=ssl_verify)
+            return requests.delete(url=rest_url, headers=header, verify=ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.PUT:
-            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify)
+            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify, timeout=self.rest_timeout)
         else:
             raise Exception("Invalid http method", method)

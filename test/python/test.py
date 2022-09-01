@@ -70,9 +70,6 @@ print(
 print(json.dumps(client.remove_cloud_app("cloud"), indent=2))
 print(json.dumps(client.get_cloud_nodes(), indent=2))
 # run app
-print(client.run({"command": "ping www.baidu.com -w 5", "shell": True}, False, max_exec_time=3))
-task1 = asyncio.ensure_future(client.run_asyncio({"command": "ping www.baidu.com -w 5", "shell": True}, False, max_exec_time=3))
-task2 = asyncio.ensure_future(client.run_asyncio({"command": "ping www.163.com -w 3", "shell": True}, True, max_exec_time=3))
-results, _ = asyncio.get_event_loop().run_until_complete(asyncio.wait([task1, task2]))
-for r in results:
-    print(r.result())
+print(client.run_sync({"command": "ping www.baidu.com -w 5", "shell": True}, max_time_seconds=3))
+tuple=client.run_async({"command": "ping www.baidu.com -w 5", "shell": True}, max_time_seconds=6)
+client.run_async_wait(tuple)

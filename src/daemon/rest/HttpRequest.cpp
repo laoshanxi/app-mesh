@@ -20,7 +20,7 @@ HttpRequest::HttpRequest(const web::http::http_request &message)
 }
 
 HttpRequest::HttpRequest(const HttpRequest &message)
-	: http_request(message), m_uuid(message.m_uuid)
+	: http_request(message), m_uuid(message.m_uuid), m_clientTcpHandler(nullptr)
 {
 	this->m_clientTcpHandler = message.m_clientTcpHandler;
 	this->m_method = message.m_method;
@@ -35,7 +35,7 @@ HttpRequest::HttpRequest(const HttpRequest &message)
 	}
 }
 
-HttpRequest::HttpRequest(const appmesh::Request &request)
+HttpRequest::HttpRequest(const appmesh::Request &request) : m_clientTcpHandler(nullptr)
 {
 	this->m_uuid = request.uuid();
 	this->m_method = request.http_method();

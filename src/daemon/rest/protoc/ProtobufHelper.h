@@ -29,11 +29,11 @@ public:
      */
     static bool deserialize(google::protobuf::Message &msg, const char *data);
 
-    /**
-     * Read a message block from socket (include header and body).
-     * @param socket ACE_SOCK_Stream used to receive data
-     * @return char *: The complete data buffer according to a Protocbuf message
-     * @return size_t: the number of bytes received
-     */
-	static const std::tuple<std::shared_ptr<char>, size_t> readMessageBlock(const ACE_SOCK_Stream &socket);
+	/**
+	 * Read a message block from socket (include header and body).
+	 * @param socket ACE_SOCK_Stream used to receive data
+	 * @return char *: The complete data buffer according to a Protocbuf message
+	 * @return int: the number of bytes received
+	 */
+	static const std::tuple<std::shared_ptr<char>, int> readMessageBlock(const ACE_SOCK_Stream &socket);
 };

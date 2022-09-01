@@ -30,7 +30,7 @@ web::json::value Roles::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	web::json::value result = web::json::value::object();
-	for (auto role : m_roles)
+	for (auto &role : m_roles)
 	{
 		result[role.first] = role.second->AsJson();
 	}
@@ -41,7 +41,7 @@ const std::shared_ptr<Roles> Roles::FromJson(const web::json::value &obj)
 {
 	std::shared_ptr<Roles> roles = std::make_shared<Roles>();
 	auto rolesJson = obj.as_object();
-	for (auto roleJson : rolesJson)
+	for (auto &roleJson : rolesJson)
 	{
 		auto roleName = GET_STD_STRING(roleJson.first);
 		auto role = Role::FromJson(roleName, roleJson.second);
@@ -56,7 +56,7 @@ void Roles::addRole(const web::json::value &obj, std::string name)
 	result[name] = obj;
 	auto roles = Roles::FromJson(result);
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	for (auto role : roles->m_roles)
+	for (auto &role : roles->m_roles)
 	{
 		m_roles[role.first] = role.second;
 		// remove role if have no permission
@@ -96,7 +96,7 @@ web::json::value Role::AsJson() const
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto rolePermissions = web::json::value::array(m_permissions.size());
 	int i = 0;
-	for (auto perm : m_permissions)
+	for (auto &perm : m_permissions)
 	{
 		// fill role permission
 		rolePermissions[i++] = web::json::value::string(perm);
@@ -108,7 +108,7 @@ std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value &obj
 {
 	auto role = std::make_shared<Role>(roleName);
 	auto permissions = obj.as_array();
-	for (auto permissionJson : permissions)
+	for (auto &permissionJson : permissions)
 	{
 		auto perm = permissionJson.as_string();
 		if (perm.length())

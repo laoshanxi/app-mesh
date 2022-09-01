@@ -193,7 +193,7 @@ void ConsulNode::dump()
 	LOG_DBG << fname << "m_total_bytes=" << m_total_bytes;
 	LOG_DBG << fname << "full=" << full();
 	LOG_DBG << fname << "m_cores=" << m_cores;
-	for (auto app : m_assignedApps)
+	for (auto &app : m_assignedApps)
 	{
 		LOG_DBG << fname << "m_assignedApps=" << app.second->getName();
 	}

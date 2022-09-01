@@ -55,7 +55,7 @@ const HostResource &ResourceCollection::getHostResource()
 		static auto cpus = os::cpus();
 		std::set<int> sockets;
 		std::set<int> processers;
-		for (auto c : cpus)
+		for (auto &c : cpus)
 		{
 			sockets.insert(c.socket);
 			processers.insert(c.id);
@@ -98,7 +98,7 @@ const HostResource &ResourceCollection::getHostResource()
 	}
 
 	// Net
-	for (auto net : nets)
+	for (auto &net : nets)
 	{
 		// do not need show lo
 		if (net.address != "127.0.0.1" && net.name != "lo" && net.address != "::1")

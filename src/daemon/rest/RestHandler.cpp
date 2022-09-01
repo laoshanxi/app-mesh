@@ -399,7 +399,7 @@ void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 	}
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
-	for (auto perm : permissions)
+	for (auto &perm : permissions)
 	{
 		json[index++] = web::json::value::string(perm);
 	}
@@ -681,7 +681,7 @@ void RestHandler::apiPermissionsView(const HttpRequest &message)
 	auto permissions = Security::instance()->getAllPermissions();
 	auto json = web::json::value::array(permissions.size());
 	int index = 0;
-	for (auto perm : permissions)
+	for (auto &perm : permissions)
 	{
 		json[index++] = web::json::value::string(perm);
 	}

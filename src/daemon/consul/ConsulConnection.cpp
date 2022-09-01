@@ -169,11 +169,11 @@ web::json::value ConsulConnection::viewCloudApps()
 	auto topology = retrieveTopology("");
 	auto cloudTasks = this->retrieveTask();
 	web::json::value result = web::json::value::object();
-	for (auto task : cloudTasks)
+	for (auto &task : cloudTasks)
 	{
 		result[task.first] = task.second->AsJson();
 
-		for (auto host : topology)
+		for (auto &host : topology)
 		{
 			if (host.second->m_scheduleApps.count(task.first))
 			{

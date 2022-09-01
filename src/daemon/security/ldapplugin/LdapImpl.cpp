@@ -183,7 +183,7 @@ std::set<std::string> LdapImpl::getAllUserGroups() const
 
     std::set<std::string> groupSet;
     auto groups = m_ldap->m_groups->getGroups();
-    for (auto group : groups)
+    for (auto &group : groups)
     {
         groupSet.insert(group.second->m_groupName);
     }

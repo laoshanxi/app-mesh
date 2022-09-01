@@ -132,7 +132,7 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value &obj)
 	if (!obj.is_null() && obj.is_object())
 	{
 		if (obj.has_object_field("Applications"))
-			for (auto app : obj.at("Applications").as_object())
+			for (auto &app : obj.at("Applications").as_object())
 			{
 				if (HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_starttime) &&
 					app.second.has_number_field(SNAPSHOT_JSON_KEY_pid) && app.second.has_number_field(SNAPSHOT_JSON_KEY_starttime))

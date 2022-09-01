@@ -21,7 +21,7 @@ web::json::value Label::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto tags = web::json::value::object();
-	for (auto tag : m_labels)
+	for (auto &tag : m_labels)
 	{
 		tags[tag.first] = web::json::value::string(tag.second);
 	}
@@ -34,7 +34,7 @@ const std::shared_ptr<Label> Label::FromJson(const web::json::value &obj)
 	if (!obj.is_null() && obj.is_object())
 	{
 		auto jsonObj = obj.as_object();
-		for (auto lblJson : jsonObj)
+		for (auto &lblJson : jsonObj)
 		{
 			std::string labelKey = GET_STD_STRING(lblJson.first);
 			label->m_labels[labelKey] = GET_STD_STRING(lblJson.second.as_string());

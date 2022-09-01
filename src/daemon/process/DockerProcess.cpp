@@ -91,7 +91,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 
 	// 2. build docker start command line
 	dockerCommand = Utility::stringFormat("docker run -d --name %s ", containerName.c_str());
-	for (auto env : envMap)
+	for (auto &env : envMap)
 	{
 		if (env.first == ENV_APPMESH_DOCKER_PARAMS)
 		{
