@@ -6,10 +6,9 @@ import time
 from enum import Enum
 from http import HTTPStatus
 from urllib import parse
+from datetime import datetime
 import requests
 
-# set ssl_verify to False if you do not want to verify SSL
-ssl_verify = "/opt/appmesh/ssl/ca.pem"
 
 DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24)  # default 7 days
 DEFAULT_RUN_APP_TIMEOUT_SECONDS = 10
@@ -32,37 +31,35 @@ class AppMeshClient:
 
     def __init__(
         self,
-        server_url="https://127.0.0.1:6060",
-        jwt_auth_enable=True,
+        server_url: str = "https://127.0.0.1:6060",
+        jwt_auth_enable: bool = True,
+        ssl_verify="/opt/appmesh/ssl/ca.pem",
         rest_timeout=(60, 300),
-    ) -> None:
-        """Construction function"""
+    ):
+        """Construct an App Mesh client object
+
+        :param server_url: server URI string
+        :param jwt_auth_enable: server enabled JWT authentication or not
+        :param ssl_verify: SSL CA certification file path or False to disable SSL verify
+        :param rest_timeout: HTTP timeout, default with 60 seconds for connect timeout and 300 seconds for read timeout
+        """
         self.server_url = server_url
         self.jwt_auth_enable = jwt_auth_enable
         self.__jwt_token = None
+        self.ssl_verify = ssl_verify
         self.rest_timeout = rest_timeout
 
     ########################################
-    # Authentication
+    # Security
     ########################################
-    def login(self, user_name, user_pwd, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
-        """
-        User Login with password
+    def login(self, user_name: str, user_pwd: str, timeout_seconds: int = DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+        """Login with user name and password
 
-        Parameters
-        ----------
-            user_name : str
-                The name of the user
-            user_pwd : str
-                The password of the user
-            timeout_seconds : int
-                Login token expire timeout of seconds, default is 1 week
+        :param user_name: the name of the user
+        :param user_pwd: the password of the user
+        :param timeout_seconds: token expire timeout of seconds, default is 1 week
 
-        Returns
-        -------
-            UserTokenString
-                Return JWT token if JWT enabled and password verify success
-                Otherwise return None
+        :return user_token: JWT token if verify success, otherwise return None
         """
         self.__jwt_token = None
         if self.jwt_auth_enable:
@@ -83,24 +80,16 @@ class AppMeshClient:
                 # resp.raise_for_status()
         return self.__jwt_token
 
-    def authentication(self, token, permission=None) -> bool:
-        """
-        Verify User token and permission id
+    def authentication(self, token: str, permission=None) -> bool:
+        """Login with token and verify permission when specified
 
-        Parameters
-        ----------
-            token : str
-                JWT token
-            permission : str
-                The permission ID used to verify for the token user
-                Permission ID can be:
-                    - Pre-defined by App Mesh from security.json (e.g 'app-view', 'app-delete')
-                    - Defined by input from update_role() or security.json
+        :param token: JWT token returned from login()
+        :param permission: the permission ID used to verify the token user
+               permission ID can be:
+                - Pre-defined by App Mesh from security.json (e.g 'app-view', 'app-delete')
+                - Defined by input from update_role() or security.json
 
-        Returns
-        -------
-            AuthenticationResult
-                Return bool value to indicate the authentication result
+        :return authentication_result: authentication success or fail
         """
         if self.jwt_auth_enable:
             self.__jwt_token = token
@@ -149,7 +138,7 @@ class AppMeshClient:
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def get_app_output(self, app_name, output_position=0, stdout_index=0, stdout_maxsize=10240, process_uuid=""):
+    def get_app_output(self, app_name, output_position=0, stdout_index=0, stdout_maxsize=10240, process_uuid="", timeout=0):
         """
         Get application stdout
 
@@ -165,7 +154,9 @@ class AppMeshClient:
             stdout_maxsize : int
                 Max buffer size
             process_uuid : str
-                Used to lock a process
+                Used to get the specified process
+            timeout: int
+                Wait process time(seconds) to get the output
 
         Returns
         -------
@@ -182,6 +173,7 @@ class AppMeshClient:
                 "stdout_index": str(stdout_index),
                 "stdout_maxsize": str(stdout_maxsize),
                 "process_uuid": process_uuid,
+                "timeout": timeout,
             },
         )
         out_position = None if not resp.headers.__contains__("Output-Position") else int(resp.headers["Output-Position"])
@@ -818,32 +810,23 @@ class AppMeshClient:
             return False, resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     ########################################
-    # Run command or Application asyncrized
+    # Application run
     ########################################
     def run_async(
         self,
-        app_json,
-        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        retention_time_seconds=DEFAULT_RUN_APP_RETENTION_DURATION,
+        app_json: dict,
+        max_time_seconds: int = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        retention_time_seconds: int = DEFAULT_RUN_APP_RETENTION_DURATION,
     ):
-        """
-        Asyncrized run a command remotely, app_json specify 'name' attributes used to run a existing application
-
+        """Asyncrized run a command remotely, 'name' attribute in app_json dict used to run an existing application
         Asyncrized run will not block process
 
-        Parameters
-        ----------
-            app_json : JSON
-                Application JSON definition
-            max_time_seconds : int
-                Set a max run time for the remote process
-            retention_time_seconds : int
-                Asynchronism run will keep process status for a while for client to fetch
+        :param app_json: application JSON dict
+        :param max_time_seconds: max run time for the remote process
+        :param retention_time_seconds: asynchronism run will keep process status for a while for the client to fetch
 
-        Returns
-        -------
-            app_name : str
-            process_uuid: str
+        :return app_name : new application name for this run
+        :return process_uuid: process UUID for this run
         """
         path = "/appmesh/app/run"
         resp = self.__request_http(
@@ -860,71 +843,51 @@ class AppMeshClient:
             print(resp.text)
         return None
 
-    ########################################
-    # Wait async run and get output
-    ########################################
-    def run_async_wait(self, async_tuple, print_stdout=True) -> int:
-        """
-        Block and wait an async run to be finished
+    def run_async_wait(self, async_tuple: tuple, stdout_print: bool = True, timeout: int = 0) -> int:
+        """Wait for an async run to be finished
 
-        Parameters
-        ----------
-            app_name : str
-                Application name from run_async
-            print_stdout: bool
-                Whether print remote stdout to local
-            process_uuid : str
-                process id name from run_async
+        :param async_tuple: asyncrized run result from run_async()
+          async_tuple[0] app_name: application name from run_async
+          async_tuple[1] process_uuid: process uuid
+        :param stdout_print: print remote stdout to local or not
+        :param timeout: Wait process time(seconds) to get the output
 
-        Returns
-        -------
-            ProcessExitCode : None or int
+        :return process_exit_code: return exit code if process finished, return None for timeout or exception
         """
         exit_code = None
-        output_position = 0
-        app_name = async_tuple[0]
-        process_uuid = async_tuple[1]
-        while len(process_uuid) > 0:
-            success, output, position, exit_code = self.get_app_output(app_name=app_name, output_position=output_position, stdout_index=0, process_uuid=process_uuid)
-            if output is not None and print_stdout:
-                print(output, end="")
-            if position is not None:
-                output_position = position
-            if exit_code is not None:
-                exit_code = exit_code
-            if (exit_code is not None) or (not success):
-                break
-            time.sleep(0.5)
-        if len(app_name) > 0:
-            self.remove_app(app_name)
+        start_time = datetime.now()
+        if async_tuple is not None:
+            app_name = async_tuple[0]
+            process_uuid = async_tuple[1]
+            output_position = 0
+            while len(process_uuid) > 0:
+                success, output, position, exit_code = self.get_app_output(app_name=app_name, output_position=output_position, stdout_index=0, process_uuid=process_uuid, timeout=1)
+                if output is not None and stdout_print:
+                    print(output, end="")
+                if position is not None:
+                    output_position = position
+                if exit_code is not None:
+                    exit_code = exit_code
+                if (exit_code is not None) or (not success) or ((datetime.now() - start_time).seconds > timeout):
+                    break
+            if len(app_name) > 0:
+                self.remove_app(app_name)
         return exit_code
 
-    ########################################
-    # Run command or Application and get output
-    ########################################
     def run_sync(
         self,
-        app_json,
-        print_stdout=True,
-        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        app_json: dict,
+        stdout_print: bool = True,
+        max_time_seconds: int = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
     ) -> int:
-        """
-        Block run a command remotely, app_json specify 'name' attributes used to run a existing application
+        """Block run a command remotely, 'name' attribute in app_json dict used to run an existing application
+        The synchronized run will block the process until the remote run is finished then return the result from HTTP response
 
-        Synchronized run will block process until the remote run finished and get result for one REST request
+        :param app_json: application JSON dict
+        :param stdout_print: print remote stdout to local or not
+        :param max_time_seconds: max run time for the remote process
 
-        Parameters
-        ----------
-            app_json : JSON
-                Application JSON definition
-            print_stdout: bool
-                Whether print remote stdout to local
-            max_time_seconds : int
-                Set a max run time for the remote process
-
-        Returns
-        -------
-            ProcessExitCode : None or int
+        :return process_exit_code: int or None
         """
         path = "/appmesh/app/syncrun"
         resp = self.__request_http(
@@ -935,11 +898,11 @@ class AppMeshClient:
         )
         exit_code = None
         if resp.status_code == HTTPStatus.OK:
-            if print_stdout:
+            if stdout_print:
                 print(resp.text, end="")
             if resp.headers.__contains__("Exit-Code"):
                 exit_code = int(resp.headers.get("Exit-Code"))
-        elif print_stdout:
+        elif stdout_print:
             print(resp.text)
         return exit_code
 
@@ -951,11 +914,11 @@ class AppMeshClient:
             header["Authorization"] = "Bearer " + self.__jwt_token
 
         if method is AppMeshClient.Method.GET:
-            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify, timeout=self.rest_timeout)
+            return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.GET_STREAM:
-            return requests.get(url=rest_url, params=query, headers=header, verify=ssl_verify, stream=True, timeout=self.rest_timeout)
+            return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify, timeout=self.rest_timeout)
+            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST_STREAM:
             return requests.post(
                 url=rest_url,
@@ -966,8 +929,8 @@ class AppMeshClient:
                 stream=True,
             )
         elif method is AppMeshClient.Method.DELETE:
-            return requests.delete(url=rest_url, headers=header, verify=ssl_verify, timeout=self.rest_timeout)
+            return requests.delete(url=rest_url, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.PUT:
-            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=ssl_verify, timeout=self.rest_timeout)
+            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=self.ssl_verify, timeout=self.rest_timeout)
         else:
             raise Exception("Invalid http method", method)

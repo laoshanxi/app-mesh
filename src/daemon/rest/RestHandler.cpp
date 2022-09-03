@@ -896,12 +896,13 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	long pos = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
 	int index = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
 	long maxSize = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
+	size_t timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
 	std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
 
 	checkAppAccessPermission(message, appName, false);
 
 	auto appObj = Configuration::instance()->getApp(appName);
-	auto result = appObj->getOutput(pos, maxSize, processUuid, index);
+	auto result = appObj->getOutput(pos, maxSize, processUuid, index, timeout);
 	auto output = std::get<0>(result);
 	auto finished = std::get<1>(result);
 	auto exitCode = std::get<2>(result);

@@ -898,7 +898,7 @@ int ArgumentParser::processAppRun()
 				// try to load as JSON first
 				jsonObj[JSON_KEY_APP_metadata] = web::json::value::parse(metaData);
 			}
-			catch(...)
+			catch (...)
 			{
 				// use text field in case of not JSON format
 				jsonObj[JSON_KEY_APP_metadata] = web::json::value::string(metaData);
@@ -954,6 +954,7 @@ int ArgumentParser::processAppRun()
 			query.clear();
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
+			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1); // wait max 1 second in server side
 			response = requestHttp(false, methods::GET, restPath, query);
 			std::cout << response.extract_utf8string(true).get();
 			outputPosition = response.headers().has(HTTP_HEADER_KEY_output_pos) ? std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
@@ -972,7 +973,6 @@ int ArgumentParser::processAppRun()
 				break;
 			}
 			continueFailure = 0;
-			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
 		// delete
 		restPath = std::string("/appmesh/app/").append(appName);

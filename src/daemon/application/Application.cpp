@@ -604,7 +604,7 @@ void Application::healthCheck()
 	}
 }
 
-std::tuple<std::string, bool, int> Application::getOutput(long &position, long maxSize, const std::string &processUuid, int index)
+std::tuple<std::string, bool, int> Application::getOutput(long &position, long maxSize, const std::string &processUuid, int index, size_t timeout)
 {
 	const static char fname[] = "Application::getOutput() ";
 
@@ -617,9 +617,12 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 		{
 			throw std::invalid_argument("No corresponding process running or the given process uuid is wrong");
 		}
-		auto output = m_process->getOutputMsg(&position, maxSize);
 		if (m_process->getuuid() == processUuid)
 		{
+			if (m_process->running() && timeout > 0)
+			{
+				m_process->wait(ACE_Time_Value(timeout));
+			}
 			if (!m_process->running())
 			{
 				exitCode = m_process->returnValue();
@@ -627,6 +630,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 				LOG_DBG << fname << "process:" << processUuid << " finished with exit code: " << exitCode;
 			}
 		}
+		auto output = m_process->getOutputMsg(&position, maxSize);
 		return std::make_tuple(output, finished, exitCode);
 	}
 	auto file = m_stdoutFileQueue->getFileName(index);
