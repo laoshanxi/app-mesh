@@ -804,6 +804,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 	{
 		if (Configuration::instance()->isAppExist(clientProvideAppName))
 		{
+			// COPY from existing application
 			// require app read permission
 			checkAppAccessPermission(message, clientProvideAppName, false);
 			// get application profile
@@ -829,6 +830,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 			}
 			existApp[JSON_KEY_APP_retention] = jsonApp[JSON_KEY_APP_retention];
 			existApp[JSON_KEY_APP_name] = web::json::value::string(Utility::createUUID()); // specify a UUID app name
+			existApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
 			jsonApp = existApp;
 		}
 		else

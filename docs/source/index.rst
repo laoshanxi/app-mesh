@@ -43,6 +43,7 @@ Welcome to AppMesh's documentation!
    success/standalone_JWT_server.md
    success/kubernetes_run_native_application.md
    success/remote_run_cli_and_python.md
+   success/python_parallel_run.md
 
 Indices and tables
 ==================

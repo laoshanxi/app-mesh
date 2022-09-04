@@ -608,6 +608,16 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 {
 	const static char fname[] = "Application::getOutput() ";
 
+	std::shared_ptr<AppProcess> process;
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		process = m_process;
+	}
+	if (process != nullptr && index == 0 && process->getuuid() == processUuid && process->running() && timeout > 0)
+	{
+		process->wait(ACE_Time_Value(timeout));
+	}
+
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	bool finished = false;
 	int exitCode = 0;
@@ -619,10 +629,6 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 		}
 		if (m_process->getuuid() == processUuid)
 		{
-			if (m_process->running() && timeout > 0)
-			{
-				m_process->wait(ACE_Time_Value(timeout));
-			}
 			if (!m_process->running())
 			{
 				exitCode = m_process->returnValue();

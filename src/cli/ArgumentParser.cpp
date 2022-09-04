@@ -1685,7 +1685,9 @@ http_request ArgumentParser::createRequest(const method &mtd, const std::string 
 	// headers
 	for (const auto &h : headers)
 		request.headers().add(h.first, h.second);
-	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken());
+	if (m_jwtToken.empty())
+		m_jwtToken = getAuthenToken();
+	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken);
 
 	request.set_request_uri(builder.to_uri());
 	return request;

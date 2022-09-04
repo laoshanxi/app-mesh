@@ -72,14 +72,18 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 	// https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 
 	req := &ctx.Request
-	ctx.Logger().Printf("Requesting")
 
 	// prepare header and body
 	protocRequest := serializeRequest(req)
 	bodyData, _ := proto.Marshal(protocRequest)
 	headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
 	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
+	ctx.Logger().Printf("Requesting: %s", protocRequest.GetUuid())
 	// ctx.Logger().Printf("---Request Protoc:---\n%v\n", protocRequest)
+
+	// create a chan and store in map
+	ch := make(chan *Response)
+	requestMap.Store(protocRequest.GetUuid(), ch)
 
 	var sendCount int
 	var sendErr error
@@ -93,10 +97,6 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 		ctx.Logger().Printf("sent body size %d = %d to TCP, error: %v", uint32(len(bodyData)), sendCount, sendErr)
 	}
 	if sendErr == nil {
-		// create a chan and store in map
-		ch := make(chan *Response)
-		requestMap.Store(protocRequest.GetUuid(), ch)
-
 		// wait chan to get response
 		protocResponse := <-ch
 
