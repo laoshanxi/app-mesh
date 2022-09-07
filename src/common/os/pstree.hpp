@@ -36,7 +36,7 @@ namespace os
 		if (iter != processes.end())
 			return std::make_shared<ProcessTree>(ProcessTree(*iter, children));
 
-		LOG_ERR << fname << "No process found at " << pid;
+		LOG_ERR << fname << "No process <" << pid << "> found from tree";
 		return nullptr;
 	}
 
@@ -53,7 +53,7 @@ namespace os
 		{
 			return pstree(pid, *(std::list<Process>*)(ptree));
 		}
-		
+
 		const std::list<Process> processList = os::processes();
 		if (processList.size() == 0)
 		{

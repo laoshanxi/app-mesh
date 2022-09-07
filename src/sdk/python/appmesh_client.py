@@ -2,7 +2,6 @@
 """App Mesh Python SDK"""
 import base64
 import os
-import time
 from enum import Enum
 from http import HTTPStatus
 from urllib import parse
@@ -11,8 +10,7 @@ import requests
 
 
 DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24)  # default 7 days
-DEFAULT_RUN_APP_TIMEOUT_SECONDS = 10
-DEFAULT_RUN_APP_RETENTION_DURATION = 10
+DEFAULT_RUN_APP_TIMEOUT_SECONDS = 600  # 10 minutes
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 
 
@@ -41,7 +39,7 @@ class AppMeshClient:
         Args:
             server_url (str, optional): server URI string.
             jwt_auth_enable (bool, optional): server enabled JWT authentication or not.
-            ssl_verify (str, optional): SSL CA certification file path or False to disable SSL verify.
+            ssl_verify (str, optional): SSL CA certification file path or False to disable SSL verification.
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
         """
         self.server_url = server_url
@@ -57,12 +55,12 @@ class AppMeshClient:
         """Login with user name and password
 
         Args:
-            user_name (str): the name of the user
-            user_pwd (str): the password of the user
-            timeout_seconds (int, optional): token expire timeout of seconds. Default to 1 week
+            user_name (str): the name of the user.
+            user_pwd (str): the password of the user.
+            timeout_seconds (int, optional): token expire timeout of seconds. Default to 1 week.
 
         Returns:
-            str: JWT token if verify success, otherwise return None
+            str: JWT token if verify success, otherwise return None.
         """
         self.__jwt_token = None
         if self.jwt_auth_enable:
@@ -87,14 +85,14 @@ class AppMeshClient:
         """Login with token and verify permission when specified
 
         Args:
-            token (str): JWT token returned from login()
+            token (str): JWT token returned from login().
             permission (str, optional): the permission ID used to verify the token user
                 permission ID can be:
-                - Pre-defined by App Mesh from security.json (e.g 'app-view', 'app-delete')
-                - Defined by input from role_update() or security.json
+                - pre-defined by App Mesh from security.json (e.g 'app-view', 'app-delete')
+                - defined by input from role_update() or security.json
 
         Returns:
-            bool: authentication success or fail
+            bool: authentication success or failure.
         """
         if self.jwt_auth_enable:
             self.__jwt_token = token
@@ -113,68 +111,53 @@ class AppMeshClient:
     ########################################
     # Application view
     ########################################
-    def app_view(self, app_name):
-        """
-        Get application JSON information
+    def app_view(self, app_name: str):
+        """Get application information in JSON format
 
-        Parameters
-        ----------
-            app_name : str
-                The application name
+        Args:
+            app_name (str): the application name.
 
-        Returns
-        -------
-            Application JSON
-                The application JSON both contain static configuration and runtime infomation
+        Returns:
+            bool: success or failure.
+            dict: the application JSON both contain static configuration and runtime information.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def app_view_all(self):
-        """
-        Get all application JSON information
+        """Get all applications in JSON format
 
-        Returns
-        -------
-            Array of application JSON
-                The application JSON both contain static configuration and runtime infomation
-                Only return applications that the user have permissions
+        Returns:
+            bool: success or failure.
+            dict: the application JSON both contain static configuration and runtime information,
+                only return applications that the user has permissions.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def app_output(self, app_name, output_position=0, stdout_index=0, stdout_maxsize=10240, process_uuid="", timeout=0):
-        """
-        Get application stdout
+    def app_output(self, app_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = "", timeout: int = 0):
+        """Get application stdout/stderr
 
-        Parameters
-        ----------
-            app_name : str
-                The application name
-            output_position : int
-                Output start position, 0 means start from beginning
-            stdout_index : str
-                Index of history process stdout, 0 means current running process
-                The history number depend by 'stdout_cache_size' of a application
-            stdout_maxsize : int
-                Max buffer size
-            process_uuid : str
-                Used to get the specified process
-            timeout: int
-                Wait process time(seconds) to get the output
+        Args:
+            app_name (str): the application name
+            stdout_position (int, optional): start read position, 0 means start from beginning.
+            stdout_index (int, optional): index of history process stdout, 0 means get from current running process,
+                the stdout number depends on 'stdout_cache_size' of the application.
+            stdout_maxsize (int, optional): max buffer size to read.
+            process_uuid (str, optional): used to get the specified process.
+            timeout (int, optional): wait for the running process for some time(seconds) to get the output.
 
-        Returns
-        -------
-            Success : bool
-            Output Text : str
-            Output Position : None or int
-            Exit Code : None or int
+        Returns:
+            bool: success or failure.
+            str: output string.
+            int or None: current read position.
+            int or None: process exit code.
         """
         resp = self.__request_http(
             AppMeshClient.Method.GET,
             path=f"/appmesh/app/{app_name}/output",
             query={
-                "stdout_position": str(output_position),
+                "stdout_position": str(stdout_position),
                 "stdout_index": str(stdout_index),
                 "stdout_maxsize": str(stdout_maxsize),
                 "process_uuid": process_uuid,
@@ -185,18 +168,14 @@ class AppMeshClient:
         exit_code = None if not resp.headers.__contains__("Exit-Code") else int(resp.headers["Exit-Code"])
         return (resp.status_code == HTTPStatus.OK), resp.text, out_position, exit_code
 
-    def app_health(self, app_name):
-        """
-        Get application health status, 0 is health
+    def app_health(self, app_name: str):
+        """Get application health status, 0 is health.
 
-        Parameters
-        ----------
-            app_name : str
-                The application name
-        Returns
-        -------
-            HeathStatus : str
-                0 is heathy, 1 is unhealthy
+        Args:
+            app_name (str): the application name.
+
+        Returns:
+            str: '0' is heathy, '1' is unhealthy.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}/health")
         return (resp.status_code == HTTPStatus.OK), resp.text
@@ -204,66 +183,54 @@ class AppMeshClient:
     ########################################
     # Application manage
     ########################################
-    def app_add(self, app_json):
-        """
-        Register an application
+    def app_add(self, app_json: dict):
+        """Register an application
 
-        Parameters
-        ----------
-            app_json : JSON
-                The application definition
-        Returns
-        -------
-            Success : bool
-            ApplicationJson : JSON
+        Args:
+            app_json (dict): the application definition.
+
+        Returns:
+            bool: success or failure.
+            dict: resigtered application in JSON format.
         """
         resp = self.__request_http(AppMeshClient.Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]), body=app_json)
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def app_delete(self, app_name):
-        """
-        Remove an application
+    def app_delete(self, app_name: str):
+        """Remove an application.
 
-        Parameters
-        ----------
-            app_name : str
-                The application name
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Args:
+            app_name (str): the application name.
+
+        Returns:
+            bool: success or failure.
+            str: text message.
         """
         resp = self.__request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
-    def app_enable(self, app_name):
-        """
-        Enable an application
+    def app_enable(self, app_name: str):
+        """Enable an application
 
-        Parameters
-        ----------
-            app_name : str
-                The application name
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Args:
+            app_name (str): the application name.
+
+        Returns:
+            bool: success or failure.
+            str: text message.
         """
         resp = self.__request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/enable")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
-    def app_disable(self, app_name):
-        """
-        Stop and Disable an application
+    def app_disable(self, app_name: str):
+        """Stop and disable an application
 
-        Parameters
-        ----------
-            app_name : str
-                The application name
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Args:
+            app_name (str): the application name.
+
+        Returns:
+            bool: success or failure.
+            str: text message.
         """
         resp = self.__request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/disable")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
@@ -272,61 +239,51 @@ class AppMeshClient:
     # Cloud management
     ########################################
     def cloud_app_view_all(self):
-        """
-        Get all cloud applications
+        """Get all cloud applications
 
-        Returns
-        -------
-            Success : bool
-            CloudApplicationsJson : JSON
+        Returns:
+            bool: success or failure.
+            dict: cloud applications in JSON format.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def cloud_app(self, app_name):
-        """
-        Get one cloud application
+    def cloud_app(self, app_name: str):
+        """Get an cloud application
 
-        Returns
-        -------
-            Success : bool
-            CloudApplicationsJson : JSON
+        Args:
+            app_name (str): the application name.
+
+        Returns:
+            bool: success or failure.
+            dict: application in JSON format.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path=f"/appmesh/cloud/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def cloud_app_output(self, app_name, host_name, output_position=0, stdout_index=0, stdout_maxsize=10240, process_uuid=""):
-        """
-        Get cloud application stdout from master agent
+    def cloud_app_output(self, app_name: str, host_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = ""):
+        """Get cloud application stdout/stderr from master agent
 
-        Parameters
-        ----------
-            app_name : str
-                The application name
-            host_name : str
-                The target host name where the application is running
-            output_position : int
-                Output start position, 0 means start from beginning
-            stdout_index : str
-                Index of history process stdout, 0 means current running process
-                The history number depend by 'stdout_cache_size' of a application
-            stdout_maxsize : int
-                Max buffer size
-            process_uuid : str
-                Used to lock a process
+        Args:
+            app_name (str): the application name
+            host_name (str): the target host name where the application is running
+            stdout_position (int, optional): start read position, 0 means start from beginning.
+            stdout_index (int, optional): index of history process stdout, 0 means get from current running process,
+                the stdout number depends on 'stdout_cache_size' of the application.
+            stdout_maxsize (int, optional): max buffer size to read.
+            process_uuid (str, optional): used to get the specified process.
 
-        Returns
-        -------
-            Success : bool
-            Output Text : str
-            Output Position : None or int
-            Exit Code : None or int
+        Returns:
+            bool: success or failure.
+            str: output string.
+            int or None: current read position.
+            int or None: process exit code.
         """
         resp = self.__request_http(
             AppMeshClient.Method.GET,
             path=f"/appmesh/cloud/app/{app_name}/output/{host_name}",
             query={
-                "stdout_position": str(output_position),
+                "stdout_position": str(stdout_position),
                 "stdout_index": str(stdout_index),
                 "stdout_maxsize": str(stdout_maxsize),
                 "process_uuid": process_uuid,
@@ -336,45 +293,37 @@ class AppMeshClient:
         exit_code = None if not resp.headers.__contains__("Exit-Code") else int(resp.headers["Exit-Code"])
         return (resp.status_code == HTTPStatus.OK), resp.text, out_position, exit_code
 
-    def cloud_app_delete(self, app_name) -> bool:
-        """
-        Delete a cloud application
+    def cloud_app_delete(self, app_name: str) -> bool:
+        """Delete a cloud application
 
-        Parameters
-        ----------
-            app_name : str
-                The application name for cloud
-        Returns
-        -------
-            Success : bool
+        Args:
+            app_name (str): The application name for cloud
+
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/cloud/app/{app_name}")
         return resp.status_code == HTTPStatus.OK
 
-    def cloud_app_add(self, app_json):
-        """
-        Add a cloud application
+    def cloud_app_add(self, app_json: dict):
+        """Add a cloud application
 
-        Parameters
-        ----------
-            app_json : JSON
-                The cloud application definition with replication, condition and resource requirement
-        Returns
-        -------
-            Success : bool
-            CloudApplicationJson : JSON
+        Args:
+            app_json (dict): the cloud application definition with replication, condition and resource requirement
+
+         Returns:
+            bool: success or failure.
+            dict: cluster application json.
         """
         resp = self.__request_http(AppMeshClient.Method.PUT, path="/appmesh/cloud/app/{0}".format(app_json["content"]["name"]), body=app_json)
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def cloud_nodes(self):
-        """
-        Get cluster node list
+        """Get cluster node list
 
-        Returns
-        -------
-            Success : bool
-            ClusterNodeList : JSON
+        Returns:
+            bool: success or failure.
+            dict: cluster node list json.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/nodes")
         return (resp.status_code == HTTPStatus.OK), resp.json()
@@ -383,49 +332,47 @@ class AppMeshClient:
     # Configuration
     ########################################
     def host_resource(self):
-        """
-        Get App Mesh host resource report include CPU, memory and disk
+        """Get App Mesh host resource report include CPU, memory and disk
 
-        Returns
-        -------
-            Success : bool
-            Resources : JSON
+        Returns:
+            bool: success or failure.
+            dict: the host resource json.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/resources")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def config_view(self):
-        """
-        Get App Mesh configuration JSON
+        """Get App Mesh configuration JSON
 
-        Returns
-        -------
-            Success : bool
-            Resources : JSON
+        Returns:
+            bool: success or failure.
+            dict: the configuration json.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/config")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def config_set(self, cfg_json):
-        """
-        Update App Mesh configuration, the format follow 'config.json', support update fragment config
+        """Update configuration, the format follow 'config.json', support partial update
 
-        Returns
-        -------
-            Success : bool
-            CurrentConfiguration : JSON
+        Args:
+            cfg_json (dict): the new configuration json.
+
+        Returns:
+            bool: success or failure.
+            dict: the updated configuration json.
         """
         resp = self.__request_http(AppMeshClient.Method.POST, path="/appmesh/config", body=cfg_json)
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def log_level_set(self, level="DEBUG"):
-        """
-        Update App Mesh log level(DEBUG/INFO/NOTICE/WARN/ERROR), a wrapper of set_config()
+    def log_level_set(self, level: str = "DEBUG"):
+        """Update App Mesh log level(DEBUG/INFO/NOTICE/WARN/ERROR), a wrapper of config_set()
 
-        Returns
-        -------
-            Success : bool
-            CurrentConfiguration : JSON
+        Args:
+            level (str, optional): log level.
+
+        Returns:
+            bool: success or failure.
+            dict: the updated configuration json.
         """
         resp = self.__request_http(AppMeshClient.Method.POST, path="/appmesh/config", body={"LogLevel": level})
         return (resp.status_code == HTTPStatus.OK), resp.json()
@@ -433,18 +380,16 @@ class AppMeshClient:
     ########################################
     # User Management
     ########################################
-    def user_passwd_update(self, new_password, user_name="self"):
-        """
-        Change user password
+    def user_passwd_update(self, new_password: str, user_name: str = "self"):
+        """Change user password
 
-        Parameters
-        ----------
-            new_password : str
+        Args:
+            user_name (str): the user name.
+            new_password (str):the new password string
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
+            str: result message.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.POST,
@@ -453,20 +398,15 @@ class AppMeshClient:
         )
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
-    def user_add(self, user_name, user_json) -> bool:
-        """
-        Add a new user, not available for LDAP user
+    def user_add(self, user_name: str, user_json: dict) -> bool:
+        """Add a new user, not available for LDAP user
 
-        Parameters
-        ----------
-            user_name : str
-            user_json : json
-                User definition, follow same user format from security.json
+        Args:
+            user_name (str): the user name.
+            user_json (dict): user definition, follow same user format from security.json.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.PUT,
@@ -475,18 +415,14 @@ class AppMeshClient:
         )
         return resp.status_code == HTTPStatus.OK
 
-    def user_delete(self, user_name) -> bool:
-        """
-        Delete an existing user
+    def user_delete(self, user_name: str) -> bool:
+        """Delete a user
 
-        Parameters
-        ----------
-            user_name : str
+        Args:
+            user_name (str): the user name.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.DELETE,
@@ -494,18 +430,14 @@ class AppMeshClient:
         )
         return resp.status_code == HTTPStatus.OK
 
-    def user_lock(self, user_name) -> bool:
-        """
-        Lock an existing user
+    def user_lock(self, user_name: str) -> bool:
+        """Lock a user
 
-        Parameters
-        ----------
-            user_name : str
+        Args:
+            user_name (str): the user name.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.POST,
@@ -513,18 +445,14 @@ class AppMeshClient:
         )
         return resp.status_code == HTTPStatus.OK
 
-    def user_unlock(self, user_name) -> bool:
-        """
-        Unlock an existing user
+    def user_unlock(self, user_name: str) -> bool:
+        """Unlock a user
 
-        Parameters
-        ----------
-            user_name : str
+        Args:
+            user_name (str): the user name.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.POST,
@@ -533,13 +461,10 @@ class AppMeshClient:
         return resp.status_code == HTTPStatus.OK
 
     def user_2fa_active(self) -> bool:
-        """
-        Active 2FA for current login user and return MFA URI with JSON body
+        """Active 2FA for current login user and return MFA URI with JSON body
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.POST,
@@ -547,18 +472,14 @@ class AppMeshClient:
         )
         return resp.status_code == HTTPStatus.OK
 
-    def user_2fa_deactive(self, user_name="self") -> bool:
-        """
-        DeActive 2FA for a user
+    def user_2fa_deactive(self, user_name: str = "self") -> bool:
+        """DeActive 2FA for a user
 
-        Parameters
-        ----------
-            user_name : str
+        Args:
+            user_name (str, optional): the user name.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.DELETE,
@@ -567,107 +488,98 @@ class AppMeshClient:
         return resp.status_code == HTTPStatus.OK
 
     def users_view(self):
-        """
-        Get all users
+        """Get all users
 
-        Returns
-        -------
-            Success : bool
-            UserList : JSON
+        Returns:
+            bool: success or failure.
+            dict: all user definition.
         """
         resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/users")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def user_self(self):
-        """
-        Get all users
+        """Get current user infomation
 
-        Returns
-        -------
-            Success : bool
-            UserList : JSON
+        Returns:
+            bool: success or failure.
+            dict: user definition.
         """
         resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/self")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def roles_view(self):
-        """
-        Get all roles
-
-        Returns
-        -------
-            Success : bool
-            RoleList : JSON
-        """
-        resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/roles")
-        return (resp.status_code == HTTPStatus.OK), resp.json()
-
     def groups_view(self):
-        """
-        Get all groups
+        """Get all user groups
 
-        Returns
-        -------
-            Success : bool
-            GroupList : JSON
+        Returns:
+            bool: success or failure.
+            dict: user group array.
         """
-        resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/groups")
+        resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/groups")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def permissions_view(self):
-        """
-        Get all permissions
+        """Get all available permissions
 
-        Returns
-        -------
-            Success : bool
-            PermissionIdList : JSON
+        Returns:
+            bool: success or failure.
+            dict: permission array.
         """
         resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/permissions")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def permissions_for_user(self):
-        """
-        Get permissions for current user
+        """Get current user permissions
 
-        Returns
-        -------
-            Success : bool
-            PermissionIdList : JSON
+        Returns:
+            bool: success or failure.
+            dict: user permission array.
         """
         resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/permissions")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
-    def role_update(self, role_name, role_json) -> bool:
-        """
-        Update (or add) a role with defined permissions
-        The permission ID can be App Mesh pre-defined or other permission ID
+    def roles_view(self):
+        """Get all roles with permission definition
 
-        Parameters
-        ----------
-            role_name : str
-            role_json : JSON
-
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
+            dict: all role definition.
         """
-        resp = self.__request_http(method=AppMeshClient.Method.POST, path=f"/appmesh/role/{role_name}", body=role_json)
+        resp = self.__request_http(method=AppMeshClient.Method.GET, path="/appmesh/roles")
+        return (resp.status_code == HTTPStatus.OK), resp.json()
+
+    def role_update(self, role_name: str, role_permission_json: dict) -> bool:
+        """Update (or add) a role with defined permissions, the permission ID can be App Mesh pre-defined or other permission ID.
+
+        Args:
+            role_name (str): the role name.
+            role_permission_json (dict): role permission definition array, e.g
+                    [
+                        "app-control",
+                        "app-delete",
+                        "cloud-app-reg",
+                        "cloud-app-delete",
+                        "app-reg",
+                        "config-set",
+                        "file-download",
+                        "file-upload",
+                        "label-delete",
+                        "label-set"
+                    ]
+
+        Returns:
+            bool: success or failure.
+        """
+        resp = self.__request_http(method=AppMeshClient.Method.POST, path=f"/appmesh/role/{role_name}", body=role_permission_json)
         return resp.status_code == HTTPStatus.OK
 
-    def role_delete(self, role_name) -> bool:
-        """
-        Delete an existing role
+    def role_delete(self, role_name: str) -> bool:
+        """Delete a user role
 
-        Parameters
-        ----------
-            role_name : str
+        Args:
+            role_name (str): the role name.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             method=AppMeshClient.Method.DELETE,
@@ -678,19 +590,15 @@ class AppMeshClient:
     ########################################
     # Tag management
     ########################################
-    def tag_add(self, tag_name, tag_value) -> bool:
-        """
-        Add a tag(label) for current logon node
+    def tag_add(self, tag_name: str, tag_value: str) -> bool:
+        """Add a new label
 
-        Parameters
-        ----------
-            tag_name : str
-            tag_value : str
+        Args:
+            tag_name (str): the label name.
+            tag_value (str): the label value.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(
             AppMeshClient.Method.PUT,
@@ -699,30 +607,24 @@ class AppMeshClient:
         )
         return resp.status_code == HTTPStatus.OK
 
-    def tag_delete(self, tag_name) -> bool:
-        """
-        Delete a tag(label) for current logon node
+    def tag_delete(self, tag_name: str) -> bool:
+        """Delete a label
 
-        Parameters
-        ----------
-            tag_name : str
+        Args:
+            tag_name (str): the label name.
 
-        Returns
-        -------
-            Success : bool
-            Message : JSON
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/label/{tag_name}")
         return resp.status_code == HTTPStatus.OK
 
     def tag_view(self):
-        """
-        Get all tags for current logon node
+        """Get the server labels
 
-        Returns
-        -------
-            Success : bool
-            TagJson : JSON
+        Returns:
+            bool: success or failure.
+            dict: label data.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/labels")
         return (resp.status_code == HTTPStatus.OK), resp.json()
@@ -731,12 +633,11 @@ class AppMeshClient:
     # Promethus metrics
     ########################################
     def metrics(self):
-        """
-        Get Promethus metrics
+        """Prometheus metrics (this does not call Prometheus API /metrics, just copy the same metrics data)
 
-        Returns
-        -------
-            MetricsText : str
+        Returns:
+            bool: success or failure.
+            str: prometheus metrics texts
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/metrics")
         return resp.status_code == HTTPStatus.OK, resp.text
@@ -744,18 +645,15 @@ class AppMeshClient:
     ########################################
     # File management
     ########################################
-    def file_download(self, file_path, local_file) -> bool:
-        """
-        Copy a remote file to local, local file will have the same permission with remote file
+    def file_download(self, file_path: str, local_file: str) -> bool:
+        """Copy a remote file to local, the local file will have the same permission as the remote file
 
-        Parameters
-        ----------
-            file_path : str
-            local_file : str
+        Args:
+            file_path (str): the remote file path.
+            local_file (str): the local file path to be downloaded.
 
-        Returns
-        -------
-            Success : bool
+        Returns:
+            bool: success or failure.
         """
         resp = self.__request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
         if resp.status_code == HTTPStatus.OK:
@@ -775,24 +673,22 @@ class AppMeshClient:
             return True
         return False
 
-    def file_upload(self, file_path, local_file):
-        """
-        Upload a local file to remote, remote file will have the same permission with local file
+    def file_upload(self, local_file: str, file_path: str):
+        """Upload a local file to the remote server, the remote file will have the same permission as the local file
 
         Dependency:
-        ----------
             sudo apt install python3-pip
-            pip install requests-toolbelt
-        Parameters
-        ----------
-            file_path : str
-            local_file : str
+            pip3 install requests_toolbelt
 
-        Returns
-        -------
-            Success : bool
+        Args:
+            local_file (str): the local file path.
+            file_path (str): the target remote file to be uploaded.
+
+        Returns:
+            bool: success or failure.
+            str: text message.
         """
-        from requests_toolbelt import MultipartEncoder  # pip3 install requests_toolbelt
+        from requests_toolbelt import MultipartEncoder
 
         with open(file=local_file, mode="rb") as fp:
             encoder = MultipartEncoder(fields={"filename": os.path.basename(file_path), "file": ("filename", fp, "application/octet-stream")})
@@ -821,7 +717,6 @@ class AppMeshClient:
         self,
         app_json: dict,
         max_time_seconds: int = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        retention_time_seconds: int = DEFAULT_RUN_APP_RETENTION_DURATION,
     ):
         """Asyncrized run a command remotely, 'name' attribute in app_json dict used to run an existing application
         Asyncrized run will not block process
@@ -829,7 +724,6 @@ class AppMeshClient:
         Args:
             app_json (dict): application JSON dict.
             max_time_seconds (int, optional): max run time for the remote process.
-            retention_time_seconds (int, optional): asynchronism run will keep process status for a while for the client to fetch.
 
         Returns:
             str: app_name, new application name for this run
@@ -840,7 +734,7 @@ class AppMeshClient:
             AppMeshClient.Method.POST,
             body=app_json,
             path=path,
-            query={"timeout": str(max_time_seconds), "retention": str(retention_time_seconds)},
+            query={"timeout": str(max_time_seconds)},
         )
         if resp.status_code == HTTPStatus.OK:
             app_name = resp.json()["name"]
@@ -850,7 +744,7 @@ class AppMeshClient:
             print(resp.text)
         return None
 
-    def run_async_wait(self, async_tuple: tuple, stdout_print: bool = True) -> int:
+    def run_async_wait(self, async_tuple: tuple, stdout_print: bool = True, timeout: int = 0) -> int:
         """Wait for an async run to be finished
 
         Args:
@@ -858,6 +752,7 @@ class AppMeshClient:
                 async_tuple[0] app_name: application name from run_async
                 async_tuple[1] process_uuid: process uuid
             stdout_print (bool, optional): print remote stdout to local or not.
+            timeout (int, optional): wait max timeout seconds and return if not finished, 0 means wait until finished
 
         Returns:
             int: return exit code if process finished, return None for timeout or exception.
@@ -867,16 +762,22 @@ class AppMeshClient:
             app_name = async_tuple[0]
             process_uuid = async_tuple[1]
             output_position = 0
+            start = datetime.now()
             while len(process_uuid) > 0:
-                success, output, position, exit_code = self.app_output(app_name=app_name, output_position=output_position, stdout_index=0, process_uuid=process_uuid, timeout=1)
+                success, output, position, exit_code = self.app_output(app_name=app_name, stdout_position=output_position, stdout_index=0, process_uuid=process_uuid, timeout=1)
                 if output is not None and stdout_print:
                     print(output, end="")
                 if position is not None:
                     output_position = position
                 if exit_code is not None:
-                    exit_code = exit_code
-                if (exit_code is not None) or (not success):
+                    # success
                     self.app_delete(app_name)
+                    break
+                if not success:
+                    # failed
+                    break
+                if timeout > 0 and (datetime.now() - start).seconds > timeout:
+                    # timeout
                     break
         return exit_code
 

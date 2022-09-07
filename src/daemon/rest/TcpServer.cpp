@@ -56,10 +56,14 @@ int TcpHandler::handle_input(ACE_HANDLE)
 		return -1;
 	}
 	else if (errno == EWOULDBLOCK)
-		return 0;
+	{
+		LOG_ERR << fname << "socket buffer full: " << std::strerror(errno);
+		// return 0; // here does not support continue recieve to existing buffer
+		return -1;
+	}
 	else
 	{
-		LOG_ERR << fname << "Problems in receiving data from " << m_clientHostName;
+		LOG_ERR << fname << "Problems in receiving data from " << m_clientHostName << ": " << std::strerror(errno);
 		return -1;
 	}
 }

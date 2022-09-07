@@ -4,7 +4,7 @@ Python does not support real threads to run something parallel, with App Mesh, P
 ## Solution
 Use SDK AppMeshClient.run_async() to run process or Python code segment by App Mesh.
 
-### 1. Install AppMesh on host OS
+### 1. Install App Mesh
 [Installation Guide](../Install.md#native-installation)
 
 ### 2. Python sample

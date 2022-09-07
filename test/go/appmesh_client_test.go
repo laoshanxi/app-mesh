@@ -27,6 +27,6 @@ func TestAppmeshLogin(t *testing.T) {
 	runApp := appmesh.Application{}
 	cmd := "ping www.baidu.com -w 5"
 	runApp.Command = &cmd
-	client.Run(runApp, false, 5, 3)
+	client.Run(runApp, false, 5)
 	fmt.Println("end")
 }

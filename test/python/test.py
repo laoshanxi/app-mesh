@@ -22,6 +22,17 @@ token = client.login("admin", "admin123")
 print(client.authentication(token, "app-view"))
 print(client.user_passwd_update("admin123"))
 print(json.dumps(client.permissions_view(), indent=2))
+print(
+    client.role_update(
+        "manage", ["app-control", "app-delete", "cloud-app-reg", "cloud-app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]
+    )
+)
+print(json.dumps(client.permissions_for_user(), indent=2))
+print(json.dumps(client.groups_view(), indent=2))
+print(json.dumps(client.roles_view(), indent=2))
+print(json.dumps(client.user_self(), indent=2))
+print(json.dumps(client.users_view(), indent=2))
+
 # view application
 print(json.dumps(client.app_view("ping"), indent=2))
 print(json.dumps(client.app_view("ping2"), indent=2))

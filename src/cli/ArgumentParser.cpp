@@ -389,7 +389,7 @@ void ArgumentParser::processAppAdd()
 		("sec_env", po::value<std::vector<std::string>>(), "security environment variables, encrypt in server side with application owner's cipher")
 		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')")
 		("cron", "indicate interval parameter use cron expression")
-		("retention,q", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention duration after run finished (default 10s), app will be cleaned after the retention period, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("retention,q", po::value<std::string>(), "extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "default exit behavior [restart,standby,keepalive,remove]")
 		("control", po::value<std::vector<std::string>>()->default_value(std::vector<std::string>(), default_control_string), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
 		("force,f", "force without confirm")
@@ -848,8 +848,7 @@ int ArgumentParser::processAppRun()
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("retention,r", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION)), "retention time[seconds] for app cleanup after finished (default 10s), support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
@@ -875,8 +874,6 @@ int ArgumentParser::processAppRun()
 		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
 	if (m_commandLineVariables["shell"].as<bool>())
 		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
-	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
-		jsonObj[JSON_KEY_APP_retention] = web::json::value::string(m_commandLineVariables["retention"].as<std::string>());
 	if (m_commandLineVariables.count(JSON_KEY_APP_name))
 		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))

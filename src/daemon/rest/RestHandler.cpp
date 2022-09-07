@@ -794,11 +794,6 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 
 	auto jsonApp = message.extractJson();
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
-	if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_retention))
-	{
-		// without default retention, application might be removed before get output
-		jsonApp[JSON_KEY_APP_retention] = web::json::value::string(std::to_string(DEFAULT_RUN_APP_RETENTION_DURATION));
-	}
 	std::shared_ptr<Application> fromApp;
 	if (clientProvideAppName.length())
 	{
@@ -828,7 +823,6 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 			{
 				existApp[JSON_KEY_APP_sec_env] = jsonApp[JSON_KEY_APP_sec_env];
 			}
-			existApp[JSON_KEY_APP_retention] = jsonApp[JSON_KEY_APP_retention];
 			existApp[JSON_KEY_APP_name] = web::json::value::string(Utility::createUUID()); // specify a UUID app name
 			existApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
 			jsonApp = existApp;

@@ -237,7 +237,7 @@ func (r *Client) AddApp(app Application) (*Application, error) {
 }
 
 // Remote run application
-func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asyncRetentionSeconds int) (int, error) {
+func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int) (int, error) {
 	appJson, err := json.Marshal(app)
 	exitCode := 0
 	if err == nil {
@@ -249,7 +249,6 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int, asy
 		}
 		query := url.Values{}
 		query.Add("timeout", strconv.Itoa(maxExectimeSeconds))
-		query.Add("retention", strconv.Itoa(asyncRetentionSeconds))
 
 		raw, code, _ := r.post(path, query, nil, appJson)
 		if code == http.StatusOK {

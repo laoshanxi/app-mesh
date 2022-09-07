@@ -125,7 +125,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define JWT_USER_NAME "mesh"
 #define JWT_ADMIN_NAME "admin"
 #define APPMESH_PASSWD_MIN_LENGTH 3
-#define DEFAULT_RUN_APP_RETENTION_DURATION 10
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 
@@ -316,7 +315,7 @@ public:
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
 
-#define JSON_KEY_APP_retention "retention" // short running: extra timeout seconds, long running: remove behavior retention
+#define JSON_KEY_APP_retention "retention" // extra timeout seconds for stopping current process
 #define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
 #define JSON_KEY_SHORT_APP_start_time "start_time"
 #define JSON_KEY_SHORT_APP_end_time "end_time"
