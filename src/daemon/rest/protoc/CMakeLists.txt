@@ -14,8 +14,9 @@ foreach(FIL ${PROTOBUF_FILELIST})
   message(STATUS "Generating: protoc ${PROTO_FLAGS} --cpp_out=${PROTO_META_BASE_DIR} ${FIL}")
   message(STATUS "Generating: protoc ${PROTO_FLAGS} --go_out=${CMAKE_SOURCE_DIR}/src/sdk/agent --go_opt=paths=source_relative ${FIL}")
   execute_process(
-    COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} --cpp_out=${PROTO_META_BASE_DIR} ${FIL}
+	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} --cpp_out=${PROTO_META_BASE_DIR} ${FIL}
     COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} --go_out=${CMAKE_SOURCE_DIR}/src/sdk/agent --go_opt=paths=source_relative ${FIL}
+	COMMAND ${PROTOBUF_PROTOC_EXECUTABLE} ${PROTO_FLAGS} --python_out=${CMAKE_SOURCE_DIR}/src/sdk/python ${FIL}
   )
 endforeach()
 

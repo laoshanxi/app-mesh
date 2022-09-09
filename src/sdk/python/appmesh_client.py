@@ -1,17 +1,25 @@
 #!/usr/bin/python3
 """App Mesh Python SDK"""
 import base64
+import json
 import os
+import socket
+import uuid
+
 from enum import Enum
 from http import HTTPStatus
 from urllib import parse
 from datetime import datetime
 import requests
+import Request_pb2
+import Response_pb2
 
 
 DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24)  # default 7 days
 DEFAULT_RUN_APP_TIMEOUT_SECONDS = 600  # 10 minutes
 REST_TEXT_MESSAGE_JSON_KEY = "message"
+MESSAGE_ENCODING_UTF8 = "utf-8"
+TCP_MESSAGE_HEADER_LENGTH = 4
 
 
 class AppMeshClient:
@@ -29,24 +37,51 @@ class AppMeshClient:
 
     def __init__(
         self,
-        server_url: str = "https://127.0.0.1:6060",
-        jwt_auth_enable: bool = True,
-        ssl_verify="/opt/appmesh/ssl/ca.pem",
+        auth_enable: bool = True,
+        rest_url: str = "https://127.0.0.1:6060",
+        rest_ssl_verify="/opt/appmesh/ssl/ca.pem",
         rest_timeout=(60, 300),
+        tcp_channel: bool = False,
+        tcp_address=("localhost", 6059),
     ):
         """Construct an App Mesh client object
 
         Args:
-            server_url (str, optional): server URI string.
-            jwt_auth_enable (bool, optional): server enabled JWT authentication or not.
-            ssl_verify (str, optional): SSL CA certification file path or False to disable SSL verification.
+            auth_enable (bool, optional): server enabled JWT authentication or not.
+            rest_url (str, optional): server URI string.
+            rest_ssl_verify (str, optional): SSL CA certification file path or False to disable SSL verification.
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
+            tcp_channel (bool, optional): use TCP channel to request API.
+            tcp_address (tuple, optional): TCP connect address.
         """
-        self.server_url = server_url
-        self.jwt_auth_enable = jwt_auth_enable
+        self.server_url = rest_url
+        self.jwt_auth_enable = auth_enable
         self.__jwt_token = None
-        self.ssl_verify = ssl_verify
+        self.ssl_verify = rest_ssl_verify
         self.rest_timeout = rest_timeout
+        self.__socket_client = None
+        self.tcp_channel = tcp_channel
+        self.tcp_address = tcp_address
+
+    def __del__(self) -> None:
+        """De-construction"""
+        self.__close_socket()
+
+    def __connect_socket(self) -> None:
+        """Establish tcp connection"""
+        if self.tcp_channel:
+            self.__socket_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.__socket_client.setblocking(True)
+            self.__socket_client.connect(self.tcp_address)
+
+    def __close_socket(self) -> None:
+        """Close socket connection"""
+        if self.__socket_client:
+            try:
+                self.__socket_client.close()
+                self.__socket_client = None
+            except Exception as ex:
+                print(ex)
 
     ########################################
     # Security
@@ -815,6 +850,63 @@ class AppMeshClient:
             print(resp.text)
         return exit_code
 
+    def __request_tcp(self, method: Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
+        """TCP API
+
+        Args:
+            method (Method): AppMeshClient.Method.
+            path (str): URI patch str.
+            query (dict, optional): HTTP query parameters.
+            header (dict, optional): HTTP headers.
+            body (_type_, optional): object to send in the body of the :class:`Request`.
+
+        Returns:
+            requests.Response: HTTP response
+        """
+        if self.__socket_client is None:
+            self.__connect_socket()
+        uid = str(uuid.uuid1())
+        appmesh_requst = Request_pb2.Request()
+        appmesh_requst.uuid = uid
+        appmesh_requst.http_method = method.name
+        appmesh_requst.request_uri = path
+        appmesh_requst.client_address = socket.gethostname()
+        if body:
+            if isinstance(body, dict):
+                appmesh_requst.http_body = json.dumps(body, indent=2)
+            else:
+                appmesh_requst.http_body = str(body)
+        if header:
+            for k, v in header.items():
+                appmesh_requst.headers[k] = v
+        if query:
+            query_list = []
+            for k, v in query.items():
+                query_list.append(str(k) + "=" + str(v))
+            appmesh_requst.querys = "&".join(query_list)
+        data = appmesh_requst.SerializeToString()
+        self.__socket_client.sendall(len(data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
+        self.__socket_client.sendall(data)
+
+        # https://developers.google.com/protocol-buffers/docs/pythontutorial
+        # https://stackoverflow.com/questions/33913308/socket-module-how-to-send-integer
+        resp_data = bytes()
+        resp_data = self.__socket_client.recv(int.from_bytes(self.__socket_client.recv(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False))
+        if resp_data is None or len(resp_data) == 0:
+            self.__close_socket()
+            raise Exception("socket connection broken")
+        http_resp = requests.Response()
+        appmesh_resp = Response_pb2.Response()
+        appmesh_resp.ParseFromString(resp_data)
+        http_resp.status_code = appmesh_resp.http_status
+        http_resp._content = bytes(appmesh_resp.http_body, MESSAGE_ENCODING_UTF8)
+        http_resp.headers = appmesh_resp.headers
+        http_resp.encoding = MESSAGE_ENCODING_UTF8
+        if appmesh_resp.http_body_msg_type:
+            http_resp.headers["Content-Type"] = appmesh_resp.http_body_msg_type
+        assert uid == appmesh_resp.uuid
+        return http_resp
+
     def __request_http(self, method: Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
         """REST API
 
@@ -829,9 +921,12 @@ class AppMeshClient:
             requests.Response: HTTP response
         """
         rest_url = parse.urljoin(self.server_url, path)
-
         if self.__jwt_token is not None:
             header["Authorization"] = "Bearer " + self.__jwt_token
+
+        if self.tcp_channel and method not in [AppMeshClient.Method.POST_STREAM, AppMeshClient.Method.GET_STREAM]:
+            # forwat to TCP API
+            return self.__request_tcp(method=method, path=path, query=query, header=header, body=body)
 
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
