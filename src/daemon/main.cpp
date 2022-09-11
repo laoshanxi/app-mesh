@@ -44,6 +44,7 @@ int main(int argc, char *argv[])
 	try
 	{
 		ACE::init();
+		// ACE::set_handle_limit(); // TODO: this will cause timer issue.
 		// create pid file: /var/run/appmesh.pid
 		if (!Utility::createPidFile())
 		{

@@ -551,7 +551,7 @@ std::string Application::runApp(int timeoutSeconds)
 	assert(m_status != STATUS::ENABLED);
 
 	const auto execUser = getExecUser();
-	LOG_INF << fname << "Running application <" << m_name << ">.";
+	LOG_INF << fname << "Running application <" << m_name << "> with timeout <" << timeoutSeconds << "> seconds";
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
 	setLastError(m_process->startError());
