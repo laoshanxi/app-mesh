@@ -8,7 +8,6 @@
 #include "../common/Utility.h"
 #include "TimerHandler.h"
 
-ACE_Reactor TimerManager::m_reactor(new ACE_TP_Reactor(), true);
 TimerManager::TimerManager()
 {
 }
@@ -66,7 +65,7 @@ int TimerManager::registerTimer(long int delayMillisecond, std::size_t intervalS
 
 	int *timerIdPtr = new int(INVALID_TIMER_ID);
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
-	(*timerIdPtr) = m_reactor.schedule_timer(this, (void *)timerIdPtr, delay, interval);
+	(*timerIdPtr) = this->reactor()->schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
 	if ((*timerIdPtr) >= 0)
 	{
@@ -92,7 +91,7 @@ bool TimerManager::cancelTimer(int &timerId)
 		return false;
 	}
 
-	auto cancled = m_reactor.cancel_timer(timerId);
+	auto cancled = this->reactor()->cancel_timer(timerId);
 	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
 
 	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
@@ -129,11 +128,6 @@ int TimerManager::endReactorEvent(ACE_Reactor *reactor)
 	LOG_DBG << fname << "Entered";
 
 	return reactor->end_reactor_event_loop();
-}
-
-ACE_Reactor *TimerManager::timerReactor()
-{
-	return &m_reactor;
 }
 
 TimerManager::TimerEvent::TimerEvent(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)

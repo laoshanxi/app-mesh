@@ -436,6 +436,7 @@ void Application::execute(void *ptree)
 void Application::spawn(int timerId)
 {
 	const static char fname[] = "Application::spawn() ";
+	std::shared_ptr<AppProcess> checkProcStdoutFile;
 	if (this->isEnabled())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -463,6 +464,8 @@ void Application::spawn(int timerId)
 		m_process = allocProcess(false, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
 		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
+		if (m_pid > 0)
+			checkProcStdoutFile = m_process;
 
 		// 3. post process
 		setLastError(m_process->startError());
@@ -476,6 +479,10 @@ void Application::spawn(int timerId)
 		// note: timer lock can hold app lock, app lock should not hold timer lock
 		this->scheduleNext(std::chrono::system_clock::now() + std::chrono::seconds(1));
 	}
+
+	// 5. registerCheckStdoutTimer() outside of m_appMutex
+	if (checkProcStdoutFile)
+		checkProcStdoutFile->registerCheckStdoutTimer();
 }
 
 void Application::disable()
@@ -554,6 +561,7 @@ std::string Application::runApp(int timeoutSeconds)
 	LOG_INF << fname << "Running application <" << m_name << "> with timeout <" << timeoutSeconds << "> seconds";
 	m_procStartTime = std::chrono::system_clock::now();
 	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
+	// TODO: run app does not call registerCheckStdoutTimer() for now
 	setLastError(m_process->startError());
 	if (m_metricStartCount)
 		m_metricStartCount->metric().Increment();
@@ -616,7 +624,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	if (process != nullptr && index == 0 && process->getuuid() == processUuid && process->running() && timeout > 0)
 	{
 		auto start = std::chrono::system_clock::now();
-		while (process->running() && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - start).count() < 1000L * timeout)
+		while (process->running() && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - start).count() < (int64_t)(1000L * timeout))
 		{
 			process->wait(ACE_Time_Value(0, 100));
 		}

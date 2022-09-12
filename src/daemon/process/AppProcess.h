@@ -101,7 +101,7 @@ public:
 	/// <summary>
 	/// register check stdout timer
 	/// </summary>
-	void regCheckStdout();
+	void registerCheckStdoutTimer();
 
 	/// <summary>
 	/// check stdout file size

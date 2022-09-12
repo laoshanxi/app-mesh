@@ -155,9 +155,9 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 	}
 }
 
-void AppProcess::regCheckStdout()
+void AppProcess::registerCheckStdoutTimer()
 {
-	const static char fname[] = "AppProcess::regCheckStdout() ";
+	const static char fname[] = "AppProcess::registerCheckStdoutTimer() ";
 
 	if (INVALID_TIMER_ID == m_stdOutSizeTimerId)
 	{
@@ -352,7 +352,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		if (m_stdoutHandler != ACE_INVALID_HANDLE && maxStdoutSize)
 		{
 			m_stdOutMaxSize = maxStdoutSize;
-			this->regCheckStdout();
 		}
 	}
 	else

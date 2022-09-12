@@ -58,8 +58,9 @@ int main(int argc, char *argv[])
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
 		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
-		TIMER_MANAGER::instance()->timerReactor()->open(ACE::max_handles());
-		if (!ACE_Reactor::instance()->initialized() || !TIMER_MANAGER::instance()->timerReactor()->initialized())
+		TIMER_MANAGER::instance()->reactor(new ACE_Reactor(new ACE_TP_Reactor(), true));
+		TIMER_MANAGER::instance()->reactor()->open(ACE::max_handles());
+		if (!ACE_Reactor::instance()->initialized() || !TIMER_MANAGER::instance()->reactor()->initialized())
 		{
 			std::cerr << "Init reactor failed with error " << std::strerror(errno);
 			return -1;
@@ -110,7 +111,7 @@ int main(int argc, char *argv[])
 		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
 		ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
 		// threads for timer (application & process event & healthcheck & consul report event)
-		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->timerReactor())));
+		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 		// threads for REST pool
 		for (size_t i = 0; i < Configuration::instance()->getThreadPoolSize(); i++)
 		{
@@ -194,7 +195,7 @@ int main(int argc, char *argv[])
 			// health-check
 			HealthCheckTask::instance()->doHealthCheck();
 		}
-		TIMER_MANAGER::instance()->timerReactor()->end_reactor_event_loop();
+		TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
 		ACE_Reactor::instance()->end_reactor_event_loop();
 	}
 	catch (const std::exception &e)

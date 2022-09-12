@@ -102,15 +102,11 @@ public:
 	/// </summary>
 	static int endReactorEvent(ACE_Reactor *reactor);
 
-	static ACE_Reactor *timerReactor();
-
 private:
 	// key: timer ID point, must unique, value: function point
 	std::map<const int *, std::shared_ptr<TimerEvent>> m_timers;
 
 protected:
-	// this reactor can be init as none-default one
-	static ACE_Reactor m_reactor;
 	mutable std::recursive_mutex m_timerMutex;
 };
 
