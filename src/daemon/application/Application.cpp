@@ -615,7 +615,11 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	}
 	if (process != nullptr && index == 0 && process->getuuid() == processUuid && process->running() && timeout > 0)
 	{
-		process->wait(ACE_Time_Value(timeout));
+		auto start = std::chrono::system_clock::now();
+		while (process->running() && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - start).count() < 1000L * timeout)
+		{
+			process->wait(ACE_Time_Value(0, 100));
+		}
 	}
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);

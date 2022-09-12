@@ -58,8 +58,8 @@ int main(int argc, char *argv[])
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
 		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
-		TimerHandler::timerReactor()->open(ACE::max_handles());
-		if (!ACE_Reactor::instance()->initialized() || !TimerHandler::timerReactor()->initialized())
+		TIMER_MANAGER::instance()->timerReactor()->open(ACE::max_handles());
+		if (!ACE_Reactor::instance()->initialized() || !TIMER_MANAGER::instance()->timerReactor()->initialized())
 		{
 			std::cerr << "Init reactor failed with error " << std::strerror(errno);
 			return -1;
@@ -110,11 +110,11 @@ int main(int argc, char *argv[])
 		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
 		ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
 		// threads for timer (application & process event & healthcheck & consul report event)
-		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, TimerHandler::timerReactor())));
+		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->timerReactor())));
 		// threads for REST pool
 		for (size_t i = 0; i < Configuration::instance()->getThreadPoolSize(); i++)
 		{
-			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerHandler::runReactorEvent, ACE_Reactor::instance())));
+			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, ACE_Reactor::instance())));
 		}
 		LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
@@ -194,7 +194,7 @@ int main(int argc, char *argv[])
 			// health-check
 			HealthCheckTask::instance()->doHealthCheck();
 		}
-		TimerHandler::timerReactor()->end_reactor_event_loop();
+		TIMER_MANAGER::instance()->timerReactor()->end_reactor_event_loop();
 		ACE_Reactor::instance()->end_reactor_event_loop();
 	}
 	catch (const std::exception &e)

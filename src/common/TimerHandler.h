@@ -17,13 +17,33 @@
 typedef ACE_Singleton<ACE_Test_and_Set<ACE_Recursive_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex> QUIT_HANDLER;
 
 #define INVALID_TIMER_ID -1
+
+class TimerHandler : public std::enable_shared_from_this<TimerHandler>
+{
+public:
+	/// <summary>
+	/// Register a timer to this object
+	/// </summary>
+	/// <param name="delaySeconds">Timer will start after delay milliseconds [1/1000 second].</param>
+	/// <param name="intervalSeconds">Interval for the Timer, the value 0 means the timer will only triggered once.</param>
+	/// <param name="handler">Function point to this object.</param>
+	/// <return>Timer unique ID.</return>
+	int registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from);
+	/// <summary>
+	/// Cancel a timer
+	/// </summary>
+	/// <param name="timerId">Timer unique ID.</param>
+	/// <return>Cancel success or not.</return>
+	bool cancelTimer(int &timerId);
+};
+
 //////////////////////////////////////////////////////////////////////////
 /// Timer Event base class
 /// The class which use timer event should implement from this class.
 /// Note: enable_shared_from_this does not support stack allocation!
 ///       http://blog.chinaunix.net/uid-442138-id-2122464.html
 //////////////////////////////////////////////////////////////////////////
-class TimerHandler : public ACE_Event_Handler, public std::enable_shared_from_this<TimerHandler>
+class TimerManager : public ACE_Event_Handler
 {
 private:
 	/// <summary>
@@ -55,8 +75,8 @@ private:
 	virtual int handle_timeout(const ACE_Time_Value &current_time, const void *act = 0) override final;
 
 public:
-	TimerHandler();
-	virtual ~TimerHandler();
+	TimerManager();
+	virtual ~TimerManager();
 
 	/// <summary>
 	/// Register a timer to this object
@@ -65,7 +85,7 @@ public:
 	/// <param name="intervalSeconds">Interval for the Timer, the value 0 means the timer will only triggered once.</param>
 	/// <param name="handler">Function point to this object.</param>
 	/// <return>Timer unique ID.</return>
-	int registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from);
+	int registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from, const std::shared_ptr<TimerHandler> fromObj);
 	/// <summary>
 	/// Cancel a timer
 	/// </summary>
@@ -93,3 +113,5 @@ protected:
 	static ACE_Reactor m_reactor;
 	mutable std::recursive_mutex m_timerMutex;
 };
+
+typedef ACE_Singleton<TimerManager, ACE_Null_Mutex> TIMER_MANAGER;

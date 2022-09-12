@@ -790,8 +790,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             process_uuid = async_tuple[1]
             output_position = 0
             start = datetime.now()
+            interval = 1 if self.__class__.__name__ == "AppMeshClient" else 1000
             while len(process_uuid) > 0:
-                success, output, position, exit_code = self.app_output(app_name=app_name, stdout_position=output_position, stdout_index=0, process_uuid=process_uuid, timeout=1)
+                success, output, position, exit_code = self.app_output(
+                    app_name=app_name, stdout_position=output_position, stdout_index=0, process_uuid=process_uuid, timeout=interval
+                )
                 if output is not None and stdout_print:
                     print(output, end="")
                 if position is not None:
@@ -978,3 +981,12 @@ class AppMeshClientTCP(AppMeshClient):
             http_resp.headers["Content-Type"] = appmesh_resp.http_body_msg_type
         assert uid == appmesh_resp.uuid
         return http_resp
+
+    ########################################
+    # File management
+    ########################################
+    def file_download(self, file_path: str, local_file: str) -> bool:
+        raise Exception("Not avialable for TCP connection")
+
+    def file_upload(self, local_file: str, file_path: str):
+        raise Exception("Not avialable for TCP connection")
