@@ -3,10 +3,10 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include <ace/Event_Handler.h>
+#include <ace/Map_Manager.h>
 #include <ace/Null_Mutex.h>
 #include <ace/Reactor.h>
 #include <ace/Recursive_Thread_Mutex.h>
@@ -103,11 +103,8 @@ public:
 	static int endReactorEvent(ACE_Reactor *reactor);
 
 private:
-	// key: timer ID point, must unique, value: function point
-	std::map<const int *, std::shared_ptr<TimerEvent>> m_timers;
-
-protected:
-	mutable std::recursive_mutex m_timerMutex;
+	// key: unique timer ID pointer, value: function point
+	ACE_Map_Manager<const int *, std::shared_ptr<TimerEvent>, ACE_Recursive_Thread_Mutex> m_timers;
 };
 
 typedef ACE_Singleton<TimerManager, ACE_Null_Mutex> TIMER_MANAGER;

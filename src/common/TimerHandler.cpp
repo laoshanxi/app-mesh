@@ -21,29 +21,22 @@ int TimerManager::handle_timeout(const ACE_Time_Value &current_time, const void 
 	const static char fname[] = "TimerManager::handle_timeout() ";
 
 	const int *timerIdPtr = static_cast<const int *>(act);
-	std::map<const int *, std::shared_ptr<TimerEvent>> timers;
-	{
-		// Should not hold this lock too long
-		std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
-		timers = m_timers;
-	}
-
-	if (timers.find(timerIdPtr) == timers.end())
+	std::shared_ptr<TimerEvent> timerDef;
+	if (m_timers.find(timerIdPtr, timerDef) != 0)
 	{
 		LOG_WAR << fname << "unrecognized Timer Id <" << *timerIdPtr << ">.";
-		// Remove this wrong timer
+		// remove this wrong timer
 		return -1;
 	}
 	else
 	{
-		auto timerDef = timers.find(timerIdPtr)->second;
 		if (timerDef->m_callOnce)
 		{
 			// remove one-time handler from map before run callback
-			LOG_DBG << fname << "one-time timer removed <" << *timerIdPtr << ">.";
-			std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
-			m_timers.erase(timerIdPtr);
+			auto removed = m_timers.unbind(timerIdPtr, timerDef);
+			LOG_DBG << fname << "one-time timer <" << *timerIdPtr << "> removed:" << (removed == 0);
 		}
+		// call timer function
 		timerDef->m_handler(*timerIdPtr);
 	}
 	return 0;
@@ -64,13 +57,12 @@ int TimerManager::registerTimer(long int delayMillisecond, std::size_t intervalS
 	}
 
 	int *timerIdPtr = new int(INVALID_TIMER_ID);
-	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
 	(*timerIdPtr) = this->reactor()->schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
 	if ((*timerIdPtr) >= 0)
 	{
-		assert(m_timers.find(timerIdPtr) == m_timers.end());
-		m_timers[timerIdPtr] = std::make_shared<TimerEvent>(timerIdPtr, handler, fromObj, callOnce);
+		assert(m_timers.find(timerIdPtr) != 0);
+		m_timers.bind(timerIdPtr, std::make_shared<TimerEvent>(timerIdPtr, handler, fromObj, callOnce));
 		LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
 		return *timerIdPtr;
 	}
@@ -92,18 +84,17 @@ bool TimerManager::cancelTimer(int &timerId)
 	}
 
 	auto cancled = this->reactor()->cancel_timer(timerId);
-	LOG_DBG << fname << "Timer <" << timerId << "> cancled <" << cancled << ">.";
+	LOG_DBG << fname << "timer <" << timerId << "> cancled <" << cancled << ">.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_timerMutex);
-	auto it = std::find_if(m_timers.begin(), m_timers.end(),
-						   [timerId](std::map<const int *, std::shared_ptr<TimerEvent>>::value_type const &pair)
-						   {
-							   return timerId == *(pair.first);
-						   });
-	if (it != m_timers.end())
+	ACE_Guard<ACE_Recursive_Thread_Mutex> locker(m_timers.mutex());
+	for (const auto &timer : m_timers)
 	{
-		m_timers.erase(it);
-		LOG_DBG << fname << "Timer removed <" << timerId << ">.";
+		if (timerId == *(timer.ext_id_))
+		{
+			m_timers.unbind(timer.ext_id_);
+			LOG_DBG << fname << "timer <" << timerId << "> removed.";
+			break;
+		}
 	}
 	timerId = INVALID_TIMER_ID;
 	return cancled;
