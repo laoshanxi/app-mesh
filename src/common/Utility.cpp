@@ -548,7 +548,7 @@ bool Utility::createPidFile()
 	auto fd = open(PID_FILE_PATH, O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
-		std::cerr << fname << "Failed to create PID file:" << PID_FILE_PATH << " with error: " << std::strerror(errno);
+		std::cout << fname << "Failed to create PID file:" << PID_FILE_PATH << " with error: " << std::strerror(errno) << std::endl;
 		return false;
 	}
 	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
@@ -891,14 +891,26 @@ const std::string Utility::readStdin2End()
 	return ss.str();
 }
 
+static std::atomic_flag cpprestThreadPoolInitilized = ATOMIC_FLAG_INIT;
 void Utility::initCpprestThreadPool(int threads)
 {
 	const static char fname[] = "Utility::initCpprestThreadPool() ";
-	static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
-	if (!initialized.test_and_set())
+
+	if (!cpprestThreadPoolInitilized.test_and_set())
 	{
 		// cpprestsdk thread pool, default will be 40 threads
 		crossplat::threadpool::initialize_with_threads(threads);
 		LOG_INF << fname << "REST thread pool size:" << threads;
+	}
+}
+
+void Utility::stopCpprestThreadPool()
+{
+	const static char fname[] = "Utility::stopCpprestThreadPool() ";
+
+	if (cpprestThreadPoolInitilized.test_and_set())
+	{
+		LOG_INF << fname << "shuting down cpprest thread pool";
+		crossplat::threadpool::shared_instance().service().stop();
 	}
 }

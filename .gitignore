@@ -265,6 +265,7 @@ __pycache__/
 
 # cmake build dir
 build/
+asan/
 
 .vscode
 b/

@@ -12,6 +12,9 @@ apt update
 apt install -y wget
 apt install -y g++ cmake make
 
+# memory tool for debug
+apt install -y valgrind libasan6
+
 # security
 apt install -y libldap-dev liboath-dev
 

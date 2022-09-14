@@ -46,10 +46,8 @@ int main(int argc, char *argv[])
 		ACE::init();
 		// ACE::set_handle_limit(); // TODO: this will cause timer issue.
 		// create pid file: /var/run/appmesh.pid
-		if (!Utility::createPidFile())
-		{
-			return -1;
-		}
+		Utility::createPidFile();
+
 		// https://www.cnblogs.com/shelmean/p/9436425.html
 		// umask 0022 => 644(-rw-r--r--)
 		// umask 0002 => 664(-rw-rw-r--)
@@ -195,8 +193,6 @@ int main(int argc, char *argv[])
 			// health-check
 			HealthCheckTask::instance()->doHealthCheck();
 		}
-		TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
-		ACE_Reactor::instance()->end_reactor_event_loop();
 	}
 	catch (const std::exception &e)
 	{
@@ -206,8 +202,11 @@ int main(int argc, char *argv[])
 	{
 		LOG_ERR << fname << "unknown exception";
 	}
-	PersistManager::instance()->persistSnapshot();
-	LOG_ERR << fname << "ERROR exited";
-	ACE_OS::_exit(0);
+	TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
+	ACE_Reactor::instance()->end_reactor_event_loop();
+	for (const auto &t : m_threadPool)
+		t->join();
+	Utility::stopCpprestThreadPool();
+	LOG_INF << fname << "exited";
 	return 0;
 }

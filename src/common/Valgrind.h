@@ -14,7 +14,7 @@
 *   - touch /opt/appmesh/bin/appsvc.valgrind
 * How to finish test :
 *   - touch /opt/appmesh/bin/appsvc.valgrind.stop
-* Check valgrind report : 
+* Check valgrind report :
 *   - /opt/appmesh/bin/appsvc.valgrind.$pid.log
 */
 
@@ -149,7 +149,7 @@ void valgrind_main()
         // 1. parent process will start a valgrind child process and wait here, valgrind will inherit environment from parent
         // valgrind --tool=memcheck --leak-check=full --error-limit=no --trace-children=yes --log-file=app_name.valgrind.%p.log
         std::string valgrindStartCmd = VALGRIND_CMD;
-        valgrindStartCmd += " --tool=memcheck --leak-check=full --show-reachable=yes --error-limit=no --log-file=";
+        valgrindStartCmd += " --tool=memcheck --trace-children=no --leak-check=full --show-reachable=yes --error-limit=no --log-file=";
         valgrindStartCmd += binaryName();
         valgrindStartCmd += ".valgrind.%p.log ";
         valgrindStartCmd += getFullCommandLine();

@@ -80,6 +80,23 @@ elif [ -f "/usr/bin/apt" ]; then
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 fi
 
+# memoty test tool
+# https://docs.microsoft.com/en-us/cpp/linux/linux-asan-configuration?view=msvc-170#install-the-asan-debug-symbols
+asanversion="0"
+case $(gcc -dumpversion) in
+    5)   asanversion="2" ;;
+    6)   asanversion="3" ;;
+    7)   asanversion="4" ;;
+    8)   asanversion="5" ;;
+	9)   asanversion="6" ;;
+	*)   asanversion="0"
+esac
+if [ -f "/usr/bin/yum" ]; then
+    yum install -y valgrind libasan
+elif [ -f "/usr/bin/apt" ]; then
+    apt install -y valgrind libasan$asanversion
+fi
+
 # apt install -y upx-ucl
 UPX_ARCH=$architecture
 UPX_VER=3.96

@@ -180,6 +180,7 @@ public:
 	static void initLogging(const std::string &name);
 	static bool setLogLevel(const std::string &level);
 	static void initCpprestThreadPool(int threads);
+	static void stopCpprestThreadPool();
 
 	// OS related
 	static unsigned long long getThreadId();
