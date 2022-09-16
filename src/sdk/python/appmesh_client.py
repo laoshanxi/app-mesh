@@ -886,7 +886,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
 
 class AppMeshClientTCP(AppMeshClient):
-    """Client object used to access App Mesh REST Service"""
+    """Client object used to access App Mesh REST Service
+
+    Dependency:
+        pip3 install protobuf
+    """
 
     def __init__(
         self,

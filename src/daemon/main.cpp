@@ -125,10 +125,8 @@ int main(int argc, char *argv[])
 			{
 				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
 			}
-			Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
 			// start agent
-			auto app = Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false);
-			app->execute();
+			Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
 
 			// reg prometheus
 			config->registerPrometheus();
@@ -206,7 +204,6 @@ int main(int argc, char *argv[])
 	ACE_Reactor::instance()->end_reactor_event_loop();
 	for (const auto &t : m_threadPool)
 		t->join();
-	Utility::stopCpprestThreadPool();
 	LOG_INF << fname << "exited";
 	return 0;
 }

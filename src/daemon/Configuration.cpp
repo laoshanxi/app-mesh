@@ -792,9 +792,15 @@ const web::json::value Configuration::getAgentAppJson() const
 		cmd += std::string(" -rest_tcp_port ") + std::to_string(Configuration::instance()->getRestTcpPort()) +
 			   " -agent_url " + restUri.to_uri().to_string();
 	}
-	if (Configuration::instance()->getDockerProxyAddress().length())
+	if (Configuration::instance()->getDockerProxyAddress().length() &&
+		Utility::isFileExist("/var/run/docker.pid") &&
+		os::pstree(1)->contains(std::stoi(Utility::readFile("/var/run/docker.pid"))))
 	{
 		cmd += std::string(" -docker_agent_url ") + this->getDockerProxyAddress();
+	}
+	else
+	{
+		LOG_WAR << fname << "docker agent not enabled";
 	}
 	if (Configuration::instance()->prometheusEnabled())
 	{

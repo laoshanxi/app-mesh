@@ -154,8 +154,8 @@ if [ true ]; then
 	sh cmake-$version.$build-$os-x86_64.sh --prefix=/usr/local/ --skip-license
 fi
 
-#install fpm
-gem install fpm
+# install fpm
+gem install fpm || gem update --system && gem install fpm
 
 # build boost_1_74_0
 if [ true ]; then
@@ -263,9 +263,9 @@ fi
 
 cd $ROOTDIR
 # protocol buffer
-PROTOCOL_BUFFER_VER=3.19.3
 # https://developers.google.com/protocol-buffers
 if [ true ]; then
+	PROTOCOL_BUFFER_VER=3.19.5
 	# $WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip
 	# unzip protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip -d /usr/local/
 	$WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protobuf-cpp-${PROTOCOL_BUFFER_VER}.zip
