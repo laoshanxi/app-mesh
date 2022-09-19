@@ -101,22 +101,3 @@ jobs:
             LICENSE
             ubuntu*/*.deb
             ubuntu*/*.rpm
-
-      # #- name: wget
-      #  uses: wei/wget@v1
-      #  with:
-      #    args: -O ghr.tar.gz https://github.com/tcnksm/ghr/releases/download/v0.14.0/ghr_v0.14.0_linux_amd64.tar.gz
-      #- name: Publish Github release
-      #  run: |
-      #    mkdir artifacts
-      #    cp build*/appmesh*.deb artifacts/
-      #    cp build*/appmesh*.rpm artifacts/
-      #    cp Release.txt artifacts/
-      #    cp CHANGELOG.txt artifacts/
-      #    tar zxvf ghr.tar.gz
-      #    TITLE="Cloud feature enhancement"
-      #    CIRCLE_PROJECT_USERNAME=laoshanxi
-      #    CIRCLE_SHA1=main
-      #    VERSION=${{ env.APPMESH_VERSION }}
-      #    BODY="<br>1. API: get cloud application output from master node<br>2. 'appc' cache local token in json file<br>3. Generate password for 'admin' after installation<br>4. CLI return app exit code<br>5. HTTP head method<br>6. Add config: DisableExecUser<br>7. Support specify daemon exec user <br>8. SSL: VerifyPeer"
-      #    ghr_v0.14.0_linux_amd64/ghr -token ${{ secrets.PUBLISH_RELEASE }}  -debug -name "${TITLE}" -body "${BODY}" -commitish ${CIRCLE_SHA1} -replace -delete ${VERSION} ./artifacts/
