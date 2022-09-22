@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"net"
 	"net/url"
@@ -51,12 +52,12 @@ func readProtobufLoop() {
 		protocResponse := new(Response)
 		err = proto.Unmarshal(buf, protocResponse)
 		if err != nil {
-			log.Fatalf("Failed de-serialize protoc respon: %v", err)
+			log.Fatalf("Failed de-serialize protoc Response: %v", err)
 		}
 
 		// forward to channel and release map
 		if t, ok := requestMap.LoadAndDelete(protocResponse.GetUuid()); !ok {
-			log.Fatalf("Failed to found request ID <%s> to response", protocResponse.GetUuid())
+			log.Fatalf("Failed to found request ID <%s> to Response", protocResponse.GetUuid())
 		} else {
 			// notify
 			ch, _ := t.(chan *Response)
@@ -143,7 +144,7 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	ctx.Response.SetStatusCode(int(data.GetHttpStatus()))
 	// body
 	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && serveFile(ctx, data) {
-		ctx.Logger().Printf("File send finished")
+		ctx.Logger().Printf("File REST call Finished")
 	} else {
 		ctx.Response.SetBodyRaw([]byte(data.GetHttpBody()))
 		ctx.SetContentType(data.GetHttpBodyMsgType())
@@ -170,11 +171,12 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		return true
 	} else if ctx.Request.Header.IsPost() && string(ctx.Request.URI().Path()) == REST_PATH_UPLOAD && data.GetHttpStatus() == fasthttp.StatusOK {
 		// handle upload file
-		ctx.Logger().Printf("upload file")
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
+		ctx.Logger().Printf("uploading file: %s", filePath)
 		if err := saveFile(ctx, filePath); err != nil {
-			ctx.Error(err.Error(), fasthttp.StatusBadRequest)
+			ctx.Error(fmt.Sprintf(`{"message": "%s" }`, err.Error()), fasthttp.StatusBadRequest)
 		} else {
+			ctx.Logger().Printf("file saved: %s", filePath)
 			// https://www.jianshu.com/p/216cb89c4d81
 			mode, err := strconv.Atoi(string(ctx.Request.Header.Peek("File-Mode")))
 			if err == nil {

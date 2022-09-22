@@ -12,8 +12,6 @@ from http import HTTPStatus
 from urllib import parse
 from datetime import datetime
 import requests
-import Request_pb2
-import Response_pb2
 
 
 DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24)  # default 7 days
@@ -940,6 +938,9 @@ class AppMeshClientTCP(AppMeshClient):
         Returns:
             requests.Response: HTTP response
         """
+        import Request_pb2
+        import Response_pb2
+
         if super().jwt_token is not None:
             header["Authorization"] = "Bearer " + super().jwt_token
         if self.__socket_client is None:

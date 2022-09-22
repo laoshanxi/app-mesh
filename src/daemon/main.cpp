@@ -204,6 +204,7 @@ int main(int argc, char *argv[])
 	ACE_Reactor::instance()->end_reactor_event_loop();
 	for (const auto &t : m_threadPool)
 		t->join();
+	Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
 	return 0;
 }
