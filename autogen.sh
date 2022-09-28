@@ -89,6 +89,9 @@ case $(gcc -dumpversion) in
     7)   asanversion="4" ;;
     8)   asanversion="5" ;;
 	9)   asanversion="6" ;;
+	10)   asanversion="7" ;;
+	11)   asanversion="8" ;;
+	12)   asanversion="9" ;;
 	*)   asanversion="0"
 esac
 if [ -f "/usr/bin/yum" ]; then
@@ -163,7 +166,7 @@ if [ true ]; then
 	if [ -f "/usr/bin/yum" ]; then
 		yum install -y python2-devel
 	elif [ -f "/usr/bin/apt" ]; then
-		apt install -y python-dev
+		apt install -y python-dev || apt install -y python2-dev
 	fi
 	# https://www.boost.org/users/download/
 	$WGWT_A https://boostorg.jfrog.io/artifactory/main/release/1.74.0/source/boost_1_74_0.tar.gz
@@ -187,6 +190,20 @@ make -j6
 make install
 ls -al /usr/local/lib*/libcpprest.so
 cd $ROOTDIR
+
+# cpr
+# https://github.com/libcpr/cpr
+git clone --depth=1 -b 1.9.2 https://github.com/libcpr/cpr.git
+cd cpr && mkdir build && cd build
+cmake .. -DCPR_USE_SYSTEM_CURL=ON
+cmake --build .
+make install
+cd $ROOTDIR
+
+# json
+$WGWT_A https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip
+unzip -o include.zip
+mv include/nlohmann /usr/local/include/
 
 # build log4cpp:
 # https://my.oschina.net/u/1983790/blog/1587568

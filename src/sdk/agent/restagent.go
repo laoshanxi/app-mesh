@@ -198,9 +198,11 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	// https://freshman.tech/file-upload-golang/
 	if file, err := ctx.FormFile("file"); err == nil {
+		ctx.Logger().Printf("SaveMultipartFile: %s", filePath)
 		return fasthttp.SaveMultipartFile(file, filePath)
 	} else {
 		// compatibile with none-multipart upload
+		ctx.Logger().Printf("SaveFile: %s", filePath)
 		return os.WriteFile(filePath, ctx.Request.Body(), 0444)
 	}
 }

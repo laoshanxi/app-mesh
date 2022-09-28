@@ -9,6 +9,7 @@
 #include <boost/program_options.hpp>
 #include <cpprest/filestream.h>
 #include <cpprest/json.h>
+#include <cpr/cpr.h>
 
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
@@ -17,7 +18,6 @@
 #include "../common/os/chown.hpp"
 #include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
-#include "MultipartParser.h"
 #include "Password.h"
 
 #define OPTION_URL \
@@ -617,8 +617,8 @@ void ArgumentParser::processAppAdd()
 	if (m_commandLineVariables.count("pid"))
 		jsonObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + appName;
-	auto resp = requestHttp(true, methods::PUT, restPath, jsonObj);
-	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	auto resp = requestHttp(true, methods::PUT, restPath, &jsonObj);
+	std::cout << Utility::prettyJson(resp.text) << std::endl;
 }
 
 void ArgumentParser::processAppDel()
@@ -685,7 +685,7 @@ void ArgumentParser::processAppView()
 		if (!m_commandLineVariables.count("output"))
 		{
 			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
-			auto resp = requestHttp(true, methods::GET, restPath).extract_json().get();
+			auto resp = web::json::value::parse(requestHttp(true, methods::GET, restPath).text);
 			if (m_commandLineVariables.count("pstree"))
 			{
 				// view app process tree
@@ -717,13 +717,13 @@ void ArgumentParser::processAppView()
 			while (!exit)
 			{
 				query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
-				auto response = requestHttp(true, methods::GET, restPath, query);
-				std::cout << response.extract_utf8string(true).get();
+				auto response = requestHttp(true, methods::GET, restPath, nullptr, {}, query);
+				std::cout << response.text;
 				if (m_commandLineVariables.count("tail") == 0)
 					break;
-				outputPosition = response.headers().has(HTTP_HEADER_KEY_output_pos) ? std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
+				outputPosition = response.header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response.header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
 				// check continues failure
-				exit = response.headers().has(HTTP_HEADER_KEY_exit_code);
+				exit = response.header.count(HTTP_HEADER_KEY_exit_code);
 				if (!exit)
 					std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			}
@@ -733,7 +733,7 @@ void ArgumentParser::processAppView()
 	{
 		std::string restPath = "/appmesh/applications";
 		auto response = requestHttp(true, methods::GET, restPath);
-		printApps(response.extract_json(true).get(), reduce);
+		printApps(web::json::value::parse(response.text), reduce);
 	}
 }
 
@@ -753,7 +753,7 @@ void ArgumentParser::processCloudAppView()
 		restPath = std::string("/appmesh/cloud/app/").append(m_commandLineVariables["name"].as<std::string>());
 	}
 	auto resp = requestHttp(true, methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	std::cout << Utility::prettyJson(resp.text) << std::endl;
 }
 
 void ArgumentParser::processCloudNodesView()
@@ -766,7 +766,7 @@ void ArgumentParser::processCloudNodesView()
 
 	std::string restPath = "/appmesh/cloud/nodes";
 	auto resp = requestHttp(true, methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	std::cout << Utility::prettyJson(resp.text) << std::endl;
 }
 
 void ArgumentParser::processResource()
@@ -780,7 +780,7 @@ void ArgumentParser::processResource()
 
 	std::string restPath = "/appmesh/resources";
 	auto resp = requestHttp(true, methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	std::cout << Utility::prettyJson(resp.text) << std::endl;
 }
 
 void ArgumentParser::processAppControl(bool start)
@@ -929,19 +929,19 @@ int ArgumentParser::processAppRun()
 		// Use syncrun directly
 		// /app/syncrun?timeout=5
 		std::string restPath = "/appmesh/app/syncrun";
-		auto response = requestHttp(true, methods::POST, restPath, query, &jsonObj);
-		std::cout << response.extract_utf8string(true).get();
-		returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
+		auto response = requestHttp(true, methods::POST, restPath, &jsonObj, {}, query);
+		std::cout << response.text;
+		returnCode = response.header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 	}
 	else
 	{
 		// Use run and output
 		// /app/run?timeout=5
 		std::string restPath = "/appmesh/app/run";
-		auto response = requestHttp(true, methods::POST, restPath, query, &jsonObj);
-		auto result = response.extract_json(true).get();
-		auto appName = result[JSON_KEY_APP_name].as_string();
-		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
+		auto response = requestHttp(true, methods::POST, restPath, &jsonObj, {}, query);
+		auto result = nlohmann::json::parse(response.text);
+		auto appName = result[JSON_KEY_APP_name].get<std::string>();
+		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].get<std::string>();
 		std::atomic<int> continueFailure(0);
 		long outputPosition = 0;
 		while (process_uuid.length() && continueFailure < 3)
@@ -952,20 +952,20 @@ int ArgumentParser::processAppRun()
 			query[HTTP_QUERY_KEY_process_uuid] = process_uuid;
 			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1); // wait max 1 second in server side
-			response = requestHttp(false, methods::GET, restPath, query);
-			std::cout << response.extract_utf8string(true).get();
-			outputPosition = response.headers().has(HTTP_HEADER_KEY_output_pos) ? std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
-			returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
+			response = requestHttp(false, methods::GET, restPath, nullptr, {}, query);
+			std::cout << response.text;
+			outputPosition = response.header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response.header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
+			returnCode = response.header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 
 			// check continues failure
-			if (response.status_code() != http::status_codes::OK && !response.headers().has(HTTP_HEADER_KEY_exit_code))
+			if (response.status_code != http::status_codes::OK && 0 == response.header.count(HTTP_HEADER_KEY_exit_code))
 			{
 				continueFailure++;
 				std::this_thread::sleep_for(std::chrono::milliseconds(500));
 				continue;
 			}
 
-			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
+			if (response.header.count(HTTP_HEADER_KEY_exit_code) || response.status_code != http::status_codes::OK)
 			{
 				break;
 			}
@@ -974,9 +974,9 @@ int ArgumentParser::processAppRun()
 		// delete
 		restPath = std::string("/appmesh/app/").append(appName);
 		response = requestHttp(false, methods::DEL, restPath);
-		if (response.status_code() != status_codes::OK)
+		if (response.status_code != status_codes::OK)
 		{
-			std::cerr << response.extract_utf8string(true).get() << std::endl;
+			std::cerr << response.text << std::endl;
 		}
 	}
 	return returnCode;
@@ -1004,26 +1004,29 @@ void SIGINT_Handler(int signo)
 	}
 }
 
-std::string ArgumentParser::parseOutputMessage(http_response &resp)
+std::string ArgumentParser::parseOutputMessage(cpr::Response &resp)
 {
-	std::string result;
 	try
 	{
-		auto respJson = resp.extract_json().get();
-		if (HAS_JSON_FIELD(respJson, REST_TEXT_MESSAGE_JSON_KEY))
+		auto output = resp.text;
+		if (output.empty() && resp.status_code != 200)
+			return resp.error.message;
+		if (output.empty())
+			return std::string();
+		auto respJson = nlohmann::json::parse(resp.text);
+		if (respJson.contains(REST_TEXT_MESSAGE_JSON_KEY))
 		{
-			result = respJson.at(REST_TEXT_MESSAGE_JSON_KEY).as_string();
+			return respJson.at(REST_TEXT_MESSAGE_JSON_KEY).get<std::string>();
 		}
 		else
 		{
-			result = Utility::prettyJson(respJson.serialize());
+			return Utility::prettyJson(resp.text);
 		}
 	}
-	catch(...)
+	catch (...)
 	{
-		result = resp.extract_utf8string().get();
 	}
-	return result;
+	return resp.text;
 }
 
 void ArgumentParser::regSignal()
@@ -1095,11 +1098,11 @@ int ArgumentParser::processExec()
 		runOnce = true;
 		std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
 		std::string restPath = "/appmesh/app/run";
-		auto response = requestHttp(false, methods::POST, restPath, query, &jsonObj);
-		if (response.status_code() == http::status_codes::OK)
+		auto response = requestHttp(false, methods::POST, restPath, &jsonObj, {}, query);
+		if (response.status_code == http::status_codes::OK)
 		{
-			auto result = response.extract_json(true).get();
-			process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
+			auto result = nlohmann::json::parse(response.text);
+			process_uuid = result[HTTP_QUERY_KEY_process_uuid].get<std::string>();
 			currentRunFinished = false;
 		}
 		else
@@ -1134,11 +1137,11 @@ int ArgumentParser::processExec()
 				jsonObj[JSON_KEY_APP_command] = web::json::value::string(input);
 				std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
 				std::string restPath = "/appmesh/app/run";
-				auto response = requestHttp(false, methods::POST, restPath, query, &jsonObj);
-				if (response.status_code() == http::status_codes::OK)
+				auto response = requestHttp(false, methods::POST, restPath, &jsonObj, {}, query);
+				if (response.status_code == http::status_codes::OK)
 				{
-					auto result = response.extract_json(true).get();
-					process_uuid = result[HTTP_QUERY_KEY_process_uuid].as_string();
+					auto result = nlohmann::json::parse(response.text);
+					process_uuid = result[HTTP_QUERY_KEY_process_uuid].get<std::string>();
 					currentRunFinished = false;
 				}
 				else
@@ -1147,7 +1150,7 @@ int ArgumentParser::processExec()
 					currentRunFinished = true;
 					process_uuid.clear();
 				}
-				returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
+				returnCode = response.header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 				// always exit loop when get one input
 				break;
 			}
@@ -1158,11 +1161,11 @@ int ArgumentParser::processExec()
 		{
 			std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_process_uuid, process_uuid}, {HTTP_QUERY_KEY_stdout_position, std::to_string(outputPosition)}};
 			auto restPath = Utility::stringFormat("/appmesh/app/%s/output", APPC_EXEC_APP_NAME.c_str());
-			auto response = requestHttp(false, methods::GET, restPath, query);
-			std::cout << response.extract_utf8string(true).get();
-			outputPosition = response.headers().has(HTTP_HEADER_KEY_output_pos) ? std::atol(response.headers().find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
-			returnCode = response.headers().has(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.headers().find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
-			if (response.headers().has(HTTP_HEADER_KEY_exit_code) || response.status_code() != http::status_codes::OK)
+			auto response = requestHttp(false, methods::GET, restPath, nullptr, {}, query);
+			std::cout << nlohmann::json::parse(response.text);
+			outputPosition = response.header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response.header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
+			returnCode = response.header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response.header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
+			if (response.header.count(HTTP_HEADER_KEY_exit_code) || response.status_code != http::status_codes::OK)
 			{
 				currentRunFinished = true;
 				process_uuid.clear();
@@ -1183,10 +1186,7 @@ void ArgumentParser::processFileDownload()
 {
 	po::options_description desc("Download file:", BOOST_DESC_WIDTH);
 	desc.add_options()
-		COMMON_OPTIONS
-		("remote,r", po::value<std::string>(), "remote file path to download")
-		("local,l", po::value<std::string>(), "local file path to save")
-		("help,h", "Prints command usage to stdout and exits");
+		COMMON_OPTIONS("remote,r", po::value<std::string>(), "remote file path to download")("local,l", po::value<std::string>(), "local file path to save")("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1199,21 +1199,24 @@ void ArgumentParser::processFileDownload()
 	std::string restPath = "/appmesh/file/download";
 	auto file = m_commandLineVariables["remote"].as<std::string>();
 	auto local = m_commandLineVariables["local"].as<std::string>();
-	std::map<std::string, std::string> query, headers;
-	headers[HTTP_HEADER_KEY_file_path] = file;
-	auto response = requestHttp(true, methods::GET, restPath, query, nullptr, headers);
 
-	auto stream = concurrency::streams::fstream::open_ostream(local, std::ios::out | std::ios::binary | std::ios::trunc).get();
-	response.body().read_to_end(stream.streambuf()).wait();
+	std::ofstream stream(local, std::ios::binary | std::ios::trunc);
+	// header
+	cpr::Header cprHeader;
+	cprHeader.insert({HTTP_HEADER_KEY_file_path, file});
+	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
+	cpr::SslOptions sslOpts;
+	sslOpts.verify_host = false;
+	sslOpts.verify_peer = false;
+	auto response = cpr::Download(stream, cpr::Url{m_url, restPath}, cprHeader, sslOpts);
 
-	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.streambuf().size()) << ">" << std::endl;
-	stream.close();
+	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.tellp()) << ">" << std::endl;
 
-	if (response.headers().has(HTTP_HEADER_KEY_file_mode))
-		os::fileChmod(local, std::stoi(response.headers().find(HTTP_HEADER_KEY_file_mode)->second));
-	if (response.headers().has(HTTP_HEADER_KEY_file_user) && response.headers().has(HTTP_HEADER_KEY_file_group))
-		os::chown(std::stoi(response.headers().find(HTTP_HEADER_KEY_file_user)->second),
-				  std::stoi(response.headers().find(HTTP_HEADER_KEY_file_group)->second),
+	if (response.header.count(HTTP_HEADER_KEY_file_mode))
+		os::fileChmod(local, std::stoi(response.header.find(HTTP_HEADER_KEY_file_mode)->second));
+	if (response.header.count(HTTP_HEADER_KEY_file_user) && response.header.count(HTTP_HEADER_KEY_file_group))
+		os::chown(std::stoi(response.header.find(HTTP_HEADER_KEY_file_user)->second),
+				  std::stoi(response.header.find(HTTP_HEADER_KEY_file_group)->second),
 				  local, false);
 }
 
@@ -1242,62 +1245,30 @@ void ArgumentParser::processFileUpload()
 		std::cout << "local file not exist" << std::endl;
 		return;
 	}
+	local = boost::filesystem::canonical(local).string();
 	std::string restPath = "/appmesh/file/upload";
-	auto fileStream = std::make_shared<concurrency::streams::ostream>();
-	// Open stream to output file.
-	pplx::task<void> requestTask = concurrency::streams::fstream::open_ostream(local).then([=](concurrency::streams::ostream outFile)
-																						   {
-        *fileStream = outFile;
-		auto fileInfo = os::fileStat(local);
+	auto fileInfo = os::fileStat(local);
 
-		std::map<std::string, std::string> query, header;
-		header[HTTP_HEADER_KEY_file_path] = file;
-		header[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
-		header[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
-		header[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
+	// header
+	cpr::Header cprHeader;
+	cprHeader.insert({HTTP_HEADER_KEY_file_path, file});
+	cprHeader.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
+	cprHeader.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
+	cprHeader.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
+	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
+	cpr::SslOptions sslOpts;
+	sslOpts.verify_host = false;
+	sslOpts.verify_peer = false;
+	cpr::Multipart cprMultipart{{"filename", boost::filesystem::path(local).filename().string()}, {"file", cpr::File(local)}};
+	auto response = cpr::Post(cpr::Url{m_url, restPath}, sslOpts, cprHeader, cprMultipart, cpr::Timeout{1000});
 
-		// https://github.com/AndsonYe/MultipartEncoder
-		// Use MultipartParser to get the encoded body content and boundary
-		MultipartParser parser;
-		parser.AddParameter("Filename", boost::filesystem::path(local).filename().string());
-		parser.AddFile("file", local);
-		std::string boundary = parser.boundary();
-		std::string body = parser.GenBodyContent();
-
-		// Create http_client to send the request.
-		web::http::client::http_client_config config;
-		config.set_timeout(std::chrono::seconds(200)); // default is 30 seconds
-		config.set_validate_certificates(false);
-		web::http::client::http_client client(m_url, config);
-		http_request request = createRequest(web::http::methods::POST, restPath, query, header);
-		 request.set_body(body, "multipart/form-data; boundary=" + boundary);
-        return client.request(request); })
-									   .then([=](pplx::task<http_response> response_task)
-											 {
-        web::http::http_response response = response_task.get();
-
-		if (response.headers().has(HTTP_HEADER_KEY_file_mode))
-			os::fileChmod(local, std::stoi(response.headers().find(HTTP_HEADER_KEY_file_mode)->second));
-		if (response.headers().has(HTTP_HEADER_KEY_file_user) && response.headers().has(HTTP_HEADER_KEY_file_group))
-			os::chown(std::stoi(response.headers().find(HTTP_HEADER_KEY_file_user)->second),
-					  std::stoi(response.headers().find(HTTP_HEADER_KEY_file_group)->second),
-					  local, false);
-
-		return response.body().read_to_end(fileStream->streambuf()); })
-									   .then([=](size_t)
-											 {
-												std::cout << "Uploaded file <" << local  << ">" << std::endl;
-												return fileStream->close(); });
-
-	// Wait for all the outstanding I/O to complete and handle any exceptions
-	try
-	{
-		requestTask.wait();
-	}
-	catch (const std::exception &e)
-	{
-		throw;
-	}
+	if (response.header.count(HTTP_HEADER_KEY_file_mode))
+		os::fileChmod(local, std::stoi(response.header.find(HTTP_HEADER_KEY_file_mode)->second));
+	if (response.header.count(HTTP_HEADER_KEY_file_user) && response.header.count(HTTP_HEADER_KEY_file_group))
+		os::chown(std::stoi(response.header.find(HTTP_HEADER_KEY_file_user)->second),
+				  std::stoi(response.header.find(HTTP_HEADER_KEY_file_group)->second),
+				  local, false);
+	std::cout << "Uploaded file <" << local << ">" << std::endl;
 }
 
 void ArgumentParser::processTags()
@@ -1333,7 +1304,7 @@ void ArgumentParser::processTags()
 			{
 				std::string restPath = std::string("/appmesh/label/").append(envVec.at(0));
 				std::map<std::string, std::string> query = {{"value", envVec.at(1)}};
-				requestHttp(true, methods::PUT, restPath, query);
+				requestHttp(true, methods::PUT, restPath, nullptr, {}, query);
 			}
 		}
 	}
@@ -1365,12 +1336,12 @@ void ArgumentParser::processTags()
 	}
 
 	std::string restPath = "/appmesh/labels";
-	http_response response = requestHttp(true, methods::GET, restPath);
+	auto response = requestHttp(true, methods::GET, restPath);
 	// Finally print current
-	auto tags = response.extract_json().get().as_object();
-	for (auto &tag : tags)
+	auto tags = nlohmann::json::parse(response.text);
+	for (auto &tag : tags.items())
 	{
-		std::cout << tag.first << "=" << tag.second.as_string() << std::endl;
+		std::cout << tag.key() << "=" << tag.value() << std::endl;
 	}
 }
 
@@ -1396,8 +1367,8 @@ void ArgumentParser::processLoglevel()
 	jsonObj[JSON_KEY_LogLevel] = web::json::value::string(level);
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
-	auto response = requestHttp(true, methods::POST, restPath, jsonObj);
-	std::cout << "Log level set to: " << response.extract_json(true).get().at(JSON_KEY_LogLevel).as_string() << std::endl;
+	auto response = requestHttp(true, methods::POST, restPath, &jsonObj);
+	std::cout << "Log level set to: " << nlohmann::json::parse(response.text).at(JSON_KEY_LogLevel).get<std::string>() << std::endl;
 }
 
 void ArgumentParser::processCloudJoinMaster()
@@ -1437,8 +1408,9 @@ void ArgumentParser::processCloudJoinMaster()
 
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
-	auto response = requestHttp(true, methods::POST, restPath, jsonObj);
-	std::cout << "App Mesh will join cluster with parameter: " << std::endl << Utility::prettyJson(response.extract_json(true).get().at(JSON_KEY_CONSUL).serialize()) << std::endl;
+	auto response = requestHttp(true, methods::POST, restPath, &jsonObj);
+	std::cout << "App Mesh will join cluster with parameter: " << std::endl
+			  << nlohmann::json::parse(response.text).at(JSON_KEY_CONSUL).dump(2, ' ') << std::endl;
 }
 
 void ArgumentParser::processConfigView()
@@ -1452,8 +1424,8 @@ void ArgumentParser::processConfigView()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = "/appmesh/config";
-	http_response resp = requestHttp(true, methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp.extract_json(true).get().serialize()) << std::endl;
+	auto resp = requestHttp(true, methods::GET, restPath);
+	std::cout << Utility::prettyJson(resp.text) << std::endl;
 }
 
 void ArgumentParser::processUserChangePwd()
@@ -1479,7 +1451,7 @@ void ArgumentParser::processUserChangePwd()
 	std::string restPath = std::string("/appmesh/user/") + user + "/passwd";
 	std::map<std::string, std::string> query, headers;
 	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
-	http_response response = requestHttp(true, methods::POST, restPath, query, nullptr, headers);
+	auto response = requestHttp(true, methods::POST, restPath, nullptr, headers, query);
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
@@ -1504,7 +1476,7 @@ void ArgumentParser::processUserLock()
 	auto lock = !m_commandLineVariables["lock"].as<bool>();
 
 	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
-	http_response response = requestHttp(true, methods::POST, restPath);
+	auto response = requestHttp(true, methods::POST, restPath);
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
@@ -1519,7 +1491,7 @@ void ArgumentParser::processUserView()
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	std::string restPath = m_commandLineVariables.count("all") ? "/appmesh/users" : "/appmesh/user/self";
-	http_response response = requestHttp(true, methods::GET, restPath);
+	auto response = requestHttp(true, methods::GET, restPath);
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
@@ -1573,9 +1545,9 @@ void ArgumentParser::processUserMfaActive()
 		if (this->confirmInput(Utility::stringFormat("Do you want active 2FA for <%s>: ", userName.c_str()).c_str()))
 		{
 			std::string restPath = std::string("/appmesh/user/self/mfa");
-			http_response response = requestHttp(true, methods::POST, restPath);
-			auto result = response.extract_json().get();
-			auto totpUri = Utility::decode64(GET_JSON_STR_VALUE(result, HTTP_BODY_KEY_MFA_URI));
+			auto response = requestHttp(true, methods::POST, restPath);
+			auto result = nlohmann::json::parse(response.text);
+			auto totpUri = Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
 
 			const auto totpCmd = std::string("/opt/appmesh/bin/qrc '").append(totpUri).append("'");
 			system(totpCmd.c_str());
@@ -1586,7 +1558,7 @@ void ArgumentParser::processUserMfaActive()
 		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s>: ", userName.c_str()).c_str()))
 		{
 			std::string restPath = std::string("/appmesh/user/") + userName + "/mfa";
-			http_response response = requestHttp(true, methods::DEL, restPath);
+			auto response = requestHttp(true, methods::DEL, restPath);
 			std::cout << parseOutputMessage(response) << std::endl;
 		}
 	}
@@ -1638,56 +1610,53 @@ bool ArgumentParser::confirmInput(const char *msg)
 	return result == "y";
 }
 
-http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path)
+cpr::Response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
-	std::map<std::string, std::string> query;
-	return requestHttp(throwAble, mtd, path, query);
-}
-
-http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value &body)
-{
-	std::map<std::string, std::string> query;
-	return requestHttp(throwAble, mtd, path, query, &body);
-}
-
-http_response ArgumentParser::requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body, std::map<std::string, std::string> header)
-{
-	// Create http_client to send the request.
-	web::http::client::http_client_config config;
-	config.set_timeout(std::chrono::seconds(60)); // default is 30 seconds
-	config.set_validate_certificates(false);
-	web::http::client::http_client client(m_url, config);
-	http_request request = createRequest(mtd, path, query, header);
-	if (body != nullptr)
-	{
-		request.set_body(*body);
-	}
-	http_response response = client.request(request).get();
-	if (throwAble && response.status_code() != status_codes::OK)
-	{
-		throw std::invalid_argument(parseOutputMessage(response));
-	}
-	return response;
-}
-
-http_request ArgumentParser::createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> &headers)
-{
-	// Build request URI and start the request.
-	uri_builder builder(GET_STRING_T(path));
-	std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair)
-				  { builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second)); });
-
-	http_request request(mtd);
-
-	// headers
-	for (const auto &h : headers)
-		request.headers().add(h.first, h.second);
+	// query
+	cpr::Header cprHeader;
+	for (const auto &h : header)
+		cprHeader.insert({h.first, h.second});
 	if (m_jwtToken.empty())
 		m_jwtToken = getAuthenToken();
-	request.headers().add(HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken);
+	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken});
 
-	request.set_request_uri(builder.to_uri());
-	return request;
+	// header
+	cpr::Parameters cprParam;
+	for (const auto &q : query)
+		cprParam.Add({q.first, q.second});
+
+	cpr::Body cprBody;
+	if (body)
+	{
+		cprBody = body->serialize();
+		cprHeader.insert({"Content-Type", "application/json"});
+	}
+
+	cpr::SslOptions sslOpts;
+	sslOpts.verify_host = false;
+	sslOpts.verify_peer = false;
+	cpr::Response resp;
+	if (mtd == "GET")
+	{
+		resp = cpr::Get(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam);
+	}
+	else if (mtd == "POST")
+	{
+		resp = cpr::Post(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam, cprBody);
+	}
+	else if (mtd == "PUT")
+	{
+		resp = cpr::Put(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam, cprBody);
+	}
+	else if (mtd == "DELETE")
+	{
+		resp = cpr::Delete(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam);
+	}
+	if (throwAble && resp.status_code != 200)
+	{
+		throw std::invalid_argument(parseOutputMessage(resp));
+	}
+	return resp;
 }
 
 bool ArgumentParser::isAppExist(const std::string &appName)
@@ -1701,12 +1670,10 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	std::map<std::string, bool> apps;
 	std::string restPath = "/appmesh/applications";
 	auto response = requestHttp(true, methods::GET, restPath);
-	auto jsonValue = response.extract_json(true).get();
-	auto arr = jsonValue.as_array();
-	for (auto iter = arr.begin(); iter != arr.end(); iter++)
+	auto jsonValue = nlohmann::json::parse(response.text);
+	for (const auto &appJson : jsonValue.array())
 	{
-		auto jsonObj = *iter;
-		apps[GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name)] = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status) == 1;
+		apps[appJson[JSON_KEY_APP_name].get<std::string>()] = (1 == appJson[JSON_KEY_APP_status].get<int>());
 	}
 	return apps;
 }
@@ -1835,27 +1802,23 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 
 std::string ArgumentParser::requestToken(const std::string &user, const std::string &passwd, const std::string &totp)
 {
-	http_client_config config;
-	config.set_validate_certificates(false);
-	http_client client(m_url, config);
-	http_request requestLogin(web::http::methods::POST);
+	// header
+	cpr::Header cprHeader;
+	cprHeader.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
+	cprHeader.insert({HTTP_HEADER_JWT_password, Utility::encode64(passwd)});
+	cprHeader.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+	if (m_tokenTimeoutSeconds > 0)
+		cprHeader.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 
-	requestLogin.set_request_uri("/appmesh/login");
-	requestLogin.headers().add(HTTP_HEADER_JWT_username, Utility::encode64(user));
-	requestLogin.headers().add(HTTP_HEADER_JWT_password, Utility::encode64(passwd));
-	requestLogin.headers().add(HTTP_HEADER_JWT_totp, Utility::encode64(totp));
-	if (m_tokenTimeoutSeconds)
-		requestLogin.headers().add(HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds));
-	http_response response = client.request(requestLogin).get();
-	if (response.status_code() != status_codes::OK)
+	cpr::SslOptions sslOpts;
+	sslOpts.verify_host = false;
+	sslOpts.verify_peer = false;
+	auto response = cpr::Post(cpr::Url{m_url, "/appmesh/login"}, sslOpts, cprHeader);
+	if (response.status_code != status_codes::OK)
 	{
 		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(response).c_str()));
 	}
-	else
-	{
-		auto jwtContent = response.extract_json(true).get();
-		return GET_JSON_STR_VALUE(jwtContent, HTTP_HEADER_JWT_access_token);
-	}
+	return nlohmann::json::parse(response.text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
 }
 
 void ArgumentParser::printApps(web::json::value json, bool reduce)
@@ -1963,8 +1926,7 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 						  }
 						  std::cout << jsonObj.at(JSON_KEY_APP_command);
 					  }
-					  std::cout << std::endl;
-				  });
+					  std::cout << std::endl; });
 }
 
 void ArgumentParser::shiftCommandLineArgs(po::options_description &desc)

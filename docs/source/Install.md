@@ -16,11 +16,11 @@ Install App Mesh as standalone mode on local node without GUI service by release
 
 ```text
 # centos
-sudo yum install appmesh_2.1.0_gcc_9_glibc_2.31_x86_64.rpm
+sudo yum install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 # ubuntu
-sudo apt install appmesh_2.1.0_gcc_7_glibc_2.27_x86_64.deb
+sudo apt install appmesh_2.1.1_gcc_7_glibc_2.27_x86_64.deb
 # SUSE
-sudo zypper install appmesh_2.1.0_gcc_9_glibc_2.31_x86_64.rpm
+sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 ```
 
 Start service:
@@ -35,7 +35,7 @@ $ systemctl status appmesh
 Deploy Web UI (access https://host-name)
 ```
 appc logon -u admin -x admin123
-appc reg -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -d laoshanxi/appmesh-ui:2.1.0 -f
+appc reg -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -d laoshanxi/appmesh-ui:2.1.1 -f
 ```
 
 Note:
@@ -105,7 +105,7 @@ When installed a new App Mesh node and want to connect to existing cluster, just
     "Url": "https://192.168.3.1",
   }
 ```
-If App Mesh is running in Docker container, need mount `/opt/appmesh/config.json` out of container to persist the configuration. After configuration change, just restart App Mesh container. 
+If App Mesh is running in Docker container, need mount `/opt/appmesh/config.json` out of container to persist the configuration. After configuration change, just restart App Mesh container.
 
 #### Option 2: Update from UI
 All configuration update from UI support hot-update, no need restart App Mesh process to take effect. Click `Configuration` -> `Consul` and set `Consul URL`, Click `Submit` to take effect.
