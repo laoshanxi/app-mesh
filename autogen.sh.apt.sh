@@ -46,6 +46,19 @@ apt install -y libcrypto++-dev
 apt install -y golang-cfssl
 apt install -y upx-ucl
 
+# cpr
+# https://github.com/libcpr/cpr
+git clone --depth=1 -b 1.9.2 https://github.com/libcpr/cpr.git
+cd cpr && mkdir build && cd build
+cmake .. -DCPR_USE_SYSTEM_CURL=ON
+cmake --build .
+make install
+
+# json
+wget https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip
+unzip -o include.zip
+mv include/nlohmann /usr/local/include/
+
 # qr code
 wget --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_amd64
 chmod +x qrc && mv qrc /usr/bin/

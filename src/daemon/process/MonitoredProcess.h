@@ -18,7 +18,7 @@ public:
 	virtual ~MonitoredProcess();
 
 	// overwrite ACE_Process spawn method
-	virtual pid_t spawn(ACE_Process_Options &options);
+	virtual pid_t spawn(ACE_Process_Options &options) override;
 	void setAsyncHttpRequest(void *httpRequest) { m_httpRequest = httpRequest; }
 	void replyAsyncRequest();
 

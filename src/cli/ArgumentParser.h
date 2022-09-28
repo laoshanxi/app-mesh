@@ -6,6 +6,7 @@
 #include <boost/program_options.hpp>
 #include <cpprest/http_client.h>
 #include <cpprest/json.h>
+#include <cpr/cpr.h>
 
 using namespace web;				  // Common features like URIs.
 using namespace web::http;			  // Common HTTP functionality
@@ -60,10 +61,7 @@ private:
 	void initRadomPassword();
 
 public:
-	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path);
-	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value &body);
-	http_response requestHttp(bool throwAble, const method &mtd, const std::string &path, std::map<std::string, std::string> &query, web::json::value *body = nullptr, std::map<std::string, std::string> header = {});
-	http_request createRequest(const method &mtd, const std::string &path, std::map<std::string, std::string> &query, std::map<std::string, std::string> &headers);
+	cpr::Response requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
 private:
 	std::string getAuthenToken();
@@ -82,7 +80,7 @@ private:
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();
 	void unregSignal();
-	std::string parseOutputMessage(http_response &resp);
+	std::string parseOutputMessage(cpr::Response &resp);
 	const std::string getAppMeshUrl();
 
 private:

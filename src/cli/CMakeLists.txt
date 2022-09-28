@@ -15,6 +15,7 @@ target_link_libraries(appc
     boost_program_options
     cpprest
     common
+	cpr
 )
 
 ##########################################################################

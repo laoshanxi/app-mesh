@@ -21,11 +21,11 @@
 #include <log4cpp/PatternLayout.hh>
 #include <log4cpp/Priority.hh>
 #include <log4cpp/RollingFileAppender.hh>
+#include <nlohmann/json.hpp>
 #include <pplx/threadpool.h>
 
 #include "DateTime.h"
 #include "Utility.h"
-#include "json.hpp"
 #include "os/chown.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)

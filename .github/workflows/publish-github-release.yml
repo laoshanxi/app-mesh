@@ -15,7 +15,7 @@ on:
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: docker.io
-  APPMESH_VERSION: "2.1.0"
+  APPMESH_VERSION: "2.1.1"
 
 jobs:
   build-and-push-image:
@@ -33,15 +33,15 @@ jobs:
 
       # https://github.com/marketplace/actions/docker-run-action
       # docker run --rm -v $(pwd):/workspace -w /workspace laoshanxi/appmesh:build_centos7 sh -c "mkdir build7;cd build7;cmake ..;make -j6;make pack;make test ARGS='-V'"
-      - name: build with ubuntu16
+      - name: build with ubuntu22
         uses: addnab/docker-run-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          image: laoshanxi/appmesh:build_ubuntu16
+          image: laoshanxi/appmesh:build_ubuntu22
           options: --rm -v ${{ github.workspace }}:/workspace -w /workspace
           run: |
-            mkdir ubuntu16
-            cd ubuntu16
+            mkdir ubuntu22
+            cd ubuntu22
             cmake ..
             make -j6
             make pack
@@ -80,9 +80,7 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. Golang re-write REST agent" >> CHANGELOG.txt
-          echo "2. env APPMESH_POSIX_TIMEZONE for specify timezone for cli/server" >> CHANGELOG.txt
-          echo "2. Support Grafana SimpleJson data source" >> CHANGELOG.txt
+          echo "1. libcpr replace cpprestsdk" >> CHANGELOG.txt
 
       # publish Github release
       # https://github.com/softprops/action-gh-release
@@ -90,7 +88,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           body_path: CHANGELOG.txt
-          name: "Golang REST agent"
+          name: "SDK & Network improvements"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: true
           # note you'll typically need to create a personal access token

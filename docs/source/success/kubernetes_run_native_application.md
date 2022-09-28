@@ -17,7 +17,7 @@ This Docker image `laoshanxi/appmesh_agent` is used to forward container start c
 $ tee Dockerfile <<-'EOF'
 FROM ubuntu
 
-ENV APP_MESH_VER=2.1.0
+ENV APP_MESH_VER=2.1.1
 
 RUN apt update && apt install wget net-tools -y && \
     wget  https://github.com/laoshanxi/app-mesh/releases/download/${APP_MESH_VER}/appmesh_${APP_MESH_VER}_amd64.deb && \
@@ -51,7 +51,7 @@ spec:
       restartPolicy: Never
 EOF
 
-$ kubectl apply -f myjob.yml 
+$ kubectl apply -f myjob.yml
 job.batch/myjob created
 
 $ kubectl get pods
@@ -60,7 +60,7 @@ myjob-vtc8h   0/1     Completed   0          8s
 
 $ kubectl logs myjob-vtc8h
 CONTAINER ID        IMAGE                                                 COMMAND                  CREATED                  STATUS                  PORTS                                                                                                       NAMES
-805dc03c3433        laoshanxi/appmesh_agent                               "python3 /opt/appmes…"   Less than a second ago   Up Less than a second 
+805dc03c3433        laoshanxi/appmesh_agent                               "python3 /opt/appmes…"   Less than a second ago   Up Less than a second
                      k8s_native-cmd-test_myjob-rp6gp_default_473ca690-c685-4d97-b135-499b40c7ad24_0
 3e482b6cf175        registry.aliyuncs.com/google_containers/pause:3.4.1   "/pause"                 8 seconds ago            Up 8 seconds                                                                                                                        k8s_POD_myjob-rp6gp_default_473ca690-c685-4d97-b135-499b40c7ad24_0
 69cd63beddf3        kubernetesui/dashboard                                "/dashboard --insecu…"   3 hours ago              Up 3 hours                                                                                                                          k8s_kubernetes-dashboard_kubernetes-dashboard-1621683118-6dfd7fb446-hbhbj_kube-system_0adaa5dd-e5aa-46d1-9855-ac9fde6afe27_0
