@@ -185,7 +185,7 @@ git clone --depth=1 -b 2.10.18 https://github.com/microsoft/cpprestsdk.git cppre
 cd cpprestsdk
 git submodule update --init
 cd Release
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers"
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers -Wno-format-truncation"
 make -j6
 make install
 ls -al /usr/local/lib*/libcpprest.so
