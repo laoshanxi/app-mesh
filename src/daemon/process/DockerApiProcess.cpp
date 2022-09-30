@@ -1,6 +1,7 @@
 #include <thread>
 
-#include <cpprest/http_client.h>
+#include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
@@ -40,9 +41,9 @@ void DockerApiProcess::killgroup(int timerId)
 		{
 			// DELETE /containers/{id}?force=true
 			auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
-			if (resp.status_code() >= web::http::status_codes::BadRequest)
+			if (resp->status_code >= web::http::status_codes::BadRequest)
 			{
-				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp.extract_utf8string().get() << ">";
+				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp->text << ">";
 			}
 		}
 		catch (const std::exception &e)
@@ -60,7 +61,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	LOG_DBG << fname << "Entered";
 
 	// GET /images/{name}/json
-	if (this->requestDocker(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr).status_code() != web::http::status_codes::OK)
+	if (this->requestDocker(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr)->status_code != web::http::status_codes::OK)
 	{
 		// pull docker image
 		return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
@@ -93,9 +94,9 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerDelete
 	// DELETE /containers/{id}?force=true
 	auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}}, {}, nullptr);
-	if (resp.status_code() >= web::http::status_codes::BadRequest)
+	if (resp->status_code >= web::http::status_codes::BadRequest)
 	{
-		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp.extract_utf8string().get() << ">";
+		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp->text << ">";
 	}
 
 	if (!stdinFileContent.is_object())
@@ -134,19 +135,19 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	// POST /containers/create
 	LOG_DBG << fname << "Create Container: " << createBody.serialize();
 	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
-	if (resp.status_code() == web::http::status_codes::Created)
+	if (resp->status_code == web::http::status_codes::Created)
 	{
-		this->containerId(resp.extract_json().get().at("Id").as_string());
+		this->containerId(nlohmann::json::parse(resp->text).at("Id").get<std::string>());
 
 		// POST /containers/{id}/start
 		resp = this->requestDocker(web::http::methods::POST, Utility::stringFormat("/containers/%s/start", m_containerName.c_str()), {}, {}, nullptr);
-		if (resp.status_code() < web::http::status_codes::BadRequest)
+		if (resp->status_code < web::http::status_codes::BadRequest)
 		{
 			// GET /containers/{id}/json
 			resp = this->requestDocker(web::http::methods::GET, Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
-			if (resp.status_code() == web::http::status_codes::OK)
+			if (resp->status_code == web::http::status_codes::OK)
 			{
-				auto pid = resp.extract_json().get()["State"]["Pid"].as_integer();
+				auto pid = nlohmann::json::parse(resp->text)["State"]["Pid"].get<int>();
 				// Success
 				this->attach(pid);
 				LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerName;
@@ -154,21 +155,21 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 			}
 			else
 			{
-				auto errorMsg = resp.extract_utf8string().get();
+				auto errorMsg = resp->text;
 				this->startError(errorMsg);
 				LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 			}
 		}
 		else
 		{
-			auto errorMsg = resp.extract_utf8string().get();
+			auto errorMsg = resp->text;
 			this->startError(errorMsg);
 			LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 		}
 	}
 	else
 	{
-		auto errorMsg = resp.extract_utf8string().get();
+		auto errorMsg = resp->text;
 		this->startError(errorMsg);
 		LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 	}
@@ -196,7 +197,7 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 		{
 			*position = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		}
-		return resp.extract_utf8string().get();
+		return resp->text;
 	}
 	return std::string();
 }
@@ -211,60 +212,58 @@ int DockerApiProcess::returnValue(void) const
 		web::http::methods::GET,
 		Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
 		{}, {}, nullptr);
-	if (resp.status_code() == web::http::status_codes::OK)
+	if (resp->status_code == web::http::status_codes::OK)
 	{
-		return resp.extract_json().get().at("State").at("ExitCode").as_integer();
+		return nlohmann::json::parse(resp->text).at("State").at("ExitCode").get<int>();
 	}
 	else
 	{
-		LOG_WAR << fname << "failed: " << resp.extract_utf8string().get();
+		LOG_WAR << fname << "failed: " << resp->text;
 	}
 	return -200;
 }
 
-const web::http::http_response DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
+const std::shared_ptr<cpr::Response> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
 	auto restURL = Configuration::instance()->getDockerProxyAddress();
 	std::string errorMsg = std::string("exception caught: ").append(path);
+	auto response = std::make_shared<cpr::Response>();
 	try
 	{
-		// enable certificate file verification
-		web::http::client::http_client_config cfg;
-		if (Utility::startWith(restURL, "https://"))
-		{
-			cfg.set_validate_certificates(true);
-			cfg.set_ssl_context_callback(
-				[](boost::asio::ssl::context &ctx)
-				{
-					ctx.load_verify_file(Utility::getParentDir() + "/ssl/ca.pem");
-					ctx.use_certificate_file(Utility::getParentDir() + "/ssl/client.pem", boost::asio::ssl::context::file_format::pem);
-					ctx.use_private_key_file(Utility::getParentDir() + "/ssl/client-key.pem", boost::asio::ssl::context::file_format::pem);
-				});
-		}
-		web::http::client::http_client client(restURL, cfg);
-
-		// Build request URI and start the request.
-		web::uri_builder builder(GET_STRING_T(path));
-		std::for_each(query.begin(), query.end(), [&builder](const std::pair<std::string, std::string> &pair)
-					  { builder.append_query(GET_STRING_T(pair.first), GET_STRING_T(pair.second)); });
-
-		web::http::http_request request(mtd);
+		// header
+		cpr::Header cprHeader;
 		for (const auto &h : header)
+			cprHeader.insert({h.first, h.second});
+		// query
+		cpr::Parameters cprParam;
+		for (const auto &q : query)
+			cprParam.Add({q.first, q.second});
+
+		cpr::Body cprBody;
+		if (body)
 		{
-			request.headers().add(h.first, h.second);
-		}
-		request.set_request_uri(builder.to_uri());
-		if (body != nullptr)
-		{
-			request.set_body(*body);
+			cprBody = body->serialize();
+			cprHeader.insert({"Content-Type", "application/json"});
 		}
 
-		// In case of REST server crash or block query timeout, will throw exception:
-		// "Failed to read HTTP status line"
-		web::http::http_response response = client.request(request).get();
-		LOG_DBG << fname << mtd << " " << path << " return " << response.status_code();
+		if (mtd == "GET")
+		{
+			*response = cpr::Get(cpr::Url{restURL, path}, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		}
+		else if (mtd == "POST")
+		{
+			*response = cpr::Post(cpr::Url{restURL, path}, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		}
+		else if (mtd == "PUT")
+		{
+			*response = cpr::Put(cpr::Url{restURL, path}, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		}
+		else if (mtd == "DELETE")
+		{
+			*response = cpr::Delete(cpr::Url{restURL, path}, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		}
 		return response;
 	}
 	catch (const std::exception &ex)
@@ -276,8 +275,7 @@ const web::http::http_response DockerApiProcess::requestDocker(const web::http::
 	{
 		LOG_ERR << fname << path << " exception";
 	}
-
-	web::http::http_response response(web::http::status_codes::ServiceUnavailable);
-	response.set_body(errorMsg);
+	response->status_code = web::http::status_codes::ServiceUnavailable;
+	response->text = errorMsg;
 	return response;
 }

@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <thread>
 
-#include <cpprest/http_client.h>
 #include <cpprest/json.h>
 
 #include "../../common/DateTime.h"

@@ -790,7 +790,7 @@ const web::json::value Configuration::getAgentAppJson() const
 	if (Configuration::instance()->getRestEnabled())
 	{
 		cmd += std::string(" -rest_tcp_port ") + std::to_string(Configuration::instance()->getRestTcpPort()) +
-			   " -agent_url " + restUri.to_uri().to_string();
+			   " -agent_url " + Utility::stdStringTrim(restUri.to_uri().to_string(), '/');
 	}
 	if (Configuration::instance()->getDockerProxyAddress().length() &&
 		Utility::isFileExist("/var/run/docker.pid") &&
@@ -830,6 +830,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	rest->m_restTcpPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestTcpPort);
 	rest->m_dockerProxyListenAddr = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DockerProxyListenAddr);
+	rest->m_dockerProxyListenAddr = Utility::stringReplace(rest->m_dockerProxyListenAddr, "https", "http");
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);

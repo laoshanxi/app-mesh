@@ -63,6 +63,7 @@ if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "${PROG_HOME}/ssl/server.pem"
 	# ssl cert gernerate
 	cd ${PROG_HOME}/ssl/
 	sh ${PROG_HOME}/ssl/ssl_cert_generate.sh
+	chmod 644 ${PROG_HOME}/ssl/*.pem
 fi
 if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [[ -f "${PROG_HOME}/.config.json" ]]; then
 	# restore previous configuration file
@@ -87,8 +88,9 @@ chmod +x ${PROG_HOME}/script/appc.sh
 
 # only allow root access config json file
 # 600 rw-------
+# 644 rw-r--r--
 chmod 644 ${PROG_HOME}/config.json
-chmod 600 ${PROG_HOME}/security.json
+chmod 644 ${PROG_HOME}/security.json
 if [ -z ${APPMESH_DAEMON_EXEC_USER+x} ]; then
 	:
 else

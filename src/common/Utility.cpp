@@ -823,7 +823,7 @@ std::string Utility::hash(const std::string &str)
 	return std::to_string(std::hash<std::string>()(str));
 }
 
-std::string Utility::stringFormat(const std::string &fmt_str, ...)
+std::string Utility::stringFormat(const std::string fmt_str, ...)
 {
 	// https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
 	int final_n, n = ((int)fmt_str.size()) * 2; /* Reserve two times as much as the length of the fmt_str */
@@ -889,28 +889,4 @@ const std::string Utility::readStdin2End()
 		ss << line << std::endl;
 	}
 	return ss.str();
-}
-
-static std::atomic_flag cpprestThreadPoolInitilized = ATOMIC_FLAG_INIT;
-void Utility::initCpprestThreadPool(int threads)
-{
-	const static char fname[] = "Utility::initCpprestThreadPool() ";
-
-	if (!cpprestThreadPoolInitilized.test_and_set())
-	{
-		// cpprestsdk thread pool, default will be 40 threads
-		crossplat::threadpool::initialize_with_threads(threads);
-		LOG_INF << fname << "REST thread pool size:" << threads;
-	}
-}
-
-void Utility::stopCpprestThreadPool()
-{
-	const static char fname[] = "Utility::stopCpprestThreadPool() ";
-
-	if (cpprestThreadPoolInitilized.test_and_set())
-	{
-		LOG_INF << fname << "shuting down cpprest thread pool";
-		crossplat::threadpool::shared_instance().service().stop();
-	}
 }

@@ -85,9 +85,6 @@ int main(int argc, char *argv[])
 		Configuration::instance(config);
 		const auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
 
-		// init REST thread pool for cpprestsdk (consul client)
-		Utility::initCpprestThreadPool(2);
-
 		// init security [both for server side and REST client side (file operation API)]
 		Security::init(Configuration::instance()->getJwt()->m_jwtInterface);
 

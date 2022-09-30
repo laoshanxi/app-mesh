@@ -29,6 +29,8 @@ target_link_libraries(appsvc
     prometheus
     consul
     common
+	client
+	cpr
 )
 
 ##########################################################################

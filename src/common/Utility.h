@@ -120,6 +120,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_SCHEDULE_INTERVAL 2
 #define DEFAULT_HTTP_THREAD_POOL_SIZE 6
+#define REST_REQUEST_TIMEOUT_SECONDS 60
 
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
@@ -171,7 +172,7 @@ public:
 	static std::string humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime = std::chrono::system_clock::now());
 	static std::string prettyJson(const std::string &jsonStr);
 	static std::string hash(const std::string &str);
-	static std::string stringFormat(const std::string &fmt_str, ...);
+	static std::string stringFormat(const std::string fmt_str, ...);
 	static std::string strToupper(std::string s);
 	static std::string strTolower(std::string s);
 	static std::string unEscape(const std::string &str);
@@ -179,8 +180,6 @@ public:
 
 	static void initLogging(const std::string &name);
 	static bool setLogLevel(const std::string &level);
-	static void initCpprestThreadPool(int threads);
-	static void stopCpprestThreadPool();
 
 	// OS related
 	static unsigned long long getThreadId();

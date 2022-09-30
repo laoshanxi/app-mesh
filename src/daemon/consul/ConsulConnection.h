@@ -10,9 +10,15 @@
 #include <cpprest/json.h>
 
 #include "../../common/TimerHandler.h"
+#include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "../Label.h"
 #include "ConsulEntity.h"
+
+namespace cpr
+{
+	class Response;
+};
 
 /// <summary>
 /// Connect to Consul service
@@ -31,7 +37,7 @@ public:
 	std::string consulSessionId();
 	web::json::value viewCloudApps();
 	web::json::value viewCloudApp(const std::string &app);
-	web::http::http_response viewCloudAppOutput(const std::string &app, const std::string &hostName, const std::map<std::string, std::string> &query, const web::http::http_headers &headers);
+	std::shared_ptr<cpr::Response> viewCloudAppOutput(const std::string &app, const std::string &hostName, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
 	web::json::value addCloudApp(const std::string &app, web::json::value &content);
 	web::json::value getCloudNodes();
 	void deleteCloudApp(const std::string &app);
@@ -46,8 +52,8 @@ private:
 	long long getModifyIndex(const std::string &path, bool recurse = false);
 	std::shared_ptr<Configuration::JsonConsul> getConfig();
 
-	web::http::http_response requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body);
-	web::http::http_response requestAppMesh(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const web::http::http_headers &headers);
+	std::shared_ptr<cpr::Response> requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body, int timeoutSec = REST_REQUEST_TIMEOUT_SECONDS);
+	std::shared_ptr<cpr::Response> requestAppMesh(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
 
 	std::tuple<bool, long long> blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse = false);
 	void watchSecurityThread();

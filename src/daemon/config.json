@@ -16,7 +16,7 @@
     "RestListenPort": 6060,
     "RestTcpPort": 6059,
     "PrometheusExporterListenPort": 6061,
-    "DockerProxyListenAddr": "https://127.0.0.1:6058",
+    "DockerProxyListenAddr": "http://127.0.0.1:6058",
     "HttpThreadPoolSize": 3,
     "SSL": {
       "SSLEnabled": true,
