@@ -1,6 +1,8 @@
 ##########################################################################
 # appc
 ##########################################################################
+add_subdirectory(client)
+
 aux_source_directory(. SRC_LIST)
 add_executable(appc ${SRC_LIST})
 add_executable(${PROJECT_NAME}::appc ALIAS appc)
@@ -10,6 +12,7 @@ add_executable(${PROJECT_NAME}::appc ALIAS appc)
 ##########################################################################
 target_link_libraries(appc
   PRIVATE
+    client
     Threads::Threads
     ${OPENSSL_LIBRARIES}
     boost_program_options

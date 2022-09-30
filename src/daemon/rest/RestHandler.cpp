@@ -1,6 +1,7 @@
 #include <chrono>
 
 #include <boost/algorithm/string_regex.hpp>
+#include <cpr/cpr.h>
 
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
@@ -946,8 +947,8 @@ void RestHandler::apiCloudAppOutputView(const HttpRequest &message)
 	auto hostName = std::get<1>(tp);
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
-	auto resp = ConsulConnection::instance()->viewCloudAppOutput(appName, hostName, querymap, message.headers());
-	message.reply(resp);
+	auto resp = ConsulConnection::instance()->viewCloudAppOutput(appName, hostName, querymap, message.m_headers);
+	message.reply(resp->status_code, resp->text);
 }
 
 void RestHandler::apiCloudAppAdd(const HttpRequest &message)

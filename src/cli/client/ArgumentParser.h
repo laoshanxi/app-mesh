@@ -1,18 +1,20 @@
 #pragma once
 
 #include <iomanip>
+#include <memory>
 #include <string>
 
 #include <boost/program_options.hpp>
 #include <cpprest/http_client.h>
 #include <cpprest/json.h>
-#include <cpr/cpr.h>
 
-using namespace web;				  // Common features like URIs.
-using namespace web::http;			  // Common HTTP functionality
-using namespace web::http::client;	  // HTTP client features
-using namespace concurrency::streams; // Asynchronous streams
+using namespace web;	   // Common features like URIs.
+using namespace web::http; // Common HTTP functionality
 
+namespace cpr
+{
+	class Response;
+};
 namespace po = boost::program_options;
 class ACE_Sig_Action;
 
@@ -28,6 +30,7 @@ public:
 	int parse();
 
 private:
+	void initArgs();
 	void printMainHelp();
 	void processLogon();
 	void processLogoff();
@@ -61,14 +64,13 @@ private:
 	void initRadomPassword();
 
 public:
-	cpr::Response requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
+	std::shared_ptr<cpr::Response> requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
-private:
 	std::string getAuthenToken();
 	std::string getAuthenUser();
 	std::string readAuthToken();
 	void persistAuthToken(const std::string &hostName, const std::string &token);
-	std::string requestToken(const std::string &user, const std::string &passwd, const std::string &totp);
+	std::string requestToken(const std::string &user, const std::string &passwd, const std::string &totp, std::string targetHost = "");
 
 private:
 	bool isAppExist(const std::string &appName);
@@ -80,7 +82,7 @@ private:
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();
 	void unregSignal();
-	std::string parseOutputMessage(cpr::Response &resp);
+	std::string parseOutputMessage(std::shared_ptr<cpr::Response> &resp);
 	const std::string getAppMeshUrl();
 
 private:
