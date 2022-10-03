@@ -91,11 +91,11 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 	// send header and body
 	{
 		socketMutex.Lock()
-		defer socketMutex.Unlock()
 		sendCount, sendErr = tcpConnect.Write(headerData)
 		ctx.Logger().Printf("sent header size %d = %d to TCP, error: %v", uint32(len(headerData)), sendCount, sendErr)
 		sendCount, sendErr = tcpConnect.Write(bodyData)
 		ctx.Logger().Printf("sent body size %d = %d to TCP, error: %v", uint32(len(bodyData)), sendCount, sendErr)
+		socketMutex.Unlock()
 	}
 	if sendErr == nil {
 		// wait chan to get response
@@ -144,11 +144,11 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	ctx.Response.SetStatusCode(int(data.GetHttpStatus()))
 	// body
 	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && serveFile(ctx, data) {
-		ctx.Logger().Printf("File REST call Finished")
+		ctx.Logger().Printf("File REST call Finished  %s", data.GetUuid())
 	} else {
 		ctx.Response.SetBodyRaw([]byte(data.GetHttpBody()))
 		ctx.SetContentType(data.GetHttpBodyMsgType())
-		ctx.Logger().Printf("REST call Finished")
+		ctx.Logger().Printf("REST call Finished  %s", data.GetUuid())
 	}
 }
 
