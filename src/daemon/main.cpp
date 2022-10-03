@@ -7,7 +7,7 @@
 #include <ace/Acceptor.h>
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
-#include <ace/TP_Reactor.h>
+#include <ace/Reactor.h>
 #include <boost/filesystem.hpp>
 
 #include "../common/PerfLog.h"
@@ -55,8 +55,6 @@ int main(int argc, char *argv[])
 		// ACE_OS::umask(0000);
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
-		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
-		TIMER_MANAGER::instance()->reactor(new ACE_Reactor(new ACE_TP_Reactor(), true));
 		TIMER_MANAGER::instance()->reactor()->open(ACE::max_handles());
 		if (!ACE_Reactor::instance()->initialized() || !TIMER_MANAGER::instance()->reactor()->initialized())
 		{
@@ -107,17 +105,20 @@ int main(int argc, char *argv[])
 		ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
 		// threads for timer (application & process event & healthcheck & consul report event)
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
-		// threads for REST pool
-		for (size_t i = 0; i < Configuration::instance()->getThreadPoolSize(); i++)
-		{
-			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, ACE_Reactor::instance())));
-		}
-		LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
 		// init REST
 		TcpAcceptor acceptor; // Acceptor factory.
 		if (config->getRestEnabled())
 		{
+			// thread for TCP reactor
+			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, ACE_Reactor::instance())));
+			// threads for REST service pool
+			for (size_t i = 0; i < Configuration::instance()->getThreadPoolSize(); i++)
+			{
+				m_threadPool.push_back(std::make_unique<std::thread>(TcpHandler::handleTcpRest));
+			}
+			LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
+
 			if (acceptor.open(ACE_INET_Addr(Configuration::instance()->getRestTcpPort(), INADDR_LOOPBACK), ACE_Reactor::instance()) == -1)
 			{
 				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
@@ -197,11 +198,14 @@ int main(int argc, char *argv[])
 	{
 		LOG_ERR << fname << "unknown exception";
 	}
+
 	TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
 	ACE_Reactor::instance()->end_reactor_event_loop();
+	TcpHandler::closeMsgQueue();
+	// TODO: close TcpAcceptor
 	for (const auto &t : m_threadPool)
 		t->join();
-	Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
+	// Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
 	return 0;
 }

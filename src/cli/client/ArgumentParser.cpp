@@ -41,7 +41,7 @@
 		std::cout << desc << std::endl;           \
 		return;                                   \
 	}                                             \
-	m_url = m_commandLineVariables["url"].as<std::string>();
+	m_currentUrl = m_commandLineVariables["url"].as<std::string>();
 #define HELP_ARG_CHECK_WITH_RETURN_ZERO           \
 	GET_USER_NAME_PASS                            \
 	if (m_commandLineVariables.count("help") > 0) \
@@ -49,7 +49,7 @@
 		std::cout << desc << std::endl;           \
 		return 0;                                 \
 	}                                             \
-	m_url = m_commandLineVariables["url"].as<std::string>();
+	m_currentUrl = m_commandLineVariables["url"].as<std::string>();
 // Each user should have its own token path
 const static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
 static std::string m_jwtToken;
@@ -318,8 +318,8 @@ void ArgumentParser::processLogon()
 	// write token to disk
 	if (m_jwtToken.length())
 	{
-		persistAuthToken(web::uri(m_url).host(), m_jwtToken);
-		std::cout << "User <" << m_username << "> logon to " << m_url << " success." << std::endl;
+		persistAuthToken(web::uri(m_currentUrl).host(), m_jwtToken);
+		std::cout << "User <" << m_username << "> logon to " << m_currentUrl << " success." << std::endl;
 	}
 }
 
@@ -332,8 +332,8 @@ void ArgumentParser::processLogoff()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	persistAuthToken(web::uri(m_url).host(), std::string());
-	std::cout << "User logoff from " << m_url << " success." << std::endl;
+	persistAuthToken(web::uri(m_currentUrl).host(), std::string());
+	std::cout << "User logoff from " << m_currentUrl << " success." << std::endl;
 }
 
 void ArgumentParser::processLoginfo()
@@ -1050,7 +1050,7 @@ void ArgumentParser::unregSignal()
 int ArgumentParser::processExec()
 {
 	int returnCode = 0;
-	m_url = DEFAULT_SERVER_URL;
+	m_currentUrl = APPMESH_LOCAL_HOST_URL;
 	// Get current session id (bash pid)
 	auto bashId = getppid();
 	// Get appmesh user
@@ -1211,7 +1211,7 @@ void ArgumentParser::processFileDownload()
 	cprHeader.insert({HTTP_HEADER_KEY_file_path, file});
 	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	auto response = cpr::Download(stream, cpr::Url{m_url, restPath}, cprHeader, sslOpts, cpr::Timeout{1000});
+	auto response = cpr::Download(stream, cpr::Url{m_currentUrl, restPath}, cprHeader, sslOpts, cpr::Timeout{1000});
 
 	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.tellp()) << ">" << std::endl;
 
@@ -1261,7 +1261,7 @@ void ArgumentParser::processFileUpload()
 	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
 	cpr::Multipart cprMultipart{{"filename", boost::filesystem::path(local).filename().string()}, {"file", cpr::File(local)}};
-	auto response = cpr::Post(cpr::Url{m_url, restPath}, sslOpts, cprHeader, cprMultipart, cpr::Timeout{1000});
+	auto response = cpr::Post(cpr::Url{m_currentUrl, restPath}, sslOpts, cprHeader, cprMultipart, cpr::Timeout{1000});
 
 	if (response.header.count(HTTP_HEADER_KEY_file_mode))
 		os::fileChmod(local, std::stoi(response.header.find(HTTP_HEADER_KEY_file_mode)->second));
@@ -1637,19 +1637,19 @@ std::shared_ptr<cpr::Response> ArgumentParser::requestHttp(bool throwAble, const
 	auto resp = std::make_shared<cpr::Response>();
 	if (mtd == "GET")
 	{
-		*resp = cpr::Get(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		*resp = cpr::Get(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
 	}
 	else if (mtd == "POST")
 	{
-		*resp = cpr::Post(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		*resp = cpr::Post(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
 	}
 	else if (mtd == "PUT")
 	{
-		*resp = cpr::Put(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		*resp = cpr::Put(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
 	}
 	else if (mtd == "DELETE")
 	{
-		*resp = cpr::Delete(cpr::Url{m_url, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
+		*resp = cpr::Delete(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
 	}
 	if (throwAble && resp->status_code != 200)
 	{
@@ -1683,17 +1683,17 @@ std::string ArgumentParser::getAuthenToken()
 	// 1. try to get from REST
 	if (m_username.length() && m_userpwd.length())
 	{
-		token = login(m_username, m_userpwd, m_totp);
+		token = login(m_username, m_userpwd, m_totp, m_currentUrl);
 	}
 	else
 	{
 		// 2. try to read from token file
-		token = readAuthToken();
+		token = readPersistAuthToken(web::uri(m_currentUrl).host());
 
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp);
+			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp, m_currentUrl);
 		}
 	}
 	return token;
@@ -1710,11 +1710,11 @@ std::string ArgumentParser::getAuthenUser()
 	else
 	{
 		// 2. try to read from token file
-		token = readAuthToken();
+		token = readPersistAuthToken(web::uri(m_currentUrl).host());
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp);
+			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp, m_currentUrl);
 		}
 		auto decoded_token = jwt::decode(token);
 		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
@@ -1727,10 +1727,9 @@ std::string ArgumentParser::getAuthenUser()
 	}
 }
 
-std::string ArgumentParser::readAuthToken()
+std::string ArgumentParser::readPersistAuthToken(const std::string &hostName)
 {
 	std::string jwtToken;
-	auto hostName = web::uri(m_url).host();
 	if (Utility::isFileExist(m_tokenFile) && hostName.length())
 	{
 		try
@@ -1751,6 +1750,31 @@ std::string ArgumentParser::readAuthToken()
 		}
 	}
 	return jwtToken;
+}
+
+std::string ArgumentParser::readPersistLastHost()
+{
+	std::string lastHost = "localhost";
+	if (Utility::isFileExist(m_tokenFile))
+	{
+		try
+		{
+			auto configFile = Utility::readFile(m_tokenFile);
+			if (configFile.length() > 0)
+			{
+				auto config = web::json::value::parse(configFile);
+				if (config.has_field("last_host"))
+				{
+					lastHost = config.at("last_host").as_string();
+				}
+			}
+		}
+		catch (const std::exception &e)
+		{
+			std::cerr << "failed to parse " << m_tokenFile << " as json format" << '\n';
+		}
+	}
+	return lastHost;
 }
 
 void ArgumentParser::persistAuthToken(const std::string &hostName, const std::string &token)
@@ -1784,6 +1808,7 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	{
 		config["auths"].erase(hostName);
 	}
+	config["last_host"] = web::json::value::string(hostName);
 
 	std::ofstream ofs(m_tokenFile, std::ios::trunc);
 	if (ofs.is_open())
@@ -1801,7 +1826,7 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 
 std::string ArgumentParser::login(const std::string &user, const std::string &passwd, const std::string &totp, std::string targetHost)
 {
-	m_url = Utility::stdStringTrim(targetHost.empty() ? m_defaultUrl : targetHost, '/');
+	auto url = Utility::stdStringTrim(targetHost, '/');
 	// header
 	cpr::Header cprHeader;
 	cprHeader.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
@@ -1811,13 +1836,14 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 		cprHeader.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 
 	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	auto response = cpr::Post(cpr::Url{m_url, "/appmesh/login"}, sslOpts, cprHeader);
+	auto response = cpr::Post(cpr::Url{url, "/appmesh/login"}, sslOpts, cprHeader);
 	if (response.status_code != status_codes::OK)
 	{
 		auto sharedResp = std::make_shared<cpr::Response>();
 		*sharedResp = response;
 		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(sharedResp).c_str()));
 	}
+	m_currentUrl = url;
 	m_jwtToken = nlohmann::json::parse(response.text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
 	return m_jwtToken;
 }
@@ -2036,7 +2062,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 
 const std::string ArgumentParser::getAppMeshUrl()
 {
-	std::string url = DEFAULT_SERVER_URL;
+	std::string url = APPMESH_LOCAL_HOST_URL;
 	auto file = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string());
 	if (file.length() > 0)
 	{
@@ -2050,7 +2076,7 @@ const std::string ArgumentParser::getAppMeshUrl()
 					   HAS_JSON_FIELD(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled) &&
 					   GET_JSON_BOOL_VALUE(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled);
 			web::http::uri_builder builder;
-			builder.set_host("localhost");
+			builder.set_host(readPersistLastHost());
 			builder.set_port(port);
 			builder.set_scheme(ssl ? "https" : "http");
 			return Utility::stdStringTrim(builder.to_string(), '/');

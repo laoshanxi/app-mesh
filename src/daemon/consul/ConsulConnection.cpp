@@ -248,10 +248,7 @@ int ConsulConnection::getHealthStatus(const std::string &hostName, const std::st
 	baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
 	auto restPath = Utility::stringFormat("/appmesh/app/%s/health", app.c_str());
 	auto url = Utility::stdStringTrim(baseUri.to_uri().to_string(), '/');
-	auto resp = cpr::Get(
-		cpr::Url{url, restPath},
-		cpr::Timeout{1000 * 10},
-		cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false}));
+	auto resp = cpr::Get(cpr::Url{url, restPath}, cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false}), cpr::Timeout{1000 * 10});
 	if (resp.status_code != web::http::status_codes::OK)
 	{
 		LOG_WAR << fname << "failed to get health status: " << resp.status_code << " with message: " << resp.error.message << " with host: " << url << restPath << ", app: " << app;

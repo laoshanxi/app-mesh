@@ -1,6 +1,6 @@
 module github.com/laoshanxi/app-mesh
 
-go 1.16
+go 1.17
 
 require (
 	github.com/buaazp/fasthttprouter v0.1.1

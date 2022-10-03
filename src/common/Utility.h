@@ -131,7 +131,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
-#define DEFAULT_SERVER_URL "https://localhost:6060"
+#define APPMESH_LOCAL_HOST_URL "https://localhost:6060"
 
 const web::json::value EMPTY_STR_JSON = web::json::value::object();
 const web::json::value CLOUD_STR_JSON = web::json::value::string("APPMESH-CLOUD-APP-FLAG");

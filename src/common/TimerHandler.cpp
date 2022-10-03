@@ -1,7 +1,6 @@
 
 #include <ace/OS.h>
 #include <ace/Reactor.h>
-#include <ace/TP_Reactor.h>
 #include <ace/Time_Value.h>
 #include <assert.h>
 
@@ -10,6 +9,7 @@
 
 TimerManager::TimerManager()
 {
+	this->reactor(&m_reactor);
 }
 
 TimerManager::~TimerManager()

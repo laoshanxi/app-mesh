@@ -105,6 +105,7 @@ public:
 private:
 	// key: unique timer ID pointer, value: function point
 	ACE_Map_Manager<const int *, std::shared_ptr<TimerEvent>, ACE_Recursive_Thread_Mutex> m_timers;
+	ACE_Reactor m_reactor;
 };
 
 typedef ACE_Singleton<TimerManager, ACE_Null_Mutex> TIMER_MANAGER;

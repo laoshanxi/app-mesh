@@ -1,5 +1,6 @@
 #include <memory>
 
+#include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
@@ -7,6 +8,18 @@
 #include "protoc/ProtobufHelper.h"
 
 ACE_Map_Manager<void *, bool, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
+ACE_Message_Queue<ACE_MT_SYNCH> TcpHandler::messageQueue;
+
+struct MessageEntity
+{
+	explicit MessageEntity(std::shared_ptr<char> data, size_t len, TcpHandler *client)
+		: m_data(data), m_size(len), m_client(client)
+	{
+	}
+	const std::shared_ptr<char> m_data;
+	const size_t m_size;
+	TcpHandler *m_client;
+};
 
 // Default constructor.
 TcpHandler::TcpHandler(void)
@@ -21,6 +34,7 @@ TcpHandler::~TcpHandler()
 	const static char fname[] = "TcpHandler::~TcpHandler() ";
 	LOG_DBG << fname << "from this =" << this;
 	m_handlers.unbind(this);
+	ACE_Reactor::instance()->remove_handler(this, READ_MASK);
 }
 
 // Perform the tcp record receive.
@@ -35,16 +49,8 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	auto readCount = std::get<1>(result);
 	if (data != nullptr)
 	{
-		auto httpRequest = HttpRequest::deserialize(data.get());
-		if (httpRequest != nullptr)
-		{
-			httpRequest->m_clientTcpHandler = this;
-			handleTcpRest(*httpRequest);
-			if (httpRequest->m_response != nullptr)
-			{
-				return replyResponse(*(httpRequest->m_response.get())) ? 0 : -1;
-			}
-		}
+		auto *msg = new ACE_Message_Block((const char *)(new MessageEntity(data, readCount, this)));
+		messageQueue.enqueue(msg);
 	}
 
 	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Reactor/WFMO_Reactor/Network_Events.cpp#L66
@@ -81,6 +87,7 @@ int TcpHandler::open(void *)
 	else
 	{
 		this->m_clientHostName = addr.get_host_name();
+		// TODO: one TCP connection can not leverage parallel ACE_TP_Reactor thread pool
 		if (ACE_Reactor::instance()->register_handler(this, READ_MASK) == -1)
 		{
 			LOG_ERR << fname << "can't register with reactor";
@@ -94,27 +101,55 @@ int TcpHandler::open(void *)
 	}
 }
 
-void TcpHandler::handleTcpRest(const HttpRequest &message)
+void TcpHandler::handleTcpRest()
 {
 	const static char fname[] = "TcpHandler::handleTcpRest() ";
-	LOG_DBG << fname << message.m_method << " from <" << message.m_remote_address << "> path <" << message.m_relative_uri << "> id <" << message.m_uuid << ">";
 
-	if (message.m_method == web::http::methods::GET)
-		RESTHANDLER::instance()->handle_get(message);
-	else if (message.m_method == web::http::methods::PUT)
-		RESTHANDLER::instance()->handle_put(message);
-	else if (message.m_method == web::http::methods::DEL)
-		RESTHANDLER::instance()->handle_delete(message);
-	else if (message.m_method == web::http::methods::POST)
-		RESTHANDLER::instance()->handle_post(message);
-	else if (message.m_method == web::http::methods::OPTIONS)
-		RESTHANDLER::instance()->handle_options(message);
-	else if (message.m_method == web::http::methods::HEAD)
-		RESTHANDLER::instance()->handle_head(message);
-	else
+	ACE_Message_Block *msg = nullptr;
+	while (0 == messageQueue.deactivated() && QUIT_HANDLER::instance()->is_set() == 0)
 	{
-		LOG_ERR << fname << "no such method " << message.m_method << " from " << message.m_remote_address << " with path " << message.m_relative_uri;
+		if (messageQueue.dequeue(msg) >= -1 && msg)
+		{
+			std::unique_ptr<MessageEntity> entity(static_cast<MessageEntity *>((void *)msg->rd_ptr()));
+			auto httpRequest = HttpRequest::deserialize(entity->m_data.get());
+			msg->release();
+			msg = nullptr;
+			if (httpRequest != nullptr)
+			{
+				httpRequest->m_clientTcpHandler = entity->m_client;
+				const HttpRequest &message = *httpRequest;
+				LOG_DBG << fname << message.m_method << " from <" << message.m_remote_address << "> path <" << message.m_relative_uri << "> id <" << message.m_uuid << ">";
+
+				if (message.m_method == web::http::methods::GET)
+					RESTHANDLER::instance()->handle_get(message);
+				else if (message.m_method == web::http::methods::PUT)
+					RESTHANDLER::instance()->handle_put(message);
+				else if (message.m_method == web::http::methods::DEL)
+					RESTHANDLER::instance()->handle_delete(message);
+				else if (message.m_method == web::http::methods::POST)
+					RESTHANDLER::instance()->handle_post(message);
+				else if (message.m_method == web::http::methods::OPTIONS)
+					RESTHANDLER::instance()->handle_options(message);
+				else if (message.m_method == web::http::methods::HEAD)
+					RESTHANDLER::instance()->handle_head(message);
+				else
+				{
+					LOG_ERR << fname << "no such method " << message.m_method << " from " << message.m_remote_address << " with path " << message.m_relative_uri;
+				}
+				// for sync response reply here
+				if (httpRequest->m_response != nullptr)
+				{
+					TcpHandler::replyResponse(entity->m_client, *(httpRequest->m_response.get()));
+				}
+			}
+		}
 	}
+}
+
+void TcpHandler::closeMsgQueue()
+{
+	// TODO: release memory before clear
+	messageQueue.close();
 }
 
 bool TcpHandler::replyResponse(const appmesh::Response &resp)
