@@ -15,7 +15,7 @@ case $(uname -m) in
 esac
 
 SHELL_FOLDER=$(dirname $(readlink -f "$0"))
-export ROOTDIR=${SHELL_FOLDER}/dep
+export ROOTDIR=${SHELL_FOLDER}/appmesh
 mkdir -p ${ROOTDIR}
 cd ${ROOTDIR}
 

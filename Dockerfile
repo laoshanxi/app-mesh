@@ -1,14 +1,14 @@
-FROM laoshanxi/appmesh:build_ubuntu AS builder
+FROM laoshanxi/appmesh:build_ubuntu22 AS builder
 
-WORKDIR /workspace
+WORKDIR /appmesh
 
 COPY . .
 
 RUN mkdir build; cd build; cmake ..; make -j2; make pack; make test ARG='-V'
 
-FROM ubuntu:latest
+FROM ubuntu:22.04
 
-COPY --from=builder /workspace/build/appmesh*.deb /opt/
+COPY --from=builder /appmesh/build/appmesh*.deb /opt/appmesh.deb
 
 ARG AM_UID="482"
 ARG AM_GID="482"
@@ -23,7 +23,7 @@ RUN apt-get update && \
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
     apt-get update && apt install -y docker-ce-cli && \
     apt-get install -y python3 iputils-ping tini && \
-    apt-get install -y /opt/appmesh*.deb && rm -f /opt/appmesh*.deb && apt-get clean && \
+	apt-get install -y /opt/appmesh.deb && rm -f /opt/appmesh.deb && apt-get clean && \
     groupadd -r -g $AM_GID appmesh && useradd -r -u $AM_UID -g appmesh appmesh && \
     echo "" > /var/run/appmesh.pid && \
     chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid

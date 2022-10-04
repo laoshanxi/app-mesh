@@ -1,7 +1,9 @@
 FROM centos:8
 
-COPY autogen.sh go.* /opt/
+WORKDIR /workspace
+
+COPY autogen.sh go.* /workspace/
 
 USER root
 
-RUN cd /opt/ && sh autogen.sh && rm -rf /opt/*
+RUN sh autogen.sh && rm -rf /workspace/*
