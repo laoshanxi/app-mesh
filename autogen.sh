@@ -110,7 +110,7 @@ mv upx-${UPX_VER}-amd64_linux/upx /usr/bin/
 # yum install -y golang
 # apt install -y golang
 GO_ARCH=$architecture
-GO_VER=1.17
+GO_VER=1.18.6
 $WGWT_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
@@ -119,9 +119,9 @@ go version
 # go env -w GO111MODULE=on
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp@v1.37.0
+go get github.com/valyala/fasthttp@v1.40.0
 go get github.com/buaazp/fasthttprouter
-go get github.com/klauspost/compress@v1.15.5
+go get github.com/klauspost/compress@v1.15.11
 go get -v github.com/rs/xid
 # Golang tools for VSCode
 go install -v github.com/cweill/gotests/gotests@latest

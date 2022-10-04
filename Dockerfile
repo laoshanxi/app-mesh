@@ -4,9 +4,9 @@ WORKDIR /appmesh
 
 COPY . .
 
-RUN mkdir build; cd build; cmake ..; make -j2; make pack; make test ARG='-V'
+RUN mkdir build; cd build; go mod tidy; cmake ..; make -j2; make pack; make test ARG='-V'
 
-FROM ubuntu:22.04
+FROM ubuntu:latest
 
 COPY --from=builder /appmesh/build/appmesh*.deb /opt/appmesh.deb
 
@@ -15,18 +15,18 @@ ARG AM_GID="482"
 
 # not enable exec user in container
 ENV APPMESH_DisableExecUser=true \
-    DOCKER_RUNNING=true
+	DOCKER_RUNNING=true
 
 RUN apt-get update && \
-    apt-get install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common && \
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - && \
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
-    apt-get update && apt install -y docker-ce-cli && \
-    apt-get install -y python3 iputils-ping tini && \
+	apt-get install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common && \
+	curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - && \
+	add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
+	apt-get update && apt install -y docker-ce-cli && \
+	apt-get install -y python3 iputils-ping tini && \
 	apt-get install -y /opt/appmesh.deb && rm -f /opt/appmesh.deb && apt-get clean && \
-    groupadd -r -g $AM_GID appmesh && useradd -r -u $AM_UID -g appmesh appmesh && \
-    echo "" > /var/run/appmesh.pid && \
-    chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid
+	groupadd -r -g $AM_GID appmesh && useradd -r -u $AM_UID -g appmesh appmesh && \
+	echo "" > /var/run/appmesh.pid && \
+	chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid
 
 EXPOSE 6060
 
