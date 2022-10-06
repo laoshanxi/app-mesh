@@ -7,7 +7,7 @@
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 
-ACE_Map_Manager<void *, bool, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
+ACE_Map_Manager<TcpHandler *, bool, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
 ACE_Message_Queue<ACE_MT_SYNCH> TcpHandler::messageQueue;
 
 struct HttpRequestMsg
@@ -108,13 +108,13 @@ void TcpHandler::handleTcpRest()
 		if (messageQueue.dequeue(msg) >= -1 && msg)
 		{
 			std::unique_ptr<HttpRequestMsg> entity(static_cast<HttpRequestMsg *>((void *)msg->rd_ptr()));
-			auto httpRequest = HttpRequest::deserialize(entity->m_data.get());
+			auto request = HttpRequest::deserialize(entity->m_data.get());
 			msg->release();
 			msg = nullptr;
-			if (httpRequest != nullptr)
+			if (request != nullptr)
 			{
-				httpRequest->m_clientTcpHandler = entity->m_client;
-				const HttpRequest &message = *httpRequest;
+				request->m_requestClient = entity->m_client;
+				const HttpRequest &message = *request;
 				LOG_DBG << fname << message.m_method << " from <"
 						<< message.m_remote_address << "> path <"
 						<< message.m_relative_uri << "> id <"
@@ -139,9 +139,9 @@ void TcpHandler::handleTcpRest()
 							<< " with path " << message.m_relative_uri;
 				}
 				// for sync response reply here
-				if (httpRequest->m_response != nullptr)
+				if (request->m_response != nullptr)
 				{
-					TcpHandler::replyResponse(entity->m_client, *(httpRequest->m_response.get()));
+					TcpHandler::reply(entity->m_client, *(request->m_response.get()));
 				}
 			}
 		}
@@ -154,9 +154,9 @@ void TcpHandler::closeMsgQueue()
 	messageQueue.close();
 }
 
-bool TcpHandler::replyResponse(const appmesh::Response &resp)
+bool TcpHandler::reply(const appmesh::Response &resp)
 {
-	const static char fname[] = "TcpHandler::replyResponse() ";
+	const static char fname[] = "TcpHandler::reply() ";
 	LOG_DBG << fname;
 
 	const auto data = ProtobufHelper::serialize(resp);
@@ -182,12 +182,12 @@ bool TcpHandler::replyResponse(const appmesh::Response &resp)
 	return true;
 }
 
-bool TcpHandler::replyResponse(TcpHandler *tcpHandler, const appmesh::Response &resp)
+bool TcpHandler::reply(TcpHandler *tcpHandler, const appmesh::Response &resp)
 {
 	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex(), false);
 	if (m_handlers.find(tcpHandler) == 0)
 	{
-		return (static_cast<TcpHandler *>(tcpHandler))->replyResponse(resp);
+		return tcpHandler->reply(resp);
 	}
 	return false;
 }

@@ -123,7 +123,7 @@ int ArgumentParser::parse()
 	{
 		processAppDel();
 	}
-	else if (cmd == "view")
+	else if (cmd == "view" || cmd == "list" || cmd == "ls")
 	{
 		processAppView();
 	}
@@ -225,7 +225,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  loginfo     Print current logon user" << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  view        List application[s]" << std::endl;
+	std::cout << "  list        List application[s]" << std::endl;
 	std::cout << "  reg         Add a new application" << std::endl;
 	std::cout << "  unreg       Remove an application" << std::endl;
 	std::cout << "  enable      Enable a application" << std::endl;

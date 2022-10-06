@@ -4,36 +4,19 @@
 #include "protoc/ProtobufHelper.h"
 #include "protoc/Request.pb.h"
 
-HttpRequest::HttpRequest(const web::http::http_request &message)
-	: m_uuid(Utility::createUUID()), m_clientTcpHandler(nullptr)
-{
-	this->m_method = message.method();
-	this->m_relative_uri = message.relative_uri().path();
-	this->m_remote_address = message.remote_address();
-	this->m_query = message.relative_uri().query();
-	this->m_body = const_cast<web::http::http_request &>(message).extract_utf8string(true).get();
-	for (const auto &header : message.headers())
-	{
-		this->m_headers[header.first] = header.second;
-	}
-}
-
 HttpRequest::HttpRequest(const HttpRequest &message)
-	: m_uuid(message.m_uuid), m_clientTcpHandler(nullptr)
+	: m_uuid(Utility::createUUID()), m_requestClient(nullptr)
 {
-	this->m_clientTcpHandler = message.m_clientTcpHandler;
 	this->m_method = message.m_method;
 	this->m_relative_uri = message.m_relative_uri;
 	this->m_remote_address = message.m_remote_address;
-	this->m_body = message.m_body;
 	this->m_query = message.m_query;
-	for (const auto &header : message.m_headers)
-	{
-		this->m_headers[header.first] = header.second;
-	}
+	this->m_body = message.m_body;
+	this->m_headers = message.m_headers;
+	this->m_requestClient = message.m_requestClient;
 }
 
-HttpRequest::HttpRequest(const appmesh::Request &request) : m_clientTcpHandler(nullptr)
+HttpRequest::HttpRequest(const appmesh::Request &request) : m_requestClient(nullptr)
 {
 	this->m_uuid = request.uuid();
 	this->m_method = request.http_method();
@@ -56,51 +39,51 @@ web::json::value HttpRequest::extractJson() const
 	return web::json::value::parse(m_body);
 }
 
-void HttpRequest::reply(http_response &response) const
+void HttpRequest::saveReply(http_response &response) const
 {
 	persistResponse(m_relative_uri, m_uuid, "", response.headers(), response.status_code(), "");
 }
 
-void HttpRequest::reply(http_response &response, const std::string &body_data) const
+void HttpRequest::saveReply(http_response &response, const std::string &body_data) const
 {
 	persistResponse(m_relative_uri, m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
 }
 
-void HttpRequest::reply(http::status_code status) const
+void HttpRequest::saveReply(http::status_code status) const
 {
 	persistResponse(m_relative_uri, m_uuid, "", {}, status, "");
 }
 
-void HttpRequest::reply(http::status_code status, const json::value &body_data) const
+void HttpRequest::saveReply(http::status_code status, const json::value &body_data) const
 {
 	persistResponse(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 }
 
-void HttpRequest::reply(http::status_code status, utf8string &&body_data, const utf8string &content_type) const
+void HttpRequest::saveReply(http::status_code status, utf8string &&body_data, const utf8string &content_type) const
 {
 	persistResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
-void HttpRequest::reply(http::status_code status, const utf8string &body_data, const utf8string &content_type) const
+void HttpRequest::saveReply(http::status_code status, const utf8string &body_data, const utf8string &content_type) const
 {
 	persistResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
-void HttpRequest::reply(http::status_code status, const utf16string &body_data, const utf16string &content_type) const
+void HttpRequest::saveReply(http::status_code status, const utf16string &body_data, const utf16string &content_type) const
 {
 	persistResponse(m_relative_uri, m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
 }
 
-void HttpRequest::reply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) const
+void HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) const
 {
-	const static char fname[] = "HttpRequest::reply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) ";
+	const static char fname[] = "HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) ";
 	LOG_ERR << fname << "unsupported method";
 	throw std::runtime_error("not supported");
 }
 
-void HttpRequest::reply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) const
+void HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) const
 {
-	const static char fname[] = "HttpRequest::reply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) ";
+	const static char fname[] = "HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) ";
 	LOG_ERR << fname << "unsupported method";
 	throw std::runtime_error("not supported");
 }

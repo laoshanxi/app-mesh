@@ -6,8 +6,8 @@ User and Role design for App Mesh
 
 > * App Mesh REST API support user permission control
 > * App Mesh CLI (based on REST API) support user permission control
-> * Permission KEY is defined for each REST API 
-> * Role list is configurable 
+> * Permission KEY is defined for each REST API
+> * Role list is configurable
 > * Each user can define a password and some roles
 > * All the user/role/permission can be defined in local json file and central Consul service
 > * user/role configuration support dynamic update by `systemctl reload appmesh`, WebGUI and CLI
@@ -136,7 +136,7 @@ User and Role design for App Mesh
  - Invalid authentication will stop command line
 
 ```shell
-$ appc view
+$ appc list
 login failed : Incorrect user password
 invalid token supplied
 ```
@@ -148,7 +148,7 @@ User: admin
 Password: *********
 User <admin> logon to localhost success.
 
-$ appc view
+$ appc list
 id name        user  status   return pid    memory  start_time          command
 1  sleep       root  enabled  0      32646  812 K   2019-10-10 19:25:38 /bin/sleep 60
 ```
@@ -159,7 +159,7 @@ id name        user  status   return pid    memory  start_time          command
 $ appc logoff
 User <admin> logoff from localhost success.
 
-$ appc view
+$ appc list
 login failed : Incorrect user password
 invalid token supplied
 ```

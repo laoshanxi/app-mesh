@@ -73,12 +73,12 @@ void MonitoredProcess::replyAsyncRequest()
 			const auto body = this->getOutputMsg(&position);
 			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->returnValue());
 			resp.headers().add(HTTP_HEADER_KEY_output_pos, position);
-			std::unique_ptr<HttpRequest> response(static_cast<HttpRequest *>(m_httpRequest));
+			std::unique_ptr<HttpRequest> request(static_cast<HttpRequest *>(m_httpRequest));
 			m_httpRequest = nullptr;
-			if (nullptr != response && response->m_clientTcpHandler != nullptr)
+			if (nullptr != request && request->m_requestClient != nullptr)
 			{
-				response->reply(resp, body);
-				TcpHandler::replyResponse(response->m_clientTcpHandler, *(response->m_response.get()));
+				request->saveReply(resp, body);
+				TcpHandler::reply(request->m_requestClient, *(request->m_response.get()));
 			}
 		}
 		catch (...)

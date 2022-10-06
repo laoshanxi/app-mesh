@@ -42,15 +42,15 @@ protected:
 	/// Reply response to Golang
 	/// </summary>
 	/// <param name="appmesh::Response"></param>
-	bool replyResponse(const appmesh::Response &resp);
+	bool reply(const appmesh::Response &resp);
 
 public:
-	static bool replyResponse(TcpHandler *tcpHandler, const appmesh::Response &resp);
+	static bool reply(TcpHandler *tcpHandler, const appmesh::Response &resp);
 
 private:
 	std::string m_clientHostName;
 	std::recursive_mutex m_socketSendLock;
 
-	static ACE_Map_Manager<void *, bool, ACE_Recursive_Thread_Mutex> m_handlers;
+	static ACE_Map_Manager<TcpHandler *, bool, ACE_Recursive_Thread_Mutex> m_handlers;
 	static ACE_Message_Queue<ACE_MT_SYNCH> messageQueue;
 };

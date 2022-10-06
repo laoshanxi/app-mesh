@@ -24,15 +24,12 @@ class TcpHandler;
 /// </summary>
 class HttpRequest
 {
-private:
+public:
 	/// <summary>
 	/// Construction for deserialize
 	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
 	/// </summary>
 	HttpRequest(const appmesh::Request &request);
-
-public:
-	HttpRequest(const web::http::http_request &message);
 
 	/// <summary>
 	/// Constructor for RestChildObject::sendRequest2Server() save http_request copy
@@ -52,21 +49,21 @@ public:
 	/// </summary>
 	/// <param name="response">Response to send.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(http_response &response) const;
+	void saveReply(http_response &response) const;
 
 	/// <summary>
 	/// Asynchronously responses to this HTTP request.
 	/// </summary>
 	/// <param name="response">Response to send.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(http_response &response, const std::string &body_data) const;
+	void saveReply(http_response &response, const std::string &body_data) const;
 
 	/// <summary>
 	/// Asynchronously responses to this HTTP request.
 	/// </summary>
 	/// <param name="status">Response status code.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(http::status_code status) const;
+	void saveReply(http::status_code status) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -74,7 +71,7 @@ public:
 	/// <param name="status">Response status code.</param>
 	/// <param name="body_data">Json value to use in the response body.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(http::status_code status, const json::value &body_data) const;
+	void saveReply(http::status_code status, const json::value &body_data) const;
 
 	/// Responds to this HTTP request with a string.
 	/// Assumes the character encoding of the string is UTF-8.
@@ -87,7 +84,7 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	void reply(http::status_code status,
+	void saveReply(http::status_code status,
 			   utf8string &&body_data,
 			   const utf8string &content_type = "text/plain; charset=utf-8") const;
 
@@ -103,7 +100,7 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	void reply(http::status_code status,
+	void saveReply(http::status_code status,
 			   const utf8string &body_data,
 			   const utf8string &content_type = "text/plain; charset=utf-8") const;
 
@@ -119,7 +116,7 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	void reply(http::status_code status,
+	void saveReply(http::status_code status,
 			   const utf16string &body_data,
 			   const utf16string &content_type = utility::conversions::to_utf16string("text/plain")) const;
 
@@ -130,7 +127,7 @@ public:
 	/// <param name="content_type">A string holding the MIME type of the message body.</param>
 	/// <param name="body">An asynchronous stream representing the body data.</param>
 	/// <returns>A task that is completed once a response from the request is received.</returns>
-	void reply(status_code status,
+	void saveReply(status_code status,
 			   const concurrency::streams::istream &body,
 			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
 
@@ -142,7 +139,7 @@ public:
 	/// <param name="content_type">A string holding the MIME type of the message body.</param>
 	/// <param name="body">An asynchronous stream representing the body data.</param>
 	/// <returns>A task that is completed once a response from the request is received.</returns>
-	void reply(status_code status,
+	void saveReply(status_code status,
 			   const concurrency::streams::istream &body,
 			   utility::size64_t content_length,
 			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
@@ -172,7 +169,7 @@ public:
 	std::string m_query;
 
 	mutable std::shared_ptr<appmesh::Response> m_response;
-	TcpHandler *m_clientTcpHandler;
+	TcpHandler *m_requestClient;
 };
 
 class Application;
