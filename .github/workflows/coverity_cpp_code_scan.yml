@@ -14,7 +14,7 @@ env:
 jobs:
   coverity-cpp-code-scan:
     runs-on: ubuntu-latest
-    container: laoshanxi/appmesh:build_ubuntu
+    container: laoshanxi/appmesh:build_ubuntu22
 
     steps:
       - name: Checkout Github code

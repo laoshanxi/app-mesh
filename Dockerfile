@@ -4,7 +4,7 @@ WORKDIR /appmesh
 
 COPY . .
 
-RUN mkdir build; cd build; go mod tidy; cmake ..; make -j2; make pack; make test ARG='-V'
+RUN mkdir build; cd build; go mod tidy; cmake ..; make -j4; make pack; make test ARG='-V'
 
 FROM ubuntu:latest
 

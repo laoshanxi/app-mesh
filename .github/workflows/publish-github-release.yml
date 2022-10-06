@@ -43,7 +43,7 @@ jobs:
             mkdir ubuntu22
             cd ubuntu22
             cmake ..
-            make -j6
+            make -j4
             make pack
             ls
             make test ARGS='-V'
@@ -58,7 +58,7 @@ jobs:
             mkdir ubuntu18
             cd ubuntu18
             cmake ..
-            make -j6
+            make -j4
             make pack
             ls
             make test ARGS='-V'
@@ -73,7 +73,7 @@ jobs:
             mkdir ubuntu20
             cd ubuntu20
             cmake ..
-            make -j6
+            make -j4
             make pack
             ls
             make test ARGS='-V'

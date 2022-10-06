@@ -45,7 +45,7 @@ protected:
 	bool replyResponse(const appmesh::Response &resp);
 
 public:
-	static bool replyResponse(void *tcpHandler, const appmesh::Response &resp);
+	static bool replyResponse(TcpHandler *tcpHandler, const appmesh::Response &resp);
 
 private:
 	std::string m_clientHostName;

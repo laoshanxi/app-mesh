@@ -13,6 +13,7 @@ using namespace web;
 using namespace http;
 
 #define CONTENT_TYPE_APPLICATION_JSON "application/json"
+class TcpHandler;
 
 /// <summary>
 /// HttpRequest is wrapper of <web::http::http_request>,
@@ -21,7 +22,7 @@ using namespace http;
 /// serialize between RestTcpServer & RestChildObject
 /// handle across domain reply (headers)
 /// </summary>
-class HttpRequest : public web::http::http_request
+class HttpRequest
 {
 private:
 	/// <summary>
@@ -171,26 +172,7 @@ public:
 	std::string m_query;
 
 	mutable std::shared_ptr<appmesh::Response> m_response;
-	void* m_clientTcpHandler;
-
-private:
-	// hide bellow extract functions, note extract_X function can only be called once, otherwise will hang
-	pplx::task<utf8string> extract_utf8string(bool ignore_content_type = false)
-	{
-		return web::http::http_request::extract_utf8string(ignore_content_type);
-	};
-	pplx::task<utility::string_t> extract_string(bool ignore_content_type = false)
-	{
-		return web::http::http_request::extract_string(ignore_content_type);
-	};
-	pplx::task<utf16string> extract_utf16string(bool ignore_content_type = false)
-	{
-		return web::http::http_request::extract_utf16string(ignore_content_type);
-	};
-	pplx::task<json::value> extract_json(bool ignore_content_type = false) const
-	{
-		return web::http::http_request::extract_json(ignore_content_type);
-	};
+	TcpHandler *m_clientTcpHandler;
 };
 
 class Application;

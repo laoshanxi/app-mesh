@@ -10,12 +10,11 @@
 ACE_Map_Manager<void *, bool, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
 ACE_Message_Queue<ACE_MT_SYNCH> TcpHandler::messageQueue;
 
-struct MessageEntity
+struct HttpRequestMsg
 {
-	explicit MessageEntity(std::shared_ptr<char> data, size_t len, TcpHandler *client)
-		: m_data(data), m_size(len), m_client(client)
-	{
-	}
+	explicit HttpRequestMsg(std::shared_ptr<char> data, size_t len,
+							TcpHandler *client)
+		: m_data(data), m_size(len), m_client(client) {}
 	const std::shared_ptr<char> m_data;
 	const size_t m_size;
 	TcpHandler *m_client;
@@ -47,15 +46,13 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	auto result = ProtobufHelper::readMessageBlock(this->peer());
 	auto data = std::get<0>(result);
 	auto readCount = std::get<1>(result);
-	if (data != nullptr)
-	{
-		auto *msg = new ACE_Message_Block((const char *)(new MessageEntity(data, readCount, this)));
-		messageQueue.enqueue(msg);
-	}
 
 	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Reactor/WFMO_Reactor/Network_Events.cpp#L66
 	if (readCount > 0)
+	{
+		messageQueue.enqueue(new ACE_Message_Block((const char *)(new HttpRequestMsg(data, readCount, this))));
 		return 0;
+	}
 	else if (readCount == 0)
 	{
 		LOG_ERR << fname << "Connection from " << m_clientHostName << " closing down";
@@ -110,7 +107,7 @@ void TcpHandler::handleTcpRest()
 	{
 		if (messageQueue.dequeue(msg) >= -1 && msg)
 		{
-			std::unique_ptr<MessageEntity> entity(static_cast<MessageEntity *>((void *)msg->rd_ptr()));
+			std::unique_ptr<HttpRequestMsg> entity(static_cast<HttpRequestMsg *>((void *)msg->rd_ptr()));
 			auto httpRequest = HttpRequest::deserialize(entity->m_data.get());
 			msg->release();
 			msg = nullptr;
@@ -118,7 +115,10 @@ void TcpHandler::handleTcpRest()
 			{
 				httpRequest->m_clientTcpHandler = entity->m_client;
 				const HttpRequest &message = *httpRequest;
-				LOG_DBG << fname << message.m_method << " from <" << message.m_remote_address << "> path <" << message.m_relative_uri << "> id <" << message.m_uuid << ">";
+				LOG_DBG << fname << message.m_method << " from <"
+						<< message.m_remote_address << "> path <"
+						<< message.m_relative_uri << "> id <"
+						<< message.m_uuid << ">";
 
 				if (message.m_method == web::http::methods::GET)
 					RESTHANDLER::instance()->handle_get(message);
@@ -134,7 +134,9 @@ void TcpHandler::handleTcpRest()
 					RESTHANDLER::instance()->handle_head(message);
 				else
 				{
-					LOG_ERR << fname << "no such method " << message.m_method << " from " << message.m_remote_address << " with path " << message.m_relative_uri;
+					LOG_ERR << fname << "no such method " << message.m_method
+							<< " from " << message.m_remote_address
+							<< " with path " << message.m_relative_uri;
 				}
 				// for sync response reply here
 				if (httpRequest->m_response != nullptr)
@@ -180,7 +182,7 @@ bool TcpHandler::replyResponse(const appmesh::Response &resp)
 	return true;
 }
 
-bool TcpHandler::replyResponse(void *tcpHandler, const appmesh::Response &resp)
+bool TcpHandler::replyResponse(TcpHandler *tcpHandler, const appmesh::Response &resp)
 {
 	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex(), false);
 	if (m_handlers.find(tcpHandler) == 0)

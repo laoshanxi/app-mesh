@@ -5,7 +5,7 @@
 #include "protoc/Request.pb.h"
 
 HttpRequest::HttpRequest(const web::http::http_request &message)
-	: http_request(message), m_uuid(Utility::createUUID()), m_clientTcpHandler(nullptr)
+	: m_uuid(Utility::createUUID()), m_clientTcpHandler(nullptr)
 {
 	this->m_method = message.method();
 	this->m_relative_uri = message.relative_uri().path();
@@ -15,12 +15,11 @@ HttpRequest::HttpRequest(const web::http::http_request &message)
 	for (const auto &header : message.headers())
 	{
 		this->m_headers[header.first] = header.second;
-		this->headers().add(header.first, header.second);
 	}
 }
 
 HttpRequest::HttpRequest(const HttpRequest &message)
-	: http_request(message), m_uuid(message.m_uuid), m_clientTcpHandler(nullptr)
+	: m_uuid(message.m_uuid), m_clientTcpHandler(nullptr)
 {
 	this->m_clientTcpHandler = message.m_clientTcpHandler;
 	this->m_method = message.m_method;
@@ -31,7 +30,6 @@ HttpRequest::HttpRequest(const HttpRequest &message)
 	for (const auto &header : message.m_headers)
 	{
 		this->m_headers[header.first] = header.second;
-		this->headers().add(header.first, header.second);
 	}
 }
 
@@ -46,7 +44,6 @@ HttpRequest::HttpRequest(const appmesh::Request &request) : m_clientTcpHandler(n
 	for (const auto &header : request.headers())
 	{
 		this->m_headers[header.first] = header.second;
-		this->headers().add(header.first, header.second);
 	}
 }
 
