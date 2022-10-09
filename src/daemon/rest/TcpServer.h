@@ -7,7 +7,6 @@
 #include <ace/SOCK_Stream.h>
 #include <ace/Svc_Handler.h>
 
-#include "HttpRequest.h"
 #include "protoc/Response.pb.h"
 
 // = TITLE
@@ -45,7 +44,7 @@ protected:
 	bool reply(const appmesh::Response &resp);
 
 public:
-	static bool reply(TcpHandler *tcpHandler, const appmesh::Response &resp);
+	static bool replyTcp(TcpHandler *tcpHandler, const appmesh::Response &resp);
 
 private:
 	std::string m_clientHostName;

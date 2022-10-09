@@ -1,13 +1,11 @@
 #pragma once
 
-#include <functional>
 #include <map>
 #include <memory>
 
 #include <cpprest/http_client.h>
 
 #include "protoc/Request.pb.h"
-#include "protoc/Response.pb.h"
 
 using namespace web;
 using namespace http;
@@ -29,13 +27,8 @@ public:
 	/// Construction for deserialize
 	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
 	/// </summary>
-	HttpRequest(const appmesh::Request &request);
+	explicit HttpRequest(const appmesh::Request &request, TcpHandler *requestClient);
 
-	/// <summary>
-	/// Constructor for RestChildObject::sendRequest2Server() save http_request copy
-	/// and send the response to REST client after received TCP response
-	/// </summary>
-	HttpRequest(const HttpRequest &message);
 	virtual ~HttpRequest();
 
 	/// <summary>
@@ -47,23 +40,9 @@ public:
 	/// <summary>
 	/// Asynchronously responses to this HTTP request.
 	/// </summary>
-	/// <param name="response">Response to send.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void saveReply(http_response &response) const;
-
-	/// <summary>
-	/// Asynchronously responses to this HTTP request.
-	/// </summary>
-	/// <param name="response">Response to send.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void saveReply(http_response &response, const std::string &body_data) const;
-
-	/// <summary>
-	/// Asynchronously responses to this HTTP request.
-	/// </summary>
 	/// <param name="status">Response status code.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void saveReply(http::status_code status) const;
+	void reply(web::http::status_code status) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -71,7 +50,7 @@ public:
 	/// <param name="status">Response status code.</param>
 	/// <param name="body_data">Json value to use in the response body.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void saveReply(http::status_code status, const json::value &body_data) const;
+	void reply(web::http::status_code status, const json::value &body_data) const;
 
 	/// Responds to this HTTP request with a string.
 	/// Assumes the character encoding of the string is UTF-8.
@@ -84,41 +63,9 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	void saveReply(http::status_code status,
-			   utf8string &&body_data,
-			   const utf8string &content_type = "text/plain; charset=utf-8") const;
-
-	/// <summary>
-	/// Responds to this HTTP request with a string.
-	/// Assumes the character encoding of the string is UTF-8.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="body_data">UTF-8 string containing the text to use in the response body.</param>
-	/// <param name="content_type">Content type of the body.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	/// <remarks>
-	//  Callers of this function do NOT need to block waiting for the response to be
-	/// sent to before the body data is destroyed or goes out of scope.
-	/// </remarks>
-	void saveReply(http::status_code status,
-			   const utf8string &body_data,
-			   const utf8string &content_type = "text/plain; charset=utf-8") const;
-
-	/// <summary>
-	/// Responds to this HTTP request with a string. Assumes the character encoding
-	/// of the string is UTF-16 will perform conversion to UTF-8.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="body_data">UTF-16 string containing the text to use in the response body.</param>
-	/// <param name="content_type">Content type of the body.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	/// <remarks>
-	//  Callers of this function do NOT need to block waiting for the response to be
-	/// sent to before the body data is destroyed or goes out of scope.
-	/// </remarks>
-	void saveReply(http::status_code status,
-			   const utf16string &body_data,
-			   const utf16string &content_type = utility::conversions::to_utf16string("text/plain")) const;
+	void reply(web::http::status_code status,
+			   std::string &body_data,
+			   const std::string &content_type = "text/plain; charset=utf-8") const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -127,27 +74,24 @@ public:
 	/// <param name="content_type">A string holding the MIME type of the message body.</param>
 	/// <param name="body">An asynchronous stream representing the body data.</param>
 	/// <returns>A task that is completed once a response from the request is received.</returns>
-	void saveReply(status_code status,
-			   const concurrency::streams::istream &body,
-			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
-
-	/// <summary>
-	/// Responds to this HTTP request.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="content_length">The size of the data to be sent in the body..</param>
-	/// <param name="content_type">A string holding the MIME type of the message body.</param>
-	/// <param name="body">An asynchronous stream representing the body data.</param>
-	/// <returns>A task that is completed once a response from the request is received.</returns>
-	void saveReply(status_code status,
-			   const concurrency::streams::istream &body,
-			   utility::size64_t content_length,
-			   const utility::string_t &content_type = _XPLATSTR("application/octet-stream")) const;
+	void reply(web::http::status_code status,
+			   const std::string &body_data,
+			   const std::map<std::string, std::string> &headers,
+			   const std::string &content_type = "text/plain") const;
 
 	const std::shared_ptr<appmesh::Request> serialize() const;
-	static std::shared_ptr<HttpRequest> deserialize(const char *input);
+	static std::shared_ptr<HttpRequest> deserialize(const char *input, TcpHandler *clientRequest);
 	static const web::json::value emptyJson();
 
+	std::string m_uuid;
+	web::http::method m_method;
+	std::string m_relative_uri;
+	std::string m_remote_address;
+	std::string m_body;
+	std::map<std::string, std::string> m_headers;
+	std::string m_query;
+
+private:
 	/// <summary>
 	/// Response REST response to client
 	/// </summary>
@@ -157,18 +101,9 @@ public:
 	/// <param name="headers"></param>
 	/// <param name="status"></param>
 	/// <param name="bodyType"></param>
-	void persistResponse(const std::string &requestUri, const std::string &uuid, const std::string &body, const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType) const;
+	void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const http::status_code &status, const std::string &bodyType) const;
 
-	// serializeable, always use those variables intead of method(), headers()
-	std::string m_uuid;
-	web::http::method m_method;
-	std::string m_relative_uri;
-	std::string m_remote_address;
-	std::string m_body;
-	std::map<std::string, std::string> m_headers;
-	std::string m_query;
-
-	mutable std::shared_ptr<appmesh::Response> m_response;
+private:
 	TcpHandler *m_requestClient;
 };
 

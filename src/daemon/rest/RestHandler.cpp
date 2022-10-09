@@ -259,7 +259,7 @@ void RestHandler::apiAppEnable(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->enableApp(appName);
-	message.saveReply(status_codes::OK, convertText2Json(std::string("Enable <") + appName + "> success."));
+	message.reply(status_codes::OK, convertText2Json(std::string("Enable <") + appName + "> success."));
 }
 
 void RestHandler::apiAppDisable(const HttpRequest &message)
@@ -271,7 +271,7 @@ void RestHandler::apiAppDisable(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->disableApp(appName);
-	message.saveReply(status_codes::OK, convertText2Json(std::string("Disable <") + appName + "> success."));
+	message.reply(status_codes::OK, convertText2Json(std::string("Disable <") + appName + "> success."));
 }
 
 void RestHandler::apiAppDelete(const HttpRequest &message)
@@ -292,7 +292,7 @@ void RestHandler::apiAppDelete(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->removeApp(appName);
-	message.saveReply(status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
+	message.reply(status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 }
 
 void RestHandler::apiFileDownload(const HttpRequest &message)
@@ -302,24 +302,24 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
-		message.saveReply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
+		message.reply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
 	auto file = GET_STD_STRING(message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
-		message.saveReply(status_codes::NotAcceptable, convertText2Json("file not found"));
+		message.reply(status_codes::NotAcceptable, convertText2Json("file not found"));
 		return;
 	}
 
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
 	auto fileInfo = os::fileStat(file);
-	web::http::http_response resp(status_codes::OK);
-	resp.headers().add(HTTP_HEADER_KEY_file_mode, std::get<0>(fileInfo));
-	resp.headers().add(HTTP_HEADER_KEY_file_user, std::get<1>(fileInfo));
-	resp.headers().add(HTTP_HEADER_KEY_file_group, std::get<2>(fileInfo));
-	message.saveReply(resp);
+	std::map<std::string, std::string> headers;
+	headers[HTTP_HEADER_KEY_file_mode] = std::get<0>(fileInfo);
+	headers[HTTP_HEADER_KEY_file_user] = std::get<1>(fileInfo);
+	headers[HTTP_HEADER_KEY_file_group] = std::get<2>(fileInfo);
+	message.reply(status_codes::OK, "", headers);
 }
 
 void RestHandler::apiFileUpload(const HttpRequest &message)
@@ -328,24 +328,24 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
-		message.saveReply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
+		message.reply(status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
 	auto file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
 	if (Utility::isFileExist(file))
 	{
-		message.saveReply(status_codes::Forbidden, convertText2Json("file already exist"));
+		message.reply(status_codes::Forbidden, convertText2Json("file already exist"));
 		return;
 	}
 
 	LOG_DBG << fname << "Uploading file <" << file << ">";
-	message.saveReply(status_codes::OK, convertText2Json("File upload success"));
+	message.reply(status_codes::OK, convertText2Json("File upload success"));
 }
 
 void RestHandler::apiLabelsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_view);
-	message.saveReply(status_codes::OK, Configuration::instance()->getLabel()->AsJson());
+	message.reply(status_codes::OK, Configuration::instance()->getLabel()->AsJson());
 }
 
 void RestHandler::apiLabelAdd(const HttpRequest &message)
@@ -363,11 +363,11 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();
 
-		message.saveReply(status_codes::OK, convertText2Json("Add label success"));
+		message.reply(status_codes::OK, convertText2Json("Add label success"));
 	}
 	else
 	{
-		message.saveReply(status_codes::BadRequest, convertText2Json("query value required"));
+		message.reply(status_codes::BadRequest, convertText2Json("query value required"));
 	}
 }
 
@@ -381,7 +381,7 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 	Configuration::instance()->getLabel()->delLabel(labelKey);
 	Configuration::instance()->saveConfigToDisk();
 
-	message.saveReply(status_codes::OK, convertText2Json("Label delete success"));
+	message.reply(status_codes::OK, convertText2Json("Label delete success"));
 }
 
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
@@ -404,7 +404,7 @@ void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 	{
 		json[index++] = web::json::value::string(perm);
 	}
-	message.saveReply(status_codes::OK, json);
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiBasicConfigView(const HttpRequest &message)
@@ -412,7 +412,7 @@ void RestHandler::apiBasicConfigView(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_config_view);
 
 	auto config = Configuration::instance()->AsJson(false, getJwtUserName(message));
-	message.saveReply(status_codes::OK, config);
+	message.reply(status_codes::OK, config);
 }
 
 void RestHandler::apiBasicConfigSet(const HttpRequest &message)
@@ -456,7 +456,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << tokenUserName << "> changed password";
-	message.saveReply(status_codes::OK, convertText2Json("password changed success"));
+	message.reply(status_codes::OK, convertText2Json("password changed success"));
 }
 
 void RestHandler::apiUserLock(const HttpRequest &message)
@@ -478,7 +478,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
-	message.saveReply(status_codes::OK, convertText2Json("Lock user success"));
+	message.reply(status_codes::OK, convertText2Json("Lock user success"));
 }
 
 void RestHandler::apiUserUnlock(const HttpRequest &message)
@@ -495,7 +495,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
-	message.saveReply(status_codes::OK, convertText2Json("Unlock user success"));
+	message.reply(status_codes::OK, convertText2Json("Unlock user success"));
 }
 
 void RestHandler::apiUserAdd(const HttpRequest &message)
@@ -512,7 +512,7 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
-	message.saveReply(status_codes::OK, convertText2Json("User add success"));
+	message.reply(status_codes::OK, convertText2Json("User add success"));
 }
 
 void RestHandler::apiUserView(const HttpRequest &message)
@@ -524,7 +524,7 @@ void RestHandler::apiUserView(const HttpRequest &message)
 		if (user != nullptr)
 		{
 			auto userJson = user->AsJson();
-			message.saveReply(status_codes::OK, User::clearConfidentialInfo(userJson));
+			message.reply(status_codes::OK, User::clearConfidentialInfo(userJson));
 		}
 		else
 		{
@@ -551,7 +551,7 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
-	message.saveReply(status_codes::OK, convertText2Json("User delete success"));
+	message.reply(status_codes::OK, convertText2Json("User delete success"));
 }
 
 void RestHandler::apiUserActiveMFA(const HttpRequest &message)
@@ -571,7 +571,7 @@ void RestHandler::apiUserActiveMFA(const HttpRequest &message)
 
 	auto result = web::json::value();
 	result[HTTP_BODY_KEY_MFA_URI] = web::json::value(Utility::encode64(totpUri));
-	message.saveReply(status_codes::OK, result);
+	message.reply(status_codes::OK, result);
 
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 	ConsulConnection::instance()->saveSecurity();
@@ -597,7 +597,7 @@ void RestHandler::apiUserDeActiveMFA(const HttpRequest &message)
 			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
 		}
 		user->deactiveMfa();
-		message.saveReply(status_codes::OK, convertText2Json("2FA deactive success"));
+		message.reply(status_codes::OK, convertText2Json("2FA deactive success"));
 
 		Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 		ConsulConnection::instance()->saveSecurity();
@@ -618,14 +618,14 @@ void RestHandler::apiUsersView(const HttpRequest &message)
 		User::clearConfidentialInfo(user.second);
 	}
 
-	message.saveReply(status_codes::OK, users);
+	message.reply(status_codes::OK, users);
 }
 
 void RestHandler::apiRolesView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_role_view);
 
-	message.saveReply(status_codes::OK, Security::instance()->getRolesJson());
+	message.reply(status_codes::OK, Security::instance()->getRolesJson());
 }
 
 void RestHandler::apiRoleUpdate(const HttpRequest &message)
@@ -642,7 +642,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
-	message.saveReply(status_codes::OK, convertText2Json("Role update success"));
+	message.reply(status_codes::OK, convertText2Json("Role update success"));
 }
 
 void RestHandler::apiRoleDelete(const HttpRequest &message)
@@ -660,7 +660,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
-	message.saveReply(status_codes::OK, convertText2Json("Role delete success"));
+	message.reply(status_codes::OK, convertText2Json("Role delete success"));
 }
 
 void RestHandler::apiUserGroupsView(const HttpRequest &message)
@@ -672,7 +672,7 @@ void RestHandler::apiUserGroupsView(const HttpRequest &message)
 	{
 		json[index++] = web::json::value::string(grp);
 	}
-	message.saveReply(status_codes::OK, json);
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiPermissionsView(const HttpRequest &message)
@@ -686,7 +686,7 @@ void RestHandler::apiPermissionsView(const HttpRequest &message)
 	{
 		json[index++] = web::json::value::string(perm);
 	}
-	message.saveReply(status_codes::OK, json);
+	message.reply(status_codes::OK, json);
 }
 
 void RestHandler::apiHealth(const HttpRequest &message)
@@ -694,14 +694,16 @@ void RestHandler::apiHealth(const HttpRequest &message)
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_HEALTH);
 	auto health = Configuration::instance()->getApp(appName)->health();
-	message.saveReply(status_codes::OK, std::to_string(health));
+	auto body = std::to_string(health);
+	message.reply(status_codes::OK, body);
 }
 
 void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
 	if (Configuration::instance()->prometheusEnabled())
 	{
-		message.saveReply(status_codes::OK, this->collectData(), "text/plain; version=0.0.4");
+		auto body = this->collectData();
+		message.reply(status_codes::OK, body, "text/plain; version=0.0.4");
 	}
 	else
 	{
@@ -720,7 +722,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 		std::string userGroup;
 		if (Configuration::instance()->getJwtEnabled() && !Security::instance()->verifyUserKey(uname, passwd, totp, userGroup))
 		{
-			message.saveReply(status_codes::Unauthorized, convertText2Json("Incorrect user password"));
+			message.reply(status_codes::Unauthorized, convertText2Json("Incorrect user password"));
 		}
 		else
 		{
@@ -743,13 +745,13 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 			result[GET_STRING_T("expire_time")] = web::json::value::number(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
 			result[GET_STRING_T("expire_seconds")] = web::json::value::number(timeoutSeconds);
 
-			message.saveReply(status_codes::OK, result);
+			message.reply(status_codes::OK, result);
 			LOG_DBG << fname << "User <" << uname << "> login success";
 		}
 	}
 	else
 	{
-		message.saveReply(status_codes::NetworkAuthenticationRequired, convertText2Json("Username or Password missing"));
+		message.reply(status_codes::NetworkAuthenticationRequired, convertText2Json("Username or Password missing"));
 	}
 }
 
@@ -759,7 +761,7 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 
 	if (!Configuration::instance()->getJwtEnabled())
 	{
-		message.saveReply(status_codes::OK, convertText2Json("JWT authentication not enabled"));
+		message.reply(status_codes::OK, convertText2Json("JWT authentication not enabled"));
 	}
 	else
 	{
@@ -769,11 +771,11 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 			result["user"] = web::json::value::string(getJwtUserName(message));
 			result["success"] = web::json::value::boolean(true);
 			result["permission"] = web::json::value::string(permission);
-			message.saveReply(status_codes::OK, result);
+			message.reply(status_codes::OK, result);
 		}
 		else
 		{
-			message.saveReply(status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
+			message.reply(status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
 		}
 	}
 }
@@ -786,7 +788,7 @@ void RestHandler::apiAppView(const HttpRequest &message)
 
 	checkAppAccessPermission(message, appName, false);
 
-	message.saveReply(status_codes::OK, Configuration::instance()->getApp(appName)->AsJson(true));
+	message.reply(status_codes::OK, Configuration::instance()->getApp(appName)->AsJson(true));
 }
 
 std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &message)
@@ -868,7 +870,7 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 	auto result = web::json::value::object();
 	result[JSON_KEY_APP_name] = web::json::value::string(appObj->getName());
 	result[HTTP_QUERY_KEY_process_uuid] = web::json::value::string(processUuid);
-	message.saveReply(status_codes::OK, result);
+	message.reply(status_codes::OK, result);
 }
 
 void RestHandler::apiRunSync(const HttpRequest &message)
@@ -904,29 +906,26 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	auto finished = std::get<1>(result);
 	auto exitCode = std::get<2>(result);
 	LOG_DBG << fname; // << output;
-	web::http::http_response resp(status_codes::OK);
+	std::map<std::string, std::string> headers;
 	if (pos)
-	{
-		resp.headers().add(HTTP_HEADER_KEY_output_pos, pos);
-	}
+		headers[HTTP_HEADER_KEY_output_pos] = std::to_string(pos);
 	if (finished)
-	{
-		resp.headers().add(HTTP_HEADER_KEY_exit_code, exitCode);
-	}
-	message.saveReply(resp, output);
+		headers[HTTP_HEADER_KEY_exit_code] = std::to_string(exitCode);
+
+	message.reply(status_codes::OK, output, headers);
 }
 
 void RestHandler::apiAppsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_all_app);
 	auto tokenUserName = getJwtUserName(message);
-	message.saveReply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName, true));
+	message.reply(status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName, true));
 }
 
 void RestHandler::apiCloudAppsView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
-	message.saveReply(status_codes::OK, ConsulConnection::instance()->viewCloudApps());
+	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApps());
 }
 
 void RestHandler::apiCloudAppView(const HttpRequest &message)
@@ -935,7 +934,7 @@ void RestHandler::apiCloudAppView(const HttpRequest &message)
 	auto path = GET_STD_STRING(http::uri::decode(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_VIEW);
 
-	message.saveReply(status_codes::OK, ConsulConnection::instance()->viewCloudApp(appName));
+	message.reply(status_codes::OK, ConsulConnection::instance()->viewCloudApp(appName));
 }
 
 void RestHandler::apiCloudAppOutputView(const HttpRequest &message)
@@ -948,7 +947,7 @@ void RestHandler::apiCloudAppOutputView(const HttpRequest &message)
 
 	auto querymap = web::uri::split_query(web::http::uri::decode(message.m_query));
 	auto resp = ConsulConnection::instance()->viewCloudAppOutput(appName, hostName, querymap, message.m_headers);
-	message.saveReply(resp->status_code, resp->text);
+	message.reply(resp->status_code, resp->text);
 }
 
 void RestHandler::apiCloudAppAdd(const HttpRequest &message)
@@ -963,7 +962,7 @@ void RestHandler::apiCloudAppAdd(const HttpRequest &message)
 	{
 		throw std::invalid_argument("Empty json input");
 	}
-	message.saveReply(status_codes::OK, ConsulConnection::instance()->addCloudApp(appName, jsonApp));
+	message.reply(status_codes::OK, ConsulConnection::instance()->addCloudApp(appName, jsonApp));
 }
 
 void RestHandler::apiCloudAppDel(const HttpRequest &message)
@@ -974,19 +973,19 @@ void RestHandler::apiCloudAppDel(const HttpRequest &message)
 	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_DELETE);
 
 	ConsulConnection::instance()->deleteCloudApp(appName);
-	message.saveReply(status_codes::OK, convertText2Json("Delete cloud application success"));
+	message.reply(status_codes::OK, convertText2Json("Delete cloud application success"));
 }
 
 void RestHandler::apiCloudHostView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_host_view);
-	message.saveReply(status_codes::OK, ConsulConnection::instance()->getCloudNodes());
+	message.reply(status_codes::OK, ConsulConnection::instance()->getCloudNodes());
 }
 
 void RestHandler::apiResourceView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_host_resource);
-	message.saveReply(status_codes::OK, ResourceCollection::instance()->AsJson());
+	message.reply(status_codes::OK, ResourceCollection::instance()->AsJson());
 }
 
 void RestHandler::apiAppAdd(const HttpRequest &message)
@@ -1012,5 +1011,5 @@ void RestHandler::apiAppAdd(const HttpRequest &message)
 	}
 	jsonApp[JSON_KEY_APP_owner] = web::json::value::string(getJwtUserName(message));
 	auto app = Configuration::instance()->addApp(jsonApp);
-	message.saveReply(status_codes::OK, app->AsJson(false));
+	message.reply(status_codes::OK, app->AsJson(false));
 }

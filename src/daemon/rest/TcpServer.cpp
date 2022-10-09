@@ -108,12 +108,11 @@ void TcpHandler::handleTcpRest()
 		if (messageQueue.dequeue(msg) >= -1 && msg)
 		{
 			std::unique_ptr<HttpRequestMsg> entity(static_cast<HttpRequestMsg *>((void *)msg->rd_ptr()));
-			auto request = HttpRequest::deserialize(entity->m_data.get());
+			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_client);
 			msg->release();
 			msg = nullptr;
 			if (request != nullptr)
 			{
-				request->m_requestClient = entity->m_client;
 				const HttpRequest &message = *request;
 				LOG_DBG << fname << message.m_method << " from <"
 						<< message.m_remote_address << "> path <"
@@ -138,11 +137,7 @@ void TcpHandler::handleTcpRest()
 							<< " from " << message.m_remote_address
 							<< " with path " << message.m_relative_uri;
 				}
-				// for sync response reply here
-				if (request->m_response != nullptr)
-				{
-					TcpHandler::reply(entity->m_client, *(request->m_response.get()));
-				}
+				// TODO: check request without reply
 			}
 		}
 	}
@@ -182,7 +177,7 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 	return true;
 }
 
-bool TcpHandler::reply(TcpHandler *tcpHandler, const appmesh::Response &resp)
+bool TcpHandler::replyTcp(TcpHandler *tcpHandler, const appmesh::Response &resp)
 {
 	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex(), false);
 	if (m_handlers.find(tcpHandler) == 0)

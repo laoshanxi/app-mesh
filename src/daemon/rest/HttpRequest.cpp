@@ -1,22 +1,16 @@
-#include "HttpRequest.h"
+#include <map>
+#include <string>
+
 #include "../../common/Utility.h"
 #include "../../daemon/application/Application.h"
+#include "HttpRequest.h"
+#include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 #include "protoc/Request.pb.h"
+#include "protoc/Response.pb.h"
 
-HttpRequest::HttpRequest(const HttpRequest &message)
-	: m_uuid(Utility::createUUID()), m_requestClient(nullptr)
-{
-	this->m_method = message.m_method;
-	this->m_relative_uri = message.m_relative_uri;
-	this->m_remote_address = message.m_remote_address;
-	this->m_query = message.m_query;
-	this->m_body = message.m_body;
-	this->m_headers = message.m_headers;
-	this->m_requestClient = message.m_requestClient;
-}
-
-HttpRequest::HttpRequest(const appmesh::Request &request) : m_requestClient(nullptr)
+HttpRequest::HttpRequest(const appmesh::Request &request, TcpHandler *requestClient)
+	: m_requestClient(requestClient)
 {
 	this->m_uuid = request.uuid();
 	this->m_method = request.http_method();
@@ -39,53 +33,24 @@ web::json::value HttpRequest::extractJson() const
 	return web::json::value::parse(m_body);
 }
 
-void HttpRequest::saveReply(http_response &response) const
+void HttpRequest::reply(web::http::status_code status) const
 {
-	persistResponse(m_relative_uri, m_uuid, "", response.headers(), response.status_code(), "");
+	reply(m_relative_uri, m_uuid, "", {}, status, "");
 }
 
-void HttpRequest::saveReply(http_response &response, const std::string &body_data) const
+void HttpRequest::reply(web::http::status_code status, const json::value &body_data) const
 {
-	persistResponse(m_relative_uri, m_uuid, body_data, response.headers(), response.status_code(), "text/plain; charset=utf-8");
+	reply(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 }
 
-void HttpRequest::saveReply(http::status_code status) const
+void HttpRequest::reply(web::http::status_code status, std::string &body_data, const std::string &content_type) const
 {
-	persistResponse(m_relative_uri, m_uuid, "", {}, status, "");
+	reply(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
-void HttpRequest::saveReply(http::status_code status, const json::value &body_data) const
+void HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
 {
-	persistResponse(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
-}
-
-void HttpRequest::saveReply(http::status_code status, utf8string &&body_data, const utf8string &content_type) const
-{
-	persistResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
-}
-
-void HttpRequest::saveReply(http::status_code status, const utf8string &body_data, const utf8string &content_type) const
-{
-	persistResponse(m_relative_uri, m_uuid, body_data, {}, status, content_type);
-}
-
-void HttpRequest::saveReply(http::status_code status, const utf16string &body_data, const utf16string &content_type) const
-{
-	persistResponse(m_relative_uri, m_uuid, GET_STD_STRING(body_data), {}, status, GET_STD_STRING(content_type));
-}
-
-void HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) const
-{
-	const static char fname[] = "HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, const utility::string_t &content_type) ";
-	LOG_ERR << fname << "unsupported method";
-	throw std::runtime_error("not supported");
-}
-
-void HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) const
-{
-	const static char fname[] = "HttpRequest::saveReply(status_code status, const concurrency::streams::istream &body, utility::size64_t content_length, const utility::string_t &content_type) ";
-	LOG_ERR << fname << "unsupported method";
-	throw std::runtime_error("not supported");
+	reply(m_relative_uri, m_uuid, body_data, headers, status, content_type);
 }
 
 const std::shared_ptr<appmesh::Request> HttpRequest::serialize() const
@@ -103,7 +68,7 @@ const std::shared_ptr<appmesh::Request> HttpRequest::serialize() const
 	return req;
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, TcpHandler *clientRequest)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -111,7 +76,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input)
 	appmesh::Request req;
 	if (ProtobufHelper::deserialize(req, input))
 	{
-		return std::shared_ptr<HttpRequest>(new HttpRequest(req));
+		return std::make_shared<HttpRequest>(req, clientRequest);
 	}
 	else
 	{
@@ -127,19 +92,24 @@ const web::json::value HttpRequest::emptyJson()
 	return emptyBody;
 }
 
-void HttpRequest::persistResponse(const std::string &requestUri, const std::string &uuid, const std::string &body,
-								  const web::http::http_headers &headers, const http::status_code &status, const std::string &bodyType) const
+void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
+						const std::map<std::string, std::string> &headers, const http::status_code &status, const std::string &bodyType) const
 {
-	const static char fname[] = "HttpRequest::persistResponse() ";
+	const static char fname[] = "HttpRequest::reply() ";
 	LOG_DBG << fname;
 
-	m_response = std::make_shared<appmesh::Response>();
+	appmesh::Response response;
 	// fill data
-	m_response->set_uuid(uuid);
-	m_response->set_http_body(body);
-	m_response->mutable_headers()->insert(headers.begin(), headers.end());
-	m_response->set_http_status(status);
-	m_response->set_http_body_msg_type(bodyType);
+	response.set_uuid(uuid);
+	response.set_http_body(body);
+	response.mutable_headers()->insert(headers.begin(), headers.end());
+	response.set_http_status(status);
+	response.set_http_body_msg_type(bodyType);
+
+	if (m_requestClient)
+	{
+		TcpHandler::replyTcp(m_requestClient, response);
+	}
 }
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequest with remove app from global map

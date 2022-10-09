@@ -46,12 +46,12 @@ void RestBase::handle_delete(const HttpRequest &message)
 
 void RestBase::handle_options(const HttpRequest &message)
 {
-    message.saveReply(web::http::status_codes::OK);
+    message.reply(web::http::status_codes::OK);
 }
 
 void RestBase::handle_head(const HttpRequest &message)
 {
-    message.saveReply(web::http::status_codes::OK);
+    message.reply(web::http::status_codes::OK);
 }
 
 void RestBase::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
@@ -65,8 +65,9 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     {
         auto msg = web::json::value::object();
         msg[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string(REST_ROOT_TEXT_MESSAGE);
-        message.saveReply(status_codes::OK, msg.serialize());
-        return;
+		auto body = msg.serialize();
+		message.reply(status_codes::OK, body);
+		return;
     }
 
     bool findRest = false;
@@ -81,7 +82,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     if (!findRest)
     {
-        message.saveReply(status_codes::NotFound, convertText2Json(std::string("Path not found: ") + path));
+        message.reply(status_codes::NotFound, convertText2Json(std::string("Path not found: ") + path));
         return;
     }
 
@@ -101,12 +102,12 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     catch (const std::exception &e)
     {
         LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
-        message.saveReply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
+        message.reply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
     }
     catch (...)
     {
         LOG_WAR << fname << "rest " << path << " failed";
-        message.saveReply(web::http::status_codes::BadRequest, convertText2Json("unknow exception"));
+        message.reply(web::http::status_codes::BadRequest, convertText2Json("unknow exception"));
     }
 }
 

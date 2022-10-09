@@ -68,17 +68,16 @@ void MonitoredProcess::replyAsyncRequest()
 	{
 		try
 		{
-			web::http::http_response resp(web::http::status_codes::OK);
-			long position = 0;
-			const auto body = this->getOutputMsg(&position);
-			resp.headers().add(HTTP_HEADER_KEY_exit_code, this->returnValue());
-			resp.headers().add(HTTP_HEADER_KEY_output_pos, position);
 			std::unique_ptr<HttpRequest> request(static_cast<HttpRequest *>(m_httpRequest));
 			m_httpRequest = nullptr;
-			if (nullptr != request && request->m_requestClient != nullptr)
+			if (nullptr != request)
 			{
-				request->saveReply(resp, body);
-				TcpHandler::reply(request->m_requestClient, *(request->m_response.get()));
+				long position = 0;
+				auto body = this->getOutputMsg(&position);
+				std::map<std::string, std::string> headers;
+				headers[HTTP_HEADER_KEY_exit_code] = std::to_string(this->returnValue());
+				headers[HTTP_HEADER_KEY_output_pos] = std::to_string(position);
+				request->reply(web::http::status_codes::OK, body, headers);
 			}
 		}
 		catch (...)
