@@ -624,9 +624,12 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	if (process != nullptr && index == 0 && process->getuuid() == processUuid && process->running() && timeout > 0)
 	{
 		auto start = std::chrono::system_clock::now();
-		while (process->running() && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - start).count() < (int64_t)(1000L * timeout))
+		auto end = start + std::chrono::seconds(timeout);
+		ACE_Time_Value shortInterval;
+		shortInterval.msec(100);
+		while (process->running() && std::chrono::system_clock::now() < end)
 		{
-			process->wait(ACE_Time_Value(0, 100));
+			process->wait(shortInterval);
 		}
 	}
 

@@ -9,11 +9,15 @@
 
 TimerManager::TimerManager()
 {
+	const static char fname[] = "TimerManager::TimerManager() ";
+	LOG_DBG << fname;
 	this->reactor(&m_reactor);
 }
 
 TimerManager::~TimerManager()
 {
+	const static char fname[] = "TimerManager::~TimerManager() ";
+	LOG_DBG << fname;
 }
 
 int TimerManager::handle_timeout(const ACE_Time_Value &current_time, const void *act)
@@ -105,10 +109,12 @@ void TimerManager::runReactorEvent(ACE_Reactor *reactor)
 	const static char fname[] = "TimerManager::runReactorEvent() ";
 	LOG_DBG << fname << "Entered";
 
-	if (QUIT_HANDLER::instance()->is_set() == 0)
+	reactor->owner(ACE_OS::thr_self());
+	while (QUIT_HANDLER::instance()->is_set() == 0 && !reactor->reactor_event_loop_done())
 	{
-		reactor->owner(ACE_OS::thr_self());
+
 		reactor->run_reactor_event_loop();
+		LOG_WAR << fname << "reactor_event_loop";
 	}
 	LOG_WAR << fname << "Exit";
 }
