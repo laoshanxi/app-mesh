@@ -123,10 +123,14 @@ func serializeRequest(req *fasthttp.Request) *Request {
 	req.Header.VisitAll(func(key, value []byte) {
 		data.Headers[string(key)] = string(value)
 	})
-	data.Querys = string(req.URI().QueryArgs().QueryString())
+	data.Querys = map[string]string{}
+	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
+		data.Querys[string(key)] = string(value)
+	})
+
 	// do not read body for file upload
 	if !(req.Header.IsPost() && string(req.URI().Path()) == REST_PATH_UPLOAD) {
-		data.HttpBody = string(req.Body())
+		data.HttpBody = req.Body()
 	}
 	return data
 }

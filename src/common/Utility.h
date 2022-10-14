@@ -8,7 +8,6 @@
 #include <string>
 #include <vector>
 
-#include <cpprest/http_headers.h>
 #include <cpprest/json.h>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
@@ -39,8 +38,8 @@ namespace fs = boost::filesystem;
 		return 0;                                                                                                         \
 	}
 
-#define GET_STRING_T(sstr) utility::conversions::to_string_t(std::string(sstr))
-#define GET_STD_STRING(sstr) utility::conversions::to_utf8string(sstr)
+#define GET_STRING_T(sstr) (sstr)
+#define GET_STD_STRING(sstr) (sstr)
 
 #define SET_COMPARE(x, y)                                           \
 	if ((x) != (y))                                                 \
@@ -111,7 +110,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	} while (false)
 
 #define GET_HTTP_HEADER(message, headerName) \
-	message.m_headers.count(headerName) > 0 ? message.m_headers.find(headerName)->second : utility::string_t()
+	message.m_headers.count(headerName) > 0 ? message.m_headers.find(headerName)->second : std::string()
 #define APPMESH_CONFIG_JSON_FILE "config.json"
 #define APPMESH_SECURITY_JSON_FILE "security.json"
 #define APPMESH_SECURITY_LDAP_JSON_FILE "ldap.json"
@@ -418,3 +417,69 @@ public:
 #define PERMISSION_KEY_role_delete "role-delete"
 #define PERMISSION_KEY_role_view "role-view"
 #define PERMISSION_KEY_permission_list "permission-list"
+
+namespace web
+{
+	namespace http
+	{
+		/// <summary>
+		/// Predefined method strings for the standard HTTP methods mentioned in the
+		/// HTTP 1.1 specification.
+		/// </summary>
+		typedef std::string method;
+
+		/// <summary>
+		/// Common HTTP methods.
+		/// </summary>
+		class methods
+		{
+		public:
+#define _METHODS
+#define DAT(a, b) _ASYNCRTIMP const static method a;
+#include "http_constants.dat"
+#undef _METHODS
+#undef DAT
+		};
+
+		typedef unsigned short status_code;
+
+		/// <summary>
+		/// Predefined values for all of the standard HTTP 1.1 response status codes.
+		/// </summary>
+		class status_codes
+		{
+		public:
+#define _PHRASES
+#define DAT(a, b, c) const static status_code a = b;
+#include "http_constants.dat"
+#undef _PHRASES
+#undef DAT
+		};
+
+		/// <summary>
+		/// Constants for the HTTP headers mentioned in RFC 2616.
+		/// </summary>
+		class header_names
+		{
+		public:
+#define _HEADER_NAMES
+#define DAT(a, b) _ASYNCRTIMP const static std::string a;
+#include "http_constants.dat"
+#undef _HEADER_NAMES
+#undef DAT
+		};
+
+		/// <summary>
+		/// Constants for MIME types.
+		/// </summary>
+		class mime_types
+		{
+		public:
+#define _MIME_TYPES
+#define DAT(a, b) _ASYNCRTIMP const static std::string a;
+#include "http_constants.dat"
+#undef _MIME_TYPES
+#undef DAT
+		};
+	}
+}

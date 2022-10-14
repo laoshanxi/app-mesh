@@ -960,10 +960,8 @@ class AppMeshClientTCP(AppMeshClient):
             for k, v in header.items():
                 appmesh_requst.headers[k] = v
         if query:
-            query_list = []
             for k, v in query.items():
-                query_list.append(str(k) + "=" + str(v))
-            appmesh_requst.querys = "&".join(query_list)
+                appmesh_requst.querys[k] = v
         data = appmesh_requst.SerializeToString()
         self.__socket_client.sendall(len(data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
         self.__socket_client.sendall(data)

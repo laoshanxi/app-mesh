@@ -6,7 +6,6 @@
 #include <string>
 #include <thread>
 
-#include <cpprest/http_msg.h>
 #include <cpprest/json.h>
 
 #include "../../common/TimerHandler.h"
@@ -53,7 +52,7 @@ private:
 	std::shared_ptr<Configuration::JsonConsul> getConfig();
 
 	std::shared_ptr<cpr::Response> requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body, int timeoutSec = REST_REQUEST_TIMEOUT_SECONDS);
-	std::shared_ptr<cpr::Response> requestAppMesh(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
+	std::shared_ptr<cpr::Response> requestAppMesh(const std::string &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
 
 	std::tuple<bool, long long> blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse = false);
 	void watchSecurityThread();

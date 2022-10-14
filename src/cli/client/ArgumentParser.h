@@ -5,11 +5,9 @@
 #include <string>
 
 #include <boost/program_options.hpp>
-#include <cpprest/http_client.h>
 #include <cpprest/json.h>
 
-using namespace web;	   // Common features like URIs.
-using namespace web::http; // Common HTTP functionality
+#include "../../common/Utility.h"
 
 namespace cpr
 {
@@ -64,7 +62,7 @@ private:
 	void initRadomPassword();
 
 public:
-	std::shared_ptr<cpr::Response> requestHttp(bool throwAble, const method &mtd, const std::string &path, web::json::value *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
+	std::shared_ptr<cpr::Response> requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, web::json::value *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
 	std::string getAuthenToken();
 	std::string getAuthenUser();
@@ -85,6 +83,7 @@ private:
 	void unregSignal();
 	std::string parseOutputMessage(std::shared_ptr<cpr::Response> &resp);
 	const std::string getAppMeshUrl();
+	const std::string parseUrlHost(const std::string &url);
 
 private:
 	po::variables_map m_commandLineVariables;

@@ -119,7 +119,7 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
 	}
 	auto body = collectData();
-	message.reply(status_codes::OK, body, CONTENT_TYPE);
+	message.reply(web::http::status_codes::OK, body, CONTENT_TYPE);
 }
 
 CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, const std::string &name, const std::string &help, std::map<std::string, std::string> label)

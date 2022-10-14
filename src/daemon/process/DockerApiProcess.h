@@ -2,7 +2,6 @@
 
 #include <string>
 
-#include <cpprest/http_msg.h>
 #include <cpprest/json.h>
 
 #include "DockerProcess.h"

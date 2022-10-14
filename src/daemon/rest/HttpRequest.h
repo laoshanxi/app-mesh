@@ -3,12 +3,10 @@
 #include <map>
 #include <memory>
 
-#include <cpprest/http_client.h>
+#include <cpprest/json.h>
 
+#include "../../common/Utility.h"
 #include "protoc/Request.pb.h"
-
-using namespace web;
-using namespace http;
 
 #define CONTENT_TYPE_APPLICATION_JSON "application/json"
 class TcpHandler;
@@ -50,7 +48,7 @@ public:
 	/// <param name="status">Response status code.</param>
 	/// <param name="body_data">Json value to use in the response body.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(web::http::status_code status, const json::value &body_data) const;
+	void reply(web::http::status_code status, const web::json::value &body_data) const;
 
 	/// Responds to this HTTP request with a string.
 	/// Assumes the character encoding of the string is UTF-8.
@@ -88,8 +86,8 @@ public:
 	std::string m_relative_uri;
 	std::string m_remote_address;
 	std::string m_body;
+	std::map<std::string, std::string> m_querys;
 	std::map<std::string, std::string> m_headers;
-	std::string m_query;
 
 private:
 	/// <summary>
@@ -101,7 +99,7 @@ private:
 	/// <param name="headers"></param>
 	/// <param name="status"></param>
 	/// <param name="bodyType"></param>
-	void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const http::status_code &status, const std::string &bodyType) const;
+	void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const;
 
 private:
 	TcpHandler *m_requestClient;

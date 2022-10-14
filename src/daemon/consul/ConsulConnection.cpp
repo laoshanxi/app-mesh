@@ -230,24 +230,18 @@ std::shared_ptr<cpr::Response> ConsulConnection::viewCloudAppOutput(const std::s
 	const static char fname[] = "ConsulConnection::viewCloudAppOutput() ";
 	LOG_DBG << fname;
 
-	web::uri_builder baseUri;
-	baseUri.set_host(hostName);
-	baseUri.set_port(Configuration::instance()->getRestListenPort());
-	baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
+	auto baseUri = Utility::stringFormat("%s://%s:%d", (Configuration::instance()->getSslEnabled() ? "https" : "http"), hostName.c_str(), Configuration::instance()->getRestListenPort());
 	auto restPath = Utility::stringFormat("/appmesh/app/%s/output", app.c_str());
-	return requestAppMesh(baseUri.to_uri(), restPath, web::http::methods::GET, query, headers);
+	return requestAppMesh(baseUri, restPath, web::http::methods::GET, query, headers);
 }
 
 int ConsulConnection::getHealthStatus(const std::string &hostName, const std::string &app)
 {
 	const static char fname[] = "ConsulConnection::getHealthStatus() ";
 
-	web::uri_builder baseUri;
-	baseUri.set_host(hostName);
-	baseUri.set_port(Configuration::instance()->getRestListenPort());
-	baseUri.set_scheme(Configuration::instance()->getSslEnabled() ? "https" : "http");
+	auto baseUri = Utility::stringFormat("%s://%s:%d", (Configuration::instance()->getSslEnabled() ? "https" : "http"), hostName.c_str(), Configuration::instance()->getRestListenPort());
 	auto restPath = Utility::stringFormat("/appmesh/app/%s/health", app.c_str());
-	auto url = Utility::stdStringTrim(baseUri.to_uri().to_string(), '/');
+	auto url = Utility::stdStringTrim(baseUri, '/');
 	auto resp = cpr::Get(cpr::Url{url, restPath}, cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false}), cpr::Timeout{1000 * 10});
 	if (resp.status_code != web::http::status_codes::OK)
 	{
@@ -1101,11 +1095,11 @@ std::shared_ptr<cpr::Response> ConsulConnection::requestConsul(const web::http::
 	return response;
 }
 
-std::shared_ptr<cpr::Response> ConsulConnection::requestAppMesh(const web::uri &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers)
+std::shared_ptr<cpr::Response> ConsulConnection::requestAppMesh(const std::string &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers)
 {
 	ArgumentParser appmesh(0, 0);
 	auto admin = Security::instance()->getUserInfo(JWT_ADMIN_NAME);
-	appmesh.login(admin->getName(), admin->getKey(), "", Utility::stdStringTrim(baseUri.to_string(), '/'));
+	appmesh.login(admin->getName(), admin->getKey(), "", Utility::stdStringTrim(baseUri, '/'));
 	return appmesh.requestHttp(false, mtd, requestPath, nullptr, headers, query);
 }
 

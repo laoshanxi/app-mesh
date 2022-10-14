@@ -7,7 +7,7 @@ message Request {
   string http_method = 2;
   string request_uri = 3;
   string client_address = 4;
-  string http_body = 5;
+  bytes http_body = 5;
   map<string, string> headers = 6;
-  string querys = 7;
+  map<string, string> querys = 7;
 }

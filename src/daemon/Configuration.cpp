@@ -782,15 +782,12 @@ const web::json::value Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
-	web::uri_builder restUri;
-	restUri.set_host(Configuration::instance()->getRestListenAddress());
-	restUri.set_port(Configuration::instance()->getRestListenPort());
-	restUri.set_scheme(this->m_rest->m_ssl->m_sslEnabled ? "https" : "http");
+	auto restUri = Utility::stringFormat("%s://%s:%d", (this->m_rest->m_ssl->m_sslEnabled ? "https" : "http"), Configuration::instance()->getRestListenAddress().c_str(), Configuration::instance()->getRestListenPort());
 	auto cmd = (fs::path(Utility::getSelfDir()) / "agent").string();
 	if (Configuration::instance()->getRestEnabled())
 	{
 		cmd += std::string(" -rest_tcp_port ") + std::to_string(Configuration::instance()->getRestTcpPort()) +
-			   " -agent_url " + Utility::stdStringTrim(restUri.to_uri().to_string(), '/');
+			   " -agent_url " + Utility::stdStringTrim(restUri, '/');
 	}
 	if (Configuration::instance()->getDockerProxyAddress().length() &&
 		Utility::isFileExist("/var/run/docker.pid") &&

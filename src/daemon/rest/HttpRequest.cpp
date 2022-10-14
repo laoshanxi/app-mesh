@@ -17,7 +17,10 @@ HttpRequest::HttpRequest(const appmesh::Request &request, TcpHandler *requestCli
 	this->m_relative_uri = request.request_uri();
 	this->m_remote_address = request.client_address();
 	this->m_body = request.http_body();
-	this->m_query = request.querys();
+	for (const auto &query : request.querys())
+	{
+		this->m_querys[query.first] = query.second;
+	}
 	for (const auto &header : request.headers())
 	{
 		this->m_headers[header.first] = header.second;
@@ -38,7 +41,7 @@ void HttpRequest::reply(web::http::status_code status) const
 	reply(m_relative_uri, m_uuid, "", {}, status, "");
 }
 
-void HttpRequest::reply(web::http::status_code status, const json::value &body_data) const
+void HttpRequest::reply(web::http::status_code status, const web::json::value &body_data) const
 {
 	reply(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 }
@@ -63,7 +66,7 @@ const std::shared_ptr<appmesh::Request> HttpRequest::serialize() const
 	req->set_client_address(m_remote_address);
 	req->set_http_body(m_body);
 	req->mutable_headers()->insert(m_headers.begin(), m_headers.end());
-	req->set_querys(m_query);
+	req->mutable_querys()->insert(m_querys.begin(), m_querys.end());
 
 	return req;
 }
@@ -93,7 +96,7 @@ const web::json::value HttpRequest::emptyJson()
 }
 
 void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
-						const std::map<std::string, std::string> &headers, const http::status_code &status, const std::string &bodyType) const
+						const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
 	LOG_DBG << fname;
