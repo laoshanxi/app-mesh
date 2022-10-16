@@ -11,7 +11,7 @@
 #include <ace/SOCK_Stream.h>
 #include <boost/algorithm/string_regex.hpp>
 #include <chrono>
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
 #include <log4cpp/Appender.hh>
@@ -136,29 +136,29 @@ TEST_CASE("Utility Test", "[Utility]")
     // teardown
 }
 
-TEST_CASE("cpprestsdk", "[Utility]")
+TEST_CASE("json", "[Utility]")
 {
     init();
 
     LOG_INF << "Utility::getSelfFullPath():" << Utility::getSelfFullPath();
     LOG_INF << "Utility::getSelfDir():" << Utility::getSelfDir();
 
-    web::json::value a;
-    LOG_INF << "web::json::value: " << a;
+    nlohmann::json a;
+    LOG_INF << "nlohmann::json: " << a;
 
     REQUIRE(a.is_null());
-    REQUIRE(a.serialize() == "null");
+    REQUIRE(a.dump() == "null");
 
-    a = web::json::value::string("abc");
-    REQUIRE_FALSE(a.serialize() == "abc");
-    REQUIRE(a.as_string() == "abc");
-    REQUIRE(a == web::json::value::string("abc"));
+    a = std::string("abc");
+    REQUIRE_FALSE(a.dump() == "abc");
+    REQUIRE(a.get<std::string>() == "abc");
+    REQUIRE(a == std::string("abc"));
 
-    a = web::json::value::parse("{\"a\":2, \"b\":2}");
-    LOG_INF << "web::json::value: " << a;
-    LOG_INF << "web::json::value: " << a.serialize();
+    a = nlohmann::json::parse("{\"a\":2, \"b\":2}");
+    LOG_INF << "nlohmann::json: " << a;
+    LOG_INF << "nlohmann::json: " << a.dump();
 
-    web::json::value nullBody;
+    nlohmann::json nullBody;
     REQUIRE(nullBody.is_null());
 }
 

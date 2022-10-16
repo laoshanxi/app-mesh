@@ -7,7 +7,7 @@
 #include <string>
 #include <tuple>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 class Application;
 class Label;
@@ -19,8 +19,8 @@ struct ConsulTask;
 struct ConsulNode
 {
 	ConsulNode();
-	static std::shared_ptr<ConsulNode> FromJson(const web::json::value &jsonObj, const std::string &hostName);
-	web::json::value AsJson() const;
+	static std::shared_ptr<ConsulNode> FromJson(const nlohmann::json &jsonObj, const std::string &hostName);
+	nlohmann::json AsJson() const;
 	void dump();
 
 	/// @brief For schedule sort
@@ -50,8 +50,8 @@ struct ConsulNode
 struct ConsulTask
 {
 	ConsulTask();
-	static std::shared_ptr<ConsulTask> FromJson(const web::json::value &jsonObj);
-	web::json::value AsJson() const;
+	static std::shared_ptr<ConsulTask> FromJson(const nlohmann::json &jsonObj);
+	nlohmann::json AsJson() const;
 	void dump();
 	bool operator==(const std::shared_ptr<ConsulTask> &task);
 
@@ -80,8 +80,8 @@ struct ConsulTask
 /// </summary>
 struct ConsulTopology
 {
-	static std::shared_ptr<ConsulTopology> FromJson(const web::json::value &jsonObj, const std::string &hostName);
-	web::json::value AsJson() const;
+	static std::shared_ptr<ConsulTopology> FromJson(const nlohmann::json &jsonObj, const std::string &hostName);
+	nlohmann::json AsJson() const;
 	bool operator==(const std::shared_ptr<ConsulTopology> &topology);
 	void dump();
 

@@ -231,7 +231,7 @@ std::tuple<std::string, std::string> AppProcess::extractCommand(const std::strin
 	return std::tuple<std::string, std::string>(params, cmdroot);
 }
 
-int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const web::json::value &stdinFileContent, const int maxStdoutSize)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
@@ -324,9 +324,9 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			m_stdinFileName = Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str());
 			std::ofstream inputFile(m_stdinFileName, std::ios::trunc);
 			if (stdinFileContent.is_string())
-				inputFile << stdinFileContent.as_string();
+				inputFile << stdinFileContent.get<std::string>();
 			else
-				inputFile << stdinFileContent.serialize();
+				inputFile << stdinFileContent.dump();
 			inputFile.close();
 			assert(Utility::isFileExist(m_stdinFileName));
 			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY, 0444);

@@ -6,7 +6,7 @@ AppBehavior::AppBehavior()
 {
 }
 
-void AppBehavior::behaviorInit(web::json::value config)
+void AppBehavior::behaviorInit(nlohmann::json config)
 {
     m_exitEvent = AppBehavior::Action::STANDBY;
     m_exitCodeEvent.clear();
@@ -19,33 +19,33 @@ void AppBehavior::behaviorInit(web::json::value config)
         }
         if (HAS_JSON_FIELD(config, JSON_KEY_APP_behavior_control))
         {
-            auto jsonObj = config[JSON_KEY_APP_behavior_control].as_object();
-            for (const auto &event : jsonObj)
+            auto jsonObj = config[JSON_KEY_APP_behavior_control];
+            for (auto &event : jsonObj.items())
             {
-                if (Utility::isNumber(event.first))
+                if (Utility::isNumber(event.key()))
                 {
-                    m_exitCodeEvent[std::atoi(event.first.c_str())] = str2action(event.second.as_string());
+                    m_exitCodeEvent[std::atoi(event.key().c_str())] = str2action(event.value().get<std::string>());
                 }
                 else
                 {
-                    LOG_ERR << "invalid control code <" << event.first << ">";
-                    throw std::invalid_argument(Utility::stringFormat("invalid control code <%s>", event.first.c_str()));
+                    LOG_ERR << "invalid control code <" << event.key() << ">";
+                    throw std::invalid_argument(Utility::stringFormat("invalid control code <%s>", event.key().c_str()));
                 }
             }
         }
     }
 }
 
-web::json::value AppBehavior::behaviorAsJson()
+nlohmann::json AppBehavior::behaviorAsJson()
 {
-    web::json::value result;
-    result[JSON_KEY_APP_behavior_exit] = web::json::value::string(action2str(m_exitEvent));
+    nlohmann::json result;
+    result[JSON_KEY_APP_behavior_exit] = std::string(action2str(m_exitEvent));
     if (m_exitCodeEvent.size())
     {
-        web::json::value controls;
+        nlohmann::json controls;
         for (const auto &control : m_exitCodeEvent)
         {
-            controls[std::to_string(control.first)] = web::json::value::string(action2str(control.second));
+            controls[std::to_string(control.first)] = std::string(action2str(control.second));
         }
         result[JSON_KEY_APP_behavior_control] = controls;
     }

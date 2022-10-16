@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -20,8 +20,8 @@ class Configuration
 public:
 	struct JsonSsl
 	{
-		static std::shared_ptr<JsonSsl> FromJson(const web::json::value &jsonObj);
-		web::json::value AsJson() const;
+		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
+		nlohmann::json AsJson() const;
 		bool m_sslEnabled;
 		bool m_sslVerifyPeer;
 		std::string m_certFile;
@@ -32,8 +32,8 @@ public:
 	struct JsonJwt
 	{
 		JsonJwt();
-		static std::shared_ptr<JsonJwt> FromJson(const web::json::value &jsonObj);
-		web::json::value AsJson() const;
+		static std::shared_ptr<JsonJwt> FromJson(const nlohmann::json &jsonObj);
+		nlohmann::json AsJson() const;
 		std::string getJwtInterface() const;
 
 		bool m_jwtEnabled;
@@ -44,8 +44,8 @@ public:
 	struct JsonRest
 	{
 		JsonRest();
-		static std::shared_ptr<JsonRest> FromJson(const web::json::value &jsonObj);
-		web::json::value AsJson() const;
+		static std::shared_ptr<JsonRest> FromJson(const nlohmann::json &jsonObj);
+		nlohmann::json AsJson() const;
 
 		bool m_restEnabled;
 		int m_httpThreadPoolSize;
@@ -61,8 +61,8 @@ public:
 	struct JsonConsul
 	{
 		JsonConsul();
-		static std::shared_ptr<JsonConsul> FromJson(const web::json::value &jsonObj, int appmeshRestPort, bool sslEnabled);
-		web::json::value AsJson() const;
+		static std::shared_ptr<JsonConsul> FromJson(const nlohmann::json &jsonObj, int appmeshRestPort, bool sslEnabled);
+		nlohmann::json AsJson() const;
 		bool consulEnabled() const;
 		bool consulSecurityEnabled() const;
 		const std::string appmeshUrl() const;
@@ -91,19 +91,19 @@ public:
 	static void handleSignal();
 
 	static std::shared_ptr<Configuration> FromJson(const std::string &str, bool applyEnv = false) noexcept(false);
-	web::json::value AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp = true);
-	void deSerializeApps(const web::json::value &jsonObj);
+	nlohmann::json AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp = true);
+	void deSerializeApps(const nlohmann::json &jsonObj);
 	void saveConfigToDisk();
-	void hotUpdate(const web::json::value &config);
-	static void readConfigFromEnv(web::json::value &jsonConfig);
-	static bool applyEnvConfig(web::json::value &jsonValue, std::string envValue);
+	void hotUpdate(const nlohmann::json &config);
+	static void readConfigFromEnv(nlohmann::json &jsonConfig);
+	static bool applyEnvConfig(nlohmann::json &jsonValue, std::string envValue);
 	void registerPrometheus();
 	bool prometheusEnabled() const;
 
 	std::vector<std::shared_ptr<Application>> getApps() const;
-	std::shared_ptr<Application> addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp = nullptr, bool persistable = true);
+	std::shared_ptr<Application> addApp(const nlohmann::json &jsonApp, std::shared_ptr<Application> fromApp = nullptr, bool persistable = true);
 	void removeApp(const std::string &appName);
-	std::shared_ptr<Application> parseApp(const web::json::value &jsonApp);
+	std::shared_ptr<Application> parseApp(const nlohmann::json &jsonApp);
 
 	int getScheduleInterval();
 	int getRestListenPort();
@@ -111,12 +111,12 @@ public:
 	std::string getRestListenAddress();
 	std::string getDockerProxyAddress() const;
 	int getRestTcpPort();
-	web::json::value serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
+	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
 	bool isAppExist(const std::string &appName);
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
-	const web::json::value getAgentAppJson() const;
+	const nlohmann::json getAgentAppJson() const;
 
 	std::shared_ptr<Label> getLabel() { return m_label; }
 

@@ -5,7 +5,7 @@
 #include <string>
 
 #include <boost/program_options.hpp>
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/Utility.h"
 
@@ -62,7 +62,7 @@ private:
 	void initRadomPassword();
 
 public:
-	std::shared_ptr<cpr::Response> requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, web::json::value *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
+	std::shared_ptr<cpr::Response> requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
 	std::string getAuthenToken();
 	std::string getAuthenUser();
@@ -74,7 +74,7 @@ public:
 private:
 	bool isAppExist(const std::string &appName);
 	std::map<std::string, bool> getAppList();
-	void printApps(web::json::value json, bool reduce);
+	void printApps(nlohmann::json json, bool reduce);
 	void shiftCommandLineArgs(po::options_description &desc);
 	std::string reduceStr(std::string source, int limit);
 	bool confirmInput(const char *msg);

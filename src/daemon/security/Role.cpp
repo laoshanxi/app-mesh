@@ -26,10 +26,10 @@ std::shared_ptr<Role> Roles::getRole(const std::string &roleName)
 	}
 }
 
-web::json::value Roles::AsJson() const
+nlohmann::json Roles::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	for (auto &role : m_roles)
 	{
 		result[role.first] = role.second->AsJson();
@@ -37,22 +37,21 @@ web::json::value Roles::AsJson() const
 	return result;
 }
 
-const std::shared_ptr<Roles> Roles::FromJson(const web::json::value &obj)
+const std::shared_ptr<Roles> Roles::FromJson(const nlohmann::json &obj)
 {
 	std::shared_ptr<Roles> roles = std::make_shared<Roles>();
-	auto rolesJson = obj.as_object();
-	for (auto &roleJson : rolesJson)
+	for (auto &roleJson : obj.items())
 	{
-		auto roleName = GET_STD_STRING(roleJson.first);
-		auto role = Role::FromJson(roleName, roleJson.second);
+		auto roleName = (roleJson.key());
+		auto role = Role::FromJson(roleName, roleJson.value());
 		roles->m_roles[roleName] = role;
 	}
 	return roles;
 }
 
-void Roles::addRole(const web::json::value &obj, std::string name)
+void Roles::addRole(const nlohmann::json &obj, std::string name)
 {
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	result[name] = obj;
 	auto roles = Roles::FromJson(result);
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -91,26 +90,24 @@ Role::~Role()
 {
 }
 
-web::json::value Role::AsJson() const
+nlohmann::json Role::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto rolePermissions = web::json::value::array(m_permissions.size());
-	int i = 0;
+	auto rolePermissions = nlohmann::json::array();
 	for (auto &perm : m_permissions)
 	{
 		// fill role permission
-		rolePermissions[i++] = web::json::value::string(perm);
+		rolePermissions.push_back(std::string(perm));
 	}
 	return rolePermissions;
 }
 
-std::shared_ptr<Role> Role::FromJson(std::string roleName, web::json::value &obj)
+std::shared_ptr<Role> Role::FromJson(std::string roleName, const nlohmann::json &obj)
 {
 	auto role = std::make_shared<Role>(roleName);
-	auto permissions = obj.as_array();
-	for (auto &permissionJson : permissions)
+	for (auto &permissionJson : obj.items())
 	{
-		auto perm = permissionJson.as_string();
+		auto perm = permissionJson.value().get<std::string>();
 		if (perm.length())
 			role->m_permissions.insert(perm);
 	}

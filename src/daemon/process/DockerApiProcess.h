@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "DockerProcess.h"
 
@@ -43,7 +43,7 @@ public:
 	/// <param name="stdinFileContent"></param>
 	/// <param name="maxStdoutSize"></param>
 	/// <returns></returns>
-	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const web::json::value &stdinFileContent = EMPTY_STR_JSON, const int maxStdoutSize = 0) override;
+	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON, const int maxStdoutSize = 0) override;
 
 	/// <summary>
 	/// get all std out content from stdoutFile with given position
@@ -71,5 +71,5 @@ private:
 	/// <param name="header"></param>
 	/// <param name="body"></param>
 	/// <returns></returns>
-	const std::shared_ptr<cpr::Response> requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body);
+	const std::shared_ptr<cpr::Response> requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body);
 };

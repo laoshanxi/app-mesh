@@ -17,10 +17,10 @@ Users::~Users()
 {
 }
 
-web::json::value Users::AsJson() const
+nlohmann::json Users::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	for (auto &user : m_users)
 	{
 		result[user.first] = user.second->AsJson();
@@ -28,14 +28,13 @@ web::json::value Users::AsJson() const
 	return result;
 }
 
-std::shared_ptr<Users> Users::FromJson(const web::json::value &obj, std::shared_ptr<Roles> roles)
+std::shared_ptr<Users> Users::FromJson(const nlohmann::json &obj, std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<Users> users = std::make_shared<Users>();
-	auto jsonOj = obj.as_object();
-	for (auto &user : jsonOj)
+	for (auto &user : obj.items())
 	{
-		auto name = GET_STD_STRING(user.first);
-		users->m_users[name] = User::FromJson(name, user.second, roles);
+		auto name = (user.key());
+		users->m_users[name] = User::FromJson(name, user.value(), roles);
 	}
 	return users;
 }
@@ -72,14 +71,13 @@ std::set<std::string> Users::getGroups() const
 	return result;
 }
 
-void Users::addUsers(const web::json::value &obj, std::shared_ptr<Roles> roles)
+void Users::addUsers(const nlohmann::json &obj, std::shared_ptr<Roles> roles)
 {
 	if (!obj.is_null() && obj.is_object())
 	{
-		auto users = obj.as_object();
-		for (auto &userJson : users)
+		for (auto &userJson : obj.items())
 		{
-			addUser(GET_STD_STRING(userJson.first), userJson.second, roles);
+			addUser((userJson.key()), userJson.value(), roles);
 		}
 	}
 	else
@@ -88,7 +86,7 @@ void Users::addUsers(const web::json::value &obj, std::shared_ptr<Roles> roles)
 	}
 }
 
-std::shared_ptr<User> Users::addUser(const std::string &userName, const web::json::value &userJson, std::shared_ptr<Roles> roles)
+std::shared_ptr<User> Users::addUser(const std::string &userName, const nlohmann::json &userJson, std::shared_ptr<Roles> roles)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = User::FromJson(userName, userJson, roles);
@@ -124,7 +122,7 @@ User::~User()
 {
 }
 
-web::json::value &User::clearConfidentialInfo(web::json::value &userJson)
+nlohmann::json &User::clearConfidentialInfo(nlohmann::json &userJson)
 {
 	if (HAS_JSON_FIELD(userJson, JSON_KEY_USER_key))
 		userJson.erase(JSON_KEY_USER_key);
@@ -133,32 +131,31 @@ web::json::value &User::clearConfidentialInfo(web::json::value &userJson)
 	return userJson;
 }
 
-web::json::value User::AsJson() const
+nlohmann::json User::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 
-	result[JSON_KEY_USER_key] = web::json::value::string(m_key);
-	result[JSON_KEY_USER_email] = web::json::value::string(m_email);
-	result[JSON_KEY_USER_group] = web::json::value::string(m_group);
-	result[JSON_KEY_USER_exec_user] = web::json::value::string(m_execUser);
-	result[JSON_KEY_USER_locked] = web::json::value::boolean(m_locked);
-	result[JSON_KEY_USER_mfa_enabled] = web::json::value::boolean(m_enableMfa);
+	result[JSON_KEY_USER_key] = std::string(m_key);
+	result[JSON_KEY_USER_email] = std::string(m_email);
+	result[JSON_KEY_USER_group] = std::string(m_group);
+	result[JSON_KEY_USER_exec_user] = std::string(m_execUser);
+	result[JSON_KEY_USER_locked] = (m_locked);
+	result[JSON_KEY_USER_mfa_enabled] = (m_enableMfa);
 	if (!m_metadata.empty())
-		result[JSON_KEY_USER_metadata] = web::json::value::string(m_metadata);
+		result[JSON_KEY_USER_metadata] = std::string(m_metadata);
 	if (!m_mfaKey.empty())
-		result[JSON_KEY_USER_mfa_key] = web::json::value::string(m_mfaKey);
-	auto roles = web::json::value::array(m_roles.size());
-	int i = 0;
+		result[JSON_KEY_USER_mfa_key] = std::string(m_mfaKey);
+	auto roles = nlohmann::json::array();
 	for (auto &role : m_roles)
 	{
-		roles[i++] = web::json::value::string(role->getName());
+		roles.push_back(std::string(role->getName()));
 	}
 	result[JSON_KEY_USER_roles] = roles;
 	return result;
 }
 
-std::shared_ptr<User> User::FromJson(const std::string &userName, const web::json::value &obj, const std::shared_ptr<Roles> roles)
+std::shared_ptr<User> User::FromJson(const std::string &userName, const nlohmann::json &obj, const std::shared_ptr<Roles> roles)
 {
 	std::shared_ptr<User> result;
 	if (!obj.is_null())
@@ -174,9 +171,8 @@ std::shared_ptr<User> User::FromJson(const std::string &userName, const web::jso
 		result->m_enableMfa = GET_JSON_BOOL_VALUE(obj, JSON_KEY_USER_mfa_enabled);
 		if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
 		{
-			auto arr = obj.at(JSON_KEY_USER_roles).as_array();
-			for (auto &jsonRole : arr)
-				result->m_roles.insert(roles->getRole(jsonRole.as_string()));
+			for (auto &jsonRole : obj.at(JSON_KEY_USER_roles).items())
+				result->m_roles.insert(roles->getRole(jsonRole.value().get<std::string>()));
 		}
 	}
 	return result;
@@ -439,7 +435,7 @@ JsonSecurity::JsonSecurity()
 	m_users = std::make_shared<Users>();
 }
 
-std::shared_ptr<JsonSecurity> JsonSecurity::FromJson(const web::json::value &jsonValue)
+std::shared_ptr<JsonSecurity> JsonSecurity::FromJson(const nlohmann::json &jsonValue)
 {
 	auto security = std::make_shared<JsonSecurity>();
 	// Roles
@@ -451,10 +447,10 @@ std::shared_ptr<JsonSecurity> JsonSecurity::FromJson(const web::json::value &jso
 	return security;
 }
 
-web::json::value JsonSecurity::AsJson()
+nlohmann::json JsonSecurity::AsJson()
 {
-	auto result = web::json::value::object();
-	result[JSON_KEY_SECURITY_EncryptKey] = web::json::value::boolean(m_encryptKey);
+	auto result = nlohmann::json::object();
+	result[JSON_KEY_SECURITY_EncryptKey] = (m_encryptKey);
 	// Users
 	result[JSON_KEY_JWT_Users] = m_users->AsJson();
 	// Roles

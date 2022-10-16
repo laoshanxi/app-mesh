@@ -31,9 +31,9 @@ HttpRequest::~HttpRequest()
 {
 }
 
-web::json::value HttpRequest::extractJson() const
+nlohmann::json HttpRequest::extractJson() const
 {
-	return web::json::value::parse(m_body);
+	return nlohmann::json::parse(m_body);
 }
 
 void HttpRequest::reply(web::http::status_code status) const
@@ -41,9 +41,9 @@ void HttpRequest::reply(web::http::status_code status) const
 	reply(m_relative_uri, m_uuid, "", {}, status, "");
 }
 
-void HttpRequest::reply(web::http::status_code status, const web::json::value &body_data) const
+void HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data) const
 {
-	reply(m_relative_uri, m_uuid, body_data.serialize(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
+	reply(m_relative_uri, m_uuid, body_data.dump(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
 }
 
 void HttpRequest::reply(web::http::status_code status, std::string &body_data, const std::string &content_type) const
@@ -54,21 +54,6 @@ void HttpRequest::reply(web::http::status_code status, std::string &body_data, c
 void HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
 {
 	reply(m_relative_uri, m_uuid, body_data, headers, status, content_type);
-}
-
-const std::shared_ptr<appmesh::Request> HttpRequest::serialize() const
-{
-	auto req = std::make_shared<appmesh::Request>();
-	// fill data
-	req->set_uuid(m_uuid);
-	req->set_http_method(m_method);
-	req->set_request_uri(m_relative_uri);
-	req->set_client_address(m_remote_address);
-	req->set_http_body(m_body);
-	req->mutable_headers()->insert(m_headers.begin(), m_headers.end());
-	req->mutable_querys()->insert(m_querys.begin(), m_querys.end());
-
-	return req;
 }
 
 std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, TcpHandler *clientRequest)
@@ -88,10 +73,10 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, TcpHand
 	return nullptr;
 }
 
-const web::json::value HttpRequest::emptyJson()
+const nlohmann::json HttpRequest::emptyJson()
 {
-	web::json::value emptyBody;
-	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string("");
+	nlohmann::json emptyBody;
+	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = std::string("");
 	return emptyBody;
 }
 

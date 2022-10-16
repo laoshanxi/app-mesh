@@ -13,7 +13,6 @@ add_catch_test(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
-    cpprest
     rest
     ${OPENSSL_LIBRARIES}
     security

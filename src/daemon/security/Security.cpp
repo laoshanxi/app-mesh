@@ -23,7 +23,7 @@ void Security::init(const std::string &interface)
     if (interface == JSON_KEY_USER_key_method_local)
     {
         const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
-        const auto security = Security::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
+        const auto security = Security::FromJson(nlohmann::json::parse(Utility::readFileCpp(securityJsonFile)));
         Security::instance(security);
     }
     else if (interface == JSON_KEY_USER_key_method_ldap)
@@ -64,7 +64,7 @@ void Security::save(const std::string &interface)
         securityFile = APPMESH_SECURITY_LDAP_JSON_FILE;
     }
 
-    auto content = this->AsJson().serialize();
+    auto content = this->AsJson().dump();
     if (content.length())
     {
         const auto securityJsonFile = fs::path(Utility::getParentDir()) / securityFile;
@@ -91,13 +91,13 @@ void Security::save(const std::string &interface)
     }
 }
 
-std::shared_ptr<Security> Security::FromJson(const web::json::value &obj) noexcept(false)
+std::shared_ptr<Security> Security::FromJson(const nlohmann::json &obj) noexcept(false)
 {
     std::shared_ptr<Security> security(new Security(JsonSecurity::FromJson(obj)));
     return security;
 }
 
-web::json::value Security::AsJson() const
+nlohmann::json Security::AsJson() const
 {
     return this->m_securityConfig->AsJson();
 }
@@ -161,17 +161,17 @@ std::map<std::string, std::shared_ptr<User>> Security::getUsers() const
     return m_securityConfig->m_users->getUsers();
 }
 
-web::json::value Security::getUsersJson() const
+nlohmann::json Security::getUsersJson() const
 {
     return m_securityConfig->m_users->AsJson();
 }
 
-web::json::value Security::getRolesJson() const
+nlohmann::json Security::getRolesJson() const
 {
     return m_securityConfig->m_roles->AsJson();
 }
 
-std::shared_ptr<User> Security::addUser(const std::string &userName, const web::json::value &userJson)
+std::shared_ptr<User> Security::addUser(const std::string &userName, const nlohmann::json &userJson)
 {
     return m_securityConfig->m_users->addUser(userName, userJson, m_securityConfig->m_roles);
 }
@@ -181,7 +181,7 @@ void Security::delUser(const std::string &name)
     m_securityConfig->m_users->delUser(name);
 }
 
-void Security::addRole(const web::json::value &obj, std::string name)
+void Security::addRole(const nlohmann::json &obj, std::string name)
 {
     m_securityConfig->m_roles->addRole(obj, name);
 }

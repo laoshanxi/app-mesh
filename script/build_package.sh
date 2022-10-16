@@ -47,7 +47,6 @@ ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appc | grep libcurl | awk '{cmd="cp "$3" ${P
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appc | grep libcpr | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep ACE | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep cpprest | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libssl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libcrypto | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'

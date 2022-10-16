@@ -17,10 +17,10 @@ RestBase::~RestBase()
 {
 }
 
-web::json::value RestBase::convertText2Json(const std::string &msg)
+nlohmann::json RestBase::convertText2Json(const std::string &msg)
 {
-    web::json::value result;
-    result[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string(msg);
+    nlohmann::json result;
+    result[REST_TEXT_MESSAGE_JSON_KEY] = std::string(msg);
     return result;
 }
 
@@ -63,9 +63,9 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
     if (path == "/" || path.empty())
     {
-        auto msg = web::json::value::object();
-        msg[REST_TEXT_MESSAGE_JSON_KEY] = web::json::value::string(REST_ROOT_TEXT_MESSAGE);
-		auto body = msg.serialize();
+        auto msg = nlohmann::json::object();
+        msg[REST_TEXT_MESSAGE_JSON_KEY] = std::string(REST_ROOT_TEXT_MESSAGE);
+		auto body = msg.dump();
 		message.reply(web::http::status_codes::OK, body);
 		return;
     }
@@ -92,9 +92,9 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
         const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
         if (message.m_body.length())
         {
-            auto body = web::json::value::parse(message.m_body);
+            auto body = nlohmann::json::parse(message.m_body);
             tranverseJsonTree(body);
-            const_cast<HttpRequest *>(&message)->m_body = body.serialize();
+            const_cast<HttpRequest *>(&message)->m_body = body.dump();
         }
 
         stdFunction(message);
@@ -191,26 +191,19 @@ const std::string RestBase::replaceXssRiskChars(const std::string &source)
     return result;
 }
 
-void RestBase::tranverseJsonTree(web::json::value &val)
+void RestBase::tranverseJsonTree(nlohmann::json &val)
 {
-    if (val.is_array())
+    if (val.is_array() || val.is_object())
     {
-        for (auto &item : val.as_array())
+        for (auto &item : val.items())
         {
-            tranverseJsonTree(item);
-        }
-    }
-    else if (val.is_object())
-    {
-        for (auto &item : val.as_object())
-        {
-            tranverseJsonTree(item.second);
+            tranverseJsonTree(item.value());
         }
     }
     else if (val.is_string())
     {
         // handle string now
-        val = web::json::value::string(RestBase::replaceXssRiskChars(GET_STD_STRING(val.as_string())));
+        val = std::string(RestBase::replaceXssRiskChars((val.get<std::string>())));
     }
 }
 

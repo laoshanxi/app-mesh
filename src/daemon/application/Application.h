@@ -6,7 +6,7 @@
 #include <string>
 #include <tuple>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/TimerHandler.h"
 #include "AppBehavior.h"
@@ -50,8 +50,8 @@ public:
 	bool isEnabled() const;
 	bool attach(int pid);
 
-	static void FromJson(const std::shared_ptr<Application> &app, const web::json::value &obj) noexcept(false);
-	virtual web::json::value AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
+	static void FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &obj) noexcept(false);
+	virtual nlohmann::json AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
 	virtual void dump();
 
 	// operate
@@ -106,7 +106,7 @@ protected:
 	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;
-	web::json::value m_metadata;
+	nlohmann::json m_metadata;
 	bool m_shellApp;
 	int m_stdoutCacheNum;
 	int m_stdoutCacheSize;

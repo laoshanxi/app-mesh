@@ -29,17 +29,17 @@ void ResourceLimitation::dump()
 	LOG_DBG << fname << "m_cpuShares:" << m_cpuShares;
 }
 
-web::json::value ResourceLimitation::AsJson()
+nlohmann::json ResourceLimitation::AsJson()
 {
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 
-	result[JSON_KEY_RESOURCE_LIMITATION_memory_mb] = web::json::value::number(m_memoryMb);
-	result[JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb] = web::json::value::number(m_memoryVirtMb);
-	result[JSON_KEY_RESOURCE_LIMITATION_cpu_shares] = web::json::value::number(m_cpuShares);
+	result[JSON_KEY_RESOURCE_LIMITATION_memory_mb] = (m_memoryMb);
+	result[JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb] = (m_memoryVirtMb);
+	result[JSON_KEY_RESOURCE_LIMITATION_cpu_shares] = (m_cpuShares);
 	return result;
 }
 
-std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const web::json::value &jsonObj, const std::string &appName)
+std::shared_ptr<ResourceLimitation> ResourceLimitation::FromJson(const nlohmann::json &jsonObj, const std::string &appName)
 {
 	std::shared_ptr<ResourceLimitation> result;
 	if (!jsonObj.is_null())

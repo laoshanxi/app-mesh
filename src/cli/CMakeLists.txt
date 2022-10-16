@@ -16,7 +16,6 @@ target_link_libraries(appc
     Threads::Threads
     ${OPENSSL_LIBRARIES}
     boost_program_options
-    cpprest
     common
 	cpr
 )

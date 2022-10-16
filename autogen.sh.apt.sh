@@ -38,7 +38,6 @@ apt install -y git
 # dependency libraries
 apt install -y liblog4cpp5-dev
 apt install -y libace-dev
-apt install -y libcpprest-dev
 apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
 

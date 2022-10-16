@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include <cpprest/json.h>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
+#include <nlohmann/json.hpp>
 
 #if __cplusplus >= 201703L
 #include <filesystem>
@@ -37,9 +37,6 @@ namespace fs = boost::filesystem;
 		std::cout << "Build: " << __MICRO_VAR__(BUILD_TAG) << std::endl;                                                  \
 		return 0;                                                                                                         \
 	}
-
-#define GET_STRING_T(sstr) (sstr)
-#define GET_STD_STRING(sstr) (sstr)
 
 #define SET_COMPARE(x, y)                                           \
 	if ((x) != (y))                                                 \
@@ -69,24 +66,22 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object
-#define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(GET_STD_STRING(GET_JSON_STR_T_VALUE(jsonObj, key)))
-#define GET_JSON_STR_T_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_string() : GET_STRING_T(""))
-#define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_integer() : 0)
-#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? static_cast<int64_t>(jsonObj.at(GET_STRING_T(key)).as_double()) : 0L)
-#define GET_JSON_NUMBER_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_number().to_int64() : 0L)
-#define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_double() : 0.0L)
+#define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<std::string>() : std::string(""))
+#define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<int>() : 0)
+#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<int64_t>() : 0L)
+#define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<double>() : 0.0L)
 #define SET_JSON_INT_VALUE(jsonObj, key, value) \
 	if (HAS_JSON_FIELD(jsonObj, key))           \
 		value = GET_JSON_INT_VALUE(jsonObj, key);
-#define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(GET_STRING_T(key)).as_bool() : false)
+#define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<bool>() : false)
 #define SET_JSON_BOOL_VALUE(jsonObj, key, value) \
 	if (HAS_JSON_FIELD(jsonObj, key))            \
 		value = GET_JSON_BOOL_VALUE(jsonObj, key);
-#define HAS_JSON_FIELD(jsonObj, key) (jsonObj.has_field(GET_STRING_T(key)) && !jsonObj.at(GET_STRING_T(key)).is_null())
+#define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
 #define ERASE_JSON_FIELD(jsonObj, key)    \
 	if (HAS_JSON_FIELD(jsonObj, key))     \
 	{                                     \
-		jsonObj.erase(GET_STRING_T(key)); \
+		jsonObj.erase((key)); \
 	}
 
 #define CLOSE_ACE_HANDLER(handler)         \
@@ -132,9 +127,9 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define APPMESH_LOCAL_HOST_URL "https://localhost:6060"
 
-const web::json::value EMPTY_STR_JSON = web::json::value::object();
-const web::json::value CLOUD_STR_JSON = web::json::value::string("APPMESH-CLOUD-APP-FLAG");
 const char *GET_STATUS_STR(unsigned int status);
+const nlohmann::json EMPTY_STR_JSON(nullptr);
+const nlohmann::json CLOUD_STR_JSON("APPMESH-CLOUD-APP-FLAG");
 
 /// <summary>
 /// All common functions
@@ -197,9 +192,9 @@ public:
 
 	static std::string createUUID();
 	static bool createPidFile();
-	static void appendStrTimeAttr(web::json::value &jsonObj, const std::string &key);
-	static void appendStrDayTimeAttr(web::json::value &jsonObj, const std::string &key);
-	static void addExtraAppTimeReferStr(web::json::value &jsonObj);
+	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);
+	static void appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key);
+	static void addExtraAppTimeReferStr(nlohmann::json &jsonObj);
 	static void initDateTimeZone(bool writeLog = false);
 
 	static const std::string readStdin2End();
@@ -435,7 +430,7 @@ namespace web
 		{
 		public:
 #define _METHODS
-#define DAT(a, b) _ASYNCRTIMP const static method a;
+#define DAT(a, b) const static method a;
 #include "http_constants.dat"
 #undef _METHODS
 #undef DAT
@@ -463,7 +458,7 @@ namespace web
 		{
 		public:
 #define _HEADER_NAMES
-#define DAT(a, b) _ASYNCRTIMP const static std::string a;
+#define DAT(a, b) const static std::string a;
 #include "http_constants.dat"
 #undef _HEADER_NAMES
 #undef DAT
@@ -476,7 +471,7 @@ namespace web
 		{
 		public:
 #define _MIME_TYPES
-#define DAT(a, b) _ASYNCRTIMP const static std::string a;
+#define DAT(a, b) const static std::string a;
 #include "http_constants.dat"
 #undef _MIME_TYPES
 #undef DAT

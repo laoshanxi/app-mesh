@@ -22,7 +22,6 @@
 #include <log4cpp/Priority.hh>
 #include <log4cpp/RollingFileAppender.hh>
 #include <nlohmann/json.hpp>
-#include <pplx/threadpool.h>
 
 #include "DateTime.h"
 #include "Utility.h"
@@ -567,23 +566,23 @@ bool Utility::createPidFile()
 	return false;
 }
 
-void Utility::appendStrTimeAttr(web::json::value &jsonObj, const std::string &key)
+void Utility::appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key)
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{
-		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = web::json::value::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
+		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
 	}
 }
 
-void Utility::appendStrDayTimeAttr(web::json::value &jsonObj, const std::string &key)
+void Utility::appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key)
 {
 	if (HAS_JSON_FIELD(jsonObj, key))
 	{
-		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = web::json::value::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
+		jsonObj[key + JSON_KEY_TIME_POSTTIX_STR] = std::string(splitString(DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T").back());
 	}
 }
 
-void Utility::addExtraAppTimeReferStr(web::json::value &appJson)
+void Utility::addExtraAppTimeReferStr(nlohmann::json &appJson)
 {
 	// append extra string format for time values
 	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_REG_TIME);
@@ -889,4 +888,38 @@ const std::string Utility::readStdin2End()
 		ss << line << std::endl;
 	}
 	return ss.str();
+}
+
+#define _XPLATSTR(x) x
+namespace web
+{
+	namespace http
+	{
+#define _METHODS
+#define DAT(a, b) const method methods::a = b;
+#include "http_constants.dat"
+#undef _METHODS
+#undef DAT
+
+#define _HEADER_NAMES
+#define DAT(a, b) const std::string header_names::a = _XPLATSTR(b);
+#include "http_constants.dat"
+#undef _HEADER_NAMES
+#undef DAT
+
+#define _MIME_TYPES
+#define DAT(a, b) const std::string mime_types::a = _XPLATSTR(b);
+#include "http_constants.dat"
+#undef _MIME_TYPES
+#undef DAT
+
+// This is necessary for Linux because of a bug in GCC 4.7
+#ifndef _WIN32
+#define _PHRASES
+#define DAT(a, b, c) const status_code status_codes::a;
+#include "http_constants.dat"
+#undef _PHRASES
+#undef DAT
+#endif
+	}
 }

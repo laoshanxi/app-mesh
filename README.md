@@ -103,6 +103,7 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [DOCGroup/ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
 - [libcpr/cpr](https://github.com/libcpr/cpr)
 - [Thalhammer/jwt-cpp](https://thalhammer.it/projects/jwt_cpp)
+- [nlohmann/json](https://json.nlohmann.me/)
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
 - [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)

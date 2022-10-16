@@ -4,7 +4,7 @@
 #include <set>
 #include <string>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "../../../common/Utility.h"
 #include "../Role.h"
@@ -18,21 +18,20 @@
 //////////////////////////////////////////////////////////////////////////
 
 // serialize
-web::json::value LdapGroup::AsJson() const
+nlohmann::json LdapGroup::AsJson() const
 {
-    web::json::value result = web::json::value::object();
+    nlohmann::json result = nlohmann::json::object();
 
-    result[JSON_KEY_USER_LDAP_bind_dn] = web::json::value::string(m_bindDN);
-    auto roles = web::json::value::array(m_roles.size());
-    int i = 0;
+    result[JSON_KEY_USER_LDAP_bind_dn] = std::string(m_bindDN);
+    auto roles = nlohmann::json::array();
     for (const auto &role : m_roles)
     {
-        roles[i++] = web::json::value::string(role->getName());
+        roles.push_back(std::string(role->getName()));
     }
     return result;
 };
 // de-serialize
-std::shared_ptr<LdapGroup> LdapGroup::FromJson(const std::string &groupName, const web::json::value &obj, const std::shared_ptr<Roles> roles) noexcept(false)
+std::shared_ptr<LdapGroup> LdapGroup::FromJson(const std::string &groupName, const nlohmann::json &obj, const std::shared_ptr<Roles> roles) noexcept(false)
 {
     std::shared_ptr<LdapGroup> result = std::make_shared<LdapGroup>(groupName);
     if (!obj.is_null())
@@ -40,9 +39,8 @@ std::shared_ptr<LdapGroup> LdapGroup::FromJson(const std::string &groupName, con
         result->m_bindDN = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_LDAP_bind_dn);
         if (HAS_JSON_FIELD(obj, JSON_KEY_USER_roles))
         {
-            auto arr = obj.at(JSON_KEY_USER_roles).as_array();
-            for (auto &jsonRole : arr)
-                result->m_roles.insert(roles->getRole(jsonRole.as_string()));
+            for (auto &jsonRole : obj.at(JSON_KEY_USER_roles).items())
+                result->m_roles.insert(roles->getRole(jsonRole.value().get<std::string>()));
         }
     }
     return result;
@@ -68,21 +66,20 @@ void LdapGroup::syncGroupUsers(std::shared_ptr<Ldap::Server> ldap, std::shared_p
         auto result = ldap->Search(baseDN, Ldap::ScopeTree, "sn=*");
         for (auto &entry : result)
         {
-            web::json::value result = web::json::value::object();
+            nlohmann::json result = nlohmann::json::object();
             auto userName = Utility::stdStringTrim(entry.GetStringValue("cn"));
             auto userMail = Utility::stdStringTrim(entry.GetStringValue("mail"));
             auto userSN = Utility::stdStringTrim(entry.GetStringValue("sn"));
-            result[JSON_KEY_USER_group] = web::json::value::string(this->m_groupName);
-            result[JSON_KEY_USER_exec_user] = web::json::value::string(userSN);
-            result[JSON_KEY_USER_locked] = web::json::value::boolean(false);
-            result[JSON_KEY_USER_metadata] = web::json::value::string(entry.DN());
-            result[JSON_KEY_USER_email] = web::json::value::string(userMail);
+            result[JSON_KEY_USER_group] = std::string(this->m_groupName);
+            result[JSON_KEY_USER_exec_user] = std::string(userSN);
+            result[JSON_KEY_USER_locked] = (false);
+            result[JSON_KEY_USER_metadata] = std::string(entry.DN());
+            result[JSON_KEY_USER_email] = std::string(userMail);
             // Roles
-            auto rolesArray = web::json::value::array(this->m_roles.size());
-            int i = 0;
+            auto rolesArray = nlohmann::json::array();
             for (const auto &role : this->m_roles)
             {
-                rolesArray[i++] = web::json::value::string(role->getName());
+                rolesArray.push_back(std::string(role->getName()));
             }
             result[JSON_KEY_USER_roles] = rolesArray;
 
@@ -120,29 +117,28 @@ std::shared_ptr<LdapGroup> LdapGroups::getGroup(const std::string &name)
         throw std::invalid_argument(Utility::stringFormat("no such group <%s>", name.c_str()));
     }
 };
-web::json::value LdapGroups::AsJson() const
+nlohmann::json LdapGroups::AsJson() const
 {
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
-    web::json::value result = web::json::value::object();
+    nlohmann::json result = nlohmann::json::object();
     for (const auto &group : m_groups)
     {
         result[group.first] = group.second->AsJson();
     }
     return result;
 };
-const std::shared_ptr<LdapGroups> LdapGroups::FromJson(const web::json::value &obj, std::shared_ptr<Roles> roles) noexcept(false)
+const std::shared_ptr<LdapGroups> LdapGroups::FromJson(const nlohmann::json &obj, std::shared_ptr<Roles> roles) noexcept(false)
 {
     std::shared_ptr<LdapGroups> groups = std::make_shared<LdapGroups>();
-    auto jsonOj = obj.as_object();
-    for (const auto &group : jsonOj)
+    for (auto &group : obj.items())
     {
-        auto name = GET_STD_STRING(group.first);
-        groups->m_groups[name] = LdapGroup::FromJson(name, group.second, roles);
+        auto name = (group.key());
+        groups->m_groups[name] = LdapGroup::FromJson(name, group.value(), roles);
     }
     return groups;
 };
 
-std::shared_ptr<LdapGroup> LdapGroups::addGroup(const web::json::value &obj, std::string name, std::shared_ptr<Roles> roles)
+std::shared_ptr<LdapGroup> LdapGroups::addGroup(const nlohmann::json &obj, std::string name, std::shared_ptr<Roles> roles)
 {
     std::lock_guard<std::recursive_mutex> guard(m_mutex);
     auto group = LdapGroup::FromJson(name, obj, roles);
@@ -183,7 +179,7 @@ JsonLdap::JsonLdap() : m_syncSeconds(0)
     m_roles = std::make_shared<Roles>();
     m_groups = std::make_shared<LdapGroups>();
 }
-std::shared_ptr<JsonLdap> JsonLdap::FromJson(const web::json::value &jsonValue)
+std::shared_ptr<JsonLdap> JsonLdap::FromJson(const nlohmann::json &jsonValue)
 {
     auto security = std::make_shared<JsonLdap>();
     security->m_ldapUri = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_USER_LDAP_ldap_uri);
@@ -198,13 +194,13 @@ std::shared_ptr<JsonLdap> JsonLdap::FromJson(const web::json::value &jsonValue)
         security->m_groups = LdapGroups::FromJson(jsonValue.at(JSON_KEY_Groups), security->m_roles);
     return security;
 }
-web::json::value JsonLdap::AsJson() const
+nlohmann::json JsonLdap::AsJson() const
 {
-    auto result = web::json::value::object();
-    result[JSON_KEY_USER_LDAP_ldap_uri] = web::json::value::string(m_ldapUri);
-    result[JSON_KEY_USER_LDAP_ldap_LoginDN] = web::json::value::string(m_ldapAdmin);
-    result[JSON_KEY_USER_LDAP_ldap_LoginPWD] = web::json::value::string(m_ldapAdminPwd);
-    result[JSON_KEY_USER_LDAP_ldap_SyncPeriodSeconds] = web::json::value::number(m_syncSeconds);
+    auto result = nlohmann::json::object();
+    result[JSON_KEY_USER_LDAP_ldap_uri] = std::string(m_ldapUri);
+    result[JSON_KEY_USER_LDAP_ldap_LoginDN] = std::string(m_ldapAdmin);
+    result[JSON_KEY_USER_LDAP_ldap_LoginPWD] = std::string(m_ldapAdminPwd);
+    result[JSON_KEY_USER_LDAP_ldap_SyncPeriodSeconds] = (m_syncSeconds);
     // Users
     result[JSON_KEY_JWT_Users] = m_groups->AsJson();
     // Roles

@@ -55,7 +55,7 @@ void DockerApiProcess::killgroup(int timerId)
 	this->detach();
 }
 
-int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const web::json::value &stdinFileContent, const int maxStdoutSize)
+int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "DockerApiProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -71,18 +71,18 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	// curl -g http://127.0.0.1:6058/containers/json'?filters={%22status%22:[%22exited%22]}'
 	// https://stackoverflow.com/questions/39976683/docker-api-can-t-apply-json-filters
 	/*
-	auto filters = web::json::value();
-	auto nameArray = web::json::value::array(1);
-	nameArray[0] = web::json::value::string(m_containerName);
+	auto filters = nlohmann::json();
+	auto nameArray = nlohmann::json::array(1);
+	nameArray[0] = std::string(m_containerName);
 	filters["name"] = nameArray;
-	auto resp = this->requestDocker(web::http::methods::GET, "/containers/json", {{"filters", filters.serialize()}}, {}, nullptr);
+	auto resp = this->requestDocker(web::http::methods::GET, "/containers/json", {{"filters", filters.dump()}}, {}, nullptr);
 	if (resp.status_code() == web::http::status_codes::OK)
 	{
 		auto result = resp.extract_json().get();
-		LOG_DBG << fname << "Get Container with filters <" << filters.serialize() << "> return " << result.as_array().size();
+		LOG_DBG << fname << "Get Container with filters <" << filters.dump() << "> return " << result.as_array().size();
 		for (const auto &container : result.as_array())
 		{
-			this->containerId(container.at("Id").as_string());
+			this->containerId(container.at("Id").get<std::string>());
 			killgroup();
 		}
 	}
@@ -101,7 +101,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 
 	if (!stdinFileContent.is_object())
 	{
-		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.serialize();
+		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.dump();
 		LOG_WAR << fname << msg;
 		this->startError(msg);
 		return ACE_INVALID_PID;
@@ -113,27 +113,27 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	if (cmd.length())
 	{
 		auto argv = Utility::str2argv(cmd);
-		auto array = web::json::value::array(argv.size());
+		auto array = nlohmann::json::array();
 		for (size_t i = 0; i < argv.size(); i++)
 		{
-			array[i] = web::json::value::string(argv[i]);
+			array.push_back(std::string(argv[i]));
 		}
 		createBody["Cmd"] = array;
 	}
 
 	if (limit != nullptr)
 	{
-		auto hostConfig = web::json::value();
-		hostConfig["Memory"] = web::json::value::number(limit->m_memoryMb);
-		hostConfig["MemorySwap"] = web::json::value::number(limit->m_memoryVirtMb);
-		hostConfig["CpuShares"] = web::json::value::number(limit->m_cpuShares);
+		auto hostConfig = nlohmann::json();
+		hostConfig["Memory"] = (limit->m_memoryMb);
+		hostConfig["MemorySwap"] = (limit->m_memoryVirtMb);
+		hostConfig["CpuShares"] = (limit->m_cpuShares);
 		createBody["HostConfig"] = hostConfig;
 	}
 
 	if (m_dockerImage.length())
-		createBody["Image"] = web::json::value::string(m_dockerImage);
+		createBody["Image"] = std::string(m_dockerImage);
 	// POST /containers/create
-	LOG_DBG << fname << "Create Container: " << createBody.serialize();
+	LOG_DBG << fname << "Create Container: " << createBody.dump();
 	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
 	if (resp->status_code == web::http::status_codes::Created)
 	{
@@ -223,7 +223,7 @@ int DockerApiProcess::returnValue(void) const
 	return -200;
 }
 
-const std::shared_ptr<cpr::Response> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body)
+const std::shared_ptr<cpr::Response> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body)
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
@@ -244,7 +244,7 @@ const std::shared_ptr<cpr::Response> DockerApiProcess::requestDocker(const web::
 		cpr::Body cprBody;
 		if (body)
 		{
-			cprBody = body->serialize();
+			cprBody = body->dump();
 			cprHeader.insert({"Content-Type", "application/json"});
 		}
 

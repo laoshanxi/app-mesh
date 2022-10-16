@@ -25,15 +25,15 @@ void DailyLimitation::dump()
 	LOG_DBG << fname << "m_endTime:" << m_endTimeValue;
 }
 
-web::json::value DailyLimitation::AsJson() const
+nlohmann::json DailyLimitation::AsJson() const
 {
-	web::json::value result = web::json::value::object();
-	result[JSON_KEY_DAILY_LIMITATION_daily_start] = web::json::value::number(m_startTimeValue.total_seconds());
-	result[JSON_KEY_DAILY_LIMITATION_daily_end] = web::json::value::number(m_endTimeValue.total_seconds());
+	nlohmann::json result = nlohmann::json::object();
+	result[JSON_KEY_DAILY_LIMITATION_daily_start] = (m_startTimeValue.total_seconds());
+	result[JSON_KEY_DAILY_LIMITATION_daily_end] = (m_endTimeValue.total_seconds());
 	return result;
 }
 
-std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const web::json::value &jsonObj)
+std::shared_ptr<DailyLimitation> DailyLimitation::FromJson(const nlohmann::json &jsonObj)
 {
 	std::shared_ptr<DailyLimitation> result;
 	if (!jsonObj.is_null())

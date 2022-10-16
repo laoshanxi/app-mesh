@@ -25,7 +25,7 @@ void LdapImpl::init(const std::string &interface)
     if (interface == JSON_KEY_USER_key_method_ldap)
     {
         const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_LDAP_JSON_FILE).string();
-        const auto security = LdapImpl::FromJson(web::json::value::parse(Utility::readFileCpp(securityJsonFile)));
+        const auto security = LdapImpl::FromJson(nlohmann::json::parse(Utility::readFileCpp(securityJsonFile)));
         Security::instance(security);
 
         security->syncGroupUsers();
@@ -36,7 +36,7 @@ void LdapImpl::init(const std::string &interface)
     }
 }
 
-web::json::value LdapImpl::AsJson() const
+nlohmann::json LdapImpl::AsJson() const
 {
     const static char fname[] = "LdapImpl::AsJson() ";
     LOG_DBG << fname;
@@ -44,7 +44,7 @@ web::json::value LdapImpl::AsJson() const
     return this->m_ldap->AsJson();
 }
 
-std::shared_ptr<LdapImpl> LdapImpl::FromJson(const web::json::value &obj) noexcept(false)
+std::shared_ptr<LdapImpl> LdapImpl::FromJson(const nlohmann::json &obj) noexcept(false)
 {
     const static char fname[] = "LdapImpl::FromJson() ";
     LOG_DBG << fname;

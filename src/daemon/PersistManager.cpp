@@ -109,39 +109,39 @@ bool Snapshot::operator==(const Snapshot &snapshort) const
 	return snapshort.m_consulSessionId == m_consulSessionId;
 }
 
-web::json::value Snapshot::AsJson() const
+nlohmann::json Snapshot::AsJson() const
 {
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	// Applications
-	web::json::value apps = web::json::value::object();
+	nlohmann::json apps = nlohmann::json::object();
 	for (const auto &app : m_apps)
 	{
-		auto json = web::json::value::object();
-		json[SNAPSHOT_JSON_KEY_pid] = web::json::value::number(app.second.m_pid);
-		json[SNAPSHOT_JSON_KEY_starttime] = web::json::value::number(app.second.m_startTime);
+		auto json = nlohmann::json::object();
+		json[SNAPSHOT_JSON_KEY_pid] = (app.second.m_pid);
+		json[SNAPSHOT_JSON_KEY_starttime] = (app.second.m_startTime);
 		apps[app.first] = json;
 	}
 	result["Applications"] = apps;
-	result["ConsulSessionId"] = web::json::value::string(m_consulSessionId);
+	result["ConsulSessionId"] = std::string(m_consulSessionId);
 	return result;
 }
 
-std::shared_ptr<Snapshot> Snapshot::FromJson(const web::json::value &obj)
+std::shared_ptr<Snapshot> Snapshot::FromJson(const nlohmann::json &obj)
 {
 	auto snap = std::make_shared<Snapshot>();
 	if (!obj.is_null() && obj.is_object())
 	{
-		if (obj.has_object_field("Applications"))
-			for (auto &app : obj.at("Applications").as_object())
+		if (obj.contains("Applications"))
+			for (auto &app : obj.at("Applications").items())
 			{
-				if (HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app.second, SNAPSHOT_JSON_KEY_starttime) &&
-					app.second.has_number_field(SNAPSHOT_JSON_KEY_pid) && app.second.has_number_field(SNAPSHOT_JSON_KEY_starttime))
+				if (HAS_JSON_FIELD(app.value(), SNAPSHOT_JSON_KEY_pid) && HAS_JSON_FIELD(app.value(), SNAPSHOT_JSON_KEY_starttime) &&
+					app.value().contains(SNAPSHOT_JSON_KEY_pid) && app.value().contains(SNAPSHOT_JSON_KEY_starttime))
 				{
 					snap->m_apps.insert(std::pair<std::string, AppSnap>(
-						app.first,
+						app.key(),
 						AppSnap(
-							GET_JSON_INT_VALUE(app.second, SNAPSHOT_JSON_KEY_pid),
-							GET_JSON_NUMBER_VALUE(app.second, SNAPSHOT_JSON_KEY_starttime))));
+							GET_JSON_INT_VALUE(app.value(), SNAPSHOT_JSON_KEY_pid),
+							GET_JSON_INT64_VALUE(app.value(), SNAPSHOT_JSON_KEY_starttime))));
 				}
 			}
 		snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
@@ -157,7 +157,7 @@ void Snapshot::persist()
 	std::ofstream ofs(tmpFile, std::ios::trunc);
 	if (ofs.is_open())
 	{
-		ofs << this->AsJson().serialize();
+		ofs << this->AsJson().dump();
 		ofs.close();
 		if (ACE_OS::rename(tmpFile.c_str(), SNAPSHOT_FILE_NAME) == 0)
 		{

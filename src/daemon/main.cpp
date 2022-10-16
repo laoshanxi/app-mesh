@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
 		const auto configTxt = Configuration::readConfiguration();
 		auto config = Configuration::FromJson(configTxt, true);
 		Configuration::instance(config);
-		const auto configJsonValue = web::json::value::parse(GET_STRING_T(configTxt));
+		const auto configJsonValue = nlohmann::json::parse((configTxt));
 
 		// init security [both for server side and REST client side (file operation API)]
 		Security::init(Configuration::instance()->getJwt()->m_jwtInterface);
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
 		auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
 		try
 		{
-			snap = Snapshot::FromJson(web::json::value::parse(snapfile.length() ? snapfile : std::string("{}")));
+			snap = Snapshot::FromJson(nlohmann::json::parse(snapfile.length() ? snapfile : std::string("{}")));
 		}
 		catch (...)
 		{

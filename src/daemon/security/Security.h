@@ -5,7 +5,7 @@
 #include <set>
 #include <string>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "User.h"
 
@@ -19,8 +19,8 @@ protected:
 
 public:
     virtual ~Security();
-    virtual web::json::value AsJson() const;
-    static std::shared_ptr<Security> FromJson(const web::json::value &obj) noexcept(false);
+    virtual nlohmann::json AsJson() const;
+    static std::shared_ptr<Security> FromJson(const nlohmann::json &obj) noexcept(false);
     virtual void save(const std::string &interface);
     virtual bool encryptKey();
     static void init(const std::string &interface);
@@ -33,12 +33,12 @@ public:
 
     virtual std::shared_ptr<User> getUserInfo(const std::string &userName);
     virtual std::map<std::string, std::shared_ptr<User>> getUsers() const;
-    virtual web::json::value getUsersJson() const;
-    virtual std::shared_ptr<User> addUser(const std::string &userName, const web::json::value &userJson);
+    virtual nlohmann::json getUsersJson() const;
+    virtual std::shared_ptr<User> addUser(const std::string &userName, const nlohmann::json &userJson);
     virtual void delUser(const std::string &name);
 
-    virtual web::json::value getRolesJson() const;
-    virtual void addRole(const web::json::value &obj, std::string name);
+    virtual nlohmann::json getRolesJson() const;
+    virtual void addRole(const nlohmann::json &obj, std::string name);
     virtual void delRole(const std::string &name);
 
     virtual std::set<std::string> getAllUserGroups() const;

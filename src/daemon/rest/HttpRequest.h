@@ -3,7 +3,7 @@
 #include <map>
 #include <memory>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/Utility.h"
 #include "protoc/Request.pb.h"
@@ -33,7 +33,7 @@ public:
 	/// Always use this function to get http body
 	/// http body will always be extract with string (for serialize purpose) and parse to JSON here
 	/// </summary>
-	web::json::value extractJson() const;
+	nlohmann::json extractJson() const;
 
 	/// <summary>
 	/// Asynchronously responses to this HTTP request.
@@ -48,7 +48,7 @@ public:
 	/// <param name="status">Response status code.</param>
 	/// <param name="body_data">Json value to use in the response body.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(web::http::status_code status, const web::json::value &body_data) const;
+	void reply(web::http::status_code status, const nlohmann::json &body_data) const;
 
 	/// Responds to this HTTP request with a string.
 	/// Assumes the character encoding of the string is UTF-8.
@@ -77,9 +77,8 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = "text/plain") const;
 
-	const std::shared_ptr<appmesh::Request> serialize() const;
 	static std::shared_ptr<HttpRequest> deserialize(const char *input, TcpHandler *clientRequest);
-	static const web::json::value emptyJson();
+	static const nlohmann::json emptyJson();
 
 	std::string m_uuid;
 	web::http::method m_method;

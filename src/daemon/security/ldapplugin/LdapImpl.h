@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 #include <mutex>
 #include <string>
 
@@ -29,8 +29,8 @@ public:
 
     virtual bool encryptKey() override { return true; };
 
-    virtual web::json::value AsJson() const override;
-    static std::shared_ptr<LdapImpl> FromJson(const web::json::value &obj) noexcept(false);
+    virtual nlohmann::json AsJson() const override;
+    static std::shared_ptr<LdapImpl> FromJson(const nlohmann::json &obj) noexcept(false);
 
     static void init(const std::string &interface);
     void syncGroupUsers(int timerId = INVALID_TIMER_ID);
@@ -41,12 +41,12 @@ public:
 
     virtual std::shared_ptr<User> getUserInfo(const std::string &userName) override;
     virtual std::map<std::string, std::shared_ptr<User>> getUsers() const NOT_APPLICABLE_THROW;
-    virtual web::json::value getUsersJson() const NOT_APPLICABLE_THROW;
-    virtual std::shared_ptr<User> addUser(const std::string &userName, const web::json::value &userJson) NOT_APPLICABLE_THROW;
+    virtual nlohmann::json getUsersJson() const NOT_APPLICABLE_THROW;
+    virtual std::shared_ptr<User> addUser(const std::string &userName, const nlohmann::json &userJson) NOT_APPLICABLE_THROW;
     virtual void delUser(const std::string &name) NOT_APPLICABLE_THROW;
 
-    virtual web::json::value getRolesJson() const NOT_APPLICABLE_THROW;
-    virtual void addRole(const web::json::value &obj, std::string name) NOT_APPLICABLE_THROW;
+    virtual nlohmann::json getRolesJson() const NOT_APPLICABLE_THROW;
+    virtual void addRole(const nlohmann::json &obj, std::string name) NOT_APPLICABLE_THROW;
     virtual void delRole(const std::string &name) NOT_APPLICABLE_THROW;
 
     virtual std::set<std::string> getAllUserGroups() const override;

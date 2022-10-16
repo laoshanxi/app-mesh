@@ -5,7 +5,7 @@
 #include <set>
 #include <string>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "Role.h"
 
@@ -19,9 +19,9 @@ public:
 	virtual ~User();
 
 	// serialize
-	web::json::value AsJson() const;
-	static std::shared_ptr<User> FromJson(const std::string &userName, const web::json::value &obj, const std::shared_ptr<Roles> roles) noexcept(false);
-	static web::json::value &clearConfidentialInfo(web::json::value &userJson);
+	nlohmann::json AsJson() const;
+	static std::shared_ptr<User> FromJson(const std::string &userName, const nlohmann::json &obj, const std::shared_ptr<Roles> roles) noexcept(false);
+	static nlohmann::json &clearConfidentialInfo(nlohmann::json &userJson);
 
 	// user update
 	void lock();
@@ -76,8 +76,8 @@ public:
 	Users();
 	virtual ~Users();
 
-	web::json::value AsJson() const;
-	static std::shared_ptr<Users> FromJson(const web::json::value &obj, std::shared_ptr<Roles> roles) noexcept(false);
+	nlohmann::json AsJson() const;
+	static std::shared_ptr<Users> FromJson(const nlohmann::json &obj, std::shared_ptr<Roles> roles) noexcept(false);
 
 	// find user
 	std::map<std::string, std::shared_ptr<User>> getUsers();
@@ -85,8 +85,8 @@ public:
 	std::set<std::string> getGroups() const;
 
 	// manage users
-	void addUsers(const web::json::value &obj, std::shared_ptr<Roles> roles);
-	std::shared_ptr<User> addUser(const std::string &userName, const web::json::value &userJson, std::shared_ptr<Roles> roles);
+	void addUsers(const nlohmann::json &obj, std::shared_ptr<Roles> roles);
+	std::shared_ptr<User> addUser(const std::string &userName, const nlohmann::json &userJson, std::shared_ptr<Roles> roles);
 	void delUser(const std::string &name);
 
 private:
@@ -97,8 +97,8 @@ private:
 struct JsonSecurity
 {
 	JsonSecurity();
-	static std::shared_ptr<JsonSecurity> FromJson(const web::json::value &jsonObj);
-	web::json::value AsJson();
+	static std::shared_ptr<JsonSecurity> FromJson(const nlohmann::json &jsonObj);
+	nlohmann::json AsJson();
 
 	bool m_encryptKey;
 	std::string m_jwtSalt;

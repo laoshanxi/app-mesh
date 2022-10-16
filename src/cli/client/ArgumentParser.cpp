@@ -8,7 +8,7 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 
 #include "../../common/DateTime.h"
@@ -419,10 +419,10 @@ void ArgumentParser::processAppAdd()
 			return;
 		}
 	}
-	web::json::value jsonObj;
+	nlohmann::json jsonObj;
 	if (m_commandLineVariables.count("stdin"))
 	{
-		jsonObj = web::json::value::parse(Utility::readStdin2End());
+		jsonObj = nlohmann::json::parse(Utility::readStdin2End());
 	}
 
 	std::string appName;
@@ -465,8 +465,8 @@ void ArgumentParser::processAppAdd()
 			hebavior == JSON_KEY_APP_behavior_keepalive ||
 			hebavior == JSON_KEY_APP_behavior_remove)
 		{
-			web::json::value jsonBehavior;
-			jsonBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(hebavior);
+			nlohmann::json jsonBehavior;
+			jsonBehavior[JSON_KEY_APP_behavior_exit] = std::string(hebavior);
 			jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
 		}
 		else
@@ -479,7 +479,7 @@ void ArgumentParser::processAppAdd()
 		auto controls = m_commandLineVariables[JSON_KEY_APP_behavior_control].as<std::vector<std::string>>();
 		if (controls.size() == 0)
 			controls.push_back(default_control_string);
-		web::json::value objControl = web::json::value::object();
+		nlohmann::json objControl = nlohmann::json::object();
 		for (const auto &control : controls)
 		{
 			auto find = control.find_first_of(':');
@@ -492,7 +492,7 @@ void ArgumentParser::processAppAdd()
 					hebavior == JSON_KEY_APP_behavior_keepalive ||
 					hebavior == JSON_KEY_APP_behavior_remove)
 				{
-					objControl[code] = web::json::value::string(hebavior);
+					objControl[code] = std::string(hebavior);
 				}
 				else
 				{
@@ -503,21 +503,21 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_behavior][JSON_KEY_APP_behavior_control] = objControl;
 	}
 	if (m_commandLineVariables.count("name"))
-		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
+		jsonObj[JSON_KEY_APP_name] = std::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count("cmd"))
-		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+		jsonObj[JSON_KEY_APP_command] = std::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
-		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
+		jsonObj[JSON_KEY_APP_description] = std::string(m_commandLineVariables["desc"].as<std::string>());
 	if (m_commandLineVariables["shell"].as<bool>())
-		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
+		jsonObj[JSON_KEY_APP_shell_mode] = (true);
 	if (m_commandLineVariables.count("health_check"))
-		jsonObj[JSON_KEY_APP_health_check_cmd] = web::json::value::string(m_commandLineVariables["health_check"].as<std::string>());
+		jsonObj[JSON_KEY_APP_health_check_cmd] = std::string(m_commandLineVariables["health_check"].as<std::string>());
 	if (m_commandLineVariables.count("perm"))
-		jsonObj[JSON_KEY_APP_owner_permission] = web::json::value::number(m_commandLineVariables["perm"].as<int>());
+		jsonObj[JSON_KEY_APP_owner_permission] = (m_commandLineVariables["perm"].as<int>());
 	if (m_commandLineVariables.count("workdir"))
-		jsonObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
+		jsonObj[JSON_KEY_APP_working_dir] = std::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("status"))
-		jsonObj[JSON_KEY_APP_status] = web::json::value::number(m_commandLineVariables["status"].as<bool>() ? 1 : 0);
+		jsonObj[JSON_KEY_APP_status] = (m_commandLineVariables["status"].as<bool>() ? 1 : 0);
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
 	{
 		auto metaData = m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>();
@@ -535,49 +535,49 @@ void ArgumentParser::processAppAdd()
 			try
 			{
 				// try to load as JSON first
-				jsonObj[JSON_KEY_APP_metadata] = web::json::value::parse(metaData);
+				jsonObj[JSON_KEY_APP_metadata] = nlohmann::json::parse(metaData);
 			}
 			catch (...)
 			{
 				// use text field in case of not JSON format
-				jsonObj[JSON_KEY_APP_metadata] = web::json::value::string(metaData);
+				jsonObj[JSON_KEY_APP_metadata] = std::string(metaData);
 			}
 		}
 	}
 	if (m_commandLineVariables.count("docker_image"))
-		jsonObj[JSON_KEY_APP_docker_image] = web::json::value::string(m_commandLineVariables["docker_image"].as<std::string>());
+		jsonObj[JSON_KEY_APP_docker_image] = std::string(m_commandLineVariables["docker_image"].as<std::string>());
 	if (m_commandLineVariables.count("start_time"))
-		jsonObj[JSON_KEY_SHORT_APP_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["start_time"].as<std::string>()).time_since_epoch()).count());
+		jsonObj[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["start_time"].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count("end_time"))
-		jsonObj[JSON_KEY_SHORT_APP_end_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["end_time"].as<std::string>()).time_since_epoch()).count());
+		jsonObj[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["end_time"].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count("interval"))
 	{
-		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_commandLineVariables["interval"].as<std::string>());
+		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_commandLineVariables["interval"].as<std::string>());
 		if (m_commandLineVariables.count("cron"))
-			jsonObj[JSON_KEY_SHORT_APP_cron_interval] = web::json::value::boolean(true);
+			jsonObj[JSON_KEY_SHORT_APP_cron_interval] = (true);
 	}
 	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
-		jsonObj[JSON_KEY_APP_retention] = web::json::value::string(m_commandLineVariables["retention"].as<std::string>());
+		jsonObj[JSON_KEY_APP_retention] = std::string(m_commandLineVariables["retention"].as<std::string>());
 	if (m_commandLineVariables.count("stdout_cache_num"))
-		jsonObj[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_commandLineVariables["stdout_cache_num"].as<int>());
+		jsonObj[JSON_KEY_APP_stdout_cache_num] = (m_commandLineVariables["stdout_cache_num"].as<int>());
 	if (m_commandLineVariables.count("daily_start") && m_commandLineVariables.count("daily_end"))
 	{
-		web::json::value objDailyLimitation = web::json::value::object();
-		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_start] = web::json::value::number(DateTime::parseDayTimeUtcDuration(m_commandLineVariables["daily_start"].as<std::string>()).total_seconds());
-		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_end] = web::json::value::number(DateTime::parseDayTimeUtcDuration(m_commandLineVariables["daily_end"].as<std::string>()).total_seconds());
+		nlohmann::json objDailyLimitation = nlohmann::json::object();
+		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_start] = (DateTime::parseDayTimeUtcDuration(m_commandLineVariables["daily_start"].as<std::string>()).total_seconds());
+		objDailyLimitation[JSON_KEY_DAILY_LIMITATION_daily_end] = (DateTime::parseDayTimeUtcDuration(m_commandLineVariables["daily_end"].as<std::string>()).total_seconds());
 		jsonObj[JSON_KEY_APP_daily_limitation] = objDailyLimitation;
 	}
 
 	if (m_commandLineVariables.count("memory") || m_commandLineVariables.count("virtual_memory") ||
 		m_commandLineVariables.count("cpu_shares"))
 	{
-		web::json::value objResourceLimitation = web::json::value::object();
+		nlohmann::json objResourceLimitation = nlohmann::json::object();
 		if (m_commandLineVariables.count("memory"))
-			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_mb] = web::json::value::number(m_commandLineVariables["memory"].as<int>());
+			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_mb] = (m_commandLineVariables["memory"].as<int>());
 		if (m_commandLineVariables.count("virtual_memory"))
-			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb] = web::json::value::number(m_commandLineVariables["virtual_memory"].as<int>());
+			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb] = (m_commandLineVariables["virtual_memory"].as<int>());
 		if (m_commandLineVariables.count("cpu_shares"))
-			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_cpu_shares] = web::json::value::number(m_commandLineVariables["cpu_shares"].as<int>());
+			objResourceLimitation[JSON_KEY_RESOURCE_LIMITATION_cpu_shares] = (m_commandLineVariables["cpu_shares"].as<int>());
 		jsonObj[JSON_KEY_APP_resource_limit] = objResourceLimitation;
 	}
 
@@ -586,7 +586,7 @@ void ArgumentParser::processAppAdd()
 		std::vector<std::string> envs = m_commandLineVariables[JSON_KEY_APP_env].as<std::vector<std::string>>();
 		if (envs.size())
 		{
-			web::json::value objEnvs = web::json::value::object();
+			nlohmann::json objEnvs = nlohmann::json::object();
 			for (auto &env : envs)
 			{
 				auto find = env.find_first_of('=');
@@ -594,7 +594,7 @@ void ArgumentParser::processAppAdd()
 				{
 					auto key = Utility::stdStringTrim(env.substr(0, find));
 					auto val = Utility::stdStringTrim(env.substr(find + 1));
-					objEnvs[key] = web::json::value::string(val);
+					objEnvs[key] = std::string(val);
 				}
 			}
 			jsonObj[JSON_KEY_APP_env] = objEnvs;
@@ -605,7 +605,7 @@ void ArgumentParser::processAppAdd()
 		std::vector<std::string> envs = m_commandLineVariables[JSON_KEY_APP_sec_env].as<std::vector<std::string>>();
 		if (envs.size())
 		{
-			web::json::value objEnvs = web::json::value::object();
+			nlohmann::json objEnvs = nlohmann::json::object();
 			for (auto &env : envs)
 			{
 				auto find = env.find_first_of('=');
@@ -613,14 +613,14 @@ void ArgumentParser::processAppAdd()
 				{
 					auto key = Utility::stdStringTrim(env.substr(0, find));
 					auto val = Utility::stdStringTrim(env.substr(find + 1));
-					objEnvs[key] = web::json::value::string(val);
+					objEnvs[key] = std::string(val);
 				}
 			}
 			jsonObj[JSON_KEY_APP_sec_env] = objEnvs;
 		}
 	}
 	if (m_commandLineVariables.count("pid"))
-		jsonObj[JSON_KEY_APP_pid] = web::json::value::number(m_commandLineVariables["pid"].as<int>());
+		jsonObj[JSON_KEY_APP_pid] = (m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + appName;
 	auto resp = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
 	std::cout << Utility::prettyJson(resp->text) << std::endl;
@@ -690,20 +690,20 @@ void ArgumentParser::processAppView()
 		if (!m_commandLineVariables.count("output"))
 		{
 			std::string restPath = std::string("/appmesh/app/") + m_commandLineVariables["name"].as<std::string>();
-			auto resp = web::json::value::parse(requestHttp(true, web::http::methods::GET, restPath)->text);
+			auto resp = nlohmann::json::parse(requestHttp(true, web::http::methods::GET, restPath)->text);
 			if (m_commandLineVariables.count("pstree"))
 			{
 				// view app process tree
 				if (HAS_JSON_FIELD(resp, JSON_KEY_APP_pstree))
 				{
-					std::cout << resp.at(JSON_KEY_APP_pstree).as_string() << std::endl;
+					std::cout << resp.at(JSON_KEY_APP_pstree).get<std::string>() << std::endl;
 				}
 			}
 			else
 			{
 				// view app json
 				Utility::addExtraAppTimeReferStr(resp);
-				std::cout << Utility::prettyJson(resp.serialize()) << std::endl;
+				std::cout << Utility::prettyJson(resp.dump()) << std::endl;
 			}
 		}
 		else
@@ -738,7 +738,7 @@ void ArgumentParser::processAppView()
 	{
 		std::string restPath = "/appmesh/applications";
 		auto response = requestHttp(true, web::http::methods::GET, restPath);
-		printApps(web::json::value::parse(response->text), reduce);
+		printApps(nlohmann::json::parse(response->text), reduce);
 	}
 }
 
@@ -869,18 +869,18 @@ int ArgumentParser::processAppRun()
 	if (m_commandLineVariables.count("timeout"))
 		query[HTTP_QUERY_KEY_timeout] = std::to_string(std::abs(timeout));
 
-	web::json::value jsonObj;
-	web::json::value jsonBehavior;
-	jsonBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(JSON_KEY_APP_behavior_remove);
+	nlohmann::json jsonObj;
+	nlohmann::json jsonBehavior;
+	jsonBehavior[JSON_KEY_APP_behavior_exit] = std::string(JSON_KEY_APP_behavior_remove);
 	jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
 	if (m_commandLineVariables.count("cmd"))
-		jsonObj[JSON_KEY_APP_command] = web::json::value::string(m_commandLineVariables["cmd"].as<std::string>());
+		jsonObj[JSON_KEY_APP_command] = std::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
-		jsonObj[JSON_KEY_APP_description] = web::json::value::string(m_commandLineVariables["desc"].as<std::string>());
+		jsonObj[JSON_KEY_APP_description] = std::string(m_commandLineVariables["desc"].as<std::string>());
 	if (m_commandLineVariables["shell"].as<bool>())
-		jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
+		jsonObj[JSON_KEY_APP_shell_mode] = (true);
 	if (m_commandLineVariables.count(JSON_KEY_APP_name))
-		jsonObj[JSON_KEY_APP_name] = web::json::value::string(m_commandLineVariables["name"].as<std::string>());
+		jsonObj[JSON_KEY_APP_name] = std::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
 	{
 		auto metaData = m_commandLineVariables[JSON_KEY_APP_metadata].as<std::string>();
@@ -898,23 +898,23 @@ int ArgumentParser::processAppRun()
 			try
 			{
 				// try to load as JSON first
-				jsonObj[JSON_KEY_APP_metadata] = web::json::value::parse(metaData);
+				jsonObj[JSON_KEY_APP_metadata] = nlohmann::json::parse(metaData);
 			}
 			catch (...)
 			{
 				// use text field in case of not JSON format
-				jsonObj[JSON_KEY_APP_metadata] = web::json::value::string(metaData);
+				jsonObj[JSON_KEY_APP_metadata] = std::string(metaData);
 			}
 		}
 	}
 	if (m_commandLineVariables.count("workdir"))
-		jsonObj[JSON_KEY_APP_working_dir] = web::json::value::string(m_commandLineVariables["workdir"].as<std::string>());
+		jsonObj[JSON_KEY_APP_working_dir] = std::string(m_commandLineVariables["workdir"].as<std::string>());
 	if (m_commandLineVariables.count("env"))
 	{
 		std::vector<std::string> envs = m_commandLineVariables["env"].as<std::vector<std::string>>();
 		if (envs.size())
 		{
-			web::json::value objEnvs = web::json::value::object();
+			nlohmann::json objEnvs = nlohmann::json::object();
 			for (auto &env : envs)
 			{
 				auto find = env.find_first_of('=');
@@ -922,7 +922,7 @@ int ArgumentParser::processAppRun()
 				{
 					auto key = Utility::stdStringTrim(env.substr(0, find));
 					auto val = Utility::stdStringTrim(env.substr(find + 1));
-					objEnvs[key] = web::json::value::string(val);
+					objEnvs[key] = std::string(val);
 				}
 			}
 			jsonObj[JSON_KEY_APP_env] = objEnvs;
@@ -1068,27 +1068,27 @@ int ArgumentParser::processExec()
 	}
 
 	// Get current ENV
-	web::json::value objEnvs = web::json::value::object();
+	nlohmann::json objEnvs = nlohmann::json::object();
 	for (char **var = environ; *var != nullptr; var++)
 	{
 		std::string e = *var;
 		auto vec = Utility::splitString(e, "=");
 		if (vec.size() > 0)
 		{
-			objEnvs[vec[0]] = web::json::value::string(vec.size() > 1 ? vec[1] : std::string());
+			objEnvs[vec[0]] = std::string(vec.size() > 1 ? vec[1] : std::string());
 		}
 	}
 
 	char buff[MAX_COMMAND_LINE_LENGTH] = {0};
-	web::json::value jsonObj;
-	jsonObj[JSON_KEY_APP_name] = web::json::value::string(APPC_EXEC_APP_NAME);
-	jsonObj[JSON_KEY_APP_shell_mode] = web::json::value::boolean(true);
-	jsonObj[JSON_KEY_APP_command] = web::json::value::string(initialCmd);
-	jsonObj[JSON_KEY_APP_description] = web::json::value::string("App Mesh exec environment");
+	nlohmann::json jsonObj;
+	jsonObj[JSON_KEY_APP_name] = std::string(APPC_EXEC_APP_NAME);
+	jsonObj[JSON_KEY_APP_shell_mode] = (true);
+	jsonObj[JSON_KEY_APP_command] = std::string(initialCmd);
+	jsonObj[JSON_KEY_APP_description] = std::string("App Mesh exec environment");
 	jsonObj[JSON_KEY_APP_env] = objEnvs;
-	jsonObj[JSON_KEY_APP_working_dir] = web::json::value::string(getcwd(buff, sizeof(buff)));
-	web::json::value behavior;
-	behavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(JSON_KEY_APP_behavior_remove);
+	jsonObj[JSON_KEY_APP_working_dir] = std::string(getcwd(buff, sizeof(buff)));
+	nlohmann::json behavior;
+	behavior[JSON_KEY_APP_behavior_exit] = std::string(JSON_KEY_APP_behavior_remove);
 	jsonObj[JSON_KEY_APP_behavior] = behavior;
 
 	std::string process_uuid;
@@ -1139,7 +1139,7 @@ int ArgumentParser::processExec()
 				}
 				process_uuid.clear();
 				outputPosition = 0;
-				jsonObj[JSON_KEY_APP_command] = web::json::value::string(input);
+				jsonObj[JSON_KEY_APP_command] = std::string(input);
 				std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
 				std::string restPath = "/appmesh/app/run";
 				auto response = requestHttp(false, web::http::methods::POST, restPath, &jsonObj, {}, query);
@@ -1213,7 +1213,7 @@ void ArgumentParser::processFileDownload()
 	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
 	auto response = cpr::Download(stream, cpr::Url{m_currentUrl, restPath}, cprHeader, sslOpts, cpr::Timeout{1000});
 
-	std::cout << "Download file <" << local << "> size <" << Utility::humanReadableSize(stream.tellp()) << ">" << std::endl;
+	std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(stream.tellp()) << ">" << std::endl;
 
 	if (response.header.count(HTTP_HEADER_KEY_file_mode))
 		os::fileChmod(local, std::stoi(response.header.find(HTTP_HEADER_KEY_file_mode)->second));
@@ -1364,8 +1364,8 @@ void ArgumentParser::processLoglevel()
 
 	auto level = m_commandLineVariables["level"].as<std::string>();
 
-	web::json::value jsonObj;
-	jsonObj[JSON_KEY_LogLevel] = web::json::value::string(level);
+	nlohmann::json jsonObj;
+	jsonObj[JSON_KEY_LogLevel] = std::string(level);
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
 	auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
@@ -1395,16 +1395,16 @@ void ArgumentParser::processCloudJoinMaster()
 		return;
 	}
 
-	web::json::value jsonObj;
-	web::json::value jsonConsul;
-	jsonConsul[JSON_KEY_CONSUL_URL] = web::json::value::string(m_commandLineVariables["consul"].as<std::string>());
-	jsonConsul[JSON_KEY_CONSUL_IS_MAIN] = web::json::value::boolean(m_commandLineVariables.count("main"));
-	jsonConsul[JSON_KEY_CONSUL_IS_WORKER] = web::json::value::boolean(m_commandLineVariables.count("worker"));
-	jsonConsul[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_commandLineVariables["proxy"].as<std::string>());
-	jsonConsul[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_commandLineVariables["ttl"].as<std::int16_t>());
-	jsonConsul[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_commandLineVariables.count("security"));
-	jsonConsul[JSON_KEY_CONSUL_AUTH_USER] = web::json::value::string(m_commandLineVariables["user"].as<std::string>());
-	jsonConsul[JSON_KEY_CONSUL_AUTH_PASS] = web::json::value::string(m_commandLineVariables["pass"].as<std::string>());
+	nlohmann::json jsonObj;
+	nlohmann::json jsonConsul;
+	jsonConsul[JSON_KEY_CONSUL_URL] = std::string(m_commandLineVariables["consul"].as<std::string>());
+	jsonConsul[JSON_KEY_CONSUL_IS_MAIN] = (m_commandLineVariables.count("main"));
+	jsonConsul[JSON_KEY_CONSUL_IS_WORKER] = (m_commandLineVariables.count("worker"));
+	jsonConsul[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = std::string(m_commandLineVariables["proxy"].as<std::string>());
+	jsonConsul[JSON_KEY_CONSUL_SESSION_TTL] = (m_commandLineVariables["ttl"].as<std::int16_t>());
+	jsonConsul[JSON_KEY_CONSUL_SECURITY] = (m_commandLineVariables.count("security"));
+	jsonConsul[JSON_KEY_CONSUL_AUTH_USER] = std::string(m_commandLineVariables["user"].as<std::string>());
+	jsonConsul[JSON_KEY_CONSUL_AUTH_PASS] = std::string(m_commandLineVariables["pass"].as<std::string>());
 	jsonObj[JSON_KEY_CONSUL] = jsonConsul;
 
 	// /app-manager/config
@@ -1576,7 +1576,7 @@ void ArgumentParser::initRadomPassword()
 	}
 
 	const auto configFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string();
-	auto fileContentJsonObj = web::json::value::parse(Utility::readFileCpp(configFilePath));
+	auto fileContentJsonObj = nlohmann::json::parse(Utility::readFileCpp(configFilePath));
 	// check JWT enabled
 	if (HAS_JSON_FIELD(fileContentJsonObj, JSON_KEY_REST) &&
 		HAS_JSON_FIELD(fileContentJsonObj.at(JSON_KEY_REST), JSON_KEY_JWT))
@@ -1586,16 +1586,16 @@ void ArgumentParser::initRadomPassword()
 		if (GET_JSON_STR_VALUE(jwtSection, JSON_KEY_SECURITY_Interface) == JSON_KEY_USER_key_method_local)
 		{
 			const auto securityFilePath = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
-			auto jsonObj = web::json::value::parse(Utility::readFileCpp(securityFilePath));
+			auto jsonObj = nlohmann::json::parse(Utility::readFileCpp(securityFilePath));
 			// update with generated password
 			std::string genPassword = generatePassword(8, true, true, true, true);
-			jsonObj[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = web::json::value::string(genPassword);
+			jsonObj[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = std::string(genPassword);
 
 			// serialize and save security JSON config
 			std::ofstream ofs(securityFilePath, ios::trunc);
 			if (ofs.is_open())
 			{
-				ofs << Utility::prettyJson(jsonObj.serialize());
+				ofs << Utility::prettyJson(jsonObj.dump());
 				ofs.close();
 				std::cout << "password generated" << std::endl;
 			}
@@ -1611,7 +1611,7 @@ bool ArgumentParser::confirmInput(const char *msg)
 	return result == "y";
 }
 
-std::shared_ptr<cpr::Response> ArgumentParser::requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, web::json::value *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
+std::shared_ptr<cpr::Response> ArgumentParser::requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
 	// header
 	cpr::Header cprHeader;
@@ -1629,7 +1629,7 @@ std::shared_ptr<cpr::Response> ArgumentParser::requestHttp(bool throwAble, const
 	cpr::Body cprBody;
 	if (body)
 	{
-		cprBody = body->serialize();
+		cprBody = body->dump();
 		cprHeader.insert({"Content-Type", "application/json"});
 	}
 
@@ -1669,10 +1669,11 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	std::map<std::string, bool> apps;
 	std::string restPath = "/appmesh/applications";
 	auto response = requestHttp(true, web::http::methods::GET, restPath);
-	auto jsonValue = web::json::value::parse(response->text);
-	for (const auto &appJson : jsonValue.as_array())
+	auto jsonValue = nlohmann::json::parse(response->text);
+	for (auto &item : jsonValue.items())
 	{
-		apps[appJson.at(JSON_KEY_APP_name).as_string()] = (1 == appJson.at(JSON_KEY_APP_status).as_integer());
+		auto appJson = item.value();
+		apps[appJson.at(JSON_KEY_APP_name).get<std::string>()] = (1 == appJson.at(JSON_KEY_APP_status).get<int>());
 	}
 	return apps;
 }
@@ -1737,10 +1738,10 @@ std::string ArgumentParser::readPersistAuthToken(const std::string &hostName)
 			auto configFile = Utility::readFile(m_tokenFile);
 			if (configFile.length() > 0)
 			{
-				auto config = web::json::value::parse(configFile);
-				if (config.has_object_field("auths") && config["auths"].has_object_field(hostName))
+				auto config = nlohmann::json::parse(configFile);
+				if (config.contains("auths") && config["auths"].contains(hostName))
 				{
-					jwtToken = config.at("auths").at(hostName).at("auth").as_string();
+					jwtToken = config.at("auths").at(hostName).at("auth").get<std::string>();
 				}
 			}
 		}
@@ -1762,10 +1763,10 @@ std::string ArgumentParser::readPersistLastHost()
 			auto configFile = Utility::readFile(m_tokenFile);
 			if (configFile.length() > 0)
 			{
-				auto config = web::json::value::parse(configFile);
-				if (config.has_field("last_host"))
+				auto config = nlohmann::json::parse(configFile);
+				if (config.contains("last_host"))
 				{
-					lastHost = config.at("last_host").as_string();
+					lastHost = config.at("last_host").get<std::string>();
 				}
 			}
 		}
@@ -1779,7 +1780,7 @@ std::string ArgumentParser::readPersistLastHost()
 
 void ArgumentParser::persistAuthToken(const std::string &hostName, const std::string &token)
 {
-	web::json::value config = EMPTY_STR_JSON;
+	nlohmann::json config = EMPTY_STR_JSON;
 	try
 	{
 		std::string configFile;
@@ -1789,31 +1790,31 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 		}
 		if (configFile.length() > 0)
 		{
-			config = web::json::value::parse(configFile);
+			config = nlohmann::json::parse(configFile);
 		}
 	}
 	catch (const std::exception &e)
 	{
 		std::cerr << "failed to parse " << m_tokenFile << " as json format" << '\n';
 	}
-	if (!config.has_object_field("auths"))
-		config["auths"] = web::json::value::object();
+	if (!config.contains("auths"))
+		config["auths"] = nlohmann::json::object();
 
 	if (token.length())
 	{
-		config["auths"][hostName] = web::json::value::object();
-		config["auths"][hostName]["auth"] = web::json::value::string(token);
+		config["auths"][hostName] = nlohmann::json::object();
+		config["auths"][hostName]["auth"] = std::string(token);
 	}
-	else if (config["auths"].has_field(hostName))
+	else if (config["auths"].contains(hostName))
 	{
 		config["auths"].erase(hostName);
 	}
-	config["last_host"] = web::json::value::string(hostName);
+	config["last_host"] = std::string(hostName);
 
 	std::ofstream ofs(m_tokenFile, std::ios::trunc);
 	if (ofs.is_open())
 	{
-		ofs << Utility::prettyJson(config.serialize());
+		ofs << Utility::prettyJson(config.dump());
 		ofs.close();
 		// only owner to read and write for token file
 		os::chmod(m_tokenFile, 600);
@@ -1848,7 +1849,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 	return m_jwtToken;
 }
 
-void ArgumentParser::printApps(web::json::value json, bool reduce)
+void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 {
 	constexpr size_t NAME_COL_WIDTH = 15;
 	boost::io::ios_all_saver guard(std::cout);
@@ -1871,89 +1872,90 @@ void ArgumentParser::printApps(web::json::value json, bool reduce)
 		<< std::endl;
 
 	int index = 1;
-	auto jsonArr = json.as_array();
 	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
-	std::for_each(jsonArr.begin(), jsonArr.end(), [&index, &reduceFunc, reduce, NAME_COL_WIDTH](web::json::value &jsonObj)
-				  {
-					  const char *slash = "-";
-					  auto name = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
-					  if (reduce)
-						  name = reduceFunc(name, NAME_COL_WIDTH);
-					  else if (name.length() >= NAME_COL_WIDTH)
-						  name += " ";
-					  std::cout << std::setw(3) << index++;
-					  std::cout << std::setw(NAME_COL_WIDTH) << name;
-					  std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
-					  std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
-					  std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);
-					  std::cout << std::setw(8);
-					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
-							  std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);
-						  else
-							  std::cout << slash;
-					  }
-					  std::cout << std::setw(9);
-					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
-							  std::cout << Utility::humanReadableSize(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_memory));
-						  else
-							  std::cout << slash;
-					  }
-					  std::cout << std::setw(5);
-					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cpu))
-						  {
-							  std::stringstream ss;
-							  ss << (int)GET_JSON_DOUBLE_VALUE(jsonObj, JSON_KEY_APP_cpu);
-							  std::cout << ss.str();
-						  }
-						  else
-							  std::cout << slash;
-					  }
-					  std::cout << std::setw(7);
-					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_return))
-							  std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_return);
-						  else
-							  std::cout << slash;
-					  }
-					  std::cout << std::setw(7);
-					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
-							  std::cout << Utility::humanReadableDuration(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
-						  else
-							  std::cout << slash;
-					  }
-					  std::cout << std::setw(9);
-					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start) && HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
-						  {
-							  auto startTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_start));
-							  auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();
-							  std::cout << Utility::humanReadableDuration(startTime, endTime);
-						  }
-						  else
-							  std::cout << slash;
-					  }
-					  std::cout << std::setw(7);
-					  {
-						  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_starts))
-							  std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_starts);
-						  else
-							  std::cout << slash;
-					  }
-					  if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_command))
-					  {
-						  if (reduce)
-						  {
-							  const int commandColMaxLength = 40;
-							  auto command = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
-							  jsonObj[JSON_KEY_APP_command] = web::json::value::string(reduceFunc(command, commandColMaxLength));
-						  }
-						  std::cout << jsonObj.at(JSON_KEY_APP_command);
-					  }
-					  std::cout << std::endl; });
+	for (auto &entity : json.items())
+	{
+		auto jsonObj = entity.value();
+		const char *slash = "-";
+		auto name = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
+		if (reduce)
+			name = reduceFunc(name, NAME_COL_WIDTH);
+		else if (name.length() >= NAME_COL_WIDTH)
+			name += " ";
+		std::cout << std::setw(3) << index++;
+		std::cout << std::setw(NAME_COL_WIDTH) << name;
+		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
+		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
+		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);
+		std::cout << std::setw(8);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
+				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(9);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
+				std::cout << Utility::humanReadableSize(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_memory));
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(5);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cpu))
+			{
+				std::stringstream ss;
+				ss << (int)GET_JSON_DOUBLE_VALUE(jsonObj, JSON_KEY_APP_cpu);
+				std::cout << ss.str();
+			}
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(7);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_return))
+				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_return);
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(7);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
+				std::cout << Utility::humanReadableDuration(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(9);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start) && HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
+			{
+				auto startTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_start));
+				auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();
+				std::cout << Utility::humanReadableDuration(startTime, endTime);
+			}
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(7);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_starts))
+				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_starts);
+			else
+				std::cout << slash;
+		}
+		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_command))
+		{
+			if (reduce)
+			{
+				const int commandColMaxLength = 40;
+				auto command = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
+				jsonObj[JSON_KEY_APP_command] = std::string(reduceFunc(command, commandColMaxLength));
+			}
+			std::cout << jsonObj.at(JSON_KEY_APP_command);
+		}
+		std::cout << std::endl;
+	}
 }
 
 void ArgumentParser::shiftCommandLineArgs(po::options_description &desc)
@@ -2066,7 +2068,7 @@ const std::string ArgumentParser::getAppMeshUrl()
 	auto file = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string());
 	if (file.length() > 0)
 	{
-		auto jsonValue = web::json::value::parse(GET_STRING_T(file));
+		auto jsonValue = nlohmann::json::parse((file));
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST) &&
 			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_RestListenPort))
 		{

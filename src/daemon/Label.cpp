@@ -17,27 +17,26 @@ Label::~Label()
 {
 }
 
-web::json::value Label::AsJson() const
+nlohmann::json Label::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	auto tags = web::json::value::object();
+	auto tags = nlohmann::json::object();
 	for (auto &tag : m_labels)
 	{
-		tags[tag.first] = web::json::value::string(tag.second);
+		tags[tag.first] = std::string(tag.second);
 	}
 	return tags;
 }
 
-const std::shared_ptr<Label> Label::FromJson(const web::json::value &obj)
+const std::shared_ptr<Label> Label::FromJson(const nlohmann::json &obj)
 {
 	std::shared_ptr<Label> label = std::make_shared<Label>();
 	if (!obj.is_null() && obj.is_object())
 	{
-		auto jsonObj = obj.as_object();
-		for (auto &lblJson : jsonObj)
+		for (auto &lblJson : obj.items())
 		{
-			std::string labelKey = GET_STD_STRING(lblJson.first);
-			label->m_labels[labelKey] = GET_STD_STRING(lblJson.second.as_string());
+			std::string labelKey = (lblJson.key());
+			label->m_labels[labelKey] = (lblJson.value().get<std::string>());
 		}
 	}
 	return label;

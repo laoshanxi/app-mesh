@@ -6,7 +6,7 @@
 #include <set>
 #include <string>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 //////////////////////////////////////////////////////////////////////////
 /// Role
@@ -18,8 +18,8 @@ public:
 	virtual ~Role();
 
 	// serialize
-	web::json::value AsJson() const;
-	static std::shared_ptr<Role> FromJson(std::string roleName, web::json::value &obj) noexcept(false);
+	nlohmann::json AsJson() const;
+	static std::shared_ptr<Role> FromJson(std::string roleName, const nlohmann::json &obj) noexcept(false);
 
 	// get information
 	bool hasPermission(std::string permission);
@@ -40,10 +40,10 @@ public:
 
 	std::shared_ptr<Role> getRole(const std::string &roleName);
 
-	web::json::value AsJson() const;
-	static const std::shared_ptr<Roles> FromJson(const web::json::value &obj) noexcept(false);
+	nlohmann::json AsJson() const;
+	static const std::shared_ptr<Roles> FromJson(const nlohmann::json &obj) noexcept(false);
 
-	void addRole(const web::json::value &obj, std::string name);
+	void addRole(const nlohmann::json &obj, std::string name);
 	void delRole(std::string name);
 	std::map<std::string, std::shared_ptr<Role>> getRoles();
 

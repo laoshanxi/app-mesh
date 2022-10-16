@@ -7,7 +7,7 @@
 #include <string>
 #include <unistd.h>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 struct HostNetInterface
 {
@@ -54,8 +54,8 @@ public:
 
 	void dump();
 
-	web::json::value AsJson();
-	web::json::value getConsulJson();
+	nlohmann::json AsJson();
+	nlohmann::json getConsulJson();
 
 private:
 	HostResource m_resources;

@@ -19,11 +19,11 @@ class RestBase
 public:
     explicit RestBase();
     virtual ~RestBase();
-    web::json::value convertText2Json(const std::string &msg);
+    nlohmann::json convertText2Json(const std::string &msg);
     // Security: replace XSS risk chars to safe charactor
     const std::string replaceXssRiskChars(const std::string &source);
     // Security: go through JSON tree and replace XSS risk chars for string attributes
-    void tranverseJsonTree(web::json::value &tree);
+    void tranverseJsonTree(nlohmann::json &tree);
 
 protected:
     /// <summary>

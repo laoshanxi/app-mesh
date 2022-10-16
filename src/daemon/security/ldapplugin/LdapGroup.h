@@ -6,7 +6,7 @@
 #include <set>
 #include <string>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 class Role;
 class Roles;
@@ -25,9 +25,9 @@ public:
     virtual ~LdapGroup(){};
 
     // serialize
-    web::json::value AsJson() const;
+    nlohmann::json AsJson() const;
     // de-serialize
-    static std::shared_ptr<LdapGroup> FromJson(const std::string &groupName, const web::json::value &obj, const std::shared_ptr<Roles> roles) noexcept(false);
+    static std::shared_ptr<LdapGroup> FromJson(const std::string &groupName, const nlohmann::json &obj, const std::shared_ptr<Roles> roles) noexcept(false);
     void updateGroup(std::shared_ptr<LdapGroup> group);
     // sync LDAP
     void syncGroupUsers(std::shared_ptr<Ldap::Server> ldap, std::shared_ptr<Roles> roles);
@@ -50,10 +50,10 @@ public:
     virtual ~LdapGroups(){};
 
     std::shared_ptr<LdapGroup> getGroup(const std::string &name);
-    web::json::value AsJson() const;
-    static const std::shared_ptr<LdapGroups> FromJson(const web::json::value &obj, std::shared_ptr<Roles> roles) noexcept(false);
+    nlohmann::json AsJson() const;
+    static const std::shared_ptr<LdapGroups> FromJson(const nlohmann::json &obj, std::shared_ptr<Roles> roles) noexcept(false);
 
-    std::shared_ptr<LdapGroup> addGroup(const web::json::value &obj, std::string name, std::shared_ptr<Roles> roles);
+    std::shared_ptr<LdapGroup> addGroup(const nlohmann::json &obj, std::string name, std::shared_ptr<Roles> roles);
     void delGroup(const std::string &name);
     std::map<std::string, std::shared_ptr<LdapGroup>> getGroups() const;
 
@@ -68,8 +68,8 @@ private:
 struct JsonLdap
 {
     JsonLdap();
-    static std::shared_ptr<JsonLdap> FromJson(const web::json::value &jsonValue);
-    web::json::value AsJson() const;
+    static std::shared_ptr<JsonLdap> FromJson(const nlohmann::json &jsonValue);
+    nlohmann::json AsJson() const;
 
     std::string m_ldapUri;
     std::string m_ldapAdmin;

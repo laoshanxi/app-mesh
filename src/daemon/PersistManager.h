@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 
-#include "cpprest/json.h"
 
 /// <summary>
 /// App Process Recover object
@@ -23,8 +22,8 @@ struct AppSnap
 struct Snapshot
 {
 	bool operator==(const Snapshot &snapshort) const;
-	web::json::value AsJson() const;
-	static std::shared_ptr<Snapshot> FromJson(const web::json::value &obj);
+	nlohmann::json AsJson() const;
+	static std::shared_ptr<Snapshot> FromJson(const nlohmann::json &obj);
 	void persist();
 
 	std::map<std::string, AppSnap> m_apps;

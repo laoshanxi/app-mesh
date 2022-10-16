@@ -141,7 +141,7 @@ void ResourceCollection::dump()
 	LOG_DBG << fname << "m_freeSwap_bytes:" << m_resources.m_freeSwap_bytes;
 }
 
-web::json::value ResourceCollection::AsJson()
+nlohmann::json ResourceCollection::AsJson()
 {
 	const static char fname[] = "ResourceCollection::AsJson() ";
 	LOG_DBG << fname << "Entered";
@@ -149,82 +149,78 @@ web::json::value ResourceCollection::AsJson()
 	this->getHostResource();
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
-	web::json::value result = web::json::value::object();
-	result[GET_STRING_T("host_name")] = web::json::value::string(GET_STRING_T(getHostName()));
-	result[GET_STRING_T("os_user")] = web::json::value::string(GET_STRING_T(Utility::getOsUserName()));
-	result[GET_STRING_T("host_description")] = web::json::value::string(Configuration::instance()->getDescription());
-	auto arr = web::json::value::array(m_resources.m_ipaddress.size());
-	int idx = 0;
-	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr, &idx](const HostNetInterface &pair)
+	nlohmann::json result = nlohmann::json::object();
+	result[("host_name")] = std::string((getHostName()));
+	result[("os_user")] = std::string((Utility::getOsUserName()));
+	result[("host_description")] = std::string(Configuration::instance()->getDescription());
+	auto arr = nlohmann::json::array();
+	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr](const HostNetInterface &pair)
 				  {
-					  web::json::value net_detail = web::json::value::object();
-					  net_detail["name"] = web::json::value::string(pair.name);
-					  net_detail["ipv4"] = web::json::value::boolean(pair.ipv4);
-					  net_detail["address"] = web::json::value::string(pair.address);
-					  arr[idx++] = net_detail;
-				  });
-	result[GET_STRING_T("net")] = arr;
-	result[GET_STRING_T("cpu_cores")] = web::json::value::number(m_resources.m_cores);
-	result[GET_STRING_T("cpu_sockets")] = web::json::value::number(m_resources.m_sockets);
-	result[GET_STRING_T("cpu_processors")] = web::json::value::number(m_resources.m_processors);
-	result[GET_STRING_T("mem_total_bytes")] = web::json::value::number(m_resources.m_total_bytes);
-	result[GET_STRING_T("mem_free_bytes")] = web::json::value::number(m_resources.m_free_bytes);
-	result[GET_STRING_T("mem_totalSwap_bytes")] = web::json::value::number(m_resources.m_totalSwap_bytes);
-	result[GET_STRING_T("mem_freeSwap_bytes")] = web::json::value::number(m_resources.m_freeSwap_bytes);
+					  nlohmann::json net_detail = nlohmann::json::object();
+					  net_detail["name"] = std::string(pair.name);
+					  net_detail["ipv4"] = (pair.ipv4);
+					  net_detail["address"] = std::string(pair.address);
+					  arr.push_back(net_detail); });
+	result[("net")] = arr;
+	result[("cpu_cores")] = (m_resources.m_cores);
+	result[("cpu_sockets")] = (m_resources.m_sockets);
+	result[("cpu_processors")] = (m_resources.m_processors);
+	result[("mem_total_bytes")] = (m_resources.m_total_bytes);
+	result[("mem_free_bytes")] = (m_resources.m_free_bytes);
+	result[("mem_totalSwap_bytes")] = (m_resources.m_totalSwap_bytes);
+	result[("mem_freeSwap_bytes")] = (m_resources.m_freeSwap_bytes);
 	auto allAppMem = os::pstree();
 	if (nullptr != allAppMem)
 	{
-		result[GET_STRING_T("mem_applications")] = web::json::value::number(allAppMem->totalRssMemBytes());
+		result[("mem_applications")] = (allAppMem->totalRssMemBytes());
 	}
 	// Load
 	auto load = os::loadavg();
 	if (load != nullptr)
 	{
-		web::json::value sysLoad = web::json::value::object();
-		sysLoad["1min"] = web::json::value::number(load->one);
-		sysLoad["5min"] = web::json::value::number(load->five);
-		sysLoad["15min"] = web::json::value::number(load->fifteen);
-		result[GET_STRING_T("load")] = sysLoad;
+		nlohmann::json sysLoad = nlohmann::json::object();
+		sysLoad["1min"] = (load->one);
+		sysLoad["5min"] = (load->five);
+		sysLoad["15min"] = (load->fifteen);
+		result[("load")] = sysLoad;
 	}
 	// FS
 	auto mountPoints = os::getMoundPoints();
-	auto fsArr = web::json::value::array(mountPoints.size());
-	idx = 0;
-	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr, &idx](const std::pair<std::string, std::string> &pair)
+	auto fsArr = nlohmann::json::array();
+	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr](const std::pair<std::string, std::string> &pair)
 				  {
 					  auto usage = os::df(pair.first);
 					  if (usage != nullptr)
 					  {
-						  web::json::value fs = web::json::value::object();
-						  fs["size"] = web::json::value::number(usage->size);
-						  fs["used"] = web::json::value::number(usage->used);
-						  fs["usage"] = web::json::value::number(usage->usage);
-						  fs["device"] = web::json::value::string(pair.second);
-						  fs["mount_point"] = web::json::value::string(pair.first);
-						  fsArr[idx++] = fs;
-					  }
-				  });
+						  nlohmann::json fs = nlohmann::json::object();
+						  fs["size"] = (usage->size);
+						  fs["used"] = (usage->used);
+						  fs["usage"] = (usage->usage);
+						  fs["device"] = std::string(pair.second);
+						  fs["mount_point"] = std::string(pair.first);
+						  fsArr.push_back(fs);
+					  } });
 
-	result[GET_STRING_T("fs")] = fsArr;
-	result[GET_STRING_T("systime")] = web::json::value::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));
-	result[GET_STRING_T("appmesh_start_time")] = web::json::value::string(DateTime::formatLocalTime(m_appmeshStartTime));
-	result[GET_STRING_T("pid")] = web::json::value::number(getPid());
-	result[GET_STRING_T("fd")] = web::json::value::number(os::pstree()->totalFileDescriptors());
+	result[("fs")] = fsArr;
+	result[("systime")] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));
+	result[("appmesh_start_time")] = std::string(DateTime::formatLocalTime(m_appmeshStartTime));
+	result[("pid")] = (getPid());
+	result[("fd")] = (os::pstree()->totalFileDescriptors());
 	LOG_DBG << fname << "Exit";
 	return result;
 }
 
-web::json::value ResourceCollection::getConsulJson()
+nlohmann::json ResourceCollection::getConsulJson()
 {
 	static auto cpus = os::cpus();
 	auto mem = os::memory();
 
-	web::json::value result = web::json::value::object();
-	result[GET_STRING_T("cpu_cores")] = web::json::value::number(cpus.size());
-	result[GET_STRING_T("mem_total_bytes")] = web::json::value::number(mem->total_bytes);
-	//result[GET_STRING_T("mem_free_bytes")] = web::json::value::number(mem->free_bytes);
-	//result[GET_STRING_T("mem_totalSwap_bytes")] = web::json::value::number(mem->totalSwap_bytes);
-	//result[GET_STRING_T("mem_freeSwap_bytes")] = web::json::value::number(mem->freeSwap_bytes);
+	nlohmann::json result = nlohmann::json::object();
+	result[("cpu_cores")] = (cpus.size());
+	result[("mem_total_bytes")] = (mem->total_bytes);
+	// result[("mem_free_bytes")] = (mem->free_bytes);
+	// result[("mem_totalSwap_bytes")] = (mem->totalSwap_bytes);
+	// result[("mem_freeSwap_bytes")] = (mem->freeSwap_bytes);
 
 	return result;
 }

@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <thread>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
@@ -16,11 +16,11 @@ ConsulTask::ConsulTask()
 {
 }
 
-std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value &jsonObj)
+std::shared_ptr<ConsulTask> ConsulTask::FromJson(const nlohmann::json &jsonObj)
 {
 	auto consul = std::make_shared<ConsulTask>();
 	if (HAS_JSON_FIELD(jsonObj, "content") && HAS_JSON_FIELD(jsonObj, "replication") &&
-		jsonObj.at("replication").is_integer() &&
+		jsonObj.at("replication").is_number() &&
 		jsonObj.at("content").is_object())
 	{
 		auto appJson = jsonObj.at("content");
@@ -44,13 +44,13 @@ std::shared_ptr<ConsulTask> ConsulTask::FromJson(const web::json::value &jsonObj
 	return consul;
 }
 
-web::json::value ConsulTask::AsJson() const
+nlohmann::json ConsulTask::AsJson() const
 {
-	auto result = web::json::value::object();
-	result["replication"] = web::json::value::number(m_replication);
-	result["priority"] = web::json::value::number(m_priority);
-	result["port"] = web::json::value::number(m_consulServicePort);
-	result["memoryMB"] = web::json::value::number(m_requestMemMega);
+	auto result = nlohmann::json::object();
+	result["replication"] = (m_replication);
+	result["priority"] = (m_priority);
+	result["port"] = (m_consulServicePort);
+	result["memoryMB"] = (m_requestMemMega);
 	result["content"] = m_app->AsJson(false);
 	if (m_condition != nullptr)
 		result["condition"] = m_condition->AsJson();
@@ -79,14 +79,15 @@ bool ConsulTask::operator==(const std::shared_ptr<ConsulTask> &task)
 		   m_condition->operator==(task->m_condition);
 }
 
-std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value &jsonObj, const std::string &hostName)
+std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const nlohmann::json &jsonObj, const std::string &hostName)
 {
 	auto topology = std::make_shared<ConsulTopology>();
 	topology->m_hostName = hostName;
 	if (jsonObj.is_array())
 	{
-		for (const auto &app : jsonObj.as_array())
+		for (auto &entity : jsonObj.items())
 		{
+			auto app = entity.value();
 			auto appName = GET_JSON_STR_VALUE(app, "app");
 			topology->m_scheduleApps[appName] = std::chrono::system_clock::from_time_t(GET_JSON_INT_VALUE(app, "schedule_time"));
 		}
@@ -94,16 +95,15 @@ std::shared_ptr<ConsulTopology> ConsulTopology::FromJson(const web::json::value 
 	return topology;
 }
 
-web::json::value ConsulTopology::AsJson() const
+nlohmann::json ConsulTopology::AsJson() const
 {
-	auto result = web::json::value::array(m_scheduleApps.size());
-	std::size_t appIndex = 0;
+	auto result = nlohmann::json::array();
 	for (const auto &app : m_scheduleApps)
 	{
-		auto appJson = web::json::value::object();
-		appJson["app"] = web::json::value::string(app.first);
-		appJson["schedule_time"] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(app.second.time_since_epoch()).count());
-		result[appIndex++] = appJson;
+		auto appJson = nlohmann::json::object();
+		appJson["app"] = std::string(app.first);
+		appJson["schedule_time"] = (std::chrono::duration_cast<std::chrono::seconds>(app.second.time_since_epoch()).count());
+		result.push_back(appJson);
 	}
 	return result;
 }
@@ -137,7 +137,7 @@ ConsulNode::ConsulNode()
 {
 }
 
-std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value &jsonObj, const std::string &hostName)
+std::shared_ptr<ConsulNode> ConsulNode::FromJson(const nlohmann::json &jsonObj, const std::string &hostName)
 {
 	auto node = std::make_shared<ConsulNode>();
 	node->m_hostName = hostName;
@@ -162,23 +162,23 @@ std::shared_ptr<ConsulNode> ConsulNode::FromJson(const web::json::value &jsonObj
 		}
 		if (HAS_JSON_FIELD(resourceJson, "mem_total_bytes"))
 		{
-			node->m_total_bytes = GET_JSON_NUMBER_VALUE(resourceJson, "mem_total_bytes");
+			node->m_total_bytes = GET_JSON_INT64_VALUE(resourceJson, "mem_total_bytes");
 		}
 	}
 
 	return node;
 }
 
-web::json::value ConsulNode::AsJson() const
+nlohmann::json ConsulNode::AsJson() const
 {
-	auto result = web::json::value::object();
-	result["appmesh"] = web::json::value::string(m_appmeshProxyUrl);
+	auto result = nlohmann::json::object();
+	result["appmesh"] = std::string(m_appmeshProxyUrl);
 	result["label"] = m_label->AsJson();
-	auto resource = web::json::value::object();
-	resource["cpu_cores"] = web::json::value::number(m_cores);
-	resource["mem_total_bytes"] = web::json::value::number(m_total_bytes);
+	auto resource = nlohmann::json::object();
+	resource["cpu_cores"] = (m_cores);
+	resource["mem_total_bytes"] = (m_total_bytes);
 	result["resource"] = resource;
-	result["leader"] = web::json::value::boolean(m_leader);
+	result["leader"] = (m_leader);
 	return result;
 }
 

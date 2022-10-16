@@ -48,10 +48,10 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 
 std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, bool applyEnv)
 {
-	web::json::value jsonValue;
+	nlohmann::json jsonValue;
 	try
 	{
-		jsonValue = web::json::value::parse(GET_STRING_T(str));
+		jsonValue = nlohmann::json::parse((str));
 		if (applyEnv)
 		{
 			// Only the first time read from ENV
@@ -129,7 +129,7 @@ void SigHupHandler(int signo)
 	{
 		try
 		{
-			config->hotUpdate(web::json::value::parse(Configuration::readConfiguration()));
+			config->hotUpdate(nlohmann::json::parse(Configuration::readConfiguration()));
 		}
 		catch (const std::exception &e)
 		{
@@ -160,21 +160,21 @@ void Configuration::handleSignal()
 	}
 }
 
-web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp)
+nlohmann::json Configuration::AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp)
 {
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	// Applications
 	result[JSON_KEY_Applications] = serializeApplication(false, user, returnUnPersistApp);
 
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
 	// Global parameters
-	result[JSON_KEY_Description] = web::json::value::string(m_hostDescription);
-	result[JSON_KEY_DefaultExecUser] = web::json::value::string(m_defaultExecUser);
-	result[JSON_KEY_DisableExecUser] = web::json::value::boolean(m_disableExecUser);
-	result[JSON_KEY_WorkingDirectory] = web::json::value::string(m_defaultWorkDir);
-	result[JSON_KEY_ScheduleIntervalSeconds] = web::json::value::number(m_scheduleInterval);
-	result[JSON_KEY_LogLevel] = web::json::value::string(m_logLevel);
+	result[JSON_KEY_Description] = std::string(m_hostDescription);
+	result[JSON_KEY_DefaultExecUser] = std::string(m_defaultExecUser);
+	result[JSON_KEY_DisableExecUser] = (m_disableExecUser);
+	result[JSON_KEY_WorkingDirectory] = std::string(m_defaultWorkDir);
+	result[JSON_KEY_ScheduleIntervalSeconds] = (m_scheduleInterval);
+	result[JSON_KEY_LogLevel] = std::string(m_logLevel);
 
 	// REST
 	result[JSON_KEY_REST] = m_rest->AsJson();
@@ -186,7 +186,7 @@ web::json::value Configuration::AsJson(bool returnRuntimeInfo, const std::string
 	result[JSON_KEY_CONSUL] = m_consul->AsJson();
 
 	// Build version
-	result[JSON_KEY_VERSION] = web::json::value::string(__MICRO_VAR__(BUILD_TAG));
+	result[JSON_KEY_VERSION] = std::string(__MICRO_VAR__(BUILD_TAG));
 
 	return result;
 }
@@ -249,7 +249,7 @@ int Configuration::getRestTcpPort()
 	return m_rest->m_restTcpPort;
 }
 
-web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
+nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	std::vector<std::shared_ptr<Application>> apps;
@@ -261,14 +261,14 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_AGENT_APP_NAME)); // not expose rest process
 				 });
 
-	auto result = web::json::value::array(apps.size());
+	auto result = nlohmann::json::array();
 	// Build Json
 	if (returnRuntimeInfo)
 	{
 		std::list<os::Process> ptree = os::processes();
 		for (std::size_t i = 0; i < apps.size(); ++i)
 		{
-			result[i] = apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree));
+			result.push_back(apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree)));
 		}
 	}
 	else
@@ -282,12 +282,13 @@ web::json::value Configuration::serializeApplication(bool returnRuntimeInfo, con
 	return result;
 }
 
-void Configuration::deSerializeApps(const web::json::value &jsonObj)
+void Configuration::deSerializeApps(const nlohmann::json &jsonObj)
 {
-	for (auto jsonApp : jsonObj.as_array())
+	for (auto &entry : jsonObj.items())
 	{
 		// set recover flag used to decrypt confidential data
-		jsonApp[JSON_KEY_APP_from_recover] = web::json::value::boolean(true);
+		auto jsonApp = entry.value();
+		jsonApp[JSON_KEY_APP_from_recover] = true;
 		auto app = this->parseApp(jsonApp);
 		this->addApp2Map(app);
 	}
@@ -439,7 +440,7 @@ void Configuration::dump()
 	const static char fname[] = "Configuration::dump() ";
 
 	LOG_DBG << fname << '\n'
-			<< Utility::prettyJson(this->AsJson(false, "").serialize());
+			<< Utility::prettyJson(this->AsJson(false, "").dump());
 
 	auto apps = getApps();
 	for (auto &app : apps)
@@ -448,7 +449,7 @@ void Configuration::dump()
 	}
 }
 
-std::shared_ptr<Application> Configuration::addApp(const web::json::value &jsonApp, std::shared_ptr<Application> fromApp, bool persistable)
+std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp, std::shared_ptr<Application> fromApp, bool persistable)
 {
 	auto app = parseApp(jsonApp);
 	bool update = false;
@@ -533,7 +534,7 @@ void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = GET_STD_STRING(this->AsJson(false, "", false).serialize());
+	auto content = (this->AsJson(false, "", false).dump());
 	if (content.length())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -561,7 +562,7 @@ void Configuration::saveConfigToDisk()
 	LOG_DBG << fname;
 }
 
-void Configuration::hotUpdate(const web::json::value &jsonValue)
+void Configuration::hotUpdate(const nlohmann::json &jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
@@ -571,7 +572,7 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
 		// parse
-		auto newConfig = Configuration::FromJson(GET_STD_STRING(jsonValue.serialize()));
+		auto newConfig = Configuration::FromJson((jsonValue.dump()));
 
 		// update
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description))
@@ -662,7 +663,7 @@ void Configuration::hotUpdate(const web::json::value &jsonValue)
 	ResourceCollection::instance()->dump();
 }
 
-void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
+void Configuration::readConfigFromEnv(nlohmann::json &jsonConfig)
 {
 	const static char fname[] = "Configuration::readConfigFromEnv() ";
 
@@ -678,11 +679,11 @@ void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
 			auto envKey = env.substr(0, pos);
 			auto envVal = env.substr(pos + 1);
 			auto keys = Utility::splitString(envKey, "_");
-			web::json::value *json = &jsonConfig;
+			nlohmann::json *json = &jsonConfig;
 			for (size_t i = 1; i < keys.size(); i++)
 			{
 				auto jsonKey = keys[i];
-				if (json->has_field(jsonKey))
+				if (json->contains(jsonKey))
 				{
 					// find the last level
 					if (i == (keys.size() - 1))
@@ -707,36 +708,36 @@ void Configuration::readConfigFromEnv(web::json::value &jsonConfig)
 		}
 	}
 }
-bool Configuration::applyEnvConfig(web::json::value &jsonValue, std::string envValue)
+bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envValue)
 {
 	const static char fname[] = "Configuration::applyEnvConfig() ";
 
 	if (jsonValue.is_string())
 	{
-		jsonValue = web::json::value::string(envValue);
+		jsonValue = std::string(envValue);
 		return true;
 	}
-	else if (jsonValue.is_integer())
+	else if (jsonValue.is_number())
 	{
-		jsonValue = web::json::value::number(std::stoi(envValue));
+		jsonValue = (std::stoi(envValue));
 		return true;
 	}
 	else if (jsonValue.is_boolean())
 	{
 		if (Utility::isNumber(envValue))
 		{
-			jsonValue = web::json::value::boolean(envValue != "0");
+			jsonValue = (envValue != "0");
 			return true;
 		}
 		else
 		{
-			jsonValue = web::json::value::boolean(envValue != "false");
+			jsonValue = (envValue != "false");
 			return true;
 		}
 	}
 	else
 	{
-		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.serialize();
+		LOG_WAR << fname << "JSON value type not supported: " << jsonValue.dump();
 	}
 	return false;
 }
@@ -753,7 +754,7 @@ bool Configuration::prometheusEnabled() const
 	return getRestEnabled() && getPromListenPort() > 1024;
 }
 
-std::shared_ptr<Application> Configuration::parseApp(const web::json::value &jsonApp)
+std::shared_ptr<Application> Configuration::parseApp(const nlohmann::json &jsonApp)
 {
 	auto app = std::make_shared<Application>();
 	Application::FromJson(app, jsonApp);
@@ -778,7 +779,7 @@ bool Configuration::isAppExist(const std::string &appName)
 					   { return app->getName() == appName; });
 }
 
-const web::json::value Configuration::getAgentAppJson() const
+const nlohmann::json Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
@@ -805,20 +806,20 @@ const web::json::value Configuration::getAgentAppJson() const
 	}
 	LOG_INF << fname << " agent start command <" << cmd << ">";
 
-	web::json::value restApp;
-	restApp[JSON_KEY_APP_name] = web::json::value::string(SEPARATE_AGENT_APP_NAME);
-	restApp[JSON_KEY_APP_command] = web::json::value::string(cmd);
-	restApp[JSON_KEY_APP_description] = web::json::value::string("REST agent for App Mesh");
-	restApp[JSON_KEY_APP_owner_permission] = web::json::value::number(11);
-	restApp[JSON_KEY_APP_owner] = web::json::value::string(JWT_ADMIN_NAME);
-	restApp[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(3);
-	auto objBehavior = web::json::value::object();
-	objBehavior[JSON_KEY_APP_behavior_exit] = web::json::value::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
+	nlohmann::json restApp;
+	restApp[JSON_KEY_APP_name] = std::string(SEPARATE_AGENT_APP_NAME);
+	restApp[JSON_KEY_APP_command] = std::string(cmd);
+	restApp[JSON_KEY_APP_description] = std::string("REST agent for App Mesh");
+	restApp[JSON_KEY_APP_owner_permission] = (11);
+	restApp[JSON_KEY_APP_owner] = std::string(JWT_ADMIN_NAME);
+	restApp[JSON_KEY_APP_stdout_cache_num] = (3);
+	auto objBehavior = nlohmann::json::object();
+	objBehavior[JSON_KEY_APP_behavior_exit] = std::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
 	restApp[JSON_KEY_APP_behavior] = objBehavior;
 	return restApp;
 }
 
-std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const web::json::value &jsonValue)
+std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const nlohmann::json &jsonValue)
 {
 	const static char fname[] = "Configuration::JsonRest::FromJson() ";
 
@@ -858,16 +859,16 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	return rest;
 }
 
-web::json::value Configuration::JsonRest::AsJson() const
+nlohmann::json Configuration::JsonRest::AsJson() const
 {
-	auto result = web::json::value::object();
-	result[JSON_KEY_RestEnabled] = web::json::value::boolean(m_restEnabled);
-	result[JSON_KEY_HttpThreadPoolSize] = web::json::value::number((uint32_t)m_httpThreadPoolSize);
-	result[JSON_KEY_RestListenPort] = web::json::value::number(m_restListenPort);
-	result[JSON_KEY_PrometheusExporterListenPort] = web::json::value::number(m_promListenPort);
-	result[JSON_KEY_RestListenAddress] = web::json::value::string(m_restListenAddress);
-	result[JSON_KEY_RestTcpPort] = web::json::value::number(m_restTcpPort);
-	result[JSON_KEY_DockerProxyListenAddr] = web::json::value::string(m_dockerProxyListenAddr);
+	auto result = nlohmann::json::object();
+	result[JSON_KEY_RestEnabled] = (m_restEnabled);
+	result[JSON_KEY_HttpThreadPoolSize] = ((uint32_t)m_httpThreadPoolSize);
+	result[JSON_KEY_RestListenPort] = (m_restListenPort);
+	result[JSON_KEY_PrometheusExporterListenPort] = (m_promListenPort);
+	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
+	result[JSON_KEY_RestTcpPort] = (m_restTcpPort);
+	result[JSON_KEY_DockerProxyListenAddr] = std::string(m_dockerProxyListenAddr);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
 
@@ -885,13 +886,14 @@ Configuration::JsonRest::JsonRest()
 	m_jwt = std::make_shared<JsonJwt>();
 }
 
-std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const web::json::value &jsonValue)
+std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const nlohmann::json &jsonValue)
 {
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, ssl->m_sslEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_VerifyPeer, ssl->m_sslVerifyPeer);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
+	// TODO: enable/disable SSL require full set of configuration parameters
 	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certFile))
 	{
 		throw std::invalid_argument(Utility::stringFormat("SSLCertificateFile <%s> not exist", ssl->m_certFile.c_str()));
@@ -903,13 +905,13 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const w
 	return ssl;
 }
 
-web::json::value Configuration::JsonSsl::AsJson() const
+nlohmann::json Configuration::JsonSsl::AsJson() const
 {
-	auto result = web::json::value::object();
-	result[JSON_KEY_SSLEnabled] = web::json::value::boolean(m_sslEnabled);
-	result[JSON_KEY_VerifyPeer] = web::json::value::boolean(m_sslVerifyPeer);
-	result[JSON_KEY_SSLCertificateFile] = web::json::value::string(m_certFile);
-	result[JSON_KEY_SSLCertificateKeyFile] = web::json::value::string(m_certKeyFile);
+	auto result = nlohmann::json::object();
+	result[JSON_KEY_SSLEnabled] = (m_sslEnabled);
+	result[JSON_KEY_VerifyPeer] = (m_sslVerifyPeer);
+	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
+	result[JSON_KEY_SSLCertificateKeyFile] = std::string(m_certKeyFile);
 	return result;
 }
 
@@ -923,7 +925,7 @@ Configuration::JsonJwt::JsonJwt()
 {
 }
 
-std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const web::json::value &jsonObj)
+std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const nlohmann::json &jsonObj)
 {
 	auto security = std::make_shared<Configuration::JsonJwt>();
 	SET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
@@ -932,12 +934,12 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const w
 	return security;
 }
 
-web::json::value Configuration::JsonJwt::AsJson() const
+nlohmann::json Configuration::JsonJwt::AsJson() const
 {
-	auto result = web::json::value::object();
-	result[JSON_KEY_JWTEnabled] = web::json::value::boolean(m_jwtEnabled);
-	result[JSON_KEY_JWTSalt] = web::json::value::string(m_jwtSalt);
-	result[JSON_KEY_SECURITY_Interface] = web::json::value::string(m_jwtInterface);
+	auto result = nlohmann::json::object();
+	result[JSON_KEY_JWTEnabled] = (m_jwtEnabled);
+	result[JSON_KEY_JWTSalt] = std::string(m_jwtSalt);
+	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);
 	return result;
 }
 
@@ -946,7 +948,7 @@ std::string Configuration::JsonJwt::getJwtInterface() const
 	return m_jwtInterface;
 }
 
-std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const web::json::value &jsonObj, int appmeshRestPort, bool sslEnabled)
+std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const nlohmann::json &jsonObj, int appmeshRestPort, bool sslEnabled)
 {
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_URL);
@@ -973,21 +975,21 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	return consul;
 }
 
-web::json::value Configuration::JsonConsul::AsJson() const
+nlohmann::json Configuration::JsonConsul::AsJson() const
 {
-	auto result = web::json::value::object();
+	auto result = nlohmann::json::object();
 	if (m_consulUrl.length())
-		result[JSON_KEY_CONSUL_URL] = web::json::value::string(m_consulUrl);
-	result[JSON_KEY_CONSUL_IS_MAIN] = web::json::value::boolean(m_isMaster);
-	result[JSON_KEY_CONSUL_IS_WORKER] = web::json::value::boolean(m_isWorker);
-	result[JSON_KEY_CONSUL_SESSION_TTL] = web::json::value::number(m_ttl);
-	result[JSON_KEY_CONSUL_SECURITY] = web::json::value::boolean(m_securitySync);
+		result[JSON_KEY_CONSUL_URL] = std::string(m_consulUrl);
+	result[JSON_KEY_CONSUL_IS_MAIN] = (m_isMaster);
+	result[JSON_KEY_CONSUL_IS_WORKER] = (m_isWorker);
+	result[JSON_KEY_CONSUL_SESSION_TTL] = (m_ttl);
+	result[JSON_KEY_CONSUL_SECURITY] = (m_securitySync);
 	if (m_proxyUrl.length())
-		result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = web::json::value::string(m_proxyUrl);
+		result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = std::string(m_proxyUrl);
 	if (m_basicAuthUser.length())
-		result[JSON_KEY_CONSUL_AUTH_USER] = web::json::value::string(m_basicAuthUser);
+		result[JSON_KEY_CONSUL_AUTH_USER] = std::string(m_basicAuthUser);
 	if (m_basicAuthPass.length())
-		result[JSON_KEY_CONSUL_AUTH_PASS] = web::json::value::string(m_basicAuthPass);
+		result[JSON_KEY_CONSUL_AUTH_PASS] = std::string(m_basicAuthPass);
 	return result;
 }
 

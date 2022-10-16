@@ -148,7 +148,7 @@ bool Application::available(const std::chrono::system_clock::time_point &now)
 	return isEnabled();
 }
 
-void Application::FromJson(const std::shared_ptr<Application> &app, const web::json::value &jsonObj)
+void Application::FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &jsonObj)
 {
 	app->m_name = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name));
 	auto ownerStr = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner));
@@ -156,18 +156,18 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 		app->m_owner = Security::instance()->getUserInfo(ownerStr);
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
-	if (jsonObj.has_field(JSON_KEY_APP_metadata))
+	if (jsonObj.contains(JSON_KEY_APP_metadata))
 	{
 		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
 		if (!jsonObj.at(JSON_KEY_APP_metadata).is_object())
 		{
 			try
 			{
-				const auto str = Utility::unEscape(jsonObj.at(JSON_KEY_APP_metadata).as_string());
+				const auto str = Utility::unEscape(jsonObj.at(JSON_KEY_APP_metadata).get<std::string>());
 				// handle escape
-				app->m_metadata = web::json::value::string(str);
+				app->m_metadata = std::string(str);
 				// try to load as JSON
-				app->m_metadata = web::json::value::parse(str);
+				app->m_metadata = nlohmann::json::parse(str);
 			}
 			catch (...)
 			{
@@ -199,26 +199,26 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const web::j
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_env))
 	{
-		auto envs = jsonObj.at(JSON_KEY_APP_env).as_object();
-		for (auto &env : envs)
+		auto envs = jsonObj.at(JSON_KEY_APP_env);
+		for (auto &env : envs.items())
 		{
-			app->m_envMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
+			app->m_envMap[(env.key())] = (env.value().get<std::string>());
 		}
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_sec_env))
 	{
 		bool fromRecover = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover);
-		auto envs = jsonObj.at(JSON_KEY_APP_sec_env).as_object();
-		for (auto &env : envs)
+		auto envs = jsonObj.at(JSON_KEY_APP_sec_env);
+		for (auto &env : envs.items())
 		{
 			// from register, env was not encrypted
 			if (fromRecover && app->m_owner != nullptr)
 			{
-				app->m_secEnvMap[GET_STD_STRING(env.first)] = app->m_owner->decrypt(GET_STD_STRING(env.second.as_string()));
+				app->m_secEnvMap[(env.key())] = app->m_owner->decrypt((env.value().get<std::string>()));
 			}
 			else
 			{
-				app->m_secEnvMap[GET_STD_STRING(env.first)] = GET_STD_STRING(env.second.as_string());
+				app->m_secEnvMap[(env.key())] = (env.value().get<std::string>());
 			}
 		}
 	}
@@ -713,59 +713,59 @@ void Application::initMetrics(std::shared_ptr<Application> fromApp)
 	}
 }
 
-web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
+nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 {
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	result[JSON_KEY_APP_name] = web::json::value::string(GET_STRING_T(m_name));
+	result[JSON_KEY_APP_name] = std::string((m_name));
 	if (m_owner)
-		result[JSON_KEY_APP_owner] = web::json::value::string(m_owner->getName());
+		result[JSON_KEY_APP_owner] = std::string(m_owner->getName());
 	if (m_ownerPermission)
-		result[JSON_KEY_APP_owner_permission] = web::json::value::number(m_ownerPermission);
+		result[JSON_KEY_APP_owner_permission] = (m_ownerPermission);
 	if (m_shellApp)
-		result[JSON_KEY_APP_shell_mode] = web::json::value::boolean(m_shellApp);
+		result[JSON_KEY_APP_shell_mode] = (m_shellApp);
 	if (m_commandLine.length())
-		result[GET_STRING_T(JSON_KEY_APP_command)] = web::json::value::string(GET_STRING_T(m_commandLine));
+		result[(JSON_KEY_APP_command)] = std::string((m_commandLine));
 	if (m_description.length())
-		result[GET_STRING_T(JSON_KEY_APP_description)] = web::json::value::string(GET_STRING_T(m_description));
+		result[(JSON_KEY_APP_description)] = std::string((m_description));
 	if (m_healthCheckCmd.length())
-		result[GET_STRING_T(JSON_KEY_APP_health_check_cmd)] = web::json::value::string(GET_STRING_T(m_healthCheckCmd));
+		result[(JSON_KEY_APP_health_check_cmd)] = std::string((m_healthCheckCmd));
 	if (m_workdir.length())
-		result[JSON_KEY_APP_working_dir] = web::json::value::string(GET_STRING_T(m_workdir));
-	result[JSON_KEY_APP_status] = web::json::value::number(static_cast<int>(m_status));
+		result[JSON_KEY_APP_working_dir] = std::string((m_workdir));
+	result[JSON_KEY_APP_status] = (static_cast<int>(m_status));
 	if (m_stdoutCacheNum)
-		result[JSON_KEY_APP_stdout_cache_num] = web::json::value::number(m_stdoutCacheNum);
+		result[JSON_KEY_APP_stdout_cache_num] = (m_stdoutCacheNum);
 	if (m_metadata != EMPTY_STR_JSON)
 		result[JSON_KEY_APP_metadata] = m_metadata;
 	if (returnRuntimeInfo)
 	{
 		if (m_return != nullptr)
-			result[JSON_KEY_APP_return] = web::json::value::number(*m_return);
+			result[JSON_KEY_APP_return] = (*m_return);
 		if (m_process && m_process->running())
 		{
-			result[JSON_KEY_APP_pid] = web::json::value::number(m_pid);
+			result[JSON_KEY_APP_pid] = (m_pid);
 			auto usage = m_process->getProcessDetails(ptree);
 			if (std::get<0>(usage))
 			{
-				result[JSON_KEY_APP_memory] = web::json::value::number(std::get<1>(usage));
-				result[JSON_KEY_APP_cpu] = web::json::value::number(std::get<2>(usage));
-				result[JSON_KEY_APP_open_fd] = web::json::value::number(std::get<3>(usage));
-				result[JSON_KEY_APP_pstree] = web::json::value::string(std::get<4>(usage));
+				result[JSON_KEY_APP_memory] = (std::get<1>(usage));
+				result[JSON_KEY_APP_cpu] = (std::get<2>(usage));
+				result[JSON_KEY_APP_open_fd] = (std::get<3>(usage));
+				result[JSON_KEY_APP_pstree] = std::string(std::get<4>(usage));
 			}
 		}
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[JSON_KEY_APP_last_start] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
+			result[JSON_KEY_APP_last_start] = (std::chrono::duration_cast<std::chrono::seconds>(m_procStartTime.time_since_epoch()).count());
 		if (std::chrono::time_point_cast<std::chrono::hours>(m_procExitTime).time_since_epoch().count() > 24)
-			result[JSON_KEY_APP_last_exit] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_procExitTime.time_since_epoch()).count());
+			result[JSON_KEY_APP_last_exit] = (std::chrono::duration_cast<std::chrono::seconds>(m_procExitTime.time_since_epoch()).count());
 		if (m_process && !m_process->containerId().empty())
 		{
-			result[JSON_KEY_APP_container_id] = web::json::value::string(GET_STRING_T(m_process->containerId()));
+			result[JSON_KEY_APP_container_id] = std::string((m_process->containerId()));
 		}
-		result[JSON_KEY_APP_health] = web::json::value::number(this->health());
+		result[JSON_KEY_APP_health] = (this->health());
 		if (m_stdoutFileQueue->size())
-			result[JSON_KEY_APP_stdout_cache_size] = web::json::value::number(m_stdoutFileQueue->size());
-		// result[JSON_KEY_APP_id] = web::json::value::string(m_appId);
+			result[JSON_KEY_APP_stdout_cache_size] = (m_stdoutFileQueue->size());
+		// result[JSON_KEY_APP_id] = std::string(m_appId);
 	}
 	if (m_dailyLimit != nullptr)
 	{
@@ -777,51 +777,51 @@ web::json::value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	}
 	if (m_envMap.size())
 	{
-		web::json::value envs = web::json::value::object();
+		nlohmann::json envs = nlohmann::json::object();
 		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string> &pair)
-					  { envs[GET_STRING_T(pair.first)] = web::json::value::string(pair.second); });
+					  { envs[(pair.first)] = std::string(pair.second); });
 		result[JSON_KEY_APP_env] = envs;
 	}
 	if (m_secEnvMap.size())
 	{
-		web::json::value envs = web::json::value::object();
+		nlohmann::json envs = nlohmann::json::object();
 		auto owner = getOwner();
 		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair)
 					  {
 						  auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
-						  envs[GET_STRING_T(pair.first)] = web::json::value::string(encryptedEnvValue); });
+						  envs[(pair.first)] = std::string(encryptedEnvValue); });
 		result[JSON_KEY_APP_sec_env] = envs;
 	}
 	if (m_dockerImage.length())
-		result[JSON_KEY_APP_docker_image] = web::json::value::string(m_dockerImage);
+		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);
 	if (m_version)
-		result[JSON_KEY_APP_version] = web::json::value::number(m_version);
+		result[JSON_KEY_APP_version] = (m_version);
 
 	if (m_startTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
+		result[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
 	if (m_endTime.time_since_epoch().count())
-		result[JSON_KEY_SHORT_APP_end_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
-	result[JSON_KEY_APP_REG_TIME] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
+		result[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
+	result[JSON_KEY_APP_REG_TIME] = (std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
 	if (returnRuntimeInfo)
 	{
 		auto err = getLastError();
 		if (err.length())
-			result[JSON_KEY_APP_last_error] = web::json::value::string(err);
-		result[JSON_KEY_APP_starts] = web::json::value::number(m_starts->Value());
+			result[JSON_KEY_APP_last_error] = std::string(err);
+		result[JSON_KEY_APP_starts] = (m_starts->Value());
 	}
 
 	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
 	if (m_bufferTime)
-		result[JSON_KEY_APP_retention] = web::json::value::string(m_bufferTimeValue);
+		result[JSON_KEY_APP_retention] = std::string(m_bufferTimeValue);
 	if (m_startIntervalValueIsCronExpr)
-		result[JSON_KEY_SHORT_APP_cron_interval] = web::json::value::boolean(m_startIntervalValueIsCronExpr);
+		result[JSON_KEY_SHORT_APP_cron_interval] = (m_startIntervalValueIsCronExpr);
 	if (m_startIntervalValue.length())
 	{
-		result[JSON_KEY_SHORT_APP_start_interval_seconds] = web::json::value::string(m_startIntervalValue);
+		result[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_startIntervalValue);
 	}
 	if (returnRuntimeInfo && m_nextLaunchTime != nullptr)
 	{
-		result[JSON_KEY_SHORT_APP_next_start_time] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(m_nextLaunchTime->time_since_epoch()).count());
+		result[JSON_KEY_SHORT_APP_next_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_nextLaunchTime->time_since_epoch()).count());
 	}
 
 	Utility::addExtraAppTimeReferStr(result);

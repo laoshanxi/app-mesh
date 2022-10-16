@@ -2,7 +2,7 @@
 #include <cpr/ssl_options.h>
 #include <thread>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 
 #include "../../cli/client/ArgumentParser.h"
@@ -73,9 +73,9 @@ void ConsulConnection::reportNode()
 		node.m_total_bytes = resource.m_total_bytes;
 		node.m_cores = resource.m_cores;
 		node.m_leader = m_leader;
-		web::json::value body = node.AsJson();
+		nlohmann::json body = node.AsJson();
 		auto cloudBody = this->retrieveNode(MY_HOST_NAME);
-		if (cloudBody.serialize() == body.serialize())
+		if (cloudBody == body)
 		{
 			// TODO: mem_free_bytes is always not the same here
 			LOG_DBG << fname << "host info " << MY_HOST_NAME << " is the same with server";
@@ -160,7 +160,7 @@ long long ConsulConnection::getModifyIndex(const std::string &path, bool recurse
 	return 0;
 }
 
-web::json::value ConsulConnection::viewCloudApps()
+nlohmann::json ConsulConnection::viewCloudApps()
 {
 	const static char fname[] = "ConsulConnection::viewCloudApps() ";
 	LOG_DBG << fname;
@@ -171,7 +171,7 @@ web::json::value ConsulConnection::viewCloudApps()
 	}
 	auto topology = retrieveTopology("");
 	auto cloudTasks = this->retrieveTask();
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	for (auto &task : cloudTasks)
 	{
 		result[task.first] = task.second->AsJson();
@@ -188,7 +188,7 @@ web::json::value ConsulConnection::viewCloudApps()
 	return result;
 }
 
-web::json::value ConsulConnection::viewCloudApp(const std::string &app)
+nlohmann::json ConsulConnection::viewCloudApp(const std::string &app)
 {
 	const static char fname[] = "ConsulConnection::viewCloudApp() ";
 	LOG_DBG << fname;
@@ -197,11 +197,11 @@ web::json::value ConsulConnection::viewCloudApp(const std::string &app)
 	{
 		throw std::runtime_error("Consul not enabled");
 	}
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	const auto topology = this->retrieveTopology("");
 	const auto cloudTasks = this->retrieveTask();
 	const auto iter = cloudTasks.find(app);
-	web::json::value scheduleResult;
+	nlohmann::json scheduleResult;
 	if (iter != cloudTasks.end())
 	{
 		result = iter->second->AsJson();
@@ -209,7 +209,7 @@ web::json::value ConsulConnection::viewCloudApp(const std::string &app)
 		{
 			if (node.second->m_scheduleApps.count(app) > 0)
 			{
-				scheduleResult[node.first] = web::json::value::number(std::chrono::duration_cast<std::chrono::seconds>(node.second->m_scheduleApps[app].time_since_epoch()).count());
+				scheduleResult[node.first] = (std::chrono::duration_cast<std::chrono::seconds>(node.second->m_scheduleApps[app].time_since_epoch()).count());
 			}
 		}
 	}
@@ -278,7 +278,7 @@ void ConsulConnection::deleteCloudApp(const std::string &app)
 	}
 }
 
-web::json::value ConsulConnection::addCloudApp(const std::string &app, web::json::value &content)
+nlohmann::json ConsulConnection::addCloudApp(const std::string &app, nlohmann::json &content)
 {
 	const static char fname[] = "ConsulConnection::addCloudApp() ";
 	LOG_DBG << fname;
@@ -306,10 +306,10 @@ web::json::value ConsulConnection::addCloudApp(const std::string &app, web::json
 	return task->AsJson();
 }
 
-web::json::value ConsulConnection::getCloudNodes()
+nlohmann::json ConsulConnection::getCloudNodes()
 {
 	auto nodes = this->retrieveNode();
-	web::json::value result = web::json::value::object();
+	nlohmann::json result = nlohmann::json::object();
 	for (const auto &node : nodes)
 	{
 		result[node.first] = node.second->AsJson();
@@ -365,14 +365,14 @@ void ConsulConnection::syncSecurity()
 		auto resp = requestConsul(web::http::methods::GET, path, {}, {}, nullptr);
 		if (resp->status_code == web::http::status_codes::OK)
 		{
-			auto respJson = web::json::value::parse(resp->text);
-			if (!respJson.is_array() || respJson.as_array().size() == 0)
+			auto respJson = nlohmann::json::parse(resp->text);
+			if (!respJson.is_array() || respJson.array().size() == 0)
 				return;
-			auto securityJson = respJson.as_array().at(0);
+			auto securityJson = respJson.at(0);
 			if (!HAS_JSON_FIELD(securityJson, "ModifyIndex") || !HAS_JSON_FIELD(securityJson, "Value"))
 				return;
 
-			auto security = web::json::value::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
+			auto security = nlohmann::json::parse(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value")));
 			auto securityObj = Security::FromJson(security);
 			if (securityObj->getUsers().size())
 			{
@@ -402,17 +402,17 @@ std::string ConsulConnection::requestSessionId()
 	// https://www.consul.io/api-docs/session
 	std::string sessionId;
 
-	auto payload = web::json::value::object();
-	payload["LockDelay"] = web::json::value::string("15s");
-	payload["Name"] = web::json::value::string(std::string("appmesh-lock-") + MY_HOST_NAME);
-	payload["Behavior"] = web::json::value::string("delete");
-	payload["TTL"] = web::json::value::string(std::to_string(getConfig()->m_ttl) + "s");
+	auto payload = nlohmann::json::object();
+	payload["LockDelay"] = std::string("15s");
+	payload["Name"] = std::string(std::string("appmesh-lock-") + MY_HOST_NAME);
+	payload["Behavior"] = std::string("delete");
+	payload["TTL"] = std::string(std::to_string(getConfig()->m_ttl) + "s");
 
 	auto resp = requestConsul(web::http::methods::PUT, "/v1/session/create", {}, {}, &payload);
 	if (resp->status_code == web::http::status_codes::OK)
 	{
-		auto json = web::json::value::parse(resp->text);
-		// LOG_DBG << fname << json.serialize();
+		auto json = nlohmann::json::parse(resp->text);
+		// LOG_DBG << fname << json.dump();
 		if (HAS_JSON_FIELD(json, "ID"))
 		{
 			sessionId = GET_JSON_STR_VALUE(json, "ID");
@@ -443,10 +443,10 @@ std::string ConsulConnection::renewSessionId()
 		auto resp = requestConsul(web::http::methods::PUT, std::string("/v1/session/renew/").append(sessionId), {}, {}, nullptr);
 		if (resp->status_code == web::http::status_codes::OK)
 		{
-			auto json = web::json::value::parse(resp->text);
-			if (json.is_array() && json.as_array().size())
+			auto json = nlohmann::json::parse(resp->text);
+			if (json.is_array() && json.array().size())
 			{
-				json = json.as_array().at(0);
+				json = json.at(0);
 				sessionId = GET_JSON_STR_VALUE(json, "ID");
 			}
 		}
@@ -597,7 +597,8 @@ bool ConsulConnection::electionLeader()
 
 	// write hostname to leader path : /appmesh/leader
 	std::string path = std::string(CONSUL_BASE_PATH).append("leader");
-	auto body = web::json::value::string(MY_HOST_NAME);
+	nlohmann::json body;
+	body.push_back(MY_HOST_NAME);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	auto resp = requestConsul(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 	m_leader = (resp->status_code == web::http::status_codes::OK);
@@ -639,19 +640,19 @@ bool ConsulConnection::registerService(const std::string &appName, int port)
 	if (port == 0)
 		return false;
 	auto serviceId = MY_HOST_NAME + ":" + appName;
-	auto body = web::json::value();
-	body["ID"] = web::json::value::string(serviceId);
-	body["Name"] = web::json::value::string(appName);
-	body["Address"] = web::json::value::string(MY_HOST_NAME);
-	body["Port"] = web::json::value::number(port);
+	auto body = nlohmann::json();
+	body["ID"] = std::string(serviceId);
+	body["Name"] = std::string(appName);
+	body["Address"] = std::string(MY_HOST_NAME);
+	body["Port"] = (port);
 
 	auto checkHttpUrl = getConfig()->appmeshUrl() + "/appmesh/app/" + appName + "/health";
-	auto check = web::json::value::object();
-	check["HTTP"] = web::json::value::string(checkHttpUrl);
-	check["Interval"] = web::json::value::string("15s");
-	check["Timeout"] = web::json::value::string("5s");
-	check["Method"] = web::json::value::string("GET");
-	check["TLSSkipVerify"] = web::json::value::boolean(true);
+	auto check = nlohmann::json::object();
+	check["HTTP"] = std::string(checkHttpUrl);
+	check["Interval"] = std::string("15s");
+	check["Timeout"] = std::string("5s");
+	check["Method"] = std::string("GET");
+	check["TLSSkipVerify"] = (true);
 	body["Check"] = check;
 
 	std::string path = "/v1/agent/service/register";
@@ -782,12 +783,12 @@ bool ConsulConnection::writeTopology(std::string hostName, const std::shared_ptr
 
 	// topology: /appmesh/topology/myhost
 	std::string path = std::string(CONSUL_BASE_PATH).append("topology/").append(hostName);
-	auto body = web::json::value::object();
+	auto body = nlohmann::json::object();
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	if (topology && topology->m_scheduleApps.size())
 		body = topology->AsJson();
 	auto resp = requestConsul(web::http::methods::PUT, path, {{"flags", timestamp}}, {}, &body);
-	LOG_INF << fname << "write <" << body.serialize() << "> to <" << hostName << ">";
+	LOG_INF << fname << "write <" << body << "> to <" << hostName << ">";
 
 	if (resp->status_code == web::http::status_codes::OK)
 	{
@@ -835,11 +836,12 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::retriev
 	auto resp = requestConsul(web::http::methods::GET, path, {{"recurse", "true"}}, {}, nullptr);
 	if (resp->status_code == web::http::status_codes::OK)
 	{
-		auto json = web::json::value::parse(resp->text);
+		auto json = nlohmann::json::parse(resp->text);
 		if (json.is_array())
 		{
-			for (const auto &section : json.as_array())
+			for (auto &entity : json.items())
 			{
+				auto section = entity.value();
 				if (HAS_JSON_FIELD(section, "Value"))
 				{
 					// int consulIndex = GET_JSON_INT_VALUE(section, "ModifyIndex");
@@ -849,7 +851,7 @@ std::map<std::string, std::shared_ptr<ConsulTopology>> ConsulConnection::retriev
 					auto consulKey = GET_JSON_STR_VALUE(section, "Key");
 					auto vec = Utility::splitString(consulKey, "/");
 					auto hostName = vec[vec.size() - 1];
-					auto appArrayJson = web::json::value::parse(hostText);
+					auto appArrayJson = nlohmann::json::parse(hostText);
 					if (appArrayJson.is_array())
 					{
 						topology[hostName] = ConsulTopology::FromJson(appArrayJson, hostName);
@@ -874,15 +876,16 @@ std::map<std::string, std::shared_ptr<ConsulTask>> ConsulConnection::retrieveTas
 	auto resp = requestConsul(web::http::methods::GET, path, {{"recurse", "true"}}, {}, nullptr);
 	if (resp->status_code == web::http::status_codes::OK)
 	{
-		auto json = web::json::value::parse(resp->text);
+		auto json = nlohmann::json::parse(resp->text);
 		if (json.is_array())
 		{
-			for (const auto &section : json.as_array())
+			for (auto &entity : json.items())
 			{
+				auto section = entity.value();
 				if (HAS_JSON_FIELD(section, "Value") && GET_JSON_STR_VALUE(section, "Key") != "appmesh/cluster/tasks")
 				{
 					auto appText = Utility::decode64(GET_JSON_STR_VALUE(section, "Value"));
-					auto appJson = web::json::value::parse(appText);
+					auto appJson = nlohmann::json::parse(appText);
 					auto task = ConsulTask::FromJson(appJson);
 					if (task->m_app && task->m_app->getName().length() && task->m_replication)
 					{
@@ -912,18 +915,19 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	auto resp = requestConsul(web::http::methods::GET, path, {{"recurse", "true"}}, {}, nullptr);
 	if (resp->status_code == web::http::status_codes::OK)
 	{
-		auto json = web::json::value::parse(resp->text);
+		auto json = nlohmann::json::parse(resp->text);
 		if (json.is_array())
 		{
-			for (const auto &section : json.as_array())
+			for (auto &entity : json.items())
 			{
-				if (section.has_string_field("Key") && section.has_string_field("Value") && section.at("Value").as_string().length())
+				auto section = entity.value();
+				if (section.contains("Key") && section.contains("Value") && section.at("Value").get<std::string>().length())
 				{
 					auto key = GET_JSON_STR_VALUE(section, "Key");
 					if (Utility::startWith(key, "appmesh/cluster/nodes/"))
 					{
 						auto host = Utility::stringReplace(key, "appmesh/cluster/nodes/", "");
-						auto value = web::json::value::parse(Utility::decode64(section.at("Value").as_string()));
+						auto value = nlohmann::json::parse(Utility::decode64(section.at("Value").get<std::string>()));
 						result[host] = ConsulNode::FromJson(value, host);
 					}
 				}
@@ -934,7 +938,7 @@ std::map<std::string, std::shared_ptr<ConsulNode>> ConsulConnection::retrieveNod
 	return result;
 }
 
-web::json::value ConsulConnection::retrieveNode(const std::string &host)
+nlohmann::json ConsulConnection::retrieveNode(const std::string &host)
 {
 	const static char fname[] = "ConsulConnection::retrieveNode() ";
 
@@ -943,7 +947,7 @@ web::json::value ConsulConnection::retrieveNode(const std::string &host)
 	auto resp = requestConsul(web::http::methods::GET, path, {{"raw", "true"}}, {}, nullptr);
 	if (resp->status_code == web::http::status_codes::OK)
 	{
-		auto json = web::json::value::parse(resp->text);
+		auto json = nlohmann::json::parse(resp->text);
 		// result = ConsulNode::FromJson(json, host);
 		LOG_DBG << fname << "got nodes : " << host;
 		return json;
@@ -952,7 +956,7 @@ web::json::value ConsulConnection::retrieveNode(const std::string &host)
 	{
 		LOG_DBG << fname << "no node info : " << host;
 	}
-	return web::json::value();
+	return nlohmann::json();
 }
 
 void ConsulConnection::init(const std::string &recoverSsnId)
@@ -1017,7 +1021,7 @@ void ConsulConnection::init(const std::string &recoverSsnId)
 	}
 }
 
-std::shared_ptr<cpr::Response> ConsulConnection::requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, web::json::value *body, int timeoutSec)
+std::shared_ptr<cpr::Response> ConsulConnection::requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body, int timeoutSec)
 {
 	const static char fname[] = "ConsulConnection::requestConsul() ";
 
@@ -1037,7 +1041,7 @@ std::shared_ptr<cpr::Response> ConsulConnection::requestConsul(const web::http::
 	cpr::Body cprBody;
 	if (body)
 	{
-		cprBody = body->serialize();
+		cprBody = body->dump();
 		cprHeader.insert({"Content-Type", "application/json"});
 	}
 

@@ -70,7 +70,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	# apt full-upgrade -q -y
 	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap-dev liboath-dev
 	#apt install -y libboost-all-dev libace-dev
-	#apt install -y libcpprest-dev liblog4cpp5-dev
+	#apt install -y liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 	# reduce binary size
 	apt-get update && apt-get install -y lsb-release
@@ -177,18 +177,6 @@ if [ true ]; then
 	./b2 install
 	ls -al /usr/local/lib/libboost_system.so.1.74.0 /usr/local/include/boost/thread.hpp
 fi
-cd $ROOTDIR
-
-# cpprestsdk (use -DBUILD_SHARED_LIBS=0 for static link):
-# https://stackoverflow.com/questions/49877907/cpp-rest-sdk-in-centos-7
-git clone --depth=1 -b 2.10.18 https://github.com/microsoft/cpprestsdk.git cpprestsdk
-cd cpprestsdk
-git submodule update --init
-cd Release
-cmake .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DBUILD_SHARED_LIBS=1 -DCMAKE_CXX_FLAGS="-Wno-error=cast-align -Wno-error=conversion -Wno-error=missing-field-initializers -Wno-format-truncation"
-make -j6
-make install
-ls -al /usr/local/lib*/libcpprest.so
 cd $ROOTDIR
 
 # cpr

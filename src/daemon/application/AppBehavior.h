@@ -1,7 +1,7 @@
 #include <map>
 #include <string>
 
-#include <cpprest/json.h>
+#include <nlohmann/json.hpp>
 
 /// <summary>
 /// Application error handling
@@ -28,8 +28,8 @@ public:
     static AppBehavior::Action str2action(const std::string &action2str);
 
 protected:
-    void behaviorInit(web::json::value config);
-    web::json::value behaviorAsJson();
+    void behaviorInit(nlohmann::json config);
+    nlohmann::json behaviorAsJson();
 
     // behavior getting
     AppBehavior::Action exitAction(int code);

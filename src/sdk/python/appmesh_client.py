@@ -387,7 +387,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             dict: the updated configuration json.
         """
         resp = self.request_http(AppMeshClient.Method.POST, path="/appmesh/config", body=cfg_json)
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        result = resp.json()
+        if "Applications" in result:
+            result.pop("Applications")
+        return (resp.status_code == HTTPStatus.OK), result
 
     def log_level_set(self, level: str = "DEBUG"):
         """Update App Mesh log level(DEBUG/INFO/NOTICE/WARN/ERROR), a wrapper of config_set()
@@ -400,6 +403,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             dict: the updated configuration json.
         """
         resp = self.request_http(AppMeshClient.Method.POST, path="/appmesh/config", body={"LogLevel": level})
+        if resp.status_code == HTTPStatus.OK:
+            return True,resp.json()["LogLevel"]
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
