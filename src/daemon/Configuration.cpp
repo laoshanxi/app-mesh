@@ -893,12 +893,11 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_VerifyPeer, ssl->m_sslVerifyPeer);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
-	// TODO: enable/disable SSL require full set of configuration parameters
-	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certFile))
+	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certFile) && jsonValue.contains(JSON_KEY_SSLCertificateFile))
 	{
 		throw std::invalid_argument(Utility::stringFormat("SSLCertificateFile <%s> not exist", ssl->m_certFile.c_str()));
 	}
-	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certKeyFile))
+	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certKeyFile) && jsonValue.contains(JSON_KEY_SSLCertificateKeyFile))
 	{
 		throw std::invalid_argument(Utility::stringFormat("SSLCertificateKeyFile <%s> not exist", ssl->m_certKeyFile.c_str()));
 	}
@@ -964,7 +963,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	{
 		throw std::invalid_argument(Utility::stringFormat("Consul url <%s> is not correct", consul->m_consulUrl.c_str()));
 	}
-	if (consul->m_ttl < 5)
+	if (consul->m_ttl < 5 && jsonObj.contains(JSON_KEY_CONSUL_SESSION_TTL))
 		throw std::invalid_argument("session TTL should not less than 5s");
 
 	{
