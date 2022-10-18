@@ -25,6 +25,8 @@ const PROTOBUF_HEADER_LENGTH = 4
 const REST_PATH_UPLOAD = "/appmesh/file/upload"
 const REST_PATH_DOWNLOAD = "/appmesh/file/download"
 const REST_PATH_FILE = "/appmesh/file/"
+const HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
+const HTTP_USER_AGENT = "appmeshsdk"
 
 var tcpConnect net.Conn    // tcp connection
 var socketMutex sync.Mutex // tcp connection lock
@@ -123,6 +125,7 @@ func serializeRequest(req *fasthttp.Request) *Request {
 	req.Header.VisitAll(func(key, value []byte) {
 		data.Headers[string(key)] = string(value)
 	})
+	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
 	data.Querys = map[string]string{}
 	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
 		data.Querys[string(key)] = string(value)
@@ -144,6 +147,8 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 	ctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
 	ctx.Response.Header.Set("Access-Control-Allow-Headers", "*")
+	// user agent
+	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
 	// status code
 	ctx.Response.SetStatusCode(int(data.GetHttpStatus()))
 	// body

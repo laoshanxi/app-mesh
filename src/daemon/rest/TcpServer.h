@@ -42,13 +42,14 @@ protected:
 	/// </summary>
 	/// <param name="appmesh::Response"></param>
 	bool reply(const appmesh::Response &resp);
+	bool sendBytes(const char *data, size_t length);
 
 public:
 	static bool replyTcp(TcpHandler *tcpHandler, const appmesh::Response &resp);
 
 private:
 	std::string m_clientHostName;
-	std::recursive_mutex m_socketSendLock;
+	std::mutex m_socketLock;
 
 	static ACE_Map_Manager<TcpHandler *, bool, ACE_Recursive_Thread_Mutex> m_handlers;
 	static ACE_Message_Queue<ACE_MT_SYNCH> messageQueue;

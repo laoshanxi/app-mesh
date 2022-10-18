@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-import asyncio  # pip3 install asyncio
 import json
 import sys
 import os
@@ -7,16 +6,9 @@ import inspect
 
 # For installation env:
 sys.path.append("/opt/appmesh/sdk/")
-
-# For source code env:
-current_file_path = inspect.getfile(inspect.currentframe())
-current_dir_name = os.path.abspath(os.path.dirname(current_file_path))
-root_dir = os.path.dirname(os.path.dirname(current_dir_name))
-# sys.path.append(os.path.join(root_dir, "src/sdk/python"))
-
 import appmesh_client
 
-client = appmesh_client.AppMeshClient()
+client = appmesh_client.AppMeshClientTCP()
 # authentication
 token = client.login("admin", "admin123")
 print(client.authentication(token, "app-view"))

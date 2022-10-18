@@ -115,11 +115,11 @@ int ArgumentParser::parse()
 	{
 		processLoginfo();
 	}
-	else if (cmd == "reg")
+	else if (cmd == "add" || cmd == "reg")
 	{
 		processAppAdd();
 	}
-	else if (cmd == "unreg")
+	else if (cmd == "rm" || cmd == "remove" || cmd == "unreg")
 	{
 		processAppDel();
 	}
@@ -226,8 +226,8 @@ void ArgumentParser::printMainHelp()
 	std::cout << std::endl;
 
 	std::cout << "  list        List application[s]" << std::endl;
-	std::cout << "  reg         Add a new application" << std::endl;
-	std::cout << "  unreg       Remove an application" << std::endl;
+	std::cout << "  add         Add a new application" << std::endl;
+	std::cout << "  rm          Remove an application" << std::endl;
 	std::cout << "  enable      Enable a application" << std::endl;
 	std::cout << "  disable     Disable a application" << std::endl;
 	std::cout << "  restart     Restart a application" << std::endl;

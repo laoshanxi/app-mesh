@@ -319,7 +319,15 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
-	message.reply(web::http::status_codes::OK, "", headers);
+	std::string body;
+	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT))
+	{
+		LOG_DBG << fname << "Downloading file not from App Mesh agent";
+		auto wrapper = convertText2Json("download from TCP stream");
+		wrapper[TCP_JSON_MSG_FILE] = file;
+		body = wrapper.dump();
+	}
+	message.reply(web::http::status_codes::OK, body, headers, web::http::mime_types::application_octetstream);
 }
 
 void RestHandler::apiFileUpload(const HttpRequest &message)
@@ -339,7 +347,23 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	}
 
 	LOG_DBG << fname << "Uploading file <" << file << ">";
-	message.reply(web::http::status_codes::OK, convertText2Json("File upload success"));
+
+	std::string body;
+	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT))
+	{
+		LOG_DBG << fname << "Upload file not from App Mesh agent";
+		auto wrapper = convertText2Json("upload from TCP stream");
+		wrapper[TCP_JSON_MSG_FILE] = file;
+		body = wrapper.dump();
+	}
+	message.reply(web::http::status_codes::OK, body, {}, web::http::mime_types::application_octetstream);
+	// set permission
+	if (message.m_headers.count(HTTP_HEADER_KEY_file_mode))
+		os::fileChmod(file, std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_mode)->second));
+	if (message.m_headers.count(HTTP_HEADER_KEY_file_user) && message.m_headers.count(HTTP_HEADER_KEY_file_group))
+		os::chown(std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_user)->second),
+				  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
+				  file, false);
 }
 
 void RestHandler::apiLabelsView(const HttpRequest &message)

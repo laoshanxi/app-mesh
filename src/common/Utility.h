@@ -78,11 +78,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	if (HAS_JSON_FIELD(jsonObj, key))            \
 		value = GET_JSON_BOOL_VALUE(jsonObj, key);
 #define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
-#define ERASE_JSON_FIELD(jsonObj, key)    \
-	if (HAS_JSON_FIELD(jsonObj, key))     \
-	{                                     \
-		jsonObj.erase((key)); \
-	}
 
 #define CLOSE_ACE_HANDLER(handler)         \
 	do                                     \
@@ -122,10 +117,15 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_PASSWD_MIN_LENGTH 3
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
+// The first 4 bytes of the protocol buffer data contains the size of the following body data.
+constexpr size_t PROTOBUF_HEADER_LENGTH = 4;
+constexpr size_t BLOCK_CHUNK_SIZE = 1024 * 4;
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define APPMESH_LOCAL_HOST_URL "https://localhost:6060"
+#define HTTP_USER_AGENT "appmeshsdk"
+#define TCP_JSON_MSG_FILE "file"
 
 const char *GET_STATUS_STR(unsigned int status);
 const nlohmann::json EMPTY_STR_JSON(nullptr);

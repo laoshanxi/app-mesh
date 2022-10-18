@@ -83,3 +83,6 @@ go install -v golang.org/x/tools/gopls@latest
 go get -v google.golang.org/protobuf@latest
 go install -v github.com/golang/protobuf/protoc-gen-go@latest
 ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
+
+#protocbuf Python pip
+apt install -y python3-pip

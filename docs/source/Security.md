@@ -21,7 +21,7 @@ All REST Methods require authentication by default, JWT authentication was used 
 ## Multi tenant
 #### Multi tenant applications
 Applications managed by App Mesh can define access permissions for other user and other groups, you can register an application only visible for yourself, or you can also register an application for your user group.
-Refer to command line: appc reg "--perm" parameter
+Refer to command line: appc add "--perm" parameter
 
 #### Encrypt application information
 If application need some confidential information, you can use encrypted environment variables to store those confidential information.

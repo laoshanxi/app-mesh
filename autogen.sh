@@ -60,6 +60,7 @@ if [ -f "/usr/bin/yum" ]; then
 	# yum install -y http://ftp.tu-chemnitz.de/pub/linux/dag/redhat/el7/en/x86_64/rpmforge/RPMS/upx-3.91-1.el7.rf.x86_64.rpm
 	# other platform package download
 	# https://centos.pkgs.org/7/repoforge-x86_64/upx-3.91-1.el7.rf.x86_64.rpm.html
+	yum install -y python3-pip
 elif [ -f "/usr/bin/apt" ]; then
 	#Ubuntu
 	# for old archived ubuntu version, the apt update may fail, run below command before update
@@ -78,6 +79,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	apt install -y ca-certificates
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 	ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
+	apt install -y python3-pip
 fi
 
 # memoty test tool
@@ -270,7 +272,7 @@ cd $ROOTDIR
 # protocol buffer
 # https://developers.google.com/protocol-buffers
 if [ true ]; then
-	PROTOCOL_BUFFER_VER=3.19.5
+	PROTOCOL_BUFFER_VER=3.19.6
 	# $WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip
 	# unzip protoc-${PROTOCOL_BUFFER_VER}-linux-$(arch).zip -d /usr/local/
 	$WGWT_A https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOCOL_BUFFER_VER}/protobuf-cpp-${PROTOCOL_BUFFER_VER}.zip
@@ -281,4 +283,5 @@ if [ true ]; then
 	make -j 6
 	make install
 	ldconfig
+	pip3 install protobuf==${PROTOCOL_BUFFER_VER}
 fi

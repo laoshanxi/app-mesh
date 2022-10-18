@@ -1,3 +1,4 @@
+#include <cerrno>
 #include <memory>
 
 #include "../../common/TimerHandler.h"
@@ -43,7 +44,8 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	const static char fname[] = "TcpHandler::handle_input() ";
 	LOG_DBG << fname << "from this =" << this;
 
-	auto result = ProtobufHelper::readMessageBlock(this->peer());
+	std::lock_guard<std::mutex> guard(m_socketLock); // hold this lock to avoid recv TCP file stream data
+	auto result = ProtobufHelper::readProtobufBlock(this->peer());
 	auto data = std::get<0>(result);
 	auto readCount = std::get<1>(result);
 
@@ -92,6 +94,10 @@ int TcpHandler::open(void *)
 		}
 		else
 		{
+			if (this->peer().disable(ACE_NONBLOCK) == -1)
+			{
+				LOG_ERR << fname << "Can't disable nonblocking";
+			}
 			LOG_INF << fname << "client <" << m_clientHostName << ":" << addr.get_port_number() << "> connected";
 		}
 		return 0;
@@ -152,21 +158,81 @@ void TcpHandler::closeMsgQueue()
 bool TcpHandler::reply(const appmesh::Response &resp)
 {
 	const static char fname[] = "TcpHandler::reply() ";
-	LOG_DBG << fname;
 
 	const auto data = ProtobufHelper::serialize(resp);
 	const auto buffer = std::get<0>(data);
 	const auto length = std::get<1>(data);
 
-	std::lock_guard<std::recursive_mutex> guard(m_socketSendLock);
+	std::lock_guard<std::mutex> guard(m_socketLock);
 	if (this->peer().get_handle() != ACE_INVALID_HANDLE)
 	{
-		const auto sendSize = (size_t)this->peer().send_n((void *)buffer.get(), length);
-		LOG_DBG << fname << m_clientHostName << " response: " << resp.uuid() << " with length: " << length << " sent len:" << sendSize;
-		if (sendSize != length)
+		if (!sendBytes(buffer.get(), length))
 		{
 			LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
 			return false;
+		}
+
+		if (resp.http_status() == web::http::status_codes::OK &&
+			resp.http_body_msg_type() == web::http::mime_types::application_octetstream &&
+			resp.request_uri() == "/appmesh/file/download" &&
+			nlohmann::json::parse(resp.http_body()).contains(TCP_JSON_MSG_FILE))
+		{
+			auto path = nlohmann::json::parse(resp.http_body())[TCP_JSON_MSG_FILE].get<std::string>();
+			// send file via TCP with chunks
+			auto pBuffer = make_shared_array<char>(BLOCK_CHUNK_SIZE + PROTOBUF_HEADER_LENGTH);
+			std::ifstream file(path, std::ios::binary | std::ios::in);
+			if (file)
+			{
+				// get length of file:
+				file.seekg(0, file.end);
+				auto fileEnd = file.tellg();
+				file.seekg(0, file.beg);
+				auto currentPos = file.tellg();
+				while (currentPos < fileEnd && file.good())
+				{
+					// continue read data chunk
+					file.readsome(pBuffer.get() + PROTOBUF_HEADER_LENGTH, BLOCK_CHUNK_SIZE);
+					auto chunkSize = file.tellg() - currentPos;
+					currentPos = file.tellg();
+
+					// send chunk size to client
+					*((uint32_t *)pBuffer.get()) = htonl(chunkSize); // host to network byte order
+					if (!sendBytes(pBuffer.get(), chunkSize + PROTOBUF_HEADER_LENGTH))
+					{
+						LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
+						return false;
+					}
+				}
+			}
+			// send last 0 for delimiter
+			*((uint32_t *)pBuffer.get()) = htonl(0); // host to network byte order
+			sendBytes(pBuffer.get(), PROTOBUF_HEADER_LENGTH);
+		}
+
+		if (resp.http_status() == web::http::status_codes::OK &&
+			resp.http_body_msg_type() == web::http::mime_types::application_octetstream &&
+			resp.request_uri() == "/appmesh/file/upload" &&
+			nlohmann::json::parse(resp.http_body()).contains(TCP_JSON_MSG_FILE))
+		{
+			auto path = nlohmann::json::parse(resp.http_body())[TCP_JSON_MSG_FILE].get<std::string>();
+			std::ofstream file(path, std::ios::binary | std::ios::out | std::ios::trunc);
+			ssize_t recvReturn = 0;
+			auto bodySize = ProtobufHelper::readMsgHeader(this->peer(), true, recvReturn);
+			while (bodySize > 0)
+			{
+				auto result = ProtobufHelper::readMsgBody(this->peer(), bodySize, recvReturn);
+				auto pBuffer = std::get<0>(result);
+				auto readCount = std::get<1>(result);
+				if (readCount > 0)
+				{
+					file.write(pBuffer.get(), readCount);
+					bodySize = ProtobufHelper::readMsgHeader(this->peer(), true, recvReturn);
+				}
+				else
+				{
+					return false;
+				}
+			}
 		}
 	}
 	else
@@ -174,15 +240,41 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 		LOG_WAR << fname << "Socket not available, ignore message: " << resp.uuid();
 		return false;
 	}
+	LOG_DBG << fname << "successfully";
+	return true;
+}
+
+bool TcpHandler::sendBytes(const char *data, size_t length)
+{
+	const static char fname[] = "TcpHandler::sendBytes() ";
+
+	size_t totalSent = 0;
+	while (totalSent < length)
+	{
+		size_t sendSize = 0;
+		errno = 0;
+		const auto sendReturn = (size_t)this->peer().send_n((void *)(data + totalSent), (length - totalSent), 0, &sendSize);
+		LOG_DBG << fname << m_clientHostName << " total length: " << (length - totalSent) << " sent length:" << sendSize;
+		if (sendReturn <= 0 && EINTR != errno)
+		{
+			LOG_ERR << fname << m_clientHostName << " send response failed with error: " << std::strerror(errno);
+			return false;
+		}
+		totalSent += sendSize;
+	}
+	LOG_INF << fname << m_clientHostName << " success";
 	return true;
 }
 
 bool TcpHandler::replyTcp(TcpHandler *tcpHandler, const appmesh::Response &resp)
 {
+	const static char fname[] = "TcpHandler::replyTcp() ";
+
 	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex(), false);
 	if (m_handlers.find(tcpHandler) == 0)
 	{
 		return tcpHandler->reply(resp);
 	}
+	LOG_WAR << fname << "Client not exist: " << resp.uuid();
 	return false;
 }

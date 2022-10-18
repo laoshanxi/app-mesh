@@ -22,7 +22,7 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/u
 ##################################################################################
 # for docker entrypoint, this function can register docker container commands to
 # app mesh application, accept parameter as bellow format:
-#  1. appc reg xxx
+#  1. appc add xxx
 #  2. mysqld (automaticly register to appmesh with long running app)
 ##################################################################################
 pre_reg_app() {

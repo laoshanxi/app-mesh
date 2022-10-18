@@ -9,8 +9,8 @@ Commands:
   loginfo     Print current logon user
 
   list        List application[s]
-  reg         Add a new application
-  unreg       Remove an application
+  add         Add a new application
+  rm          Remove an application
   enable      Enable a application
   disable     Disable a application
   restart     Restart a application
@@ -32,6 +32,7 @@ Commands:
 
   passwd      Change user password
   lock        Lock/Unlock a user
+  user        View user
 
 Run 'appc COMMAND --help' for more information on a command.
 Use '-b $hostname','-B $port' to run remote command.
@@ -54,7 +55,7 @@ ID NAME        OWNER STATUS   HEALTH PID     MEMORY   %CPU RETURN LAST_START_TIM
 ```
 - View application output
 ```text
-$ appc reg -n ping -c 'ping www.baidu.com'
+$ appc add -n ping -c 'ping www.baidu.com'
 {
 	"command": "ping www.baidu.com",
 	"name": "ping",
@@ -97,7 +98,7 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 - Register a new application
 
 ```text
-$ appc reg
+$ appc add
 Register a new application:
   -b [ --host ] arg (=localhost) host name or ip address
   -B [ --port ] arg              port number
@@ -141,7 +142,7 @@ Register a new application:
 
 
 # register a app with a native command
-$ appc reg -n ping -u kfc -c 'ping www.google.com' -w /opt
+$ appc add -n ping -u kfc -c 'ping www.google.com' -w /opt
 Application already exist, are you sure you want to update the application (y/n)?
 y
 {
@@ -154,7 +155,7 @@ y
 }
 
 # register a docker container app
-$ appc reg -n mydocker -c 'sleep 30' -d ubuntu
+$ appc add -n mydocker -c 'sleep 30' -d ubuntu
 {
         "command" : "sleep 30",
         "docker_image" : "ubuntu",
@@ -174,7 +175,7 @@ CONTAINER ID        IMAGE               COMMAND             CREATED             
 
 - Remove an application
 ```text
-appc unreg -n ping
+appc rm -n ping
 Are you sure you want to remove the application (y/n)?
 y
 Success

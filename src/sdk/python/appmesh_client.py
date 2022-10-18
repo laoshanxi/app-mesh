@@ -31,7 +31,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         PUT = "PUT"
         POST = "POST"
         DELETE = "DELETE"
-        GET_STREAM = "GET_STREAM"
         POST_STREAM = "POST_STREAM"
 
     def __init__(
@@ -186,7 +185,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 "stdout_index": str(stdout_index),
                 "stdout_maxsize": str(stdout_maxsize),
                 "process_uuid": process_uuid,
-                "timeout": timeout,
+                "timeout": str(timeout),
             },
         )
         out_position = None if not resp.headers.__contains__("Output-Position") else int(resp.headers["Output-Position"])
@@ -867,8 +866,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
-        elif method is AppMeshClient.Method.GET_STREAM:
-            return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
             return requests.post(url=rest_url, params=query, headers=header, json=body, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST_STREAM:
@@ -892,7 +889,7 @@ class AppMeshClientTCP(AppMeshClient):
     """Client object used to access App Mesh REST Service
 
     Dependency:
-        pip3 install protobuf
+        pip3 install protobuf==3.20.3
     """
 
     def __init__(
@@ -956,11 +953,16 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_requst.http_method = method.name
         appmesh_requst.request_uri = path
         appmesh_requst.client_address = socket.gethostname()
+        # appmesh_requst.http_body = bytes()
         if body:
-            if isinstance(body, dict):
-                appmesh_requst.http_body = json.dumps(body, indent=2)
+            if isinstance(body, dict) or isinstance(body, list):
+                appmesh_requst.http_body = bytes(json.dumps(body, indent=2), MESSAGE_ENCODING_UTF8)
+            elif isinstance(body, str):
+                appmesh_requst.http_body = bytes(body, MESSAGE_ENCODING_UTF8)
+            elif isinstance(body, bytes):
+                appmesh_requst.http_body = body
             else:
-                appmesh_requst.http_body = str(body)
+                raise Exception("UnSupported body type: %s" % type(body))
         if header:
             for k, v in header.items():
                 appmesh_requst.headers[k] = v
@@ -982,7 +984,7 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_resp = Response_pb2.Response()
         appmesh_resp.ParseFromString(resp_data)
         http_resp.status_code = appmesh_resp.http_status
-        http_resp._content = bytes(appmesh_resp.http_body, MESSAGE_ENCODING_UTF8)
+        http_resp._content = appmesh_resp.http_body
         http_resp.headers = appmesh_resp.headers
         http_resp.encoding = MESSAGE_ENCODING_UTF8
         if appmesh_resp.http_body_msg_type:
@@ -994,7 +996,72 @@ class AppMeshClientTCP(AppMeshClient):
     # File management
     ########################################
     def file_download(self, file_path: str, local_file: str) -> bool:
-        raise Exception("Not avialable for TCP connection")
+        """Copy a remote file to local, the local file will have the same permission as the remote file
+
+        Args:
+            file_path (str): the remote file path.
+            local_file (str): the local file path to be downloaded.
+
+        Returns:
+            bool: success or failure.
+        """
+        resp = self.request_http(
+            AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
+        if resp.status_code == HTTPStatus.OK:
+            with open(local_file, "wb") as fp:
+                chunk_data = bytes()
+                chunk_size = int.from_bytes(self.__socket_client.recv(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
+                while chunk_size > 0:
+                    chunk_data = self.__socket_client.recv(chunk_size)
+                    if chunk_data is None or len(chunk_data) == 0:
+                        self.__close_socket()
+                        raise Exception("socket connection broken")
+                    fp.write(chunk_data)
+                    chunk_size = int.from_bytes(self.__socket_client.recv(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
+            if resp.headers.__contains__("File-Mode"):
+                os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
+            if resp.headers.__contains__("File-User") and resp.headers.__contains__("File-Group"):
+                file_uid = int(resp.headers["File-User"])
+                file_gid = int(resp.headers["File-Group"])
+                try:
+                    os.chown(path=local_file, uid=file_uid, gid=file_gid)
+                except Exception as ex:
+                    print(ex)
+            return True
+        return False
 
     def file_upload(self, local_file: str, file_path: str):
-        raise Exception("Not avialable for TCP connection")
+        """Upload a local file to the remote server, the remote file will have the same permission as the local file
+
+        Dependency:
+            sudo apt install python3-pip
+            pip3 install requests_toolbelt
+
+        Args:
+            local_file (str): the local file path.
+            file_path (str): the target remote file to be uploaded.
+
+        Returns:
+            bool: success or failure.
+            str: text message.
+        """
+        with open(file=local_file, mode="rb") as fp:
+            file_stat = os.stat(local_file)
+            header = {}
+            header["File-Path"] = file_path
+            header["File-Mode"] = str(file_stat.st_mode)
+            header["File-User"] = str(file_stat.st_uid)
+            header["File-Group"] = str(file_stat.st_gid)
+            header["Content-Type"] = "text/plain"
+            # https://stackoverflow.com/questions/22567306/python-requests-file-upload
+            resp = self.request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
+            if resp.status_code == HTTPStatus.OK:
+                chunk_size = 1024*4  # 131072 bytes, default max ssl buffer size
+                chunk_data = fp.read(chunk_size)
+                while chunk_data:
+                    self.__socket_client.sendall(len(chunk_data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
+                    self.__socket_client.sendall(chunk_data)
+                    chunk_data = fp.read(chunk_size)
+                self.__socket_client.sendall(int(0).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
+                return True, ""
+            return False, resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
