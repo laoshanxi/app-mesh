@@ -56,13 +56,13 @@ void HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	reply(m_relative_uri, m_uuid, body_data, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, TcpHandler *clientRequest)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inputSize, TcpHandler *clientRequest)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
 	// https://blog.csdn.net/u010601662/article/details/78353206
 	appmesh::Request req;
-	if (ProtobufHelper::deserialize(req, input))
+	if (ProtobufHelper::deserialize(req, input, inputSize))
 	{
 		return std::make_shared<HttpRequest>(req, clientRequest);
 	}

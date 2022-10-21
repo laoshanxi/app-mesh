@@ -77,7 +77,7 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = "text/plain") const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const char *input, TcpHandler *clientRequest);
+	static std::shared_ptr<HttpRequest> deserialize(const char *input, int inputSize, TcpHandler *clientRequest);
 	static const nlohmann::json emptyJson();
 
 	std::string m_uuid;
