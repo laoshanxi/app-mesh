@@ -27,7 +27,7 @@ public:
 	 * @param data the raw data containing the message plus the header
 	 * @return success or not
 	 */
-	static bool deserialize(google::protobuf::Message &msg, const char *data);
+	static bool deserialize(google::protobuf::Message &msg, const char *data, int dataSize);
 
 	/**
 	 * Read a message block from socket (include header and body).
@@ -37,6 +37,6 @@ public:
 	 */
 	static const std::tuple<std::shared_ptr<char>, int> readProtobufBlock(const ACE_SOCK_Stream &socket);
 
-	static int readMsgHeader(const ACE_SOCK_Stream &socket, bool shift, ssize_t &recvReturn);
-	static const std::tuple<std::shared_ptr<char>, int> readMsgBody(const ACE_SOCK_Stream &socket, int bodySize, ssize_t &recvReturn);
+	static int readMsgHeader(const ACE_SOCK_Stream &socket, ssize_t &recvReturn);
+	static const std::tuple<std::shared_ptr<char>, int> readBytes(const ACE_SOCK_Stream &socket, int bodySize, ssize_t &recvReturn);
 };

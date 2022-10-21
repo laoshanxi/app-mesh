@@ -15,9 +15,9 @@ struct HttpRequestMsg
 {
 	explicit HttpRequestMsg(std::shared_ptr<char> data, size_t len,
 							TcpHandler *client)
-		: m_data(data), m_size(len), m_client(client) {}
+		: m_data(data), m_dataSize(len), m_client(client) {}
 	const std::shared_ptr<char> m_data;
-	const size_t m_size;
+	const size_t m_dataSize;
 	TcpHandler *m_client;
 };
 
@@ -52,6 +52,7 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Reactor/WFMO_Reactor/Network_Events.cpp#L66
 	if (readCount > 0)
 	{
+		assert(data != nullptr);
 		messageQueue.enqueue(new ACE_Message_Block((const char *)(new HttpRequestMsg(data, readCount, this))));
 		return 0;
 	}
@@ -114,7 +115,7 @@ void TcpHandler::handleTcpRest()
 		if (messageQueue.dequeue(msg) >= -1 && msg)
 		{
 			std::unique_ptr<HttpRequestMsg> entity(static_cast<HttpRequestMsg *>((void *)msg->rd_ptr()));
-			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_client);
+			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_dataSize, entity->m_client);
 			msg->release();
 			msg = nullptr;
 			if (request != nullptr)
@@ -192,12 +193,14 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 				{
 					// continue read data chunk
 					file.readsome(pBuffer.get() + PROTOBUF_HEADER_LENGTH, BLOCK_CHUNK_SIZE);
-					auto chunkSize = file.tellg() - currentPos;
+					auto readChunkSize = file.tellg() - currentPos;
 					currentPos = file.tellg();
 
+					// write data size to header
+					*((uint32_t *)pBuffer.get()) = htonl(readChunkSize); // host to network byte order
+
 					// send chunk size to client
-					*((uint32_t *)pBuffer.get()) = htonl(chunkSize); // host to network byte order
-					if (!sendBytes(pBuffer.get(), chunkSize + PROTOBUF_HEADER_LENGTH))
+					if (!sendBytes(pBuffer.get(), PROTOBUF_HEADER_LENGTH + readChunkSize))
 					{
 						LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
 						return false;
@@ -217,16 +220,16 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 			auto path = nlohmann::json::parse(resp.http_body())[TCP_JSON_MSG_FILE].get<std::string>();
 			std::ofstream file(path, std::ios::binary | std::ios::out | std::ios::trunc);
 			ssize_t recvReturn = 0;
-			auto bodySize = ProtobufHelper::readMsgHeader(this->peer(), true, recvReturn);
+			auto bodySize = ProtobufHelper::readMsgHeader(this->peer(), recvReturn);
 			while (bodySize > 0)
 			{
-				auto result = ProtobufHelper::readMsgBody(this->peer(), bodySize, recvReturn);
+				auto result = ProtobufHelper::readBytes(this->peer(), bodySize, recvReturn);
 				auto pBuffer = std::get<0>(result);
 				auto readCount = std::get<1>(result);
 				if (readCount > 0)
 				{
 					file.write(pBuffer.get(), readCount);
-					bodySize = ProtobufHelper::readMsgHeader(this->peer(), true, recvReturn);
+					bodySize = ProtobufHelper::readMsgHeader(this->peer(), recvReturn);
 				}
 				else
 				{
