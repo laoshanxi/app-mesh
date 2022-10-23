@@ -7,7 +7,7 @@ _appc() {
 
     case $prev in
     appc)
-        COMPREPLY=($(compgen -W "logon logoff loginfo view cloud nodes join resource label enable disable restart reg unreg run exec get put config passwd lock log" -- $cur))
+        COMPREPLY=($(compgen -W "logon logoff loginfo list add rm enable disable restart join cloud nodes run exec resource label config log get put passwd lock user" -- $cur))
         return
         ;;
     -n | --name)
