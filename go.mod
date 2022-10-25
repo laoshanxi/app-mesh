@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/buaazp/fasthttprouter v0.1.1
 	github.com/rs/xid v1.4.0
-	github.com/valyala/fasthttp v1.40.0
+	github.com/valyala/fasthttp v1.41.0
 	google.golang.org/protobuf v1.28.1
 )
 
