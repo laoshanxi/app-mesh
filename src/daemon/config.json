@@ -19,7 +19,6 @@
     "DockerProxyListenAddr": "http://127.0.0.1:6058",
     "HttpThreadPoolSize": 3,
     "SSL": {
-      "SSLEnabled": true,
       "VerifyPeer": false,
       "SSLCertificateFile": "/opt/appmesh/ssl/server.pem",
       "SSLCertificateKeyFile": "/opt/appmesh/ssl/server-key.pem"

@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 
 		// init ACE SSL
-		if (config->getRestEnabled() && config->getSslEnabled())
+		if (config->getRestEnabled())
 		{
 			TcpHandler::initTcpSSL();
 		}

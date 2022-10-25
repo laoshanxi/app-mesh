@@ -22,7 +22,6 @@ public:
 	{
 		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
 		nlohmann::json AsJson() const;
-		bool m_sslEnabled;
 		bool m_sslVerifyPeer;
 		std::string m_certFile;
 		std::string m_certKeyFile;
@@ -61,7 +60,7 @@ public:
 	struct JsonConsul
 	{
 		JsonConsul();
-		static std::shared_ptr<JsonConsul> FromJson(const nlohmann::json &jsonObj, int appmeshRestPort, bool sslEnabled);
+		static std::shared_ptr<JsonConsul> FromJson(const nlohmann::json &jsonObj, int appmeshRestPort);
 		nlohmann::json AsJson() const;
 		bool consulEnabled() const;
 		bool consulSecurityEnabled() const;
@@ -124,7 +123,6 @@ public:
 	const std::string getDefaultExecUser() const;
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
-	bool getSslEnabled() const;
 	bool getSslVerifyPeer() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;

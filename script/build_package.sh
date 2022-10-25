@@ -34,6 +34,8 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/*_pb2.py ${PACKAGE_HOME}/sdk/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/container_monitor.py ${PACKAGE_HOME}/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appmesh_arm.py ${PACKAGE_HOME}/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py ${PACKAGE_HOME}/bin/
+cp -r /usr/local/lib/python3*/dist-packages/google ${PACKAGE_HOME}/sdk/
+find ${PACKAGE_HOME}/sdk/ -name *.pyc | xargs rm
 cp /usr/bin/cfssl ${PACKAGE_HOME}/ssl/
 cp /usr/bin/cfssljson ${PACKAGE_HOME}/ssl/
 cp /usr/bin/qrc ${PACKAGE_HOME}/bin/

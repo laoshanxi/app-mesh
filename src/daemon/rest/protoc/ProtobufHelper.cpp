@@ -58,7 +58,11 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	// parse header data (get body length). network to host byte order
 	const auto bodySize = ntohl(*((int *)(data.get()))); // host to network byte order
 	LOG_DBG << fname << "read length :" << bodySize << " from header";
-	// TODO: check and raise invalid range here
+	if (bodySize > MAX_TCP_BLOCK_SIZE)
+	{
+		LOG_ERR << fname << "read data size reached limitation, aborting connection";
+		return -1;
+	}
 	return bodySize;
 }
 
@@ -84,7 +88,7 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE
 		recvReturn = totalRecieved;
 	if (socket.get_handle() != ACE_INVALID_HANDLE && recvReturn <= 0)
 	{
-		LOG_ERR << fname << "read body socket data failed with error :" << std::strerror(errno);
+		LOG_ERR << fname << "read body socket data failed with error: " << std::strerror(errno);
 		return std::make_tuple(nullptr, recvReturn);
 	}
 	LOG_DBG << fname << "read message block data with length: " << bufferSize;

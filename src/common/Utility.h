@@ -120,6 +120,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 // The first 4 bytes of the protocol buffer data contains the size of the following body data.
 constexpr size_t PROTOBUF_HEADER_LENGTH = 4;
 constexpr size_t BLOCK_CHUNK_SIZE = 1024 * 4;
+constexpr size_t MAX_TCP_BLOCK_SIZE = 10 * 1024 * 1024 * 8;
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
@@ -237,7 +238,6 @@ public:
 #define JSON_KEY_LogLevel "LogLevel"
 
 #define JSON_KEY_SSL "SSL"
-#define JSON_KEY_SSLEnabled "SSLEnabled"
 #define JSON_KEY_VerifyPeer "VerifyPeer"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"

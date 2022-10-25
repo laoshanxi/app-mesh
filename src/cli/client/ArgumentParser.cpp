@@ -2074,10 +2074,7 @@ const std::string ArgumentParser::getAppMeshUrl()
 		{
 			auto rest = jsonValue.at(JSON_KEY_REST);
 			auto port = GET_JSON_INT_VALUE(rest, JSON_KEY_RestListenPort);
-			auto ssl = HAS_JSON_FIELD(rest, JSON_KEY_SSL) &&
-					   HAS_JSON_FIELD(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled) &&
-					   GET_JSON_BOOL_VALUE(rest.at(JSON_KEY_SSL), JSON_KEY_SSLEnabled);
-			return Utility::stringFormat("%s://%s:%d", (ssl ? "https" : "http"), readPersistLastHost().c_str(), port);
+			return Utility::stringFormat("https://%s:%d", readPersistLastHost().c_str(), port);
 		}
 	}
 	return url;

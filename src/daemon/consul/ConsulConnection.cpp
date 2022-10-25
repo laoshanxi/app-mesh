@@ -2,8 +2,8 @@
 #include <cpr/ssl_options.h>
 #include <thread>
 
-#include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
 
 #include "../../cli/client/ArgumentParser.h"
 #include "../../common/DateTime.h"
@@ -230,7 +230,7 @@ std::shared_ptr<cpr::Response> ConsulConnection::viewCloudAppOutput(const std::s
 	const static char fname[] = "ConsulConnection::viewCloudAppOutput() ";
 	LOG_DBG << fname;
 
-	auto baseUri = Utility::stringFormat("%s://%s:%d", (Configuration::instance()->getSslEnabled() ? "https" : "http"), hostName.c_str(), Configuration::instance()->getRestListenPort());
+	auto baseUri = Utility::stringFormat("https://%s:%d", hostName.c_str(), Configuration::instance()->getRestListenPort());
 	auto restPath = Utility::stringFormat("/appmesh/app/%s/output", app.c_str());
 	return requestAppMesh(baseUri, restPath, web::http::methods::GET, query, headers);
 }
@@ -239,7 +239,7 @@ int ConsulConnection::getHealthStatus(const std::string &hostName, const std::st
 {
 	const static char fname[] = "ConsulConnection::getHealthStatus() ";
 
-	auto baseUri = Utility::stringFormat("%s://%s:%d", (Configuration::instance()->getSslEnabled() ? "https" : "http"), hostName.c_str(), Configuration::instance()->getRestListenPort());
+	auto baseUri = Utility::stringFormat("https://%s:%d", hostName.c_str(), Configuration::instance()->getRestListenPort());
 	auto restPath = Utility::stringFormat("/appmesh/app/%s/health", app.c_str());
 	auto url = Utility::stdStringTrim(baseUri, '/');
 	auto resp = cpr::Get(cpr::Url{url, restPath}, cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false}), cpr::Timeout{1000 * 10});

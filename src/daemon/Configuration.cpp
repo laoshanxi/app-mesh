@@ -107,7 +107,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	// Consul
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSUL))
 	{
-		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSUL), config->getRestListenPort(), config->getSslEnabled());
+		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSUL), config->getRestListenPort());
 	}
 
 	return config;
@@ -330,12 +330,6 @@ const std::string Configuration::getWorkDir() const
 		return m_defaultWorkDir;
 	else
 		return (fs::path(Utility::getParentDir()) / "work").string();
-}
-
-bool Configuration::getSslEnabled() const
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_ssl->m_sslEnabled;
 }
 
 bool Configuration::getSslVerifyPeer() const
@@ -622,8 +616,6 @@ void Configuration::hotUpdate(const nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile))
 					SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
-				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled))
-					SET_COMPARE(this->m_rest->m_ssl->m_sslEnabled, newConfig->m_rest->m_ssl->m_sslEnabled);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_VerifyPeer))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyPeer, newConfig->m_rest->m_ssl->m_sslVerifyPeer);
 			}
@@ -783,7 +775,7 @@ const nlohmann::json Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
-	auto restUri = Utility::stringFormat("%s://%s:%d", (this->m_rest->m_ssl->m_sslEnabled ? "https" : "http"), Configuration::instance()->getRestListenAddress().c_str(), Configuration::instance()->getRestListenPort());
+	auto restUri = Utility::stringFormat("https://%s:%d", Configuration::instance()->getRestListenAddress().c_str(), Configuration::instance()->getRestListenPort());
 	auto cmd = (fs::path(Utility::getSelfDir()) / "agent").string();
 	if (Configuration::instance()->getRestEnabled())
 	{
@@ -889,15 +881,14 @@ Configuration::JsonRest::JsonRest()
 std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const nlohmann::json &jsonValue)
 {
 	auto ssl = std::make_shared<JsonSsl>();
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLEnabled, ssl->m_sslEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_VerifyPeer, ssl->m_sslVerifyPeer);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
-	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certFile) && jsonValue.contains(JSON_KEY_SSLCertificateFile))
+	if (!Utility::isFileExist(ssl->m_certFile) && jsonValue.contains(JSON_KEY_SSLCertificateFile))
 	{
 		throw std::invalid_argument(Utility::stringFormat("SSLCertificateFile <%s> not exist", ssl->m_certFile.c_str()));
 	}
-	if (ssl->m_sslEnabled && !Utility::isFileExist(ssl->m_certKeyFile) && jsonValue.contains(JSON_KEY_SSLCertificateKeyFile))
+	if (!Utility::isFileExist(ssl->m_certKeyFile) && jsonValue.contains(JSON_KEY_SSLCertificateKeyFile))
 	{
 		throw std::invalid_argument(Utility::stringFormat("SSLCertificateKeyFile <%s> not exist", ssl->m_certKeyFile.c_str()));
 	}
@@ -907,7 +898,6 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 nlohmann::json Configuration::JsonSsl::AsJson() const
 {
 	auto result = nlohmann::json::object();
-	result[JSON_KEY_SSLEnabled] = (m_sslEnabled);
 	result[JSON_KEY_VerifyPeer] = (m_sslVerifyPeer);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
 	result[JSON_KEY_SSLCertificateKeyFile] = std::string(m_certKeyFile);
@@ -915,7 +905,7 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 }
 
 Configuration::JsonSsl::JsonSsl()
-	: m_sslEnabled(false), m_sslVerifyPeer(false)
+	: m_sslVerifyPeer(false)
 {
 }
 
@@ -947,7 +937,7 @@ std::string Configuration::JsonJwt::getJwtInterface() const
 	return m_jwtInterface;
 }
 
-std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const nlohmann::json &jsonObj, int appmeshRestPort, bool sslEnabled)
+std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const nlohmann::json &jsonObj, int appmeshRestPort)
 {
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_URL);
@@ -968,8 +958,7 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 
 	{
 		auto hostname = ResourceCollection::instance()->getHostName();
-		auto protocol = sslEnabled ? "https" : "http";
-		consul->m_defaultProxyUrl = Utility::stringFormat("%s://%s:%d", protocol, hostname.c_str(), appmeshRestPort);
+		consul->m_defaultProxyUrl = Utility::stringFormat("https://%s:%d", hostname.c_str(), appmeshRestPort);
 	}
 	return consul;
 }
