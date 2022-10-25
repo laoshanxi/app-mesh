@@ -3,6 +3,7 @@
 
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
+#include "../Configuration.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
 #include "TcpServer.h"
@@ -236,6 +237,27 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 	}
 	LOG_DBG << fname << "successfully";
 	return true;
+}
+
+void TcpHandler::initTcpSSL()
+{
+	const static char fname[] = "TcpHandler::initTcpSSL() ";
+
+	ACE_SSL_Context::instance()->certificate(Configuration::instance()->getSSLCertificateFile().c_str(), SSL_FILETYPE_PEM);
+	ACE_SSL_Context::instance()->private_key(Configuration::instance()->getSSLCertificateKeyFile().c_str(), SSL_FILETYPE_PEM);
+	auto sslHandler = ACE_SSL_Context::instance()->context();
+	// Enable ECDH cipher
+	if (!SSL_CTX_set_ecdh_auto(sslHandler, 1))
+	{
+		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
+	}
+	auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
+	// auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
+	if (!SSL_CTX_set_cipher_list(sslHandler, ciphers))
+	{
+		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
+	}
+	SSL_CTX_clear_options(sslHandler, SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 }
 
 bool TcpHandler::sendBytes(const char *data, size_t length)

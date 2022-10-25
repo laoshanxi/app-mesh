@@ -29,7 +29,7 @@ bool ProtobufHelper::deserialize(google::protobuf::Message &msg, const char *dat
 	return true;
 }
 
-const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(const ACE_SOCK_Stream &socket)
+const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(const ACE_SSL_SOCK_Stream &socket)
 {
 	const static char fname[] = "ProtobufHelper::readMessageBlock() ";
 	LOG_DBG << fname << "entered";
@@ -44,7 +44,7 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(co
 	return readBytes(socket, bodySize, recvReturn);
 }
 
-int ProtobufHelper::readMsgHeader(const ACE_SOCK_Stream &socket, ssize_t &recvReturn)
+int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &recvReturn)
 {
 	const static char fname[] = "ProtobufHelper::readMsgHeader() ";
 	// read header socket data (4 bytes)
@@ -57,10 +57,12 @@ int ProtobufHelper::readMsgHeader(const ACE_SOCK_Stream &socket, ssize_t &recvRe
 	}
 	// parse header data (get body length). network to host byte order
 	const auto bodySize = ntohl(*((int *)(data.get()))); // host to network byte order
+	LOG_DBG << fname << "read length :" << bodySize << " from header";
+	// TODO: check and raise invalid range here
 	return bodySize;
 }
 
-const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE_SOCK_Stream &socket, int bodySize, ssize_t &recvReturn)
+const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE_SSL_SOCK_Stream &socket, int bodySize, ssize_t &recvReturn)
 {
 	const static char fname[] = "ProtobufHelper::readBytes() ";
 
@@ -71,11 +73,11 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE
 	// https://programmerall.com/article/5562684780/#:~:text=When%20a%20certain%20signal%20is%20caught%2C%20the%20system,system%20calls%20that%20may%20block%20the%20process%20forever.
 	errno = 0;
 	size_t totalRecieved = 0;
-	recvReturn = ACE::recv_n(socket.get_handle(), bodyBuffer.get(), bufferSize, 0, &totalRecieved);
+	recvReturn = socket.recv_n(bodyBuffer.get(), bufferSize, 0, &totalRecieved);
 	while (totalRecieved < bufferSize && errno == EINTR)
 	{
 		size_t transfered = 0;
-		recvReturn = ACE::recv_n(socket.get_handle(), bodyBuffer.get() + totalRecieved, bufferSize - totalRecieved, 0, &transfered);
+		recvReturn = socket.recv_n(bodyBuffer.get() + totalRecieved, bufferSize - totalRecieved, 0, &transfered);
 		totalRecieved += transfered;
 	}
 	if (bufferSize == totalRecieved)

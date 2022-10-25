@@ -4,7 +4,7 @@
 #include <ace/Map_Manager.h>
 #include <ace/Message_Queue.h>
 #include <ace/Recursive_Thread_Mutex.h>
-#include <ace/SOCK_Stream.h>
+#include <ace/SSL/SSL_SOCK_Stream.h>
 #include <ace/Svc_Handler.h>
 
 #include "protoc/Response.pb.h"
@@ -17,7 +17,7 @@
 //     clients using the notification mechanisms in the
 //     <ACE_Reactor>.  In addition, it also illustrates how to
 //     utilize the <ACE_Reactor> timer mechanisms, as well.
-class TcpHandler : public ACE_Svc_Handler<ACE_SOCK_STREAM, ACE_NULL_SYNCH>
+class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_NULL_SYNCH>
 {
 public:
 	TcpHandler(void);
@@ -46,6 +46,7 @@ protected:
 
 public:
 	static bool replyTcp(TcpHandler *tcpHandler, const appmesh::Response &resp);
+	static void initTcpSSL();
 
 private:
 	std::string m_clientHostName;

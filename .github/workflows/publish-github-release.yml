@@ -81,6 +81,7 @@ jobs:
       - name: Generate Changelog
         run: |
           echo "1. libcpr replace cpprestsdk" >> CHANGELOG.txt
+          echo "2. TCP socket enable SSL" >> CHANGELOG.txt
 
       # publish Github release
       # https://github.com/softprops/action-gh-release

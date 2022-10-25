@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/url"
@@ -33,7 +35,23 @@ var socketMutex sync.Mutex // tcp connection lock
 var requestMap sync.Map    // request cache for asyncrized response
 
 func connectServer(restTcpPort int) (net.Conn, error) {
-	return net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(restTcpPort))
+	// https://www.jianshu.com/p/dce19fb167f4
+	pool := x509.NewCertPool()
+	caCertPath := filepath.Join(getAppMeshHomeDir(), "ssl/ca.pem")
+	caCrt, err := ioutil.ReadFile(caCertPath)
+	if err != nil {
+		log.Fatalf("Failed read file: %v", err)
+	}
+	pool.AppendCertsFromPEM(caCrt)
+	clientCert, err := tls.LoadX509KeyPair(filepath.Join(getAppMeshHomeDir(), "ssl/client.pem"), filepath.Join(getAppMeshHomeDir(), "ssl/client-key.pem"))
+	if err != nil {
+		log.Fatalf("Failed Loadx509keypair: %v", err)
+	}
+	conf := &tls.Config{
+		RootCAs:      pool,
+		Certificates: []tls.Certificate{clientCert},
+	}
+	return tls.Dial("tcp", "localhost:"+strconv.Itoa(restTcpPort), conf)
 }
 
 func readProtobufLoop() {
@@ -225,7 +243,7 @@ func listenAgent(restAgentAddr string, router *fasthttprouter.Router) error {
 }
 
 func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
-	cfg := &tls.Config{
+	conf := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
 		Certificates:             []tls.Certificate{loadServerCertificates(filepath.Join(getAppMeshHomeDir(), "ssl/server.pem"), filepath.Join(getAppMeshHomeDir(), "ssl/server-key.pem"))},
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
@@ -248,7 +266,7 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 		Handler:            router.Handler,
 		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
 	}
-	return s.Serve(tls.NewListener(ln, cfg))
+	return s.Serve(tls.NewListener(ln, conf))
 }
 
 func listenRest(restAgentAddr string, restTcpPort int) {

@@ -70,7 +70,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	apt update
 	# apt full-upgrade -q -y
 	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap-dev liboath-dev
-	#apt install -y libboost-all-dev libace-dev
+	#apt install -y libboost-all-dev libace-dev libace
 	#apt install -y liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
 	# reduce binary size
@@ -227,8 +227,8 @@ if [ true ]; then
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
 	cd ${ACE_ROOT}/ace
-	make -j6
-	make install INSTALL_PREFIX=/usr/local
+	make ssl=1 -j6
+	make install ssl=1 INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
 fi
 cd $ROOTDIR

@@ -11,9 +11,10 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 target_link_libraries(common
   PRIVATE
     ACE
+    ACE_SSL
     log4cpp
     boost_regex
     boost_system
     boost_filesystem
-	boost_program_options
+    boost_program_options
 )

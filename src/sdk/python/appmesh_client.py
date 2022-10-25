@@ -5,6 +5,7 @@ import base64
 import json
 import os
 import socket
+import ssl
 import uuid
 
 from enum import Enum
@@ -19,6 +20,7 @@ DEFAULT_RUN_APP_TIMEOUT_SECONDS = 600  # 10 minutes
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
+SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -37,7 +39,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self,
         auth_enable: bool = True,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify="/opt/appmesh/ssl/ca.pem",
+        rest_ssl_verify=SSL_CA_PEM_FILE,
         rest_timeout=(60, 300),
     ):
         """Construct an App Mesh client object
@@ -914,9 +916,13 @@ class AppMeshClientTCP(AppMeshClient):
 
     def __connect_socket(self) -> None:
         """Establish tcp connection"""
-        self.__socket_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.__socket_client.setblocking(True)
-        self.__socket_client.connect(self.tcp_address)
+        sock = socket.create_connection(self.tcp_address)
+        sock.setblocking(True)
+
+        context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_verify_locations(SSL_CA_PEM_FILE)
+        self.__socket_client = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
 
     def __close_socket(self) -> None:
         """Close socket connection"""

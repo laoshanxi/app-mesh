@@ -3,11 +3,11 @@
 #include <string>
 #include <thread>
 
-#include "ace/SOCK_Acceptor.h"
 #include <ace/Acceptor.h>
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
 #include <ace/Reactor.h>
+#include <ace/SSL/SSL_SOCK_Acceptor.h>
 #include <boost/filesystem.hpp>
 
 #include "../common/PerfLog.h"
@@ -29,7 +29,7 @@
 #include "../common/Valgrind.h"
 #endif
 
-typedef ACE_Acceptor<TcpHandler, ACE_SOCK_ACCEPTOR> TcpAcceptor; // Specialize a Tcp Acceptor.
+typedef ACE_Acceptor<TcpHandler, ACE_SSL_SOCK_Acceptor> TcpAcceptor; // Specialize a Tcp Acceptor.
 static std::vector<std::unique_ptr<std::thread>> m_threadPool;
 
 int main(int argc, char *argv[])
@@ -106,6 +106,11 @@ int main(int argc, char *argv[])
 		// threads for timer (application & process event & healthcheck & consul report event)
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 
+		// init ACE SSL
+		if (config->getRestEnabled() && config->getSslEnabled())
+		{
+			TcpHandler::initTcpSSL();
+		}
 		// init REST
 		TcpAcceptor acceptor; // Acceptor factory.
 		if (config->getRestEnabled())
