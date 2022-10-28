@@ -919,8 +919,7 @@ class AppMeshClientTCP(AppMeshClient):
         sock = socket.create_connection(self.tcp_address)
         sock.setblocking(True)
 
-        context = ssl.create_default_context()
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.load_verify_locations(SSL_CA_PEM_FILE)
         self.__socket_client = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
 
@@ -932,6 +931,27 @@ class AppMeshClientTCP(AppMeshClient):
                 self.__socket_client = None
             except Exception as ex:
                 print(ex)
+
+    def __recvall(self, length: int) -> bytes:
+        """socket recv data with fixed length
+           https://stackoverflow.com/questions/64466530/using-a-custom-socket-recvall-function-works-only-if-thread-is-put-to-sleep
+        Args:
+            length (bytes): data length to be recieved
+
+        Raises:
+            EOFError: _description_
+
+        Returns:
+            bytes: socket data
+        """
+        fragments = []
+        while length:
+            chunk = self.__socket_client.recv(length)
+            if not chunk:
+                raise EOFError('socket closed')
+            length -= len(chunk)
+            fragments.append(chunk)
+        return b''.join(fragments)
 
     def request_http(self, method: AppMeshClient.Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
         """TCP API
@@ -953,9 +973,9 @@ class AppMeshClientTCP(AppMeshClient):
             header["Authorization"] = "Bearer " + super().jwt_token
         if self.__socket_client is None:
             self.__connect_socket()
-        uid = str(uuid.uuid1())
+        req_id = str(uuid.uuid1())
         appmesh_requst = Request_pb2.Request()
-        appmesh_requst.uuid = uid
+        appmesh_requst.uuid = req_id
         appmesh_requst.http_method = method.name
         appmesh_requst.request_uri = path
         appmesh_requst.client_address = socket.gethostname()
@@ -982,7 +1002,7 @@ class AppMeshClientTCP(AppMeshClient):
         # https://developers.google.com/protocol-buffers/docs/pythontutorial
         # https://stackoverflow.com/questions/33913308/socket-module-how-to-send-integer
         resp_data = bytes()
-        resp_data = self.__socket_client.recv(int.from_bytes(self.__socket_client.recv(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False))
+        resp_data = self.__recvall(int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False))
         if resp_data is None or len(resp_data) == 0:
             self.__close_socket()
             raise Exception("socket connection broken")
@@ -995,7 +1015,7 @@ class AppMeshClientTCP(AppMeshClient):
         http_resp.encoding = MESSAGE_ENCODING_UTF8
         if appmesh_resp.http_body_msg_type:
             http_resp.headers["Content-Type"] = appmesh_resp.http_body_msg_type
-        assert uid == appmesh_resp.uuid
+        assert req_id == appmesh_resp.uuid
         return http_resp
 
     ########################################
@@ -1016,14 +1036,14 @@ class AppMeshClientTCP(AppMeshClient):
         if resp.status_code == HTTPStatus.OK:
             with open(local_file, "wb") as fp:
                 chunk_data = bytes()
-                chunk_size = int.from_bytes(self.__socket_client.recv(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
+                chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
                 while chunk_size > 0:
-                    chunk_data = self.__socket_client.recv(chunk_size)
+                    chunk_data = self.__recvall(chunk_size)
                     if chunk_data is None or len(chunk_data) == 0:
                         self.__close_socket()
                         raise Exception("socket connection broken")
                     fp.write(chunk_data)
-                    chunk_size = int.from_bytes(self.__socket_client.recv(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
+                    chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
             if resp.headers.__contains__("File-Mode"):
                 os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
             if resp.headers.__contains__("File-User") and resp.headers.__contains__("File-Group"):

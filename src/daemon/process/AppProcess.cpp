@@ -297,7 +297,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	// clean if necessary
 	CLOSE_ACE_HANDLER(m_stdoutHandler);
 	CLOSE_ACE_HANDLER(m_stdinHandler);
-	ACE_HANDLE dummy = ACE_INVALID_HANDLE;
 	m_stdoutFileName = stdoutFile;
 	if (m_stdoutFileName.length() || stdinFileContent != EMPTY_STR_JSON)
 	{
@@ -312,12 +311,15 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			755 rwxr-xr-x
 			777 rwxrwxrwx
 		*/
-		dummy = ACE_OS::open("/dev/null", O_RDWR);
-		m_stdoutHandler = m_stdinHandler = dummy;
+		m_stdoutHandler = m_stdinHandler = ACE_INVALID_HANDLE;
 		if (m_stdoutFileName.length())
 		{
 			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 0666);
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName;
+		}
+		else
+		{
+			m_stdoutHandler = ACE_OS::open("/dev/null", O_RDWR);
 		}
 		if (stdinFileContent != EMPTY_STR_JSON && stdinFileContent != CLOUD_STR_JSON)
 		{
@@ -331,6 +333,10 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			assert(Utility::isFileExist(m_stdinFileName));
 			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY, 0444);
 			LOG_DBG << fname << "std_in: " << m_stdinFileName << " : " << stdinFileContent;
+		}
+		else
+		{
+			m_stdinHandler = ACE_OS::open("/dev/null", O_RDWR);
 		}
 		option.set_handles(m_stdinHandler, m_stdoutHandler, m_stdoutHandler);
 	}
@@ -360,8 +366,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << std::strerror(errno);
 		startError(Utility::stringFormat("start failed with error <%s>", std::strerror(errno)));
 	}
-	if (dummy != ACE_INVALID_HANDLE)
-		ACE_OS::close(dummy);
 	return pid;
 }
 

@@ -121,7 +121,7 @@ go version
 # go env -w GO111MODULE=on
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp@v1.40.0
+go get github.com/valyala/fasthttp@v1.41.0
 go get github.com/buaazp/fasthttprouter
 go get github.com/klauspost/compress@v1.15.11
 go get -v github.com/rs/xid

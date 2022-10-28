@@ -245,6 +245,8 @@ void TcpHandler::initTcpSSL()
 
 	ACE_SSL_Context::instance()->certificate(Configuration::instance()->getSSLCertificateFile().c_str(), SSL_FILETYPE_PEM);
 	ACE_SSL_Context::instance()->private_key(Configuration::instance()->getSSLCertificateKeyFile().c_str(), SSL_FILETYPE_PEM);
+
+	ACE_SSL_Context::instance()->filter_versions(TCP_SSL_VERSION_LIST);
 	auto sslHandler = ACE_SSL_Context::instance()->context();
 	// Enable ECDH cipher
 	if (!SSL_CTX_set_ecdh_auto(sslHandler, 1))

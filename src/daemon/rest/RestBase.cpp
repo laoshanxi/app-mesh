@@ -136,12 +136,9 @@ const std::string RestBase::getJwtToken(const HttpRequest &message)
     if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
     {
         token = Utility::stdStringTrim(message.m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
-        const std::string bearerFlag = HTTP_HEADER_JWT_BearerSpace;
-        if (Utility::startWith(token, bearerFlag))
-        {
-            token = token.substr(bearerFlag.length());
-        }
-    }
+		token = Utility::stdStringTrim(token, HTTP_HEADER_JWT_BearerSpace, true, false);
+		token = Utility::stdStringTrim(token);
+	}
     return token;
 }
 
