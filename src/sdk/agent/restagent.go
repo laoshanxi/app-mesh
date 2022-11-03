@@ -34,7 +34,7 @@ var tcpConnect net.Conn    // tcp connection
 var socketMutex sync.Mutex // tcp connection lock
 var requestMap sync.Map    // request cache for asyncrized response
 
-func connectServer(restTcpPort int) (net.Conn, error) {
+func connectServer(tcpAddr string) (net.Conn, error) {
 	// https://www.jianshu.com/p/dce19fb167f4
 	pool := x509.NewCertPool()
 	caCertPath := filepath.Join(getAppMeshHomeDir(), "ssl/ca.pem")
@@ -51,7 +51,7 @@ func connectServer(restTcpPort int) (net.Conn, error) {
 		RootCAs:      pool,
 		Certificates: []tls.Certificate{clientCert},
 	}
-	return tls.Dial("tcp", "localhost:"+strconv.Itoa(restTcpPort), conf)
+	return tls.Dial("tcp", tcpAddr, conf)
 }
 
 func readProtobufLoop() {
@@ -274,10 +274,16 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 	if err != nil {
 		panic(err)
 	}
-	addrForListen := addr.Hostname() + ":" + addr.Port()
+	anyAddr := "0.0.0.0"
+	addrForListen := anyAddr + ":" + addr.Port()
+	tcpHostName := addr.Hostname()
+	if tcpHostName == anyAddr {
+		tcpHostName, _ = os.Hostname()
+	}
+	addrForConnect := tcpHostName + ":" + strconv.Itoa(restTcpPort)
 
 	// connect to TCP rest server
-	conn, err := connectServer(restTcpPort)
+	conn, err := connectServer(addrForConnect)
 	if err != nil {
 		log.Fatalf("Failed to connected to TCP server <%d> with error: %v", restTcpPort, err)
 		os.Exit(-1)
@@ -288,7 +294,7 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 	// setup REST listener
 	router := fasthttprouter.New()
 	router.NotFound = restProxyHandler // set all default router to restProxyHandler
-	grafana.RegGrafanaRestHandler(router, restAgentAddr)
+	grafana.RegGrafanaRestHandler(router)
 	if addr.Scheme == "https" {
 		err = listenAgentTls(addrForListen, router)
 	} else {

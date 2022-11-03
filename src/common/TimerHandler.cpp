@@ -1,6 +1,6 @@
 
 #include <ace/OS.h>
-#include <ace/Reactor.h>
+#include <ace/TP_Reactor.h>
 #include <ace/Time_Value.h>
 #include <assert.h>
 
@@ -8,6 +8,7 @@
 #include "TimerHandler.h"
 
 TimerManager::TimerManager()
+	: m_reactor(new ACE_TP_Reactor(), true)
 {
 	const static char fname[] = "TimerManager::TimerManager() ";
 	LOG_DBG << fname;
@@ -62,12 +63,15 @@ int TimerManager::registerTimer(long int delayMillisecond, std::size_t intervalS
 
 	int *timerIdPtr = new int(INVALID_TIMER_ID);
 	(*timerIdPtr) = this->reactor()->schedule_timer(this, (void *)timerIdPtr, delay, interval);
+	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
 	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
 	if ((*timerIdPtr) >= 0)
 	{
-		assert(m_timers.find(timerIdPtr) != 0);
+		if (m_timers.find(timerIdPtr) != 0)
+		{
+			LOG_ERR << fname << "timer <" << *timerIdPtr << "> already exists";
+		}
 		m_timers.bind(timerIdPtr, std::make_shared<TimerEvent>(timerIdPtr, handler, fromObj, callOnce));
-		LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
 		return *timerIdPtr;
 	}
 	else

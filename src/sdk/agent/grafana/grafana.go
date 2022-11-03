@@ -2,7 +2,6 @@ package grafana
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/buaazp/fasthttprouter"
@@ -131,9 +130,7 @@ func (AppmeshGrafanaJson) GrafanaAdhocFilterTagValues(ctx context.Context, key s
 	}, nil
 }
 
-func RegGrafanaRestHandler(router *fasthttprouter.Router, restAddr string) {
-	appmeshRestAddr = restAddr
-	log.Println("Simple Json connect to App Mesh: ", appmeshRestAddr)
+func RegGrafanaRestHandler(router *fasthttprouter.Router) {
 	// TODO: WithQuerier(AppmeshGrafanaJson{}) WithSearcher(AppmeshGrafanaJson{}) WithAnnotator(AppmeshGrafanaJson{})
 	simJson := New(WithTableQuerier(AppmeshGrafanaJson{}))
 	simJson.handleRestRouter(router)

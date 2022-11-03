@@ -63,10 +63,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
     if (path == "/" || path.empty())
     {
-        auto msg = nlohmann::json::object();
-        msg[REST_TEXT_MESSAGE_JSON_KEY] = std::string(REST_ROOT_TEXT_MESSAGE);
-		auto body = msg.dump();
-		message.reply(web::http::status_codes::OK, body);
+		message.reply(web::http::status_codes::OK, REST_ROOT_TEXT_MESSAGE);
 		return;
     }
 

@@ -12,7 +12,7 @@
       "JWTEnabled": true,
       "SecurityInterface": "json"
     },
-    "RestListenAddress": "0.0.0.0",
+    "RestListenAddress": "localhost",
     "RestListenPort": 6060,
     "RestTcpPort": 6059,
     "PrometheusExporterListenPort": 6061,

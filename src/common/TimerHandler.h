@@ -108,4 +108,4 @@ private:
 	ACE_Reactor m_reactor;
 };
 
-typedef ACE_Singleton<TimerManager, ACE_Null_Mutex> TIMER_MANAGER;
+typedef ACE_Singleton<TimerManager, ACE_Recursive_Thread_Mutex> TIMER_MANAGER;
