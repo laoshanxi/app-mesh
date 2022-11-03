@@ -8,16 +8,14 @@ Loki is a horizontally-scalable, highly-available, multi-tenant log aggregation 
 
 ### Install docker-compose
 ```
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.11.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.12.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
 ### Start Loki, Grafana, Promtail，AppMesh
 ```
-$ mkdir appmesh
-$ cd appmesh
-$ wget --no-check-certificate -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose-all-in-one.yaml
-$ docker-compose -f docker-compose.yaml up -d
+cd app-mesh/script
+docker-compose -f docker-compose-all-in-one.yaml up -d
 ```
 
 ### Configure Grafana
