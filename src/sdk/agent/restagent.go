@@ -43,13 +43,8 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 		log.Fatalf("Failed read file: %v", err)
 	}
 	pool.AppendCertsFromPEM(caCrt)
-	clientCert, err := tls.LoadX509KeyPair(filepath.Join(getAppMeshHomeDir(), "ssl/client.pem"), filepath.Join(getAppMeshHomeDir(), "ssl/client-key.pem"))
-	if err != nil {
-		log.Fatalf("Failed Loadx509keypair: %v", err)
-	}
 	conf := &tls.Config{
-		RootCAs:      pool,
-		Certificates: []tls.Certificate{clientCert},
+		RootCAs: pool,
 	}
 	return tls.Dial("tcp", tcpAddr, conf)
 }
@@ -165,6 +160,7 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
 	ctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
 	ctx.Response.Header.Set("Access-Control-Allow-Headers", "*")
+	// ctx.Response.Header.SetServer(HTTP_SERVER)
 	// user agent
 	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
 	// status code
@@ -285,7 +281,7 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 	// connect to TCP rest server
 	conn, err := connectServer(addrForConnect)
 	if err != nil {
-		log.Fatalf("Failed to connected to TCP server <%d> with error: %v", restTcpPort, err)
+		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", addrForConnect, err)
 		os.Exit(-1)
 	}
 	tcpConnect = conn
