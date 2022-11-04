@@ -27,20 +27,27 @@ int TimerManager::handle_timeout(const ACE_Time_Value &current_time, const void 
 
 	const int *timerIdPtr = static_cast<const int *>(act);
 	std::shared_ptr<TimerEvent> timerDef;
-	if (m_timers.find(timerIdPtr, timerDef) != 0)
+	if (timerIdPtr)
 	{
-		LOG_WAR << fname << "unrecognized Timer Id <" << *timerIdPtr << ">.";
-		// remove this wrong timer
-		return -1;
-	}
-	else
-	{
-		if (timerDef->m_callOnce)
+		ACE_Guard<ACE_Recursive_Thread_Mutex> locker(m_timers.mutex());
+		if (m_timers.find(timerIdPtr, timerDef) != 0)
 		{
-			// remove one-time handler from map before run callback
-			auto removed = m_timers.unbind(timerIdPtr, timerDef);
-			LOG_DBG << fname << "one-time timer <" << *timerIdPtr << "> removed:" << (removed == 0);
+			LOG_WAR << fname << "unrecognized Timer Id <" << *timerIdPtr << ">.";
+			// remove this wrong timer
+			return -1;
 		}
+		else
+		{
+			if (timerDef->m_callOnce)
+			{
+				// remove one-time handler from map before run callback
+				auto removed = m_timers.unbind(timerIdPtr, timerDef);
+				LOG_DBG << fname << "one-time timer <" << *timerIdPtr << "> removed:" << (removed == 0);
+			}
+		}
+	}
+	if (timerDef && timerIdPtr)
+	{
 		// call timer function
 		timerDef->m_handler(*timerIdPtr);
 	}
@@ -62,12 +69,13 @@ int TimerManager::registerTimer(long int delayMillisecond, std::size_t intervalS
 	}
 
 	int *timerIdPtr = new int(INVALID_TIMER_ID);
+	ACE_Guard<ACE_Recursive_Thread_Mutex> locker(m_timers.mutex());
 	(*timerIdPtr) = this->reactor()->schedule_timer(this, (void *)timerIdPtr, delay, interval);
 	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
 	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
 	if ((*timerIdPtr) >= 0)
 	{
-		if (m_timers.find(timerIdPtr) != 0)
+		if (m_timers.find(timerIdPtr) == 0)
 		{
 			LOG_ERR << fname << "timer <" << *timerIdPtr << "> already exists";
 		}

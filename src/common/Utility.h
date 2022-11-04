@@ -219,7 +219,7 @@ public:
 #define SEPARATE_REST_APP_NAME "apprest"
 #define SEPARATE_AGENT_APP_NAME "agent"
 #define SEPARATE_PYTHON_EXEC_APP_NAME "pyrun"
-#define REST_ROOT_TEXT_MESSAGE "<html><head><title>App Mesh</title></head></html>"
+#define REST_ROOT_TEXT_MESSAGE "<html>\n<head><title>App Mesh</title></head>\n<body><h1>App Mesh</h1></body>\n</html>\n"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_Description "Description"

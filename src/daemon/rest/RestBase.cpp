@@ -63,8 +63,10 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
     if (path == "/" || path.empty())
     {
-		message.reply(web::http::status_codes::OK, REST_ROOT_TEXT_MESSAGE);
-		return;
+        static auto body = std::string(REST_ROOT_TEXT_MESSAGE);
+        static auto contentType = std::string("text/html; charset=utf-8");
+        message.reply(web::http::status_codes::OK, body, contentType);
+        return;
     }
 
     bool findRest = false;
@@ -79,7 +81,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     if (!findRest)
     {
-        message.reply(web::http::status_codes::NotFound, convertText2Json(std::string("Path not found: ") + path));
+        message.reply(web::http::status_codes::NotFound, convertText2Json(Utility::stringFormat("Path not found %s:%s", message.m_method.c_str(), path.c_str())));
         return;
     }
 
@@ -133,9 +135,9 @@ const std::string RestBase::getJwtToken(const HttpRequest &message)
     if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
     {
         token = Utility::stdStringTrim(message.m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
-		token = Utility::stdStringTrim(token, HTTP_HEADER_JWT_BearerSpace, true, false);
-		token = Utility::stdStringTrim(token);
-	}
+        token = Utility::stdStringTrim(token, HTTP_HEADER_JWT_BearerSpace, true, false);
+        token = Utility::stdStringTrim(token);
+    }
     return token;
 }
 
