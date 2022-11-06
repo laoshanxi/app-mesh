@@ -59,7 +59,7 @@ private:
 	void watchTopologyThread();
 	void watchScheduleThread();
 
-	void refreshSession(int timerId = INVALID_TIMER_ID);
+	void refreshSession();
 	std::string requestSessionId();
 	std::string renewSessionId();
 	void consulSessionId(const std::string &sessionId);
@@ -84,7 +84,7 @@ private:
 private:
 	mutable std::recursive_mutex m_consulMutex;
 	std::string m_sessionId;
-	int m_ssnRenewTimerId;
+	long m_ssnRenewTimerId;
 	bool m_leader;
 	std::shared_ptr<Configuration::JsonConsul> m_config;
 

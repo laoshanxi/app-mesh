@@ -75,26 +75,13 @@ int AppProcess::returnValue(void) const
 	return this->exit_code();
 }
 
-void AppProcess::killgroup(int timerId)
+void AppProcess::killgroup()
 {
 	const static char fname[] = "AppProcess::killgroup() ";
 
 	LOG_INF << fname << "kill process <" << getpid() << ">.";
-
-	if (timerId == INVALID_TIMER_ID)
-	{
-		// killed before timer event, cancel timer event
-		this->cancelTimer(m_delayKillTimerId);
-	}
-
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-		if (m_delayKillTimerId > INVALID_TIMER_ID && m_delayKillTimerId == timerId)
-		{
-			// clean timer id, trigger-ing this time.
-			m_delayKillTimerId = INVALID_TIMER_ID;
-		}
-
 		if (this->running() && this->getpid() > 1)
 		{
 			ACE_OS::kill(-(this->getpid()), 9);
@@ -113,16 +100,14 @@ void AppProcess::killgroup(int timerId)
 					LOG_INF << fname << "Retry wait process <" << getpid() << "> success";
 				}
 			}
-			if (timerId > INVALID_TIMER_ID)
-			{
-				LOG_DBG << fname << "process killed due to timeout";
-			}
+			LOG_DBG << fname << "process killed";
 		}
 
 		CLOSE_ACE_HANDLER(m_stdoutHandler);
 		CLOSE_ACE_HANDLER(m_stdinHandler);
 	}
 	this->cancelTimer(m_stdOutSizeTimerId);
+	this->cancelTimer(m_delayKillTimerId);
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
@@ -147,7 +132,7 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	if (INVALID_TIMER_ID == m_delayKillTimerId)
 	{
-		m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this, std::placeholders::_1), from);
+		m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::killgroup, this), from);
 	}
 	else
 	{
@@ -161,8 +146,8 @@ void AppProcess::registerCheckStdoutTimer()
 
 	if (INVALID_TIMER_ID == m_stdOutSizeTimerId)
 	{
-		int timeoutSec = 5;
-		m_stdOutSizeTimerId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::checkStdout, this, std::placeholders::_1), fname);
+		static const int timeoutSec = 30;
+		m_stdOutSizeTimerId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::checkStdout, this), fname);
 	}
 	else
 	{
@@ -170,7 +155,7 @@ void AppProcess::registerCheckStdoutTimer()
 	}
 }
 
-void AppProcess::checkStdout(int timerId)
+void AppProcess::checkStdout()
 {
 	const static char fname[] = "AppProcess::checkStdout() ";
 
@@ -195,7 +180,7 @@ void AppProcess::checkStdout(int timerId)
 	// automatic release timer reference when not running
 	if (!this->running())
 	{
-		this->cancelTimer(timerId);
+		this->cancelTimer(m_stdOutSizeTimerId);
 	}
 }
 

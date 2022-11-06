@@ -34,7 +34,7 @@ pid_t MonitoredProcess::spawn(ACE_Process_Options &option)
 	return rt;
 }
 
-void MonitoredProcess::waitThread(int timerId)
+void MonitoredProcess::waitThread()
 {
 	if (nullptr != m_thread)
 	{
@@ -57,7 +57,7 @@ void MonitoredProcess::runPipeReaderThread()
 
 	replyAsyncRequest();
 	LOG_DBG << fname << "Exited";
-	this->registerTimer(0, 0, std::bind(&MonitoredProcess::waitThread, this, std::placeholders::_1), fname);
+	this->registerTimer(0, 0, std::bind(&MonitoredProcess::waitThread, this), fname);
 }
 
 void MonitoredProcess::replyAsyncRequest()
@@ -87,9 +87,9 @@ void MonitoredProcess::replyAsyncRequest()
 	}
 }
 
-void MonitoredProcess::killgroup(int timerId)
+void MonitoredProcess::killgroup()
 {
-	AppProcess::killgroup(timerId);
+	AppProcess::killgroup();
 	replyAsyncRequest();
 	// TODO: sometimes, terminated process can not get stdout from file.
 }

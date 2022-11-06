@@ -97,7 +97,7 @@ std::shared_ptr<Ldap::Server> LdapImpl::connect()
     return nullptr;
 }
 
-void LdapImpl::syncGroupUsers(int timerId)
+void LdapImpl::syncGroupUsers()
 {
     const static char fname[] = "LdapImpl::syncGroupUsers() ";
     LOG_DBG << fname;
@@ -120,29 +120,24 @@ void LdapImpl::syncGroupUsers(int timerId)
                     group.second->syncGroupUsers(ldap, m_ldap->m_roles);
                 }
             }
-            else if (timerId == INVALID_TIMER_ID)
+            else
             {
-                throw std::invalid_argument("Failed to sync LDAP users due to incorrect password");
+                LOG_WAR << fname << ("Failed to sync LDAP users due to incorrect password");
             }
         }
-        else if (timerId == INVALID_TIMER_ID)
+        else
         {
-            throw std::invalid_argument("Failed to sync LDAP users due to can not connect to LDAP Server");
+            LOG_WAR << fname << ("Failed to sync LDAP users due to can not connect to LDAP Server");
         }
     }
     catch (const std::exception &ex)
     {
         LOG_WAR << fname << ex.what();
-
-        if (timerId == INVALID_TIMER_ID)
-        {
-            throw ex;
-        }
     }
 
-    if (timerId == INVALID_TIMER_ID && m_ldap->m_syncSeconds > 0)
+    if (m_syncTimerId == INVALID_TIMER_ID && m_ldap->m_syncSeconds > 0)
     {
-        m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, std::bind(&LdapImpl::syncGroupUsers, this, std::placeholders::_1), fname);
+        m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, std::bind(&LdapImpl::syncGroupUsers, this), fname);
     }
 }
 

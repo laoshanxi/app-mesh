@@ -25,11 +25,10 @@ public:
 	/// <summary>
 	/// kill the process group
 	/// </summary>
-	/// <param name="timerId"></param>
-	virtual void killgroup(int timerId = INVALID_TIMER_ID) override;
+	virtual void killgroup() override;
 
 protected:
-	virtual void waitThread(int timerId = INVALID_TIMER_ID);
+	virtual void waitThread();
 	void runPipeReaderThread();
 
 private:

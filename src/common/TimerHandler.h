@@ -6,7 +6,6 @@
 #include <string>
 
 #include <ace/Event_Handler.h>
-#include <ace/Map_Manager.h>
 #include <ace/Null_Mutex.h>
 #include <ace/Reactor.h>
 #include <ace/Recursive_Thread_Mutex.h>
@@ -16,11 +15,13 @@
 // ACE_Test_and_Set Singleton.
 typedef ACE_Singleton<ACE_Test_and_Set<ACE_Recursive_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex> QUIT_HANDLER;
 
-#define INVALID_TIMER_ID -1
+#define INVALID_TIMER_ID -1L
 
 class TimerHandler : public std::enable_shared_from_this<TimerHandler>
 {
 public:
+	virtual ~TimerHandler();
+
 	/// <summary>
 	/// Register a timer to this object
 	/// </summary>
@@ -28,43 +29,19 @@ public:
 	/// <param name="intervalSeconds">Interval for the Timer, the value 0 means the timer will only triggered once.</param>
 	/// <param name="handler">Function point to this object.</param>
 	/// <return>Timer unique ID.</return>
-	int registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from);
+	long registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(void)> &handler, const std::string &from);
 	/// <summary>
 	/// Cancel a timer
 	/// </summary>
 	/// <param name="timerId">Timer unique ID.</param>
 	/// <return>Cancel success or not.</return>
-	bool cancelTimer(int &timerId);
+	bool cancelTimer(long &timerId);
 };
 
-//////////////////////////////////////////////////////////////////////////
-/// Timer Event base class
-/// The class which use timer event should implement from this class.
-/// Note: enable_shared_from_this does not support stack allocation!
-///       http://blog.chinaunix.net/uid-442138-id-2122464.html
-//////////////////////////////////////////////////////////////////////////
-class TimerManager : public ACE_Event_Handler
+class TimerEvent : public ACE_Event_Handler
 {
-private:
-	/// <summary>
-	/// One timer event
-	/// </summary>
-	struct TimerEvent
-	{
-		/// <summary>
-		/// TimerEvent construction
-		/// </summary>
-		/// <param name="timerId">timerId will be deleted in TimerEvent de-construction</param>
-		/// <param name="handler">timer function</param>
-		/// <param name="object">timer object</param>
-		/// <param name="callOnce">only run one-time</param>
-		explicit TimerEvent(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce);
-		const std::shared_ptr<int> m_timerId;
-		std::function<void(int)> m_handler;
-		const std::shared_ptr<TimerHandler> m_timerObject;
-		const bool m_callOnce;
-	};
-
+public:
+	explicit TimerEvent(bool callOnce, const std::shared_ptr<TimerHandler> timerObj, const std::function<void(void)> &handler);
 	/**
 	 * Timer expire call back function, override from ACE
 	 * Called when timer expires.  @a current_time represents the current
@@ -74,9 +51,30 @@ private:
 	 */
 	virtual int handle_timeout(const ACE_Time_Value &current_time, const void *act = 0) override final;
 
+	/// Called when a handle_*() method returns -1 or when the
+	/// remove_handler() method is called on an ACE_Reactor.  The
+	/// @a close_mask indicates which event has triggered the
+	/// handle_close() method callback on a particular @a handle.
+	virtual int handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask) override final;
+
+private:
+	const std::shared_ptr<TimerHandler> m_timerObj; // used to hold the timer target instance avoid free
+	const std::function<void(void)> m_handler;
+	const bool m_callOnce;
+};
+
+//////////////////////////////////////////////////////////////////////////
+/// Timer Event base class
+/// The class which use timer event should implement from this class.
+/// Note: enable_shared_from_this does not support stack allocation!
+///       http://blog.chinaunix.net/uid-442138-id-2122464.html
+//////////////////////////////////////////////////////////////////////////
+class TimerManager
+{
 public:
 	TimerManager();
 	virtual ~TimerManager();
+	ACE_Reactor *reactor();
 
 	/// <summary>
 	/// Register a timer to this object
@@ -85,13 +83,13 @@ public:
 	/// <param name="intervalSeconds">Interval for the Timer, the value 0 means the timer will only triggered once.</param>
 	/// <param name="handler">Function point to this object.</param>
 	/// <return>Timer unique ID.</return>
-	int registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from, const std::shared_ptr<TimerHandler> fromObj);
+	long registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::string &from, const std::shared_ptr<TimerHandler> timerObj, const std::function<void(void)> &handler);
 	/// <summary>
 	/// Cancel a timer
 	/// </summary>
 	/// <param name="timerId">Timer unique ID.</param>
 	/// <return>Cancel success or not.</return>
-	bool cancelTimer(int &timerId);
+	bool cancelTimer(long &timerId);
 
 	/// <summary>
 	/// Use ACE_Reactor for timer event, block function, should used in a thread
@@ -103,8 +101,6 @@ public:
 	static int endReactorEvent(ACE_Reactor *reactor);
 
 private:
-	// key: unique timer ID pointer, value: function point
-	ACE_Map_Manager<const int *, std::shared_ptr<TimerEvent>, ACE_Recursive_Thread_Mutex> m_timers;
 	ACE_Reactor m_reactor;
 };
 

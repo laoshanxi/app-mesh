@@ -21,7 +21,7 @@ DockerProcess::~DockerProcess()
 	DockerProcess::killgroup();
 }
 
-void DockerProcess::killgroup(int timerId)
+void DockerProcess::killgroup()
 {
 	const static char fname[] = "DockerProcess::killgroup() ";
 

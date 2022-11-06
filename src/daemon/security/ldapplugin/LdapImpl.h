@@ -33,7 +33,7 @@ public:
     static std::shared_ptr<LdapImpl> FromJson(const nlohmann::json &obj) noexcept(false);
 
     static void init(const std::string &interface);
-    void syncGroupUsers(int timerId = INVALID_TIMER_ID);
+    void syncGroupUsers();
 
 public:
     virtual bool verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup) override;
@@ -58,5 +58,5 @@ private:
 
 private:
     std::shared_ptr<JsonLdap> m_ldap;
-    int m_syncTimerId;
+    long m_syncTimerId;
 };

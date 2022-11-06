@@ -83,8 +83,7 @@ public:
 	/// <summary>
 	/// kill the process group
 	/// </summary>
-	/// <param name="timerId"></param>
-	virtual void killgroup(int timerId = INVALID_TIMER_ID);
+	virtual void killgroup();
 
 	/// <summary>
 	/// set resource limitation
@@ -106,8 +105,7 @@ public:
 	/// <summary>
 	/// check stdout file size
 	/// </summary>
-	/// <param name="timerId"></param>
-	void checkStdout(int timerId);
+	void checkStdout();
 
 	/// <summary>
 	/// Start process
@@ -152,8 +150,8 @@ protected:
 	std::tuple<std::string, std::string> extractCommand(const std::string &cmd);
 
 private:
-	int m_delayKillTimerId;
-	int m_stdOutSizeTimerId;
+	long m_delayKillTimerId;
+	long m_stdOutSizeTimerId;
 	off_t m_stdOutMaxSize;
 	mutable std::recursive_mutex m_processMutex; //checkStdout, delayKill, killgroup
 

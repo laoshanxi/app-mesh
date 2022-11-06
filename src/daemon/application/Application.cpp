@@ -433,7 +433,7 @@ void Application::execute(void *ptree)
 	}
 }
 
-void Application::spawn(int timerId)
+void Application::spawn()
 {
 	const static char fname[] = "Application::spawn() ";
 	std::shared_ptr<AppProcess> checkProcStdoutFile;
@@ -490,12 +490,8 @@ void Application::disable()
 	const static char fname[] = "Application::disable() ";
 
 	// clean old timer
-	int timerId = INVALID_TIMER_ID;
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		timerId = m_nextStartTimerId;
-		m_nextStartTimerId = INVALID_TIMER_ID;
-	}
+	long timerId = INVALID_TIMER_ID;
+	m_nextStartTimerId.exchange(timerId);
 	this->cancelTimer(timerId);
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -906,8 +902,8 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 
 void Application::destroy()
 {
-	int suicideTimerId = INVALID_TIMER_ID;
-	int timerId = INVALID_TIMER_ID;
+	long suicideTimerId = INVALID_TIMER_ID;
+	long timerId = INVALID_TIMER_ID;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		this->disable();
@@ -920,7 +916,7 @@ void Application::destroy()
 	this->cancelTimer(timerId);
 }
 
-void Application::onSuicide(int timerId)
+void Application::onSuicide()
 {
 	const static char fname[] = "Application::onSuicide() ";
 
@@ -956,7 +952,7 @@ void Application::onExit(int code)
 	case AppBehavior::Action::KEEPALIVE:
 		// keep alive always, used for period run
 		m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-		this->registerTimer(0, 0, std::bind(&Application::spawn, this, std::placeholders::_1), fname);
+		this->registerTimer(0, 0, std::bind(&Application::spawn, this), fname);
 		LOG_DBG << fname << "next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -972,7 +968,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 {
 	const static char fname[] = "Application::scheduleNext() ";
 
-	int timerId = INVALID_TIMER_ID;
+	long timerId = INVALID_TIMER_ID;
 	auto next = m_timer->nextTime(now);
 
 	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
@@ -987,7 +983,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 	if (next != AppTimer::EPOCH_ZERO_TIME)
 	{
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - now).count();
-		timerId = this->registerTimer(delay, 0, std::bind(&Application::spawn, this, std::placeholders::_1), fname);
+		timerId = this->registerTimer(delay, 0, std::bind(&Application::spawn, this), fname);
 	}
 
 	// 3. update timer id
@@ -1007,7 +1003,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 void Application::regSuicideTimer(int timeoutSeconds)
 {
 	const static char fname[] = "Application::regSuicideTimer() ";
-	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicide, this, std::placeholders::_1), fname);
+	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicide, this), fname);
 }
 
 void Application::setLastError(const std::string &error)

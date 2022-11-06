@@ -7,12 +7,60 @@
 #include "../common/Utility.h"
 #include "TimerHandler.h"
 
+////////////////////////////////////////////////////////////////
+/// TimerEvent
+////////////////////////////////////////////////////////////////
+TimerEvent::TimerEvent(bool callOnce, const std::shared_ptr<TimerHandler> timerObj, const std::function<void(void)> &handler)
+	: m_timerObj(timerObj), m_handler(handler), m_callOnce(callOnce)
+{
+}
+
+int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *act)
+{
+	const static char fname[] = "TimerEvent::handle_timeout() ";
+
+	if (act)
+	{
+		if (act != (void *)this)
+		{
+			LOG_ERR << fname << "invalid timer, target not match act: <" << act << ">, this <" << this << ">";
+			return -1;
+		}
+		// call timer function
+		m_handler();
+		if (m_callOnce)
+		{
+			LOG_DBG << fname << "one-time timer <" << this << "> removed";
+			// stop timer - will call handle_close()
+			return -1;
+		}
+	}
+	else
+	{
+		LOG_ERR << fname << "invalid timer triggered <" << this << ">";
+		return -1;
+	}
+	// continue till next interval
+	return 0;
+}
+
+int TimerEvent::handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask)
+{
+	const static char fname[] = "TimerEvent::handle_close() ";
+	LOG_DBG << fname << "timer <" << this << ">";
+	// self destruct
+	delete this;
+	return 0;
+}
+
+////////////////////////////////////////////////////////////////
+/// TimerManager
+////////////////////////////////////////////////////////////////
 TimerManager::TimerManager()
 	: m_reactor(new ACE_TP_Reactor(), true)
 {
 	const static char fname[] = "TimerManager::TimerManager() ";
 	LOG_DBG << fname;
-	this->reactor(&m_reactor);
 }
 
 TimerManager::~TimerManager()
@@ -21,40 +69,12 @@ TimerManager::~TimerManager()
 	LOG_DBG << fname;
 }
 
-int TimerManager::handle_timeout(const ACE_Time_Value &current_time, const void *act)
+ACE_Reactor *TimerManager::reactor()
 {
-	const static char fname[] = "TimerManager::handle_timeout() ";
-
-	const int *timerIdPtr = static_cast<const int *>(act);
-	std::shared_ptr<TimerEvent> timerDef;
-	if (timerIdPtr)
-	{
-		ACE_Guard<ACE_Recursive_Thread_Mutex> locker(m_timers.mutex());
-		if (m_timers.find(timerIdPtr, timerDef) != 0)
-		{
-			LOG_WAR << fname << "unrecognized Timer Id <" << *timerIdPtr << ">.";
-			// remove this wrong timer
-			return -1;
-		}
-		else
-		{
-			if (timerDef->m_callOnce)
-			{
-				// remove one-time handler from map before run callback
-				auto removed = m_timers.unbind(timerIdPtr, timerDef);
-				LOG_DBG << fname << "one-time timer <" << *timerIdPtr << "> removed:" << (removed == 0);
-			}
-		}
-	}
-	if (timerDef && timerIdPtr)
-	{
-		// call timer function
-		timerDef->m_handler(*timerIdPtr);
-	}
-	return 0;
+	return &m_reactor;
 }
 
-int TimerManager::registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from, const std::shared_ptr<TimerHandler> fromObj)
+long TimerManager::registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::string &from, const std::shared_ptr<TimerHandler> timerObj, const std::function<void(void)> &handler)
 {
 	const static char fname[] = "TimerManager::registerTimer() ";
 
@@ -67,30 +87,18 @@ int TimerManager::registerTimer(long int delayMillisecond, std::size_t intervalS
 		interval = ACE_Time_Value::zero;
 		callOnce = true;
 	}
-
-	int *timerIdPtr = new int(INVALID_TIMER_ID);
-	ACE_Guard<ACE_Recursive_Thread_Mutex> locker(m_timers.mutex());
-	(*timerIdPtr) = this->reactor()->schedule_timer(this, (void *)timerIdPtr, delay, interval);
-	LOG_DBG << fname << from << " register timer <" << *timerIdPtr << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
-	// once schedule_timer failed(return -1), do not hold shared_ptr, the handler will never be triggered
-	if ((*timerIdPtr) >= 0)
+	TimerEvent *timer = new TimerEvent(callOnce, timerObj, handler);
+	long timerId = m_reactor.schedule_timer(timer, (void *)timer, delay, interval);
+	LOG_DBG << fname << from << " " << timer << " register timer <" << timerId << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
+	if (timerId < 0)
 	{
-		if (m_timers.find(timerIdPtr) == 0)
-		{
-			LOG_ERR << fname << "timer <" << *timerIdPtr << "> already exists";
-		}
-		m_timers.bind(timerIdPtr, std::make_shared<TimerEvent>(timerIdPtr, handler, fromObj, callOnce));
-		return *timerIdPtr;
+		timer->handle_close(ACE_INVALID_HANDLE, (ACE_Reactor_Mask)0); // self-destruct
+		LOG_ERR << fname << from << " failed register timer with error: " << std::strerror(errno);
 	}
-	else
-	{
-		std::unique_ptr<int> autoRelease(timerIdPtr);
-		LOG_ERR << fname << from << " failed with error: " << std::strerror(errno);
-		return -1;
-	}
+	return timerId;
 }
 
-bool TimerManager::cancelTimer(int &timerId)
+bool TimerManager::cancelTimer(long &timerId)
 {
 	const static char fname[] = "TimerManager::cancelTimer() ";
 
@@ -98,19 +106,13 @@ bool TimerManager::cancelTimer(int &timerId)
 	{
 		return false;
 	}
-
-	auto cancled = this->reactor()->cancel_timer(timerId);
+	TimerEvent *timer = nullptr;
+	auto cancled = this->reactor()->cancel_timer(timerId, (const void **)&timer);
 	LOG_DBG << fname << "timer <" << timerId << "> cancled <" << cancled << ">.";
 
-	ACE_Guard<ACE_Recursive_Thread_Mutex> locker(m_timers.mutex());
-	for (const auto &timer : m_timers)
+	if (cancled == 1 && timer)
 	{
-		if (timerId == *(timer.ext_id_))
-		{
-			m_timers.unbind(timer.ext_id_);
-			LOG_DBG << fname << "timer <" << timerId << "> removed.";
-			break;
-		}
+		timer->handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::TIMER_MASK);
 	}
 	timerId = INVALID_TIMER_ID;
 	return cancled;
@@ -139,17 +141,19 @@ int TimerManager::endReactorEvent(ACE_Reactor *reactor)
 	return reactor->end_reactor_event_loop();
 }
 
-TimerManager::TimerEvent::TimerEvent(int *timerId, std::function<void(int)> handler, const std::shared_ptr<TimerHandler> object, bool callOnce)
-	: m_timerId(timerId), m_handler(handler), m_timerObject(object), m_callOnce(callOnce)
+////////////////////////////////////////////////////////////////
+/// TimerHandler
+////////////////////////////////////////////////////////////////
+TimerHandler::~TimerHandler()
 {
 }
 
-int TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(int)> &handler, const std::string &from)
+long TimerHandler::registerTimer(long int delayMillisecond, std::size_t intervalSeconds, const std::function<void(void)> &handler, const std::string &from)
 {
-	return TIMER_MANAGER::instance()->registerTimer(delayMillisecond, intervalSeconds, handler, from, this->shared_from_this());
+	return TIMER_MANAGER::instance()->registerTimer(delayMillisecond, intervalSeconds, from, this->shared_from_this(), handler);
 }
 
-bool TimerHandler::cancelTimer(int &timerId)
+bool TimerHandler::cancelTimer(long &timerId)
 {
 	return TIMER_MANAGER::instance()->cancelTimer(timerId);
 }

@@ -107,7 +107,7 @@ void ConsulConnection::reportNode()
 	}
 }
 
-void ConsulConnection::refreshSession(int)
+void ConsulConnection::refreshSession()
 {
 	const static char fname[] = "ConsulConnection::refreshSession() ";
 
@@ -989,7 +989,7 @@ void ConsulConnection::init(const std::string &recoverSsnId)
 		m_ssnRenewTimerId = this->registerTimer(
 			0,
 			getConfig()->m_ttl - 3,
-			std::bind(&ConsulConnection::refreshSession, this, std::placeholders::_1),
+			std::bind(&ConsulConnection::refreshSession, this),
 			__FUNCTION__);
 	}
 	else if (getConfig()->consulEnabled())

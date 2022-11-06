@@ -23,8 +23,7 @@ public:
 	/// <summary>
 	/// override with docker cli behavior
 	/// </summary>
-	/// <param name="timerId"></param>
-	virtual void killgroup(int timerId = INVALID_TIMER_ID) override;
+	virtual void killgroup() override;
 
 	/// <summary>
 	/// override with docker cli behavior

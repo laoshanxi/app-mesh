@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <chrono>
 #include <map>
 #include <memory>
@@ -63,7 +64,7 @@ public:
 	// behavior
 	std::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
-	void onSuicide(int timerId = INVALID_TIMER_ID);
+	void onSuicide();
 	void onExit(int code);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
@@ -82,7 +83,7 @@ protected:
 
 	// process
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
-	void spawn(int timerId);
+	void spawn();
 	std::shared_ptr<int> refresh(void *ptree = nullptr);
 	void healthCheck();
 
@@ -124,7 +125,7 @@ protected:
 	bool m_startIntervalValueIsCronExpr;
 	std::shared_ptr<AppProcess> m_bufferProcess;
 	std::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
-	int m_nextStartTimerId;
+	std::atomic<long> m_nextStartTimerId;
 
 	std::chrono::system_clock::time_point m_regTime;
 	bool m_health;
@@ -133,7 +134,7 @@ protected:
 	unsigned int m_version;
 	std::shared_ptr<AppProcess> m_process;
 	pid_t m_pid;
-	int m_suicideTimerId;
+	long m_suicideTimerId;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;
