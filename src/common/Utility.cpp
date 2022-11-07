@@ -249,6 +249,12 @@ void Utility::removeFile(const std::string &path)
 	}
 }
 
+bool Utility::runningInContainer()
+{
+	static bool result = (Utility::readFile("/proc/self/cgroup").find("/docker/") != std::string::npos);
+	return result;
+}
+
 void Utility::initLogging(const std::string &name)
 {
 	using namespace log4cpp;

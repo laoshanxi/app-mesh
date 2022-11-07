@@ -39,7 +39,7 @@ const HostResource &ResourceCollection::getHostResource()
 {
 
 	auto nets = net::links();
-	bool isDocker = LinuxCgroup::runningInContainer();
+	bool isDocker = Utility::runningInContainer();
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_resources.m_ipaddress.clear();

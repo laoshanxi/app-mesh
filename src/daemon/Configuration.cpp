@@ -533,19 +533,26 @@ void Configuration::saveConfigToDisk()
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 		auto tmpFile = m_jsonFilePath + "." + std::to_string(Utility::getThreadId());
+		if (Utility::runningInContainer())
+		{
+			tmpFile = m_jsonFilePath;
+		}
 		std::ofstream ofs(tmpFile, ios::trunc);
 		if (ofs.is_open())
 		{
 			auto formatJson = Utility::prettyJson(content);
 			ofs << formatJson;
 			ofs.close();
-			if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
+			if (tmpFile != m_jsonFilePath)
 			{
-				LOG_DBG << fname << formatJson;
-			}
-			else
-			{
-				LOG_ERR << fname << "Failed to write configuration file <" << m_jsonFilePath << ">, error :" << std::strerror(errno);
+				if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
+				{
+					LOG_DBG << fname << formatJson;
+				}
+				else
+				{
+					LOG_ERR << fname << "Failed to write configuration file <" << m_jsonFilePath << ">, error :" << std::strerror(errno);
+				}
 			}
 		}
 	}

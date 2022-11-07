@@ -153,6 +153,7 @@ public:
 	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
+	static bool runningInContainer();
 
 	// String functions
 	static bool isNumber(const std::string &str);

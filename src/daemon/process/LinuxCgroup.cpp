@@ -196,7 +196,7 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 			// get the CPU hierarchy mount point.
 			CGROUP_CPU_ROOT_DIR = entObj.mnt_dir;
 
-			//handle "/sys/fs/cgroup/cpu,cpuacct"
+			// handle "/sys/fs/cgroup/cpu,cpuacct"
 			auto found = CGROUP_CPU_ROOT_DIR.find(',');
 			if (found != std::string::npos)
 			{
@@ -283,10 +283,4 @@ long long LinuxCgroup::readValue(const std::string &cgroupPath)
 		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << std::strerror(errno);
 	}
 	return value;
-}
-
-bool LinuxCgroup::runningInContainer()
-{
-	static bool result = (Utility::readFile("/proc/self/cgroup").find("/docker/") != std::string::npos);
-	return result;
 }

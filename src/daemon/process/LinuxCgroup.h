@@ -14,7 +14,6 @@ public:
 	long long readHostMemValue(const std::string &cgroupFileName);
 	int readHostCpuSet();
 	bool swapSupport() const;
-	static bool runningInContainer();
 
 private:
 	void retrieveCgroupHeirarchy();

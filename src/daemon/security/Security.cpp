@@ -67,21 +67,28 @@ void Security::save(const std::string &interface)
     auto content = this->AsJson().dump();
     if (content.length())
     {
-        const auto securityJsonFile = fs::path(Utility::getParentDir()) / securityFile;
-        const auto tmpFile = fs::path(Utility::getParentDir()) / (securityFile + (std::string(".") + std::to_string(Utility::getThreadId())));
-        std::ofstream ofs(tmpFile.string(), ios::trunc);
+        const auto securityJsonFile = (fs::path(Utility::getParentDir()) / securityFile).string();
+        auto tmpFile = securityJsonFile + std::string(".") + std::to_string(Utility::getThreadId());
+        if (Utility::runningInContainer())
+        {
+            tmpFile = securityJsonFile;
+        }
+        std::ofstream ofs(tmpFile, ios::trunc);
         if (ofs.is_open())
         {
             auto formatJson = Utility::prettyJson(content);
             ofs << formatJson;
             ofs.close();
-            if (ACE_OS::rename(tmpFile.c_str(), securityJsonFile.c_str()) == 0)
+            if (tmpFile != securityJsonFile)
             {
-                LOG_DBG << fname << "local security saved";
-            }
-            else
-            {
-                LOG_ERR << fname << "Failed to write configuration file <" << securityJsonFile << ">, error :" << std::strerror(errno);
+                if (ACE_OS::rename(tmpFile.c_str(), securityJsonFile.c_str()) == 0)
+                {
+                    LOG_DBG << fname << "local security saved";
+                }
+                else
+                {
+                    LOG_ERR << fname << "Failed to write configuration file <" << securityJsonFile << ">, error :" << std::strerror(errno);
+                }
             }
         }
     }
