@@ -8,9 +8,8 @@ Welcome to AppMesh's documentation!
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Features:
    :numbered: 0
-
 
    README.md
    Build.md
@@ -28,11 +27,11 @@ Welcome to AppMesh's documentation!
    Coverity.md
    GrafanaDataSource.md
 
+
 .. toctree::
    :maxdepth: 1
    :caption: Success:
    :numbered: 0
-
 
    success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.md
    success/customize_app_startup_behavior.md
@@ -45,9 +44,11 @@ Welcome to AppMesh's documentation!
    success/remote_run_cli_and_python.md
    success/python_parallel_run.md
 
-Indices and tables
-==================
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. toctree::
+   :maxdepth: 2
+   :caption: Python SDK
+   :glob:
+
+   api/appmesh_client
+   api/sample

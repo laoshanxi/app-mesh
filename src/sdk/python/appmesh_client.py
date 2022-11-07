@@ -90,7 +90,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         self.jwt_token = None
         if self.jwt_auth_enable:
-            resp = self.request_http(
+            resp = self._request_http(
                 AppMeshClient.Method.POST,
                 path="/appmesh/login",
                 header={
@@ -125,7 +125,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             headers = {}
             if permission is not None:
                 headers["Auth-Permission"] = permission
-            resp = self.request_http(AppMeshClient.Method.POST, path="/appmesh/auth", header=headers)
+            resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/auth", header=headers)
             if resp.status_code == HTTPStatus.OK:
                 return True
             else:
@@ -147,7 +147,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: the application JSON both contain static configuration and runtime information.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}")
+        resp = self._request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def app_view_all(self):
@@ -158,7 +158,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             dict: the application JSON both contain static configuration and runtime information,
                 only return applications that the user has permissions.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/applications")
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def app_output(self, app_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = "", timeout: int = 0):
@@ -179,7 +179,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             int or None: current read position.
             int or None: process exit code.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             AppMeshClient.Method.GET,
             path=f"/appmesh/app/{app_name}/output",
             query={
@@ -203,7 +203,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             str: '0' is heathy, '1' is unhealthy.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}/health")
+        resp = self._request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}/health")
         return (resp.status_code == HTTPStatus.OK), resp.text
 
     ########################################
@@ -219,7 +219,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: resigtered application in JSON format.
         """
-        resp = self.request_http(AppMeshClient.Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]), body=app_json)
+        resp = self._request_http(AppMeshClient.Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]), body=app_json)
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def app_delete(self, app_name: str):
@@ -232,7 +232,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             str: text message.
         """
-        resp = self.request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/app/{app_name}")
+        resp = self._request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     def app_enable(self, app_name: str):
@@ -245,7 +245,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             str: text message.
         """
-        resp = self.request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/enable")
+        resp = self._request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/enable")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     def app_disable(self, app_name: str):
@@ -258,7 +258,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             str: text message.
         """
-        resp = self.request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/disable")
+        resp = self._request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/disable")
         return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     ########################################
@@ -271,7 +271,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: cloud applications in JSON format.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/applications")
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def cloud_app(self, app_name: str):
@@ -284,7 +284,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: application in JSON format.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path=f"/appmesh/cloud/app/{app_name}")
+        resp = self._request_http(AppMeshClient.Method.GET, path=f"/appmesh/cloud/app/{app_name}")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def cloud_app_output(self, app_name: str, host_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = ""):
@@ -305,7 +305,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             int or None: current read position.
             int or None: process exit code.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             AppMeshClient.Method.GET,
             path=f"/appmesh/cloud/app/{app_name}/output/{host_name}",
             query={
@@ -328,7 +328,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/cloud/app/{app_name}")
+        resp = self._request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/cloud/app/{app_name}")
         return resp.status_code == HTTPStatus.OK
 
     def cloud_app_add(self, app_json: dict):
@@ -341,7 +341,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: cluster application json.
         """
-        resp = self.request_http(AppMeshClient.Method.PUT, path="/appmesh/cloud/app/{0}".format(app_json["content"]["name"]), body=app_json)
+        resp = self._request_http(AppMeshClient.Method.PUT, path="/appmesh/cloud/app/{0}".format(app_json["content"]["name"]), body=app_json)
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def cloud_nodes(self):
@@ -351,7 +351,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: cluster node list json.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/nodes")
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/nodes")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
@@ -364,7 +364,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: the host resource json.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/resources")
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/resources")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def config_view(self):
@@ -374,7 +374,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: the configuration json.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/config")
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/config")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def config_set(self, cfg_json):
@@ -387,7 +387,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: the updated configuration json.
         """
-        resp = self.request_http(AppMeshClient.Method.POST, path="/appmesh/config", body=cfg_json)
+        resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/config", body=cfg_json)
         result = resp.json()
         if "Applications" in result:
             result.pop("Applications")
@@ -403,7 +403,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: the updated configuration json.
         """
-        resp = self.request_http(AppMeshClient.Method.POST, path="/appmesh/config", body={"LogLevel": level})
+        resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/config", body={"LogLevel": level})
         if resp.status_code == HTTPStatus.OK:
             return True,resp.json()["LogLevel"]
         return (resp.status_code == HTTPStatus.OK), resp.json()
@@ -422,7 +422,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             str: result message.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path=f"/appmesh/user/{user_name}/passwd",
             header={"New-Password": base64.b64encode(new_password.encode())},
@@ -439,7 +439,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.PUT,
             path=f"/appmesh/user/{user_name}",
             body=user_json,
@@ -455,7 +455,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.DELETE,
             path=f"/appmesh/user/{user_name}",
         )
@@ -470,7 +470,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path=f"/appmesh/user/{user_name}/lock",
         )
@@ -485,7 +485,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path=f"/appmesh/user/{user_name}/unlock",
         )
@@ -497,7 +497,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path="/appmesh/user/self/mfa",
         )
@@ -512,7 +512,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.DELETE,
             path=f"/appmesh/user/{user_name}/mfa",
         )
@@ -525,7 +525,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: all user definition.
         """
-        resp = self.request_http(method=AppMeshClient.Method.GET, path="/appmesh/users")
+        resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/users")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def user_self(self):
@@ -535,7 +535,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: user definition.
         """
-        resp = self.request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/self")
+        resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/self")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def groups_view(self):
@@ -545,7 +545,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: user group array.
         """
-        resp = self.request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/groups")
+        resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/groups")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def permissions_view(self):
@@ -555,7 +555,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: permission array.
         """
-        resp = self.request_http(method=AppMeshClient.Method.GET, path="/appmesh/permissions")
+        resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/permissions")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def permissions_for_user(self):
@@ -565,7 +565,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: user permission array.
         """
-        resp = self.request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/permissions")
+        resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/permissions")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def roles_view(self):
@@ -575,7 +575,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: all role definition.
         """
-        resp = self.request_http(method=AppMeshClient.Method.GET, path="/appmesh/roles")
+        resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/roles")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     def role_update(self, role_name: str, role_permission_json: dict) -> bool:
@@ -600,7 +600,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(method=AppMeshClient.Method.POST, path=f"/appmesh/role/{role_name}", body=role_permission_json)
+        resp = self._request_http(method=AppMeshClient.Method.POST, path=f"/appmesh/role/{role_name}", body=role_permission_json)
         return resp.status_code == HTTPStatus.OK
 
     def role_delete(self, role_name: str) -> bool:
@@ -612,7 +612,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             method=AppMeshClient.Method.DELETE,
             path=f"/appmesh/role/{role_name}",
         )
@@ -631,7 +631,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             AppMeshClient.Method.PUT,
             query={"value": tag_value},
             path=f"/appmesh/label/{tag_name}",
@@ -647,7 +647,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/label/{tag_name}")
+        resp = self._request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/label/{tag_name}")
         return resp.status_code == HTTPStatus.OK
 
     def tag_view(self):
@@ -657,7 +657,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             dict: label data.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/labels")
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/labels")
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
@@ -670,7 +670,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: success or failure.
             str: prometheus metrics texts
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/metrics")
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/metrics")
         return resp.status_code == HTTPStatus.OK, resp.text
 
     ########################################
@@ -686,7 +686,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
         if resp.status_code == HTTPStatus.OK:
             with open(local_file, "wb") as fp:
                 for chunk in resp.iter_content(chunk_size=512):
@@ -731,7 +731,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header["File-Group"] = str(file_stat.st_gid)
             header["Content-Type"] = encoder.content_type
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
-            resp = self.request_http(
+            resp = self._request_http(
                 AppMeshClient.Method.POST_STREAM,
                 path="/appmesh/file/upload",
                 header=header,
@@ -761,7 +761,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             str: process_uuid, process UUID for this run
         """
         path = "/appmesh/app/run"
-        resp = self.request_http(
+        resp = self._request_http(
             AppMeshClient.Method.POST,
             body=app_json,
             path=path,
@@ -833,7 +833,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             int: process exit code, return None if no exit code.
         """
         path = "/appmesh/app/syncrun"
-        resp = self.request_http(
+        resp = self._request_http(
             AppMeshClient.Method.POST,
             body=app_json,
             path=path,
@@ -849,7 +849,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             print(resp.text)
         return exit_code
 
-    def request_http(self, method: Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
+    def _request_http(self, method: Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
         """REST API
 
         Args:
@@ -888,7 +888,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
 
 class AppMeshClientTCP(AppMeshClient):
-    """Client object used to access App Mesh REST Service
+    """Client object used to access App Mesh REST Service over TCP (better performance than AppMeshClient)
 
     Dependency:
         pip3 install protobuf==3.20.3
@@ -953,7 +953,7 @@ class AppMeshClientTCP(AppMeshClient):
             fragments.append(chunk)
         return b''.join(fragments)
 
-    def request_http(self, method: AppMeshClient.Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
+    def _request_http(self, method: AppMeshClient.Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
         """TCP API
 
         Args:
@@ -1031,7 +1031,7 @@ class AppMeshClientTCP(AppMeshClient):
         Returns:
             bool: success or failure.
         """
-        resp = self.request_http(
+        resp = self._request_http(
             AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
         if resp.status_code == HTTPStatus.OK:
             with open(local_file, "wb") as fp:
@@ -1080,7 +1080,7 @@ class AppMeshClientTCP(AppMeshClient):
             header["File-Group"] = str(file_stat.st_gid)
             header["Content-Type"] = "text/plain"
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
-            resp = self.request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
+            resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
             if resp.status_code == HTTPStatus.OK:
                 chunk_size = 1024*4  # 131072 bytes, default max ssl buffer size
                 chunk_data = fp.read(chunk_size)

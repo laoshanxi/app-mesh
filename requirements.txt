@@ -11,3 +11,7 @@ sphinxemoji
 
 # crate-docs-theme
 sphinx-rtd-theme
+
+# api doc
+sphinxcontrib-apidoc
+

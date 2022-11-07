@@ -275,3 +275,5 @@ _build
 *.pb.go
 *_pb2.py
 .cache
+api/
+docs/source/README.md

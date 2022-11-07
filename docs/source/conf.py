@@ -1,5 +1,9 @@
+import os
+import sys
 from shutil import copyfile
 from recommonmark.parser import CommonMarkParser
+current_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.abspath(os.path.join(current_dir, "../../src/sdk/python")))
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -12,7 +16,7 @@ from recommonmark.parser import CommonMarkParser
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-# sys.path.insert(0, os.path.abspath('.'))
+# sys.path.insert(0, os.path.abspath("."))
 
 
 # -- Project information -----------------------------------------------------
@@ -20,7 +24,7 @@ from recommonmark.parser import CommonMarkParser
 # If your documentation needs a minimal Sphinx version, state it here.
 needs_sphinx = "3.0"
 project = "AppMesh"
-copyright = "2021, laoshanxi"
+copyright = "2022, laoshanxi"
 author = "laoshanxi"
 
 # The full version, including alpha/beta/rc tags
@@ -30,7 +34,7 @@ release = "2.1.1"
 # -- General configuration ---------------------------------------------------
 
 # Add any Sphinx extension module names here, as strings. They can be
-# extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
+# extensions coming with Sphinx (named "sphinx.ext.*") or your custom
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
@@ -38,9 +42,17 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.extlinks",
     "sphinx.ext.viewcode",
+    "sphinxcontrib.apidoc",
     "sphinx_markdown_tables",
     "recommonmark",
 ]
+
+# apidoc
+apidoc_module_dir = os.path.abspath(os.path.join(current_dir, "../../src/sdk/python"))
+apidoc_output_dir = "api"
+apidoc_excluded_paths = ["test"]
+apidoc_separate_modules = False
+apidoc_toc_file = False
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -74,4 +86,7 @@ html_static_path = ["_static"]
 source_parsers = {".md": CommonMarkParser}
 source_suffix = [".rst", ".md"]
 
-copyfile("../../README.md", "README.md")
+copyfile(os.path.abspath(os.path.join(current_dir, "../../README.md")), os.path.abspath(os.path.join(current_dir, "README.md")))
+exclude_py_file = os.path.abspath(os.path.join(current_dir, "../../src/sdk/python/py_exec.py"))
+if os.path.exists(exclude_py_file):
+   os.remove(exclude_py_file)
