@@ -2,7 +2,12 @@
 import json
 import sys
 
-# import App Mesh SDK from installation path
+"""
+install dependencies for SDK
+  python -m pip install --exists-action=w --no-cache-dir -r /opt/appmesh/sdk/requirements.txt
+"""
+
+# import SDK
 sys.path.append("/opt/appmesh/sdk/")
 import appmesh_client
 

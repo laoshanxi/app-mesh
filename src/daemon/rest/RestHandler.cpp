@@ -877,6 +877,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 		LOG_INF << fname << "Run application <" << app->getName() << "> from " << fromApp->getName();
 	else
 		LOG_INF << fname << "Run application <" << app->getName() << ">";
+	int lifecycle = getHttpQueryValue(message, HTTP_QUERY_KEY_lifecycle, DEFAULT_RUN_APP_LIFECYCLE_SECONDS, 3, MAX_RUN_APP_TIMEOUT_SECONDS);
+	app->regSuicideTimer(lifecycle);
 	return app;
 }
 

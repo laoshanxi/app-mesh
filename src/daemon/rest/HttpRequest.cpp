@@ -90,7 +90,7 @@ void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	// fill data
 	response.set_uuid(uuid);
 	response.set_request_uri(requestUri);
-	response.set_http_body(body.empty() ? HttpRequest::emptyJson().dump() : body);
+	response.set_http_body(body);
 	response.mutable_headers()->insert(headers.begin(), headers.end());
 	response.set_http_status(status);
 	response.set_http_body_msg_type(bodyType);

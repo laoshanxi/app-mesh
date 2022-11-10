@@ -853,6 +853,7 @@ int ArgumentParser::processAppRun()
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
+		("lifecycle,l", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "max lifecycle time[seconds] for the shell command run. default is 12 hours, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
@@ -866,8 +867,9 @@ int ArgumentParser::processAppRun()
 
 	std::map<std::string, std::string> query;
 	int timeout = DurationParse::parse(m_commandLineVariables["timeout"].as<std::string>());
-	if (m_commandLineVariables.count("timeout"))
-		query[HTTP_QUERY_KEY_timeout] = std::to_string(std::abs(timeout));
+	int lifecycle = DurationParse::parse(m_commandLineVariables["lifecycle"].as<std::string>());
+	query[HTTP_QUERY_KEY_timeout] = std::to_string(std::abs(timeout));
+	query[HTTP_QUERY_KEY_lifecycle] = std::to_string(std::abs(lifecycle));
 
 	nlohmann::json jsonObj;
 	nlohmann::json jsonBehavior;
@@ -978,11 +980,7 @@ int ArgumentParser::processAppRun()
 		}
 		// delete
 		restPath = std::string("/appmesh/app/").append(appName);
-		response = requestHttp(false, web::http::methods::DEL, restPath);
-		if (response->status_code != web::http::status_codes::OK)
-		{
-			std::cerr << response->text << std::endl;
-		}
+		requestHttp(false, web::http::methods::DEL, restPath);
 	}
 	return returnCode;
 }

@@ -98,7 +98,7 @@ protected:
 	static ACE_Time_Value m_waitTimeout;
 	bool m_persistAble;
 
-	STATUS m_status;
+	std::atomic<STATUS> m_status;
 	std::string m_name;
 	std::string m_commandLine;
 	std::string m_description;
@@ -134,7 +134,7 @@ protected:
 	unsigned int m_version;
 	std::shared_ptr<AppProcess> m_process;
 	pid_t m_pid;
-	long m_suicideTimerId;
+	std::atomic<long> m_suicideTimerId;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;

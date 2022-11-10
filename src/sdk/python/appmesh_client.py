@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """App Mesh Python SDK"""
 import abc
+import aniso8601
 import base64
 import json
 import os
@@ -15,13 +16,19 @@ from datetime import datetime
 import requests
 
 
-DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24)  # default 7 days
-DEFAULT_RUN_APP_TIMEOUT_SECONDS = 600  # 10 minutes
+DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"          # 7 days
+DEFAULT_RUN_APP_TIMEOUT_SECONDS = "PT1H"      # 1 hour
+DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "PT10H"   # 10 hours
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
 SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 
+
+"""
+install pip dependencies:
+  python -m pip install --exists-action=w --no-cache-dir -r /opt/appmesh/sdk/requirements.txt
+"""
 
 class AppMeshClient(metaclass=abc.ABCMeta):
     """Client object used to access App Mesh REST Service"""
@@ -77,13 +84,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Security
     ########################################
-    def login(self, user_name: str, user_pwd: str, timeout_seconds: int = DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+    def login(self, user_name: str, user_pwd: str, timeout_seconds = DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
         """Login with user name and password
 
         Args:
             user_name (str): the name of the user.
             user_pwd (str): the password of the user.
-            timeout_seconds (int, optional): token expire timeout of seconds. Default to 1 week.
+            timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
 
         Returns:
             str: JWT token if verify success, otherwise return None.
@@ -96,7 +103,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 header={
                     "Username": base64.b64encode(user_name.encode()),
                     "Password": base64.b64encode(user_pwd.encode()),
-                    "Expire-Seconds": str(timeout_seconds),
+                    "Expire-Seconds": self._parse_duration(timeout_seconds),
                 },
             )
             if resp.status_code == HTTPStatus.OK:
@@ -744,17 +751,27 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application run
     ########################################
+    def _parse_duration(self, timeout) -> str:
+        if isinstance(timeout, int):
+            return str(timeout)
+        elif isinstance(timeout, str):
+            return str(int(aniso8601.parse_duration(timeout).total_seconds()))
+        else:
+            raise TypeError("Invalid timeout type: %s" % str(timeout))
+
     def run_async(
         self,
         app_json: dict,
-        max_time_seconds: int = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        max_time_seconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        life_cycle_seconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
     ):
         """Asyncrized run a command remotely, 'name' attribute in app_json dict used to run an existing application
         Asyncrized run will not block process
 
         Args:
             app_json (dict): application JSON dict.
-            max_time_seconds (int, optional): max run time for the remote process.
+            max_time_seconds (int | str, optional): max run time for the remote process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
+            life_cycle_seconds (int | str, optional): max lifecycle time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
 
         Returns:
             str: app_name, new application name for this run
@@ -765,7 +782,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             AppMeshClient.Method.POST,
             body=app_json,
             path=path,
-            query={"timeout": str(max_time_seconds)},
+            query={"timeout": self._parse_duration(max_time_seconds), "lifecycle": self._parse_duration(life_cycle_seconds)},
         )
         if resp.status_code == HTTPStatus.OK:
             app_name = resp.json()["name"]
@@ -819,7 +836,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self,
         app_json: dict,
         stdout_print: bool = True,
-        max_time_seconds: int = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        max_time_seconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        life_cycle_seconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
     ) -> int:
         """Block run a command remotely, 'name' attribute in app_json dict used to run an existing application
         The synchronized run will block the process until the remote run is finished then return the result from HTTP response
@@ -827,7 +845,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Args:
             app_json (dict): application JSON dict.
             stdout_print (bool, optional): whether print remote stdout to local or not. Defaults to True.
-            max_time_seconds (int, optional): max run time for the remote process. Defaults to 10.
+            max_time_seconds (int | str, optional): max run time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
+            life_cycle_seconds (int | str, optional): max lifecycle time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
 
         Returns:
             int: process exit code, return None if no exit code.
@@ -837,7 +856,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             AppMeshClient.Method.POST,
             body=app_json,
             path=path,
-            query={"timeout": str(max_time_seconds)},
+            query={"timeout": self._parse_duration(max_time_seconds), "lifecycle": self._parse_duration(life_cycle_seconds)},
         )
         exit_code = None
         if resp.status_code == HTTPStatus.OK:

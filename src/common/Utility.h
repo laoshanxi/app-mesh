@@ -212,6 +212,7 @@ public:
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 60				// run app default timeout
+#define DEFAULT_RUN_APP_LIFECYCLE_SECONDS 60 * 60 * 12	// run app max lifecycle seconds
 #define MAX_RUN_APP_TIMEOUT_SECONDS 1 * (60 * 60 * 24)	// run app max timeout 1 day
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
@@ -375,6 +376,7 @@ public:
 #define HTTP_QUERY_KEY_stdout_timeout "timeout"
 #define HTTP_QUERY_KEY_process_uuid "process_uuid"
 #define HTTP_QUERY_KEY_timeout "timeout"
+#define HTTP_QUERY_KEY_lifecycle "lifecycle"
 #define HTTP_QUERY_KEY_action_start "enable"
 #define HTTP_QUERY_KEY_action_stop "disable"
 #define HTTP_QUERY_KEY_loglevel "level"

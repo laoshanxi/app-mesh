@@ -44,5 +44,5 @@ public:
 	/// @param recvReturn socket return code
 	/// @return char *: message data
 	/// @return int: the message data size
-	static const std::tuple<std::shared_ptr<char>, int> readBytes(const ACE_SSL_SOCK_Stream &socket, int bodySize, ssize_t &recvReturn);
+	static const std::tuple<std::shared_ptr<char>, int> readBytes(const ACE_SSL_SOCK_Stream &socket, size_t bodySize, ssize_t &recvReturn);
 };

@@ -96,7 +96,6 @@ int Application::health() const
 
 bool Application::isEnabled() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	return (m_status == STATUS::ENABLED);
 }
 
@@ -122,8 +121,7 @@ bool Application::isCloudApp() const
 
 STATUS Application::getStatus() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	return m_status;
+	return m_status.load();
 }
 
 bool Application::isPersistAble() const
@@ -495,9 +493,9 @@ void Application::disable()
 	this->cancelTimer(timerId);
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (m_status == STATUS::ENABLED)
+	auto enabled = STATUS::ENABLED;
+	if (m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
 	{
-		m_status = STATUS::DISABLED;
 		m_return = nullptr;
 		LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	}
@@ -510,11 +508,8 @@ void Application::disable()
 
 void Application::enable()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (m_status == STATUS::DISABLED)
-	{
-		m_status = STATUS::ENABLED;
-	}
+	auto disabled = STATUS::DISABLED;
+	m_status.compare_exchange_strong(disabled, STATUS::ENABLED);
 }
 
 std::string Application::runAsyncrize(int timeoutSeconds)
@@ -729,7 +724,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		result[(JSON_KEY_APP_health_check_cmd)] = std::string((m_healthCheckCmd));
 	if (m_workdir.length())
 		result[JSON_KEY_APP_working_dir] = std::string((m_workdir));
-	result[JSON_KEY_APP_status] = (static_cast<int>(m_status));
+	result[JSON_KEY_APP_status] = (int)m_status.load();
 	if (m_stdoutCacheNum)
 		result[JSON_KEY_APP_stdout_cache_num] = (m_stdoutCacheNum);
 	if (m_metadata != EMPTY_STR_JSON)
@@ -840,7 +835,7 @@ void Application::dump()
 	if (m_owner)
 		LOG_DBG << fname << "m_owner:" << m_owner->getName();
 	LOG_DBG << fname << "m_permission:" << m_ownerPermission;
-	LOG_DBG << fname << "m_status:" << static_cast<int>(m_status);
+	LOG_DBG << fname << "m_status:" << (int)m_status.load();
 	LOG_DBG << fname << "m_pid:" << m_pid;
 	LOG_DBG << fname << "m_startTimeValue:" << DateTime::formatLocalTime(m_startTime);
 	LOG_DBG << fname << "m_endTimeValue:" << DateTime::formatLocalTime(m_endTime);
@@ -902,17 +897,12 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 
 void Application::destroy()
 {
-	long suicideTimerId = INVALID_TIMER_ID;
+	this->disable();
+	this->m_status.store(STATUS::NOTAVIALABLE);
 	long timerId = INVALID_TIMER_ID;
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		this->disable();
-		this->m_status = STATUS::NOTAVIALABLE;
-		suicideTimerId = m_suicideTimerId;
-		timerId = m_nextStartTimerId;
-		m_suicideTimerId = m_nextStartTimerId = INVALID_TIMER_ID;
-	}
-	this->cancelTimer(suicideTimerId);
+	m_suicideTimerId.exchange(timerId);
+	this->cancelTimer(timerId);
+	m_nextStartTimerId.exchange(timerId);
 	this->cancelTimer(timerId);
 }
 
@@ -1003,6 +993,11 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 void Application::regSuicideTimer(int timeoutSeconds)
 {
 	const static char fname[] = "Application::regSuicideTimer() ";
+
+	long timerId = INVALID_TIMER_ID;
+	m_suicideTimerId.exchange(timerId);
+	this->cancelTimer(timerId);
+	LOG_DBG << fname << "application " << getName() << "will be removed after <" << timeoutSeconds << "> seconds";
 	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicide, this), fname);
 }
 
