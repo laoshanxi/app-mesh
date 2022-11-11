@@ -9,7 +9,7 @@ Welcome to AppMesh's documentation!
 .. toctree::
    :maxdepth: 2
    :caption: Features:
-   :numbered: 0
+   :numbered:
 
    README.md
    Build.md
@@ -31,7 +31,7 @@ Welcome to AppMesh's documentation!
 .. toctree::
    :maxdepth: 1
    :caption: Success:
-   :numbered: 0
+   :numbered:
 
    success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.md
    success/customize_app_startup_behavior.md
@@ -46,9 +46,8 @@ Welcome to AppMesh's documentation!
 
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Python SDK
-   :glob:
+   :maxdepth: 3
+   :caption: Python SDK:
 
    api/appmesh_client
    api/sample

@@ -4,7 +4,7 @@ import sys
 
 """
 install dependencies for SDK
-  python -m pip install --exists-action=w --no-cache-dir -r /opt/appmesh/sdk/requirements.txt
+  python -m pip install --exists-action=w --no-cache-dir --requirement /opt/appmesh/sdk/requirements.txt
 """
 
 # import SDK

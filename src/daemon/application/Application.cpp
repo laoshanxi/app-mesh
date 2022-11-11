@@ -489,7 +489,7 @@ void Application::disable()
 
 	// clean old timer
 	long timerId = INVALID_TIMER_ID;
-	m_nextStartTimerId.exchange(timerId);
+	timerId = m_nextStartTimerId.exchange(timerId);
 	this->cancelTimer(timerId);
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -897,12 +897,15 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 
 void Application::destroy()
 {
+	const static char fname[] = "Application::destroy() ";
+
+	LOG_DBG << fname << "suicideTimerId: " << m_suicideTimerId.load() << " nextStartTimerId: " << m_nextStartTimerId.load();
 	this->disable();
 	this->m_status.store(STATUS::NOTAVIALABLE);
-	long timerId = INVALID_TIMER_ID;
-	m_suicideTimerId.exchange(timerId);
+	auto timerId = INVALID_TIMER_ID;
+	timerId = m_suicideTimerId.exchange(timerId);
 	this->cancelTimer(timerId);
-	m_nextStartTimerId.exchange(timerId);
+	timerId = m_nextStartTimerId.exchange(timerId);
 	this->cancelTimer(timerId);
 }
 
@@ -995,7 +998,7 @@ void Application::regSuicideTimer(int timeoutSeconds)
 	const static char fname[] = "Application::regSuicideTimer() ";
 
 	long timerId = INVALID_TIMER_ID;
-	m_suicideTimerId.exchange(timerId);
+	timerId = m_suicideTimerId.exchange(timerId);
 	this->cancelTimer(timerId);
 	LOG_DBG << fname << "application " << getName() << "will be removed after <" << timeoutSeconds << "> seconds";
 	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onSuicide, this), fname);

@@ -27,7 +27,7 @@ SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 
 """
 install pip dependencies:
-  python -m pip install --exists-action=w --no-cache-dir -r /opt/appmesh/sdk/requirements.txt
+  python -m pip install --exists-action=w --no-cache-dir --requirement /opt/appmesh/sdk/requirements.txt
 """
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -35,12 +35,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     class Method(Enum):
         """REST methods"""
-
         GET = "GET"
         PUT = "PUT"
         POST = "POST"
         DELETE = "DELETE"
         POST_STREAM = "POST_STREAM"
+
 
     def __init__(
         self,
@@ -162,8 +162,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         Returns:
             bool: success or failure.
-            dict: the application JSON both contain static configuration and runtime information,
-                only return applications that the user has permissions.
+            dict: the application JSON both contain static configuration and runtime information, only return applications that the user has permissions.
         """
         resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/applications")
         return (resp.status_code == HTTPStatus.OK), resp.json()

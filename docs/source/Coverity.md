@@ -76,7 +76,7 @@ $ curl --form token=Yor-Coverity-Token \
 5. All done, open your [dashboard](https://scan.coverity.com/dashboard) to view the defects
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/appmesh/h.png" />
 
-5. Additional, integrate Coverity with Github Action automaticlly refer to: [coverity_workflow](.github/workflows/coverity_cpp_code_scan.yml)
+5. Additional, integrate Coverity with Github Action automaticlly refer to: [coverity_workflow](https://github.com/laoshanxi/app-mesh/blob/main/.github/workflows/coverity_cpp_code_scan.yml)
 
 ## Reference
 - [coverity scan](https://scan.coverity.com/)

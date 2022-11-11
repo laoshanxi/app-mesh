@@ -15,3 +15,6 @@ sphinx-rtd-theme
 # api doc
 sphinxcontrib-apidoc
 
+# dependency for appmesh_client.py
+aniso8601
+protobuf==3.20.3

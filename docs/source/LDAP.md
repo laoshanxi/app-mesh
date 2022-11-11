@@ -1,7 +1,4 @@
-
 # LDAP integration
-
-------
 
 LDAP (Lightweight Directory Access Protocol) is a user authentication data base, all users and groups information can be stored in LDAP. AppMesh users are able to integrate with LDAP to provide enterprise level security.
 

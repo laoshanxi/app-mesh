@@ -1,18 +1,9 @@
 name: Build docker image and publish
 
 on:
-  # trigger when code changes
-  push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "script/**"
-      - ".github/workflows/build-push-appmesh-image.yml"
-      - "Dockerfile"
-  # trigger when the workflow "build with ubuntu:latest for appmesh build image" succeeded
+  # trigger when the workflow "Build package and publish" succeeded
   workflow_run:
-    workflows: ["build with ubuntu:latest for appmesh build image"]
+    workflows: ["Build package and publish"]
     types:
       - completed
 
