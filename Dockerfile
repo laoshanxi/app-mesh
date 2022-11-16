@@ -1,19 +1,15 @@
 FROM ubuntu:latest as stage
-
 COPY src/sdk/python/requirements.txt .
 RUN apt-get update && \
 	apt-get install -y python3 python3-pip && \
 	python3 -m pip install --exists-action=w --no-cache-dir --requirement ./requirements.txt
 
-FROM ubuntu:latest
 
+FROM ubuntu:latest
 ARG AM_UID="482"
 ARG AM_GID="482"
-
 # not enable exec user in container
-ENV APPMESH_DisableExecUser=true \
-	DOCKER_RUNNING=true
-
+ENV APPMESH_DisableExecUser=true
 RUN apt-get update && \
 	apt-get install -y python3 iputils-ping tini && \
 	apt-get install -y wget && \
@@ -24,7 +20,6 @@ RUN apt-get update && \
 	chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid
 COPY --from=stage /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 EXPOSE 6060
-
 USER appmesh
 WORKDIR /
 CMD ["tini", "--", "/opt/appmesh/script/appmesh-entrypoint.sh"]

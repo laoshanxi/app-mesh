@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"os"
 	"path"
@@ -10,13 +11,46 @@ import (
 )
 
 func IsFileExist(path string) bool {
-	_, err := os.Stat(path)
+	if len(path) > 0 {
+		_, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func Move(src string, dst string) error {
+
+	buf := make([]byte, 1024)
+	fin, err := os.Open(src)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return false
+		return err
+	}
+
+	defer fin.Close()
+	fout, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+
+	defer fout.Close()
+	for {
+		n, err := fin.Read(buf)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		if n == 0 {
+			break
+		}
+		if _, err := fout.Write(buf[:n]); err != nil {
+			return err
 		}
 	}
-	return true
+	return os.Remove(src)
 }
 
 func getAppMeshHomeDir() string {

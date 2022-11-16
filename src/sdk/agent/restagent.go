@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
-	"fmt"
+	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net"
@@ -33,6 +33,9 @@ const HTTP_USER_AGENT = "appmeshsdk"
 var tcpConnect net.Conn    // tcp connection
 var socketMutex sync.Mutex // tcp connection lock
 var requestMap sync.Map    // request cache for asyncrized response
+type ResponseMessage struct {
+	Message string `json:"message"`
+}
 
 func connectServer(tcpAddr string) (net.Conn, error) {
 	// https://www.jianshu.com/p/dce19fb167f4
@@ -197,7 +200,8 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
 		ctx.Logger().Printf("uploading file: %s", filePath)
 		if err := saveFile(ctx, filePath); err != nil {
-			ctx.Error(fmt.Sprintf(`{"message": "%s" }`, err.Error()), fasthttp.StatusBadRequest)
+			errorJson, _ := json.Marshal(ResponseMessage{Message: err.Error()})
+			ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
 		} else {
 			ctx.Logger().Printf("file saved: %s", filePath)
 			// https://www.jianshu.com/p/216cb89c4d81
@@ -222,7 +226,19 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	// https://freshman.tech/file-upload-golang/
 	if file, err := ctx.FormFile("file"); err == nil {
 		ctx.Logger().Printf("SaveMultipartFile: %s", filePath)
-		return fasthttp.SaveMultipartFile(file, filePath)
+		// TODO: save in /tmp need consider device size
+		tmpFile, err := ioutil.TempFile("/tmp", "appmesh_upload_tmp_")
+		if err != nil {
+			return err
+		}
+		tmpFileName := tmpFile.Name()
+		tmpFile.Close()
+		ctx.Logger().Printf("tmp file: %s", tmpFileName)
+		err = fasthttp.SaveMultipartFile(file, tmpFileName)
+		if err != nil {
+			return err
+		}
+		return Move(tmpFileName, filePath)
 	} else {
 		// compatibile with none-multipart upload
 		ctx.Logger().Printf("SaveFile: %s", filePath)

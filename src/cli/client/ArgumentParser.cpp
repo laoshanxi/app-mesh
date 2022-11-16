@@ -286,16 +286,6 @@ void ArgumentParser::processLogon()
 		m_username = m_commandLineVariables["user"].as<std::string>();
 	}
 
-	if (!m_commandLineVariables.count("totp"))
-	{
-		std::cout << "TOTP(enter any char to skip when 2FA not activated): ";
-		std::cin >> m_totp;
-	}
-	else
-	{
-		m_totp = m_commandLineVariables["totp"].as<std::string>();
-	}
-
 	if (!m_commandLineVariables.count("password"))
 	{
 		if (!m_commandLineVariables.count("user"))
@@ -310,6 +300,16 @@ void ArgumentParser::processLogon()
 		inputSecurePasswd(&str, sizeof(buffer), '*', fp);
 		m_userpwd = buffer;
 		std::cout << std::endl;
+	}
+
+	if (!m_commandLineVariables.count("totp"))
+	{
+		std::cout << "TOTP(enter any char to skip when 2FA not activated): ";
+		std::cin >> m_totp;
+	}
+	else
+	{
+		m_totp = m_commandLineVariables["totp"].as<std::string>();
 	}
 
 	// get token from REST
@@ -376,7 +376,7 @@ void ArgumentParser::processAppAdd()
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("shell,S", po::value<bool>()->default_value(false), "use shell mode, cmd can be more commands")
+		("shell,S", "use shell mode, cmd can be more shell commands with string format")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (for docker container application)")
 		("workdir,w", po::value<std::string>(), "working directory")
@@ -508,8 +508,7 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_command] = std::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
 		jsonObj[JSON_KEY_APP_description] = std::string(m_commandLineVariables["desc"].as<std::string>());
-	if (m_commandLineVariables["shell"].as<bool>())
-		jsonObj[JSON_KEY_APP_shell_mode] = (true);
+	jsonObj[JSON_KEY_APP_shell_mode] = (m_commandLineVariables.count("shell") > 0);
 	if (m_commandLineVariables.count("health_check"))
 		jsonObj[JSON_KEY_APP_health_check_cmd] = std::string(m_commandLineVariables["health_check"].as<std::string>());
 	if (m_commandLineVariables.count("perm"))
@@ -553,8 +552,7 @@ void ArgumentParser::processAppAdd()
 	if (m_commandLineVariables.count("interval"))
 	{
 		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_commandLineVariables["interval"].as<std::string>());
-		if (m_commandLineVariables.count("cron"))
-			jsonObj[JSON_KEY_SHORT_APP_cron_interval] = (true);
+		jsonObj[JSON_KEY_SHORT_APP_cron_interval] = (m_commandLineVariables.count("cron") > 0);
 	}
 	if (m_commandLineVariables.count(JSON_KEY_APP_retention))
 		jsonObj[JSON_KEY_APP_retention] = std::string(m_commandLineVariables["retention"].as<std::string>());

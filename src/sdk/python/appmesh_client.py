@@ -22,7 +22,7 @@ DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "PT10H"   # 10 hours
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
-SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
+_SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 
 
 """
@@ -46,7 +46,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self,
         auth_enable: bool = True,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify=SSL_CA_PEM_FILE,
+        rest_ssl_verify=_SSL_CA_PEM_FILE,
         rest_timeout=(60, 300),
     ):
         """Construct an App Mesh client object
@@ -937,8 +937,8 @@ class AppMeshClientTCP(AppMeshClient):
         sock = socket.create_connection(self.tcp_address)
         sock.setblocking(True)
 
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.load_verify_locations(SSL_CA_PEM_FILE)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        context.load_verify_locations(_SSL_CA_PEM_FILE)
         self.__socket_client = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
 
     def __close_socket(self) -> None:

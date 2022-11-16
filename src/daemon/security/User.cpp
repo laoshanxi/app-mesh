@@ -90,6 +90,10 @@ std::shared_ptr<User> Users::addUser(const std::string &userName, const nlohmann
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = User::FromJson(userName, userJson, roles);
+	if (user->getKey().empty())
+	{
+		throw std::invalid_argument("no password provided");
+	}
 	if (m_users.count(userName))
 	{
 		// update

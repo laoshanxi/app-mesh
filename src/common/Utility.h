@@ -327,7 +327,7 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb "memory_virt_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
 
-#define JSON_KEY_TIME_POSTTIX_STR "_ref_str"
+#define JSON_KEY_TIME_POSTTIX_STR "_TEXT"
 
 #define JSON_KEY_USER_key "key"
 #define JSON_KEY_USER_email "email"

@@ -176,7 +176,7 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 
 		if (resp.http_status() == web::http::status_codes::OK &&
 			resp.http_body_msg_type() == web::http::mime_types::application_octetstream &&
-			resp.request_uri() == "/appmesh/file/download" &&
+			resp.request_uri() == "/appmesh/file/download" && resp.http_body().size() &&
 			nlohmann::json::parse(resp.http_body()).contains(TCP_JSON_MSG_FILE))
 		{
 			auto path = nlohmann::json::parse(resp.http_body())[TCP_JSON_MSG_FILE].get<std::string>();
@@ -215,7 +215,7 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 
 		if (resp.http_status() == web::http::status_codes::OK &&
 			resp.http_body_msg_type() == web::http::mime_types::application_octetstream &&
-			resp.request_uri() == "/appmesh/file/upload" &&
+			resp.request_uri() == "/appmesh/file/upload" && resp.http_body().size() &&
 			nlohmann::json::parse(resp.http_body()).contains(TCP_JSON_MSG_FILE))
 		{
 			auto path = nlohmann::json::parse(resp.http_body())[TCP_JSON_MSG_FILE].get<std::string>();

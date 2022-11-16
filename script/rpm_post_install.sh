@@ -25,6 +25,11 @@ for e in $(env); do
 		echo $e >>${PROG_HOME}/script/appmesh.environment
 	fi
 done
+# set default execute user to current user
+# https://cloud.tencent.com/developer/ask/sof/878838
+if [ 0"$APPMESH_DefaultExecUser" = "0" ]; then
+	echo "APPMESH_DefaultExecUser=$LOGNAME" >>${PROG_HOME}/script/appmesh.environment
+fi
 
 # check systemd or initd (systemd --test can not run with root)
 # https://unix.stackexchange.com/questions/121654/convenient-way-to-check-if-system-is-using-systemd-or-sysvinit-in-bash
@@ -112,10 +117,3 @@ if [[ "$APPMESH_SECURE_INSTALLATION" = "Y" ]]; then
 	/usr/bin/appc appmginit
 fi
 
-# add user appmesh
-if [ $DOCKER_RUNNING ]; then
-	echo "installing in docker container"
-else
-	echo "installing in native host"
-	useradd appmesh -s /usr/sbin/nologin --no-create-home --user-group || true
-fi

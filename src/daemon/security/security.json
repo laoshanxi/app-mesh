@@ -71,7 +71,7 @@
             "key": "mesh123",
             "email": "mesh@appmesh.com",
             "group": "user",
-            "exec_user": "appmesh",
+            "exec_user": "",
             "locked": false,
             "roles": [
                 "view",
