@@ -9,7 +9,6 @@
 #include "protoc/Request.pb.h"
 
 #define CONTENT_TYPE_APPLICATION_JSON "application/json"
-class TcpHandler;
 
 /// <summary>
 /// HttpRequest is wrapper of <web::http::http_request>,
@@ -25,7 +24,7 @@ public:
 	/// Construction for deserialize
 	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
 	/// </summary>
-	explicit HttpRequest(const appmesh::Request &request, TcpHandler *requestClient);
+	explicit HttpRequest(const appmesh::Request &request, int tcpHandlerId);
 
 	virtual ~HttpRequest();
 
@@ -77,7 +76,7 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = "text/plain") const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const char *input, int inputSize, TcpHandler *clientRequest);
+	static std::shared_ptr<HttpRequest> deserialize(const char *input, int inputSize, int tcpHandlerId);
 	static const nlohmann::json emptyJson();
 
 	std::string m_uuid;
@@ -101,7 +100,7 @@ private:
 	void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const;
 
 private:
-	TcpHandler *m_requestClient;
+	const int m_tcpHanlerId;
 };
 
 class Application;

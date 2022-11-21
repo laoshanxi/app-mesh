@@ -40,7 +40,6 @@ cp /usr/bin/cfssl ${PACKAGE_HOME}/ssl/
 cp /usr/bin/cfssljson ${PACKAGE_HOME}/ssl/
 cp /usr/bin/qrc ${PACKAGE_HOME}/bin/
 
-# upx ${CMAKE_CURRENT_BINARY_DIR}/home/bin/agent
 chmod +x ${PACKAGE_HOME}/script/*.sh
 
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/

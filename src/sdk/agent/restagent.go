@@ -61,6 +61,7 @@ func readProtobufLoop() {
 			log.Fatalf("Failed read header from TCP Server: %v", err)
 		}
 		bodyLength := binary.BigEndian.Uint32(buf)
+		log.Printf("read body from TCP Server: %d", bodyLength)
 		// read body buffer
 		buf = make([]byte, bodyLength)
 		_, err = tcpConnect.Read(buf)
@@ -226,19 +227,8 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	// https://freshman.tech/file-upload-golang/
 	if file, err := ctx.FormFile("file"); err == nil {
 		ctx.Logger().Printf("SaveMultipartFile: %s", filePath)
-		// TODO: save in /tmp need consider device size
-		tmpFile, err := ioutil.TempFile("/tmp", "appmesh_upload_tmp_")
-		if err != nil {
-			return err
-		}
-		tmpFileName := tmpFile.Name()
-		tmpFile.Close()
-		ctx.Logger().Printf("tmp file: %s", tmpFileName)
-		err = fasthttp.SaveMultipartFile(file, tmpFileName)
-		if err != nil {
-			return err
-		}
-		return Move(tmpFileName, filePath)
+		defer ctx.Request.RemoveMultipartFormFiles()
+		return fasthttp.SaveMultipartFile(file, filePath)
 	} else {
 		// compatibile with none-multipart upload
 		ctx.Logger().Printf("SaveFile: %s", filePath)

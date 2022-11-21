@@ -1,3 +1,6 @@
+# for google.protobuf
 protobuf
+# for MultipartEncoder
 requests_toolbelt
+# for ISO8601 duration parse
 aniso8601

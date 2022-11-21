@@ -909,7 +909,7 @@ class AppMeshClientTCP(AppMeshClient):
     """Client object used to access App Mesh REST Service over TCP (better performance than AppMeshClient)
 
     Dependency:
-        pip3 install protobuf==3.20.3
+        pip3 install protobuf
     """
 
     def __init__(

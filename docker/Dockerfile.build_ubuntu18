@@ -6,4 +6,4 @@ COPY autogen.sh go.* /workspace/
 
 USER root
 
-RUN sh autogen.sh && rm -rf /workspace/* && apt-get clean
+RUN bash autogen.sh && rm -rf /workspace/* && apt-get clean

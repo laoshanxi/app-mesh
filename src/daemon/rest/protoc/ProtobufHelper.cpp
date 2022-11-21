@@ -7,12 +7,17 @@
 
 const std::tuple<std::shared_ptr<char>, size_t> ProtobufHelper::serialize(const google::protobuf::Message &msg)
 {
+	const static char fname[] = "ProtobufHelper::serialize() ";
+
 	const auto msgLength = msg.ByteSizeLong();
 	const auto totalLength = PROTOBUF_HEADER_LENGTH + msgLength;
 	const auto buffer = make_shared_array<char>(totalLength);
 	*((uint32_t *)buffer.get()) = htonl(msgLength); // host to network byte order
-	msg.SerializeToArray(buffer.get() + 4, msgLength);
-
+	if (!msg.SerializeToArray(buffer.get() + 4, msgLength))
+	{
+		LOG_ERR << fname << msg.DebugString();
+		return std::make_tuple(nullptr, 0);
+	}
 	return std::make_tuple(buffer, totalLength); // return buffer and length pair
 }
 
@@ -23,7 +28,7 @@ bool ProtobufHelper::deserialize(google::protobuf::Message &msg, const char *dat
 	// De-Serialize
 	if (!msg.ParseFromArray(data, dataSize))
 	{
-		LOG_ERR << fname << "ParseFromCodedStream failed with error :" << std::strerror(errno);
+		LOG_ERR << fname << "ParseFromCodedStream failed with error :" << msg.DebugString();
 		return false;
 	}
 	return true;

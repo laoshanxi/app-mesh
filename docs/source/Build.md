@@ -9,8 +9,8 @@ Build host support RHEL, Ubuntu, Debian and Fedora distributions with X86 or ARM
 The general way build all dependencies on local Linux host, this will build all the dependency libraries and need some time to finish.
 ```shell
 $ git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
-$ sudo sh app-mesh/script/openssl_update.sh
-$ sudo sh app-mesh/autogen.sh
+$ sudo bash app-mesh/script/openssl_update.sh
+$ sudo bash app-mesh/autogen.sh
 # clean
 $ rm -rf app-mesh dep
 ```

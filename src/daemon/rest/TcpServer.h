@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <mutex>
 
 #include <ace/Map_Manager.h>
@@ -32,6 +33,7 @@ public:
 	/// <param name="message"></param>
 	static void handleTcpRest();
 	static void closeMsgQueue();
+	const int &id();
 
 protected:
 	// = Demultiplexing hooks.
@@ -45,13 +47,16 @@ protected:
 	bool sendBytes(const char *data, size_t length);
 
 public:
-	static bool replyTcp(TcpHandler *tcpHandler, const appmesh::Response &resp);
+	static bool replyTcp(int tcpHandlerId, const appmesh::Response &resp);
 	static void initTcpSSL();
 
 private:
 	std::string m_clientHostName;
 	std::mutex m_socketLock;
+	const int m_id;
 
-	static ACE_Map_Manager<TcpHandler *, bool, ACE_Recursive_Thread_Mutex> m_handlers;
-	static ACE_Message_Queue<ACE_MT_SYNCH> messageQueue;
+
+	static ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> m_handlers;
+	static ACE_Message_Queue<ACE_MT_SYNCH> m_messageQueue;
+	static std::atomic_int m_idGenerator;
 };

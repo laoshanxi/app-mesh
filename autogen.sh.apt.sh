@@ -43,7 +43,6 @@ apt install -y libcrypto++-dev
 
 # tool
 apt install -y golang-cfssl
-apt install -y upx-ucl
 
 # cpr
 # https://github.com/libcpr/cpr
@@ -81,7 +80,7 @@ go install -v honnef.co/go/tools/cmd/staticcheck@latest
 go install -v golang.org/x/tools/gopls@latest
 # protoc
 go get -v google.golang.org/protobuf@latest
-go install -v github.com/golang/protobuf/protoc-gen-go@latest
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
 
 #protocbuf Python pip

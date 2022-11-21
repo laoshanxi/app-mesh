@@ -5,8 +5,8 @@ option go_package = "./;main";
 message Response {
   string uuid = 1;
   string request_uri = 2;
-  int32 http_status = 3;
-  bytes http_body = 4;
-  string http_body_msg_type = 5;
-  map<string, string> headers = 6;
+  string http_body_msg_type = 3;
+  map<string, string> headers = 4;
+  int32 http_status = 5;
+  bytes http_body = 6;
 }

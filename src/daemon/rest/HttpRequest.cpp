@@ -9,8 +9,8 @@
 #include "protoc/Request.pb.h"
 #include "protoc/Response.pb.h"
 
-HttpRequest::HttpRequest(const appmesh::Request &request, TcpHandler *requestClient)
-	: m_requestClient(requestClient)
+HttpRequest::HttpRequest(const appmesh::Request &request, int tcpHandlerId)
+	: m_tcpHanlerId(tcpHandlerId)
 {
 	this->m_uuid = request.uuid();
 	this->m_method = request.http_method();
@@ -56,7 +56,7 @@ void HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	reply(m_relative_uri, m_uuid, body_data, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inputSize, TcpHandler *clientRequest)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inputSize, int tcpHandlerId)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -64,7 +64,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inp
 	appmesh::Request req;
 	if (ProtobufHelper::deserialize(req, input, inputSize))
 	{
-		return std::make_shared<HttpRequest>(req, clientRequest);
+		return std::make_shared<HttpRequest>(req, tcpHandlerId);
 	}
 	else
 	{
@@ -95,9 +95,9 @@ void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	response.set_http_status(status);
 	response.set_http_body_msg_type(bodyType);
 
-	if (m_requestClient)
+	if (m_tcpHanlerId > 0)
 	{
-		TcpHandler::replyTcp(m_requestClient, response);
+		TcpHandler::replyTcp(m_tcpHanlerId, response);
 	}
 }
 ////////////////////////////////////////////////////////////////////////////////

@@ -9,32 +9,35 @@
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 
-ACE_Map_Manager<TcpHandler *, bool, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
-ACE_Message_Queue<ACE_MT_SYNCH> TcpHandler::messageQueue;
+ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
+ACE_Message_Queue<ACE_MT_SYNCH> TcpHandler::m_messageQueue;
+std::atomic_int TcpHandler::m_idGenerator = ATOMIC_FLAG_INIT;
 
 struct HttpRequestMsg
 {
-	explicit HttpRequestMsg(std::shared_ptr<char> data, size_t len,
-							TcpHandler *client)
-		: m_data(data), m_dataSize(len), m_client(client) {}
+	explicit HttpRequestMsg(std::shared_ptr<char> data, size_t len, int client)
+		: m_data(data), m_dataSize(len), m_tcpHanlerId(client)
+	{
+	}
 	const std::shared_ptr<char> m_data;
 	const size_t m_dataSize;
-	TcpHandler *m_client;
+	const int m_tcpHanlerId;
 };
 
 // Default constructor.
 TcpHandler::TcpHandler(void)
+	: m_id(++m_idGenerator)
 {
 	const static char fname[] = "TcpHandler::TcpHandler() ";
-	m_handlers.bind(this, true);
-	LOG_DBG << fname << "TcpHandler client size: " << m_handlers.current_size();
+	m_handlers.bind(m_id, this);
+	LOG_DBG << fname << "client=" << m_id << ", total client number: " << m_handlers.current_size();
 }
 
 TcpHandler::~TcpHandler()
 {
 	const static char fname[] = "TcpHandler::~TcpHandler() ";
-	LOG_DBG << fname << "from this =" << this;
-	m_handlers.unbind(this);
+	LOG_DBG << fname << "client=" << m_id;
+	m_handlers.unbind(m_id);
 	ACE_Reactor::instance()->remove_handler(this, READ_MASK);
 }
 
@@ -43,7 +46,7 @@ TcpHandler::~TcpHandler()
 int TcpHandler::handle_input(ACE_HANDLE)
 {
 	const static char fname[] = "TcpHandler::handle_input() ";
-	LOG_DBG << fname << "from this =" << this;
+	LOG_DBG << fname << "from client=" << m_id;
 
 	std::lock_guard<std::mutex> guard(m_socketLock); // hold this lock to avoid recv TCP file stream data
 	auto result = ProtobufHelper::readMessageBlock(this->peer());
@@ -54,7 +57,7 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	if (readCount > 0)
 	{
 		assert(data != nullptr);
-		messageQueue.enqueue(new ACE_Message_Block((const char *)(new HttpRequestMsg(data, readCount, this))));
+		m_messageQueue.enqueue(new ACE_Message_Block((const char *)(new HttpRequestMsg(data, readCount, m_id))));
 		return 0;
 	}
 	else if (readCount == 0)
@@ -78,7 +81,7 @@ int TcpHandler::handle_input(ACE_HANDLE)
 int TcpHandler::open(void *)
 {
 	const static char fname[] = "TcpHandler::open() ";
-	LOG_DBG << fname << "from this =" << this;
+	LOG_DBG << fname << "from client=" << m_id;
 
 	ACE_INET_Addr addr;
 	if (this->peer().get_remote_addr(addr) == -1)
@@ -111,12 +114,12 @@ void TcpHandler::handleTcpRest()
 	const static char fname[] = "TcpHandler::handleTcpRest() ";
 
 	ACE_Message_Block *msg = nullptr;
-	while (0 == messageQueue.deactivated() && QUIT_HANDLER::instance()->is_set() == 0)
+	while (0 == m_messageQueue.deactivated() && QUIT_HANDLER::instance()->is_set() == 0)
 	{
-		if (messageQueue.dequeue(msg) >= -1 && msg)
+		if (m_messageQueue.dequeue(msg) >= -1 && msg)
 		{
 			std::unique_ptr<HttpRequestMsg> entity(static_cast<HttpRequestMsg *>((void *)msg->rd_ptr()));
-			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_dataSize, entity->m_client);
+			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_dataSize, entity->m_tcpHanlerId);
 			msg->release();
 			msg = nullptr;
 			if (request != nullptr)
@@ -125,7 +128,8 @@ void TcpHandler::handleTcpRest()
 				LOG_DBG << fname << message.m_method << " from <"
 						<< message.m_remote_address << "> path <"
 						<< message.m_relative_uri << "> id <"
-						<< message.m_uuid << ">";
+						<< message.m_uuid << "> TcpHandler <"
+						<< entity->m_tcpHanlerId << ">";
 
 				if (message.m_method == web::http::methods::GET)
 					RESTHANDLER::instance()->handle_get(message);
@@ -154,7 +158,14 @@ void TcpHandler::handleTcpRest()
 void TcpHandler::closeMsgQueue()
 {
 	// TODO: release memory before clear
-	messageQueue.close();
+	m_messageQueue.close();
+	// Optional:  Delete all global objects allocated by libprotobuf.
+	google::protobuf::ShutdownProtobufLibrary();
+}
+
+const int &TcpHandler::id()
+{
+	return m_id;
 }
 
 bool TcpHandler::reply(const appmesh::Response &resp)
@@ -168,6 +179,11 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 	std::lock_guard<std::mutex> guard(m_socketLock);
 	if (this->peer().get_handle() != ACE_INVALID_HANDLE)
 	{
+		if (length == 0)
+		{
+			this->peer().close();
+			return false;
+		}
 		if (!sendBytes(buffer.get(), length))
 		{
 			LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
@@ -243,6 +259,10 @@ void TcpHandler::initTcpSSL()
 {
 	const static char fname[] = "TcpHandler::initTcpSSL() ";
 
+	// Verify that the version of the library that we linked against is
+	// compatible with the version of the headers we compiled against.
+	GOOGLE_PROTOBUF_VERIFY_VERSION;
+
 	ACE_SSL_Context::instance()->certificate(Configuration::instance()->getSSLCertificateFile().c_str(), SSL_FILETYPE_PEM);
 	ACE_SSL_Context::instance()->private_key(Configuration::instance()->getSSLCertificateKeyFile().c_str(), SSL_FILETYPE_PEM);
 
@@ -291,15 +311,16 @@ bool TcpHandler::sendBytes(const char *data, size_t length)
 	return true;
 }
 
-bool TcpHandler::replyTcp(TcpHandler *tcpHandler, const appmesh::Response &resp)
+bool TcpHandler::replyTcp(int tcpHandlerId, const appmesh::Response &resp)
 {
 	const static char fname[] = "TcpHandler::replyTcp() ";
 
 	ACE_GUARD_RETURN(ACE_Recursive_Thread_Mutex, locker, m_handlers.mutex(), false);
-	if (m_handlers.find(tcpHandler) == 0)
+	TcpHandler *client = NULL;
+	if (m_handlers.find(tcpHandlerId, client) == 0 && client)
 	{
-		return tcpHandler->reply(resp);
+		return client->reply(resp);
 	}
-	LOG_WAR << fname << "Client not exist: " << resp.uuid();
+	LOG_WAR << fname << "Client " << tcpHandlerId << " not exist, can not reply response: " << resp.uuid();
 	return false;
 }

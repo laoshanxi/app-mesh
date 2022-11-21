@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=b'Z\007./;main',
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0eResponse.proto\x12\x07\x61ppmesh\"\xd2\x01\n\x08Response\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x13\n\x0brequest_uri\x18\x02 \x01(\t\x12\x13\n\x0bhttp_status\x18\x03 \x01(\x05\x12\x11\n\thttp_body\x18\x04 \x01(\x0c\x12\x1a\n\x12http_body_msg_type\x18\x05 \x01(\t\x12/\n\x07headers\x18\x06 \x03(\x0b\x32\x1e.appmesh.Response.HeadersEntry\x1a.\n\x0cHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\tZ\x07./;mainb\x06proto3'
+  serialized_pb=b'\n\x0eResponse.proto\x12\x07\x61ppmesh\"\xd2\x01\n\x08Response\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x13\n\x0brequest_uri\x18\x02 \x01(\t\x12\x1a\n\x12http_body_msg_type\x18\x03 \x01(\t\x12/\n\x07headers\x18\x04 \x03(\x0b\x32\x1e.appmesh.Response.HeadersEntry\x12\x13\n\x0bhttp_status\x18\x05 \x01(\x05\x12\x11\n\thttp_body\x18\x06 \x01(\x0c\x1a.\n\x0cHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\tZ\x07./;mainb\x06proto3'
 )
 
 
@@ -86,30 +86,30 @@ _RESPONSE = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='http_status', full_name='appmesh.Response.http_status', index=2,
-      number=3, type=5, cpp_type=1, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='http_body', full_name='appmesh.Response.http_body', index=3,
-      number=4, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='http_body_msg_type', full_name='appmesh.Response.http_body_msg_type', index=4,
-      number=5, type=9, cpp_type=9, label=1,
+      name='http_body_msg_type', full_name='appmesh.Response.http_body_msg_type', index=2,
+      number=3, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='headers', full_name='appmesh.Response.headers', index=5,
-      number=6, type=11, cpp_type=10, label=3,
+      name='headers', full_name='appmesh.Response.headers', index=3,
+      number=4, type=11, cpp_type=10, label=3,
       has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='http_status', full_name='appmesh.Response.http_status', index=4,
+      number=5, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='http_body', full_name='appmesh.Response.http_body', index=5,
+      number=6, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),

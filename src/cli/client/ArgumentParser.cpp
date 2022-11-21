@@ -225,7 +225,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  loginfo     Print current logon user" << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  list        List application[s]" << std::endl;
+	std::cout << "  view        View application[s]" << std::endl;
 	std::cout << "  add         Add a new application" << std::endl;
 	std::cout << "  rm          Remove an application" << std::endl;
 	std::cout << "  enable      Enable a application" << std::endl;
@@ -387,7 +387,7 @@ void ArgumentParser::processAppAdd()
 		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00+08')")
 		("memory,m", po::value<int>(), "memory limit in MByte")
 		("pid,p", po::value<int>(), "process id used to attach")
-		("stdout_cache_num,O", po::value<int>(), "stdout file cache number")
+		("stdout_cache_num,O", po::value<int>()->default_value(3), "stdout file cache number")
 		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
 		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
 		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)")
