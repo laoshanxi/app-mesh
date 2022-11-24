@@ -270,10 +270,6 @@ asan/
 .vscode
 b/
 _build
-*.pb.h
-*.pb.cc
-*.pb.go
-*_pb2.py
 .cache
 api/
 docs/source/README.md

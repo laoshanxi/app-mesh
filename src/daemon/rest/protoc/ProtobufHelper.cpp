@@ -2,36 +2,80 @@
 #include <errno.h>
 #include <tuple>
 
+#include <msgpack.hpp>
+
 #include "../../../common/Utility.h"
 #include "ProtobufHelper.h"
 
-const std::tuple<std::shared_ptr<char>, size_t> ProtobufHelper::serialize(const google::protobuf::Message &msg)
+Response::Response()
+	: http_status(0)
 {
-	const static char fname[] = "ProtobufHelper::serialize() ";
-
-	const auto msgLength = msg.ByteSizeLong();
-	const auto totalLength = PROTOBUF_HEADER_LENGTH + msgLength;
-	const auto buffer = make_shared_array<char>(totalLength);
-	*((uint32_t *)buffer.get()) = htonl(msgLength); // host to network byte order
-	if (!msg.SerializeToArray(buffer.get() + 4, msgLength))
-	{
-		LOG_ERR << fname << msg.DebugString();
-		return std::make_tuple(nullptr, 0);
-	}
-	return std::make_tuple(buffer, totalLength); // return buffer and length pair
 }
 
-bool ProtobufHelper::deserialize(google::protobuf::Message &msg, const char *data, int dataSize)
+Response::~Response()
 {
-	const static char fname[] = "ProtobufHelper::deserialize() ";
+}
 
-	// De-Serialize
-	if (!msg.ParseFromArray(data, dataSize))
+std::shared_ptr<msgpack::sbuffer> Response::serialize() const
+{
+	// pack
+	auto sbuf = std::make_shared<msgpack::sbuffer>();
+	msgpack::pack(*sbuf, *this);
+	return sbuf;
+}
+
+bool Response::deserialize(const char *data, int dataSize)
+{
+	const static char fname[] = "Response::deserialize() ";
+	try
 	{
-		LOG_ERR << fname << "ParseFromCodedStream failed with error :" << msg.DebugString();
-		return false;
+		msgpack::unpacked result;
+		msgpack::unpack(result, data, dataSize);
+		msgpack::object obj = result.get();
+		Response resp = obj.as<Response>();
+		*this = resp;
+		return true;
 	}
-	return true;
+	catch (const std::exception &e)
+	{
+		LOG_ERR << fname << "failed with error :" << e.what();
+	}
+	return false;
+}
+
+Request::Request()
+{
+}
+
+Request::~Request()
+{
+}
+
+std::shared_ptr<msgpack::sbuffer> Request::serialize() const
+{
+	// pack
+	auto sbuf = std::make_shared<msgpack::sbuffer>();
+	msgpack::pack(*sbuf, *this);
+	return sbuf;
+}
+
+bool Request::deserialize(const char *data, int dataSize)
+{
+	const static char fname[] = "Request::deserialize() ";
+	try
+	{
+		msgpack::unpacked result;
+		msgpack::unpack(result, data, dataSize);
+		msgpack::object obj = result.get();
+		Request rest = obj.as<Request>();
+		*this = rest;
+		return true;
+	}
+	catch (const std::exception &e)
+	{
+		LOG_ERR << fname << "failed with error :" << e.what();
+	}
+	return false;
 }
 
 const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(const ACE_SSL_SOCK_Stream &socket)

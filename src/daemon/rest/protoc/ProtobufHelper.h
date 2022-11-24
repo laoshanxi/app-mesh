@@ -2,7 +2,46 @@
 #include <tuple>
 
 #include <ace/SSL/SSL_SOCK_Stream.h>
-#include <google/protobuf/message.h>
+#include <msgpack.hpp>
+
+class Response
+{
+public:
+	Response();
+	virtual ~Response();
+	std::shared_ptr<msgpack::sbuffer> serialize() const;
+	bool deserialize(const char *data, int dataSize);
+
+public:
+	std::string uuid;
+	std::string request_uri;
+	int http_status;
+	std::string body_msg_type;
+	std::string body;
+	std::map<std::string, std::string> headers;
+
+	MSGPACK_DEFINE_MAP(uuid, request_uri, http_status, body_msg_type, body, headers);
+};
+
+class Request
+{
+public:
+	Request();
+	virtual ~Request();
+	std::shared_ptr<msgpack::sbuffer> serialize() const;
+	bool deserialize(const char *data, int dataSize);
+
+public:
+	std::string uuid;
+	std::string request_uri;
+	std::string http_method;
+	std::string client_addr;
+	std::string body;
+	std::map<std::string, std::string> headers;
+	std::map<std::string, std::string> querys;
+
+	MSGPACK_DEFINE_MAP(uuid, request_uri, http_method, http_method, client_addr, body, headers, querys);
+};
 
 /// <summary>
 /// ProtobufHelper common functions
@@ -12,19 +51,6 @@ class ProtobufHelper
 public:
 	ProtobufHelper();
 	virtual ~ProtobufHelper();
-
-	/// @brief Serialize data for sending over a socket.
-	/// @param msg the protocol buffer message
-	/// @return std::shared_ptr<char>: packet The data buffer to write data into
-	/// @return size_t: the number of bytes encoded
-	static const std::tuple<std::shared_ptr<char>, size_t> serialize(const google::protobuf::Message &msg);
-
-	/// @brief Read a protocol buffer from raw data.
-	/// @param msg the message to read
-	/// @param data the raw data containing the message plus the header
-	/// @param dataSize the raw data size
-	/// @return success or not
-	static bool deserialize(google::protobuf::Message &msg, const char *data, int dataSize);
 
 	/// @brief Read a message block from socket (include header and body).
 	/// @param socket ACE_SSL_SOCK_Stream used to receive data

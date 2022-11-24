@@ -121,11 +121,6 @@ go install -v github.com/haya14busa/goplay/cmd/goplay@latest
 go install -v github.com/go-delve/delve/cmd/dlv@latest
 go install -v honnef.co/go/tools/cmd/staticcheck@latest
 go install -v golang.org/x/tools/gopls@latest
-# protoc
-# https://developers.google.com/protocol-buffers/
-go get -v google.golang.org/protobuf@latest
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
 
 # check libssl in case of openssl_update.sh not executed
 if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then
@@ -258,17 +253,13 @@ else
 fi
 
 cd $ROOTDIR
-# protocol buffer
-# https://developers.google.com/protocol-buffers
+# Message Pack
+# https://github.com/msgpack/msgpack-c/tree/cpp_master
 if [ true ]; then
-	PROTOCOL_BUFFER_VER=3.21.9
-	$WGET_A https://github.com/protocolbuffers/protobuf/releases/download/v21.9/protobuf-cpp-3.21.9.zip
-	unzip protobuf-cpp-${PROTOCOL_BUFFER_VER}.zip
-	cd protobuf-${PROTOCOL_BUFFER_VER}
-	./autogen.sh
-	./configure
-	make -j 6
-	make install
-	ldconfig
-	python3 -m pip install --upgrade protobuf
+	git clone https://github.com/msgpack/msgpack-c.git
+	cd msgpack-c
+	git checkout cpp_master
+	cmake .
+	cmake --build . --target install
 fi
+python3 -m pip install --upgrade msgpack

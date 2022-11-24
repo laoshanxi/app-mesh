@@ -1,5 +1,4 @@
-# for google.protobuf
-protobuf
+msgpack
 # for MultipartEncoder
 requests_toolbelt
 # for ISO8601 duration parse

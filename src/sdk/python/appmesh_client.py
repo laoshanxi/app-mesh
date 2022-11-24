@@ -909,7 +909,7 @@ class AppMeshClientTCP(AppMeshClient):
     """Client object used to access App Mesh REST Service over TCP (better performance than AppMeshClient)
 
     Dependency:
-        pip3 install protobuf
+        pip3 install msgpack
     """
 
     def __init__(
@@ -984,27 +984,55 @@ class AppMeshClientTCP(AppMeshClient):
         Returns:
             requests.Response: HTTP response
         """
-        import Request_pb2
-        import Response_pb2
+        import msgpack
+        class RequestMsg:
+            uuid: str = ""
+            request_uri: str = ""
+            http_method: str = ""
+            client_addr: str = ""
+            body: bytes = b''
+            headers: dict = {}
+            querys: dict = {}
+
+            def serialize(self) -> bytes:
+                # http://www.cnitblog.com/luckydmz/archive/2019/11/20/91959.html
+                self_dict = vars(self)
+                self_dict["headers"] = self.headers
+                self_dict["querys"] = self.querys
+                return msgpack.dumps(self_dict)
+
+        class ResponseMsg:
+            uuid: str = ""
+            request_uri: str = ""
+            http_status: int = 0
+            body_msg_type: str = ""
+            body: bytes = b''
+            headers: dict = {}
+
+            def desirialize(self, buf: bytes):
+                dic = msgpack.unpackb(buf)
+                for k,v in dic.items():
+                    setattr(self, k, v)
+                return self
+
 
         if super().jwt_token is not None:
             header["Authorization"] = "Bearer " + super().jwt_token
         if self.__socket_client is None:
             self.__connect_socket()
         req_id = str(uuid.uuid1())
-        appmesh_requst = Request_pb2.Request()
+        appmesh_requst = RequestMsg()
         appmesh_requst.uuid = req_id
         appmesh_requst.http_method = method.name
         appmesh_requst.request_uri = path
-        appmesh_requst.client_address = socket.gethostname()
-        # appmesh_requst.http_body = bytes()
+        appmesh_requst.client_addr = socket.gethostname()
         if body:
             if isinstance(body, dict) or isinstance(body, list):
-                appmesh_requst.http_body = bytes(json.dumps(body, indent=2), MESSAGE_ENCODING_UTF8)
+                appmesh_requst.body = bytes(json.dumps(body, indent=2), MESSAGE_ENCODING_UTF8)
             elif isinstance(body, str):
-                appmesh_requst.http_body = bytes(body, MESSAGE_ENCODING_UTF8)
+                appmesh_requst.body = bytes(body, MESSAGE_ENCODING_UTF8)
             elif isinstance(body, bytes):
-                appmesh_requst.http_body = body
+                appmesh_requst.body = body
             else:
                 raise Exception("UnSupported body type: %s" % type(body))
         if header:
@@ -1013,7 +1041,7 @@ class AppMeshClientTCP(AppMeshClient):
         if query:
             for k, v in query.items():
                 appmesh_requst.querys[k] = v
-        data = appmesh_requst.SerializeToString()
+        data = appmesh_requst.serialize()
         self.__socket_client.sendall(len(data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
         self.__socket_client.sendall(data)
 
@@ -1024,15 +1052,14 @@ class AppMeshClientTCP(AppMeshClient):
         if resp_data is None or len(resp_data) == 0:
             self.__close_socket()
             raise Exception("socket connection broken")
+        appmesh_resp = ResponseMsg().desirialize(resp_data)
         http_resp = requests.Response()
-        appmesh_resp = Response_pb2.Response()
-        appmesh_resp.ParseFromString(resp_data)
         http_resp.status_code = appmesh_resp.http_status
-        http_resp._content = appmesh_resp.http_body
+        http_resp._content = appmesh_resp.body if "application/octet-stream" in appmesh_resp.body_msg_type.lower() else appmesh_resp.body.encode("utf8")
         http_resp.headers = appmesh_resp.headers
         http_resp.encoding = MESSAGE_ENCODING_UTF8
-        if appmesh_resp.http_body_msg_type:
-            http_resp.headers["Content-Type"] = appmesh_resp.http_body_msg_type
+        if appmesh_resp.body_msg_type:
+            http_resp.headers["Content-Type"] = appmesh_resp.body_msg_type
         assert req_id == appmesh_resp.uuid
         return http_resp
 

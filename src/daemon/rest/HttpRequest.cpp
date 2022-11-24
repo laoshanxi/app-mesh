@@ -6,25 +6,17 @@
 #include "HttpRequest.h"
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
-#include "protoc/Request.pb.h"
-#include "protoc/Response.pb.h"
 
-HttpRequest::HttpRequest(const appmesh::Request &request, int tcpHandlerId)
+HttpRequest::HttpRequest(const Request &request, int tcpHandlerId)
 	: m_tcpHanlerId(tcpHandlerId)
 {
-	this->m_uuid = request.uuid();
-	this->m_method = request.http_method();
-	this->m_relative_uri = request.request_uri();
-	this->m_remote_address = request.client_address();
-	this->m_body = request.http_body();
-	for (const auto &query : request.querys())
-	{
-		this->m_querys[query.first] = query.second;
-	}
-	for (const auto &header : request.headers())
-	{
-		this->m_headers[header.first] = header.second;
-	}
+	this->m_uuid = request.uuid;
+	this->m_method = request.http_method;
+	this->m_relative_uri = request.request_uri;
+	this->m_remote_address = request.client_addr;
+	this->m_body = request.body;
+	this->m_querys = request.querys;
+	this->m_headers = request.headers;
 }
 
 HttpRequest::~HttpRequest()
@@ -61,14 +53,14 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inp
 	const static char fname[] = "HttpRequest::deserialize() ";
 
 	// https://blog.csdn.net/u010601662/article/details/78353206
-	appmesh::Request req;
-	if (ProtobufHelper::deserialize(req, input, inputSize))
+	Request req;
+	if (req.deserialize(input, inputSize))
 	{
 		return std::make_shared<HttpRequest>(req, tcpHandlerId);
 	}
 	else
 	{
-		LOG_ERR << fname << "failed to decode protobuf data";
+		LOG_ERR << fname << "failed to decode tcp raw data";
 	}
 	return nullptr;
 }
@@ -86,14 +78,14 @@ void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	const static char fname[] = "HttpRequest::reply() ";
 	LOG_DBG << fname;
 
-	appmesh::Response response;
+	Response response;
 	// fill data
-	response.set_uuid(uuid);
-	response.set_request_uri(requestUri);
-	response.set_http_body(body);
-	response.mutable_headers()->insert(headers.begin(), headers.end());
-	response.set_http_status(status);
-	response.set_http_body_msg_type(bodyType);
+	response.uuid = uuid;
+	response.request_uri = requestUri;
+	response.body = body;
+	response.headers = headers;
+	response.http_status = status;
+	response.body_msg_type = bodyType;
 
 	if (m_tcpHanlerId > 0)
 	{

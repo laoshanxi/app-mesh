@@ -26,10 +26,6 @@ export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
 gem install fpm
 
-# protobuf
-apt install -y libprotobuf-dev
-apt install -y protobuf-compiler
-
 # cpplint tools
 apt install -y clang
 apt install -y cppcheck
@@ -78,10 +74,6 @@ go install -v github.com/haya14busa/goplay/cmd/goplay@latest
 go install -v github.com/go-delve/delve/cmd/dlv@latest
 go install -v honnef.co/go/tools/cmd/staticcheck@latest
 go install -v golang.org/x/tools/gopls@latest
-# protoc
-go get -v google.golang.org/protobuf@latest
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-ln -s ~/go/bin/protoc-gen-go /usr/bin/protoc-gen-go
-
-#protocbuf Python pip
+#messagepack Python pip
 apt install -y python3-pip
+python3 -m pip install --upgrade msgpack

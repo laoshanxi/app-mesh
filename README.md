@@ -98,7 +98,7 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Library dependency
 
-- [Google/protobuf](https://github.com/protocolbuffers/protobuf)
+- [MessagePack](https://msgpack.org/)
 - [boostorg/boost](https://github.com/boostorg/boost)
 - [DOCGroup/ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
 - [libcpr/cpr](https://github.com/libcpr/cpr)

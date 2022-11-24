@@ -17,4 +17,4 @@ sphinxcontrib-apidoc
 
 # dependency for appmesh_client.py
 aniso8601
-protobuf
+msgpack

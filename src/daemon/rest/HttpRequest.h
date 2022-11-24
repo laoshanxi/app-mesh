@@ -6,7 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../../common/Utility.h"
-#include "protoc/Request.pb.h"
+#include "protoc/ProtobufHelper.h"
 
 #define CONTENT_TYPE_APPLICATION_JSON "application/json"
 
@@ -24,7 +24,7 @@ public:
 	/// Construction for deserialize
 	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
 	/// </summary>
-	explicit HttpRequest(const appmesh::Request &request, int tcpHandlerId);
+	explicit HttpRequest(const Request &request, int tcpHandlerId);
 
 	virtual ~HttpRequest();
 

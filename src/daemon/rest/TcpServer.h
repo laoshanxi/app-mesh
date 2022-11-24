@@ -8,7 +8,7 @@
 #include <ace/SSL/SSL_SOCK_Stream.h>
 #include <ace/Svc_Handler.h>
 
-#include "protoc/Response.pb.h"
+#include "protoc/ProtobufHelper.h"
 
 // = TITLE
 //     Receive client message from the remote clients.
@@ -42,19 +42,19 @@ protected:
 	/// <summary>
 	/// Reply response to Golang
 	/// </summary>
-	/// <param name="appmesh::Response"></param>
-	bool reply(const appmesh::Response &resp);
+	/// <param name="Response"></param>
+	bool reply(const Response &resp);
 	bool sendBytes(const char *data, size_t length);
+	bool sendBytes(size_t intValue);
 
 public:
-	static bool replyTcp(int tcpHandlerId, const appmesh::Response &resp);
+	static bool replyTcp(int tcpHandlerId, const Response &resp);
 	static void initTcpSSL();
 
 private:
 	std::string m_clientHostName;
 	std::mutex m_socketLock;
 	const int m_id;
-
 
 	static ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> m_handlers;
 	static ACE_Message_Queue<ACE_MT_SYNCH> m_messageQueue;

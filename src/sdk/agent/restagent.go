@@ -20,7 +20,7 @@ import (
 	grafana "github.com/laoshanxi/app-mesh/src/sdk/agent/grafana"
 	"github.com/rs/xid"
 	"github.com/valyala/fasthttp"
-	"google.golang.org/protobuf/proto"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 const PROTOBUF_HEADER_LENGTH = 4
@@ -35,6 +35,25 @@ var socketMutex sync.Mutex // tcp connection lock
 var requestMap sync.Map    // request cache for asyncrized response
 type ResponseMessage struct {
 	Message string `json:"message"`
+}
+
+type Response struct {
+	Uuid        string            `msg:"uuid" msgpack:"uuid"`
+	RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
+	HttpStatus  int               `msg:"http_status" msgpack:"http_status"`
+	BodyMsgType string            `msg:"body_msg_type" msgpack:"body_msg_type"`
+	Body        string            `msg:"body" msgpack:"body"`
+	Headers     map[string]string `msg:"headers" msgpack:"headers"`
+}
+
+type Request struct {
+	Uuid          string            `msg:"uuid" msgpack:"uuid"`
+	RequestUri    string            `msg:"request_uri" msgpack:"request_uri"`
+	HttpMethod    string            `msg:"http_method" msgpack:"http_method"`
+	ClientAddress string            `msg:"client_addr" msgpack:"client_addr"`
+	Body          string            `msg:"body" msgpack:"body"`
+	Headers       map[string]string `msg:"headers" msgpack:"headers"`
+	Querys        map[string]string `msg:"querys" msgpack:"querys"`
 }
 
 func connectServer(tcpAddr string) (net.Conn, error) {
@@ -61,7 +80,7 @@ func readProtobufLoop() {
 			log.Fatalf("Failed read header from TCP Server: %v", err)
 		}
 		bodyLength := binary.BigEndian.Uint32(buf)
-		log.Printf("read body from TCP Server: %d", bodyLength)
+		log.Printf("read body length: %d", bodyLength)
 		// read body buffer
 		buf = make([]byte, bodyLength)
 		_, err = tcpConnect.Read(buf)
@@ -69,14 +88,13 @@ func readProtobufLoop() {
 			log.Fatalf("Failed read body from TCP Server: %v", err)
 		}
 		protocResponse := new(Response)
-		err = proto.Unmarshal(buf, protocResponse)
-		if err != nil {
-			log.Fatalf("Failed de-serialize protoc Response: %v", err)
+		if err = msgpack.Unmarshal(buf, protocResponse); err != nil {
+			log.Fatalf("msgpack.Unmarshal: %v", err)
 		}
 
 		// forward to channel and release map
-		if t, ok := requestMap.LoadAndDelete(protocResponse.GetUuid()); !ok {
-			log.Fatalf("Failed to found request ID <%s> to Response", protocResponse.GetUuid())
+		if t, ok := requestMap.LoadAndDelete(protocResponse.Uuid); !ok {
+			log.Fatalf("Failed to found request ID <%s> to Response", protocResponse.Uuid)
 		} else {
 			// notify
 			ch, _ := t.(chan *Response)
@@ -95,15 +113,18 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 
 	// prepare header and body
 	protocRequest := serializeRequest(req)
-	bodyData, _ := proto.Marshal(protocRequest)
+	bodyData, err := msgpack.Marshal(*protocRequest)
+	if err != nil {
+		log.Fatalf("msgpack.Marshal: %v", err)
+	}
 	headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
 	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
-	ctx.Logger().Printf("Requesting: %s", protocRequest.GetUuid())
+	ctx.Logger().Printf("Requesting: %s with msg length: %d", protocRequest.Uuid, len(bodyData))
 	// ctx.Logger().Printf("---Request Protoc:---\n%v\n", protocRequest)
 
 	// create a chan and store in map
 	ch := make(chan *Response)
-	requestMap.Store(protocRequest.GetUuid(), ch)
+	requestMap.Store(protocRequest.Uuid, ch)
 
 	var sendCount int
 	var sendErr error
@@ -138,26 +159,26 @@ func serializeRequest(req *fasthttp.Request) *Request {
 	data.HttpMethod = string(req.Header.Method())
 	data.RequestUri = string(req.URI().Path())
 	data.ClientAddress = string(req.Host())
-	data.Headers = map[string]string{}
+	data.Headers = make(map[string]string)
 	req.Header.VisitAll(func(key, value []byte) {
 		data.Headers[string(key)] = string(value)
 	})
 	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
-	data.Querys = map[string]string{}
+	data.Querys = make(map[string]string)
 	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
 		data.Querys[string(key)] = string(value)
 	})
 
 	// do not read body for file upload
 	if !(req.Header.IsPost() && string(req.URI().Path()) == REST_PATH_UPLOAD) {
-		data.HttpBody = req.Body()
+		data.Body = string(req.Body())
 	}
 	return data
 }
 
 func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	// headers
-	for k, v := range data.GetHeaders() {
+	for k, v := range data.Headers {
 		ctx.Response.Header.Set(k, v)
 	}
 	// cross site header
@@ -168,20 +189,20 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	// user agent
 	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
 	// status code
-	ctx.Response.SetStatusCode(int(data.GetHttpStatus()))
+	ctx.Response.SetStatusCode(int(data.HttpStatus))
 	// body
 	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && serveFile(ctx, data) {
-		ctx.Logger().Printf("File REST call Finished  %s", data.GetUuid())
+		ctx.Logger().Printf("File REST call Finished  %s", data.Uuid)
 	} else {
-		ctx.Response.SetBodyRaw([]byte(data.GetHttpBody()))
-		ctx.SetContentType(data.GetHttpBodyMsgType())
-		ctx.Logger().Printf("REST call Finished  %s", data.GetUuid())
+		ctx.Response.SetBodyRaw([]byte(data.Body))
+		ctx.SetContentType(data.BodyMsgType)
+		ctx.Logger().Printf("REST call Finished  %s", data.Uuid)
 	}
 }
 
 func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 	ctx.Logger().Printf(string(ctx.Request.URI().Path()))
-	if ctx.Request.Header.IsGet() && string(ctx.Request.URI().Path()) == REST_PATH_DOWNLOAD && data.GetHttpStatus() == fasthttp.StatusOK {
+	if ctx.Request.Header.IsGet() && string(ctx.Request.URI().Path()) == REST_PATH_DOWNLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle download file
 		ctx.Logger().Printf("download file")
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
@@ -196,7 +217,7 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		ctx.Logger().Printf("ServeFile: %s", fileName)
 		fasthttp.ServeFile(ctx, filePath)
 		return true
-	} else if ctx.Request.Header.IsPost() && string(ctx.Request.URI().Path()) == REST_PATH_UPLOAD && data.GetHttpStatus() == fasthttp.StatusOK {
+	} else if ctx.Request.Header.IsPost() && string(ctx.Request.URI().Path()) == REST_PATH_UPLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle upload file
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
 		ctx.Logger().Printf("uploading file: %s", filePath)

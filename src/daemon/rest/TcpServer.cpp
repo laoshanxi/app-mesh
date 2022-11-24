@@ -151,6 +151,7 @@ void TcpHandler::handleTcpRest()
 				}
 				// TODO: check request without reply
 			}
+			// TODO: check request without reply
 		}
 	}
 }
@@ -159,8 +160,6 @@ void TcpHandler::closeMsgQueue()
 {
 	// TODO: release memory before clear
 	m_messageQueue.close();
-	// Optional:  Delete all global objects allocated by libprotobuf.
-	google::protobuf::ShutdownProtobufLibrary();
 }
 
 const int &TcpHandler::id()
@@ -168,14 +167,15 @@ const int &TcpHandler::id()
 	return m_id;
 }
 
-bool TcpHandler::reply(const appmesh::Response &resp)
+bool TcpHandler::reply(const Response &resp)
 {
 	const static char fname[] = "TcpHandler::reply() ";
 
-	const auto data = ProtobufHelper::serialize(resp);
-	const auto buffer = std::get<0>(data);
-	const auto length = std::get<1>(data);
+	const auto data = resp.serialize();
+	const auto buffer = data->data();
+	const auto length = data->size();
 
+	LOG_DBG << fname << "send response length: " << length;
 	std::lock_guard<std::mutex> guard(m_socketLock);
 	if (this->peer().get_handle() != ACE_INVALID_HANDLE)
 	{
@@ -184,20 +184,20 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 			this->peer().close();
 			return false;
 		}
-		if (!sendBytes(buffer.get(), length))
+		if (!sendBytes(length) || !sendBytes(buffer, length))
 		{
 			LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
 			return false;
 		}
 
-		if (resp.http_status() == web::http::status_codes::OK &&
-			resp.http_body_msg_type() == web::http::mime_types::application_octetstream &&
-			resp.request_uri() == "/appmesh/file/download" && resp.http_body().size() &&
-			nlohmann::json::parse(resp.http_body()).contains(TCP_JSON_MSG_FILE))
+		if (resp.http_status == web::http::status_codes::OK &&
+			resp.body_msg_type == web::http::mime_types::application_octetstream &&
+			resp.request_uri == "/appmesh/file/download" && resp.body.size() &&
+			nlohmann::json::parse(resp.body).contains(TCP_JSON_MSG_FILE))
 		{
-			auto path = nlohmann::json::parse(resp.http_body())[TCP_JSON_MSG_FILE].get<std::string>();
+			auto path = nlohmann::json::parse(resp.body)[TCP_JSON_MSG_FILE].get<std::string>();
 			// send file via TCP with chunks
-			auto pBuffer = make_shared_array<char>(BLOCK_CHUNK_SIZE + PROTOBUF_HEADER_LENGTH);
+			auto pBuffer = make_shared_array<char>(BLOCK_CHUNK_SIZE);
 			std::ifstream file(path, std::ios::binary | std::ios::in);
 			if (file)
 			{
@@ -209,15 +209,12 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 				while (currentPos < fileEnd && file.good())
 				{
 					// continue read data chunk
-					file.readsome(pBuffer.get() + PROTOBUF_HEADER_LENGTH, BLOCK_CHUNK_SIZE);
+					file.readsome(pBuffer.get(), BLOCK_CHUNK_SIZE);
 					auto readChunkSize = file.tellg() - currentPos;
 					currentPos = file.tellg();
 
-					// write data size to header
-					*((uint32_t *)pBuffer.get()) = htonl(readChunkSize); // host to network byte order
-
 					// send chunk size to client
-					if (!sendBytes(pBuffer.get(), PROTOBUF_HEADER_LENGTH + readChunkSize))
+					if (!sendBytes(readChunkSize) || !sendBytes(pBuffer.get(), readChunkSize))
 					{
 						LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
 						return false;
@@ -225,16 +222,15 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 				}
 			}
 			// send last 0 for delimiter
-			*((uint32_t *)pBuffer.get()) = htonl(0); // host to network byte order
-			sendBytes(pBuffer.get(), PROTOBUF_HEADER_LENGTH);
+			sendBytes(0);
 		}
 
-		if (resp.http_status() == web::http::status_codes::OK &&
-			resp.http_body_msg_type() == web::http::mime_types::application_octetstream &&
-			resp.request_uri() == "/appmesh/file/upload" && resp.http_body().size() &&
-			nlohmann::json::parse(resp.http_body()).contains(TCP_JSON_MSG_FILE))
+		if (resp.http_status == web::http::status_codes::OK &&
+			resp.body_msg_type == web::http::mime_types::application_octetstream &&
+			resp.request_uri == "/appmesh/file/upload" && resp.body.size() &&
+			nlohmann::json::parse(resp.body).contains(TCP_JSON_MSG_FILE))
 		{
-			auto path = nlohmann::json::parse(resp.http_body())[TCP_JSON_MSG_FILE].get<std::string>();
+			auto path = nlohmann::json::parse(resp.body)[TCP_JSON_MSG_FILE].get<std::string>();
 			std::ofstream file(path, std::ios::binary | std::ios::out | std::ios::trunc);
 			auto msg = ProtobufHelper::readMessageBlock(this->peer());
 			while (std::get<0>(msg) != nullptr)
@@ -248,7 +244,7 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 	}
 	else
 	{
-		LOG_WAR << fname << "Socket not available, ignore message: " << resp.uuid();
+		LOG_WAR << fname << "Socket not available, ignore message: " << resp.uuid;
 		return false;
 	}
 	LOG_DBG << fname << "successfully";
@@ -258,10 +254,6 @@ bool TcpHandler::reply(const appmesh::Response &resp)
 void TcpHandler::initTcpSSL()
 {
 	const static char fname[] = "TcpHandler::initTcpSSL() ";
-
-	// Verify that the version of the library that we linked against is
-	// compatible with the version of the headers we compiled against.
-	GOOGLE_PROTOBUF_VERIFY_VERSION;
 
 	ACE_SSL_Context::instance()->certificate(Configuration::instance()->getSSLCertificateFile().c_str(), SSL_FILETYPE_PEM);
 	ACE_SSL_Context::instance()->private_key(Configuration::instance()->getSSLCertificateKeyFile().c_str(), SSL_FILETYPE_PEM);
@@ -311,7 +303,15 @@ bool TcpHandler::sendBytes(const char *data, size_t length)
 	return true;
 }
 
-bool TcpHandler::replyTcp(int tcpHandlerId, const appmesh::Response &resp)
+bool TcpHandler::sendBytes(size_t intValue)
+{
+	char headerBuff[PROTOBUF_HEADER_LENGTH];
+	// write data size to header
+	*((uint32_t *)headerBuff) = htonl(intValue); // host to network byte order
+	return sendBytes(headerBuff, PROTOBUF_HEADER_LENGTH);
+}
+
+bool TcpHandler::replyTcp(int tcpHandlerId, const Response &resp)
 {
 	const static char fname[] = "TcpHandler::replyTcp() ";
 
@@ -321,6 +321,6 @@ bool TcpHandler::replyTcp(int tcpHandlerId, const appmesh::Response &resp)
 	{
 		return client->reply(resp);
 	}
-	LOG_WAR << fname << "Client " << tcpHandlerId << " not exist, can not reply response: " << resp.uuid();
+	LOG_WAR << fname << "Client " << tcpHandlerId << " not exist, can not reply response: " << resp.uuid;
 	return false;
 }
