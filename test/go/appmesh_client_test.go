@@ -4,7 +4,11 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"testing"
+
+	"github.com/rs/xid"
+	"github.com/vmihailenco/msgpack/v5"
 
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
@@ -29,4 +33,38 @@ func TestAppmeshLogin(t *testing.T) {
 	runApp.Command = &cmd
 	client.Run(runApp, false, 5)
 	fmt.Println("end")
+}
+
+func TestMessagePack(t *testing.T) {
+	type Response struct {
+		Uuid        string            `msg:"uuid" msgpack:"uuid"`
+		RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
+		HttpStatus  int               `msg:"http_status" msgpack:"http_status"`
+		BodyMsgType string            `msg:"body_msg_type" msgpack:"body_msg_type"`
+		Body        string            `msg:"body" msgpack:"body"`
+		Headers     map[string]string `msg:"headers" msgpack:"headers"`
+	}
+
+	data := new(Response)
+	data.Uuid = xid.New().String()
+	data.RequestUri = "123"
+	data.HttpStatus = 1
+	content, _ := ioutil.ReadFile("/root/app-mesh/1.log")
+	data.Body = string(content)
+	data.Headers = make(map[string]string)
+	data.Headers[string("key")] = string("value")
+
+	buf, err := msgpack.Marshal(*data)
+	if err != nil {
+		t.Errorf("msgpack.Marshal: %v", err)
+	}
+	t.Log(len(buf))
+	protocResponse := new(Response)
+	if err = msgpack.Unmarshal(buf, protocResponse); err != nil {
+		t.Errorf("msgpack.Unmarshal: %v", err)
+	}
+	if data.Body != protocResponse.Body {
+		t.Errorf("not same as expected")
+	}
+	t.Log("same as expected")
 }

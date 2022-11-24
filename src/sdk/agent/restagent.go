@@ -29,6 +29,7 @@ const REST_PATH_DOWNLOAD = "/appmesh/file/download"
 const REST_PATH_FILE = "/appmesh/file/"
 const HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 const HTTP_USER_AGENT = "appmeshsdk"
+const TCP_CHUNK_READ_BLOCK_SIZE = 2048
 
 var tcpConnect net.Conn    // tcp connection
 var socketMutex sync.Mutex // tcp connection lock
@@ -74,21 +75,45 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 func readProtobufLoop() {
 	for {
 		// read header 4 bytes (int)
-		buf := make([]byte, PROTOBUF_HEADER_LENGTH)
-		_, err := tcpConnect.Read(buf)
+		headerBuf := make([]byte, PROTOBUF_HEADER_LENGTH)
+		_, err := tcpConnect.Read(headerBuf)
 		if err != nil {
 			log.Fatalf("Failed read header from TCP Server: %v", err)
 		}
-		bodyLength := binary.BigEndian.Uint32(buf)
+		bodyLength := binary.BigEndian.Uint32(headerBuf)
 		log.Printf("read body length: %d", bodyLength)
 		// read body buffer
-		buf = make([]byte, bodyLength)
-		_, err = tcpConnect.Read(buf)
-		if err != nil {
-			log.Fatalf("Failed read body from TCP Server: %v", err)
+		var chunkSize uint32 = TCP_CHUNK_READ_BLOCK_SIZE
+		if bodyLength < chunkSize {
+			chunkSize = bodyLength
+		}
+		// make 0 length data bytes (since we'll be appending)
+		bodyBuf := make([]byte, 0)
+		var alreadyReadSize uint32 = 0
+		for {
+			// https://stackoverflow.com/questions/24339660/read-whole-data-with-golang-net-conn-read
+			oneTimeRead := bodyLength - alreadyReadSize
+			if oneTimeRead > chunkSize {
+				oneTimeRead = chunkSize
+			}
+			data := make([]byte, oneTimeRead)
+			n, err := tcpConnect.Read(data)
+			if n > 0 {
+				bodyBuf = append(bodyBuf, data[:n]...)
+				alreadyReadSize += uint32(n)
+				log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, bodyLength-alreadyReadSize)
+				if alreadyReadSize >= bodyLength {
+					break
+				}
+				continue
+			}
+			if err != nil {
+				log.Fatalf("Failed read body from TCP Server: %v", err)
+				break
+			}
 		}
 		protocResponse := new(Response)
-		if err = msgpack.Unmarshal(buf, protocResponse); err != nil {
+		if err = msgpack.Unmarshal(bodyBuf, protocResponse); err != nil {
 			log.Fatalf("msgpack.Unmarshal: %v", err)
 		}
 
