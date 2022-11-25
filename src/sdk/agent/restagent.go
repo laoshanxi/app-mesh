@@ -14,48 +14,22 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/buaazp/fasthttprouter"
 	grafana "github.com/laoshanxi/app-mesh/src/sdk/agent/grafana"
 	"github.com/rs/xid"
 	"github.com/valyala/fasthttp"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
-const PROTOBUF_HEADER_LENGTH = 4
 const REST_PATH_UPLOAD = "/appmesh/file/upload"
 const REST_PATH_DOWNLOAD = "/appmesh/file/download"
 const REST_PATH_FILE = "/appmesh/file/"
 const HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 const HTTP_USER_AGENT = "appmeshsdk"
-const TCP_CHUNK_READ_BLOCK_SIZE = 2048
 
 var tcpConnect net.Conn    // tcp connection
 var socketMutex sync.Mutex // tcp connection lock
 var requestMap sync.Map    // request cache for asyncrized response
-type ResponseMessage struct {
-	Message string `json:"message"`
-}
-
-type Response struct {
-	Uuid        string            `msg:"uuid" msgpack:"uuid"`
-	RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
-	HttpStatus  int               `msg:"http_status" msgpack:"http_status"`
-	BodyMsgType string            `msg:"body_msg_type" msgpack:"body_msg_type"`
-	Body        string            `msg:"body" msgpack:"body"`
-	Headers     map[string]string `msg:"headers" msgpack:"headers"`
-}
-
-type Request struct {
-	Uuid          string            `msg:"uuid" msgpack:"uuid"`
-	RequestUri    string            `msg:"request_uri" msgpack:"request_uri"`
-	HttpMethod    string            `msg:"http_method" msgpack:"http_method"`
-	ClientAddress string            `msg:"client_addr" msgpack:"client_addr"`
-	Body          string            `msg:"body" msgpack:"body"`
-	Headers       map[string]string `msg:"headers" msgpack:"headers"`
-	Querys        map[string]string `msg:"querys" msgpack:"querys"`
-}
 
 func connectServer(tcpAddr string) (net.Conn, error) {
 	// https://www.jianshu.com/p/dce19fb167f4
@@ -72,94 +46,55 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 	return tls.Dial("tcp", tcpAddr, conf)
 }
 
-func readProtobufLoop() {
+func readMsgLoop() {
 	for {
-		// read header 4 bytes (int)
-		headerBuf := make([]byte, PROTOBUF_HEADER_LENGTH)
-		_, err := tcpConnect.Read(headerBuf)
-		if err != nil {
-			log.Fatalf("Failed read header from TCP Server: %v", err)
-		}
-		bodyLength := binary.BigEndian.Uint32(headerBuf)
-		log.Printf("read body length: %d", bodyLength)
-		// read body buffer
-		var chunkSize uint32 = TCP_CHUNK_READ_BLOCK_SIZE
-		if bodyLength < chunkSize {
-			chunkSize = bodyLength
-		}
-		// make 0 length data bytes (since we'll be appending)
-		bodyBuf := make([]byte, 0)
-		var alreadyReadSize uint32 = 0
-		for {
-			// https://stackoverflow.com/questions/24339660/read-whole-data-with-golang-net-conn-read
-			oneTimeRead := bodyLength - alreadyReadSize
-			if oneTimeRead > chunkSize {
-				oneTimeRead = chunkSize
-			}
-			data := make([]byte, oneTimeRead)
-			n, err := tcpConnect.Read(data)
-			if n > 0 {
-				bodyBuf = append(bodyBuf, data[:n]...)
-				alreadyReadSize += uint32(n)
-				log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, bodyLength-alreadyReadSize)
-				if alreadyReadSize >= bodyLength {
-					break
-				}
-				continue
-			}
-			if err != nil {
-				log.Fatalf("Failed read body from TCP Server: %v", err)
-				break
-			}
-		}
-		protocResponse := new(Response)
-		if err = msgpack.Unmarshal(bodyBuf, protocResponse); err != nil {
-			log.Fatalf("msgpack.Unmarshal: %v", err)
+		// read response from server
+		response := new(Response)
+		if err := response.readResponse(tcpConnect); err != nil {
+			log.Fatalf("Failed read response: %v", err)
 		}
 
 		// forward to channel and release map
-		if t, ok := requestMap.LoadAndDelete(protocResponse.Uuid); !ok {
-			log.Fatalf("Failed to found request ID <%s> to Response", protocResponse.Uuid)
+		if t, ok := requestMap.LoadAndDelete(response.Uuid); !ok {
+			log.Fatalf("Not found request ID <%s> for Response", response.Uuid)
 		} else {
 			// notify
 			ch, _ := t.(chan *Response)
-			ch <- protocResponse
+			ch <- response
 		}
-
-		time.Sleep(time.Duration(10) * time.Millisecond)
 	}
 }
 
 // http handler function
-func restProxyHandler(ctx *fasthttp.RequestCtx) {
+func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 	// https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 
-	req := &ctx.Request
-
-	// prepare header and body
-	protocRequest := serializeRequest(req)
-	bodyData, err := msgpack.Marshal(*protocRequest)
+	// body buffer
+	request := readRequestData(&ctx.Request)
+	bodyData, err := request.serialize()
 	if err != nil {
-		log.Fatalf("msgpack.Marshal: %v", err)
+		log.Fatalf("failed to serialize request: %v", err)
 	}
+
+	// header buffer
 	headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
 	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
-	ctx.Logger().Printf("Requesting: %s with msg length: %d", protocRequest.Uuid, len(bodyData))
+	ctx.Logger().Printf("Requesting: %s with msg length: %d", request.Uuid, len(bodyData))
 	// ctx.Logger().Printf("---Request Protoc:---\n%v\n", protocRequest)
 
-	// create a chan and store in map
+	// create a chan for accept Response
 	ch := make(chan *Response)
-	requestMap.Store(protocRequest.Uuid, ch)
+	requestMap.Store(request.Uuid, ch)
 
-	var sendCount int
+	var sendHeader int
+	var sendBody int
 	var sendErr error
 	// send header and body
 	{
 		socketMutex.Lock()
-		sendCount, sendErr = tcpConnect.Write(headerData)
-		ctx.Logger().Printf("sent header size %d = %d to TCP, error: %v", uint32(len(headerData)), sendCount, sendErr)
-		sendCount, sendErr = tcpConnect.Write(bodyData)
-		ctx.Logger().Printf("sent body size %d = %d to TCP, error: %v", uint32(len(bodyData)), sendCount, sendErr)
+		sendHeader, _ = tcpConnect.Write(headerData)
+		sendBody, sendErr = tcpConnect.Write(bodyData)
+		ctx.Logger().Printf("sent header size [%d = %d] body size [%d = %d] to TCP, error: %v", len(headerData), sendHeader, len(bodyData), sendBody, sendErr)
 		socketMutex.Unlock()
 	}
 	if sendErr == nil {
@@ -171,11 +106,11 @@ func restProxyHandler(ctx *fasthttp.RequestCtx) {
 		// ctx.Logger().Printf("---Response Protoc:---\n%v\n", protocResponse)
 	} else {
 		ctx.Logger().Printf("Failed to send request to server with error:: %v", sendErr)
-		os.Exit(-1)
+		log.Fatal(sendErr)
 	}
 }
 
-func serializeRequest(req *fasthttp.Request) *Request {
+func readRequestData(req *fasthttp.Request) *Request {
 	// do not proxy "Connection" header.
 	req.Header.Del("Connection")
 
@@ -246,7 +181,7 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		// handle upload file
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
 		ctx.Logger().Printf("uploading file: %s", filePath)
-		if err := saveFile(ctx, filePath); err != nil {
+		if err := persistFile(ctx, filePath); err != nil {
 			errorJson, _ := json.Marshal(ResponseMessage{Message: err.Error()})
 			ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
 		} else {
@@ -269,7 +204,7 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 	return false
 }
 
-func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
+func persistFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	// https://freshman.tech/file-upload-golang/
 	if file, err := ctx.FormFile("file"); err == nil {
 		ctx.Logger().Printf("SaveMultipartFile: %s", filePath)
@@ -337,11 +272,11 @@ func listenRest(restAgentAddr string, restTcpPort int) {
 		os.Exit(-1)
 	}
 	tcpConnect = conn
-	go readProtobufLoop()
+	go readMsgLoop()
 
 	// setup REST listener
 	router := fasthttprouter.New()
-	router.NotFound = restProxyHandler // set all default router to restProxyHandler
+	router.NotFound = handleAppmeshRest // set all default router to restProxyHandler
 	grafana.RegGrafanaRestHandler(router)
 	if addr.Scheme == "https" {
 		err = listenAgentTls(addrForListen, router)

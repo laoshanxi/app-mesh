@@ -20,7 +20,7 @@ func prometheusRootHandler(ctx *fasthttp.RequestCtx) {
 func prometheusProxyHandler(ctx *fasthttp.RequestCtx) {
 	// only allow GET /metrics
 	if string(ctx.Request.URI().Path()) == PROMETHEUS_METRIC_REST_PATH && string(ctx.Request.Header.Method()) == "GET" {
-		restProxyHandler(ctx)
+		handleAppmeshRest(ctx)
 	} else {
 		ctx.Response.SetStatusCode(fasthttp.StatusBadRequest)
 	}

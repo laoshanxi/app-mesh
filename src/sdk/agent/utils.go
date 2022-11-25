@@ -23,7 +23,7 @@ func IsFileExist(path string) bool {
 	return false
 }
 
-func Move(src string, dst string) error {
+func MoveFile(src string, dst string) error {
 
 	buf := make([]byte, 1024)
 	fin, err := os.Open(src)
