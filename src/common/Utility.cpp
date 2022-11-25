@@ -7,13 +7,14 @@
 #include <thread>
 
 #include <ace/OS.h>
-#include <ace/UUID.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/program_options/parsers.hpp>
+#include <hashidsxx/hashids.cpp>
+#include <hashidsxx/hashids.h>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/Category.hh>
 #include <log4cpp/FileAppender.hh>
@@ -24,6 +25,7 @@
 #include <nlohmann/json.hpp>
 
 #include "DateTime.h"
+#include "Password.h"
 #include "Utility.h"
 #include "os/chown.hpp"
 
@@ -532,16 +534,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 
 std::string Utility::createUUID()
 {
-	static bool initialized = false;
-	if (!initialized)
-	{
-		ACE_Utils::UUID_GENERATOR::instance()->init();
-		initialized = true;
-	}
-	ACE_Utils::UUID uuid;
-	ACE_Utils::UUID_GENERATOR::instance()->generate_UUID(uuid);
-	auto str = std::string(uuid.to_string()->c_str());
-	return str;
+	return hashId();
 }
 
 bool Utility::createPidFile()
@@ -826,6 +819,15 @@ std::string Utility::prettyJson(const std::string &jsonStr)
 std::string Utility::hash(const std::string &str)
 {
 	return std::to_string(std::hash<std::string>()(str));
+}
+
+std::string Utility::hashId()
+{
+	// https://github.com/schoentoon/hashidsxx
+	static const auto salt = generatePassword(6, true, true, false, false);
+	static hashidsxx::Hashids hash(salt, 10);
+	static std::atomic_int index(1000);
+	return hash.encode(++index);
 }
 
 std::string Utility::stringFormat(const std::string fmt_str, ...)

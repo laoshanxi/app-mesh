@@ -3,6 +3,7 @@ App Mesh provide file download/upload REST APIs, also those APIs can be authenti
 
 ## Solution
 Use below API to manage file:
+
 | Method | URI                    | Body/Headers                                                           | Desc                                                  |
 | ------ | ---------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------- |
 | GET    | /appmesh/file/download | Header: <br> File-Path=/opt/remote/filename                            | Download a file from REST server and grant permission |
@@ -11,7 +12,7 @@ Use below API to manage file:
 * The simple way is use [Python SDK](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/python/appmesh_client.py)
 * Use appmesh cli is also fine: `appc put -l /opt/appmesh/log/appsvc.log -r /tmp/1.log`
 
-### Use nginx to deploy a file server
+### Nginx can be used to be file download server
 
 `nginx.conf`
 ```
@@ -40,21 +41,20 @@ http {
     include           /etc/nginx/conf.d/*.conf;
 }
 ```
-`default.conf`
 
+`default.conf`
 ```
 server {
-    listen 8080;
+    listen 443 ssl;
     server_name localhost;
 
-    # for SSL listen port only
-    #ssl_certificate                /etc/nginx/conf.d/server.pem;
-    #ssl_certificate_key            /etc/nginx/conf.d/server-key.pem;
-    #ssl_protocols                  TLSv1.2;
-    #ssl_prefer_server_ciphers      on;
-    #ssl_session_timeout            5m;
-    #ssl_ciphers                    ECDHE-RSA-AES128-GCM-SHA256:ECDHE:ECDH:AES:HIGH:!NULL:!aNULL:!MD5:!ADH:!RC4;
-    #underscores_in_headers         on;
+    ssl_certificate                /etc/nginx/conf.d/server.pem;
+    ssl_certificate_key            /etc/nginx/conf.d/server-key.pem;
+    ssl_protocols                  TLSv1.2;
+    ssl_prefer_server_ciphers      on;
+    ssl_session_timeout            5m;
+    ssl_ciphers                    ECDHE-RSA-AES128-GCM-SHA256:ECDHE:ECDH:AES:HIGH:!NULL:!aNULL:!MD5:!ADH:!RC4;
+    underscores_in_headers         on;
 
     charset utf-8;
     root /data;
@@ -66,19 +66,42 @@ server {
 }
 ```
 
-start nginx:
-```shell
-#!/bin/bash
-mkdir data
-docker stop nginx_file_server
-docker rm nginx_file_server
+App Mesh used as a secure file upload server which share storage with Nginx.
+Use `docker-compose up -d` to start appmesh and nginx service.
 
-docker run -d -p 8081:8080\
-        --name nginx_file_server \
-        -v $(pwd)/data:/data \
-        -v $(pwd)/nginx.conf:/etc/nginx/nginx.conf \
-        -v $(pwd)/default.conf:/etc/nginx/conf.d/default.conf \
-        nginx:stable-alpine
+`compose.yml`:
+```yaml
+version: "3"
+
+services:
+
+  appmesh_upload_svc:
+    image: laoshanxi/appmesh:latest
+    hostname: appmesh.hostname.com
+    restart: always
+    privileged: true
+    user: root
+    volumes:
+      - ./data/:/data/
+      - /etc/ssl/ca.pem:/opt/appmesh/ssl/ca.pem
+      - ./server-key.pem:/opt/appmesh/ssl/server-key.pem
+      - ./server.pem:/opt/appmesh/ssl/server.pem
+    ports:
+      - "6060:6060"
+    environment:
+      - APPMESH_REST_RestListenAddress=appmesh.hostname.com
+
+  nginx_download_svc:
+    image: nginx:stable-alpine
+    restart: always
+    ports:
+      - "8443:443"
+    volumes:
+      - ./data/:/data/
+      - ./server-key.pem:/etc/nginx/conf.d/server-key.pem
+      - ./server.pem:/etc/nginx/conf.d/server.pem
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./default.conf:/etc/nginx/conf.d/default.conf
 ```
 
-Access file server from URL `http://127.0.0.1:8081/`
+View file server from URL `https://127.0.0.1:8443/`

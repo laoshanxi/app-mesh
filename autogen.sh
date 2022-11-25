@@ -263,3 +263,11 @@ if [ true ]; then
 	cmake --build . --target install
 fi
 python3 -m pip install --upgrade msgpack
+
+cd $ROOTDIR
+# hashids
+# https://hashids.org/
+if [ true ]; then
+	git clone https://github.com/schoentoon/hashidsxx.git
+	cp -r hashidsxx /usr/local/include/
+fi

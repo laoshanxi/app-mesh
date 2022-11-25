@@ -36,3 +36,42 @@ System login and permission can all forward to App Mesh 1st and 2nd API to do th
 
 ### UI
 All those management API can be operated by [UI](https://github.com/laoshanxi/app-mesh-ui)
+
+### Deploy a JWT server with SSL certificate
+
+`compose.yml`
+```yaml
+version: "3"
+
+services:
+
+  jwt_appmesh:
+    image: laoshanxi/appmesh:latest
+    hostname: www.appmesh.com
+    restart: always
+    volumes:
+     - /etc/ssl/ca-bundle.pem:/opt/appmesh/ssl/ca.pem
+     - ./server.pem:/opt/appmesh/ssl/server.pem
+     - ./server-key.pem:/opt/appmesh/ssl/server-key.pem
+     - ./security.json:/opt/appmesh/security.json:rw
+    ports:
+     - "6060:6060"
+    environment:
+     - APPMESH_REST_RestListenAddress=www.appmesh.com
+
+
+  jwt_appmesh_ui:
+    image: laoshanxi/appmesh-ui:latest
+    restart: always
+    volumes:
+     - ./server.pem:/etc/nginx/conf.d/server.crt
+     - ./server-key.pem:/etc/nginx/conf.d/server.key
+    ports:
+     - "8443:443"
+    environment:
+     - APP_MESH_SERVER_HOST=www.appmesh.com
+    links:
+      - jwt_appmesh
+    depends_on:
+      - jwt_appmesh
+```

@@ -77,3 +77,6 @@ go install -v golang.org/x/tools/gopls@latest
 #messagepack Python pip
 apt install -y python3-pip
 python3 -m pip install --upgrade msgpack
+
+git clone https://github.com/schoentoon/hashidsxx.git
+cp -r hashidsxx /usr/local/include/

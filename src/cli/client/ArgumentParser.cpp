@@ -13,12 +13,12 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
+#include "../../common/Password.h"
 #include "../../common/Utility.h"
 #include "../../common/jwt-cpp/jwt.h"
 #include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
 #include "ArgumentParser.h"
-#include "Password.h"
 
 #define OPTION_URL \
 	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "server URL")
@@ -1852,7 +1852,7 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 	// Title:
 	std::cout << std::left;
 	std::cout
-		<< std::setw(3) << Utility::strToupper("id")
+		<< std::setw(5) << Utility::strToupper("id")
 		<< std::setw(NAME_COL_WIDTH) << Utility::strToupper(JSON_KEY_APP_name)
 		<< std::setw(6) << Utility::strToupper(JSON_KEY_APP_owner)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_status)
@@ -1878,7 +1878,7 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 			name = reduceFunc(name, NAME_COL_WIDTH);
 		else if (name.length() >= NAME_COL_WIDTH)
 			name += " ";
-		std::cout << std::setw(3) << index++;
+		std::cout << std::setw(5) << std::to_string(index++) + ' ';
 		std::cout << std::setw(NAME_COL_WIDTH) << name;
 		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
