@@ -1,4 +1,4 @@
-package main
+package http
 
 import (
 	"encoding/binary"
@@ -8,8 +8,10 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-const TCP_CHUNK_READ_BLOCK_SIZE = 2048
-const PROTOBUF_HEADER_LENGTH = 4
+const (
+	TCP_CHUNK_READ_BLOCK_SIZE = 2048
+	PROTOBUF_HEADER_LENGTH    = 4
+)
 
 type ResponseMessage struct {
 	Message string `json:"message"`
@@ -34,26 +36,18 @@ type Request struct {
 	Querys        map[string]string `msg:"querys" msgpack:"querys"`
 }
 
-func (r *Response) readResponse(conn net.Conn) error {
-	// read header 4 bytes (int)
-	headerBuf := make([]byte, PROTOBUF_HEADER_LENGTH)
-	_, err := conn.Read(headerBuf) //TODO: check read size
-	if err != nil {
-		return err
-	}
-	bodyLength := binary.BigEndian.Uint32(headerBuf)
-	log.Printf("read body length: %d", bodyLength)
+func blockRead(conn net.Conn, msgLength uint32) ([]byte, error) {
 	// read body buffer
 	var chunkSize uint32 = TCP_CHUNK_READ_BLOCK_SIZE
-	if bodyLength < chunkSize {
-		chunkSize = bodyLength
+	if msgLength < chunkSize {
+		chunkSize = msgLength
 	}
 	// make 0 length data bytes (since we'll be appending)
 	bodyBuf := make([]byte, 0)
-	var alreadyReadSize uint32 = 0
-	for {
+	var totalReadSize uint32 = 0
+	for totalReadSize < msgLength {
 		// https://stackoverflow.com/questions/24339660/read-whole-data-with-golang-net-conn-read
-		oneTimeRead := bodyLength - alreadyReadSize
+		oneTimeRead := msgLength - totalReadSize
 		if oneTimeRead > chunkSize {
 			oneTimeRead = chunkSize
 		}
@@ -61,16 +55,43 @@ func (r *Response) readResponse(conn net.Conn) error {
 		n, err := conn.Read(data)
 		if n > 0 {
 			bodyBuf = append(bodyBuf, data[:n]...)
-			alreadyReadSize += uint32(n)
-			log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, bodyLength-alreadyReadSize)
-			if alreadyReadSize >= bodyLength {
-				break
-			}
+			totalReadSize += uint32(n)
+			log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, msgLength-totalReadSize)
 			continue
+		} else if err != nil {
+			return nil, err
 		}
-		if err != nil {
+	}
+
+	return bodyBuf, nil
+}
+
+func blockSend(conn net.Conn, buf []byte) error {
+	var totalSentSize int = 0
+	var err error = nil
+	for totalSentSize < len(buf) {
+		byteSent := 0
+
+		if byteSent, err = tcpConnect.Write(buf[totalSentSize:]); err != nil {
 			return err
 		}
+		totalSentSize += byteSent
+		log.Printf("total send size %d bytes", totalSentSize)
+	}
+	return err
+}
+
+func (r *Response) readResponse(conn net.Conn) error {
+
+	// read header 4 bytes (int)
+	headerBuf, err := blockRead(conn, PROTOBUF_HEADER_LENGTH)
+	if err != nil {
+		return err
+	}
+	// read body
+	bodyBuf, err := blockRead(conn, binary.BigEndian.Uint32(headerBuf))
+	if err != nil {
+		return err
 	}
 	return msgpack.Unmarshal(bodyBuf, r)
 }

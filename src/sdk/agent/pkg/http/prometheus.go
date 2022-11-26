@@ -1,4 +1,4 @@
-package main
+package http
 
 import (
 	"log"
@@ -26,7 +26,7 @@ func prometheusProxyHandler(ctx *fasthttp.RequestCtx) {
 	}
 }
 
-func listenPrometheus(port int) {
+func ListenPrometheus(port int) {
 	router := fasthttprouter.New()
 	router.GET("/", prometheusRootHandler)
 	router.GET(PROMETHEUS_METRIC_REST_PATH, prometheusProxyHandler)

@@ -1,5 +1,4 @@
-#/usr/bin/env bash
-# appc(1) completion                                     -*- shell-script -*-
+# bash completion for appmesh                            -*- shell-script -*-
 
 _appc() {
     local cur prev words cword
@@ -23,4 +22,4 @@ _appc() {
     _filedir
 } && complete -F _appc appc
 
-# ex: ts=4 sw=4 et filetype=sh
+# ex: filetype=sh

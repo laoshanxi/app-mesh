@@ -143,7 +143,7 @@ add_custom_target(pack
 ##########################################################################
 add_custom_target(agent
     COMMENT "Golang build agent"
-    COMMAND go build -buildvcs=false -o ${CMAKE_CURRENT_BINARY_DIR}/bin/agent ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/
+    COMMAND go build -buildvcs=false -o ${CMAKE_CURRENT_BINARY_DIR}/bin/agent ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd
 )
 
 ##########################################################################

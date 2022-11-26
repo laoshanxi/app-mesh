@@ -62,6 +62,7 @@ fi
 # bash completion
 if [ -d "/usr/share/bash-completion/completions" ]; then
 	cp -f ${PROG_HOME}/script/bash_completion.sh /usr/share/bash-completion/completions/appc
+	chmod 644 /usr/share/bash-completion/completions/appc
 fi
 
 if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "${PROG_HOME}/ssl/server.pem" ]]; then
@@ -112,8 +113,10 @@ fi
 # start service
 # systemctl enable appmesh
 # systemctl start appmesh
+echo "APPMESH_SECURE_INSTALLATION=$APPMESH_SECURE_INSTALLATION"
 if [[ "$APPMESH_SECURE_INSTALLATION" = "Y" ]]; then
 	# gernerate password for secure installation
 	/usr/bin/appc appmginit
 fi
+echo "Install App Mesh complete"
 

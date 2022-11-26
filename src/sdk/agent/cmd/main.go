@@ -6,9 +6,9 @@ import (
 	"os"
 	"syscall"
 	"time"
-)
 
-var restAgentAddr = "" //"https://0.0.0.0:6060"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/http"
+)
 
 func monitorParentExit(parentProPid int) {
 	// 1. Force process exit when parent was exited
@@ -33,13 +33,14 @@ func main() {
 	var restTcpPort = 0      //6059
 	var prometheusPort = 0   //6061
 	var dockerAgentAddr = "" //"https://127.0.0.1:6058"
+	var restAgentAddr = ""   //"https://0.0.0.0:6060"
 
 	// parse arguments
 	restAddr := flag.String("agent_url", restAgentAddr, "The host URL used to listen REST proxy")
 	tcpPort := flag.Int("rest_tcp_port", restTcpPort, "The host port used to forward REST proxy")
 	promePort := flag.Int("prom_exporter_port", prometheusPort, "The host port used to expose Prometheus metrics")
 	dockerAddr := flag.String("docker_agent_url", dockerAgentAddr, "The host URL used to listen docker proxy")
-	socket := flag.String("docker_socket_file", dockerSocketFile, "Docker unix domain socket file path used to forward docker proxy")
+	socket := flag.String("docker_socket_file", http.DockerSocketFilePath, "Docker unix domain socket file path used to forward docker proxy")
 	flag.Parse()
 
 	log.Println("REST Agent enter")
@@ -55,7 +56,7 @@ func main() {
 		prometheusPort = *promePort
 	}
 	if socket != nil {
-		dockerSocketFile = *socket
+		http.DockerSocketFilePath = *socket
 	}
 	if dockerAddr != nil {
 		dockerAgentAddr = *dockerAddr
@@ -66,21 +67,21 @@ func main() {
 
 	// start listen docker proxy
 	if len(dockerAgentAddr) > 0 {
-		go listenDocker(dockerAgentAddr)
-		log.Println("Docker agent listening at:", dockerAgentAddr, " forward to:", dockerSocketFile)
+		go http.ListenDocker(dockerAgentAddr)
+		log.Println("<Docker Agent> listening at:", dockerAgentAddr, " forward to:", http.DockerSocketFilePath)
 
 	}
 
 	// start listen REST proxy
 	if restTcpPort > 1024 {
-		go listenRest(restAgentAddr, restTcpPort)
-		log.Println("REST agent listening at:", restAgentAddr)
+		go http.ListenRest(restAgentAddr, restTcpPort)
+		log.Println("<App Mesh Agent> listening at: ", restAgentAddr)
 	}
 
 	// start prometheus exporter (without SSL)
 	if prometheusPort > 1024 {
-		go listenPrometheus(prometheusPort)
-		log.Println("Prometheus exporter listening at:", prometheusPort)
+		go http.ListenPrometheus(prometheusPort)
+		log.Println("<Prometheus Exporter> listening at: ", prometheusPort)
 	}
 
 	// Wait forever.

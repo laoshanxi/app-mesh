@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"io"
@@ -53,7 +53,7 @@ func MoveFile(src string, dst string) error {
 	return os.Remove(src)
 }
 
-func getAppMeshHomeDir() string {
+func GetAppMeshHomeDir() string {
 	return getParentDir(getCurrentAbPath())
 }
 

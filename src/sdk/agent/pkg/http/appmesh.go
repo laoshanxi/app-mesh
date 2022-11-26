@@ -1,4 +1,4 @@
-package main
+package http
 
 import (
 	"crypto/tls"
@@ -16,33 +16,36 @@ import (
 	"sync"
 
 	"github.com/buaazp/fasthttprouter"
-	grafana "github.com/laoshanxi/app-mesh/src/sdk/agent/grafana"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/grafana"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	"github.com/rs/xid"
 	"github.com/valyala/fasthttp"
 )
 
-const REST_PATH_UPLOAD = "/appmesh/file/upload"
-const REST_PATH_DOWNLOAD = "/appmesh/file/download"
-const REST_PATH_FILE = "/appmesh/file/"
-const HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
-const HTTP_USER_AGENT = "appmeshsdk"
+const (
+	REST_PATH_UPLOAD            = "/appmesh/file/upload"
+	REST_PATH_DOWNLOAD          = "/appmesh/file/download"
+	REST_PATH_FILE              = "/appmesh/file/"
+	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
+	HTTP_USER_AGENT             = "appmeshsdk"
+)
 
-var tcpConnect net.Conn    // tcp connection
-var socketMutex sync.Mutex // tcp connection lock
-var requestMap sync.Map    // request cache for asyncrized response
+var (
+	tcpConnect  net.Conn   // tcp connection to the server
+	socketMutex sync.Mutex // tcp connection lock
+	requestMap  sync.Map   // request map cache for asyncrized response
+)
 
+// https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
-	// https://www.jianshu.com/p/dce19fb167f4
 	pool := x509.NewCertPool()
-	caCertPath := filepath.Join(getAppMeshHomeDir(), "ssl/ca.pem")
+	caCertPath := filepath.Join(utils.GetAppMeshHomeDir(), "ssl/ca.pem")
 	caCrt, err := ioutil.ReadFile(caCertPath)
 	if err != nil {
 		log.Fatalf("Failed read file: %v", err)
 	}
 	pool.AppendCertsFromPEM(caCrt)
-	conf := &tls.Config{
-		RootCAs: pool,
-	}
+	conf := &tls.Config{RootCAs: pool}
 	return tls.Dial("tcp", tcpAddr, conf)
 }
 
@@ -65,45 +68,38 @@ func readMsgLoop() {
 	}
 }
 
-// http handler function
+// https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
-	// https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
-
-	// body buffer
+	// body buffer, read from fasthttp
 	request := readRequestData(&ctx.Request)
 	bodyData, err := request.serialize()
 	if err != nil {
-		log.Fatalf("failed to serialize request: %v", err)
+		log.Fatalf("Failed to serialize request: %v", err)
 	}
 
 	// header buffer
 	headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
 	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
 	ctx.Logger().Printf("Requesting: %s with msg length: %d", request.Uuid, len(bodyData))
-	// ctx.Logger().Printf("---Request Protoc:---\n%v\n", protocRequest)
 
 	// create a chan for accept Response
 	ch := make(chan *Response)
 	requestMap.Store(request.Uuid, ch)
 
-	var sendHeader int
-	var sendBody int
 	var sendErr error
-	// send header and body
+	// send header and body to app mesh server
 	{
 		socketMutex.Lock()
-		sendHeader, _ = tcpConnect.Write(headerData)
-		sendBody, sendErr = tcpConnect.Write(bodyData)
-		ctx.Logger().Printf("sent header size [%d = %d] body size [%d = %d] to TCP, error: %v", len(headerData), sendHeader, len(bodyData), sendBody, sendErr)
+		if sendErr = blockSend(tcpConnect, headerData); sendErr == nil {
+			sendErr = blockSend(tcpConnect, bodyData)
+		}
 		socketMutex.Unlock()
 	}
 	if sendErr == nil {
 		// wait chan to get response
 		protocResponse := <-ch
-
 		// reply to client
 		applyResponse(ctx, protocResponse)
-		// ctx.Logger().Printf("---Response Protoc:---\n%v\n", protocResponse)
 	} else {
 		ctx.Logger().Printf("Failed to send request to server with error:: %v", sendErr)
 		log.Fatal(sendErr)
@@ -151,7 +147,7 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	// status code
 	ctx.Response.SetStatusCode(int(data.HttpStatus))
 	// body
-	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && serveFile(ctx, data) {
+	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && handleRestFile(ctx, data) {
 		ctx.Logger().Printf("File REST call Finished  %s", data.Uuid)
 	} else {
 		ctx.Response.SetBodyRaw([]byte(data.Body))
@@ -160,7 +156,7 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	}
 }
 
-func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
+func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 	ctx.Logger().Printf(string(ctx.Request.URI().Path()))
 	if ctx.Request.Header.IsGet() && string(ctx.Request.URI().Path()) == REST_PATH_DOWNLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle download file
@@ -181,7 +177,7 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		// handle upload file
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
 		ctx.Logger().Printf("uploading file: %s", filePath)
-		if err := persistFile(ctx, filePath); err != nil {
+		if err := saveFile(ctx, filePath); err != nil {
 			errorJson, _ := json.Marshal(ResponseMessage{Message: err.Error()})
 			ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
 		} else {
@@ -204,8 +200,8 @@ func serveFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 	return false
 }
 
-func persistFile(ctx *fasthttp.RequestCtx, filePath string) error {
-	// https://freshman.tech/file-upload-golang/
+// https://freshman.tech/file-upload-golang/
+func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	if file, err := ctx.FormFile("file"); err == nil {
 		ctx.Logger().Printf("SaveMultipartFile: %s", filePath)
 		defer ctx.Request.RemoveMultipartFormFiles()
@@ -228,7 +224,7 @@ func listenAgent(restAgentAddr string, router *fasthttprouter.Router) error {
 func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 	conf := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
-		Certificates:             []tls.Certificate{loadServerCertificates(filepath.Join(getAppMeshHomeDir(), "ssl/server.pem"), filepath.Join(getAppMeshHomeDir(), "ssl/server-key.pem"))},
+		Certificates:             []tls.Certificate{loadServerCertificates(filepath.Join(utils.GetAppMeshHomeDir(), "ssl/server.pem"), filepath.Join(utils.GetAppMeshHomeDir(), "ssl/server-key.pem"))},
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
@@ -252,7 +248,7 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 	return s.Serve(tls.NewListener(ln, conf))
 }
 
-func listenRest(restAgentAddr string, restTcpPort int) {
+func ListenRest(restAgentAddr string, restTcpPort int) {
 	addr, err := url.Parse(restAgentAddr)
 	if err != nil {
 		panic(err)

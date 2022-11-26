@@ -1,4 +1,4 @@
-package main
+package http
 
 // Reference
 // https://github.com/open-cluster-management/rbac-query-proxy/blob/release-2.3/cmd/main.go
@@ -12,15 +12,18 @@ import (
 	"net"
 	"net/url"
 
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	"github.com/valyala/fasthttp"
 )
 
-var dockerSocketFile = "/var/run/docker.sock"
-var dockerSocktClient = &fasthttp.HostClient{
-	Addr: dockerSocketFile,
-	Dial: func(addr string) (net.Conn, error) {
-		return net.Dial("unix", addr)
-	}}
+var (
+	DockerSocketFilePath = "/var/run/docker.sock"
+	dockerSocktClient    = &fasthttp.HostClient{
+		Addr: DockerSocketFilePath,
+		Dial: func(addr string) (net.Conn, error) {
+			return net.Dial("unix", addr)
+		}}
+)
 
 // http handler function
 func dockerReverseProxyHandler(ctx *fasthttp.RequestCtx) {
@@ -55,9 +58,9 @@ func loadServerCertificates(pem string, key string) tls.Certificate {
 	return cert
 }
 
-func listenDocker(dockerAgentAddr string) {
+func ListenDocker(dockerAgentAddr string) {
 
-	if IsFileExist(dockerSocketFile) {
+	if utils.IsFileExist(DockerSocketFilePath) {
 		addr, err := url.Parse(dockerAgentAddr)
 		if err != nil {
 			panic(err)
@@ -68,6 +71,6 @@ func listenDocker(dockerAgentAddr string) {
 		dockerAgentAddr = addr.Hostname() + ":" + addr.Port()
 		listenDockerAgent(dockerAgentAddr)
 	} else {
-		log.Fatalf("Docker socket file not exist: %s", dockerSocketFile)
+		log.Fatalf("Docker socket file not exist: %s", DockerSocketFilePath)
 	}
 }

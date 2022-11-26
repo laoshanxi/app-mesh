@@ -1584,7 +1584,7 @@ void ArgumentParser::initRadomPassword()
 			const auto securityFilePath = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
 			auto jsonObj = nlohmann::json::parse(Utility::readFileCpp(securityFilePath));
 			// update with generated password
-			std::string genPassword = generatePassword(8, true, true, true, true);
+			std::string genPassword = generatePassword(8, true, true, true, false);
 			jsonObj[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = std::string(genPassword);
 
 			// serialize and save security JSON config
@@ -1593,7 +1593,7 @@ void ArgumentParser::initRadomPassword()
 			{
 				ofs << Utility::prettyJson(jsonObj.dump());
 				ofs.close();
-				std::cout << "password generated" << std::endl;
+				std::cout << "!Important! This will only occure once, password for user <admin> is <" << genPassword << ">." << std::endl;
 			}
 		}
 	}

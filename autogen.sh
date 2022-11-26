@@ -100,7 +100,7 @@ fi
 # yum install -y golang
 # apt install -y golang
 GO_ARCH=$architecture
-GO_VER=1.18.6
+GO_VER=1.18.8
 $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
@@ -109,7 +109,7 @@ go version
 # go env -w GO111MODULE=on
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp@v1.41.0
+go get github.com/valyala/fasthttp@v1.42.0
 go get github.com/buaazp/fasthttprouter
 go get github.com/klauspost/compress@v1.15.11
 go get -v github.com/rs/xid
