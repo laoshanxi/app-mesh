@@ -376,6 +376,8 @@ public:
 #define HTTP_QUERY_KEY_stdout_maxsize "stdout_maxsize"
 #define HTTP_QUERY_KEY_stdout_timeout "timeout"
 #define HTTP_QUERY_KEY_process_uuid "process_uuid"
+#define HTTP_QUERY_KEY_html "html"
+#define HTTP_QUERY_KEY_json "json"
 #define HTTP_QUERY_KEY_timeout "timeout"
 #define HTTP_QUERY_KEY_lifecycle "lifecycle"
 #define HTTP_QUERY_KEY_action_start "enable"

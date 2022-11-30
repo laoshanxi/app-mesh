@@ -38,3 +38,15 @@ Same as SimpleJson, add authentication token as Custom HTTP Headers `Authorizati
 Use URL `http://127.0.0.1:6060/appmesh/applications` to query applications from App Mesh.
 
 ![infinity](https://raw.githubusercontent.com/laoshanxi/picture/master/grafana/04_infinity_datasource.PNG)
+
+Date time string attributes support convert to local ISO date time:
+![date_column](https://raw.githubusercontent.com/laoshanxi/picture/master/grafana/05_grafana_date_time.png)
+
+Note: for https without import root CA, please select "Skip TLS Verify"
+
+This plugin also support HTML format for application output
+Use URL `https://appmesh:6060/appmesh/app/ping/output`, add Query Parameter `html=true`, input `Rows / Root` as `body > pre`, add one column `pre` to shown output by line.
+![infinity_html](https://raw.githubusercontent.com/laoshanxi/picture/master/grafana/06_infinity_html.png)
+
+This plugin also support JSON format for application output
+Use URL `https://appmesh:6060/appmesh/app/ping/output`, add Query Parameter `json=true`

@@ -923,6 +923,8 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	long maxSize = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
 	size_t timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
 	std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
+	bool outputHtml = getHttpQueryString(message, HTTP_QUERY_KEY_html).length();
+	bool outputJson = getHttpQueryString(message, HTTP_QUERY_KEY_json).length();
 
 	checkAppAccessPermission(message, appName, false);
 
@@ -937,7 +939,30 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 		headers[HTTP_HEADER_KEY_output_pos] = std::to_string(pos);
 	if (finished)
 		headers[HTTP_HEADER_KEY_exit_code] = std::to_string(exitCode);
-
+	if (outputHtml)
+	{
+		// https://github.com/yesoreyeram/grafana-infinity-datasource/blob/main/testdata/users.html
+		// https://sriramajeyam.com/grafana-infinity-datasource/wiki/html
+		static const auto html = Utility::readFileCpp("/opt/appmesh/script/grafana_infinity.html");
+		auto lines = Utility::splitString(output, "\n");
+		std::stringstream ss;
+		for (const auto &line : lines)
+		{
+			ss << line << "</pre>\n<pre>";
+		}
+		output = Utility::stringFormat(html, appName.c_str(), ss.str().c_str());
+	}
+	else if (outputJson)
+	{
+		auto lines = Utility::splitString(output, "\n");
+		auto jsonArray = nlohmann::json::array();
+		// Build Json
+		for (std::size_t i = 0; i < lines.size(); ++i)
+		{
+			jsonArray[i] = nlohmann::json{{"index", i + 1}, {"stdout", lines[i]}};
+		}
+		output = jsonArray.dump();
+	}
 	message.reply(web::http::status_codes::OK, output, headers);
 }
 

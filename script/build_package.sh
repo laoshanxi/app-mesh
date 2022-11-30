@@ -29,6 +29,7 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/script/ssl_cert_generate.sh ${PACKAGE_HOME}/ssl/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/bash_completion.sh ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yml ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yaml ${PACKAGE_HOME}/script/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.html ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/appmesh_client.py ${PACKAGE_HOME}/sdk/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/requirements.txt ${PACKAGE_HOME}/sdk/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/*_pb2.py ${PACKAGE_HOME}/sdk/
