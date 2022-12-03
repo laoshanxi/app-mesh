@@ -109,7 +109,7 @@ go version
 # go env -w GO111MODULE=on
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp@v1.42.0
+go get github.com/valyala/fasthttp@v1.43.0
 go get github.com/buaazp/fasthttprouter
 go get github.com/klauspost/compress@v1.15.11
 go get -v github.com/rs/xid
@@ -167,8 +167,8 @@ cd $ROOTDIR
 
 # cpr
 # https://github.com/libcpr/cpr
-git clone --depth=1 -b 1.9.2 https://github.com/libcpr/cpr.git
-cd cpr && mkdir build && cd build
+git clone --depth=1 -b 1.9.3 https://github.com/libcpr/cpr.git
+cd cpr && mkdir -p build && cd build
 cmake .. -DCPR_USE_SYSTEM_CURL=ON
 cmake --build .
 make install

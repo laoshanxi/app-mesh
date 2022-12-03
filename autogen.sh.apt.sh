@@ -42,8 +42,8 @@ apt install -y golang-cfssl
 
 # cpr
 # https://github.com/libcpr/cpr
-git clone --depth=1 -b 1.9.2 https://github.com/libcpr/cpr.git
-cd cpr && mkdir build && cd build
+git clone --depth=1 -b 1.9.3 https://github.com/libcpr/cpr.git
+cd cpr && mkdir -p build && cd build
 cmake .. -DCPR_USE_SYSTEM_CURL=ON
 cmake --build .
 make install
@@ -62,10 +62,10 @@ apt install -y golang
 # Golang third party library
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get -v github.com/valyala/fasthttp@v1.42.0
+go get github.com/valyala/fasthttp@v1.43.0
 go get github.com/buaazp/fasthttprouter
 go get github.com/klauspost/compress@v1.15.11
-go get -v github.com/rs/xid
+go get github.com/rs/xid
 # Golang tools for VSCode
 go install -v github.com/cweill/gotests/gotests@latest
 go install -v github.com/fatih/gomodifytags@latest
@@ -76,7 +76,14 @@ go install -v honnef.co/go/tools/cmd/staticcheck@latest
 go install -v golang.org/x/tools/gopls@latest
 #messagepack Python pip
 apt install -y python3-pip
+if [ true ]; then
+	git clone https://github.com/msgpack/msgpack-c.git
+	cd msgpack-c
+	git checkout cpp_master
+	cmake .
+	cmake --build . --target install
+fi
 python3 -m pip install --upgrade msgpack
 
-git clone https://github.com/schoentoon/hashidsxx.git
+git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
 cp -r hashidsxx /usr/local/include/
