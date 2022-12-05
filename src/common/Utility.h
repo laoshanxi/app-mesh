@@ -356,6 +356,7 @@ public:
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization
 #define HTTP_HEADER_JWT_Bearer "Bearer"
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "
+#define HTTP_HEADER_Auth_BasicSpace "Basic "
 #define HTTP_HEADER_JWT_access_token "Access-Token"
 #define HTTP_HEADER_JWT_expire_seconds "Expire-Seconds"
 #define HTTP_HEADER_JWT_username "Username"

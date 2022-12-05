@@ -240,7 +240,7 @@ void Utility::removeFile(const std::string &path)
 
 	if (path.length() && isFileExist(path))
 	{
-		if (fs::remove(path))
+		if (ACE_OS::unlink(path.c_str()) == 0)
 		{
 			LOG_DBG << fname << "file <" << path << "> removed";
 		}

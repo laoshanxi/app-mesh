@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
 				}
 				catch (...)
 				{
-					LOG_ERR << fname << "Recover from snapshot failed with error " << std::strerror(errno);
+					LOG_ERR << fname << "Application <" << app->getName() << "> execute failed with error " << std::strerror(errno);
 				}
 			}
 
