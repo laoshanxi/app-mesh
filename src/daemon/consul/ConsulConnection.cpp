@@ -8,6 +8,7 @@
 #include "../../cli/client/ArgumentParser.h"
 #include "../../common/DateTime.h"
 #include "../../common/PerfLog.h"
+#include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
@@ -242,15 +243,15 @@ int ConsulConnection::getHealthStatus(const std::string &hostName, const std::st
 	auto baseUri = Utility::stringFormat("https://%s:%d", hostName.c_str(), Configuration::instance()->getRestListenPort());
 	auto restPath = Utility::stringFormat("/appmesh/app/%s/health", app.c_str());
 	auto url = Utility::stdStringTrim(baseUri, '/');
-	auto resp = cpr::Get(cpr::Url{url, restPath}, cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false}), cpr::Timeout{1000 * 10});
-	if (resp.status_code != web::http::status_codes::OK)
+	auto resp = RestClient::request(url, web::http::methods::GET, restPath, nullptr, {}, {});
+	if (resp->status_code != web::http::status_codes::OK)
 	{
-		LOG_WAR << fname << "failed to get health status: " << resp.status_code << " with message: " << resp.error.message << " with host: " << url << restPath << ", app: " << app;
+		LOG_WAR << fname << "failed to get health status: " << resp->status_code << " with message: " << resp->error.message << " with host: " << url << restPath << ", app: " << app;
 		return 1;
 	}
 	else
 	{
-		return (std::stoi(resp.text));
+		return (std::stoi(resp->text));
 	}
 }
 
@@ -1027,59 +1028,14 @@ std::shared_ptr<cpr::Response> ConsulConnection::requestConsul(const web::http::
 
 	auto response = std::make_shared<cpr::Response>();
 	auto restURL = getConfig()->m_consulUrl;
-
-	// header
-	cpr::Header cprHeader;
-	for (const auto &h : header)
-		cprHeader.insert({h.first, h.second});
-
-	// query
-	cpr::Parameters cprParam;
-	for (const auto &q : query)
-		cprParam.Add({q.first, q.second});
-
-	cpr::Body cprBody;
-	if (body)
-	{
-		cprBody = body->dump();
-		cprHeader.insert({"Content-Type", "application/json"});
-	}
-
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	cpr::Authentication auth = cpr::Authentication(getConfig()->m_basicAuthUser, getConfig()->m_basicAuthPass, cpr::AuthMode::BASIC);
 	bool useAuth = getConfig()->m_basicAuthUser.length();
-	auto cprTimeout = cpr::Timeout{1000 * timeoutSec};
-
 	try
 	{
-		if (mtd == "GET")
+		if (useAuth)
 		{
-			if (useAuth)
-				*response = cpr::Get(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprTimeout, auth);
-			else
-				*response = cpr::Get(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprTimeout);
+			header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_Auth_BasicSpace) + Utility::encode64(getConfig()->m_basicAuthUser + ":" + getConfig()->m_basicAuthPass);
 		}
-		else if (mtd == "POST")
-		{
-			if (useAuth)
-				*response = cpr::Post(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprBody, cprTimeout, auth);
-			else
-				*response = cpr::Post(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprBody, cprTimeout);
-		}
-		else if (mtd == "PUT")
-		{
-			if (useAuth)
-				*response = cpr::Put(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprBody, cprTimeout, auth);
-			else
-				*response = cpr::Put(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprBody, cprTimeout);
-		}
-		else if (mtd == "DELETE")
-		{
-			if (useAuth)
-				*response = cpr::Delete(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprTimeout, auth);
-			else
-				*response = cpr::Delete(cpr::Url{restURL, path}, sslOpts, cprHeader, cprParam, cprTimeout);
-		}
+		response = RestClient::request(restURL, mtd, path, body, header, query);
 		// In case of REST server crash or block query timeout, will throw exception:
 		// "Failed to read HTTP status line"
 		LOG_DBG << fname << mtd << " " << path << " return " << response->status_code;

@@ -8,12 +8,13 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
-#include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Password.h"
+#include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../../common/jwt-cpp/jwt.h"
 #include "../../common/os/chown.hpp"
@@ -396,7 +397,7 @@ void ArgumentParser::processAppAdd()
 		("cron", "indicate interval parameter use cron expression")
 		("retention,q", po::value<std::string>(), "extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "default exit behavior [restart,standby,keepalive,remove]")
-		("control", po::value<std::vector<std::string>>()->default_value(std::vector<std::string>(), default_control_string), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
+		("control", po::value<std::vector<std::string>>(), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
 		("force,f", "force without confirm")
 		("stdin", "accept json from stdin")
 		("help,h", "Prints command usage to stdout and exits");
@@ -1201,22 +1202,22 @@ void ArgumentParser::processFileDownload()
 	auto file = m_commandLineVariables["remote"].as<std::string>();
 	auto local = m_commandLineVariables["local"].as<std::string>();
 
-	std::ofstream stream(local, std::ios::binary | std::ios::trunc);
 	// header
-	cpr::Header cprHeader;
-	cprHeader.insert({HTTP_HEADER_KEY_file_path, file});
-	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	auto response = cpr::Download(stream, cpr::Url{m_currentUrl, restPath}, cprHeader, sslOpts, cpr::Timeout{1000});
+	std::map<std::string, std::string> header;
+	header.insert({HTTP_HEADER_KEY_file_path, file});
+	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
+	auto response = RestClient::download(m_currentUrl, restPath, file, local, header);
 
-	std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(stream.tellp()) << ">" << std::endl;
-
-	if (response.header.count(HTTP_HEADER_KEY_file_mode))
-		os::fileChmod(local, std::stoi(response.header.find(HTTP_HEADER_KEY_file_mode)->second));
-	if (response.header.count(HTTP_HEADER_KEY_file_user) && response.header.count(HTTP_HEADER_KEY_file_group))
-		os::chown(std::stoi(response.header.find(HTTP_HEADER_KEY_file_user)->second),
-				  std::stoi(response.header.find(HTTP_HEADER_KEY_file_group)->second),
+	if (response->header.count(HTTP_HEADER_KEY_file_mode))
+		os::fileChmod(local, std::stoi(response->header.find(HTTP_HEADER_KEY_file_mode)->second));
+	if (response->header.count(HTTP_HEADER_KEY_file_user) && response->header.count(HTTP_HEADER_KEY_file_group))
+		os::chown(std::stoi(response->header.find(HTTP_HEADER_KEY_file_user)->second),
+				  std::stoi(response->header.find(HTTP_HEADER_KEY_file_group)->second),
 				  local, false);
+	if (response->status_code == 200)
+		std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
+	else
+		std::cout << parseOutputMessage(response) << std::endl;
 }
 
 void ArgumentParser::processFileUpload()
@@ -1247,25 +1248,24 @@ void ArgumentParser::processFileUpload()
 	local = boost::filesystem::canonical(local).string();
 	std::string restPath = "/appmesh/file/upload";
 	auto fileInfo = os::fileStat(local);
-
 	// header
-	cpr::Header cprHeader;
-	cprHeader.insert({HTTP_HEADER_KEY_file_path, file});
-	cprHeader.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
-	cprHeader.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
-	cprHeader.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
-	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	cpr::Multipart cprMultipart{{"filename", boost::filesystem::path(local).filename().string()}, {"file", cpr::File(local)}};
-	auto response = cpr::Post(cpr::Url{m_currentUrl, restPath}, sslOpts, cprHeader, cprMultipart, cpr::Timeout{1000});
-
-	if (response.header.count(HTTP_HEADER_KEY_file_mode))
-		os::fileChmod(local, std::stoi(response.header.find(HTTP_HEADER_KEY_file_mode)->second));
-	if (response.header.count(HTTP_HEADER_KEY_file_user) && response.header.count(HTTP_HEADER_KEY_file_group))
-		os::chown(std::stoi(response.header.find(HTTP_HEADER_KEY_file_user)->second),
-				  std::stoi(response.header.find(HTTP_HEADER_KEY_file_group)->second),
+	std::map<std::string, std::string> header;
+	header.insert({HTTP_HEADER_KEY_file_path, file});
+	header.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
+	header.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
+	header.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
+	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
+	auto response = RestClient::upload(m_currentUrl, restPath, local, header);
+	if (response->header.count(HTTP_HEADER_KEY_file_mode))
+		os::fileChmod(local, std::stoi(response->header.find(HTTP_HEADER_KEY_file_mode)->second));
+	if (response->header.count(HTTP_HEADER_KEY_file_user) && response->header.count(HTTP_HEADER_KEY_file_group))
+		os::chown(std::stoi(response->header.find(HTTP_HEADER_KEY_file_user)->second),
+				  std::stoi(response->header.find(HTTP_HEADER_KEY_file_group)->second),
 				  local, false);
-	std::cout << "Uploaded file <" << local << ">" << std::endl;
+	if (response->status_code == 200)
+		std::cout << "Uploaded file <" << local << ">" << std::endl;
+	else
+		std::cout << parseOutputMessage(response) << std::endl;
 }
 
 void ArgumentParser::processTags()
@@ -1609,44 +1609,12 @@ bool ArgumentParser::confirmInput(const char *msg)
 
 std::shared_ptr<cpr::Response> ArgumentParser::requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
-	// header
-	cpr::Header cprHeader;
-	for (const auto &h : header)
-		cprHeader.insert({h.first, h.second});
 	if (m_jwtToken.empty())
+	{
 		m_jwtToken = getAuthenToken();
-	cprHeader.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken});
-
-	// query
-	cpr::Parameters cprParam;
-	for (const auto &q : query)
-		cprParam.Add({q.first, q.second});
-
-	cpr::Body cprBody;
-	if (body)
-	{
-		cprBody = body->dump();
-		cprHeader.insert({"Content-Type", "application/json"});
 	}
-
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	auto resp = std::make_shared<cpr::Response>();
-	if (mtd == "GET")
-	{
-		*resp = cpr::Get(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
-	else if (mtd == "POST")
-	{
-		*resp = cpr::Post(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
-	else if (mtd == "PUT")
-	{
-		*resp = cpr::Put(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
-	else if (mtd == "DELETE")
-	{
-		*resp = cpr::Delete(cpr::Url{m_currentUrl, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
+	header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken;
+	auto resp = RestClient::request(m_currentUrl, mtd, path, body, header, query);
 	if (throwAble && resp->status_code != 200)
 	{
 		throw std::invalid_argument(parseOutputMessage(resp));
@@ -1825,23 +1793,20 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 {
 	auto url = Utility::stdStringTrim(targetHost, '/');
 	// header
-	cpr::Header cprHeader;
-	cprHeader.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
-	cprHeader.insert({HTTP_HEADER_JWT_password, Utility::encode64(passwd)});
-	cprHeader.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+	std::map<std::string, std::string> header;
+	header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
+	header.insert({HTTP_HEADER_JWT_password, Utility::encode64(passwd)});
+	header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
 	if (m_tokenTimeoutSeconds > 0)
-		cprHeader.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
+		header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	auto response = cpr::Post(cpr::Url{url, "/appmesh/login"}, sslOpts, cprHeader);
-	if (response.status_code != web::http::status_codes::OK)
+	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", nullptr, header, {});
+	if (response->status_code != web::http::status_codes::OK)
 	{
-		auto sharedResp = std::make_shared<cpr::Response>();
-		*sharedResp = response;
-		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(sharedResp).c_str()));
+		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(response).c_str()));
 	}
 	m_currentUrl = url;
-	m_jwtToken = nlohmann::json::parse(response.text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
+	m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
 	return m_jwtToken;
 }
 

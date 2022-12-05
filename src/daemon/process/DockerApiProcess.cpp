@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../../common/DateTime.h"
+#include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../../common/os/pstree.hpp"
 #include "../Configuration.h"
@@ -206,21 +207,34 @@ int DockerApiProcess::returnValue(void) const
 {
 	const static char fname[] = "DockerApiProcess::returnValue() ";
 
-	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerInspect
-	// GET /containers/{id}/json
-	auto resp = const_cast<DockerApiProcess *>(this)->requestDocker(
-		web::http::methods::GET,
-		Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
-		{}, {}, nullptr);
-	if (resp->status_code == web::http::status_codes::OK)
+	if (this->containerId().length())
 	{
-		return nlohmann::json::parse(resp->text).at("State").at("ExitCode").get<int>();
+		// https://docs.docker.com/engine/api/v1.41/#operation/ContainerInspect
+		// GET /containers/{id}/json
+		auto resp = const_cast<DockerApiProcess *>(this)->requestDocker(
+			web::http::methods::GET,
+			Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
+			{}, {}, nullptr);
+		if (resp->status_code == web::http::status_codes::OK)
+		{
+			try
+			{
+				return nlohmann::json::parse(resp->text).at("State").at("ExitCode").get<int>();
+			}
+			catch (...)
+			{
+				return -200;
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "failed: " << resp->text;
+		}
 	}
 	else
 	{
-		LOG_WAR << fname << "failed: " << resp->text;
+		return AppProcess::returnValue();
 	}
-	return -200;
 }
 
 const std::shared_ptr<cpr::Response> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body)
@@ -232,39 +246,7 @@ const std::shared_ptr<cpr::Response> DockerApiProcess::requestDocker(const web::
 	auto response = std::make_shared<cpr::Response>();
 	try
 	{
-		// header
-		cpr::Header cprHeader;
-		for (const auto &h : header)
-			cprHeader.insert({h.first, h.second});
-		// query
-		cpr::Parameters cprParam;
-		for (const auto &q : query)
-			cprParam.Add({q.first, q.second});
-
-		cpr::Body cprBody;
-		if (body)
-		{
-			cprBody = body->dump();
-			cprHeader.insert({"Content-Type", "application/json"});
-		}
-
-		if (mtd == "GET")
-		{
-			*response = cpr::Get(cpr::Url{restURL, path}, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-		}
-		else if (mtd == "POST")
-		{
-			*response = cpr::Post(cpr::Url{restURL, path}, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-		}
-		else if (mtd == "PUT")
-		{
-			*response = cpr::Put(cpr::Url{restURL, path}, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-		}
-		else if (mtd == "DELETE")
-		{
-			*response = cpr::Delete(cpr::Url{restURL, path}, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-		}
-		return response;
+		return RestClient::request(restURL, mtd, path, body, header, query);
 	}
 	catch (const std::exception &ex)
 	{
