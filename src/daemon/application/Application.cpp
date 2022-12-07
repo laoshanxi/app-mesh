@@ -475,7 +475,7 @@ void Application::spawn()
 	if (this->isEnabled() && m_startInterval > 0)
 	{
 		// note: timer lock can hold app lock, app lock should not hold timer lock
-		this->scheduleNext(std::chrono::system_clock::now() + std::chrono::seconds(1));
+		this->scheduleNext(std::chrono::system_clock::now());
 	}
 
 	// 5. registerCheckStdoutTimer() outside of m_appMutex
@@ -961,6 +961,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 {
 	const static char fname[] = "Application::scheduleNext() ";
 
+	now += std::chrono::seconds(1); // adjust the parse input which does not contain seconds/milliseconds
 	long timerId = INVALID_TIMER_ID;
 	auto next = m_timer->nextTime(now);
 
@@ -975,7 +976,7 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 	// 2. register timer
 	if (next != AppTimer::EPOCH_ZERO_TIME)
 	{
-		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - now).count();
+		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
 		timerId = this->registerTimer(delay, 0, std::bind(&Application::spawn, this), fname);
 	}
 
