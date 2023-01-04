@@ -798,7 +798,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		auto err = getLastError();
 		if (err.length())
 			result[JSON_KEY_APP_last_error] = std::string(err);
-		result[JSON_KEY_APP_starts] = (m_starts->Value());
+		result[JSON_KEY_APP_starts] = static_cast<long long>(m_starts->Value());
 	}
 
 	result[JSON_KEY_APP_behavior] = this->behaviorAsJson();
