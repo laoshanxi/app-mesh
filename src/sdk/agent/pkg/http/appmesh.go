@@ -185,7 +185,7 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 			// https://www.jianshu.com/p/216cb89c4d81
 			mode, err := strconv.Atoi(string(ctx.Request.Header.Peek("File-Mode")))
 			if err == nil {
-				os.Chmod(filePath, os.FileMode(mode))
+				os.Chmod(filePath, os.FileMode(uint32(mode)))
 			}
 			fileUserId := string(ctx.Request.Header.Peek("File-User"))
 			uid, errUid := strconv.Atoi(fileUserId)
