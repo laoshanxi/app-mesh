@@ -43,7 +43,7 @@ if [ -f "/usr/bin/yum" ]; then
 		yum install git -y
 	fi
 	yum install -y make gcc-c++ libtool openldap-devel liboath-devel
-	yum install -y dos2unix wget which
+	yum install -y dos2unix wget curl which
 
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -63,7 +63,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
 	# apt full-upgrade -q -y
-	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap-dev liboath-dev
+	apt install -y dos2unix g++ git wget curl make automake libtool zlib1g-dev alien libldap-dev liboath-dev
 	#apt install -y libboost-all-dev libace-dev libace
 	#apt install -y liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
@@ -109,10 +109,10 @@ go version
 # go env -w GO111MODULE=on
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp@v1.43.0
+go get github.com/valyala/fasthttp
 go get github.com/buaazp/fasthttprouter
-go get github.com/klauspost/compress@v1.15.11
-go get -v github.com/rs/xid
+go get github.com/klauspost/compress
+go get github.com/rs/xid
 # Golang tools for VSCode
 go install -v github.com/cweill/gotests/gotests@latest
 go install -v github.com/fatih/gomodifytags@latest
@@ -256,7 +256,7 @@ cd $ROOTDIR
 # Message Pack
 # https://github.com/msgpack/msgpack-c/tree/cpp_master
 if [ true ]; then
-	git clone https://github.com/msgpack/msgpack-c.git
+	git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
 	cd msgpack-c
 	git checkout cpp_master
 	cmake .

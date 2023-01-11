@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -184,8 +185,8 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 			ctx.Logger().Printf("file saved: %s", filePath)
 			// https://www.jianshu.com/p/216cb89c4d81
 			mode, err := strconv.Atoi(string(ctx.Request.Header.Peek("File-Mode")))
-			if err == nil {
-				os.Chmod(filePath, os.FileMode(uint32(mode)))
+			if err == nil && mode > 0 && mode < math.MaxInt32 {
+				os.Chmod(filePath, os.FileMode(mode))
 			}
 			fileUserId := string(ctx.Request.Header.Peek("File-User"))
 			uid, errUid := strconv.Atoi(fileUserId)
