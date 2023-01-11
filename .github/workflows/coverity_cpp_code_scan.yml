@@ -8,6 +8,9 @@ on:
       - "src/**"
       - ".github/workflows/coverity_cpp_code_scan.yml"
 
+permissions:  # added using https://github.com/step-security/secure-workflows
+  contents: read
+
 env:
   APPMESH_VERSION: "2.1.1"
 
@@ -25,21 +28,18 @@ jobs:
       - name: Checkout Github code
         uses: actions/checkout@v3
 
-      - name: Setup curl
-        run: apt-get install --fix-missing -y curl
-
       - name: Cmake init with Debug mode
         run: |
           mkdir build
           cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..
 
-      # https://github.com/laoshanxi/coverity-scan-action
+      # https://github.com/vapier/coverity-scan-action
       - name: Coverity scan
-        uses: laoshanxi/coverity-scan-action@v1
+        uses: vapier/coverity-scan-action@v1
         with:
           project: laoshanxi%2Fapp-mesh
+          working-directory: build
           token: ${{ secrets.COVERITY_SCAN_TOKEN }}
           email: 178029200@qq.com
           version: ${{ env.APPMESH_VERSION }}
-          description: "Ubuntu 9.3.0-17ubuntu1~20.04"

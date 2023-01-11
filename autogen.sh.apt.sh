@@ -9,7 +9,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt update
 # apt full-upgrade -q -y
 # apt install -y build-essential
-apt install -y wget
+apt install -y wget curl
 apt install -y g++ cmake make
 
 # memory tool for debug
@@ -62,24 +62,24 @@ apt install -y golang
 # Golang third party library
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp@v1.43.0
+go get github.com/valyala/fasthttp
 go get github.com/buaazp/fasthttprouter
-go get github.com/klauspost/compress@v1.15.11
+go get github.com/klauspost/compress
 go get github.com/rs/xid
 # Golang tools for VSCode
-go install -v github.com/cweill/gotests/gotests@latest
-go install -v github.com/fatih/gomodifytags@latest
-go install -v github.com/josharian/impl@latest
-go install -v github.com/haya14busa/goplay/cmd/goplay@latest
-go install -v github.com/go-delve/delve/cmd/dlv@latest
-go install -v honnef.co/go/tools/cmd/staticcheck@latest
-go install -v golang.org/x/tools/gopls@latest
+# go install -v github.com/cweill/gotests/gotests@latest
+# go install -v github.com/fatih/gomodifytags@latest
+# go install -v github.com/josharian/impl@latest
+# go install -v github.com/haya14busa/goplay/cmd/goplay@latest
+# go install -v github.com/go-delve/delve/cmd/dlv@latest
+# go install -v honnef.co/go/tools/cmd/staticcheck@latest
+# go install -v golang.org/x/tools/gopls@latest
+
 #messagepack Python pip
 apt install -y python3-pip
 if [ true ]; then
-	git clone https://github.com/msgpack/msgpack-c.git
+	git clone -b cpp_master --depth 1 https://github.com/msgpack/msgpack-c.git
 	cd msgpack-c
-	git checkout cpp_master
 	cmake .
 	cmake --build . --target install
 fi
