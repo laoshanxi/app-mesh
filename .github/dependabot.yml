@@ -28,3 +28,14 @@ updates:
     directory: "/docker/"
     schedule:
       interval: "weekly"
+
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: daily
+
+  - package-ecosystem: pip
+    directory: /src/sdk/python
+    schedule:
+      interval: daily

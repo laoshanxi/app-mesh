@@ -17,8 +17,13 @@ jobs:
     container: laoshanxi/appmesh:build_ubuntu22
 
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ebacdc22ef6c2cfb85ee5ded8f2e640f4c776dd5 # v2.0.0
+        with:
+          egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
+
       - name: Checkout Github code
-        uses: actions/checkout@v3
+        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
 
       - name: Setup curl
         run: apt-get install --fix-missing -y curl
@@ -31,7 +36,7 @@ jobs:
 
       # https://github.com/laoshanxi/coverity-scan-action
       - name: Coverity scan
-        uses: laoshanxi/coverity-scan-action@v1
+        uses: laoshanxi/coverity-scan-action@4fa81d9a897165dff6167e2930d62a6860ee66ce # v1
         with:
           project: laoshanxi%2Fapp-mesh
           token: ${{ secrets.COVERITY_SCAN_TOKEN }}
