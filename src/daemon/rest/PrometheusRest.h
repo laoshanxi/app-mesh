@@ -3,7 +3,8 @@
 #include <atomic>
 #include <memory>
 
-#include "../../prom_exporter/family.h"
+#include <prometheus/family.h>
+
 #include "HttpRequest.h"
 #include "RestBase.h"
 

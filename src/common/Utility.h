@@ -11,14 +11,8 @@
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
 #include <nlohmann/json.hpp>
-
-#if __cplusplus >= 201703L
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
 #include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
-#endif
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 

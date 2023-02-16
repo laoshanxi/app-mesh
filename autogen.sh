@@ -256,9 +256,26 @@ fi
 python3 -m pip install --upgrade msgpack
 
 cd $ROOTDIR
-# hashids
-# https://hashids.org/
-if [ true ]; then
-	git clone https://github.com/schoentoon/hashidsxx.git
-	cp -r hashidsxx /usr/local/include/
-fi
+git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
+cp -rf hashidsxx /usr/local/include/
+
+git clone --depth=1 https://github.com/mariusbancila/croncpp.git
+cp croncpp/include/croncpp.h /usr/local/include/
+
+git clone --depth=1 https://github.com/laoshanxi/wildcards.git
+cp -rf wildcards/single_include/ /usr/local/include/wildcards
+
+git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
+cp -rf prometheus-cpp/core/src /usr/local/src/prometheus
+cp -rf prometheus-cpp/core/include/prometheus /usr/local/include/
+cat << EOF > /usr/local/include/prometheus/detail/core_export.h
+#ifndef PROMETHEUS_CPP_CORE_EXPORT
+#define PROMETHEUS_CPP_CORE_EXPORT
+#endif
+EOF
+
+git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
+cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
+
+git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
+cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install

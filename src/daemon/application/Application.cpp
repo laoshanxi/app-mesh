@@ -1,12 +1,13 @@
 #include <algorithm>
 #include <assert.h>
 
+#include <prometheus/counter.h>
+#include <prometheus/gauge.h>
+
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
 #include "../../common/os/process.hpp"
-#include "../../prom_exporter/counter.h"
-#include "../../prom_exporter/gauge.h"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
 #include "../ResourceCollection.h"

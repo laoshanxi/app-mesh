@@ -1,8 +1,8 @@
 ##########################################################################
 # prometheus
 ##########################################################################
-aux_source_directory(. SRC_LIST)
-aux_source_directory(./detail DETAIL_SRC_LIST)
+aux_source_directory(/usr/local/src/prometheus SRC_LIST)
+aux_source_directory(/usr/local/src/prometheus/detail DETAIL_SRC_LIST)
 
 add_library(prometheus STATIC ${SRC_LIST} ${DETAIL_SRC_LIST})
 add_library(${PROJECT_NAME}::prometheus ALIAS prometheus)

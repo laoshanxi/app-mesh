@@ -5,13 +5,13 @@
 #include <string>
 
 #include <nlohmann/json.hpp>
+#include <ldapc++/cldap.h>
 
 #include "../../../common/Utility.h"
 #include "../Role.h"
 #include "../Security.h"
 #include "../User.h"
 #include "LdapGroup.h"
-#include "ldapcpp/cldap.h"
 
 //////////////////////////////////////////////////////////////////////////
 /// LDAP Group

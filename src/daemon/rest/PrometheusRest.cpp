@@ -1,12 +1,12 @@
 #include <ace/OS.h>
 #include <boost/algorithm/string_regex.hpp>
+#include <prometheus/counter.h>
+#include <prometheus/registry.h>
+#include <prometheus/text_serializer.h>
 
 #include "../../common/Utility.h"
 #include "../../common/os/process.hpp"
 #include "../../common/os/pstree.hpp"
-#include "../../prom_exporter/counter.h"
-#include "../../prom_exporter/registry.h"
-#include "../../prom_exporter/text_serializer.h"
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "PrometheusRest.h"

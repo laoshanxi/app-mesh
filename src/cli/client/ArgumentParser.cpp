@@ -10,13 +10,13 @@
 #include <boost/regex.hpp>
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Password.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "../../common/jwt-cpp/jwt.h"
 #include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
 #include "ArgumentParser.h"

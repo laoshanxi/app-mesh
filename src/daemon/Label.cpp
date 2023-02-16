@@ -1,7 +1,7 @@
 #ifdef __GNUC__
 #include <features.h>
 #if __GNUC_PREREQ(5, 4)
-#include "../common/wildcards/wildcards.hpp"
+#include <wildcards/wildcards.hpp>
 #endif
 #endif
 

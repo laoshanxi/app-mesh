@@ -1,9 +1,9 @@
 #include <ace/OS.h>
+#include <ldapc++/cldap.h>
 
 #include "../../../common/Utility.h"
 #include "LdapGroup.h"
 #include "LdapImpl.h"
-#include "ldapcpp/cldap.h"
 
 //////////////////////////////////////////////////////////////////////
 /// LDAP wrapper

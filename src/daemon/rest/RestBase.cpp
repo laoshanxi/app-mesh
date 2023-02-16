@@ -1,9 +1,9 @@
 #include <functional>
 
 #include <boost/algorithm/string_regex.hpp>
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
 #include "../../common/Utility.h"
-#include "../../common/jwt-cpp/jwt.h"
 #include "../Configuration.h"
 #include "../security/Security.h"
 #include "HttpRequest.h"

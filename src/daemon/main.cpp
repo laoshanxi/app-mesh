@@ -10,7 +10,6 @@
 #include <ace/SSL/SSL_SOCK_Acceptor.h>
 #include <boost/filesystem.hpp>
 
-#include "../common/PerfLog.h"
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
 #include "../common/os/linux.hpp"
@@ -170,7 +169,6 @@ int main(int argc, char *argv[])
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
 			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
-			PerfLog perf("main while loop");
 
 			// monitor application
 			std::list<os::Process> ptree;
@@ -179,7 +177,6 @@ int main(int argc, char *argv[])
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
-				PerfLog perf1(app->getName());
 				try
 				{
 					app->execute((void *)(&ptree));

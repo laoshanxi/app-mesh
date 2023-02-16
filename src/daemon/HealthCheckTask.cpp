@@ -1,5 +1,4 @@
 #include "HealthCheckTask.h"
-#include "../common/PerfLog.h"
 #include "../common/Utility.h"
 #include "Configuration.h"
 #include "application/Application.h"
@@ -16,7 +15,6 @@ HealthCheckTask::~HealthCheckTask()
 void HealthCheckTask::doHealthCheck()
 {
 	const static char fname[] = "HealthCheckTask::doHealthCheck() ";
-	PerfLog perf(fname);
 	auto apps = Configuration::instance()->getApps();
 	for (auto &app : apps)
 	{

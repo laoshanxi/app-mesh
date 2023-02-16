@@ -2,13 +2,13 @@
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
 #include "../../src/daemon/security/Security.h"
-#include "../../src/daemon/security/ldapplugin/ldapcpp/cldap.h"
 #include "../catch.hpp"
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <ldapc++/cldap.h>
 #include <log4cpp/Appender.hh>
 #include <log4cpp/Category.hh>
 #include <log4cpp/FileAppender.hh>
