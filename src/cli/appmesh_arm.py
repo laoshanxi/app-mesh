@@ -3,8 +3,6 @@ import sys
 import socket
 import os
 import uuid
-
-sys.path.append("/opt/appmesh/sdk/")
 import appmesh_client
 
 # get host OS ip

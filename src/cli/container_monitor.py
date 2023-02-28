@@ -2,8 +2,6 @@
 
 import docker
 import sys
-
-sys.path.append("/opt/appmesh/sdk/")
 import appmesh_client
 
 # input

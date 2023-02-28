@@ -3,9 +3,6 @@ import json
 import sys
 import os
 import inspect
-
-# For installation env:
-sys.path.append("/opt/appmesh/sdk/")
 import appmesh_client
 
 client = appmesh_client.AppMeshClientTCP()

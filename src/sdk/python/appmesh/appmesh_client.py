@@ -27,7 +27,7 @@ _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 
 """
 install pip dependencies:
-  python -m pip install --exists-action=w --no-cache-dir --requirement /opt/appmesh/sdk/requirements.txt
+  python3 -m pip install --upgrade appmesh
 """
 
 class AppMeshClient(metaclass=abc.ABCMeta):
