@@ -1,8 +1,7 @@
 FROM ubuntu:latest as stage
-COPY src/sdk/python/requirements.txt .
 RUN apt-get update && \
 	apt-get install -y python3 python3-pip && \
-	python3 -m pip install --exists-action=w --no-cache-dir --requirement ./requirements.txt
+	python3 -m pip install appmesh
 
 
 FROM ubuntu:latest

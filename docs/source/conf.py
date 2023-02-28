@@ -86,7 +86,12 @@ html_static_path = ["_static"]
 source_parsers = {".md": CommonMarkParser}
 source_suffix = [".rst", ".md"]
 
-copyfile(os.path.abspath(os.path.join(current_dir, "../../README.md")), os.path.abspath(os.path.join(current_dir, "README.md")))
-exclude_py_file = os.path.abspath(os.path.join(current_dir, "../../src/sdk/python/py_exec.py"))
-if os.path.exists(exclude_py_file):
-   os.remove(exclude_py_file)
+copyfile(os.path.join(current_dir, "../../README.md"), os.path.join(current_dir, "README.md"))
+copyfile(os.path.join(current_dir, "../../src/sdk/python/appmesh/appmesh_client.py"), os.path.join(current_dir, "../../src/sdk/python/appmesh_client.py"))
+
+exclude_py_files = []
+exclude_py_files.append(os.path.abspath(os.path.join(current_dir, "../../src/sdk/python/py_exec.py")))
+exclude_py_files.append(os.path.abspath(os.path.join(current_dir, "../../src/sdk/python/setup.py")))
+for f in exclude_py_files:
+  if os.path.exists(f):
+     os.remove(f)

@@ -8,7 +8,7 @@ on:
       - "src/**"
       - ".github/workflows/coverity_cpp_code_scan.yml"
 
-permissions:  # added using https://github.com/step-security/secure-workflows
+permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
 env:

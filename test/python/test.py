@@ -3,10 +3,8 @@ import json
 import sys
 import os
 import inspect
-
-# For installation env:
-sys.path.append("/opt/appmesh/sdk/")
-import appmesh_client
+# python3 -m pip install --upgrade appmesh
+from appmesh import appmesh_client
 
 client = appmesh_client.AppMeshClientTCP()
 # authentication

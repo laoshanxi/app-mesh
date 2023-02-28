@@ -3,9 +3,8 @@ import sys
 import socket
 import os
 import uuid
-
-sys.path.append("/opt/appmesh/sdk/")
-import appmesh_client
+# python3 -m pip install --upgrade appmesh
+from appmesh import appmesh_client
 
 # get host OS ip
 # https://stackoverflow.com/questions/31324981/how-to-access-host-port-from-docker-container

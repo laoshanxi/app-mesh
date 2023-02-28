@@ -253,7 +253,7 @@ if [ true ]; then
 	cmake .
 	cmake --build . --target install
 fi
-python3 -m pip install --upgrade msgpack
+python3 -m pip install --upgrade msgpack requests requests_toolbelt aniso8601 twine wheel
 
 cd $ROOTDIR
 git clone --depth=1 https://github.com/schoentoon/hashidsxx.git

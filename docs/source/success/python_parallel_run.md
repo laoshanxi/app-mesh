@@ -12,9 +12,8 @@ Use SDK AppMeshClient.run_async() to run process or Python code segment by App M
 #!/usr/bin/python3
 from datetime import datetime
 import sys
-
-sys.path.append("/opt/appmesh/sdk/")
-import appmesh_client
+# python3 -m pip install --upgrade appmesh
+from appmesh import appmesh_client
 
 # login
 client = appmesh_client.AppMeshClient()

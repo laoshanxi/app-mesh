@@ -1,4 +1,4 @@
-﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
+﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![pypi.badge]][pypi.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
 [![Documentation Status](https://readthedocs.org/projects/app-mesh/badge/?version=latest)](https://app-mesh.readthedocs.io/en/latest/?badge=latest) [![Join the chat at https://gitter.im/app-mesh/community](https://badges.gitter.im/app-mesh/community.svg)](https://gitter.im/app-mesh/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 <a href="https://scan.coverity.com/projects/laoshanxi-app-mesh">
   <img alt="Coverity Scan Build Status"
@@ -125,3 +125,5 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 [cockpit.badge]:  https://img.shields.io/badge/Cockpit-app--mesh--ui-blue?logo=appveyor
 [unittest.url]:   https://github.com/catchorg/Catch2
 [unittest.badge]: https://img.shields.io/badge/UnitTest-Catch2-blue?logo=appveyor
+[pypi.badge]: https://img.shields.io/pypi/v/appmesh?label=PyPI%3Aappmesh
+[pypi.url]: https://pypi.org/project/appmesh/

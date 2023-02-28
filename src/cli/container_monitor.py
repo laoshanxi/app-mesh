@@ -2,9 +2,8 @@
 
 import docker
 import sys
-
-sys.path.append("/opt/appmesh/sdk/")
-import appmesh_client
+# python3 -m pip install --upgrade appmesh
+from appmesh import appmesh_client
 
 # input
 #  - arg[1] as container name and shadow application name

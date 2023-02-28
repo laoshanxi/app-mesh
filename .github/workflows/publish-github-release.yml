@@ -17,7 +17,7 @@ env:
   REGISTRY: docker.io
   APPMESH_VERSION: "2.1.1"
 
-permissions:  # added using https://github.com/step-security/secure-workflows
+permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
 
 jobs:

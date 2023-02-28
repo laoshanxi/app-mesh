@@ -25,13 +25,14 @@ TCP_MESSAGE_HEADER_LENGTH = 4
 _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 
 
-"""
-install pip dependencies:
-  python -m pip install --exists-action=w --no-cache-dir --requirement /opt/appmesh/sdk/requirements.txt
-"""
 
 class AppMeshClient(metaclass=abc.ABCMeta):
-    """Client object used to access App Mesh REST Service"""
+    """
+    Client object used to access App Mesh REST Service
+
+    - install pip package: python3 -m pip install --upgrade appmesh
+    - import module: from appmesh import appmesh_client
+    """
 
     class Method(Enum):
         """REST methods"""
