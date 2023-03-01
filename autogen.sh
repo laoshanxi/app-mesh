@@ -6,7 +6,7 @@ set -x
 set -e
 WGET_A="wget --continue --quiet --backups=1 --tries=30 --no-check-certificate"
 # https://stackoverflow.com/questions/48678152/how-to-detect-386-amd64-arm-or-arm64-os-architecture-via-shell-bash
-architecture=""
+architecture="arm64" # TODO: can not get arm64, set to default
 case $(uname -m) in
     i386)   architecture="386" ;;
     i686)   architecture="386" ;;
@@ -105,14 +105,6 @@ $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 go version
-# go env -w GOPROXY=https://goproxy.io,direct
-# go env -w GO111MODULE=on
-export GO111MODULE=on
-export GOPROXY=https://goproxy.io,direct
-go get github.com/valyala/fasthttp
-go get github.com/buaazp/fasthttprouter
-go get github.com/klauspost/compress
-go get github.com/rs/xid
 
 # check libssl in case of openssl_update.sh not executed
 if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then
@@ -131,9 +123,17 @@ if [ true ]; then
 	version=3.22
 	build=1
 	os="linux"
-	$WGET_A https://cmake.org/files/v$version/cmake-$version.$build-$os-x86_64.sh
-	sh cmake-$version.$build-$os-x86_64.sh --prefix=/usr/local/ --skip-license
+	platform="x86_64"
+	if [ "$architecture" = "arm64" ]; then
+		platform="aarch64"
+	fi
+	$WGET_A https://cmake.org/files/v$version/cmake-$version.$build-$os-$platform.sh
+	sh cmake-$version.$build-$os-$platform.sh --prefix=/usr/local/ --skip-license
 fi
+
+# Golang third party library
+export GO111MODULE=on
+export GOPROXY=https://goproxy.io,direct
 
 # install fpm
 gem install fpm || gem update --system && gem install fpm
@@ -151,7 +151,7 @@ if [ true ]; then
 	tar zxvf boost_1_74_0.tar.gz
 	cd ./boost_1_74_0
 	./bootstrap.sh
-	./b2
+	./b2 -j4
 	./b2 install
 	ls -al /usr/local/lib/libboost_system.so.1.74.0 /usr/local/include/boost/thread.hpp
 fi
@@ -279,3 +279,7 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 
 git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
+
+cd $SHELL_FOLDER
+cmake .
+make agent

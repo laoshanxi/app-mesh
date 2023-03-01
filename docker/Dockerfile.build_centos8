@@ -2,7 +2,7 @@ FROM centos:8
 
 WORKDIR /workspace
 
-COPY autogen.sh go.* /workspace/
+COPY . /workspace/
 
 USER root
 

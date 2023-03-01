@@ -1,4 +1,4 @@
-name: build centos8 image for build appmesh
+name: "Build image for centos8"
 
 on:
   push:

@@ -1,4 +1,10 @@
-FROM ubuntu:latest as stage
+FROM laoshanxi/appmesh:build_ubuntu AS COMPILE_STAGE
+RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
+	cd app-mesh && mkdir build && cd build && cmake .. && make -j4 && make pack && ls
+
+
+FROM ubuntu:latest AS PYTHON_STAGE
+COPY --from=COMPILE_STAGE /opt/app-mesh/build/appmesh*.deb /opt/
 RUN apt-get update && \
 	apt-get install -y python3 python3-pip && \
 	python3 -m pip install appmesh
@@ -9,15 +15,14 @@ ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
 ENV APPMESH_DisableExecUser=true
+COPY --from=PYTHON_STAGE /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
+COPY --from=PYTHON_STAGE /opt/appmesh*.deb .
 RUN apt-get update && \
 	apt-get install -y python3 iputils-ping tini && \
-	apt-get install -y wget && \
-	wget --output-document=appmesh.deb https://github.com/laoshanxi/app-mesh/releases/download/2.1.1/appmesh_2.1.1_gcc_11_glibc_2.35_x86_64.deb && \
-	apt-get install -y ./appmesh.deb && rm -f ./appmesh.deb && apt-get remove -y wget && apt-get clean && \
+	apt-get install -y ./appmesh*.deb && rm -f ./appmesh*.deb && apt-get clean && \
 	groupadd -r -g $AM_GID appmesh && useradd -r -u $AM_UID -g appmesh appmesh && \
 	echo "" > /var/run/appmesh.pid && \
 	chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid
-COPY --from=stage /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
 EXPOSE 6060
 USER appmesh
 WORKDIR /

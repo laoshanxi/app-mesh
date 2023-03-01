@@ -2,8 +2,8 @@ FROM ubuntu:20.04
 
 WORKDIR /workspace
 
-COPY autogen.sh go.* /workspace/
+COPY . /workspace/
 
 USER root
 
-RUN bash autogen.sh && rm -rf /workspace/* && apt-get clean
+RUN bash autogen.sh && rm -rf /workspace/*

@@ -1,4 +1,4 @@
-name: Coverity CPP code scan
+name: "Code scan with Coverity"
 
 on:
   # trigger when code changes

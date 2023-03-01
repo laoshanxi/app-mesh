@@ -16,5 +16,5 @@ target_include_directories(protoc
 ##########################################################################
 target_link_libraries(protoc
   PRIVATE
-	msgpackc-cxx
+	msgpack-cxx
 )

@@ -1,4 +1,4 @@
-name: Upload python SDK to pypi
+name: "Upload python SDK to PyPI"
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "src/sdk/python/**"
+      - ".github/workflows/python-sdk-twine-upload.yml"
 
 permissions:
   contents: read
@@ -14,7 +15,8 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Github code
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -24,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install twine wheel
+          pip install twine wheel requests
 
       - name: Build package
         run: python setup.py bdist_wheel

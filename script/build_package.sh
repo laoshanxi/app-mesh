@@ -13,7 +13,6 @@ rm -rf ${PACKAGE_HOME}
 mkdir -p ${PACKAGE_HOME}/ssl
 mkdir -p ${PACKAGE_HOME}/script
 mkdir -p ${PACKAGE_HOME}/lib64
-mkdir -p ${PACKAGE_HOME}/sdk
 mkdir -p ${PACKAGE_HOME}/bin
 cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appc ${PACKAGE_HOME}/bin/
 cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc ${PACKAGE_HOME}/bin/
@@ -30,7 +29,6 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/bash_completion.sh ${PACKAGE_HOME}/script
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yml ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.yaml ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/*.html ${PACKAGE_HOME}/script/
-cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/sample.py ${PACKAGE_HOME}/sdk/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py ${PACKAGE_HOME}/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/container_monitor.py ${PACKAGE_HOME}/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appmesh_arm.py ${PACKAGE_HOME}/bin/

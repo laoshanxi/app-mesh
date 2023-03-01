@@ -14,8 +14,9 @@ def get_version():
       data = json.loads(resp.text)
       if "info" in data and "version" in data["info"] :
         version = data["info"]["version"]
-        version_list = version.split('.')
-        version_list[-1] = str(int(version_list[-1]) + 1)
+        version_list = list(str(int(version.replace(".", "")) + 1))
+        while len(version_list) < 3:
+            version_list = ["0"] + version_list
         return '.'.join(version_list)
     return "0.0.9"
 

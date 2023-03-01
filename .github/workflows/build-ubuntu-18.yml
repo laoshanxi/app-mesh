@@ -1,4 +1,4 @@
-name: build ubuntu18 image for build appmesh
+name: "Build image for ubuntu18"
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     paths:
       - ".github/workflows/docker_build/build-ubuntu-18.yml"
       - "docker/Dockerfile.build_ubuntu18"
-      - "autogen.sh"
+      - "autogen.sh*"
       - "go.*"
 
 env:
@@ -38,6 +38,10 @@ jobs:
       - name: Checkout Github code
         uses: actions/checkout@v3
 
+      # https://docs.docker.com/build/ci/github-actions/multi-platform/
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
       # Workaround: https://github.com/docker/build-push-action/issues/461
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v2
@@ -57,6 +61,7 @@ jobs:
           context: .
           file: docker/Dockerfile.build_ubuntu18
           no-cache: true
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build_ubuntu18
