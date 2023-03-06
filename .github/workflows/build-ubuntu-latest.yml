@@ -64,7 +64,6 @@ jobs:
           context: .
           file: docker/Dockerfile.build_ubuntu
           no-cache: true
-          # attests: type=sbom,generator=image
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |

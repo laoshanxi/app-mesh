@@ -26,9 +26,9 @@ jobs:
     strategy:
       matrix:
         include:
+          - arch: arm64
+            variant: v8
           - arch: amd64
-            # - arch: arm64
-            # variant: v8
 
     runs-on: ubuntu-latest
     permissions:
@@ -37,9 +37,6 @@ jobs:
       # This is used to complete the identity challenge
       # with sigstore/fulcio when running outside of PRs.
       id-token: write
-
-    env:
-      PLATFORM: linux/${{ matrix.arch }}${{ (matrix.variant != '' && format('/{0}', matrix.variant)) || '' }}
 
     steps:
       - name: Checkout Github code
@@ -52,21 +49,24 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
+        with:
+          install: true
 
+      # https://www.stereolabs.com/docs/docker/building-arm-container-on-x86/
       - name: build with ubuntu22
         run: |
           build_dir=${{ matrix.arch }}
-          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22  /bin/sh -c "mkdir ubuntu22_$build_dir; cd ubuntu22_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22  /bin/sh -c "mkdir ubuntu22_$build_dir; cd ubuntu22_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: build with ubuntu20
         run: |
           build_dir=${{ matrix.arch }}
-          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20  /bin/sh -c "mkdir ubuntu20_$build_dir; cd ubuntu20_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20  /bin/sh -c "mkdir ubuntu20_$build_dir; cd ubuntu20_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: build with ubuntu18
         run: |
           build_dir=${{ matrix.arch }}
-          docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18  /bin/sh -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18  /bin/sh -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: Upload packages
         uses: actions/upload-artifact@v3
@@ -82,10 +82,10 @@ jobs:
       - build
     if: ${{ github.event_name != 'pull_request' }}
     steps:
-      #- name: Download arm64 packages
-      #  uses: actions/download-artifact@v3
-      #  with:
-      #    name: arm64
+      - name: Download arm64 packages
+        uses: actions/download-artifact@v3
+        with:
+          name: arm64
       - name: Download amd64 packages
         uses: actions/download-artifact@v3
         with:
