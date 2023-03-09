@@ -94,7 +94,13 @@ jobs:
       - name: Generate Changelog
         run: |
           echo "1. libcpr replace cpprestsdk" >> CHANGELOG.txt
-          echo "2. TCP socket enable SSL" >> CHANGELOG.txt
+          echo "2. MessagePack replace ProtoBuffer" >> CHANGELOG.txt
+          echo "3. TCP socket enable SSL" >> CHANGELOG.txt
+          echo "4. Publish Python SDK to PyPI" >> CHANGELOG.txt
+          echo "5. Publish ARM64 v8 platform packages" >> CHANGELOG.txt
+          echo "6. Generate SBOM for AppMesh Docker image" >> CHANGELOG.txt
+          echo "7. Build third party in build docker image" >> CHANGELOG.txt
+          echo "8. Integrate Python SDK to readthedoc with sphinxcontrib.apidoc" >> CHANGELOG.txt
           ls -R
 
       # publish release
