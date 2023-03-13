@@ -103,12 +103,12 @@ std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool t
 std::string Utility::stdStringTrim(const std::string &str, const std::string &trimChars, bool trimStart, bool trimEnd)
 {
 	std::string result = str;
-	while (trimStart && result.length() >= trimChars.length() && 0 == strncmp(result.c_str(), trimChars.c_str(), trimChars.length()))
+	while (trimChars.length() && trimStart && result.length() >= trimChars.length() && 0 == strncmp(result.c_str(), trimChars.c_str(), trimChars.length()))
 	{
 		result = result.c_str() + trimChars.length();
 	}
 
-	while (trimEnd && result.length() >= trimChars.length() && 0 == strncmp(result.c_str() + (result.length() - trimChars.length()), trimChars.c_str(), trimChars.length()))
+	while (trimChars.length() && trimEnd && result.length() >= trimChars.length() && 0 == strncmp(result.c_str() + (result.length() - trimChars.length()), trimChars.c_str(), trimChars.length()))
 	{
 		result[result.length() - trimChars.length()] = '\0';
 		result = result.c_str();

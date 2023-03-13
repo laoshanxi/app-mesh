@@ -15,7 +15,7 @@ on:
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: docker.io
-  APPMESH_VERSION: "2.1.1"
+  APPMESH_VERSION: "2.1.2"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -93,14 +93,7 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. libcpr replace cpprestsdk" >> CHANGELOG.txt
-          echo "2. MessagePack replace ProtoBuffer" >> CHANGELOG.txt
-          echo "3. TCP socket enable SSL" >> CHANGELOG.txt
-          echo "4. Publish Python SDK to PyPI" >> CHANGELOG.txt
-          echo "5. Publish ARM64 v8 platform packages" >> CHANGELOG.txt
-          echo "6. Generate SBOM for AppMesh Docker image" >> CHANGELOG.txt
-          echo "7. Build third party in build docker image" >> CHANGELOG.txt
-          echo "8. Integrate Python SDK to readthedoc with sphinxcontrib.apidoc" >> CHANGELOG.txt
+          echo "1. version 2.1.2" >> CHANGELOG.txt
           ls -R
 
       # publish release
@@ -109,7 +102,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           body_path: CHANGELOG.txt
-          name: "SDK & Network improvements"
+          name: "feature release"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           # note you'll typically need to create a personal access token

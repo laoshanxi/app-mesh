@@ -16,14 +16,13 @@ from datetime import datetime
 import requests
 
 
-DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"          # 7 days
-DEFAULT_RUN_APP_TIMEOUT_SECONDS = "PT1H"      # 1 hour
-DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "PT10H"   # 10 hours
+DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"  # 7 days
+DEFAULT_RUN_APP_TIMEOUT_SECONDS = "PT1H"  # 1 hour
+DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "PT10H"  # 10 hours
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
 _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
-
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -36,12 +35,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     class Method(Enum):
         """REST methods"""
+
         GET = "GET"
         PUT = "PUT"
         POST = "POST"
         DELETE = "DELETE"
         POST_STREAM = "POST_STREAM"
-
 
     def __init__(
         self,
@@ -49,6 +48,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_url: str = "https://127.0.0.1:6060",
         rest_ssl_verify=_SSL_CA_PEM_FILE,
         rest_timeout=(60, 300),
+        jwt_token=None,
     ):
         """Construct an App Mesh client object
 
@@ -57,10 +57,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             rest_url (str, optional): server URI string.
             rest_ssl_verify (str, optional): SSL CA certification file path or False to disable SSL verification.
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
+            jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
         """
         self.server_url = rest_url
         self.jwt_auth_enable = auth_enable
-        self.__jwt_token = None
+        self.__jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify
         self.rest_timeout = rest_timeout
 
@@ -85,7 +86,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Security
     ########################################
-    def login(self, user_name: str, user_pwd: str, timeout_seconds = DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+    def login(self, user_name: str, user_pwd: str, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
         """Login with user name and password
 
         Args:
@@ -412,7 +413,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/config", body={"LogLevel": level})
         if resp.status_code == HTTPStatus.OK:
-            return True,resp.json()["LogLevel"]
+            return True, resp.json()["LogLevel"]
         return (resp.status_code == HTTPStatus.OK), resp.json()
 
     ########################################
@@ -762,8 +763,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def run_async(
         self,
         app_json: dict,
-        max_time_seconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        life_cycle_seconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
+        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        life_cycle_seconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
     ):
         """Asyncrized run a command remotely, 'name' attribute in app_json dict used to run an existing application
         Asyncrized run will not block process
@@ -836,8 +837,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self,
         app_json: dict,
         stdout_print: bool = True,
-        max_time_seconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        life_cycle_seconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
+        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+        life_cycle_seconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
     ) -> int:
         """Block run a command remotely, 'name' attribute in app_json dict used to run an existing application
         The synchronized run will block the process until the remote run is finished then return the result from HTTP response
@@ -967,10 +968,10 @@ class AppMeshClientTCP(AppMeshClient):
         while length:
             chunk = self.__socket_client.recv(length)
             if not chunk:
-                raise EOFError('socket closed')
+                raise EOFError("socket closed")
             length -= len(chunk)
             fragments.append(chunk)
-        return b''.join(fragments)
+        return b"".join(fragments)
 
     def _request_http(self, method: AppMeshClient.Method, path: str, query: dict = {}, header: dict = {}, body=None) -> requests.Response:
         """TCP API
@@ -986,12 +987,13 @@ class AppMeshClientTCP(AppMeshClient):
             requests.Response: HTTP response
         """
         import msgpack
+
         class RequestMsg:
             uuid: str = ""
             request_uri: str = ""
             http_method: str = ""
             client_addr: str = ""
-            body: bytes = b''
+            body: bytes = b""
             headers: dict = {}
             querys: dict = {}
 
@@ -1007,15 +1009,14 @@ class AppMeshClientTCP(AppMeshClient):
             request_uri: str = ""
             http_status: int = 0
             body_msg_type: str = ""
-            body: bytes = b''
+            body: bytes = b""
             headers: dict = {}
 
             def desirialize(self, buf: bytes):
                 dic = msgpack.unpackb(buf)
-                for k,v in dic.items():
+                for k, v in dic.items():
                     setattr(self, k, v)
                 return self
-
 
         if super().jwt_token is not None:
             header["Authorization"] = "Bearer " + super().jwt_token
@@ -1077,8 +1078,7 @@ class AppMeshClientTCP(AppMeshClient):
         Returns:
             bool: success or failure.
         """
-        resp = self._request_http(
-            AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
         if resp.status_code == HTTPStatus.OK:
             with open(local_file, "wb") as fp:
                 chunk_data = bytes()
@@ -1128,7 +1128,7 @@ class AppMeshClientTCP(AppMeshClient):
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
             if resp.status_code == HTTPStatus.OK:
-                chunk_size = 1024*4  # 131072 bytes, default max ssl buffer size
+                chunk_size = 1024 * 4  # 131072 bytes, default max ssl buffer size
                 chunk_data = fp.read(chunk_size)
                 while chunk_data:
                     self.__socket_client.sendall(len(chunk_data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))

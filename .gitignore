@@ -277,3 +277,4 @@ docs/source/README.md
 
 *.egg-info
 *.whl
+dist
