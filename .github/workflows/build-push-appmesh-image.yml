@@ -18,7 +18,7 @@ env:
   REGISTRY: docker.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: laoshanxi/appmesh
-  APPMESH_VERSION: "2.1.1"
+  APPMESH_VERSION: "2.1.2"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read

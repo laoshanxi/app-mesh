@@ -45,10 +45,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def __init__(
         self,
-        auth_enable: bool = True,
-        rest_url: str = "https://127.0.0.1:6060",
+        auth_enable: bool=True,
+        rest_url: str="https://127.0.0.1:6060",
         rest_ssl_verify=_SSL_CA_PEM_FILE,
         rest_timeout=(60, 300),
+        jwt_token=None,
     ):
         """Construct an App Mesh client object
 
@@ -57,10 +58,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             rest_url (str, optional): server URI string.
             rest_ssl_verify (str, optional): SSL CA certification file path or False to disable SSL verification.
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
+            jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
         """
         self.server_url = rest_url
         self.jwt_auth_enable = auth_enable
-        self.__jwt_token = None
+        self.__jwt_token = token
         self.ssl_verify = rest_ssl_verify
         self.rest_timeout = rest_timeout
 
