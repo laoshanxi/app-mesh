@@ -411,12 +411,12 @@ void ArgumentParser::processAppAdd()
 		return;
 	}
 
-	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("extra_time") > 0)
+	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("retention") > 0)
 	{
 		if (DurationParse::parse(m_commandLineVariables["interval"].as<std::string>()) <=
-			DurationParse::parse(m_commandLineVariables["extra_time"].as<std::string>()))
+			DurationParse::parse(m_commandLineVariables["retention"].as<std::string>()))
 		{
-			std::cout << "The extra_time seconds must less than interval." << std::endl;
+			std::cout << "The retention seconds must less than interval." << std::endl;
 			return;
 		}
 	}
@@ -1744,7 +1744,7 @@ std::string ArgumentParser::readPersistLastHost()
 
 void ArgumentParser::persistAuthToken(const std::string &hostName, const std::string &token)
 {
-	nlohmann::json config = EMPTY_STR_JSON;
+	nlohmann::json config;
 	try
 	{
 		std::string configFile;
@@ -1825,7 +1825,7 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_memory)
 		<< std::setw(5) << std::string("%").append(Utility::strToupper(JSON_KEY_APP_cpu))
-		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_return)
+		<< std::setw(7) << Utility::strToupper("return") // JSON_KEY_APP_return
 		<< std::setw(7) << Utility::strToupper("age")
 		<< std::setw(9) << Utility::strToupper("duration")
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_starts)

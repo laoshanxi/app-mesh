@@ -76,7 +76,7 @@ $ appc view -n ping
   "owner": "admin",
   "pid": 4790,
   "register_time": "2020-10-24 07:31:40+08",
-  "return": 2,
+  "return_code": 2,
   "status": 1,
   "stdout_cache_num": 2
 }
@@ -150,7 +150,7 @@ y
    "command" : "ping www.google.com",
    "name" : "ping",
    "pid" : -1,
-   "return" : 0,
+   "return_code" : 0,
    "working_dir" : "/opt"
 }
 
@@ -321,7 +321,7 @@ $ appc view -n ping
         "memory" : 626688,
         "name" : "ping",
         "pid" : 8426,
-        "return" : 0,
+        "return_code" : 0,
         "status" : 1
 }
 ```

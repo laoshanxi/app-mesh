@@ -11,7 +11,6 @@ Use SDK AppMeshClient.run_async() to run process or Python code segment by App M
 ```python
 #!/usr/bin/python3
 from datetime import datetime
-import sys
 # python3 -m pip install --upgrade appmesh
 from appmesh import appmesh_client
 
@@ -24,14 +23,14 @@ start_time = datetime.now()
 runs = []
 for i in range(100):
     # example: 100 run shell command:
-    runs.append(client.run_async({"command": "ping www.baidu.com -w {0}".format(i), "shell": True}, max_time_seconds=8))
+    runs.append(client.run_async(appmesh_client.App({"command": "ping www.baidu.com -w {0}".format(i), "shell": True}), max_time_seconds=8))
     # example: 100 run python code segment:
-    runs.append(client.run_async({"name": "pyrun", "metadata": "import time;print({0});time.sleep({0})".format(i)}, max_time_seconds=10))
+    runs.append(client.run_async(appmesh_client.App({"name": "pyrun", "metadata": "import time;print({0});time.sleep({0})".format(i)}), max_time_seconds=10))
 
 # wait all async runs to be finished
 for run in runs:
     # wait each run flexible
-    exit_code = client.run_async_wait(run, stdout_print=False)
+    exit_code = run.wait(stdout_print=False)
     print(exit_code)
 
 print(datetime.now() - start_time)

@@ -20,7 +20,7 @@ COPY --from=PYTHON_STAGE /opt/appmesh*.deb .
 RUN apt-get update && \
 	apt-get install -y python3 iputils-ping tini && \
 	apt-get install -y ./appmesh*.deb && rm -f ./appmesh*.deb && apt-get clean && \
-	groupadd -r -g $AM_GID appmesh && useradd -r -u $AM_UID -g appmesh appmesh && \
+	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
 	echo "" > /var/run/appmesh.pid && \
 	chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid
 EXPOSE 6060

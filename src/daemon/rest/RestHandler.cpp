@@ -889,7 +889,7 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 3, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
 	auto processUuid = appObj->runAsyncrize(timeout);

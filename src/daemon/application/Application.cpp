@@ -158,15 +158,13 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	if (jsonObj.contains(JSON_KEY_APP_metadata))
 	{
 		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
-		if (!jsonObj.at(JSON_KEY_APP_metadata).is_object())
+		if (jsonObj.at(JSON_KEY_APP_metadata).is_string())
 		{
 			try
 			{
-				const auto str = Utility::unEscape(jsonObj.at(JSON_KEY_APP_metadata).get<std::string>());
-				// handle escape
-				app->m_metadata = std::string(str);
+				auto medataStr = jsonObj.at(JSON_KEY_APP_metadata).get<std::string>();
 				// try to load as JSON
-				app->m_metadata = nlohmann::json::parse(str);
+				app->m_metadata = nlohmann::json::parse(medataStr);
 			}
 			catch (...)
 			{
@@ -277,9 +275,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		// short running
 		app->m_startIntervalValueIsCronExpr = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_SHORT_APP_cron_interval);
 		app->m_startIntervalValue = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds);
-		app->m_startInterval = duration.parse(app->m_startIntervalValue);
-		assert(app->m_startInterval > 0);
-
 		if (app->m_startIntervalValueIsCronExpr)
 		{
 			app->m_timer = std::make_shared<AppTimerCron>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startIntervalValue, app->m_startInterval);
@@ -287,6 +282,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		}
 		else
 		{
+			app->m_startInterval = duration.parse(app->m_startIntervalValue);
+			assert(app->m_startInterval > 0);
 			app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
 		}
 	}
