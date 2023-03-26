@@ -93,7 +93,7 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. version 2.1.2" >> CHANGELOG.txt
+          echo "1. Object design for Python SDK" >> CHANGELOG.txt
           ls -R
 
       # publish release
@@ -102,7 +102,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           body_path: CHANGELOG.txt
-          name: "feature release"
+          name: "Python SDK"
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           # note you'll typically need to create a personal access token

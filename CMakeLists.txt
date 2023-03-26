@@ -19,6 +19,8 @@ add_compile_options(-DBUILD_TAG=${BUILD_TAG})
 message(BUILD_TAG=${BUILD_TAG})
 # set(CMAKE_C_COMPILER "/usr/bin/gcc")
 # set(CMAKE_CXX_COMPILER "/usr/bin/g++")
+SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
+SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
 
 ##########################################################################
 # debug / release
@@ -133,8 +135,8 @@ endif()
 add_custom_target(pack
     COMMENT "Packing ${CMAKE_CURRENT_BINARY_DIR}"
     COMMAND make install
-    COMMAND ${CMAKE_COMMAND} -E env PROJECT_NAME=${PROJECT_NAME} PROJECT_VERSION=${PROJECT_VERSION} CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} CMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} sh ${CMAKE_CURRENT_SOURCE_DIR}/script/build_package.sh
-    WORKING_DIRECTORY ${CMAKE_PROJECT_DIR}
+    COMMAND ${CMAKE_COMMAND} -E env PROJECT_NAME=${PROJECT_NAME} PROJECT_VERSION=${PROJECT_VERSION} CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR} sh ${CMAKE_SOURCE_DIR}/script/build_package.sh
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS appc appsvc agent
 )
 
@@ -143,8 +145,9 @@ add_custom_target(pack
 ##########################################################################
 add_custom_target(agent
     COMMENT "Golang build agent"
-    COMMAND go build -buildvcs=false -o ${CMAKE_CURRENT_BINARY_DIR}/bin/agent ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd
+    COMMAND go build -buildvcs=false -o ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/agent ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd
 )
+file(REMOVE ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/agent)
 
 ##########################################################################
 # cppcheck

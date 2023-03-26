@@ -6,7 +6,7 @@
 set -x
 rm -rf *.rpm
 rm -rf *.deb
-export PACKAGE_HOME=${CMAKE_CURRENT_BINARY_DIR}/home
+export PACKAGE_HOME=${CMAKE_BINARY_DIR}/home
 export INSTALL_LOCATION=/opt/appmesh
 
 rm -rf ${PACKAGE_HOME}
@@ -14,9 +14,9 @@ mkdir -p ${PACKAGE_HOME}/ssl
 mkdir -p ${PACKAGE_HOME}/script
 mkdir -p ${PACKAGE_HOME}/lib64
 mkdir -p ${PACKAGE_HOME}/bin
-cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appc ${PACKAGE_HOME}/bin/
-cp ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc ${PACKAGE_HOME}/bin/
-cp ${CMAKE_CURRENT_BINARY_DIR}/bin/agent ${PACKAGE_HOME}/bin/
+cp ${CMAKE_BINARY_DIR}/gen/appc ${PACKAGE_HOME}/bin/
+cp ${CMAKE_BINARY_DIR}/gen/appsvc ${PACKAGE_HOME}/bin/
+cp ${CMAKE_BINARY_DIR}/gen/agent ${PACKAGE_HOME}/bin/
 
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/config.json ${PACKAGE_HOME}/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/security.json ${PACKAGE_HOME}/
@@ -39,22 +39,22 @@ cp /usr/bin/qrc ${PACKAGE_HOME}/bin/
 chmod +x ${PACKAGE_HOME}/script/*.sh
 
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appc | grep libcurl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appc | grep libcpr | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep ACE | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libssl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep libcrypto | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_CURRENT_BINARY_DIR}/bin/appsvc | grep oath | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appc | grep libcurl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appc | grep libcpr | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep ACE | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep libssl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep libcrypto | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep oath | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 
 GLIBC_VERION=$(ldd --version | head -n 1 | tr ' ' '\n' | tail -n 1)
 GCC_VERION=$(gcc -dumpversion)
 
-fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,openldap-devel' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${CMAKE_CURRENT_BINARY_DIR}/home/script/rpm_post_install.sh \
+fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,openldap-devel' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${PACKAGE_HOME}/script/rpm_post_install.sh \
   --before-remove ${PACKAGE_HOME}/script/rpm_pre_uninstall.sh --after-remove ${PACKAGE_HOME}/script/rpm_post_uninstall.sh -C ${PACKAGE_HOME} --prefix ${INSTALL_LOCATION}
-fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,libldap-dev' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${CMAKE_CURRENT_BINARY_DIR}/home/script/rpm_post_install.sh \
+fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,libldap-dev' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${PACKAGE_HOME}/script/rpm_post_install.sh \
   --before-remove ${PACKAGE_HOME}/script/rpm_pre_uninstall.sh --after-remove ${PACKAGE_HOME}/script/rpm_post_uninstall.sh -C ${PACKAGE_HOME} --prefix ${INSTALL_LOCATION}
 
 mv appmesh*.rpm ${PROJECT_NAME}_${PROJECT_VERSION}_gcc_${GCC_VERION}_glibc_${GLIBC_VERION}_$(arch).rpm
