@@ -31,7 +31,7 @@ for i in range(100):
 # wait all async runs to be finished
 for run in runs:
     # wait each run flexible
-    exit_code = client.run_async_wait(run, stdout_print=False)
+    exit_code = run.wait(run, stdout_print=False)
     print(exit_code)
 
 print(datetime.now() - start_time)

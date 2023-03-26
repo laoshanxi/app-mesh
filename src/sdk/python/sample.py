@@ -1,8 +1,7 @@
 #!/usr/bin/python3
-import json
-import sys
 # python3 -m pip install --upgrade appmesh
 from appmesh import appmesh_client
+
 
 def main():
     # Create a App Mesh Client object
@@ -11,7 +10,8 @@ def main():
     token = client.login("admin", "admin123")
     if token:
         # call SDK to view application 'ping'
-        print(json.dumps(client.app_view("ping"), indent=2))
+        print(client.app_view("ping"))
+
 
 if __name__ == "__main__":
     main()

@@ -1744,7 +1744,7 @@ std::string ArgumentParser::readPersistLastHost()
 
 void ArgumentParser::persistAuthToken(const std::string &hostName, const std::string &token)
 {
-	nlohmann::json config = EMPTY_STR_JSON;
+	nlohmann::json config;
 	try
 	{
 		std::string configFile;
@@ -1825,7 +1825,7 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_memory)
 		<< std::setw(5) << std::string("%").append(Utility::strToupper(JSON_KEY_APP_cpu))
-		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_return)
+		<< std::setw(7) << Utility::strToupper("return") // JSON_KEY_APP_return
 		<< std::setw(7) << Utility::strToupper("age")
 		<< std::setw(9) << Utility::strToupper("duration")
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_starts)

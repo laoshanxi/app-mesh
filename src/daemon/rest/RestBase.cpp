@@ -92,7 +92,11 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
         if (message.m_body.length())
         {
             auto body = nlohmann::json::parse(message.m_body);
-            tranverseJsonTree(body);
+            if (body.is_string())
+            {
+                body = nlohmann::json::parse(body.get<std::string>());
+            }
+            // tranverseJsonTree(body);
             const_cast<HttpRequest *>(&message)->m_body = body.dump();
         }
 
@@ -100,11 +104,13 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     catch (const std::exception &e)
     {
+        message.dump();
         LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
         message.reply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
     }
     catch (...)
     {
+        message.dump();
         LOG_WAR << fname << "rest " << path << " failed";
         message.reply(web::http::status_codes::BadRequest, convertText2Json("unknow exception"));
     }

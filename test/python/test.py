@@ -3,12 +3,22 @@ import json
 import sys
 import os
 import inspect
+
 # python3 -m pip install --upgrade appmesh
 from appmesh import appmesh_client
 
 client = appmesh_client.AppMeshClientTCP()
 # authentication
 token = client.login("admin", "admin123")
+
+
+metadata = {
+    "subject": "subject",
+    "message": "msg",
+}
+app_data = {"name": "ping", "metadata": json.dumps(metadata)}
+client.run_sync(app=appmesh_client.App(app_data), max_time_seconds=5, life_cycle_seconds=6)
+
 print(client.authentication(token, "app-view"))
 print(client.user_passwd_update("admin123"))
 print(json.dumps(client.permissions_view(), indent=2))
@@ -24,13 +34,13 @@ print(json.dumps(client.user_self(), indent=2))
 print(json.dumps(client.users_view(), indent=2))
 
 # view application
-print(json.dumps(client.app_view("ping"), indent=2))
-print(json.dumps(client.app_view("ping2"), indent=2))
-print(json.dumps(client.app_view_all(), indent=2))
+print(client.app_view("ping"))
+for app in client.app_view_all():
+    print(app)
 print(client.app_output("docker"))
 print(client.app_health("ping"))
 # manage application
-print(json.dumps(client.app_add({"command": "ping www.baidu.com -w 5", "name": "SDK"}), indent=2))
+print(client.app_add(appmesh_client.App({"command": "ping www.baidu.com -w 5", "name": "SDK"})))
 print(client.app_delete("SDK"))
 print(client.app_disable("ping"))
 print(client.app_enable("ping"))
@@ -71,6 +81,6 @@ print(
 print(json.dumps(client.cloud_app_delete("cloud"), indent=2))
 print(json.dumps(client.cloud_nodes(), indent=2))
 # run app
-print(client.run_sync({"command": "ping www.baidu.com -w 5", "shell": True}, max_time_seconds=3))
-tuple = client.run_async({"command": "ping www.baidu.com -w 5", "shell": True}, max_time_seconds=6)
-client.run_async_wait(tuple)
+print(client.run_sync(appmesh_client.App({"command": "ping www.baidu.com -w 5", "shell": True}), max_time_seconds=3))
+run = client.run_async(appmesh_client.App({"command": "ping www.baidu.com -w 5", "shell": True}), max_time_seconds=6)
+run.wait()

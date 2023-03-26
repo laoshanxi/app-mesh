@@ -3,6 +3,7 @@
 import abc
 import aniso8601
 import base64
+import copy
 import json
 import os
 import socket
@@ -23,6 +24,169 @@ REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
 _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
+
+
+def _get_str_item(data, key):
+    return str(data[key]) if (data and key in data and data[key]) else None
+
+
+def _get_int_item(data, key):
+    return int(data[key]) if (data and key in data and data[key]) else None
+
+
+def _get_bool_item(data, key):
+    return bool(data[key]) if (data and key in data and data[key]) else None
+
+
+def _get_dict_item(data, key):
+    return data[key] if (data and key in data and data[key]) else None
+
+
+class App(object):
+    """
+    App object present an application in App Mesh
+    """
+
+    class Behavior(object):
+        """
+        Application error handling behavior definition object
+        """
+
+        def __init__(self, data=None) -> None:
+            if isinstance(data, (str, bytes, bytearray)):
+                data = json.loads(data)
+            self.exit = _get_str_item(data, "exit")
+            self.control = copy.deepcopy(data)
+
+    class DailyLimitation(object):
+        """
+        Application avialable day time definition object
+        """
+
+        def __init__(self, data=None) -> None:
+            if isinstance(data, (str, bytes, bytearray)):
+                data = json.loads(data)
+            self.daily_start = _get_int_item(data, "daily_start")
+            self.daily_end = _get_int_item(data, "daily_end")
+
+    class ResourceLimitation(object):
+        """
+        Application cgroup limitation definition object
+        """
+
+        def __init__(self, data=None) -> None:
+            if isinstance(data, (str, bytes, bytearray)):
+                data = json.loads(data)
+            self.cpu_shares = _get_int_item(data, "cpu_shares")
+            self.memory_mb = _get_int_item(data, "memory_mb")
+            self.memory_virt_mb = _get_int_item(data, "memory_virt_mb")
+
+    def __init__(self, data=None):
+        """Construct an App Mesh Application object
+
+        Args:
+            data (str | dict | json, optional): application definition data
+        """
+
+        if isinstance(data, (str, bytes, bytearray)):
+            data = json.loads(data)
+
+        # mandatory parameters
+        self.name = _get_str_item(data, "name")
+        self.command = _get_str_item(data, "command")
+
+        self.shell = _get_bool_item(data, "shell")
+        self.description = _get_str_item(data, "description")
+        self.metadata = _get_dict_item(data, "metadata")
+        self.working_dir = _get_str_item(data, "working_dir")
+        self.status = _get_int_item(data, "status")
+        self.docker_image = _get_str_item(data, "docker_image")
+        self.stdout_cache_num = _get_int_item(data, "stdout_cache_num")
+
+        self.start_time = _get_int_item(data, "start_time")
+        self.end_time = _get_int_item(data, "end_time")
+        self.interval = _get_int_item(data, "interval")
+        self.cron = _get_bool_item(data, "cron")
+        self.daily_limitation = App.DailyLimitation(_get_dict_item(data, "daily_limitation"))
+
+        self.retention = _get_str_item(data, "retention")
+        self.extra_time = _get_str_item(data, "extra_time")
+
+        self.health_check_cmd = _get_str_item(data, "health_check_cmd")
+        self.permission = _get_int_item(data, "permission")
+        self.behavior = App.Behavior(_get_dict_item(data, "behavior"))
+
+        self.env = dict()
+        if data and "env" in data:
+            for k, v in data["env"].items():
+                self.env[k] = v
+        self.sec_env = dict()
+        if data and "sec_env" in data:
+            for k, v in data["sec_env"].items():
+                self.sec_env[k] = v
+        self.pid = _get_int_item(data, "pid")
+        self.resource_limit = App.ResourceLimitation(_get_dict_item(data, "resource_limit"))
+
+        # readonly attributes
+        self.owner = _get_str_item(data, "owner")
+        self.pstree = _get_str_item(data, "pstree")
+        self.container_id = _get_str_item(data, "container_id")
+        self.memory = _get_int_item(data, "memory")
+        self.cpu = _get_int_item(data, "cpu")
+        self.fd = _get_int_item(data, "fd")
+        self.last_start_time = _get_int_item(data, "last_start_time")
+        self.last_exit_time = _get_int_item(data, "last_exit_time")
+        self.health = _get_int_item(data, "health")
+        self.version = _get_int_item(data, "version")
+        self.return_code = _get_int_item(data, "return_code")
+
+    def __str__(self) -> str:
+        return json.dumps(self.json())
+
+    def json(self):
+        output = copy.deepcopy(self.__dict__)
+        output["behavior"] = copy.deepcopy(self.behavior.__dict__)
+        output["daily_limitation"] = copy.deepcopy(self.daily_limitation.__dict__)
+        output["resource_limit"] = copy.deepcopy(self.resource_limit.__dict__)
+
+        def clean_empty_item(data, key) -> None:
+            if key != "metadata":
+                value = data[key]
+                if not value:
+                    del data[key]
+                elif isinstance(value, dict):
+                    for k in list(value):
+                        clean_empty_item(value, k)
+
+        for k in list(output):
+            clean_empty_item(output, k)
+        for k in list(output):
+            clean_empty_item(output, k)
+        return output
+
+
+class Run(object):
+    """
+    Application run object indicate to a remote run from run_async()
+    """
+
+    def __init__(self, client, app_name: str, process_id: str):
+        self.app_name = app_name
+        self.proc_uid = process_id
+        self.__client = client
+
+    def wait(self, stdout_print: bool = True, timeout: int = 0) -> int:
+        """Wait for an async run to be finished
+
+        Args:
+            run (Run): asyncrized run result from run_async().
+            stdout_print (bool, optional): print remote stdout to local or not.
+            timeout (int, optional): wait max timeout seconds and return if not finished, 0 means wait until finished
+
+        Returns:
+            int: return exit code if process finished, return None for timeout or exception.
+        """
+        return self.__client.run_async_wait(self, stdout_print, timeout)
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -132,7 +296,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self.jwt_auth_enable:
             self.jwt_token = token
             headers = {}
-            if permission is not None:
+            if permission:
                 headers["Auth-Permission"] = permission
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/auth", header=headers)
             if resp.status_code == HTTPStatus.OK:
@@ -146,28 +310,39 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application view
     ########################################
-    def app_view(self, app_name: str):
-        """Get application information in JSON format
+    def app_view(self, app_name: str) -> App:
+        """Get one application information
 
         Args:
             app_name (str): the application name.
 
         Returns:
-            bool: success or failure.
-            dict: the application JSON both contain static configuration and runtime information.
+            App: the application object both contain static configuration and runtime information.
+
+        Exception:
+            failed request or no such application
         """
         resp = self._request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}")
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+        return App(resp.json())
 
     def app_view_all(self):
-        """Get all applications in JSON format
+        """Get all applications
 
         Returns:
-            bool: success or failure.
-            dict: the application JSON both contain static configuration and runtime information, only return applications that the user has permissions.
+            list: the application object both contain static configuration and runtime information, only return applications that the user has permissions.
+
+        Exception:
+            failed request or no such application
         """
         resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/applications")
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+        apps = []
+        for app in resp.json():
+            apps.append(App(app))
+        return apps
 
     def app_output(self, app_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = "", timeout: int = 0):
         """Get application stdout/stderr
@@ -217,18 +392,22 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application manage
     ########################################
-    def app_add(self, app_json: dict):
+    def app_add(self, app: App) -> App:
         """Register an application
 
         Args:
-            app_json (dict): the application definition.
+            app (App): the application definition.
 
         Returns:
-            bool: success or failure.
-            dict: resigtered application in JSON format.
+            App: resigtered application object.
+
+        Exception:
+            failed request
         """
-        resp = self._request_http(AppMeshClient.Method.PUT, path="/appmesh/app/{0}".format(app_json["name"]), body=app_json)
-        return (resp.status_code == HTTPStatus.OK), resp.json()
+        resp = self._request_http(AppMeshClient.Method.PUT, path="/appmesh/app/{0}".format(app.name), body=app.json())
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+        return App(resp.json())
 
     def app_delete(self, app_name: str):
         """Remove an application.
@@ -762,7 +941,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def run_async(
         self,
-        app_json: dict,
+        app: App,
         max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
         life_cycle_seconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
     ):
@@ -770,7 +949,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Asyncrized run will not block process
 
         Args:
-            app_json (dict): application JSON dict.
+            app (App): application object.
             max_time_seconds (int | str, optional): max run time for the remote process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
             life_cycle_seconds (int | str, optional): max lifecycle time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
 
@@ -781,25 +960,19 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         path = "/appmesh/app/run"
         resp = self._request_http(
             AppMeshClient.Method.POST,
-            body=app_json,
+            body=app.json(),
             path=path,
             query={"timeout": self._parse_duration(max_time_seconds), "lifecycle": self._parse_duration(life_cycle_seconds)},
         )
-        if resp.status_code == HTTPStatus.OK:
-            app_name = resp.json()["name"]
-            process_uuid = resp.json()["process_uuid"]
-            return (app_name, process_uuid)
-        else:
-            print(resp.text)
-        return None
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+        return Run(self, resp.json()["name"], resp.json()["process_uuid"])
 
-    def run_async_wait(self, async_tuple: tuple, stdout_print: bool = True, timeout: int = 0) -> int:
+    def run_async_wait(self, run: Run, stdout_print: bool = True, timeout: int = 0) -> int:
         """Wait for an async run to be finished
 
         Args:
-            async_tuple (tuple): asyncrized run result from run_async().
-                async_tuple[0] app_name: application name from run_async
-                async_tuple[1] process_uuid: process uuid
+            run (Run): asyncrized run result from run_async().
             stdout_print (bool, optional): print remote stdout to local or not.
             timeout (int, optional): wait max timeout seconds and return if not finished, 0 means wait until finished
 
@@ -807,23 +980,21 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             int: return exit code if process finished, return None for timeout or exception.
         """
         exit_code = None
-        if async_tuple is not None:
-            app_name = async_tuple[0]
-            process_uuid = async_tuple[1]
+        if run:
             output_position = 0
             start = datetime.now()
             interval = 1 if self.__class__.__name__ == "AppMeshClient" else 1000
-            while len(process_uuid) > 0:
+            while len(run.proc_uid) > 0:
                 success, output, position, exit_code = self.app_output(
-                    app_name=app_name, stdout_position=output_position, stdout_index=0, process_uuid=process_uuid, timeout=interval
+                    app_name=run.app_name, stdout_position=output_position, stdout_index=0, process_uuid=run.proc_uid, timeout=interval
                 )
-                if output is not None and stdout_print:
+                if output and stdout_print:
                     print(output, end="")
                 if position is not None:
                     output_position = position
                 if exit_code is not None:
                     # success
-                    self.app_delete(app_name)
+                    self.app_delete(run.app_name)
                     break
                 if not success:
                     # failed
@@ -835,7 +1006,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def run_sync(
         self,
-        app_json: dict,
+        app: App,
         stdout_print: bool = True,
         max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
         life_cycle_seconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
@@ -844,7 +1015,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         The synchronized run will block the process until the remote run is finished then return the result from HTTP response
 
         Args:
-            app_json (dict): application JSON dict.
+            app (App): application object.
             stdout_print (bool, optional): whether print remote stdout to local or not. Defaults to True.
             max_time_seconds (int | str, optional): max run time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
             life_cycle_seconds (int | str, optional): max lifecycle time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
@@ -855,7 +1026,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         path = "/appmesh/app/syncrun"
         resp = self._request_http(
             AppMeshClient.Method.POST,
-            body=app_json,
+            body=app.json(),
             path=path,
             query={"timeout": self._parse_duration(max_time_seconds), "lifecycle": self._parse_duration(life_cycle_seconds)},
         )
@@ -883,7 +1054,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             requests.Response: HTTP response
         """
         rest_url = parse.urljoin(self.server_url, path)
-        if self.jwt_token is not None:
+        if self.jwt_token:
             header["Authorization"] = "Bearer " + self.jwt_token
 
         if method is AppMeshClient.Method.GET:
@@ -1018,7 +1189,7 @@ class AppMeshClientTCP(AppMeshClient):
                     setattr(self, k, v)
                 return self
 
-        if super().jwt_token is not None:
+        if super().jwt_token:
             header["Authorization"] = "Bearer " + super().jwt_token
         if self.__socket_client is None:
             self.__connect_socket()

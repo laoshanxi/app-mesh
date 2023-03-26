@@ -72,6 +72,21 @@ const nlohmann::json HttpRequest::emptyJson()
 	return emptyBody;
 }
 
+void HttpRequest::dump() const
+{
+	const static char fname[] = "HttpRequest::dump() ";
+
+	LOG_DBG << fname << "m_uuid:" << m_uuid;
+	LOG_DBG << fname << "m_method:" << m_method;
+	LOG_DBG << fname << "m_relative_uri:" << m_relative_uri;
+	LOG_DBG << fname << "m_remote_address:" << m_remote_address;
+	LOG_DBG << fname << "m_body:" << m_body;
+	for (const auto &q : m_querys)
+		LOG_DBG << fname << "m_querys:" << q.first << "=" << q.second;
+	//for (const auto &h : m_headers)
+	//	LOG_DBG << fname << "m_headers:" << h.first << "=" << h.second;
+}
+
 void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
 						const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
