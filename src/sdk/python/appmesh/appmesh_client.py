@@ -26,19 +26,19 @@ TCP_MESSAGE_HEADER_LENGTH = 4
 _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 
 
-def _get_str_item(data, key):
-    return str(data[key]) if (data and key in data and data[key]) else None
+def _get_str_item(data: dict, key):
+    return data[key] if (data and key in data and data[key] and isinstance(data[key], str)) else None
 
 
-def _get_int_item(data, key):
-    return int(data[key]) if (data and key in data and data[key]) else None
+def _get_int_item(data: dict, key):
+    return int(data[key]) if (data and key in data and data[key] and isinstance(data[key], int)) else None
 
 
-def _get_bool_item(data, key):
+def _get_bool_item(data: dict, key):
     return bool(data[key]) if (data and key in data and data[key]) else None
 
 
-def _get_dict_item(data, key):
+def _get_native_item(data: dict, key):
     return data[key] if (data and key in data and data[key]) else None
 
 
@@ -97,7 +97,7 @@ class App(object):
 
         self.shell = _get_bool_item(data, "shell")
         self.description = _get_str_item(data, "description")
-        self.metadata = _get_dict_item(data, "metadata")
+        self.metadata = _get_native_item(data, "metadata")
         self.working_dir = _get_str_item(data, "working_dir")
         self.status = _get_int_item(data, "status")
         self.docker_image = _get_str_item(data, "docker_image")
@@ -107,14 +107,14 @@ class App(object):
         self.end_time = _get_int_item(data, "end_time")
         self.interval = _get_int_item(data, "interval")
         self.cron = _get_bool_item(data, "cron")
-        self.daily_limitation = App.DailyLimitation(_get_dict_item(data, "daily_limitation"))
+        self.daily_limitation = App.DailyLimitation(_get_native_item(data, "daily_limitation"))
 
         self.retention = _get_str_item(data, "retention")
         self.extra_time = _get_str_item(data, "extra_time")
 
         self.health_check_cmd = _get_str_item(data, "health_check_cmd")
         self.permission = _get_int_item(data, "permission")
-        self.behavior = App.Behavior(_get_dict_item(data, "behavior"))
+        self.behavior = App.Behavior(_get_native_item(data, "behavior"))
 
         self.env = dict()
         if data and "env" in data:
@@ -125,7 +125,7 @@ class App(object):
             for k, v in data["sec_env"].items():
                 self.sec_env[k] = v
         self.pid = _get_int_item(data, "pid")
-        self.resource_limit = App.ResourceLimitation(_get_dict_item(data, "resource_limit"))
+        self.resource_limit = App.ResourceLimitation(_get_native_item(data, "resource_limit"))
 
         # readonly attributes
         self.owner = _get_str_item(data, "owner")
