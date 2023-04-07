@@ -1060,7 +1060,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return requests.post(url=rest_url, params=query, headers=header, data=json.dumps(body) if isinstance(body, dict) else body, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST_STREAM:
             return requests.post(
                 url=rest_url,
