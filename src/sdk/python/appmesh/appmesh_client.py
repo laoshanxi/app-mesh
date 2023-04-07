@@ -10,7 +10,7 @@ import socket
 import ssl
 import uuid
 
-from enum import Enum
+from enum import Enum, unique
 from http import HTTPStatus
 from urllib import parse
 from datetime import datetime
@@ -39,7 +39,7 @@ def _get_bool_item(data: dict, key):
 
 
 def _get_native_item(data: dict, key):
-    return data[key] if (data and key in data and data[key]) else None
+    return copy.deepcopy(data[key]) if (data and key in data and data[key]) else None
 
 
 class App(object):
@@ -47,16 +47,39 @@ class App(object):
     App object present an application in App Mesh
     """
 
+    @unique
+    class Permission(Enum):
+        Deny = "1"
+        Read = "2"
+        Write = "3"
+
     class Behavior(object):
         """
         Application error handling behavior definition object
         """
 
+        @unique
+        class Action(Enum):
+            Restart = "restart"
+            Standby = "standby"
+            Keepalive = "keepalive"
+            Remove = "remove"
+
         def __init__(self, data=None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
+            # default exit behavior [restart,standby,keepalive,remove]
             self.exit = _get_str_item(data, "exit")
-            self.control = copy.deepcopy(data)
+            # exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior
+            self.control = _get_native_item(data, "control") if _get_native_item(data, "control") else dict()
+
+        def set_exit_behavior(self, a: Action) -> None:
+            """Set error handling behavior while application exit"""
+            self.exit = a.value
+
+        def set_control_behavior(self, control_code: int, a: Action) -> None:
+            """Set error handling behavior while application exit with specific return code"""
+            self.control[str(control_code)] = a.value
 
     class DailyLimitation(object):
         """
@@ -66,8 +89,15 @@ class App(object):
         def __init__(self, data=None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
+            # daily start time (e.g., '09:00:00+08')
             self.daily_start = _get_int_item(data, "daily_start")
+            # daily end time (e.g., '20:00:00+08')
             self.daily_end = _get_int_item(data, "daily_end")
+
+        def set_daily_range(self, start: datetime, end: datetime) -> None:
+            """Set valid day hour range"""
+            self.daily_start = int(start.timestamp())
+            self.daily_end = int(end.timestamp())
 
     class ResourceLimitation(object):
         """
@@ -77,8 +107,11 @@ class App(object):
         def __init__(self, data=None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
+            # CPU shares (relative weight)
             self.cpu_shares = _get_int_item(data, "cpu_shares")
+            # memory limit in MByte
             self.memory_mb = _get_int_item(data, "memory_mb")
+            # virtual memory limit in MByte
             self.memory_virt_mb = _get_int_item(data, "memory_virt_mb")
 
     def __init__(self, data=None):
@@ -91,39 +124,56 @@ class App(object):
         if isinstance(data, (str, bytes, bytearray)):
             data = json.loads(data)
 
-        # mandatory parameters
+        # application name
         self.name = _get_str_item(data, "name")
+        # full command line with arguments
         self.command = _get_str_item(data, "command")
 
+        # use shell mode, cmd can be more shell commands with string format
         self.shell = _get_bool_item(data, "shell")
+        # application description
         self.description = _get_str_item(data, "description")
+        # metadata string/JSON (input for application, pass to process stdin)
         self.metadata = _get_native_item(data, "metadata")
+        # working directory
         self.working_dir = _get_str_item(data, "working_dir")
+        # initial application status (true is enable, false is disabled)
         self.status = _get_int_item(data, "status")
+        # docker image which used to run command line (for docker container application)
         self.docker_image = _get_str_item(data, "docker_image")
+        # stdout file cache number
         self.stdout_cache_num = _get_int_item(data, "stdout_cache_num")
 
+        # start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')
         self.start_time = _get_int_item(data, "start_time")
+        # end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')
         self.end_time = _get_int_item(data, "end_time")
+        # start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')
         self.interval = _get_int_item(data, "interval")
+        # indicate interval parameter use cron expression
         self.cron = _get_bool_item(data, "cron")
         self.daily_limitation = App.DailyLimitation(_get_native_item(data, "daily_limitation"))
 
+        # extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
         self.retention = _get_str_item(data, "retention")
-        self.extra_time = _get_str_item(data, "extra_time")
 
+        # health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)
         self.health_check_cmd = _get_str_item(data, "health_check_cmd")
+        # application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.
         self.permission = _get_int_item(data, "permission")
         self.behavior = App.Behavior(_get_native_item(data, "behavior"))
 
+        # environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)
         self.env = dict()
         if data and "env" in data:
             for k, v in data["env"].items():
                 self.env[k] = v
+        # security environment variables, encrypt in server side with application owner's cipher
         self.sec_env = dict()
         if data and "sec_env" in data:
             for k, v in data["sec_env"].items():
                 self.sec_env[k] = v
+        # process id used to attach
         self.pid = _get_int_item(data, "pid")
         self.resource_limit = App.ResourceLimitation(_get_native_item(data, "resource_limit"))
 
@@ -139,6 +189,21 @@ class App(object):
         self.health = _get_int_item(data, "health")
         self.version = _get_int_item(data, "version")
         self.return_code = _get_int_item(data, "return_code")
+
+    def set_valid_time(self, start: datetime, end: datetime) -> None:
+        """Set avialable time window"""
+        self.start_time = int(start.timestamp()) if start else None
+        self.end_time = int(end.timestamp()) if end else None
+
+    def set_env(self, k: str, v: str, secure: bool = False) -> None:
+        """Set environment variable"""
+        if secure:
+            self.sec_env[k] = v
+        else:
+            self.env[k] = v
+
+    def set_permission(self, group_user: Permission, others_user: Permission) -> None:
+        self.permission = int(group_user.value + others_user.value)
 
     def __str__(self) -> str:
         return json.dumps(self.json())
@@ -197,6 +262,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     - import module: from appmesh import appmesh_client
     """
 
+    @unique
     class Method(Enum):
         """REST methods"""
 
@@ -1060,7 +1126,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(url=rest_url, params=query, headers=header, json=body, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return requests.post(url=rest_url, params=query, headers=header, data=json.dumps(body) if isinstance(body, dict) else body, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST_STREAM:
             return requests.post(
                 url=rest_url,
@@ -1196,7 +1262,7 @@ class AppMeshClientTCP(AppMeshClient):
         req_id = str(uuid.uuid1())
         appmesh_requst = RequestMsg()
         appmesh_requst.uuid = req_id
-        appmesh_requst.http_method = method.name
+        appmesh_requst.http_method = method.value
         appmesh_requst.request_uri = path
         appmesh_requst.client_addr = socket.gethostname()
         if body:

@@ -411,12 +411,12 @@ void ArgumentParser::processAppAdd()
 		return;
 	}
 
-	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("extra_time") > 0)
+	if (m_commandLineVariables.count("interval") > 0 && m_commandLineVariables.count("retention") > 0)
 	{
 		if (DurationParse::parse(m_commandLineVariables["interval"].as<std::string>()) <=
-			DurationParse::parse(m_commandLineVariables["extra_time"].as<std::string>()))
+			DurationParse::parse(m_commandLineVariables["retention"].as<std::string>()))
 		{
-			std::cout << "The extra_time seconds must less than interval." << std::endl;
+			std::cout << "The retention seconds must less than interval." << std::endl;
 			return;
 		}
 	}
