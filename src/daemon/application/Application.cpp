@@ -173,7 +173,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		}
 	}
 
-	app->m_commandLine = Utility::unEscape(Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command)));
+	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 	// TODO: consider i18n and  legal file name
 	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", Configuration::instance()->getWorkDir().c_str(), app->m_name.c_str());

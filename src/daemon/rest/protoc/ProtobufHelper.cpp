@@ -69,7 +69,7 @@ bool Request::deserialize(const char *data, int dataSize)
 		msgpack::object obj = result.get();
 		Request rest = obj.as<Request>();
 		*this = rest;
-		this->body = Utility::unEscape(this->body);
+		// this->body = Utility::htmlEntitiesDecode(this->body);
 		return true;
 	}
 	catch (const std::exception &e)

@@ -865,18 +865,48 @@ std::string Utility::strTolower(std::string s)
 	return s;
 }
 
-std::string Utility::unEscape(const std::string &str)
+std::string Utility::htmlEntitiesDecode(const std::string &str)
 {
-	// https://github.com/microsoft/cpprestsdk/blob/master/Release/tests/common/UnitTestpp/src/XmlTestReporter.cpp#L52
-	auto result = Utility::stringReplace(str, "&amp;", "&");
-	result = Utility::stringReplace(result, "&lt;", "<");
-	result = Utility::stringReplace(result, "&gt;", ">");
-	result = Utility::stringReplace(result, "&apos;", "\'");
-	result = Utility::stringReplace(result, "&quot;", "\"");
-	result = Utility::stringReplace(result, "&#40;", "(");
-	result = Utility::stringReplace(result, "&#41;", ")");
+	// https://forums.codeguru.com/showthread.php?448809-C-Replacing-HTML-Character-Entities
+	// https://wanghi.cn/202003/20836.html
 
-	result = Utility::stringReplace(result, "&#39;", "\'");
+	const static std::vector<std::string> subs = {
+		"&#34;", "& #34;", "&quot;", "&34;",
+		"&#39;", "& #39;", "&apos;", "&39;",
+		"&#38;", "& #38;", "&amp;", "&38;",
+		"&#60;", "& #60;", "&lt;", "&60;",
+		"&#62;", "& #62;", "&gt;", "&62;",
+		"&#32;", "& #32;", "&nbsp;", "&32;", "%20",
+		"&ndash;", "\u2013",
+		"&#40;", "& #40;",
+		"&#41;", "& #41;"};
+
+	const static std::vector<std::string> reps = {
+		"\"", "\"", "\"", "\"",
+		"'", "'", "'", "'",
+		"&", "&", "&", "&",
+		"<", "<", "<", "<",
+		">", ">", ">", ">",
+		" ", " ", " ", " ", " ",
+		"-", "-",
+		"(", "(",
+		")", ")"};
+
+	assert(subs.size() == reps.size());
+
+	std::string result = str;
+	for (int j = 0; j < reps.size(); j++)
+	{
+		const std::string &match = subs[j];
+		const std::string &repl = reps[j];
+		// Replace all matches
+		std::string::size_type start = result.find_first_of(match);
+		while (start != std::string::npos)
+		{
+			result.replace(start, match.size(), repl);
+			start = result.find_first_of(match, start + repl.size());
+		}
+	}
 	return result;
 }
 

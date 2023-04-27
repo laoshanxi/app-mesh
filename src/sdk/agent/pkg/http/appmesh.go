@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
+	"html"
 	"io/ioutil"
 	"log"
 	"math"
@@ -128,7 +129,7 @@ func readRequestData(req *fasthttp.Request) *Request {
 
 	// do not read body for file upload
 	if !(req.Header.IsPost() && string(req.URI().Path()) == REST_PATH_UPLOAD) {
-		data.Body = string(req.Body())
+		data.Body = html.UnescapeString(string(req.Body()))
 	}
 	return data
 }
