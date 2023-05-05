@@ -836,19 +836,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         Args:
             role_name (str): the role name.
-            role_permission_json (dict): role permission definition array, e.g
-                    [
-                        "app-control",
-                        "app-delete",
-                        "cloud-app-reg",
-                        "cloud-app-delete",
-                        "app-reg",
-                        "config-set",
-                        "file-download",
-                        "file-upload",
-                        "label-delete",
-                        "label-set"
-                    ]
+            role_permission_json (dict): role permission definition array, e.g: ["app-control", "app-delete", "cloud-app-reg", "cloud-app-delete"]
 
         Returns:
             bool: success or failure.

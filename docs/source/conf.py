@@ -2,6 +2,7 @@ import os
 import sys
 from shutil import copyfile
 from recommonmark.parser import CommonMarkParser
+
 current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(current_dir, "../../src/sdk/python")))
 
@@ -93,5 +94,5 @@ exclude_py_files = []
 exclude_py_files.append(os.path.abspath(os.path.join(current_dir, "../../src/sdk/python/py_exec.py")))
 exclude_py_files.append(os.path.abspath(os.path.join(current_dir, "../../src/sdk/python/setup.py")))
 for f in exclude_py_files:
-  if os.path.exists(f):
-     os.remove(f)
+    if os.path.exists(f):
+        os.remove(f)
