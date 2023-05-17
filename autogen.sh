@@ -159,7 +159,7 @@ cd $ROOTDIR
 
 # cpr
 # https://github.com/libcpr/cpr
-git clone --depth=1 -b 1.9.3 https://github.com/libcpr/cpr.git
+git clone --depth=1 -b 1.9.x https://github.com/libcpr/cpr.git
 cd cpr && mkdir -p build && cd build
 cmake .. -DCPR_USE_SYSTEM_CURL=ON
 cmake --build .
