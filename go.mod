@@ -6,7 +6,7 @@ require (
 	github.com/buaazp/fasthttprouter v0.1.1
 	github.com/rs/xid v1.5.0
 	github.com/valyala/fasthttp v1.48.0
-	github.com/vmihailenco/msgpack/v5 v5.3.5
+	github.com/vmihailenco/msgpack/v5 v5.4.0
 )
 
 require (
