@@ -17,6 +17,3 @@ sphinxcontrib-apidoc
 
 # dependency for appmesh_client.py
 appmesh
-
-# TODO: Remove when resolved: https://github.com/psf/requests/issues/6432
-urllib3<2.0.0

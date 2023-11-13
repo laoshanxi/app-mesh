@@ -98,6 +98,4 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
-cd $SHELL_FOLDER
-cmake .
-make agent
+cd $SHELL_FOLDER; mkdir -p b; cd b; cmake ..; make agent
