@@ -1,19 +1,22 @@
 # Standalone JWT server
+
 JWT authentication is a popular authentication method for HTTP service and client, App Mesh implemented a JWT Server with RBAC (role based access control) and this service can be used to build a JWT server for other systems. detail design refer to [JWT Design](https://app-mesh.readthedocs.io/en/latest/JWT.html)
 
 ## Solution
-### App Mesh can manage bellow concepts:
+
+### App Mesh can manage bellow concepts
+
 1. Users
 2. Roles
 3. Groups
 4. Permissions
 
-### Bellow APIs for security:
+### Bellow APIs for security
 
 Index | Method | URI | Body/Headers | Desc
 ---|---|---|---|---
 1 |POST| /appmesh/login | Username=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> Expire-Seconds=600 | JWT authenticate login
-2 |POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> Auth-Permission=permission_id | JWT token and permission authenticate
+2 |POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ZWrrpKI" <https://127.0.0.1:6060/appmesh/auth> <br> Optional: <br> Auth-Permission=permission_id | JWT token and permission authenticate
 3 |POST| /appmesh/user/admin/passwd | New-Password=base64(passwd) | Change user password
 4 |POST| /appmesh/user/usera/lock | | admin user to lock usera
 5 |POST| /appmesh/user/usera/unlock | | admin user to unlock usera
@@ -27,19 +30,22 @@ Index | Method | URI | Body/Headers | Desc
 13 |GET | /appmesh/permissions |  | Get all permissions
 14 |GET | /appmesh/user/groups |  | Get all user groups
 
-
 ### Manage
-Other system can call the 10th API to define `Roles` and `Permissions`, and call 6th API to define user with corrospanding role.
+
+Other system can call the 10th API to define `Roles` and `Permissions`, and call 6th API to define user with corresponding role.
 
 ### Authenticate
+
 System login and permission can all forward to App Mesh 1st and 2nd API to do the authentication.
 
 ### UI
-All those management API can be operated by [UI](https://github.com/laoshanxi/app-mesh-ui)
+
+All those managements API can be operated by [UI](https://github.com/laoshanxi/app-mesh-ui)
 
 ### Deploy a JWT server with SSL certificate
 
 `compose.yml`
+
 ```yaml
 version: "3"
 

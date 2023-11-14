@@ -56,7 +56,7 @@ AppMesh can manage user with groups, each group map to a LDAP organization unit 
 
 Start LDAP service with Docker container
 
-```
+```shell
 docker run --restart=always --name ldap-appmesh --hostname ldap-appmesh -p 389:389 -p 636:636 --detach osixia/openldap
 
 docker run --restart=always --name ldap-appmesh-ui -p 8443:443 --hostname ldap-appmesh-ui --link ldap-appmesh:ldap-appmesh --env PHPLDAPADMIN_LDAP_HOSTS=ldap-appmesh --detach osixia/phpldapadmin

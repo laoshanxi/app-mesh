@@ -1,38 +1,41 @@
 # Kubernetes run none-container applications
+
 [Demo video](https://asciinema.org/a/685tfnMjbnxjTB1sKbqs5Qv99)
 
 ## Background
-Kubernetes only support manage container applications, its impossible to run none-container application by Kubernetes.
-This solution provide a simple way to forward container start cmd to AppMesh and running on native host, AppMesh will guarantee the native application have same lifecycle with container.
 
+Kubernetes only support manage container applications, It's impossible to run none-container application by Kubernetes.
+This solution provides a simple way to forward container start cmd to AppMesh and running on native host, AppMesh will guarantee the native application have same lifecycle with container.
 
 ## Install AppMesh on host OS
+
 AppMesh is a native app manager, provide REST API which can used to manage application remotely. AppMesh is running on host OS, and container can register process to AppMesh by API, each container will register 2 AppMesh applications, one is used to start container command, the other is used to clean AppMesh application when container exits.
 [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html#native-installation)
 
-
 ## Build Kubernetes Docker image for native command
+
 This Docker image `laoshanxi/appmesh_agent` is used to forward container start command to AppMesh, The image was already built and pushed to `docker.io`, you can use directly without below build process.
+
 ```shell
 $ tee Dockerfile <<-'EOF'
-FROM ubuntu
+FROM laoshanxi/appmesh:latest
 
-ENV APP_MESH_VER=2.1.2
-
-RUN apt update && apt install wget net-tools -y && \
-    wget  https://github.com/laoshanxi/app-mesh/releases/download/${APP_MESH_VER}/appmesh_${APP_MESH_VER}_amd64.deb && \
-    apt-get install -y ./appmesh_${APP_MESH_VER}_amd64.deb && \
-    apt-get install python3 python3-pip -y && pip3 install docker six
+USER root
+RUN apt update && apt install net-tools -y
+USER appmesh
 
 ENTRYPOINT ["python3", "/opt/appmesh/bin/appmesh_arm.py"]
 EOF
+
 $ docker build --no-cache -t appmesh_agent .
 $ docker tag appmesh_agent laoshanxi/appmesh_agent
 $ docker push laoshanxi/appmesh_agent
 ```
 
 ## Kubernetes job example to run cmd on host OS
+
 This is an example run `docker ps` command on host OS and I did not install docker to this image, the command will forward to AppMesh and return result to container.
+
 ```shell
 $ tee myjob.yml <<-'EOF'
 apiVersion: batch/v1

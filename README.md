@@ -27,10 +27,12 @@ Platform support | X86_64 <br> ARM32 <br> ARM64
 SDK | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh_client.html) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/appmesh_client.go)
 
 ## Getting started
+
 The [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html) introduces how
 to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 ## Documentation
+
 - [Read the Docs](https://app-mesh.readthedocs.io/)
 - [REST API](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis)
 - [Command lines](https://app-mesh.readthedocs.io/en/latest/CLI.html)
@@ -57,7 +59,6 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 | Rich control options     | √        |                                       |
 | Authentication           | √        | √                                     |
 | Multi-tenant             | √        |                                       | √                                |
-
 
 ### Cluster mode
 
@@ -111,7 +112,6 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 - [Crypto++](https://www.cryptopp.com)
 - [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
 - [OATH Toolkit](http://www.nongnu.org/oath-toolkit/liboath-api)
-
 
 [language.url]:   https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

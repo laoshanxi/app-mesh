@@ -3,39 +3,43 @@ import sys
 import socket
 import os
 import uuid
+
 # python3 -m pip install --upgrade appmesh
 from appmesh import appmesh_client
 
-# get host OS ip
+# get host OS ip, depend on [net-tools]
 # https://stackoverflow.com/questions/31324981/how-to-access-host-port-from-docker-container
-host_ip = os.popen(r"route -n | awk '/UG[ \t]/{print $2}'").readline().strip()  # depend on [net-tools]
+HOST_OS_IP = os.popen(r"route -n | awk '/UG[ \t]/{print $2}'").readline().strip()
 
-shadow_app_name = socket.gethostname()  # used as shadow native app name
-monitor_app_name = str(uuid.uuid1())  # used as monitor app name
-client = appmesh_client.AppMeshClient(server_host=host_ip)
+APP_NAME_SHADOW = socket.gethostname()  # used as shadow native app name
+APP_NAME_MONITOR = str(uuid.uuid1())  # used as monitor app name
+
+client = appmesh_client.AppMeshClient(rest_url=f"https://{HOST_OS_IP}:6060")
 # authentication
 client.login("admin", "admin123")
 
 # prepare command line for native application
 args = sys.argv
 del args[0]
-command = " ".join(args)
+COMMANDS = " ".join(args)
 
 # run monitor app without block mode (dependency: pip3 install docker six)
-client.run(
-    app_json={"command": "python3 /opt/appmesh/bin/container_monitor.py {0} {1}".format(shadow_app_name, monitor_app_name), "name": monitor_app_name},
-    synchronized=False,
-    max_exec_time=65535,
-    block_async_run=False,
+client.run_async(
+    app=appmesh_client.App(
+        {
+            "command": f"python3 /opt/appmesh/bin/container_monitor.py {APP_NAME_SHADOW} {APP_NAME_MONITOR}",
+            "name": APP_NAME_MONITOR,
+        }
+    )
 )
 
 # run native app with block mode
 # TODO: pass container mem/cpu limitation to App Mesh
 # TODO: pass container specific Environments to App Mesh
-rt = client.run(
-    app_json={"name": shadow_app_name, "command": command, "shell": True},
-    synchronized=False,
-    max_exec_time=65535,
-    block_async_run=True,
+run = client.run_async(
+    app=appmesh_client.App(
+        {"name": APP_NAME_SHADOW, "command": COMMANDS, "shell": True}
+    ),
 )
+rt = client.run_async_wait(run)
 sys.exit(rt)

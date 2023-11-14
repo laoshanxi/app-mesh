@@ -1,29 +1,31 @@
 # Consul Integration
 
 App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
+
 - Stand-alone mode: The hosted applications can only be managed by CLI or Web UI locally.
 - Consul-cluster mode: The hosted applications can be defined in Consul, all the App Mesh nodes will vote one leader node to do the Consul application schedule, the worker App Mesh nodes will got the schedule result and launch corresponding applications.
 - Each application with listen port will register as Consul service for service discovery
 
 <div align=center><img src="docs/source/consul_arch.png" width=600 height=300 align=center /></div>
 
-### What is supported:
+### What is supported
 
-> * Each App Mesh instance in the cluster will keep a connection(support SSL) to Consul Service as a consul session
-> * App Mesh only talks to Consul service by one way communication
-> * Each App Mesh node report status to Consul KV data with session lock
-> * App Mesh node can be a cluster leader node or worker node
-> * Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any App Mesh Labels, wildcards is supported when build gcc version upper than 5.3)
-> * App Mesh Leader node schedule cluster applications and write schedule result to Consul KV data
-> * App Mesh worker node retrieve cluster applications (schedule result) and launch on worker node
-> * Cluster App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
-> * Consul session support HA recovery
-> * App Mesh request Consul session with TTL and expire delete behavior
-> * Consul watch is supported for monitor consul schedule changes and security sync-up
-> * Schedule consider resource usage and guarantee cluster applications running with corresponding replication
+> - Each App Mesh instance in the cluster will keep a connection(support SSL) to Consul Service as a consul session
+> - App Mesh only talks to Consul service by one way communication
+> - Each App Mesh node report status to Consul KV data with session lock
+> - App Mesh node can be a cluster leader node or worker node
+> - Cluster level application is submitted and defined in Consul KV data and support node selector (the selector can be hostname or any App Mesh Labels, wildcards is supported when build gcc version upper than 5.3)
+> - App Mesh Leader node schedule cluster applications and write schedule result to Consul KV data
+> - App Mesh worker node retrieve cluster applications (schedule result) and launch on worker node
+> - Cluster App support register as Consul Service for service discovery (each peer app will get others by env) with service health check point to app health API
+> - Consul session support HA recovery
+> - App Mesh request Consul session with TTL and expire delete behavior
+> - Consul watch is supported for monitor consul schedule changes and security sync-up
+> - Schedule consider resource usage and guarantee cluster applications running with corresponding replication
 
-### What is **not** supported:
-> * Consul access ACL
+### What is **not** supported
+>
+> - Consul access ACL
 
 ### Consul configuration
 
@@ -39,7 +41,6 @@ App Mesh can work as *stand-alone* mode and *Consul-cluster* mode.
 ```
 
 ------
-
 
 - Status report
  Each node will report node info to Consul KV path `appmesh/cluster/nodes/$host_name`
@@ -67,6 +68,7 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/nodes/centos8?raw | python3 
  Consul application is cluster level application that defined in Consul with replication and node selector.
  App Mesh leader node will get defined Consul application and current working nodes. schedule applications to working nodes and write schedule result to Consul.
  Each working node will watch and get its Consul application.
+
  ```shell
  curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks?recurse | python3 -m json.tool
  `
@@ -126,7 +128,7 @@ curl -s http://localhost:8500/v1/kv/appmesh/cluster/tasks/myapp?raw | python3 -m
 curl -s http://localhost:8500/v1/kv/appmesh/topology?recurse | python -m json.tool | grep Key
         "Key": "appmesh/cluster/topology/",
         "Key": "appmesh/cluster/topology/myhost",
-curl -s http://localhost:8500/v1/kv/appmesh/topology/myhost?raw | python -m json.tool  
+curl -s http://localhost:8500/v1/kv/appmesh/topology/myhost?raw | python -m json.tool
 [
     {
         "app": "myapp",
@@ -136,10 +138,11 @@ curl -s http://localhost:8500/v1/kv/appmesh/topology/myhost?raw | python -m json
 
  ```
 
- ### Consul Key/Value organization
+### Consul Key/Value organization
+
 ```json
 {
-	"appmesh": {
+ "appmesh": {
         "cluster": {
             "nodes": {
                 "host1": {
@@ -176,23 +179,26 @@ curl -s http://localhost:8500/v1/kv/appmesh/topology/myhost?raw | python -m json
                 }
             }
         },
-		"topology": {
-			"myhost": [ 
-			    {"app": "myapp", "schedule_time": "2021-03-25 17:23:58+08" },
-				{"app": "myapp2", "schedule_time": "2021-03-25 17:23:58+08" }],
-			"host2": [ 
-			    {"app": "myapp", "schedule_time": "2021-03-25 17:23:58+08" }
-			]
-		}
-	}
+  "topology": {
+   "myhost": [
+       {"app": "myapp", "schedule_time": "2021-03-25 17:23:58+08" },
+    {"app": "myapp2", "schedule_time": "2021-03-25 17:23:58+08" }],
+   "host2": [
+       {"app": "myapp", "schedule_time": "2021-03-25 17:23:58+08" }
+   ]
+  }
+ }
 }
 ```
- 
+
 - Use bellow command to start single Consul instance
+
 ```shell
-$ docker rm consul -f ; docker run --restart=always --net=host -p 8500:8500 -v /etc/hosts:/etc/hosts -e CONSUL_BIND_INTERFACE=eth0 --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 -bind=192.168.3.24 -bootstrap-expect=1 -ui
+docker rm consul -f ; docker run --restart=always --net=host -p 8500:8500 -v /etc/hosts:/etc/hosts -e CONSUL_BIND_INTERFACE=eth0 --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 -bind=192.168.3.24 -bootstrap-expect=1 -ui
 ```
+
 - Use bellow command to start 3 nodes Consul cluster
+
 ```shell
 # server-1
 docker run --restart=always --net=host --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config -bind=192.168.1.1 -bootstrap-expect=3 -ui
@@ -201,4 +207,5 @@ docker run --restart=always --net=host --name consul -d docker.io/consul consul 
 # server-3
 docker run --restart=always --net=host --name consul -d docker.io/consul consul agent -server=true -data-dir /consul/data -config-dir /consul/config -bind=192.168.1.3 -bootstrap-expect=3 -ui -join 192.168.1.1
 ```
+
 Note: consul container health-check will call outside URL, so need DNS to access other hostname or URL

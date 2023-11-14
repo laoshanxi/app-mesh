@@ -1,7 +1,9 @@
 # Secure REST file server
+
 App Mesh provide file download/upload REST APIs, also those APIs can be authenticated by JWT.
 
 ## Solution
+
 Use below API to manage file:
 
 | Method | URI                    | Body/Headers                                                           | Desc                                                  |
@@ -15,7 +17,8 @@ Use below API to manage file:
 ### Nginx can be used to be file download server
 
 `nginx.conf`
-```
+
+```text
 user  root;
 worker_processes  1;
 
@@ -43,7 +46,8 @@ http {
 ```
 
 `default.conf`
-```
+
+```text
 server {
     listen 443 ssl;
     server_name localhost;
@@ -70,6 +74,7 @@ App Mesh used as a secure file upload server which share storage with Nginx.
 Use `docker-compose up -d` to start appmesh and nginx service.
 
 `compose.yml`:
+
 ```yaml
 version: "3"
 

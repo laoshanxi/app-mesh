@@ -1,14 +1,17 @@
 # Remote run
+
 App Mesh support remote run a command, a script, and even a section of Python script
 
 ## Run commands
-```
+
+```shell
 # appc run -c whoami
 root
 ```
 
 Run a command with normal exit:
-```
+
+```shell
 # appc run -c 'ping www.baidu.com -w 2' -t 5; echo $?
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.8 ms
@@ -21,7 +24,8 @@ rtt min/avg/max/mdev = 31.844/31.850/31.857/0.006 ms
 ```
 
 Run a command and exit due to timeout:
-```
+
+```shell
 # appc run -c 'ping www.baidu.com -w 2' -t 5
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.9 ms
@@ -41,8 +45,10 @@ PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 ```
 
 ## Run Python script
+
 Use metadata to input python script which would be executed on remote side:
-```
+
+```shell
 # appc run -n  pyrun -g "print(99); print(2+9)" -t -1
 99
 11

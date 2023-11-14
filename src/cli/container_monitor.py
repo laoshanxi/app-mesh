@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-
-import docker
 import sys
+
 # python3 -m pip install --upgrade appmesh
 from appmesh import appmesh_client
+import docker
 
 # input
 #  - arg[1] as container name and shadow application name
@@ -14,13 +14,13 @@ container_name = args[0]
 
 # login appmesh
 appmesh = appmesh_client.AppMeshClient()
-print(appmesh.login("admin", "admin123"))
+appmesh.login("admin", "admin123")
 
 # wait docker finish and ignore container not exist error
 # https://docker-py.readthedocs.io/en/stable/containers.html#docker.models.containers.Container.wait
-client = docker.DockerClient(base_url="unix://var/run/docker.sock")
+client = docker.APIClient(base_url="unix://var/run/docker.sock")
 try:
-    print(client.containers.get(container_name).wait())
+    print(client.wait(container_name))
 except Exception as e:
     print(e)
 else:
@@ -28,6 +28,6 @@ else:
 
 # remove related applications
 for app_name in args:
-    print(appmesh.remove_app(app_name))
+    print(appmesh.app_delete(app_name))
 
 print("Finished")

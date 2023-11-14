@@ -7,16 +7,17 @@ Grafana support use REST API to perform a generic REST API as a customerized dat
 ### [Install Grafana simplejson plugin](https://github.com/grafana/simple-json-datasource)
 
 Use the grafana-cli tool to install SimpleJson from the commandline:
-```
+
+```shell
 grafana-cli plugins install grafana-simple-json-datasource
 service grafana-server restart
 ```
+
 After that, you could see simplejson data source plugin from Grafana.
 
 ![simplejson](https://raw.githubusercontent.com/laoshanxi/picture/master/grafana/01_add_data_source.png)
 
 [Grafana simple json plugin description](https://grafana.com/grafana/plugins/grafana-simple-json-datasource/)
-
 
 ### Add App Mesh data source to monitor applications
 
@@ -27,6 +28,7 @@ Add simplejson data source with URL `http://appmesh_server:6060/appmesh/grafana`
 Note: Add authentication token as Custom HTTP Headers `Authorization` with `Bearer ` prefix for authenticate with App Mesh, the result just show the applications visible to the token user.
 
 ### Add dashboard
+
 ![appmesh](https://raw.githubusercontent.com/laoshanxi/picture/master/grafana/03_appmesh_dashboard.png)
 
 ## [Grafana Infinity Datasource](https://grafana.com/grafana/plugins/yesoreyeram-infinity-datasource/)

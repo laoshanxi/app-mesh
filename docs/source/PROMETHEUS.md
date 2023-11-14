@@ -6,21 +6,25 @@ Prometheus, a Cloud Native Computing Foundation project, is a systems and servic
 
 ------
 
-### What is supported:
+## What is supported
+>
 > * App Mesh provide a build-in Prometheus exporter
 > * Prometheus exporter is a build-in REST server for Prometheus to scrap metrics
 
-### What is **not** supported:
+## What is **not** supported
+>
 > * Exporter SSL is not supported as community
 
-### Start Grafana, Prommetheus
-```
+## Start Grafana, Prommetheus
+
+```shell
 git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
 cd app-mesh/script
 docker-compose -f docker-compose-all-in-one.yaml up -d
 ```
 
 ### Configure Grafana
+
 1. Access Prometheus 9090 UI (http://prom_node:9090/) to verify
 2. Open Grafana on 3000 port (http://grafana_node:3000/)
 3. Add DataSource: Loki
@@ -28,11 +32,14 @@ docker-compose -f docker-compose-all-in-one.yaml up -d
 5. Select Explore -> Metrics
 
 ### Design
+
 `Prometheus` is monitoring system and time series database, every metric (unique by label) will be a time series data in DB, and use pull way to scrap data from Server to Client, client provide a exporter service listen on a local port, the exporter is build with Application together to read metric data from memory. appmesh provide a exporter service listen at 6061 by default. The exporter run build-in with appmesh and no need extra process.
 In order to collect node metrics, an extra node-exporter can be started on each node and listen on 9100 to provide node metrics service.
 
 ### Defined Metrics
-http://127.0.0.1:6061/metrics
+
+<http://127.0.0.1:6061/metrics>
+
 ```html
 # HELP appmesh_prom_scrape_count prometheus scrape count
 # TYPE appmesh_prom_scrape_count counter

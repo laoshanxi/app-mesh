@@ -1,4 +1,5 @@
 ## Command lines
+
 App Mesh command lines provide the same functionality with Web GUI for *stand-alone* mode, *Consul-cluster* mode related feature require Web GUI.
 
 ```text
@@ -39,7 +40,9 @@ Use '-b $hostname','-B $port' to run remote command.
 
 Usage:  appc [COMMAND] [ARG...] [flags]
 ```
+
 ---
+
 ### App management
 
 - List application[s]
@@ -53,15 +56,17 @@ ID NAME        OWNER STATUS   HEALTH PID     MEMORY   %CPU RETURN LAST_START_TIM
 4  ping        admin enabled  0      4790    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping www.baidu.com
 5  docker            enabled  0      2866    2.5 Mi   0    -      2021-03-26 08:03:28+08  ping www.sina.com
 ```
+
 - View application output
+
 ```text
 $ appc add -n ping -c 'ping www.baidu.com'
 {
-	"command": "ping www.baidu.com",
-	"name": "ping",
-	"owner": "admin",
-	"register_time": "2020-10-24 07:31:40+08",
-	"status": 1
+ "command": "ping www.baidu.com",
+ "name": "ping",
+ "owner": "admin",
+ "register_time": "2020-10-24 07:31:40+08",
+ "status": 1
 }
 
 $ appc view -n ping
@@ -174,6 +179,7 @@ CONTAINER ID        IMAGE               COMMAND             CREATED             
 ```
 
 - Remove an application
+
 ```text
 appc rm -n ping
 Are you sure you want to remove the application (y/n)?
@@ -182,16 +188,19 @@ Success
 ```
 
 - Enable/Disable an application
+
 ```text
-$ appc enable -n ping
-$ appc disable -n ping
-$ appc restart -n ping
+appc enable -n ping
+appc disable -n ping
+appc restart -n ping
 ```
 
 ---
+
 ### Cloud management
 
 - Join to Consul cluster
+
 ```text
 # appc join
 Join App Mesh cluster::
@@ -222,6 +231,7 @@ App Mesh will join cluster with parameter:
 ```
 
 - View cloud applications
+
 ```text
 $ appc cloud
 {
@@ -249,6 +259,7 @@ $ appc cloud
 ```
 
 ---
+
 ### Resource management
 
 - Display host resource usage
@@ -308,8 +319,8 @@ $ appc resource
   "systime": "2021-02-20 10:27:48+08"
 }
 ```
-</details>
 
+</details>
 
 - View application resource (application process tree memory usage)
 
@@ -327,9 +338,11 @@ $ appc view -n ping
 ```
 
 ---
+
 ### Remote command and application output (with session login)
 
 - Run remote application and get stdout
+
 ```text
 $ appc run -n ping -t 5
 PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
@@ -341,6 +354,7 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 ```
 
 - Run a shell command and get stdout
+
 ```text
 $ appc run -c 'su -l -c "appc view"'
 id name        user  status   health pid    memory  return last_start_time     command
@@ -349,25 +363,30 @@ id name        user  status   health pid    memory  return last_start_time     c
 3  78d92c24-6* root  N/A      0      20181  3.4 Mi  -      2020-03-26 19:46:46 su -l -c "appc view"
 ```
 
-
 ---
+
 ### File management
 
 - Download a file from server
+
 ```text
 $ # appc get -r /opt/appmesh/log/appsvc.log -l ./1.log
 file <./1.log> size <10.4 M>
 ```
 
 - Upload a local file to server
+
 ```text
 $ # appc put -r /opt/appmesh/log/appsvc.log -l ./1.log
 Success
 ```
 
 ---
+
 ### Label management
+
 - Manage labels
+
 ```text
 # list label
 $ appc label
