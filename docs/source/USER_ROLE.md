@@ -24,7 +24,6 @@ User and Role design for App Mesh
 ```json
   "Security": {
     "EncryptKey": false,
-    "JWTEnabled": true,
     "Roles": {
       "manage": [
         "app-control",

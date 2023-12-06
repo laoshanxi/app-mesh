@@ -12,7 +12,7 @@ Start App Mesh daemon docker container with 4g memory limited:
 docker run -d --memory=8g --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
 ```
 
-The startup support use environment variable override default configuration with format `APPMESH_${BASE-JSON-KEY}_${SUB-JSON-KEY}=NEW_VALUE`, E.g. `export APPMESH_REST_JWT_JWTEnabled=false`, `export APPMESH_REST_HttpThreadPoolSize=10`.
+The startup support use environment variable override default configuration with format `APPMESH_${BASE-JSON-KEY}_${SUB-JSON-KEY}=NEW_VALUE`, E.g. `export APPMESH_REST_HttpThreadPoolSize=10`.
 
 ### Native installation
 

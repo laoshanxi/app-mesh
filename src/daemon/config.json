@@ -9,7 +9,6 @@
     "RestEnabled": true,
     "JWT": {
       "JWTSalt": "HelloWorld",
-      "JWTEnabled": true,
       "SecurityInterface": "json"
     },
     "RestListenAddress": "localhost",

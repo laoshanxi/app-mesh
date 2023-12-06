@@ -141,9 +141,7 @@ func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	}
 	// cross site header
 	ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
-	ctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
 	ctx.Response.Header.Set("Access-Control-Allow-Headers", "*")
-	// ctx.Response.Header.SetServer(HTTP_SERVER)
 	// user agent
 	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
 	// status code

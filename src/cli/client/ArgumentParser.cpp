@@ -306,7 +306,7 @@ void ArgumentParser::processLogon()
 	if (!m_commandLineVariables.count("totp"))
 	{
 		std::cout << "TOTP(enter any char to skip when 2FA not activated): ";
-		std::cin >> m_totp;
+		std::getline(std::cin, m_totp);
 	}
 	else
 	{
@@ -1577,22 +1577,32 @@ void ArgumentParser::initRadomPassword()
 	if (HAS_JSON_FIELD(fileContentJsonObj, JSON_KEY_REST) &&
 		HAS_JSON_FIELD(fileContentJsonObj.at(JSON_KEY_REST), JSON_KEY_JWT))
 	{
+		// update JWT salt
+		fileContentJsonObj[JSON_KEY_REST][JSON_KEY_JWT][JSON_KEY_JWTSalt] = generatePassword(8, true, true, true, false);
+		// serialize and save JSON config
+		std::ofstream ofsCfg(configFilePath, ios::trunc);
+		if (ofsCfg.is_open())
+		{
+			ofsCfg << Utility::prettyJson(fileContentJsonObj.dump());
+			ofsCfg.close();
+		}
+
 		auto jwtSection = fileContentJsonObj[JSON_KEY_REST][JSON_KEY_JWT];
 		// check JWT configured as local JSON plugin
 		if (GET_JSON_STR_VALUE(jwtSection, JSON_KEY_SECURITY_Interface) == JSON_KEY_USER_key_method_local)
 		{
 			const auto securityFilePath = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
-			auto jsonObj = nlohmann::json::parse(Utility::readFileCpp(securityFilePath));
+			auto jsonSecurity = nlohmann::json::parse(Utility::readFileCpp(securityFilePath));
 			// update with generated password
 			std::string genPassword = generatePassword(8, true, true, true, false);
-			jsonObj[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = std::string(genPassword);
+			jsonSecurity[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = genPassword;
 
 			// serialize and save security JSON config
-			std::ofstream ofs(securityFilePath, ios::trunc);
-			if (ofs.is_open())
+			std::ofstream ofsSec(securityFilePath, ios::trunc);
+			if (ofsSec.is_open())
 			{
-				ofs << Utility::prettyJson(jsonObj.dump());
-				ofs.close();
+				ofsSec << Utility::prettyJson(jsonSecurity.dump());
+				ofsSec.close();
 				std::cout << "!Important! This will only occure once, password for user <admin> is <" << genPassword << ">." << std::endl;
 			}
 		}
