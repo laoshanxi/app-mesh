@@ -201,6 +201,8 @@ std::string RestHandler::getHttpQueryString(const HttpRequest &message, const st
 
 std::string RestHandler::regexSearch(const std::string &value, const char *expr)
 {
+	const static char fname[] = "RestHandler::regexSearch() ";
+
 	std::string result;
 	boost::regex expression(expr);
 	boost::smatch what;
@@ -216,15 +218,19 @@ std::string RestHandler::regexSearch(const std::string &value, const char *expr)
 				{
 					return result;
 				}
-				throw std::invalid_argument(Utility::stringFormat("no data from path <%s>", value.c_str()));
+				LOG_WAR << fname << "no data from path :" << value << " for regex expression: " << expr;
+				throw std::invalid_argument("no data from path for regex search");
 			}
 		}
 	}
-	throw std::invalid_argument(Utility::stringFormat("failed parse data from path <%s>", value.c_str()));
+	LOG_WAR << fname << "failed parse data from path :" << value << " for regex expression: " << expr;
+	throw std::invalid_argument("failed to search data from regex expression");
 }
 
 std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string &value, const char *expr)
 {
+	const static char fname[] = "RestHandler::regexSearch2() ";
+
 	std::string first, second;
 	boost::regex expression(expr);
 	boost::smatch what;
@@ -247,7 +253,8 @@ std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string
 			}
 		}
 	}
-	throw std::invalid_argument(Utility::stringFormat("failed parse data from path <%s>", value.c_str()));
+	LOG_WAR << fname << "failed parse data from path :" << value << " for regex expression: " << expr;
+	throw std::invalid_argument("failed to search data from regex expression");
 }
 
 void RestHandler::apiAppEnable(const HttpRequest &message)
@@ -282,7 +289,6 @@ void RestHandler::apiAppDelete(const HttpRequest &message)
 		throw std::invalid_argument("not allowed for cloud application");
 
 	if (!(Configuration::instance()->getApp(appName)->getOwner() &&
-		  Configuration::instance()->getJwtEnabled() &&
 		  Configuration::instance()->getApp(appName)->getOwner()->getName() == getJwtUserName(message)))
 	{
 		// only check delete permission for none-self app
@@ -413,18 +419,10 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
-	std::set<std::string> permissions;
-	if (Configuration::instance()->getJwtEnabled())
-	{
-		const auto result = verifyToken(message);
-		const auto userName = std::get<0>(result);
-		const auto groupName = std::get<1>(result);
-		permissions = Security::instance()->getUserPermissions(userName, groupName);
-	}
-	else
-	{
-		permissions = Security::instance()->getAllPermissions();
-	}
+	const auto result = verifyToken(message);
+	const auto userName = std::get<0>(result);
+	const auto groupName = std::get<1>(result);
+	const auto permissions = Security::instance()->getUserPermissions(userName, groupName);
 	auto json = nlohmann::json::array();
 	for (auto &perm : permissions)
 	{
@@ -543,23 +541,19 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 
 void RestHandler::apiUserView(const HttpRequest &message)
 {
-	if (Configuration::instance()->getJwtEnabled())
+	const static char fname[] = "RestHandler::apiUserView() ";
+
+	auto tokenUserName = getJwtUserName(message);
+	auto user = Security::instance()->getUserInfo(tokenUserName);
+	if (user != nullptr)
 	{
-		auto tokenUserName = getJwtUserName(message);
-		auto user = Security::instance()->getUserInfo(tokenUserName);
-		if (user != nullptr)
-		{
-			auto userJson = user->AsJson();
-			message.reply(web::http::status_codes::OK, User::clearConfidentialInfo(userJson));
-		}
-		else
-		{
-			throw std::invalid_argument(Utility::stringFormat("No such user: %s", tokenUserName.c_str()));
-		}
+		auto userJson = user->AsJson();
+		message.reply(web::http::status_codes::OK, User::clearConfidentialInfo(userJson));
 	}
 	else
 	{
-		throw std::invalid_argument("JWT authentication not enabled");
+		LOG_WAR << fname << "no such user: " << tokenUserName;
+		throw std::invalid_argument("no such user");
 	}
 }
 
@@ -583,10 +577,6 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 void RestHandler::apiUserActiveMFA(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_user_mfa_active);
-	if (!Configuration::instance()->getJwtEnabled())
-	{
-		throw std::invalid_argument("JWT authentication not enabled");
-	}
 	auto userName = getJwtUserName(message);
 
 	const auto user = Security::instance()->getUserInfo(userName);
@@ -605,11 +595,9 @@ void RestHandler::apiUserActiveMFA(const HttpRequest &message)
 
 void RestHandler::apiUserDeActiveMFA(const HttpRequest &message)
 {
+	const static char fname[] = "RestHandler::apiUserDeActiveMFA() ";
+
 	permissionCheck(message, PERMISSION_KEY_user_mfa_delete);
-	if (!Configuration::instance()->getJwtEnabled())
-	{
-		throw std::invalid_argument("JWT authentication not enabled");
-	}
 	auto path = (cpr::util::urlDecode(message.m_relative_uri));
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_MFA_DEL);
 	auto tokenUserName = getJwtUserName(message);
@@ -630,7 +618,8 @@ void RestHandler::apiUserDeActiveMFA(const HttpRequest &message)
 	}
 	else
 	{
-		throw std::invalid_argument(Utility::stringFormat("No such user exist <%s>", userName.c_str()));
+		LOG_WAR << fname << "No such user exist: " << userName;
+		throw std::invalid_argument("No such user exist");
 	}
 }
 
@@ -744,7 +733,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 		std::string passwd = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_password));
 		std::string totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
 		std::string userGroup;
-		if (Configuration::instance()->getJwtEnabled() && !Security::instance()->verifyUserKey(uname, passwd, totp, userGroup))
+		if (!Security::instance()->verifyUserKey(uname, passwd, totp, userGroup))
 		{
 			message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect user password"));
 		}
@@ -783,24 +772,17 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 {
 	std::string permission = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_auth_permission);
 
-	if (!Configuration::instance()->getJwtEnabled())
+	if (permissionCheck(message, permission))
 	{
-		message.reply(web::http::status_codes::OK, convertText2Json("JWT authentication not enabled"));
+		auto result = nlohmann::json::object();
+		result["user"] = std::string(getJwtUserName(message));
+		result["success"] = (true);
+		result["permission"] = std::string(permission);
+		message.reply(web::http::status_codes::OK, result);
 	}
 	else
 	{
-		if (permissionCheck(message, permission))
-		{
-			auto result = nlohmann::json::object();
-			result["user"] = std::string(getJwtUserName(message));
-			result["success"] = (true);
-			result["permission"] = std::string(permission);
-			message.reply(web::http::status_codes::OK, result);
-		}
-		else
-		{
-			message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
-		}
+		message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
 	}
 }
 
@@ -856,10 +838,11 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 		}
 		else
 		{
-			// CASE: new a application and run, client provide new app name
-			if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
+			// CASE: new a application and run, client provide command
+			if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command) && !HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_docker_image))
 			{
-				throw std::invalid_argument(Utility::stringFormat("Should specify command run application <%s>", clientProvideAppName.c_str()));
+				LOG_WAR << fname << "Should specify command to run application: " << clientProvideAppName;
+				throw std::invalid_argument("Should specify command to run application");
 			}
 		}
 	}

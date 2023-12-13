@@ -133,5 +133,5 @@ const std::string LogFileQueue::getFileName(int index)
 	{
 		return m_fileQueue[index]->getFileName();
 	}
-	throw std::invalid_argument(Utility::stringFormat("no such index <%d> of stdout file exist", index));
+	throw std::invalid_argument(Utility::stringFormat("no such index <%d> of stdout log file for <%s>", index, baseFileName.c_str()));
 }

@@ -35,7 +35,6 @@ public:
 		nlohmann::json AsJson() const;
 		std::string getJwtInterface() const;
 
-		bool m_jwtEnabled;
 		std::string m_jwtSalt;
 		std::string m_jwtInterface;
 	};
@@ -127,7 +126,6 @@ public:
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	bool getRestEnabled() const;
-	bool getJwtEnabled() const;
 	std::size_t getThreadPoolSize() const;
 	const std::string getDescription() const;
 

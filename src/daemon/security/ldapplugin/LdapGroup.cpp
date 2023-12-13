@@ -114,7 +114,7 @@ std::shared_ptr<LdapGroup> LdapGroups::getGroup(const std::string &name)
     }
     else
     {
-        throw std::invalid_argument(Utility::stringFormat("no such group <%s>", name.c_str()));
+        throw std::invalid_argument("no such user group");
     }
 };
 nlohmann::json LdapGroups::AsJson() const

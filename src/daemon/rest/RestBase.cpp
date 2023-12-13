@@ -262,12 +262,6 @@ bool RestBase::permissionCheck(const HttpRequest &message, const std::string &pe
 {
     const static char fname[] = "RestHandler::permissionCheck() ";
 
-    if (!Configuration::instance()->getJwtEnabled())
-    {
-        // JWT not enabled
-        return true;
-    }
-
     const auto result = verifyToken(message);
     const auto userName = std::get<0>(result);
     const auto groupName = std::get<1>(result);
@@ -279,7 +273,7 @@ bool RestBase::permissionCheck(const HttpRequest &message, const std::string &pe
     }
     else
     {
-        LOG_WAR << fname << "No such permission " << permission << " for user " << userName;
-        throw std::invalid_argument(Utility::stringFormat("No permission <%s> for user <%s>", permission.c_str(), userName.c_str()));
+        LOG_WAR << fname << "no such permission " << permission << " for user " << userName;
+        throw std::invalid_argument(Utility::stringFormat("no such permission for user <%s>", userName.c_str()));
     }
 }

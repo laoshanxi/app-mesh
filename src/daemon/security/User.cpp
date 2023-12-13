@@ -47,6 +47,7 @@ std::map<std::string, std::shared_ptr<User>> Users::getUsers()
 
 std::shared_ptr<User> Users::getUser(std::string name) const
 {
+	const static char fname[] = "Users::getUser() ";
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto user = m_users.find(name);
 	if (user != m_users.end())
@@ -55,7 +56,8 @@ std::shared_ptr<User> Users::getUser(std::string name) const
 	}
 	else
 	{
-		throw std::invalid_argument(Utility::stringFormat("no such user <%s>", name.c_str()));
+		LOG_WAR << fname << "no such user: " << name;
+		throw std::invalid_argument("no such user");
 	}
 }
 

@@ -895,7 +895,7 @@ std::string Utility::htmlEntitiesDecode(const std::string &str)
 	assert(subs.size() == reps.size());
 
 	std::string result = str;
-	for (int j = 0; j < reps.size(); j++)
+	for (size_t j = 0; j < reps.size(); j++)
 	{
 		const std::string &match = subs[j];
 		const std::string &repl = reps[j];

@@ -29,7 +29,7 @@ void AppBehavior::behaviorInit(nlohmann::json config)
                 else
                 {
                     LOG_ERR << "invalid control code <" << event.key() << ">";
-                    throw std::invalid_argument(Utility::stringFormat("invalid control code <%s>", event.key().c_str()));
+                    throw std::invalid_argument("invalid control code");
                 }
             }
         }

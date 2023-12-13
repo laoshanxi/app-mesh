@@ -32,7 +32,7 @@ void Security::init(const std::string &interface)
     }
     else
     {
-        throw std::invalid_argument(Utility::stringFormat("not supported security plugin <%s>", interface.c_str()));
+        throw std::invalid_argument("not supported security plugin");
     }
 }
 
@@ -111,6 +111,7 @@ nlohmann::json Security::AsJson() const
 
 bool Security::verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup)
 {
+    const static char fname[] = "Security::verifyUserKey() ";
     auto key = userKey;
     if (m_securityConfig->m_encryptKey)
     {
@@ -122,7 +123,8 @@ bool Security::verifyUserKey(const std::string &userName, const std::string &use
         outUserGroup = user->getGroup();
         return (user->getKey() == key) && !user->locked() && user->validateMfaCode(totp);
     }
-    throw std::invalid_argument(Utility::stringFormat("user %s not exist", userName.c_str()));
+    LOG_WAR << fname << "user not exist: " << userName;
+    throw std::invalid_argument("user not exist");
 }
 
 std::set<std::string> Security::getUserPermissions(const std::string &userName, const std::string &userGroup)
@@ -150,12 +152,14 @@ std::set<std::string> Security::getAllPermissions()
 
 void Security::changeUserPasswd(const std::string &userName, const std::string &newPwd)
 {
+    const static char fname[] = "Security::changeUserPasswd() ";
     auto user = this->getUserInfo(userName);
     if (user)
     {
         return user->updateKey(newPwd);
     }
-    throw std::invalid_argument(Utility::stringFormat("user %s not exist", userName.c_str()));
+    LOG_WAR << fname << "user not exist: " << userName;
+    throw std::invalid_argument("user not exist");
 }
 
 std::shared_ptr<User> Security::getUserInfo(const std::string &userName)

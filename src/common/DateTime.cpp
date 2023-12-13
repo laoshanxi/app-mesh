@@ -113,12 +113,12 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	catch (std::ios_base::failure &fail)
 	{
 		LOG_WAR << fname << Utility::stringFormat("invalid ISO8601 string: %s, %s", iso8601TimeStr.c_str(), fail.what());
-		throw std::invalid_argument(Utility::stringFormat("invalid ISO8601 string: %s, %s", iso8601TimeStr.c_str(), fail.what()));
+		throw std::invalid_argument("invalid ISO8601 string");
 	}
 	catch (...)
 	{
 		LOG_WAR << fname << Utility::stringFormat("invalid ISO8601 string: %s", iso8601TimeStr.c_str());
-		throw std::invalid_argument(Utility::stringFormat("invalid ISO8601 string: %s", iso8601TimeStr.c_str()));
+		throw std::invalid_argument("invalid ISO8601 string");
 	}
 }
 

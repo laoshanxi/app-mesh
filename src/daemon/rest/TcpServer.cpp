@@ -282,10 +282,11 @@ bool TcpHandler::sendBytes(const char *data, size_t length)
 	while (totalSent < length)
 	{
 		size_t sendSize = 0;
+		size_t sendReturn = 0;
 		errno = 0;
-		const auto sendReturn = (size_t)this->peer().send_n((void *)(data + totalSent), (length - totalSent), 0, &sendSize);
+		sendReturn = (size_t)this->peer().send_n((void *)(data + totalSent), (length - totalSent), 0, &sendSize);
 		LOG_DBG << fname << m_clientHostName << " total length: " << (length - totalSent) << " sent length:" << sendSize << " with result: " << std::strerror(errno);
-		if (sendReturn <= 0 || sendSize == 0)
+		if (sendReturn == 0)
 		{
 			if (EINTR == errno)
 			{

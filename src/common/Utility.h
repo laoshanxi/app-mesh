@@ -241,7 +241,6 @@ public:
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
 
 #define JSON_KEY_JWT "JWT"
-#define JSON_KEY_JWTEnabled "JWTEnabled"
 #define JSON_KEY_JWTSalt "JWTSalt"
 #define JSON_KEY_SECURITY_Interface "SecurityInterface"
 

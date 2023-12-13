@@ -32,7 +32,7 @@ void LdapImpl::init(const std::string &interface)
     }
     else
     {
-        throw std::invalid_argument(Utility::stringFormat("not supported security plugin <%s>", interface.c_str()));
+        throw std::invalid_argument("not supported security plugin");
     }
 }
 
@@ -55,7 +55,9 @@ std::shared_ptr<LdapImpl> LdapImpl::FromJson(const nlohmann::json &obj) noexcept
 
 std::shared_ptr<User> LdapImpl::getUserInfo(const std::string &userName)
 {
-    auto groups = this->m_ldap->m_groups->getGroups();
+	const static char fname[] = "LdapImpl::getUserInfo() ";
+
+	auto groups = this->m_ldap->m_groups->getGroups();
     for (const auto &group : groups)
     {
         auto user = group.second->getUser(userName);
@@ -64,7 +66,8 @@ std::shared_ptr<User> LdapImpl::getUserInfo(const std::string &userName)
             return user;
         }
     }
-    throw std::invalid_argument(Utility::stringFormat("No such user <%s> exist in LDAP", userName.c_str()));
+    LOG_WAR << fname << "No such user in LDAP: " << userName;
+    throw std::invalid_argument("No such user in LDAP");
 }
 
 std::set<std::string> LdapImpl::getUserPermissions(const std::string &userName, const std::string &userGroup)

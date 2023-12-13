@@ -82,7 +82,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	if (!config->m_defaultExecUser.empty() && !Utility::getUid(config->m_defaultExecUser, uid, gid))
 	{
 		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
-		throw std::invalid_argument(Utility::stringFormat("No such OS user found <%s>", config->m_defaultExecUser.c_str()));
+		throw std::invalid_argument("No such OS user for default execution");
 	}
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{
@@ -356,11 +356,6 @@ bool Configuration::getRestEnabled() const
 	return m_rest->m_restEnabled;
 }
 
-bool Configuration::getJwtEnabled() const
-{
-	return getJwt()->m_jwtEnabled;
-}
-
 std::size_t Configuration::getThreadPoolSize() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -631,8 +626,6 @@ void Configuration::hotUpdate(const nlohmann::json &jsonValue)
 			if (HAS_JSON_FIELD(rest, JSON_KEY_JWT))
 			{
 				auto sec = rest.at(JSON_KEY_JWT);
-				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTEnabled))
-					SET_COMPARE(this->m_rest->m_jwt->m_jwtEnabled, newConfig->m_rest->m_jwt->m_jwtEnabled);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTSalt))
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtSalt, newConfig->m_rest->m_jwt->m_jwtSalt);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_SECURITY_Interface))
@@ -762,13 +755,15 @@ std::shared_ptr<Application> Configuration::parseApp(const nlohmann::json &jsonA
 
 std::shared_ptr<Application> Configuration::getApp(const std::string &appName) const
 {
+	const static char fname[] = "Configuration::getApp() ";
 	std::vector<std::shared_ptr<Application>> apps = getApps();
 	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app)
 							 { return app->getName() == appName; });
 	if (iter != apps.end())
 		return *iter;
 
-	throw std::invalid_argument(Utility::stringFormat("No such application <%s> found", appName.c_str()));
+	LOG_WAR << fname << "No such application: " << appName;
+	throw std::invalid_argument("No such application");
 }
 
 bool Configuration::isAppExist(const std::string &appName)
@@ -887,17 +882,20 @@ Configuration::JsonRest::JsonRest()
 
 std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const nlohmann::json &jsonValue)
 {
+	const static char fname[] = "Configuration::JsonSsl::FromJson() ";
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_VerifyPeer, ssl->m_sslVerifyPeer);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
 	if (!Utility::isFileExist(ssl->m_certFile) && jsonValue.contains(JSON_KEY_SSLCertificateFile))
 	{
-		throw std::invalid_argument(Utility::stringFormat("SSLCertificateFile <%s> not exist", ssl->m_certFile.c_str()));
+		LOG_WAR << fname << "SSLCertificateFile not exist: " << ssl->m_certFile;
+		throw std::invalid_argument("SSLCertificateFile not exist");
 	}
 	if (!Utility::isFileExist(ssl->m_certKeyFile) && jsonValue.contains(JSON_KEY_SSLCertificateKeyFile))
 	{
-		throw std::invalid_argument(Utility::stringFormat("SSLCertificateKeyFile <%s> not exist", ssl->m_certKeyFile.c_str()));
+		LOG_WAR << fname << "SSLCertificateKeyFile not exist: " << ssl->m_certKeyFile;
+		throw std::invalid_argument("SSLCertificateKeyFile not exist");
 	}
 	return ssl;
 }
@@ -917,14 +915,12 @@ Configuration::JsonSsl::JsonSsl()
 }
 
 Configuration::JsonJwt::JsonJwt()
-	: m_jwtEnabled(false)
 {
 }
 
 std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const nlohmann::json &jsonObj)
 {
 	auto security = std::make_shared<Configuration::JsonJwt>();
-	SET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_JWTEnabled, security->m_jwtEnabled);
 	security->m_jwtSalt = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTSalt);
 	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);
 	return security;
@@ -933,7 +929,6 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 nlohmann::json Configuration::JsonJwt::AsJson() const
 {
 	auto result = nlohmann::json::object();
-	result[JSON_KEY_JWTEnabled] = (m_jwtEnabled);
 	result[JSON_KEY_JWTSalt] = std::string(m_jwtSalt);
 	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);
 	return result;
@@ -946,6 +941,7 @@ std::string Configuration::JsonJwt::getJwtInterface() const
 
 std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const nlohmann::json &jsonObj, int appmeshRestPort)
 {
+	const static char fname[] = "Configuration::JsonConsul::FromJson() ";
 	auto consul = std::make_shared<JsonConsul>();
 	consul->m_consulUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_URL);
 	consul->m_proxyUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
@@ -958,7 +954,8 @@ std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(c
 	const static boost::regex urlExpr("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
 	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExpr))
 	{
-		throw std::invalid_argument(Utility::stringFormat("Consul url <%s> is not correct", consul->m_consulUrl.c_str()));
+		LOG_WAR << fname << "incorrect Consul url: " << consul->m_consulUrl;
+		throw std::invalid_argument("incorrect Consul url");
 	}
 	if (consul->m_ttl < 5 && jsonObj.contains(JSON_KEY_CONSUL_SESSION_TTL))
 		throw std::invalid_argument("session TTL should not less than 5s");

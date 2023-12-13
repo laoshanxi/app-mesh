@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -87,7 +86,7 @@ func (r *Client) doRequest(method string, apiPath string, params url.Values, hea
 		fmt.Println(err.Error())
 		return nil, 0, nil, err
 	}
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Println(string(data))
