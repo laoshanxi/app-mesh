@@ -502,12 +502,16 @@ void Application::disable()
 		m_process->killgroup();
 	m_nextLaunchTime = nullptr;
 	setInvalidError();
+
+	save();
 }
 
 void Application::enable()
 {
 	auto disabled = STATUS::DISABLED;
 	m_status.compare_exchange_strong(disabled, STATUS::ENABLED);
+
+	save();
 }
 
 std::string Application::runAsyncrize(int timeoutSeconds)
@@ -704,10 +708,13 @@ void Application::initMetrics(std::shared_ptr<Application> fromApp)
 
 nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 {
+	const static char fname[] = "Application::AsJson() ";
+
 	nlohmann::json result = nlohmann::json::object();
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	result[JSON_KEY_APP_name] = std::string((m_name));
+	LOG_DBG << fname << "application:" << m_name;
+	result[JSON_KEY_APP_name] = std::string(m_name);
 	if (m_owner)
 		result[JSON_KEY_APP_owner] = std::string(m_owner->getName());
 	if (m_ownerPermission)
@@ -715,13 +722,13 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_shellApp)
 		result[JSON_KEY_APP_shell_mode] = (m_shellApp);
 	if (m_commandLine.length())
-		result[(JSON_KEY_APP_command)] = std::string((m_commandLine));
+		result[(JSON_KEY_APP_command)] = std::string(m_commandLine);
 	if (m_description.length())
-		result[(JSON_KEY_APP_description)] = std::string((m_description));
+		result[(JSON_KEY_APP_description)] = std::string(m_description);
 	if (m_healthCheckCmd.length())
-		result[(JSON_KEY_APP_health_check_cmd)] = std::string((m_healthCheckCmd));
+		result[(JSON_KEY_APP_health_check_cmd)] = std::string(m_healthCheckCmd);
 	if (m_workdir.length())
-		result[JSON_KEY_APP_working_dir] = std::string((m_workdir));
+		result[JSON_KEY_APP_working_dir] = std::string(m_workdir);
 	result[JSON_KEY_APP_status] = (int)m_status.load();
 	if (m_stdoutCacheNum)
 		result[JSON_KEY_APP_stdout_cache_num] = (m_stdoutCacheNum);
@@ -778,7 +785,8 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair)
 					  {
 						  auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
-						  envs[(pair.first)] = std::string(encryptedEnvValue); });
+						  envs[(pair.first)] = std::string(encryptedEnvValue);
+					  });
 		result[JSON_KEY_APP_sec_env] = envs;
 	}
 	if (m_dockerImage.length())
@@ -815,6 +823,34 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 
 	Utility::addExtraAppTimeReferStr(result);
 	return result;
+}
+
+void Application::save()
+{
+	const static char fname[] = "Application::save() ";
+
+	if (this->isPersistAble())
+	{
+		const auto appPath = getJsonPath();
+		LOG_DBG << fname << appPath;
+		// write prettified JSON to another file
+		std::ofstream ofs(getJsonPath(), ios::trunc);
+		ofs << std::setw(4) << AsJson(false) << std::endl;
+		if (ofs.fail())
+		{
+			throw std::invalid_argument("failed to save application, please check your app name or folder permission");
+		}
+	}
+}
+
+std::string Application::getJsonPath()
+{
+	return (fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR / (getName() + ".json")).string();
+}
+
+void Application::remove()
+{
+	Utility::removeFile(getJsonPath());
 }
 
 void Application::dump()

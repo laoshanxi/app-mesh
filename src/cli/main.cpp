@@ -11,7 +11,6 @@ int main(int argc, const char *argv[])
 	PRINT_VERSION();
 	try
 	{
-		Utility::initDateTimeZone();
 		ArgumentParser parser(argc, argv);
 		return parser.parse();
 	}

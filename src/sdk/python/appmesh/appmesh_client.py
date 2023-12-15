@@ -642,8 +642,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/config", body=cfg_json)
         result = resp.json()
-        if "Applications" in result:
-            result.pop("Applications")
         return (resp.status_code == HTTPStatus.OK), result
 
     def log_level_set(self, level: str = "DEBUG"):

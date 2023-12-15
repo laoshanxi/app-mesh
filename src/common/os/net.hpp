@@ -69,7 +69,7 @@ namespace net
 	/**
 	 * Get hostname with FQDN
 	 * https://stackoverflow.com/questions/504810/how-do-i-find-the-current-machines-full-hostname-in-c-hostname-and-domain-info
-	 * @return {std::string}  : 
+	 * @return {std::string}  :
 	 */
 	inline std::string hostname()
 	{
@@ -154,7 +154,7 @@ namespace net
 			{
 				if (fs::is_directory(*it))
 				{
-					auto deviceName = it->path().leaf().c_str();
+					auto deviceName = it->path().filename().c_str();
 					result.insert(deviceName);
 					LOG_DBG << fname << "virtual network device :" << deviceName;
 				}

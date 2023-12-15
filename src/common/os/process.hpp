@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <fstream>
 #include <list>
 #include <memory>
 #include <numeric>
@@ -37,7 +38,7 @@ namespace os
 		}
 		// 2. /proc/pid/maps
 		const auto procMapsPath = fs::path("/proc") / std::to_string(pid) / "maps";
-		std::ifstream maps(procMapsPath.string());
+		std::ifstream maps(procMapsPath.string(), std::ifstream::in);
 		if (maps.is_open())
 		{
 			std::string line;

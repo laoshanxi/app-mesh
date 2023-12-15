@@ -14,8 +14,8 @@ case $(uname -m) in
     arm)    dpkg --print-architecture | grep -q "arm64" && architecture="arm64" || architecture="arm" ;;
 esac
 
-SHELL_FOLDER=$(dirname $(readlink -f "$0"))
-export ROOTDIR=${SHELL_FOLDER}/appmesh
+SRC_DIR=$(dirname $(readlink -f "$0"))
+export ROOTDIR=$(pwd)/appmesh.tmp
 mkdir -p ${ROOTDIR}
 cd ${ROOTDIR}
 
@@ -85,11 +85,11 @@ case $(gcc -dumpversion) in
     6)   asanversion="3" ;;
     7)   asanversion="4" ;;
     8)   asanversion="5" ;;
-	9)   asanversion="6" ;;
-	10)   asanversion="7" ;;
-	11)   asanversion="8" ;;
-	12)   asanversion="9" ;;
-	*)   asanversion="0"
+    9)   asanversion="6" ;;
+    10)   asanversion="7" ;;
+    11)   asanversion="8" ;;
+    12)   asanversion="9" ;;
+    *)   asanversion="0"
 esac
 if [ -f "/usr/bin/yum" ]; then
     yum install -y valgrind libasan
@@ -100,7 +100,7 @@ fi
 # yum install -y golang
 # apt install -y golang
 GO_ARCH=$architecture
-GO_VER=1.18.8
+GO_VER=1.21.5
 $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
@@ -138,22 +138,17 @@ export GOPROXY=https://goproxy.io,direct
 # install fpm
 gem install fpm || gem update --system && gem install fpm
 
-# build boost_1_74_0
+# build boost
 if [ true ]; then
-	# https://www.cnblogs.com/eagle6688/p/5840773.html
-	if [ -f "/usr/bin/yum" ]; then
-		yum install -y python2-devel
-	elif [ -f "/usr/bin/apt" ]; then
-		apt install -y python-dev || apt install -y python2-dev
-	fi
+	BOOST_VER=76
 	# https://www.boost.org/users/download/
-	$WGET_A https://boostorg.jfrog.io/artifactory/main/release/1.74.0/source/boost_1_74_0.tar.gz
-	tar zxvf boost_1_74_0.tar.gz
-	cd ./boost_1_74_0
-	./bootstrap.sh
+	$WGET_A https://cytranet.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
+	tar zxvf boost_1_${BOOST_VER}_0.tar.gz > /dev/null
+	cd ./boost_1_${BOOST_VER}_0
+	./bootstrap.sh --without-libraries=python,mpi,test,wave
 	./b2 -j4
 	./b2 install
-	ls -al /usr/local/lib/libboost_system.so.1.74.0 /usr/local/include/boost/thread.hpp
+	ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
 fi
 cd $ROOTDIR
 
@@ -167,7 +162,7 @@ make install
 cd $ROOTDIR
 
 # json
-$WGET_A https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip
+$WGET_A https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
 unzip -o include.zip
 mv include/nlohmann /usr/local/include/
 
@@ -178,8 +173,8 @@ if [ "$architecture" = "arm64" ]; then
 	apt install -y liblog4cpp5-dev
 else
 	# yum install log4cpp -y
-	$WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
-	tar zxvf log4cpp-1.1.3.tar.gz
+	$WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz
+	tar zxvf log4cpp-1.1.4.tar.gz
 	cd log4cpp/
 	./autogen.sh
 	./configure
@@ -196,13 +191,16 @@ if [ true ]; then
 	# https://www.cnblogs.com/tanzi-888/p/5342431.html
 	# http://download.dre.vanderbilt.edu/
 	# https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#aceinstall
-	$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
-	tar zxvf ACE-6.5.16.tar.gz
+	$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
+	tar zxvf ACE-7.1.2.tar.gz > /dev/null
 	cd ACE_wrappers
 	export ACE_ROOT=$(pwd)
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
 	cd ${ACE_ROOT}/ace
+	make ssl=1 -j6
+	make install ssl=1 INSTALL_PREFIX=/usr/local
+	cd ${ACE_ROOT}/protocols/ace
 	make ssl=1 -j6
 	make install ssl=1 INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
@@ -212,36 +210,25 @@ cd $ROOTDIR
 # cryptopp: AES encrypt https://www.cryptopp.com/
 mkdir -p cryptopp
 cd cryptopp/
-$WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_6_0/cryptopp860.zip
-unzip -o cryptopp860.zip
+$WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_9_0/cryptopp890.zip
+unzip -o cryptopp890.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
 make -j6
 make install
 
 cd $ROOTDIR
 # cfssl: generate SSL certification file
+export GOBIN=/usr/local/bin
+go install github.com/cloudflare/cfssl/cmd/cfssl@latest
+go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
+
+# qrc
 if [ "$architecture" = "arm64" ]; then
-	# cfssl have no arm64 binary, just use package instead
-	apt install -y golang-cfssl
-
-	# qrc
 	$WGET_A --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_arm64
-	chmod +x qrc && mv qrc /usr/bin/
+	chmod +x qrc && mv qrc /usr/local/bin
 else
-	# SSL
-	# https://www.cnblogs.com/fanqisoft/p/10765038.html
-	# https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
-	CFSSL_VER=1.6.1
-	$WGET_A --output-document=cfssl https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VER}/cfssl_${CFSSL_VER}_linux_amd64
-	chmod +x cfssl && mv cfssl /usr/bin/
-	$WGET_A --output-document=cfssljson https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VER}/cfssljson_${CFSSL_VER}_linux_amd64
-	chmod +x cfssljson && mv cfssljson /usr/bin/
-	$WGET_A --output-document=cfssl-certinfo https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VER}/cfssl-certinfo_${CFSSL_VER}_linux_amd64
-	chmod +x cfssl-certinfo && mv cfssl-certinfo /usr/bin/
-
-	# qrc
 	$WGET_A --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_amd64
-	chmod +x qrc && mv qrc /usr/bin/
+	chmod +x qrc && mv qrc /usr/local/bin
 fi
 
 cd $ROOTDIR
@@ -280,4 +267,6 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
-cd $SHELL_FOLDER; mkdir -p b; cd b; cmake ..; make agent
+cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
+
+rm -rf ${ROOTDIR}

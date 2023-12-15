@@ -65,7 +65,6 @@ int main(int argc, char *argv[])
 		Utility::initLogging("server");
 		LOG_INF << fname << "Build: " << __MICRO_VAR__(BUILD_TAG);
 		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
-		Utility::initDateTimeZone(true);
 
 		{
 			// catch SIGHUP for 'systemctl reload'
@@ -80,16 +79,13 @@ int main(int argc, char *argv[])
 		const auto configTxt = Configuration::readConfiguration();
 		auto config = Configuration::FromJson(configTxt, true);
 		Configuration::instance(config);
-		const auto configJsonValue = nlohmann::json::parse((configTxt));
+		Utility::initDateTimeZone(Configuration::instance()->getPosixTimezone(), true);
 
 		// init security [both for server side and REST client side (file operation API)]
 		Security::init(Configuration::instance()->getJwt()->m_jwtInterface);
 
 		// recover applications
-		if (HAS_JSON_FIELD(configJsonValue, JSON_KEY_Applications))
-		{
-			config->deSerializeApps(configJsonValue.at(JSON_KEY_Applications));
-		}
+		config->loadApps();
 
 		// working dir
 		Utility::createDirectory(config->getWorkDir());
@@ -98,6 +94,7 @@ int main(int argc, char *argv[])
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());
 		Configuration::instance()->dump();
+		Configuration::instance()->saveConfigToDisk();
 
 		// Register QUIT_HANDLER to receive SIGINT commands.
 		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());

@@ -22,13 +22,13 @@ for e in $(env); do
 	val=$(echo $e | awk -F"=" '{print $2}')
 	if [[ $key == APPMESH_* ]]; then
 		echo $key"="$val
-		echo $e >>${PROG_HOME}/script/appmesh.environment
+		echo "export $e" >>${PROG_HOME}/script/appmesh.environment
 	fi
 done
 # set default execute user to current user
 # https://cloud.tencent.com/developer/ask/sof/878838
 if [ 0"$APPMESH_DefaultExecUser" = "0" ]; then
-	echo "APPMESH_DefaultExecUser=$LOGNAME" >>${PROG_HOME}/script/appmesh.environment
+	echo "export APPMESH_DefaultExecUser=$LOGNAME" >>${PROG_HOME}/script/appmesh.environment
 fi
 
 # check systemd or initd (systemd --test can not run with root)
@@ -97,6 +97,7 @@ chmod +x ${PROG_HOME}/script/appc.sh
 # 644 rw-r--r--
 chmod 644 ${PROG_HOME}/config.json
 chmod 644 ${PROG_HOME}/security.json
+chmod o+rw ${PROG_HOME}/apps
 if [ -z ${APPMESH_DAEMON_EXEC_USER+x} ]; then
 	:
 else

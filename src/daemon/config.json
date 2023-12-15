@@ -1,66 +1,42 @@
 {
-  "Description": "MYHOST",
-  "ScheduleIntervalSeconds": 1,
-  "LogLevel": "DEBUG",
-  "DefaultExecUser": "",
-  "DisableExecUser": false,
-  "WorkingDirectory": "",
-  "REST": {
-    "RestEnabled": true,
-    "JWT": {
-      "JWTSalt": "HelloWorld",
-      "SecurityInterface": "json"
-    },
-    "RestListenAddress": "localhost",
-    "RestListenPort": 6060,
-    "RestTcpPort": 6059,
-    "PrometheusExporterListenPort": 6061,
-    "DockerProxyListenAddr": "http://127.0.0.1:6058",
-    "HttpThreadPoolSize": 3,
-    "SSL": {
-      "VerifyPeer": false,
-      "SSLCertificateFile": "/opt/appmesh/ssl/server.pem",
-      "SSLCertificateKeyFile": "/opt/appmesh/ssl/server-key.pem"
-    }
-  },
-  "Applications": [
-    {
-      "name": "ping",
-      "description": "appmesh ping test",
-      "command": "ping www.baidu.com -w 300",
-      "owner": "mesh",
-      "permission": 33,
-      "behavior": {
-        "control": {
-          "0": "standby"
-        },
-        "exit": "restart"
-      }
-    },
-    {
-      "name": "pyrun",
-      "description": "execute Python string script from metadata input",
-      "command": "python3 /opt/appmesh/bin/py_exec.py",
-      "owner": "mesh",
-      "status": 0,
-      "permission": 12,
-      "behavior": {
-        "exit": "standby"
-      }
-    }
-  ],
-  "Consul": {
-    "IsMainNode": true,
-    "IsWorkerNode": true,
-    "Url": "",
-    "User": "",
-    "Pass": "",
-    "AppmeshProxyUrl": "",
-    "SessionTTL": 30,
-    "EnableConsulSecurity": false
-  },
-  "Labels": {
-    "os_version": "centos7.6",
-    "arch": "x86_64"
-  }
+	"Description": "MYHOST",
+	"ScheduleIntervalSeconds": 1,
+	"LogLevel": "DEBUG",
+	"PosixTimezone": "+08",
+	"DefaultExecUser": "",
+	"DisableExecUser": false,
+	"WorkingDirectory": "",
+	"REST": {
+		"RestEnabled": true,
+		"JWT": {
+			"JWTSalt": "HelloWorld",
+			"SecurityInterface": "json"
+		},
+		"RestListenAddress": "localhost",
+		"RestListenPort": 6060,
+		"RestTcpPort": 6059,
+		"PrometheusExporterListenPort": 6061,
+		"DockerProxyListenAddr": "http://127.0.0.1:6058",
+		"HttpThreadPoolSize": 3,
+		"SSL": {
+			"VerifyPeer": false,
+			"SSLCertificateFile": "/opt/appmesh/ssl/server.pem",
+			"SSLCertificateKeyFile": "/opt/appmesh/ssl/server-key.pem",
+			"SSLCaPath": "/opt/appmesh/ssl/ca.pem"
+		}
+	},
+	"Consul": {
+		"IsMainNode": true,
+		"IsWorkerNode": true,
+		"Url": "",
+		"User": "",
+		"Pass": "",
+		"AppmeshProxyUrl": "",
+		"SessionTTL": 30,
+		"EnableConsulSecurity": false
+	},
+	"Labels": {
+		"os_version": "centos7.6",
+		"arch": "x86_64"
+	}
 }

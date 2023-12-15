@@ -66,6 +66,8 @@ static size_t BOOST_DESC_WIDTH = 130;
 ArgumentParser::ArgumentParser(int argc, const char *argv[])
 	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(0)
 {
+	const std::string posixTimeZone = ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) ? ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) : getPosixTimezone();
+	Utility::initDateTimeZone(posixTimeZone, false);
 }
 
 void ArgumentParser::initArgs()
@@ -1593,9 +1595,11 @@ void ArgumentParser::initRadomPassword()
 		{
 			const auto securityFilePath = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
 			auto jsonSecurity = nlohmann::json::parse(Utility::readFileCpp(securityFilePath));
+			jsonSecurity[JSON_KEY_SECURITY_EncryptKey] = true;
 			// update with generated password
-			std::string genPassword = generatePassword(8, true, true, true, false);
-			jsonSecurity[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = genPassword;
+			const std::string genPassword = generatePassword(8, true, true, true, false);
+			const std::string encryptPassword = Utility::hash(genPassword);
+			jsonSecurity[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = encryptPassword;
 
 			// serialize and save security JSON config
 			std::ofstream ofsSec(securityFilePath, ios::trunc);
@@ -2049,6 +2053,16 @@ const std::string ArgumentParser::getAppMeshUrl()
 		}
 	}
 	return url;
+}
+
+const std::string ArgumentParser::getPosixTimezone()
+{
+	auto file = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string());
+	if (file.length() > 0)
+	{
+		return GET_JSON_STR_VALUE(nlohmann::json::parse(file), JSON_KEY_PosixTimezone);
+	}
+	return "";
 }
 
 const std::string ArgumentParser::parseUrlHost(const std::string &url)

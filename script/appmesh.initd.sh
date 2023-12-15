@@ -25,7 +25,7 @@ PROG_WATCHDOG=script/appmesh-entrypoint.sh
 PROG_ARGS=""
 
 export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
-. ${PROG_HOME}/script/appmesh.environment || true
+source ${PROG_HOME}/script/appmesh.environment || true
 
 # initd user
 if [ -z ${APPMESH_DAEMON_EXEC_USER+x} ]; then

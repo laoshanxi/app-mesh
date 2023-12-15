@@ -1,3 +1,5 @@
+#include <fstream>
+
 #include <ace/OS.h>
 
 #include "../../common/Utility.h"

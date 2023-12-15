@@ -39,7 +39,8 @@ User and Role design for App Mesh
       ],
       "usermgr": [
         "user-add",
-        "passwd-change",
+        "passwd-change-self",
+        "passwd-change-user",
         "user-delete",
         "user-lock",
         "role-delete",

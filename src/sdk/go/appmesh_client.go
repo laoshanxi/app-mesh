@@ -339,7 +339,6 @@ type Application struct {
 	Version   *int    `json:"version"`
 	LastError *string `json:"last_error"`
 
-	PosixTimeZone *string `json:"posix_timezone"`
 	DockerImage   *string `json:"docker_image"`
 
 	DailyLimit    *DailyLimitation    `json:"daily_limitation"`

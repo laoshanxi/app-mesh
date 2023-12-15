@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"html"
-	"io/ioutil"
 	"log"
 	"math"
 	"net"
@@ -40,14 +39,32 @@ var (
 
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
-	pool := x509.NewCertPool()
-	caCertPath := filepath.Join(utils.GetAppMeshHomeDir(), "ssl/ca.pem")
-	caCrt, err := ioutil.ReadFile(caCertPath)
-	if err != nil {
-		log.Fatalf("Failed read file: %v", err)
+	// Load client certificate and key
+	_, clientCert := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateFile")
+	_, clientCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateKeyFile")
+	_, trustedCA := utils.GetAppMeshConfig("REST", "SSL", "SSLCaPath")
+	cert := utils.LoadCertificatePair(clientCert.(string), clientCertKey.(string))
+
+	// load root CA
+	var certPool *x509.CertPool
+	caCertPath := trustedCA.(string)
+	if utils.IsFileExist(caCertPath) {
+		if fileInfo, err := os.Stat(caCertPath); !os.IsNotExist(err) {
+			if fileInfo.IsDir() {
+				certPool, _ = utils.LoadCACertificates(caCertPath)
+			} else {
+				certPool, _ = utils.LoadCACertificate(caCertPath)
+			}
+		} else {
+			log.Printf("ca file %s does not exist or empty.", caCertPath)
+			panic(err)
+		}
 	}
-	pool.AppendCertsFromPEM(caCrt)
-	conf := &tls.Config{RootCAs: pool}
+
+	conf := &tls.Config{
+		RootCAs:      certPool,
+		Certificates: []tls.Certificate{cert},
+	}
 	return tls.Dial("tcp", tcpAddr, conf)
 }
 
@@ -222,9 +239,14 @@ func listenAgent(restAgentAddr string, router *fasthttprouter.Router) error {
 }
 
 func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
+	_, verifyPeer := utils.GetAppMeshConfig("REST", "SSL", "VerifyPeer")
+	_, serverCert := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateFile")
+	_, serverCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateKeyFile")
+
 	conf := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
-		Certificates:             []tls.Certificate{loadServerCertificates(filepath.Join(utils.GetAppMeshHomeDir(), "ssl/server.pem"), filepath.Join(utils.GetAppMeshHomeDir(), "ssl/server-key.pem"))},
+		InsecureSkipVerify:       !(verifyPeer.(bool)), // Set to false to enable peer verification
+		Certificates:             []tls.Certificate{utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))},
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{

@@ -6,6 +6,9 @@
 ## https://www.bookstack.cn/read/tidb-v2.1/how-to-secure-generate-self-signed-certificates.md
 ## https://www.cnblogs.com/fanqisoft/p/10765038.html
 ## https://blog.csdn.net/kozazyh/article/details/79844609
+
+## https://github.com/cloudflare/cfssl/wiki/Creating-a-new-CSR
+## https://github.com/coreos/docs/blob/master/os/generate-self-signed-certificates.md
 ################################################################################
 
 PATH=$PATH:$(pwd)
@@ -69,3 +72,9 @@ echo $HOSTS
 echo '{"CN":"'"$HOSTNAME"'","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server -hostname=$HOSTS - | cfssljson -bare server
 
 echo '{"CN":"appmesh-client","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client -hostname=$HOSTS - | cfssljson -bare client
+
+# Start a TLS server on port 8443, using the server certificate and key, and requiring the client to present a valid certificate signed by the root CA
+# openssl s_server -cert server.pem -key server-key.pem -CAfile ca.pem -verify 1 -port 8443
+
+# Start a TLS client, using the client certificate and key, and verifying the server certificate against the root CA.
+# openssl s_client -cert client.pem -key client-key.pem -CAfile ca.pem -verify 1 -connect localhost:8443

@@ -25,6 +25,7 @@ public:
 		bool m_sslVerifyPeer;
 		std::string m_certFile;
 		std::string m_certKeyFile;
+		std::string m_sslCaPath;
 		JsonSsl();
 	};
 
@@ -89,11 +90,11 @@ public:
 	static void handleSignal();
 
 	static std::shared_ptr<Configuration> FromJson(const std::string &str, bool applyEnv = false) noexcept(false);
-	nlohmann::json AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp = true);
-	void deSerializeApps(const nlohmann::json &jsonObj);
+	nlohmann::json AsJson();
+	void loadApps();
 	void saveConfigToDisk();
 	void hotUpdate(const nlohmann::json &config);
-	static void readConfigFromEnv(nlohmann::json &jsonConfig);
+	static bool readConfigFromEnv(nlohmann::json &jsonConfig);
 	static bool applyEnvConfig(nlohmann::json &jsonValue, std::string envValue);
 	void registerPrometheus();
 	bool prometheusEnabled() const;
@@ -125,9 +126,11 @@ public:
 	bool getSslVerifyPeer() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
+	std::string getSSLCaPath() const;
 	bool getRestEnabled() const;
 	std::size_t getThreadPoolSize() const;
 	const std::string getDescription() const;
+	const std::string getPosixTimezone() const;
 
 	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
 	const std::shared_ptr<JsonJwt> getJwt() const;
@@ -149,6 +152,7 @@ private:
 	std::shared_ptr<JsonConsul> m_consul;
 
 	std::string m_logLevel;
+	std::string m_posixTimezone;
 
 	mutable std::recursive_mutex m_appMutex;
 	mutable std::recursive_mutex m_hotupdateMutex;

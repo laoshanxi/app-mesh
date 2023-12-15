@@ -98,6 +98,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_CONFIG_JSON_FILE "config.json"
 #define APPMESH_SECURITY_JSON_FILE "security.json"
 #define APPMESH_SECURITY_LDAP_JSON_FILE "ldap.json"
+#define APPMESH_APPLICATION_DIR "apps"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
@@ -108,7 +109,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
 #define JWT_ADMIN_NAME "admin"
-#define APPMESH_PASSWD_MIN_LENGTH 3
+#define APPMESH_PASSWD_MIN_LENGTH 8
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 // The first 4 bytes of the protocol buffer data contains the size of the following body data.
@@ -193,7 +194,7 @@ public:
 	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);
 	static void appendStrDayTimeAttr(nlohmann::json &jsonObj, const std::string &key);
 	static void addExtraAppTimeReferStr(nlohmann::json &jsonObj);
-	static void initDateTimeZone(bool writeLog = false);
+	static void initDateTimeZone(const std::string &posixTimezone, bool writeLog);
 
 	static const std::string readStdin2End();
 };
@@ -216,7 +217,7 @@ public:
 #define SEPARATE_REST_APP_NAME "apprest"
 #define SEPARATE_AGENT_APP_NAME "agent"
 #define SEPARATE_PYTHON_EXEC_APP_NAME "pyrun"
-#define REST_ROOT_TEXT_MESSAGE "<html>\n<head><title>App Mesh</title></head>\n<body><h1>App Mesh</h1></body>\n</html>\n"
+#define REST_ROOT_TEXT_MESSAGE "<html>\n<head><title>App Mesh</title></head>\n<body>App Mesh</body>\n</html>\n"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_Description "Description"
@@ -234,11 +235,13 @@ public:
 
 #define JSON_KEY_ScheduleIntervalSeconds "ScheduleIntervalSeconds"
 #define JSON_KEY_LogLevel "LogLevel"
+#define JSON_KEY_PosixTimezone "PosixTimezone"
 
 #define JSON_KEY_SSL "SSL"
 #define JSON_KEY_VerifyPeer "VerifyPeer"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
+#define JSON_KEY_SSLCaPath "SSLCaPath"
 
 #define JSON_KEY_JWT "JWT"
 #define JSON_KEY_JWTSalt "JWTSalt"
@@ -247,7 +250,6 @@ public:
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
 #define JSON_KEY_Groups "Groups"
-#define JSON_KEY_Applications "Applications"
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
 #define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
@@ -401,7 +403,8 @@ public:
 #define PERMISSION_KEY_label_delete "label-delete"
 #define PERMISSION_KEY_config_view "config-view"
 #define PERMISSION_KEY_config_set "config-set"
-#define PERMISSION_KEY_change_passwd "passwd-change"
+#define PERMISSION_KEY_change_passwd_self "passwd-change-self"
+#define PERMISSION_KEY_change_passwd_user "passwd-change-user"
 #define PERMISSION_KEY_lock_user "user-lock"
 #define PERMISSION_KEY_unlock_user "user-unlock"
 #define PERMISSION_KEY_add_user "user-add"

@@ -170,7 +170,7 @@ void AppProcess::checkStdout()
 				{
 					// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
 					const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
-					fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_option::overwrite_if_exists);
+					fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
 					ACE_OS::ftruncate(m_stdoutHandler, 0);
 					LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
 				}

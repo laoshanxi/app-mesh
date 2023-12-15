@@ -597,10 +597,9 @@ void Utility::addExtraAppTimeReferStr(nlohmann::json &appJson)
 	}
 }
 
-void Utility::initDateTimeZone(bool writeLog)
+void Utility::initDateTimeZone(const std::string &posixTimezone, bool writeLog)
 {
-	const std::string posixTimeZone = ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) ? ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) : "";
-	const auto &zone = DateTime::initOutputFormatPosixZone(posixTimeZone);
+	const auto &zone = DateTime::initOutputFormatPosixZone(posixTimezone);
 	if (writeLog)
 	{
 		LOG_INF << "Set timezone to: " << zone->to_posix_string();

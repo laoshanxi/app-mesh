@@ -7,7 +7,6 @@ package http
 // curl --verbose --cert /opt/appmesh/ssl/client.pem --key /opt/appmesh/ssl/client-key.pem --cacert /opt/appmesh/ssl/ca.pem  https://localhost:6058/containers/json | python -m json.tool
 
 import (
-	"crypto/tls"
 	"log"
 	"net"
 	"net/url"
@@ -47,15 +46,6 @@ func listenDockerAgent(dockerAgentAddr string) {
 	if err := fasthttp.ListenAndServe(dockerAgentAddr, dockerReverseProxyHandler); err != nil {
 		log.Fatalf("Error in fasthttp server: %s", err)
 	}
-}
-
-func loadServerCertificates(pem string, key string) tls.Certificate {
-	cert, err := tls.LoadX509KeyPair(pem, key)
-	if err != nil {
-		log.Fatalf("Error in LoadX509KeyPair: %s", err)
-		panic(err)
-	}
-	return cert
 }
 
 func ListenDocker(dockerAgentAddr string) {

@@ -12,7 +12,7 @@ Start App Mesh daemon docker container with 4g memory limited:
 docker run -d --memory=8g --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
 ```
 
-The startup support use environment variable override default configuration with format `APPMESH_${BASE-JSON-KEY}_${SUB-JSON-KEY}=NEW_VALUE`, E.g. `export APPMESH_REST_HttpThreadPoolSize=10`.
+The startup support use environment variable override default configuration with format `APPMESH_${BASE-JSON-KEY}_${SUB-JSON-KEY}=NEW_VALUE`, E.g. `export APPMESH_REST_HttpThreadPoolSize=10`, `export APPMESH_REST_SSL_VerifyPeer=true`.
 
 ### Native installation
 
@@ -47,25 +47,24 @@ appc add -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/
 Note:
 
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
-2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host)
-3. Use env `export APPMESH_SECURE_INSTALLATION=Y` to generate random initial password for user `admin`
+2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host) and use `sudo -E` to pass environment variable to sudo
+3. Use env `export APPMESH_SECURE_INSTALLATION=Y` to generate initial secure password for user `admin` and force enable password encrypt
 4. Use env `export APPMESH_DisableExecUser=true` to disable customized process user
 5. Set env `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user
-6. Set env `APPMESH_POSIX_TIMEZONE` with posix timezone (E.g. export APPMESH_POSIX_TIMEZONE="+08") for CLI and Server
+6. Set env `APPMESH_PosixTimezone` with posix timezone (E.g. export APPMESH_PosixTimezone="+08") for CLI and Server
 7. The installation will create `appmesh` Linux user for default app running
-8. For openSUSE, install dependency: `sudo zypper install net-tools-deprecated mozilla-nss`
-9. For centos 8, install dependency: `sudo yum install libnsl`
-10. The installation media structure is like this:
+8. For centos 8, install dependency: `sudo yum install libnsl`
+9. The installation media structure is like this:
 
 ```
     $ tree -L 1 /opt/appmesh/
-    ├── config.json                  ====> configuration file (can be modified manually or update from GUI)
+	├── apps                         ====> application json files dir
+    ├── config.json                  ====> configuration fileGUI)
     ├── security.json                ====> local JSON security configuration file
     ├── bin                          ====> execution binaries dir
     ├── lib64
-    ├── log                          ====> service log dir
+    ├── log                          ====> app mesh engine log dir
     ├── script
-    ├── sdk                          ====> SDK binary dir
     ├── ssl                          ====> SSL certification files
     └── work                         ====> child app work dir (app log files will write in this dir)
 ```

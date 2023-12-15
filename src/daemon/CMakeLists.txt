@@ -30,6 +30,7 @@ target_link_libraries(appsvc
     common
 	client
 	cpr
+	ACE_INet_SSL
 )
 
 ##########################################################################

@@ -3,6 +3,8 @@
 
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
+#include <boost/filesystem.hpp>
+#include <nlohmann/json.hpp>
 
 #include "Configuration.h"
 #include "Label.h"
@@ -54,7 +56,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 		jsonValue = nlohmann::json::parse((str));
 		if (applyEnv)
 		{
-			// Only the first time read from ENV
 			Configuration::readConfigFromEnv(jsonValue);
 		}
 	}
@@ -77,6 +78,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
 	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
+	config->m_posixTimezone = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_PosixTimezone);
 
 	unsigned int gid, uid;
 	if (!config->m_defaultExecUser.empty() && !Utility::getUid(config->m_defaultExecUser, uid, gid))
@@ -160,11 +162,9 @@ void Configuration::handleSignal()
 	}
 }
 
-nlohmann::json Configuration::AsJson(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp)
+nlohmann::json Configuration::AsJson()
 {
 	nlohmann::json result = nlohmann::json::object();
-	// Applications
-	result[JSON_KEY_Applications] = serializeApplication(false, user, returnUnPersistApp);
 
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
@@ -175,6 +175,7 @@ nlohmann::json Configuration::AsJson(bool returnRuntimeInfo, const std::string &
 	result[JSON_KEY_WorkingDirectory] = std::string(m_defaultWorkDir);
 	result[JSON_KEY_ScheduleIntervalSeconds] = (m_scheduleInterval);
 	result[JSON_KEY_LogLevel] = std::string(m_logLevel);
+	result[JSON_KEY_PosixTimezone] = std::string(m_posixTimezone);
 
 	// REST
 	result[JSON_KEY_REST] = m_rest->AsJson();
@@ -282,28 +283,37 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	return result;
 }
 
-void Configuration::deSerializeApps(const nlohmann::json &jsonObj)
+void Configuration::loadApps()
 {
-	for (auto &entry : jsonObj.items())
+	const static char fname[] = "Configuration::loadApps() ";
+
+	const auto appDir = fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR;
+	if (fs::exists(appDir) && fs::is_directory(appDir))
 	{
-		// set recover flag used to decrypt confidential data
-		auto jsonApp = entry.value();
-		jsonApp[JSON_KEY_APP_from_recover] = true;
-		auto app = this->parseApp(jsonApp);
-		this->addApp2Map(app);
+		for (const auto &jsonFile : fs::directory_iterator(appDir))
+		{
+			LOG_INF << fname << "loading <" << jsonFile.path().filename() << ">.";
+			if (Utility::endWith(jsonFile.path().filename().string(), ".json"))
+			{
+				auto app = this->parseApp(nlohmann::json::parse(std::ifstream(jsonFile.path().string())));
+				this->addApp2Map(app);
+			}
+		}
+	}
+	else
+	{
+		Utility::createDirectory(appDir.string());
 	}
 }
 
 void Configuration::disableApp(const std::string &appName)
 {
 	getApp(appName)->disable();
-	saveConfigToDisk();
 }
 void Configuration::enableApp(const std::string &appName)
 {
 	auto app = getApp(appName);
 	app->enable();
-	saveConfigToDisk();
 }
 
 const std::string Configuration::getLogLevel() const
@@ -350,6 +360,12 @@ std::string Configuration::getSSLCertificateKeyFile() const
 	return m_rest->m_ssl->m_certKeyFile;
 }
 
+std::string Configuration::getSSLCaPath() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_ssl->m_sslCaPath;
+}
+
 bool Configuration::getRestEnabled() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -366,6 +382,12 @@ const std::string Configuration::getDescription() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_hostDescription;
+}
+
+const std::string Configuration::getPosixTimezone() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_posixTimezone;
 }
 
 const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
@@ -429,7 +451,7 @@ void Configuration::dump()
 	const static char fname[] = "Configuration::dump() ";
 
 	LOG_DBG << fname << '\n'
-			<< Utility::prettyJson(this->AsJson(false, "").dump());
+			<< Utility::prettyJson(this->AsJson().dump());
 
 	auto apps = getApps();
 	for (auto &app : apps)
@@ -452,7 +474,8 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 						  mapApp = app;
 						  update = true;
 						  return;
-					  } });
+					  }
+				  });
 
 	if (!update)
 	{
@@ -474,10 +497,6 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 			app->initMetrics();
 		}
 
-		if (app->isPersistAble())
-		{
-			saveConfigToDisk();
-		}
 		// invoke immediately
 		app->execute();
 	}
@@ -501,11 +520,8 @@ void Configuration::removeApp(const std::string &appName)
 				app = (*iterA);
 				iterA = m_apps.erase(iterA);
 				// Write to disk
-				if (app->isPersistAble())
-				{
-					saveConfigToDisk();
-				}
-				LOG_DBG << fname << "removed " << appName;
+				app->remove();
+				LOG_DBG	<< fname << "removed " << appName;
 			}
 			else
 			{
@@ -523,7 +539,7 @@ void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = (this->AsJson(false, "", false).dump());
+	auto content = (this->AsJson().dump());
 	if (content.length())
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -618,6 +634,8 @@ void Configuration::hotUpdate(const nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile))
 					SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCaPath))
+					SET_COMPARE(this->m_rest->m_ssl->m_sslCaPath, newConfig->m_rest->m_ssl->m_sslCaPath);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_VerifyPeer))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyPeer, newConfig->m_rest->m_ssl->m_sslVerifyPeer);
 			}
@@ -655,13 +673,13 @@ void Configuration::hotUpdate(const nlohmann::json &jsonValue)
 	ResourceCollection::instance()->dump();
 }
 
-void Configuration::readConfigFromEnv(nlohmann::json &jsonConfig)
+bool Configuration::readConfigFromEnv(nlohmann::json &jsonConfig)
 {
 	const static char fname[] = "Configuration::readConfigFromEnv() ";
-
+	LOG_INF << fname;
 	// environment "APPMESH_LogLevel=INFO" can override main configuration
 	// environment "APPMESH_Security_JWTEnabled=false" can override Security configuration
-
+	bool applyConfig = false;
 	for (char **var = environ; *var != nullptr; var++)
 	{
 		std::string env = *var;
@@ -683,6 +701,7 @@ void Configuration::readConfigFromEnv(nlohmann::json &jsonConfig)
 						// override json value
 						if (applyEnvConfig(json->at(jsonKey), envVal))
 						{
+							applyConfig = true;
 							LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
 						}
 						else
@@ -699,6 +718,7 @@ void Configuration::readConfigFromEnv(nlohmann::json &jsonConfig)
 			}
 		}
 	}
+	return applyConfig;
 }
 bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envValue)
 {
@@ -718,12 +738,12 @@ bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envVal
 	{
 		if (Utility::isNumber(envValue))
 		{
-			jsonValue = (envValue != "0");
+			jsonValue = (std::stoi(envValue) > 0);
 			return true;
 		}
 		else
 		{
-			jsonValue = (envValue != "false");
+			jsonValue = (envValue == "true");
 			return true;
 		}
 	}
@@ -887,6 +907,7 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_VerifyPeer, ssl->m_sslVerifyPeer);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
+	ssl->m_sslCaPath = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCaPath);
 	if (!Utility::isFileExist(ssl->m_certFile) && jsonValue.contains(JSON_KEY_SSLCertificateFile))
 	{
 		LOG_WAR << fname << "SSLCertificateFile not exist: " << ssl->m_certFile;
@@ -897,6 +918,11 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 		LOG_WAR << fname << "SSLCertificateKeyFile not exist: " << ssl->m_certKeyFile;
 		throw std::invalid_argument("SSLCertificateKeyFile not exist");
 	}
+	if (ssl->m_sslCaPath.length() && !(Utility::isFileExist(ssl->m_sslCaPath) || Utility::isDirExist(ssl->m_sslCaPath)) && jsonValue.contains(JSON_KEY_SSLCaPath))
+	{
+		LOG_WAR << fname << "SSLCaPath not exist: " << ssl->m_sslCaPath;
+		throw std::invalid_argument("SSLCaPath not exist");
+	}
 	return ssl;
 }
 
@@ -906,6 +932,7 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 	result[JSON_KEY_VerifyPeer] = (m_sslVerifyPeer);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
 	result[JSON_KEY_SSLCertificateKeyFile] = std::string(m_certKeyFile);
+	result[JSON_KEY_SSLCaPath] = std::string(m_sslCaPath);
 	return result;
 }
 

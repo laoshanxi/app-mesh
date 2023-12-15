@@ -1,0 +1,13 @@
+{
+	"name": "ping",
+	"description": "appmesh ping test",
+	"command": "ping www.baidu.com -w 300",
+	"owner": "mesh",
+	"permission": 33,
+	"behavior": {
+		"control": {
+			"0": "standby"
+		},
+		"exit": "restart"
+	}
+}

@@ -53,7 +53,10 @@ public:
 
 	static void FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &obj) noexcept(false);
 	virtual nlohmann::json AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
+	virtual void save();
+	virtual void remove();
 	virtual void dump();
+	virtual std::string getJsonPath();
 
 	// operate
 	void execute(void *ptree = nullptr);

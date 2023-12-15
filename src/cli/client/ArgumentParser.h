@@ -83,6 +83,7 @@ private:
 	void unregSignal();
 	std::string parseOutputMessage(std::shared_ptr<cpr::Response> &resp);
 	const std::string getAppMeshUrl();
+	const std::string getPosixTimezone();
 	const std::string parseUrlHost(const std::string &url);
 
 private:

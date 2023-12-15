@@ -5,7 +5,7 @@
 set -x
 set -e
 export DEBIAN_FRONTEND=noninteractive
-SHELL_FOLDER=$(dirname $(readlink -f "$0"))
+SRC_DIR=$(dirname $(readlink -f "$0"))
 
 apt update
 # apt full-upgrade -q -y
@@ -56,7 +56,7 @@ mv include/nlohmann /usr/local/include/
 
 # qr code
 wget --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_amd64
-chmod +x qrc && mv qrc /usr/bin/
+chmod +x qrc && mv qrc /usr/local/bin
 
 # Golang
 apt install -y golang
@@ -98,4 +98,4 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
-cd $SHELL_FOLDER; mkdir -p b; cd b; cmake ..; make agent
+cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
