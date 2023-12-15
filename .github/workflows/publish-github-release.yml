@@ -69,7 +69,7 @@ jobs:
           docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18  /bin/sh -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: Upload packages
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.arch }}
           path: |
