@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
+#include <boost/filesystem.hpp>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
 #include <nlohmann/json.hpp>
-#include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
@@ -238,9 +238,11 @@ public:
 #define JSON_KEY_PosixTimezone "PosixTimezone"
 
 #define JSON_KEY_SSL "SSL"
-#define JSON_KEY_VerifyPeer "VerifyPeer"
+#define JSON_KEY_SSLVerifyPeer "VerifyPeer"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
+#define JSON_KEY_SSLClientCertificateFile "SSLClientCertificateFile"
+#define JSON_KEY_SSLClientCertificateKeyFile "SSLClientCertificateKeyFile"
 #define JSON_KEY_SSLCaPath "SSLCaPath"
 
 #define JSON_KEY_JWT "JWT"

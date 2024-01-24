@@ -14,10 +14,8 @@ target_link_libraries(appc
   PRIVATE
     client
     Threads::Threads
-    ${OPENSSL_LIBRARIES}
     boost_program_options
     common
-	cpr
 )
 
 ##########################################################################

@@ -10,6 +10,7 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 ##########################################################################
 target_link_libraries(common
   PRIVATE
+    curlpp ${CURL_LIB} z
     ACE
     ACE_SSL
     log4cpp
@@ -17,4 +18,5 @@ target_link_libraries(common
     boost_system
     boost_filesystem
     boost_program_options
+    ${OPENSSL_LIBRARIES}
 )

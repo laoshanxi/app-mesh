@@ -14,11 +14,12 @@ ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
 ENV APPMESH_DisableExecUser=true
-COPY --from=PYTHON_STAGE /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
+COPY --from=PYTHON_STAGE /usr/local/lib/python3* /usr/local/lib/
+COPY --from=PYTHON_STAGE /usr/lib/python3/dist-packages/ /usr/lib/python3/dist-packages/
 COPY --from=COMPILE_STAGE /opt/app-mesh/build/appmesh*.deb .
 RUN apt-get update && \
 	apt-get install -y python3 iputils-ping tini && \
-	apt-get install -y ./appmesh*.deb && rm -f ./appmesh*.deb && apt-get clean && \
+	apt-get install -y ./appmesh*.deb && rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
 	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
 	touch /var/run/appmesh.pid && \

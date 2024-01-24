@@ -11,6 +11,7 @@ int main(int argc, const char *argv[])
 	PRINT_VERSION();
 	try
 	{
+		Utility::initLogging(std::string());
 		ArgumentParser parser(argc, argv);
 		return parser.parse();
 	}

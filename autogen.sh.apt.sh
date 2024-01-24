@@ -6,6 +6,9 @@ set -x
 set -e
 export DEBIAN_FRONTEND=noninteractive
 SRC_DIR=$(dirname $(readlink -f "$0"))
+export ROOTDIR=$(pwd)/appmesh.tmp
+mkdir -p ${ROOTDIR}
+cd ${ROOTDIR}
 
 apt update
 # apt full-upgrade -q -y
@@ -19,14 +22,6 @@ apt install -y valgrind libasan6
 # security
 apt install -y libldap-dev liboath-dev
 
-# fpm
-apt install -y ruby ruby-dev rubygems alien
-apt install -y lsb-release
-apt install -y ca-certificates
-export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ruby -rnet/http -e "Net::HTTP.get URI('https://gem.fury.io')"
-gem install fpm
-
 # cpplint tools
 apt install -y clang
 apt install -y cppcheck
@@ -38,14 +33,10 @@ apt install -y libace-dev libace-ssl-dev
 apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
 
-# tool
-apt install -y golang-cfssl
-
-# cpr
-# https://github.com/libcpr/cpr
-git clone --depth=1 -b 1.9.x https://github.com/libcpr/cpr.git
-cd cpr && mkdir -p build && cd build
-cmake .. -DCPR_USE_SYSTEM_CURL=ON
+# curlcpp
+git clone --depth=1 https://github.com/jpbarrette/curlpp.git
+cd curlpp && mkdir -p build && cd build
+cmake ..
 cmake --build .
 make install
 
@@ -54,15 +45,17 @@ wget https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip
 unzip -o include.zip
 mv include/nlohmann /usr/local/include/
 
-# qr code
-wget --output-document=qrc https://github.com/laoshanxi/qrc/releases/download/v0.1.2/qrc_linux_amd64
-chmod +x qrc && mv qrc /usr/local/bin
-
 # Golang
 apt install -y golang
 # Golang third party library
 export GO111MODULE=on
 export GOPROXY=https://goproxy.io,direct
+# go binaries
+export GOBIN=/usr/local/bin
+go install github.com/laoshanxi/qrc/cmd/qrc@latest
+go install github.com/cloudflare/cfssl/cmd/cfssl@latest
+go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
+go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
 #messagepack Python pip
 apt install -y python3-pip
@@ -99,3 +92,15 @@ git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
 cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
+
+# clean
+rm -rf ${ROOTDIR}
+go clean -cache
+go clean -fuzzcache
+go clean --modcache
+pip3 cache purge
+if [ -f "/usr/bin/yum" ]; then
+	yum clean all
+else
+	apt-get clean
+fi

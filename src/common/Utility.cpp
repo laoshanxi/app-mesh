@@ -261,40 +261,42 @@ void Utility::initLogging(const std::string &name)
 {
 	using namespace log4cpp;
 
-	auto logDir = fs::path(Utility::getParentDir()) / "log";
-	createDirectory(logDir.string());
 	auto consoleLayout = new PatternLayout();
 	consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
 	auto consoleAppender = new OstreamAppender("console", &std::cout);
 	consoleAppender->setLayout(consoleLayout);
 
+	Category &root = Category::getRoot();
 	// RollingFileAppender(const std::string&name, const std::string&fileName,
 	//	std::size_tmaxFileSize = 10 * 1024 * 1024, unsigned intmaxBackupIndex = 1,
 	//	boolappend = true, mode_t mode = 00644);
-	auto rollingFileAppender = new RollingFileAppender(
-		"rollingFileAppender",
-		logDir.operator/=(name + ".log").string(),
-		20 * 1024 * 1024,
-		5,
-		true,
-		00664);
+	if (!name.empty())
+	{
+		auto logDir = fs::path(Utility::getParentDir()) / "log";
+		createDirectory(logDir.string());
+		auto rollingFileAppender = new RollingFileAppender(
+			"rollingFileAppender",
+			logDir.operator/=(name + ".log").string(),
+			20 * 1024 * 1024,
+			5,
+			true,
+			00664);
 
-	auto pLayout = new PatternLayout();
-	pLayout->setConversionPattern("%d [%t] %p %c: %m%n");
-	rollingFileAppender->setLayout(pLayout);
-
-	Category &root = Category::getRoot();
-	root.addAppender(rollingFileAppender);
+		auto pLayout = new PatternLayout();
+		pLayout->setConversionPattern("%d [%t] %p %c: %m%n");
+		rollingFileAppender->setLayout(pLayout);
+		root.addAppender(rollingFileAppender);
+	}
 	root.addAppender(consoleAppender);
 
 	// Log level
-	std::string levelEnv = "DEBUG";
-	auto env = getenv("LOG_LEVEL");
-	if (env != nullptr)
-		levelEnv = env;
-	setLogLevel(levelEnv);
+	auto levelEnv = getenv("LOG_LEVEL");
+	if (levelEnv != nullptr)
+	{
+		setLogLevel(levelEnv);
+	}
 
-	LOG_INF << "Logging process ID:" << getpid();
+	LOG_DBG << "Logging process ID:" << getpid();
 }
 
 bool Utility::setLogLevel(const std::string &level)

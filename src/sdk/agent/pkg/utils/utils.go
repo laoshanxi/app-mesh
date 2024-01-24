@@ -10,9 +10,24 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+var configJsonData map[string]interface{}
+
+func init() {
+	data, err := os.ReadFile(filepath.Join(GetAppMeshHomeDir(), "config.json"))
+	if err != nil {
+		log.Fatalf("Error reading file: %v", err)
+	}
+	// Unmarshal the JSON data into the map
+	err = json.Unmarshal(data, &configJsonData)
+	if err != nil {
+		log.Fatalf("Error unmarshalling JSON: %v", err)
+	}
+}
 
 func IsFileExist(path string) bool {
 	if len(path) > 0 {
@@ -61,34 +76,28 @@ func GetAppMeshHomeDir() string {
 	return getParentDir(getCurrentAbPath())
 }
 
-func GetAppMeshConfig(level1 string, level2 string, level3 string) (error, interface{}) {
-	configFile := filepath.Join(GetAppMeshHomeDir(), "config.json")
-	data, err := os.ReadFile(configFile)
-	if err != nil {
-		log.Printf("Error reading file: %v", err)
-		return err, false
-	}
-
-	// Use a map[string]interface{} to store the JSON data
-	var jsonData map[string]interface{}
-
-	// Unmarshal the JSON data into the map
-	err = json.Unmarshal(data, &jsonData)
-	if err != nil {
-		log.Printf("Error unmarshalling JSON: %v", err)
-		return err, false
-	}
-
+func GetAppMeshConfig3(level1 string, level2 string, level3 string) (error, interface{}) {
 	// Access data from the map
 	// Read level 3 value in one line
-	if value, ok := jsonData[level1].(map[string]interface{})[level2].(map[string]interface{})[level3]; ok {
+	if value, ok := configJsonData[level1].(map[string]interface{})[level2].(map[string]interface{})[level3]; ok {
 		log.Printf("Value of %s = %v", level3, value)
 		return nil, value
 	} else {
 		log.Printf("failed to retrieve json value for: %s", level3)
 		return errors.New("failed to retrieve json value"), false
 	}
+}
 
+func GetAppMeshConfig2(level1 string, level2 string) (error, interface{}) {
+	// Access data from the map
+	// Read level 3 value in one line
+	if value, ok := configJsonData[level1].(map[string]interface{})[level2]; ok {
+		log.Printf("Value of %s = %v", level2, value)
+		return nil, value
+	} else {
+		log.Printf("failed to retrieve json value for: %s", level2)
+		return errors.New("failed to retrieve json value"), false
+	}
 }
 
 func getCurrentAbPath() string {
@@ -190,4 +199,24 @@ func LoadCACertificates(certDir string) (*x509.CertPool, error) {
 	}
 
 	return caCertPool, nil
+}
+
+func IsValidFileName(fileName string) bool {
+	// Use a regular expression to allow alphanumeric characters, underscores, dashes, dots, and slashes
+	// Avoid special characters and patterns that might lead to security issues
+	regex := regexp.MustCompile(`^[a-zA-Z0-9_\-./]+$`)
+	if !regex.MatchString(fileName) {
+		return false
+	}
+
+	// Ensure the resulting file path is safe on the Linux file system
+	// Avoid certain unsafe patterns
+	unsafePrefixes := []string{"/etc/", "/var/", "/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/proc/", "/sys/", "/boot/"}
+	for _, prefix := range unsafePrefixes {
+		if strings.HasPrefix(fileName, prefix) {
+			return false
+		}
+	}
+
+	return true
 }

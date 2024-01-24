@@ -102,15 +102,11 @@ int main(int argc, char *argv[])
 		// threads for timer (application & process event & healthcheck & consul report event)
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 
-		// init ACE SSL
-		if (config->getRestEnabled())
-		{
-			TcpHandler::initTcpSSL();
-		}
 		// init REST
 		TcpAcceptor acceptor; // Acceptor factory.
 		if (config->getRestEnabled())
 		{
+			TcpHandler::initTcpSSL();
 			// thread for TCP reactor
 			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, ACE_Reactor::instance())));
 			// threads for REST service pool
@@ -120,12 +116,15 @@ int main(int argc, char *argv[])
 			}
 			LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
-			if (acceptor.open(ACE_INET_Addr(Configuration::instance()->getRestTcpPort(), INADDR_ANY), ACE_Reactor::instance()) == -1)
+			if (acceptor.open(ACE_INET_Addr(Configuration::instance()->getRestTcpPort(), Configuration::instance()->getRestListenAddress().c_str()), ACE_Reactor::instance()) == -1)
 			{
 				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
 			}
 			// start agent
-			Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
+			if (!Configuration::instance()->isAppExist(SEPARATE_AGENT_APP_NAME))
+			{
+				Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
+			}
 
 			// reg prometheus
 			config->registerPrometheus();
@@ -201,9 +200,9 @@ int main(int argc, char *argv[])
 	TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
 	ACE_Reactor::instance()->end_reactor_event_loop();
 	TcpHandler::closeMsgQueue();
-	// TODO: close TcpAcceptor
 	for (const auto &t : m_threadPool)
 		t->join();
+	ACE::fini();
 	// Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
 	return 0;

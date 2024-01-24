@@ -15,7 +15,6 @@ target_link_libraries(${PROJECT_NAME}
     Threads::Threads
     rest
     boost_regex
-    ${OPENSSL_LIBRARIES}
     security
     application
     process

@@ -73,7 +73,8 @@ public:
 	/// Attach a existing pid to AppProcess to manage
 	/// </summary>
 	/// <param name="pid">process id</param>
-	void attach(int pid);
+	/// <param name="stdoutFile">std output save file path</param>
+	void attach(int pid, const std::string &stdoutFile = "");
 
 	/// <summary>
 	/// avoid de-constructure kill process
@@ -153,7 +154,7 @@ private:
 	long m_delayKillTimerId;
 	long m_stdOutSizeTimerId;
 	off_t m_stdOutMaxSize;
-	mutable std::recursive_mutex m_processMutex; //checkStdout, delayKill, killgroup
+	mutable std::recursive_mutex m_processMutex; // checkStdout, delayKill, killgroup
 
 	ACE_HANDLE m_stdinHandler;
 	ACE_HANDLE m_stdoutHandler;

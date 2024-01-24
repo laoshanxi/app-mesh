@@ -1,6 +1,7 @@
 #include <fstream>
 #include <thread>
 
+#include <ace/File_Lock.h>
 #include <ace/OS.h>
 #include <boost/filesystem.hpp>
 
@@ -48,14 +49,19 @@ AppProcess::~AppProcess()
 	}
 }
 
-void AppProcess::attach(int pid)
+void AppProcess::attach(int pid, const std::string &stdoutFile)
 {
 	this->child_id_ = pid;
+	m_stdoutFileName = stdoutFile;
+
+	auto stdout = Utility::stringFormat("/proc/%d/fd/1", getpid());
+	m_stdoutHandler = ACE_OS::open(stdout.c_str(), O_RDWR);
+	m_stdOutMaxSize = APP_STD_OUT_MAX_FILE_SIZE;
 }
 
 void AppProcess::detach(void)
 {
-	attach(ACE_INVALID_PID);
+	attach(ACE_INVALID_PID, std::string());
 }
 
 pid_t AppProcess::getpid(void) const
@@ -146,8 +152,9 @@ void AppProcess::registerCheckStdoutTimer()
 
 	if (INVALID_TIMER_ID == m_stdOutSizeTimerId)
 	{
-		static const int timeoutSec = 30;
+		static const int timeoutSec = 20;
 		m_stdOutSizeTimerId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::checkStdout, this), fname);
+		LOG_INF << fname << "register stdout check timer id: " << m_stdOutSizeTimerId;
 	}
 	else
 	{
@@ -168,12 +175,29 @@ void AppProcess::checkStdout()
 			{
 				if (stat.st_size > m_stdOutMaxSize)
 				{
+					// Acquire an exclusive lock on the file
+					ACE_File_Lock fileLock(m_stdoutHandler, false);
+					if (fileLock.acquire() == -1)
+					{
+						LOG_WAR << fname << "acquire exclusive lock on the stdout file failed: " << m_stdoutFileName;
+					}
+
 					// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
 					const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 					fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
 					ACE_OS::ftruncate(m_stdoutHandler, 0);
+
+					// Release the lock
+					fileLock.release();
 					LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
 				}
+			}
+			else
+			{
+				LOG_ERR << fname << "fstat failed with error : " << std::strerror(errno);
+				CLOSE_ACE_HANDLER(m_stdoutHandler);
+				auto stdout = Utility::stringFormat("/proc/%d/fd/1", getpid());
+				m_stdoutHandler = ACE_OS::open(stdout.c_str(), O_RDWR);
 			}
 		}
 	}
@@ -300,7 +324,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		if (m_stdoutFileName.length())
 		{
 			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 0666);
-			LOG_DBG << fname << "std_out: " << m_stdoutFileName;
+			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler;
 		}
 		else
 		{

@@ -24,6 +24,8 @@ services:
     environment:
       - APPMESH_Consul_Url=https://127.0.0.1
       - APPMESH_REST_RestListenAddress=127.0.0.1
+      - APPMESH_REST_PrometheusExporterListenPort=6061
+      - APPMESH_REST_DockerProxyListenAddr=http://127.0.0.1:6058
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # mount this to enable configuration persist

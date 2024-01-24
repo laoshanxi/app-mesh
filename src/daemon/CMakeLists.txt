@@ -21,16 +21,15 @@ target_link_libraries(appsvc
   PRIVATE
     Threads::Threads
     rest
-    ${OPENSSL_LIBRARIES}
     security
     application
     process
     prometheus
     consul
     common
-	client
-	cpr
-	ACE_INet_SSL
+    client
+    ACE_INet
+    ACE_INet_SSL
 )
 
 ##########################################################################

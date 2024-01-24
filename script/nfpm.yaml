@@ -1,0 +1,66 @@
+# nfpm configuration file
+# check https://nfpm.goreleaser.com/configuration for detailed usage
+
+# Name. (required)
+name: ${PROJECT_NAME}
+
+# Architecture. (required)
+arch: ${GOARCH}
+
+# Platform.
+platform: linux
+
+# Version. (required)
+version: ${PROJECT_VERSION}
+
+# Section.
+section: admin
+
+# Priority.
+priority: standard
+
+# Dependencies. (overridable)
+depends:
+
+# Maintainer. (required)
+maintainer: "laoshanxi <178029200@qq.com>"
+
+# Description.
+description: |
+  App Mesh is a secure multi-tenant, cloud native, micro-service application management platform
+
+# Vendor.
+vendor: laoshanxi
+
+# Package's homepage.
+homepage: https://github.com/laoshanxi/app-mesh
+
+# License.
+license: MIT
+
+# Contents to add to the package
+contents:
+  - src: ${PACKAGE_HOME}/
+    dst: /opt/appmesh
+    type: tree
+
+# Scripts to run at specific stages. (overridable)
+scripts:
+  preinstall:
+  postinstall: ${CMAKE_CURRENT_SOURCE_DIR}/script/rpm_post_install.sh
+  preremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/rpm_pre_uninstall.sh
+  postremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/rpm_post_uninstall.sh
+
+# All fields above marked as `overridable` can be overridden for a given
+overrides:
+  deb:
+    depends:
+    - psmisc
+    - net-tools
+    - curl
+    - libldap-common
+  rpm:
+    depends:
+    - psmisc
+    - net-tools
+    - curl

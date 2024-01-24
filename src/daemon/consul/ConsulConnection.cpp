@@ -1,8 +1,6 @@
 #include <algorithm>
-#include <cpr/ssl_options.h>
 #include <thread>
 
-#include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 
 #include "../../cli/client/ArgumentParser.h"
@@ -226,7 +224,7 @@ nlohmann::json ConsulConnection::viewCloudApp(const std::string &app)
 	return result;
 }
 
-std::shared_ptr<cpr::Response> ConsulConnection::viewCloudAppOutput(const std::string &app, const std::string &hostName, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers)
+std::shared_ptr<CurlResponse> ConsulConnection::viewCloudAppOutput(const std::string &app, const std::string &hostName, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers)
 {
 	const static char fname[] = "ConsulConnection::viewCloudAppOutput() ";
 	LOG_DBG << fname;
@@ -246,7 +244,7 @@ int ConsulConnection::getHealthStatus(const std::string &hostName, const std::st
 	auto resp = RestClient::request(url, web::http::methods::GET, restPath, nullptr, {}, {});
 	if (resp->status_code != web::http::status_codes::OK)
 	{
-		LOG_WAR << fname << "failed to get health status: " << resp->status_code << " with message: " << resp->error.message << " with host: " << url << restPath << ", app: " << app;
+		LOG_WAR << fname << "failed to get health status: " << resp->status_code << " with message: " << resp->text << " with host: " << url << restPath << ", app: " << app;
 		return 1;
 	}
 	else
@@ -1022,11 +1020,11 @@ void ConsulConnection::init(const std::string &recoverSsnId)
 	}
 }
 
-std::shared_ptr<cpr::Response> ConsulConnection::requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body, int timeoutSec)
+std::shared_ptr<CurlResponse> ConsulConnection::requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body, int timeoutSec)
 {
 	const static char fname[] = "ConsulConnection::requestConsul() ";
 
-	auto response = std::make_shared<cpr::Response>();
+	auto response = std::make_shared<CurlResponse>();
 	auto restURL = getConfig()->m_consulUrl;
 	bool useAuth = getConfig()->m_basicAuthUser.length();
 	try
@@ -1055,7 +1053,7 @@ std::shared_ptr<cpr::Response> ConsulConnection::requestConsul(const web::http::
 	return response;
 }
 
-std::shared_ptr<cpr::Response> ConsulConnection::requestAppMesh(const std::string &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers)
+std::shared_ptr<CurlResponse> ConsulConnection::requestAppMesh(const std::string &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers)
 {
 	ArgumentParser appmesh(0, 0);
 	auto admin = Security::instance()->getUserInfo(JWT_ADMIN_NAME);

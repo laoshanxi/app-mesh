@@ -1,4 +1,4 @@
-name: "Upload python SDK to PyPI"
+name: "PyPI python SDK release"
 
 on:
   push:
@@ -37,5 +37,5 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
-          packages_dir: src/sdk/python/dist
+          packages-dir: src/sdk/python/dist
 # https://github.com/actions/starter-workflows/blob/main/ci/python-publish.yml
