@@ -21,7 +21,6 @@ target_link_libraries(appsvc
   PRIVATE
     Threads::Threads
     rest
-    ${OPENSSL_LIBRARIES}
     security
     application
     process
@@ -29,7 +28,6 @@ target_link_libraries(appsvc
     consul
     common
 	client
-	cpr
 	ACE_INet_SSL
 )
 

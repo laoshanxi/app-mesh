@@ -6,10 +6,7 @@
 
 #include "DockerProcess.h"
 
-namespace cpr
-{
-	class Response;
-};
+class CurlResponse;
 
 /// <summary>
 /// Docker API Object
@@ -70,5 +67,5 @@ private:
 	/// <param name="header"></param>
 	/// <param name="body"></param>
 	/// <returns></returns>
-	const std::shared_ptr<cpr::Response> requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body);
+	const std::shared_ptr<CurlResponse> requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body);
 };

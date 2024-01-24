@@ -14,7 +14,6 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
     rest
-    ${OPENSSL_LIBRARIES}
     security
     application
     process

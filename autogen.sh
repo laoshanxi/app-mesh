@@ -43,7 +43,7 @@ if [ -f "/usr/bin/yum" ]; then
 		yum install git -y
 	fi
 	yum install -y make gcc-c++ libtool openldap-devel liboath-devel
-	yum install -y dos2unix wget curl which
+	yum install -y dos2unix wget which
 
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
@@ -63,7 +63,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	export DEBIAN_FRONTEND=noninteractive
 	apt update
 	# apt full-upgrade -q -y
-	apt install -y dos2unix g++ git wget curl make automake libtool zlib1g-dev alien libldap-dev liboath-dev
+	apt install -y dos2unix g++ git wget make automake libtool zlib1g-dev alien libldap-dev liboath-dev
 	#apt install -y libboost-all-dev libace-dev libace
 	#apt install -y liblog4cpp5-dev
 	apt install -y ruby ruby-dev rubygems
@@ -137,6 +137,22 @@ export GOPROXY=https://goproxy.io,direct
 
 # install fpm
 gem install fpm || gem update --system && gem install fpm
+if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+	yum install -y curl
+	gpg2 --keyserver hkp://keyserver.ubuntu.com --recv-keys 409B6B1796C275462A1703113804BB82D39DC0E3 7D2BAF1CF37B13E2069D6956105BD0E739499BDB
+	curl -sSL https://get.rvm.io | bash -s stable
+	yum install -y gcc-c++ patch readline readline-devel zlib zlib-devel libyaml-devel libffi-devel openssl-devel make bzip2 autoconf automake libtool bison sqlite-devel
+	source /usr/local/rvm/scripts/rvm
+	/usr/local/rvm/bin/rvm install 2.7.0
+	rvm reinstall ruby-2.7.0
+	gem install fpm
+fi
+
+# build curl & libcurl
+$WGET_A https://curl.se/download/curl-8.5.0.tar.gz
+tar zxvf curl-8.5.0.tar.gz > /dev/null; cd curl-8.5.0
+mkdir build; cd build; cmake ..; make; make install
+cd $ROOTDIR
 
 # build boost
 if [ true ]; then
@@ -145,20 +161,16 @@ if [ true ]; then
 	$WGET_A https://cytranet.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
 	tar zxvf boost_1_${BOOST_VER}_0.tar.gz > /dev/null
 	cd ./boost_1_${BOOST_VER}_0
-	./bootstrap.sh --without-libraries=python,mpi,test,wave
+	./bootstrap.sh --without-libraries=python,mpi,test,wave,container,graph,graph_parallel
 	./b2 -j4
 	./b2 install
 	ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
 fi
 cd $ROOTDIR
 
-# cpr
-# https://github.com/libcpr/cpr
-git clone --depth=1 -b 1.9.x https://github.com/libcpr/cpr.git
-cd cpr && mkdir -p build && cd build
-cmake .. -DCPR_USE_SYSTEM_CURL=ON
-cmake --build .
-make install
+# curlcpp
+git clone --depth=1 https://github.com/jpbarrette/curlpp.git
+cd curlpp; mkdir build; cd build; cmake ..; make; make install
 cd $ROOTDIR
 
 # json
@@ -173,8 +185,13 @@ if [ "$architecture" = "arm64" ]; then
 	apt install -y liblog4cpp5-dev
 else
 	# yum install log4cpp -y
-	$WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz
-	tar zxvf log4cpp-1.1.4.tar.gz
+	if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+		$WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
+		tar zxvf log4cpp-1.1.3.tar.gz > /dev/null
+	else
+		$WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz
+		tar zxvf log4cpp-1.1.4.tar.gz > /dev/null
+	fi
 	cd log4cpp/
 	./autogen.sh
 	./configure
@@ -191,8 +208,13 @@ if [ true ]; then
 	# https://www.cnblogs.com/tanzi-888/p/5342431.html
 	# http://download.dre.vanderbilt.edu/
 	# https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#aceinstall
-	$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
-	tar zxvf ACE-7.1.2.tar.gz > /dev/null
+	if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
+		tar zxvf ACE-6.5.16.tar.gz > /dev/null
+	else
+		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
+		tar zxvf ACE-7.1.2.tar.gz > /dev/null
+	fi
 	cd ACE_wrappers
 	export ACE_ROOT=$(pwd)
 	cp ace/config-linux.h ace/config.h
@@ -264,8 +286,12 @@ EOF
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 
-git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
-cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
+git clone https://github.com/AndreyBarmaley/ldap-cpp.git
+cd ldap-cpp;
+if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+	git checkout 81c84ebb50185efe6525b74570acd8e6406d3140
+fi
+mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
 cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
 

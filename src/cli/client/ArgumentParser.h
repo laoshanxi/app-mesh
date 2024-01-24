@@ -9,10 +9,7 @@
 
 #include "../../common/Utility.h"
 
-namespace cpr
-{
-	class Response;
-};
+class CurlResponse;
 namespace po = boost::program_options;
 class ACE_Sig_Action;
 
@@ -62,7 +59,7 @@ private:
 	void initRadomPassword();
 
 public:
-	std::shared_ptr<cpr::Response> requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
+	std::shared_ptr<CurlResponse> requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
 	std::string getAuthenToken();
 	std::string getAuthenUser();
@@ -81,7 +78,7 @@ private:
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();
 	void unregSignal();
-	std::string parseOutputMessage(std::shared_ptr<cpr::Response> &resp);
+	std::string parseOutputMessage(std::shared_ptr<CurlResponse> &resp);
 	const std::string getAppMeshUrl();
 	const std::string getPosixTimezone();
 	const std::string parseUrlHost(const std::string &url);

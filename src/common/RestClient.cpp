@@ -1,71 +1,230 @@
 #include "RestClient.h"
-#include <cpr/cpr.h>
+#include "Utility.h"
 
-std::shared_ptr<cpr::Response> RestClient::request(const std::string url, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
+#include <mutex>
+
+#include <curlpp/Easy.hpp>
+#include <curlpp/Exception.hpp>
+#include <curlpp/Infos.hpp>
+#include <curlpp/Options.hpp>
+#include <curlpp/cURLpp.hpp>
+#include <log4cpp/Priority.hh>
+#include <openssl/ssl.h>
+
+std::mutex RestClient::m_restLock;
+ClientSSLConfig RestClient::m_sslConfig;
+ClientSSLConfig::ClientSSLConfig()
+	: m_ssl_version(CURL_SSLVERSION_LAST - 1), m_verify_peer(true), m_verify_host(true)
 {
-	// header
-	cpr::Header cprHeader;
+	const static char fname[] = "ClientSSLConfig::ClientSSLConfig() ";
+
+	// Get OpenSSL version at runtime
+	const static unsigned long openssl_version = SSLeay();
+	// Determine appropriate CURLOPT_SSLVERSION based on OpenSSL version
+	if (openssl_version >= 0x10101000L)
+		// OpenSSL version supports TLS v1.3
+		m_ssl_version = CURL_SSLVERSION_TLSv1_3;
+	else if (openssl_version >= 0x10100000L)
+		// OpenSSL version supports TLS v1.2
+		m_ssl_version = CURL_SSLVERSION_TLSv1_2;
+	else
+		LOG_WAR << fname << "not support un-secure SSL version";
+}
+
+std::shared_ptr<CurlResponse>
+RestClient::request(const std::string host, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
+{
+	std::lock_guard<std::mutex> guard(m_restLock);
+	auto url = (fs::path(host) / path).string();
+
+	curlpp::Cleanup cleaner;
+	curlpp::Easy request;
+	auto response = std::make_shared<CurlResponse>();
+
+	// timeout
+	request.setOpt(new curlpp::Options::ConnectTimeout(10));
+	request.setOpt(new curlpp::Options::Timeout(60));
+	setSslConfig(request);
+
+	// Save response body to a stringstream
+	std::ostringstream responseStream;
+	curlpp::options::WriteStream ws(&responseStream);
+	request.setOpt(ws);
+
+	// input headers
+	std::list<std::string> headers;
 	for (const auto &h : header)
-		cprHeader.insert({h.first, h.second});
+		headers.push_back(std::string(h.first) + ": " + h.second);
 
-	// query
-	cpr::Parameters cprParam;
+	// output headers
+	std::map<std::string, std::string> outputHeaders;
+	request.setOpt(curlpp::Options::HeaderFunction(
+		[&outputHeaders](char *ptr, size_t size, size_t nitems)
+		{
+			std::string oneHeader;
+			const auto incomingSize = size * nitems;
+			oneHeader.append(ptr, incomingSize);
+			if (incomingSize > 3)
+			{
+				auto kvPair = Utility::splitString(oneHeader, ":");
+				if (kvPair.size() == 2)
+					outputHeaders[Utility::stdStringTrim(kvPair[0])] = Utility::stdStringTrim(kvPair[1]);
+				else
+					LOG_DBG << "failed to parse response header: " << oneHeader;
+			}
+			return incomingSize;
+		}));
+
+	// querys
+	int queryIndex = 0;
 	for (const auto &q : query)
-		cprParam.Add({q.first, q.second});
+	{
+		if (queryIndex == 0)
+			url += "?";
+		else
+			url += "&";
+		url += (std::string(q.first) + "=" + q.second);
+		queryIndex++;
+	}
+	request.setOpt(new curlpp::Options::Url(url));
 
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	cpr::Body cprBody;
+	// HTTP method
+	request.setOpt(new curlpp::options::CustomRequest(mtd));
+
 	if (body)
 	{
-		cprBody = body->dump();
-		cprHeader.insert({web::http::header_names::content_type, web::http::mime_types::application_json});
+		std::istringstream strStream(body->dump());
+		if (mtd == web::http::methods::PUT || mtd == web::http::methods::POST)
+		{
+			// Set the data
+			request.setOpt(new curlpp::options::PostFields(strStream.str()));
+			// Set the size of the data
+			request.setOpt(new curlpp::options::PostFieldSize(strStream.str().size()));
+		}
+		else
+		{
+			headers.push_back(std::string(web::http::header_names::content_type) + ": " + web::http::mime_types::application_json);
+			headers.push_back(std::string(web::http::header_names::content_length) + ": " + std::to_string(strStream.str().size()));
+			request.setOpt(new curlpp::Options::ReadStream(&strStream));
+		}
 	}
 
-	auto resp = std::make_shared<cpr::Response>();
-	if (mtd == web::http::methods::GET)
-	{
-		*resp = cpr::Get(cpr::Url{url, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
-	else if (mtd == web::http::methods::POST)
-	{
-		*resp = cpr::Post(cpr::Url{url, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
-	else if (mtd == web::http::methods::PUT)
-	{
-		*resp = cpr::Put(cpr::Url{url, path}, sslOpts, cprHeader, cprParam, cprBody, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
-	else if (mtd == web::http::methods::DEL)
-	{
-		*resp = cpr::Delete(cpr::Url{url, path}, sslOpts, cprHeader, cprParam, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS});
-	}
+	request.setOpt(new curlpp::Options::HttpHeader(headers));
+	request.perform();
 
-	return resp;
+	// Get the HTTP response code
+	response->status_code = curlpp::infos::ResponseCode::get(request);
+	response->text = responseStream.str();
+	response->header = outputHeaders;
+
+	return response;
 }
 
-std::shared_ptr<cpr::Response> RestClient::upload(const std::string url, const std::string &path, const std::string file, std::map<std::string, std::string> header)
+std::shared_ptr<CurlResponse>
+RestClient::upload(const std::string host, const std::string &path, const std::string file, std::map<std::string, std::string> header)
 {
-	auto resp = std::make_shared<cpr::Response>();
-	// header
-	cpr::Header cprHeader;
-	for (const auto &h : header)
-		cprHeader.insert({h.first, h.second});
+	std::lock_guard<std::mutex> guard(m_restLock);
+	auto url = (fs::path(host) / path).string();
 
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	cpr::Multipart cprMultipart{{"filename", boost::filesystem::path(file).filename().string()}, {"file", cpr::File(file)}};
-	*resp = cpr::Post(cpr::Url{url, path}, sslOpts, cprHeader, cprMultipart, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS * 10});
-	return resp;
+	curlpp::Cleanup cleaner;
+	curlpp::Easy request;
+	auto response = std::make_shared<CurlResponse>();
+
+	request.setOpt(new curlpp::Options::ConnectTimeout(10));
+	request.setOpt(new curlpp::Options::Timeout(300));
+	setSslConfig(request);
+
+	request.setOpt(new curlpp::Options::Url(url));
+
+	// Redirect response body to a stringstream
+	std::ostringstream responseStream;
+	curlpp::options::WriteStream ws(&responseStream);
+	request.setOpt(ws);
+
+	// input headers
+	std::list<std::string> headers;
+	for (const auto &h : header)
+		headers.push_back(std::string(h.first) + ": " + h.second);
+	request.setOpt(new curlpp::Options::HttpHeader(headers));
+
+	curlpp::Forms form;
+	std::ifstream fileStream(file, std::ios::in | std::ios::binary);
+	if (!fileStream)
+		throw std::invalid_argument("input file not exist");
+	form.push_back(new curlpp::FormParts::File("file", file));
+	form.push_back(new curlpp::FormParts::Content("filename", file));
+	request.setOpt(new curlpp::options::HttpPost(form));
+
+	request.perform();
+
+	// Get the HTTP response code
+	response->status_code = curlpp::infos::ResponseCode::get(request);
+	response->text = responseStream.str();
+
+	return response;
 }
 
-std::shared_ptr<cpr::Response> RestClient::download(const std::string url, const std::string &path, const std::string remoteFile, const std::string localFile, std::map<std::string, std::string> header)
+std::shared_ptr<CurlResponse>
+RestClient::download(const std::string host, const std::string &path, const std::string remoteFile, const std::string localFile, std::map<std::string, std::string> header)
 {
-	auto resp = std::make_shared<cpr::Response>();
-	// header
-	cpr::Header cprHeader;
-	for (const auto &h : header)
-		cprHeader.insert({h.first, h.second});
+	std::lock_guard<std::mutex> guard(m_restLock);
+	auto url = (fs::path(host) / path).string();
 
-	cpr::SslOptions sslOpts = cpr::Ssl(cpr::ssl::VerifyHost{false}, cpr::ssl::VerifyPeer{false});
-	std::ofstream stream(localFile, std::ios::binary | std::ios::trunc);
-	*resp = cpr::Download(stream, sslOpts, cpr::Url{url, path}, cprHeader, cpr::Timeout{1000 * REST_REQUEST_TIMEOUT_SECONDS * 10});
-	return resp;
+	curlpp::Cleanup cleaner;
+	curlpp::Easy request;
+	auto response = std::make_shared<CurlResponse>();
+
+	request.setOpt(new curlpp::Options::ConnectTimeout(10));
+	request.setOpt(new curlpp::Options::Timeout(300));
+	setSslConfig(request);
+
+	request.setOpt(new curlpp::Options::Url(url));
+
+	// input headers
+	std::list<std::string> headers;
+	for (const auto &h : header)
+		headers.push_back(std::string(h.first) + ": " + h.second);
+	request.setOpt(new curlpp::Options::HttpHeader(headers));
+
+	// Create a file stream to write the downloaded content
+	std::ofstream outputFile(localFile, std::ios::out | std::ios::binary | std::ios::trunc);
+	if (!outputFile.is_open())
+		throw std::invalid_argument("failed to write file to local");
+	curlpp::options::WriteStream ws(&outputFile);
+	request.setOpt(ws);
+
+	request.perform();
+
+	// Get the HTTP response code
+	response->status_code = curlpp::infos::ResponseCode::get(request);
+
+	return response;
+}
+
+void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
+{
+	std::lock_guard<std::mutex> guard(m_restLock);
+	m_sslConfig = sslConfig;
+}
+
+void RestClient::setSslConfig(curlpp::Easy &request)
+{
+	request.setOpt(new curlpp::Options::Verbose(log4cpp::Category::getRoot().getPriority() == log4cpp::Priority::DEBUG));
+	request.setOpt(new curlpp::Options::SslVerifyPeer(m_sslConfig.m_verify_peer));
+	request.setOpt(new curlpp::Options::SslVerifyHost(m_sslConfig.m_verify_host));
+	request.setOpt(new curlpp::Options::SslVersion(m_sslConfig.m_ssl_version));
+	if (!m_sslConfig.m_certificate.empty() && !m_sslConfig.m_private_key.empty())
+	{
+		request.setOpt(new curlpp::Options::SslCert(m_sslConfig.m_certificate));
+		request.setOpt(new curlpp::Options::SslKey(m_sslConfig.m_private_key));
+		if (!m_sslConfig.m_private_key_passwd.empty())
+			request.setOpt(new curlpp::Options::SslKeyPasswd(m_sslConfig.m_private_key_passwd));
+	}
+	if (!m_sslConfig.m_ca_location.empty())
+	{
+		if (Utility::isDirExist(m_sslConfig.m_ca_location))
+			request.setOpt(new curlpp::Options::CaPath(m_sslConfig.m_ca_location));
+		else if (Utility::isFileExist(m_sslConfig.m_ca_location))
+			request.setOpt(new curlpp::Options::CaInfo(m_sslConfig.m_ca_location));
+	}
 }

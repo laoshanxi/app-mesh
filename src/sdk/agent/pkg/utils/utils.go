@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -190,4 +191,24 @@ func LoadCACertificates(certDir string) (*x509.CertPool, error) {
 	}
 
 	return caCertPool, nil
+}
+
+func IsValidFileName(fileName string) bool {
+	// Use a regular expression to allow alphanumeric characters, underscores, dashes, dots, and slashes
+	// Avoid special characters and patterns that might lead to security issues
+	regex := regexp.MustCompile(`^[a-zA-Z0-9_\-./]+$`)
+	if !regex.MatchString(fileName) {
+		return false
+	}
+
+	// Ensure the resulting file path is safe on the Linux file system
+	// Avoid certain unsafe patterns
+	unsafePrefixes := []string{"/etc/", "/var/", "/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/proc/", "/sys/", "/boot/"}
+	for _, prefix := range unsafePrefixes {
+		if strings.HasPrefix(fileName, prefix) {
+			return false
+		}
+	}
+
+	return true
 }

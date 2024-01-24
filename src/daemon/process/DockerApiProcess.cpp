@@ -1,6 +1,5 @@
 #include <thread>
 
-#include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 
 #include "../../common/DateTime.h"
@@ -234,13 +233,13 @@ int DockerApiProcess::returnValue(void) const
 	}
 }
 
-const std::shared_ptr<cpr::Response> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body)
+const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body)
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
 	auto restURL = Configuration::instance()->getDockerProxyAddress();
 	std::string errorMsg = std::string("exception caught: ").append(path);
-	auto response = std::make_shared<cpr::Response>();
+	auto response = std::make_shared<CurlResponse>();
 	try
 	{
 		return RestClient::request(restURL, mtd, path, body, header, query);

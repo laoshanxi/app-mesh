@@ -1,4 +1,4 @@
-name: "Code scan with Coverity"
+name: "Coverity cpp code scan"
 
 on:
   # trigger when code changes
@@ -27,6 +27,9 @@ jobs:
 
       - name: Checkout Github code
         uses: actions/checkout@v4
+
+      - name: Setup curl
+        run: apt-get install --fix-missing -y curl
 
       - name: Cmake init with Debug mode
         run: |

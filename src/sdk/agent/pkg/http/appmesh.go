@@ -40,8 +40,8 @@ var (
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
 	// Load client certificate and key
-	_, clientCert := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateFile")
-	_, clientCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateKeyFile")
+	_, clientCert := utils.GetAppMeshConfig("REST", "SSL", "SSLClientCertificateFile")
+	_, clientCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLClientCertificateKeyFile")
 	_, trustedCA := utils.GetAppMeshConfig("REST", "SSL", "SSLCaPath")
 	cert := utils.LoadCertificatePair(clientCert.(string), clientCertKey.(string))
 
@@ -187,32 +187,41 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		ctx.Response.Header.Set("Expires", "0")
 		ctx.Response.Header.Set("Cache-Control", "must-revalidate")
 		ctx.Response.Header.Set("Pragma", "public")
-		ctx.Logger().Printf("ServeFile: %s", fileName)
-		fasthttp.ServeFile(ctx, filePath)
-		return true
+		if utils.IsValidFileName(filePath) {
+			ctx.Logger().Printf("ServeFile: %s", fileName)
+			fasthttp.ServeFile(ctx, filePath)
+			return true
+		} else {
+			ctx.Error(string("not invalid file name"), fasthttp.StatusNotAcceptable)
+			return false
+		}
 	} else if ctx.Request.Header.IsPost() && string(ctx.Request.URI().Path()) == REST_PATH_UPLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle upload file
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
 		ctx.Logger().Printf("uploading file: %s", filePath)
-		if err := saveFile(ctx, filePath); err != nil {
-			errorJson, _ := json.Marshal(ResponseMessage{Message: err.Error()})
-			ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
+		if utils.IsValidFileName(filePath) {
+			if err := saveFile(ctx, filePath); err != nil {
+				errorJson, _ := json.Marshal(ResponseMessage{Message: err.Error()})
+				ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
+			} else {
+				ctx.Logger().Printf("file saved: %s", filePath)
+				// https://www.jianshu.com/p/216cb89c4d81
+				mode, err := strconv.Atoi(string(ctx.Request.Header.Peek("File-Mode")))
+				if err == nil && mode > 0 && mode < math.MaxInt32 {
+					os.Chmod(filePath, os.FileMode(mode))
+				}
+				fileUserId := string(ctx.Request.Header.Peek("File-User"))
+				uid, errUid := strconv.Atoi(fileUserId)
+				fileGroupId := string(ctx.Request.Header.Peek("File-Group"))
+				gid, errGid := strconv.Atoi(fileGroupId)
+				if errUid == nil && errGid == nil {
+					os.Chown(filePath, uid, gid)
+				}
+				return true
+			}
 		} else {
-			ctx.Logger().Printf("file saved: %s", filePath)
-			// https://www.jianshu.com/p/216cb89c4d81
-			mode, err := strconv.Atoi(string(ctx.Request.Header.Peek("File-Mode")))
-			if err == nil && mode > 0 && mode < math.MaxInt32 {
-				os.Chmod(filePath, os.FileMode(mode))
-			}
-			fileUserId := string(ctx.Request.Header.Peek("File-User"))
-			uid, errUid := strconv.Atoi(fileUserId)
-			fileGroupId := string(ctx.Request.Header.Peek("File-Group"))
-			gid, errGid := strconv.Atoi(fileGroupId)
-			if errUid == nil && errGid == nil {
-				os.Chown(filePath, uid, gid)
-			}
+			ctx.Error(string("not invalid file name"), fasthttp.StatusNotAcceptable)
 		}
-		return true
 	}
 	return false
 }
@@ -250,10 +259,14 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
+			// TLS 1.2
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+			// TLS 1.3 streamlined set of cipher suites
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
 		},
 	}
 
@@ -275,18 +288,17 @@ func ListenRest(restAgentAddr string, restTcpPort int) {
 	if err != nil {
 		panic(err)
 	}
-	anyAddr := "0.0.0.0"
-	addrForListen := anyAddr + ":" + addr.Port()
-	tcpHostName := addr.Hostname()
-	if tcpHostName == anyAddr {
-		tcpHostName, _ = os.Hostname()
+	listenAddr := ":" + addr.Port()
+	hostName := addr.Hostname()
+	if hostName == "0.0.0.0" {
+		hostName, _ = os.Hostname()
 	}
-	addrForConnect := tcpHostName + ":" + strconv.Itoa(restTcpPort)
+	connectAddr := hostName + ":" + strconv.Itoa(restTcpPort)
 
 	// connect to TCP rest server
-	conn, err := connectServer(addrForConnect)
+	conn, err := connectServer(connectAddr)
 	if err != nil {
-		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", addrForConnect, err)
+		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
 		os.Exit(-1)
 	}
 	tcpConnect = conn
@@ -297,9 +309,9 @@ func ListenRest(restAgentAddr string, restTcpPort int) {
 	router.NotFound = handleAppmeshRest // set all default router to restProxyHandler
 	grafana.RegGrafanaRestHandler(router)
 	if addr.Scheme == "https" {
-		err = listenAgentTls(addrForListen, router)
+		err = listenAgentTls(listenAddr, router)
 	} else {
-		err = listenAgent(addrForListen, router)
+		err = listenAgent(listenAddr, router)
 	}
 	if err != nil {
 		log.Fatalf("Error in fasthttp Serve: %v", err)

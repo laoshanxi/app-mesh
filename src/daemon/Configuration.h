@@ -25,6 +25,8 @@ public:
 		bool m_sslVerifyPeer;
 		std::string m_certFile;
 		std::string m_certKeyFile;
+		std::string m_clientCertFile;
+		std::string m_clientCertKeyFile;
 		std::string m_sslCaPath;
 		JsonSsl();
 	};

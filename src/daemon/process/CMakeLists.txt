@@ -8,7 +8,4 @@ add_library(${PROJECT_NAME}::process ALIAS process)
 ##########################################################################
 # Link
 ##########################################################################
-target_link_libraries(process
-  PRIVATE
-    ${OPENSSL_LIBRARIES}
-)
+target_link_libraries(process)

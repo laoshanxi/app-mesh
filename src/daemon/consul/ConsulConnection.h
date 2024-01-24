@@ -14,10 +14,7 @@
 #include "../Label.h"
 #include "ConsulEntity.h"
 
-namespace cpr
-{
-	class Response;
-};
+class CurlResponse;
 
 /// <summary>
 /// Connect to Consul service
@@ -36,7 +33,7 @@ public:
 	std::string consulSessionId();
 	nlohmann::json viewCloudApps();
 	nlohmann::json viewCloudApp(const std::string &app);
-	std::shared_ptr<cpr::Response> viewCloudAppOutput(const std::string &app, const std::string &hostName, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
+	std::shared_ptr<CurlResponse> viewCloudAppOutput(const std::string &app, const std::string &hostName, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
 	nlohmann::json addCloudApp(const std::string &app, nlohmann::json &content);
 	nlohmann::json getCloudNodes();
 	void deleteCloudApp(const std::string &app);
@@ -51,8 +48,8 @@ private:
 	long long getModifyIndex(const std::string &path, bool recurse = false);
 	std::shared_ptr<Configuration::JsonConsul> getConfig();
 
-	std::shared_ptr<cpr::Response> requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body, int timeoutSec = REST_REQUEST_TIMEOUT_SECONDS);
-	std::shared_ptr<cpr::Response> requestAppMesh(const std::string &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
+	std::shared_ptr<CurlResponse> requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body, int timeoutSec = REST_REQUEST_TIMEOUT_SECONDS);
+	std::shared_ptr<CurlResponse> requestAppMesh(const std::string &baseUri, const std::string &requestPath, const web::http::method &mtd, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &headers);
 
 	std::tuple<bool, long long> blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse = false);
 	void watchSecurityThread();

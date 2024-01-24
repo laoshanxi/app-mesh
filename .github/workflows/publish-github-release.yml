@@ -1,4 +1,4 @@
-name: "Publish Github release"
+name: "Github release"
 
 on:
   push:
@@ -56,25 +56,36 @@ jobs:
       - name: build with ubuntu22
         run: |
           build_dir=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22  /bin/sh -c "mkdir ubuntu22_$build_dir; cd ubuntu22_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/sh -c "mkdir ubuntu22_$build_dir; cd ubuntu22_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: build with ubuntu20
         run: |
-          build_dir=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20  /bin/sh -c "mkdir ubuntu20_$build_dir; cd ubuntu20_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          if [ "${{ matrix.arch }}" == "amd64" ]; then
+            build_dir=${{ matrix.arch }}
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20 /bin/sh -c "mkdir ubuntu20_$build_dir; cd ubuntu20_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          fi
 
       - name: build with ubuntu18
         run: |
           build_dir=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18  /bin/sh -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/sh -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+
+      - name: build with centos7
+        run: |
+          if [ "${{ matrix.arch }}" == "amd64" ]; then
+            build_dir=${{ matrix.arch }}
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_centos7 /bin/bash --login -c "mkdir centos7_$build_dir; cd centos7_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          fi
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.arch }}
+          name: ${{ matrix.arch }}-${{ github.sha }}
           path: |
             ubuntu*/*.deb
             ubuntu*/*.rpm
+            centos*/*.deb
+            centos*/*.rpm
 
   deploy:
     runs-on: ubuntu-latest
@@ -85,11 +96,11 @@ jobs:
       - name: Download arm64 packages
         uses: actions/download-artifact@v4
         with:
-          name: arm64
+          name: arm64-${{ github.sha }}
       - name: Download amd64 packages
         uses: actions/download-artifact@v4
         with:
-          name: amd64
+          name: amd64-${{ github.sha }}
 
       - name: Generate Changelog
         run: |
@@ -111,3 +122,5 @@ jobs:
           files: |
             ubuntu*/*.deb
             ubuntu*/*.rpm
+            centos*/*.deb
+            centos*/*.rpm
