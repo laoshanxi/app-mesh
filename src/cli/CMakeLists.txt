@@ -17,7 +17,6 @@ target_link_libraries(appc
     ${OPENSSL_LIBRARIES}
     boost_program_options
     common
-	cpr
 )
 
 ##########################################################################

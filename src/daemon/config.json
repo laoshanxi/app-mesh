@@ -22,6 +22,8 @@
 			"VerifyPeer": false,
 			"SSLCertificateFile": "/opt/appmesh/ssl/server.pem",
 			"SSLCertificateKeyFile": "/opt/appmesh/ssl/server-key.pem",
+			"SSLClientCertificateFile": "/opt/appmesh/ssl/client.pem",
+			"SSLClientCertificateKeyFile": "/opt/appmesh/ssl/client-key.pem",
 			"SSLCaPath": "/opt/appmesh/ssl/ca.pem"
 		}
 	},

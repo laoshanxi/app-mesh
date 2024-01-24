@@ -8,6 +8,6 @@
 		"control": {
 			"0": "standby"
 		},
-		"exit": "restart"
+		"exit": "standby"
 	}
 }

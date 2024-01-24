@@ -634,9 +634,13 @@ void Configuration::hotUpdate(const nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_certFile, newConfig->m_rest->m_ssl->m_certFile);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCertificateKeyFile))
 					SET_COMPARE(this->m_rest->m_ssl->m_certKeyFile, newConfig->m_rest->m_ssl->m_certKeyFile);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLClientCertificateFile))
+					SET_COMPARE(this->m_rest->m_ssl->m_clientCertFile, newConfig->m_rest->m_ssl->m_clientCertFile);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLClientCertificateKeyFile))
+					SET_COMPARE(this->m_rest->m_ssl->m_clientCertKeyFile, newConfig->m_rest->m_ssl->m_clientCertKeyFile);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCaPath))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslCaPath, newConfig->m_rest->m_ssl->m_sslCaPath);
-				if (HAS_JSON_FIELD(ssl, JSON_KEY_VerifyPeer))
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyPeer))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyPeer, newConfig->m_rest->m_ssl->m_sslVerifyPeer);
 			}
 
@@ -904,9 +908,11 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 {
 	const static char fname[] = "Configuration::JsonSsl::FromJson() ";
 	auto ssl = std::make_shared<JsonSsl>();
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_VerifyPeer, ssl->m_sslVerifyPeer);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyPeer, ssl->m_sslVerifyPeer);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
+	ssl->m_clientCertFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLClientCertificateFile);
+	ssl->m_clientCertKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLClientCertificateKeyFile);
 	ssl->m_sslCaPath = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCaPath);
 	if (!Utility::isFileExist(ssl->m_certFile) && jsonValue.contains(JSON_KEY_SSLCertificateFile))
 	{
@@ -929,9 +935,11 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 nlohmann::json Configuration::JsonSsl::AsJson() const
 {
 	auto result = nlohmann::json::object();
-	result[JSON_KEY_VerifyPeer] = (m_sslVerifyPeer);
+	result[JSON_KEY_SSLVerifyPeer] = (m_sslVerifyPeer);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
 	result[JSON_KEY_SSLCertificateKeyFile] = std::string(m_certKeyFile);
+	result[JSON_KEY_SSLClientCertificateFile] = std::string(m_clientCertFile);
+	result[JSON_KEY_SSLClientCertificateKeyFile] = std::string(m_clientCertKeyFile);
 	result[JSON_KEY_SSLCaPath] = std::string(m_sslCaPath);
 	return result;
 }

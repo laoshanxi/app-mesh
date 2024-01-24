@@ -29,7 +29,6 @@ target_link_libraries(appsvc
     consul
     common
 	client
-	cpr
 	ACE_INet_SSL
 )
 

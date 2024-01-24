@@ -39,10 +39,10 @@ cp -r ${CMAKE_CURRENT_SOURCE_DIR}/script/apps ${PACKAGE_HOME}
 
 chmod +x ${PACKAGE_HOME}/script/*.sh
 
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib64:/usr/local/lib/:/usr/local/ace/lib/
+export LD_LIBRARY_PATH=/usr/local/lib64:${LD_LIBRARY_PATH}
 ldd ${CMAKE_BINARY_DIR}/gen/appc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appc | grep libcurl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_BINARY_DIR}/gen/appc | grep libcpr | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appc | grep libcurlpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep ACE | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep libssl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'

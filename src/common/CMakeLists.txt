@@ -10,6 +10,8 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 ##########################################################################
 target_link_libraries(common
   PRIVATE
+    curl
+    curlpp
     ACE
     ACE_SSL
     log4cpp

@@ -1,4 +1,4 @@
-name: "Upload python SDK to PyPI"
+name: "PyPI python SDK release"
 
 on:
   push:

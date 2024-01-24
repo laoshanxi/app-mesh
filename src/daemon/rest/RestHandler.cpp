@@ -1,12 +1,13 @@
 #include <chrono>
 
 #include <boost/algorithm/string_regex.hpp>
-#include <cpr/cpr.h>
+#include <curlpp/cURLpp.hpp>
 
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
 #include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
+#include "../../common/RestClient.h"
 #include "../Configuration.h"
 #include "../Label.h"
 #include "../ResourceCollection.h"
@@ -260,7 +261,7 @@ std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string
 void RestHandler::apiAppEnable(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_ENABLE);
 
 	checkAppAccessPermission(message, appName, true);
@@ -272,7 +273,7 @@ void RestHandler::apiAppEnable(const HttpRequest &message)
 void RestHandler::apiAppDisable(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DISABLE);
 
 	checkAppAccessPermission(message, appName, true);
@@ -283,7 +284,7 @@ void RestHandler::apiAppDisable(const HttpRequest &message)
 
 void RestHandler::apiAppDelete(const HttpRequest &message)
 {
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
 	if (Configuration::instance()->getApp(appName)->isCloudApp())
 		throw std::invalid_argument("not allowed for cloud application");
@@ -385,7 +386,7 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_set);
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_ADD);
 
 	auto querymap = message.m_querys;
@@ -408,7 +409,7 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_label_delete);
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_DELETE);
 
 	Configuration::instance()->getLabel()->delLabel(labelKey);
@@ -455,7 +456,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserChangePwd() ";
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto targetUser = regexSearch(path, REST_PATH_SEC_USER_CHANGE_PWD);
 	const auto tokenUserName = getJwtUserName(message);
 	if (targetUser == "self")
@@ -495,7 +496,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserLock() ";
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_lock_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_LOCK);
 	const auto tokenUserName = getJwtUserName(message);
@@ -517,7 +518,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserUnlock() ";
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_unlock_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_UNLOCK);
 	const auto tokenUserName = getJwtUserName(message);
@@ -534,7 +535,7 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserAdd() ";
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_add_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_ADD);
 	const auto tokenUserName = getJwtUserName(message);
@@ -569,7 +570,7 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserDel() ";
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_delete_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_DELETE);
 	const auto tokenUserName = getJwtUserName(message);
@@ -606,7 +607,7 @@ void RestHandler::apiUserDeActiveMFA(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserDeActiveMFA() ";
 
 	permissionCheck(message, PERMISSION_KEY_user_mfa_delete);
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_MFA_DEL);
 	const auto tokenUserName = getJwtUserName(message);
 	auto userName = (pathUserName == "self") ? tokenUserName : pathUserName;
@@ -655,7 +656,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiRoleUpdate() ";
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_role_update);
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_UPDATE);
 	const auto tokenUserName = getJwtUserName(message);
@@ -672,7 +673,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiRoleDelete() ";
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	permissionCheck(message, PERMISSION_KEY_role_delete);
 
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_DELETE);
@@ -712,7 +713,7 @@ void RestHandler::apiPermissionsView(const HttpRequest &message)
 
 void RestHandler::apiHealth(const HttpRequest &message)
 {
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_HEALTH);
 	auto health = Configuration::instance()->getApp(appName)->health();
 	auto body = std::to_string(health);
@@ -797,7 +798,7 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 void RestHandler::apiAppView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_app);
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_VIEW);
 
 	checkAppAccessPermission(message, appName, false);
@@ -906,7 +907,7 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiAppOutputView() ";
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_OUT_VIEW);
 
 	long pos = getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
@@ -973,7 +974,7 @@ void RestHandler::apiCloudAppsView(const HttpRequest &message)
 void RestHandler::apiCloudAppView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_VIEW);
 
 	message.reply(web::http::status_codes::OK, ConsulConnection::instance()->viewCloudApp(appName));
@@ -982,7 +983,7 @@ void RestHandler::apiCloudAppView(const HttpRequest &message)
 void RestHandler::apiCloudAppOutputView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_out_view);
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto tp = regexSearch2(path, REST_PATH_CLOUD_APP_OUT_VIEW);
 	auto appName = std::get<0>(tp);
 	auto hostName = std::get<1>(tp);
@@ -996,7 +997,7 @@ void RestHandler::apiCloudAppAdd(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_reg);
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_ADD);
 
 	auto jsonApp = message.extractJson();
@@ -1011,7 +1012,7 @@ void RestHandler::apiCloudAppDel(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_cloud_app_delete);
 
-	const auto path = (cpr::util::urlDecode(message.m_relative_uri));
+	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_DELETE);
 
 	ConsulConnection::instance()->deleteCloudApp(appName);

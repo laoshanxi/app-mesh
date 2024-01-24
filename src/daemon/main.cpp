@@ -102,15 +102,11 @@ int main(int argc, char *argv[])
 		// threads for timer (application & process event & healthcheck & consul report event)
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 
-		// init ACE SSL
-		if (config->getRestEnabled())
-		{
-			TcpHandler::initTcpSSL();
-		}
 		// init REST
 		TcpAcceptor acceptor; // Acceptor factory.
 		if (config->getRestEnabled())
 		{
+			TcpHandler::initTcpSSL();
 			// thread for TCP reactor
 			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, ACE_Reactor::instance())));
 			// threads for REST service pool
@@ -201,9 +197,9 @@ int main(int argc, char *argv[])
 	TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
 	ACE_Reactor::instance()->end_reactor_event_loop();
 	TcpHandler::closeMsgQueue();
-	// TODO: close TcpAcceptor
 	for (const auto &t : m_threadPool)
 		t->join();
+	ACE::fini();
 	// Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
 	return 0;

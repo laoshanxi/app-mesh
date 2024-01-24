@@ -41,6 +41,9 @@ else()
 endif()
 message("COMPILE_OPTIONS: ${COMPILE_OPTIONS}")
 
+# Set the library path to prioritize /usr/local/lib64
+set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} /usr/local/lib64)
+
 ##########################################################################
 # boost
 ##########################################################################
@@ -70,6 +73,11 @@ endif()
 # MessagePack    https://msgpack.org/
 ##########################################################################
 find_package(msgpack-cxx REQUIRED)
+
+##########################################################################
+# libcurl
+##########################################################################
+find_package(CURL REQUIRED)
 
 ##########################################################################
 # openssl

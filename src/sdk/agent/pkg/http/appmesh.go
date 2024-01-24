@@ -40,8 +40,8 @@ var (
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
 	// Load client certificate and key
-	_, clientCert := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateFile")
-	_, clientCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateKeyFile")
+	_, clientCert := utils.GetAppMeshConfig("REST", "SSL", "SSLClientCertificateFile")
+	_, clientCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLClientCertificateKeyFile")
 	_, trustedCA := utils.GetAppMeshConfig("REST", "SSL", "SSLCaPath")
 	cert := utils.LoadCertificatePair(clientCert.(string), clientCertKey.(string))
 

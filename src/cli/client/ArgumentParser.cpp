@@ -8,7 +8,6 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
-#include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
@@ -261,7 +260,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << std::endl;
 
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
-	std::cout << "Use '-b $hostname','-B $port' to run remote command." << std::endl;
+	std::cout << "Use '-b $server_url' to connect remote. e.g https://127.0.0.1:6060" << std::endl;
 
 	std::cout << std::endl;
 	std::cout << "Usage:  appc [COMMAND] [ARG...] [flags]" << std::endl;
@@ -1008,13 +1007,13 @@ void SIGINT_Handler(int signo)
 	}
 }
 
-std::string ArgumentParser::parseOutputMessage(std::shared_ptr<cpr::Response> &resp)
+std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
 {
 	try
 	{
 		auto output = resp->text;
-		if (output.empty() && resp->status_code != 200)
-			return resp->error.message;
+		if (output.empty() && resp->status_code != web::http::status_codes::OK)
+			return resp->text;
 		if (output.empty())
 			return std::string();
 		auto respJson = nlohmann::json::parse(resp->text);
@@ -1216,7 +1215,7 @@ void ArgumentParser::processFileDownload()
 		os::chown(std::stoi(response->header.find(HTTP_HEADER_KEY_file_user)->second),
 				  std::stoi(response->header.find(HTTP_HEADER_KEY_file_group)->second),
 				  local, false);
-	if (response->status_code == 200)
+	if (response->status_code == web::http::status_codes::OK)
 		std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
 	else
 		std::cout << parseOutputMessage(response) << std::endl;
@@ -1264,7 +1263,7 @@ void ArgumentParser::processFileUpload()
 		os::chown(std::stoi(response->header.find(HTTP_HEADER_KEY_file_user)->second),
 				  std::stoi(response->header.find(HTTP_HEADER_KEY_file_group)->second),
 				  local, false);
-	if (response->status_code == 200)
+	if (response->status_code == web::http::status_codes::OK)
 		std::cout << "Uploaded file <" << local << ">" << std::endl;
 	else
 		std::cout << parseOutputMessage(response) << std::endl;
@@ -1621,7 +1620,7 @@ bool ArgumentParser::confirmInput(const char *msg)
 	return result == "y";
 }
 
-std::shared_ptr<cpr::Response> ArgumentParser::requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
+std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
 	if (m_jwtToken.empty())
 	{
@@ -1629,7 +1628,7 @@ std::shared_ptr<cpr::Response> ArgumentParser::requestHttp(bool throwAble, const
 	}
 	header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken;
 	auto resp = RestClient::request(m_currentUrl, mtd, path, body, header, query);
-	if (throwAble && resp->status_code != 200)
+	if (throwAble && resp->status_code != web::http::status_codes::OK)
 	{
 		throw std::invalid_argument(parseOutputMessage(resp));
 	}
@@ -2048,6 +2047,16 @@ const std::string ArgumentParser::getAppMeshUrl()
 			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_RestListenPort))
 		{
 			auto rest = jsonValue.at(JSON_KEY_REST);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
+			{
+				auto ssl = rest.at(JSON_KEY_SSL);
+				ClientSSLConfig config;
+				config.m_verify_peer = GET_JSON_BOOL_VALUE(ssl, JSON_KEY_SSLVerifyPeer);
+				config.m_certificate = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLClientCertificateFile);
+				config.m_private_key = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLClientCertificateKeyFile);
+				config.m_ca_location = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLCaPath);
+				RestClient::defaultSslConfiguration(config);
+			}
 			auto port = GET_JSON_INT_VALUE(rest, JSON_KEY_RestListenPort);
 			return Utility::stringFormat("https://%s:%d", readPersistLastHost().c_str(), port);
 		}

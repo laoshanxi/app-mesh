@@ -1,0 +1,9 @@
+FROM centos:7
+
+WORKDIR /workspace
+
+COPY . /workspace/
+
+USER root
+
+RUN bash autogen.sh && rm -rf /workspace/*

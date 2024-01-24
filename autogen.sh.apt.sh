@@ -41,11 +41,10 @@ apt install -y libcrypto++-dev
 # tool
 apt install -y golang-cfssl
 
-# cpr
-# https://github.com/libcpr/cpr
-git clone --depth=1 -b 1.9.x https://github.com/libcpr/cpr.git
-cd cpr && mkdir -p build && cd build
-cmake .. -DCPR_USE_SYSTEM_CURL=ON
+# curlcpp
+git clone --depth=1 https://github.com/jpbarrette/curlpp.git
+cd curlpp && mkdir -p build && cd build
+cmake ..
 cmake --build .
 make install
 
