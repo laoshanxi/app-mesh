@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/http"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 )
 
 func monitorParentExit(parentProPid int) {
@@ -30,15 +31,9 @@ func monitorParentExit(parentProPid int) {
 
 // main
 func main() {
-	var restTcpPort = 0      //6059
-	var prometheusPort = 0   //6061
 	var dockerAgentAddr = "" //"https://127.0.0.1:6058"
-	var restAgentAddr = ""   //"https://0.0.0.0:6060"
 
 	// parse arguments
-	restAddr := flag.String("agent_url", restAgentAddr, "The host URL used to listen REST proxy")
-	tcpPort := flag.Int("rest_tcp_port", restTcpPort, "The host port used to forward REST proxy")
-	promePort := flag.Int("prom_exporter_port", prometheusPort, "The host port used to expose Prometheus metrics")
 	dockerAddr := flag.String("docker_agent_url", dockerAgentAddr, "The host URL used to listen docker proxy")
 	socket := flag.String("docker_socket_file", http.DockerSocketFilePath, "Docker unix domain socket file path used to forward docker proxy")
 	flag.Parse()
@@ -46,15 +41,6 @@ func main() {
 	log.Println("REST Agent enter")
 
 	// read arguments
-	if restAddr != nil {
-		restAgentAddr = *restAddr
-	}
-	if tcpPort != nil {
-		restTcpPort = *tcpPort
-	}
-	if promePort != nil {
-		prometheusPort = *promePort
-	}
 	if socket != nil {
 		http.DockerSocketFilePath = *socket
 	}
@@ -73,14 +59,15 @@ func main() {
 	}
 
 	// start listen REST proxy
-	if restTcpPort > 1024 {
-		go http.ListenRest(restAgentAddr, restTcpPort)
-		log.Println("<App Mesh Agent> listening at: ", restAgentAddr)
+	err, restEnabled := utils.GetAppMeshConfig2("REST", "RestEnabled")
+	if err == nil && restEnabled.(bool) {
+		go http.ListenRest()
 	}
 
 	// start prometheus exporter (without SSL)
-	if prometheusPort > 1024 {
-		go http.ListenPrometheus(prometheusPort)
+	err, prometheusPort := utils.GetAppMeshConfig2("REST", "PrometheusExporterListenPort")
+	if err == nil && int(prometheusPort.(float64)) > 1024 {
+		go http.ListenPrometheus(int(prometheusPort.(float64)))
 		log.Println("<Prometheus Exporter> listening at: ", prometheusPort)
 	}
 

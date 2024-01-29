@@ -8,15 +8,11 @@
 	"WorkingDirectory": "",
 	"REST": {
 		"RestEnabled": true,
-		"JWT": {
-			"JWTSalt": "HelloWorld",
-			"SecurityInterface": "json"
-		},
 		"RestListenAddress": "localhost",
 		"RestListenPort": 6060,
 		"RestTcpPort": 6059,
-		"PrometheusExporterListenPort": 6061,
-		"DockerProxyListenAddr": "http://127.0.0.1:6058",
+		"PrometheusExporterListenPort": 0,
+		"DockerProxyListenAddr": "",
 		"HttpThreadPoolSize": 3,
 		"SSL": {
 			"VerifyPeer": false,
@@ -25,6 +21,10 @@
 			"SSLClientCertificateFile": "/opt/appmesh/ssl/client.pem",
 			"SSLClientCertificateKeyFile": "/opt/appmesh/ssl/client-key.pem",
 			"SSLCaPath": "/opt/appmesh/ssl/ca.pem"
+		},
+		"JWT": {
+			"JWTSalt": "HelloWorld",
+			"SecurityInterface": "json"
 		}
 	},
 	"Consul": {

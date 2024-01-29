@@ -116,12 +116,15 @@ int main(int argc, char *argv[])
 			}
 			LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
-			if (acceptor.open(ACE_INET_Addr(Configuration::instance()->getRestTcpPort(), INADDR_ANY), ACE_Reactor::instance()) == -1)
+			if (acceptor.open(ACE_INET_Addr(Configuration::instance()->getRestTcpPort(), Configuration::instance()->getRestListenAddress().c_str()), ACE_Reactor::instance()) == -1)
 			{
 				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
 			}
 			// start agent
-			Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
+			if (!Configuration::instance()->isAppExist(SEPARATE_AGENT_APP_NAME))
+			{
+				Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
+			}
 
 			// reg prometheus
 			config->registerPrometheus();

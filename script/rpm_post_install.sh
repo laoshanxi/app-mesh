@@ -9,10 +9,11 @@ export INITD_FILE=/etc/init.d/appmesh
 
 if [ ! -d ${PROG_HOME} ]; then
 	mkdir -p ${PROG_HOME}
-elif [[ -f $SYSTEMD_FILE ]] || [[ -f "/etc/init.d/appmesh" ]]; then
+elif [ -f $SYSTEMD_FILE ] || [ -f "/etc/init.d/appmesh" ]; then
 	systemctl stop appmesh
 	sleep 1
 fi
+
 chmod +x ${PROG_HOME}/script/*.sh
 
 # systemd environment file: ${PROG_HOME}/script/appmesh.environment
@@ -20,7 +21,7 @@ cat /dev/null >${PROG_HOME}/script/appmesh.environment
 for e in $(env); do
 	key=$(echo $e | awk -F"=" '{print $1}')
 	val=$(echo $e | awk -F"=" '{print $2}')
-	if [[ $key == APPMESH_* ]]; then
+	if [ $key == APPMESH_* ]; then
 		echo $key"="$val
 		echo "export $e" >>${PROG_HOME}/script/appmesh.environment
 	fi
@@ -65,26 +66,31 @@ if [ -d "/usr/share/bash-completion/completions" ]; then
 	chmod 644 /usr/share/bash-completion/completions/appc
 fi
 
-if [[ "$APPMESH_FRESH_INSTALL" = "Y" ]] || [[ ! -f "${PROG_HOME}/ssl/server.pem" ]]; then
+if [ "$APPMESH_FRESH_INSTALL" = "Y" ] || [ ! -f "${PROG_HOME}/ssl/server.pem" ]; then
 	# ssl cert gernerate
 	cd ${PROG_HOME}/ssl/
 	sh ${PROG_HOME}/ssl/ssl_cert_generate.sh
 	chmod 644 ${PROG_HOME}/ssl/*.pem
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [[ -f "${PROG_HOME}/.config.json" ]]; then
+if [ "$APPMESH_FRESH_INSTALL" != "Y" ] && [ -f "${PROG_HOME}/.config.json" ]; then
 	# restore previous configuration file
 	mv ${PROG_HOME}/.config.json ${PROG_HOME}/config.json
 else
 	sed -i "s/MYHOST/$(hostname -f)/g" ${PROG_HOME}/config.json
 	rm -rf ${PROG_HOME}/work
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [[ -f "${PROG_HOME}/.security.json" ]]; then
+if [ "$APPMESH_FRESH_INSTALL" != "Y" ] && [ -f "${PROG_HOME}/.security.json" ]; then
 	# restore previous security file
 	mv ${PROG_HOME}/.security.json ${PROG_HOME}/security.json
 fi
-if [[ "$APPMESH_FRESH_INSTALL" != "Y" ]] && [[ -f "${PROG_HOME}/.ldap.json" ]]; then
+if [ "$APPMESH_FRESH_INSTALL" != "Y" ] && [ -f "${PROG_HOME}/.ldap.json" ]; then
 	# restore previous security file
 	mv ${PROG_HOME}/.ldap.json ${PROG_HOME}/ldap.json
+fi
+if [ "$APPMESH_FRESH_INSTALL" != "Y" ] && [ -d "${PROG_HOME}/.apps" ]; then
+	# restore apps dir
+	rm -rf ${PROG_HOME}/apps
+	mv ${PROG_HOME}/.apps ${PROG_HOME}/apps
 fi
 
 # create appc softlink
@@ -115,7 +121,7 @@ fi
 # systemctl enable appmesh
 # systemctl start appmesh
 echo "APPMESH_SECURE_INSTALLATION=$APPMESH_SECURE_INSTALLATION"
-if [[ "$APPMESH_SECURE_INSTALLATION" = "Y" ]]; then
+if [ "$APPMESH_SECURE_INSTALLATION" = "Y" ]; then
 	# gernerate password for secure installation
 	/usr/bin/appc appmginit
 fi

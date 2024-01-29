@@ -39,9 +39,8 @@ cp -r ${CMAKE_CURRENT_SOURCE_DIR}/script/apps ${PACKAGE_HOME}
 
 chmod +x ${PACKAGE_HOME}/script/*.sh
 
-export LD_LIBRARY_PATH=/usr/local/lib64:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:${LD_LIBRARY_PATH}
 ldd ${CMAKE_BINARY_DIR}/gen/appc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
-ldd ${CMAKE_BINARY_DIR}/gen/appc | grep libcurl | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appc | grep libcurlpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep boost | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep ACE | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
@@ -53,7 +52,7 @@ ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep oath | awk '{cmd="cp "$3" ${PACKAGE_HO
 GLIBC_VERION=$(ldd --version | head -n 1 | tr ' ' '\n' | tail -n 1)
 GCC_VERION=$(gcc -dumpversion)
 
-fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,openldap-devel' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${PACKAGE_HOME}/script/rpm_post_install.sh \
+fpm -s dir -t rpm -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${PACKAGE_HOME}/script/rpm_post_install.sh \
 	--before-remove ${PACKAGE_HOME}/script/rpm_pre_uninstall.sh --after-remove ${PACKAGE_HOME}/script/rpm_post_uninstall.sh -C ${PACKAGE_HOME} --prefix ${INSTALL_LOCATION}
 fpm -s dir -t deb -v ${PROJECT_VERSION} -n ${PROJECT_NAME} --license MIT -d 'psmisc,net-tools,curl,libldap-dev' --vendor laoshanxi --description ${PROJECT_NAME} --after-install ${PACKAGE_HOME}/script/rpm_post_install.sh \
 	--before-remove ${PACKAGE_HOME}/script/rpm_pre_uninstall.sh --after-remove ${PACKAGE_HOME}/script/rpm_post_uninstall.sh -C ${PACKAGE_HOME} --prefix ${INSTALL_LOCATION}

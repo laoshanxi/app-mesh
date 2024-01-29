@@ -11,5 +11,5 @@ PROG_HOME=$(cd "${SCRIPT_DIR}/.."; pwd)
 
 # by default, IFS is space which means space is string spliter
 IFS=$'\n'
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64
+export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 ${PROG_HOME}/bin/appc $@

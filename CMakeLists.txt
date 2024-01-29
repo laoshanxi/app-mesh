@@ -77,12 +77,14 @@ find_package(msgpack-cxx REQUIRED)
 ##########################################################################
 # libcurl
 ##########################################################################
-find_package(CURL REQUIRED)
+find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
+message("CURL_LIB: ${CURL_LIB}")
 
 ##########################################################################
 # openssl
 ##########################################################################
 find_package(OpenSSL REQUIRED)
+message("OPENSSL_FOUND: ${OPENSSL_FOUND}")
 if (OPENSSL_FOUND)
     message(STATUS "openssl include dir: ${OPENSSL_INCLUDE_DIR}")
     message(STATUS "openssl library dir: ${OPENSSL_LIBRARIES}")
@@ -107,7 +109,6 @@ find_package(Threads REQUIRED)
 # library dir
 ##########################################################################
 link_directories(
-    /usr/lib64
     /usr/local/lib64
     /usr/local/lib
 )
@@ -130,6 +131,7 @@ macro(add_catch_test name)
     else()
         add_test(NAME ${name} COMMAND ${name})
     endif()
+    set_tests_properties(${name} PROPERTIES ENVIRONMENT "LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:${LD_LIBRARY_PATH}")
 endmacro()
 
 if(NOT APPMESH_NO_TESTS)

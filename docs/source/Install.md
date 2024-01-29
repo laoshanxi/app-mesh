@@ -19,6 +19,9 @@ The startup support use environment variable override default configuration with
 Install App Mesh as standalone mode on local node without GUI service by release packages.
 
 ```text
+# import gpg public key in case of signature verification
+sudo rpm --import gpg_public.key
+sudo dpkg --import gpg_public.key
 # centos
 sudo yum install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 # ubuntu

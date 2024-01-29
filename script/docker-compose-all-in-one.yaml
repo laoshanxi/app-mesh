@@ -25,7 +25,9 @@ services:
     restart: always
     image: laoshanxi/appmesh
     environment:
-      APPMESH_Consul_Url: http://localhost:8500
+      - APPMESH_Consul_Url=http://localhost:8500
+      - APPMESH_REST_PrometheusExporterListenPort=6061
+      - APPMESH_REST_DockerProxyListenAddr=http://127.0.0.1:6058
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/appmesh/work:/opt/appmesh/work

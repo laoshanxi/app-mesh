@@ -7,6 +7,7 @@
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
+#include "../../common/os/linux.hpp"
 #include "../../common/os/process.hpp"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
@@ -363,6 +364,7 @@ bool Application::attach(int pid)
 {
 	const static char fname[] = "Application::attach() ";
 
+	std::shared_ptr<AppProcess> checkProcStdoutFile;
 	if (pid > 1)
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -370,11 +372,24 @@ bool Application::attach(int pid)
 		{
 			m_process->killgroup();
 		}
-		m_process.reset(new AppProcess());
-		m_process->attach(pid);
+		m_process.reset();
+		m_process = allocProcess(false, m_dockerImage, m_name);
+		m_process->attach(pid, m_stdoutFile);
 		m_pid = m_process->getpid();
-		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name;
+		auto stat = os::status(m_pid);
+		if (stat)
+		{
+			// recover m_nextLaunchTime to avoid restart
+			m_procStartTime = stat->get_starttime();
+			m_nextLaunchTime = std::make_unique<std::chrono::system_clock::time_point>(m_procStartTime);
+		}
+		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name << ", last start on: " << DateTime::formatLocalTime(m_procStartTime);
+		if (m_process->running())
+			checkProcStdoutFile = m_process;
 	}
+	// registerCheckStdoutTimer() outside of m_appMutex
+	if (checkProcStdoutFile)
+		checkProcStdoutFile->registerCheckStdoutTimer();
 	return true;
 }
 
@@ -785,8 +800,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair)
 					  {
 						  auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
-						  envs[(pair.first)] = std::string(encryptedEnvValue);
-					  });
+						  envs[(pair.first)] = std::string(encryptedEnvValue); });
 		result[JSON_KEY_APP_sec_env] = envs;
 	}
 	if (m_dockerImage.length())
@@ -840,6 +854,7 @@ void Application::save()
 		{
 			throw std::invalid_argument("failed to save application, please check your app name or folder permission");
 		}
+		LOG_INF << fname << "saved file: " << appPath;
 	}
 }
 

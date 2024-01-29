@@ -5,7 +5,7 @@
 
 export PROG_HOME=/opt/appmesh
 export PROGC=bin/appc
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
+export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 
 # backup configuration file to avoid overide when next installation
 if [ -f "${PROG_HOME}/config.json" ]; then
@@ -16,6 +16,9 @@ if [ -f "${PROG_HOME}/security.json" ]; then
 fi
 if [ -f "${PROG_HOME}/ldap.json" ]; then
 	cp -f ${PROG_HOME}/ldap.json ${PROG_HOME}/.ldap.json
+fi
+if [ -d "${PROG_HOME}/apps" ]; then
+	cp -rf ${PROG_HOME}/apps ${PROG_HOME}/.apps
 fi
 
 # stop all running applications

@@ -40,9 +40,9 @@ var (
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
 	// Load client certificate and key
-	_, clientCert := utils.GetAppMeshConfig("REST", "SSL", "SSLClientCertificateFile")
-	_, clientCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLClientCertificateKeyFile")
-	_, trustedCA := utils.GetAppMeshConfig("REST", "SSL", "SSLCaPath")
+	_, clientCert := utils.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateFile")
+	_, clientCertKey := utils.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateKeyFile")
+	_, trustedCA := utils.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
 	cert := utils.LoadCertificatePair(clientCert.(string), clientCertKey.(string))
 
 	// load root CA
@@ -239,18 +239,10 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	}
 }
 
-func listenAgent(restAgentAddr string, router *fasthttprouter.Router) error {
-	s := &fasthttp.Server{
-		Handler:            router.Handler,
-		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
-	}
-	return s.ListenAndServe(restAgentAddr)
-}
-
 func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
-	_, verifyPeer := utils.GetAppMeshConfig("REST", "SSL", "VerifyPeer")
-	_, serverCert := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateFile")
-	_, serverCertKey := utils.GetAppMeshConfig("REST", "SSL", "SSLCertificateKeyFile")
+	_, verifyPeer := utils.GetAppMeshConfig3("REST", "SSL", "VerifyPeer")
+	_, serverCert := utils.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
+	_, serverCertKey := utils.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
 
 	conf := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
@@ -280,23 +272,19 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 		Handler:            router.Handler,
 		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
 	}
+	log.Println("<App Mesh Agent> listening at: ", restAgentAddr)
 	return s.Serve(tls.NewListener(ln, conf))
 }
 
-func ListenRest(restAgentAddr string, restTcpPort int) {
-	addr, err := url.Parse(restAgentAddr)
-	if err != nil {
-		panic(err)
-	}
-	listenAddr := ":" + addr.Port()
-	hostName := addr.Hostname()
-	if hostName == "0.0.0.0" {
-		hostName, _ = os.Hostname()
-	}
-	connectAddr := hostName + ":" + strconv.Itoa(restTcpPort)
+func ListenRest() {
+	_, listenHostName := utils.GetAppMeshConfig2("REST", "RestListenAddress")
+	_, listenHostPort := utils.GetAppMeshConfig2("REST", "RestListenPort")
+	_, restTcpPort := utils.GetAppMeshConfig2("REST", "RestTcpPort")
 
+	listenAddr := listenHostName.(string) + ":" + strconv.Itoa(int(listenHostPort.(float64)))
+	connectAddr := listenHostName.(string) + ":" + strconv.Itoa(int(restTcpPort.(float64)))
 	// connect to TCP rest server
-	conn, err := connectServer(connectAddr)
+	conn, err := connectServer(strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1))
 	if err != nil {
 		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
 		os.Exit(-1)
@@ -308,11 +296,7 @@ func ListenRest(restAgentAddr string, restTcpPort int) {
 	router := fasthttprouter.New()
 	router.NotFound = handleAppmeshRest // set all default router to restProxyHandler
 	grafana.RegGrafanaRestHandler(router)
-	if addr.Scheme == "https" {
-		err = listenAgentTls(listenAddr, router)
-	} else {
-		err = listenAgent(listenAddr, router)
-	}
+	err = listenAgentTls(listenAddr, router)
 	if err != nil {
 		log.Fatalf("Error in fasthttp Serve: %v", err)
 		os.Exit(-1)

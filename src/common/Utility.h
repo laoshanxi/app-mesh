@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
+#include <boost/filesystem.hpp>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
 #include <nlohmann/json.hpp>
-#include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))

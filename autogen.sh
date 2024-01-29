@@ -148,10 +148,11 @@ if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
 	gem install fpm
 fi
 
-# build curl & libcurl
+# build static libcurl
 $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
 tar zxvf curl-8.5.0.tar.gz > /dev/null; cd curl-8.5.0
-mkdir build; cd build; cmake ..; make; make install
+mkdir build; cd build; cmake .. -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF; make; make install
+ldconfig
 cd $ROOTDIR
 
 # build boost
@@ -287,12 +288,12 @@ git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 
 git clone https://github.com/AndreyBarmaley/ldap-cpp.git
-cd ldap-cpp;
+cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..;
 if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-	git checkout 81c84ebb50185efe6525b74570acd8e6406d3140
+	while ! make; do make clean && git reset --hard HEAD^ && cmake -DBUILD_SHARED_LIBS=OFF ..; sleep 0.5; done
 fi
-mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
-
+make; make install
+ldconfig
 cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
 
 rm -rf ${ROOTDIR}

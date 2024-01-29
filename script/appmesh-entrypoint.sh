@@ -17,7 +17,7 @@ log() {
 cd ${PROG_HOME}
 
 SCRIPT_PID="$$"
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
+export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 
 pre_start_app() {
 	if [[ $# -gt 0 ]]; then
@@ -53,5 +53,5 @@ while true; do
 			FIRST_START="false"
 		fi
 	fi
-	sleep 2
+	sleep 1
 done

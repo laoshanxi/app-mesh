@@ -474,8 +474,7 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 						  mapApp = app;
 						  update = true;
 						  return;
-					  }
-				  });
+					  } });
 
 	if (!update)
 	{
@@ -519,9 +518,7 @@ void Configuration::removeApp(const std::string &appName)
 			{
 				app = (*iterA);
 				iterA = m_apps.erase(iterA);
-				// Write to disk
-				app->remove();
-				LOG_DBG	<< fname << "removed " << appName;
+				LOG_DBG << fname << "removed " << appName;
 			}
 			else
 			{
@@ -531,7 +528,9 @@ void Configuration::removeApp(const std::string &appName)
 	}
 	if (app)
 	{
+		// Write to disk
 		app->destroy();
+		app->remove();
 	}
 }
 
@@ -801,13 +800,8 @@ const nlohmann::json Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
-	auto restUri = Utility::stringFormat("https://%s:%d", Configuration::instance()->getRestListenAddress().c_str(), Configuration::instance()->getRestListenPort());
 	auto cmd = (fs::path(Utility::getSelfDir()) / "agent").string();
-	if (Configuration::instance()->getRestEnabled())
-	{
-		cmd += std::string(" -rest_tcp_port ") + std::to_string(Configuration::instance()->getRestTcpPort()) +
-			   " -agent_url " + Utility::stdStringTrim(restUri, '/');
-	}
+
 	if (Configuration::instance()->getDockerProxyAddress().length() &&
 		Utility::isFileExist("/var/run/docker.pid") &&
 		os::pstree(1)->contains(std::stoi(Utility::readFile("/var/run/docker.pid"))))
@@ -817,10 +811,6 @@ const nlohmann::json Configuration::getAgentAppJson() const
 	else
 	{
 		LOG_WAR << fname << "docker agent not enabled";
-	}
-	if (Configuration::instance()->prometheusEnabled())
-	{
-		cmd += std::string(" -prom_exporter_port ") + std::to_string(Configuration::instance()->getPromListenPort());
 	}
 	LOG_INF << fname << " agent start command <" << cmd << ">";
 

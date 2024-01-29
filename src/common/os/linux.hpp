@@ -20,6 +20,7 @@
 #endif // __linux__
 
 #include <assert.h>
+#include <atomic>
 #include <fstream>
 #include <list>
 #include <memory>
@@ -155,6 +156,32 @@ namespace os
 			  wchan(_wchan),
 			  nswap(_nswap),
 			  cnswap(_cnswap) {}
+
+		std::chrono::system_clock::time_point get_starttime()
+		{
+			static const long ticks_per_second = sysconf(_SC_CLK_TCK);
+			// Read system uptime from /proc/uptime
+			static double uptime_seconds = 0;
+			std::atomic_flag flag = ATOMIC_FLAG_INIT;
+			if (!flag.test_and_set(std::memory_order_acquire))
+			{
+				std::ifstream uptime_file("/proc/uptime");
+				if (!uptime_file)
+				{
+					LOG_WAR << "Error opening /proc/uptime";
+					return {};
+				}
+				uptime_file >> uptime_seconds;
+				uptime_file.close();
+			}
+			// Calculate system boot time in seconds
+			time_t system_boot_time = time(nullptr) - static_cast<time_t>(uptime_seconds);
+			// Calculate start time since system boot in seconds + boot time
+			double start_time_seconds = system_boot_time + (starttime / ticks_per_second);
+
+			// Convert start time
+			return std::chrono::system_clock::from_time_t(static_cast<time_t>(start_time_seconds));
+		}
 
 		const pid_t pid;
 		const std::string comm;
@@ -485,7 +512,8 @@ namespace os
 		pid_t pid,
 		const std::list<Process> &processes)
 	{
-		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p) { return p.pid == pid; });
+		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p)
+									   { return p.pid == pid; });
 		if (iter != processes.end())
 			return std::make_shared<Process>(*iter);
 		return nullptr;
@@ -713,11 +741,11 @@ namespace os
 	}
 
 	/**
-	* @brief  get file mode, user and group id
-	* @note   
-	* @param  &path: file path
-	* @retval file mode, user id, file group id
-	*/
+	 * @brief  get file mode, user and group id
+	 * @note
+	 * @param  &path: file path
+	 * @retval file mode, user id, file group id
+	 */
 	inline std::tuple<int, int, int> fileStat(const std::string &path)
 	{
 		const static char fname[] = "fileStat() ";

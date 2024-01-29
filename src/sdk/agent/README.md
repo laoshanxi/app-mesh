@@ -13,12 +13,8 @@
 ```
 $ /opt/appmesh/bin/agent -h
 Usage of /opt/appmesh/bin/agent:
-  -agent_url string
-        The host URL used to listen REST proxy (default "https://0.0.0.0:6060")
   -docker_agent_url string
         The host URL used to listen docker proxy (default "https://127.0.0.1:6058")
   -docker_socket_file string
         Docker unix domain socket file path used to forward docker proxy (default "/var/run/docker.sock")
-  -rest_tcp_port int
-        The host port used to forward REST proxy (default 6059)
 ```

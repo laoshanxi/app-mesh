@@ -56,19 +56,19 @@ jobs:
       - name: build with ubuntu22
         run: |
           build_dir=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/sh -c "mkdir ubuntu22_$build_dir; cd ubuntu22_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/bash --login -c "mkdir ubuntu22_$build_dir; cd ubuntu22_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: build with ubuntu20
         run: |
           if [ "${{ matrix.arch }}" == "amd64" ]; then
             build_dir=${{ matrix.arch }}
-            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20 /bin/sh -c "mkdir ubuntu20_$build_dir; cd ubuntu20_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20 /bin/bash --login -c "mkdir ubuntu20_$build_dir; cd ubuntu20_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
           fi
 
       - name: build with ubuntu18
         run: |
           build_dir=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/sh -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/bash --login -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: build with centos7
         run: |
@@ -105,7 +105,46 @@ jobs:
       - name: Generate Changelog
         run: |
           echo "1. Object design for Python SDK" >> CHANGELOG.txt
+          echo "2. CentOS7 compatible" >> CHANGELOG.txt
+          echo "3. SSL for all connections" >> CHANGELOG.txt
+          echo "4. GPG sign packages (rpm --import gpg_public.key)" >> CHANGELOG.txt
           ls -R
+
+      - name: Install gpg dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm dpkg-sig gnupg2
+
+      # generate gpg key
+      # https://gist.github.com/fernandoaleman/1376720
+      # https://github.com/marketplace/actions/import-gpg
+      # gpg --batch --passphrase $GPG_PASSPHRASE --quick-generate-key "appmesh <178029200@qq.com>" rsa4096
+      # GPG_PRIVATE_KEY=$(gpg --armor --export-secret-keys --pinentry-mode loopback --passphrase $GPG_PASSPHRASE)
+      # GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep -oP '^sec\s+\K\S+' | grep -oP '[^/]+$')
+      # echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+      # echo "$GPG_PASSPHRASE" | gpg --batch --passphrase-fd 0 --pinentry-mode loopback --export-secret-key > ~/gpg.key
+      # gpg --batch --import ~/gpg.key
+      - name: Sign packages
+        run: |
+          # generate key
+          gpg --batch --passphrase '' --quick-generate-key "appmesh <178029200@qq.com>" rsa4096
+          gpg --list-keys
+          # prepare for rpm sign
+          gpg --export -a 'appmesh' > gpg_public.key
+          rpm --import gpg_public.key
+          rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
+          cat > ~/.rpmmacros <<EOF
+          %_signature gpg
+          %_gpg_path ~/.gnupg
+          %_gpg_name appmesh
+          %_gpgbin /usr/bin/gpg
+          EOF
+          # sign rpm pkg
+          rpm --addsign */*.rpm
+          rpm --checksig */*.rpm
+          # sign deb pkg
+          dpkg-sig --sign builder -k appmesh --gpg-options '--batch --pinentry-mode loopback' */*.deb
+          dpkg-sig --verify */*.deb
 
       # publish release
       # https://github.com/softprops/action-gh-release
@@ -124,3 +163,4 @@ jobs:
             ubuntu*/*.rpm
             centos*/*.deb
             centos*/*.rpm
+            gpg_public.key

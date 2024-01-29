@@ -24,7 +24,7 @@ export PROGC=bin/appc
 PROG_WATCHDOG=script/appmesh-entrypoint.sh
 PROG_ARGS=""
 
-export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PROG_HOME}/lib64:/usr/local/lib64:/usr/local/lib/
+export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 source ${PROG_HOME}/script/appmesh.environment || true
 
 # initd user

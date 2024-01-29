@@ -27,8 +27,9 @@ target_link_libraries(appsvc
     prometheus
     consul
     common
-	client
-	ACE_INet_SSL
+    client
+    ACE_INet
+    ACE_INet_SSL
 )
 
 ##########################################################################
