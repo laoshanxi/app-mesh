@@ -47,6 +47,15 @@ jobs:
         with:
           platforms: ${{ matrix.arch }}
 
+      - name: Install venv
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-venv
+
+      - name: Download Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@v0.15.8
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -55,26 +64,38 @@ jobs:
       # https://www.stereolabs.com/docs/docker/building-arm-container-on-x86/
       - name: build with ubuntu22
         run: |
-          build_dir=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/bash --login -c "mkdir ubuntu22_$build_dir; cd ubuntu22_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          BUILD_DIR=${{ matrix.arch }}
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/bash --login -c "mkdir ubuntu22_$BUILD_DIR; cd ubuntu22_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+
+      - name: Generate SBOM
+        run: |
+          if [ "${{ matrix.arch }}" == "amd64" ]; then
+            BUILD_DIR_UBUNTU22=${{ github.workspace }}/ubuntu22_${{ matrix.arch }}
+            sudo python3 -m venv $BUILD_DIR_UBUNTU22/home/venv
+            source $BUILD_DIR_UBUNTU22/home/venv/bin/activate
+            sudo $BUILD_DIR_UBUNTU22/home/venv/bin/pip3 install appmesh
+            ${{ steps.syft.outputs.cmd }} scan $BUILD_DIR_UBUNTU22/home/ -c ${{ github.workspace }}/script/syft.yaml --source-name app-mesh --source-version ${{ env.APPMESH_VERSION }}
+            SBOM_JSON_FILE=${{ github.workspace }}/appmesh.${{ env.APPMESH_VERSION }}.sbom.spdx.json
+            mv sbom.spdx.json $SBOM_JSON_FILE
+          fi
 
       - name: build with ubuntu20
         run: |
           if [ "${{ matrix.arch }}" == "amd64" ]; then
-            build_dir=${{ matrix.arch }}
-            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20 /bin/bash --login -c "mkdir ubuntu20_$build_dir; cd ubuntu20_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+            BUILD_DIR=${{ matrix.arch }}
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20 /bin/bash --login -c "mkdir ubuntu20_$BUILD_DIR; cd ubuntu20_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
           fi
 
       - name: build with ubuntu18
         run: |
-          build_dir=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/bash --login -c "mkdir ubuntu18_$build_dir; cd ubuntu18_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          BUILD_DIR=${{ matrix.arch }}
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/bash --login -c "mkdir ubuntu18_$BUILD_DIR; cd ubuntu18_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: build with centos7
         run: |
           if [ "${{ matrix.arch }}" == "amd64" ]; then
-            build_dir=${{ matrix.arch }}
-            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_centos7 /bin/bash --login -c "mkdir centos7_$build_dir; cd centos7_$build_dir; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+            BUILD_DIR=${{ matrix.arch }}
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_centos7 /bin/bash --login -c "mkdir centos7_$BUILD_DIR; cd centos7_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
           fi
 
       - name: Upload packages
@@ -84,6 +105,7 @@ jobs:
           path: |
             ubuntu*/*.deb
             ubuntu*/*.rpm
+            *.sbom.spdx.json
             centos*/*.deb
             centos*/*.rpm
 
@@ -108,6 +130,7 @@ jobs:
           echo "2. CentOS7 compatible" >> CHANGELOG.txt
           echo "3. SSL for all connections" >> CHANGELOG.txt
           echo "4. GPG sign packages (rpm --import gpg_public.key)" >> CHANGELOG.txt
+          echo "5. Generate SBOM file" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
@@ -161,6 +184,7 @@ jobs:
           files: |
             ubuntu*/*.deb
             ubuntu*/*.rpm
+            *.sbom.spdx.json
             centos*/*.deb
             centos*/*.rpm
             gpg_public.key

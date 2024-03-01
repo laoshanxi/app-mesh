@@ -166,3 +166,13 @@ add_custom_target(cppcheck
     COMMENT "code static check ${CMAKE_CURRENT_SOURCE_DIR}"
     COMMAND cppcheck --enable=all --quiet --std=c++11 --platform=native ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+##########################################################################
+# SBOM
+# in-order to include Python packages:
+#   create venv under home and use pip install appmesh
+##########################################################################
+add_custom_target(sbom
+    COMMENT "Generate SBOM file: ${CMAKE_BINARY_DIR}/home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml"
+    COMMAND syft ${CMAKE_BINARY_DIR}/home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
+)

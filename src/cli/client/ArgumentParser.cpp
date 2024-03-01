@@ -403,7 +403,7 @@ void ArgumentParser::processAppAdd()
 		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "default exit behavior [restart,standby,keepalive,remove]")
 		("control", po::value<std::vector<std::string>>(), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
 		("force,f", "force without confirm")
-		("stdin", "accept json from stdin")
+		("stdin", po::value<std::string>(), "accept json from stdin (provide 'std' string) or local json file path")
 		("help,h", "Prints command usage to stdout and exits");
 
 	shiftCommandLineArgs(desc);
@@ -427,7 +427,11 @@ void ArgumentParser::processAppAdd()
 	nlohmann::json jsonObj;
 	if (m_commandLineVariables.count("stdin"))
 	{
-		jsonObj = nlohmann::json::parse(Utility::readStdin2End());
+		auto inputJson = m_commandLineVariables["stdin"].as<std::string>();
+		if (inputJson == "std")
+			jsonObj = nlohmann::json::parse(Utility::readStdin2End());
+		else
+			jsonObj = nlohmann::json::parse(Utility::readFileCpp(inputJson));
 	}
 
 	std::string appName;
@@ -452,10 +456,10 @@ void ArgumentParser::processAppAdd()
 
 	if (isAppExist(appName))
 	{
-		if (m_commandLineVariables.count("force") == 0)
+		if (m_commandLineVariables.count("force") == 0 && (m_commandLineVariables.count("stdin") == 0 || m_commandLineVariables["stdin"].as<std::string>() != "std"))
 		{
 			std::cout << "Application already exist, are you sure you want to update the application <" << appName << ">?" << std::endl;
-			if (m_commandLineVariables.count("stdin") || !confirmInput("[y/n]:"))
+			if (!confirmInput("[y/n]:"))
 			{
 				return;
 			}

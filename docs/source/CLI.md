@@ -105,45 +105,47 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 ```text
 $ appc add
 Register a new application:
-  -b [ --host ] arg (=localhost) host name or ip address
-  -B [ --port ] arg              port number
-  -u [ --user ] arg              Specifies the name of the user to connect to App Mesh for this command.
-  -x [ --password ] arg          Specifies the user password to connect to App Mesh for this command.
-  -n [ --name ] arg              application name
-  -g [ --metadata ] arg          metadata string (input for application, pass to process stdin), '@' allowed to read from file
-  --perm arg                     application user permission, value is 2 bit integer: [group & other], each bit can be deny:1,
-                                 read:2, write: 3.
-  -c [ --cmd ] arg               full command line with arguments
-  -S [ --shell ]                 use shell mode, cmd can be more commands
-  -I [ --init ] arg              initial command line with arguments
-  -F [ --fini ] arg              fini command line with arguments
-  -l [ --health_check ] arg      health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)
-  -d [ --docker_image ] arg      docker image which used to run command line (for docker container application)
-  -w [ --workdir ] arg           working directory
-  -s [ --status ] arg (=1)       initial application status (true is enable, false is disabled)
-  -t [ --start_time ] arg        start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')
-  -E [ --end_time ] arg          end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')
-  -j [ --daily_start ] arg       daily start time (e.g., '09:00:00')
-  -y [ --daily_end ] arg         daily end time (e.g., '20:00:00')
-  -m [ --memory ] arg            memory limit in MByte
-  -p [ --pid ] arg               process id used to attach
-  -O [ --stdout_cache_num ] arg  stdout file cache number
-  -v [ --virtual_memory ] arg    virtual memory limit in MByte
-  -r [ --cpu_shares ] arg        CPU shares (relative weight)
-  -e [ --env ] arg               environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input
-                                 docker parameters)
-  --sec_env arg                  security environment variables, encrypt in server side with application owner's cipher
-  -i [ --interval ] arg          start interval seconds for short running app, support ISO 8601 durations and cron expression
-                                 (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')
-  --cron                         indicate interval parameter use cron expression
-  -q [ --extra_time ] arg        extra timeout for short running app,the value must less than interval  (default 0), support ISO
-                                 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')
-  -z [ --timezone ] arg          posix timezone for the application, reflect [start_time|daily_start|daily_end] (e.g.,
-                                 'GMT+08:00' is Beijing Time)
-  -k [ --keep_running ]          monitor and keep running for short running app in start interval
-  -f [ --force ]                 force without confirm
-  --stdin                        accept json from stdin
-  -h [ --help ]                  Prints command usage to stdout and exits
+  -b [ --url ] arg (=https://localhost:6060) server URL
+  -u [ --user ] arg                          Specifies the name of the user to connect to App Mesh for this command.
+  -x [ --password ] arg                      Specifies the user password to connect to App Mesh for this command.
+  -V [ --verbose ]                           enable verbose output
+  -n [ --name ] arg                          application name
+  -a [ --desc ] arg                          application description
+  -g [ --metadata ] arg                      metadata string/JSON (input for application, pass to process stdin), '@' allowed to
+                                             read from file
+  --perm arg                                 application user permission, value is 2 bit integer: [group & other], each bit can
+                                             be deny:1, read:2, write: 3.
+  -c [ --cmd ] arg                           full command line with arguments
+  -S [ --shell ]                             use shell mode, cmd can be more shell commands with string format
+  -l [ --health_check ] arg                  health check script command (e.g., sh -x 'curl host:port/health', return 0 is
+                                             health)
+  -d [ --docker_image ] arg                  docker image which used to run command line (for docker container application)
+  -w [ --workdir ] arg                       working directory
+  -s [ --status ] arg (=1)                   initial application status (true is enable, false is disabled)
+  -t [ --start_time ] arg                    start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')
+  -E [ --end_time ] arg                      end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')
+  -j [ --daily_start ] arg                   daily start time (e.g., '09:00:00+08')
+  -y [ --daily_end ] arg                     daily end time (e.g., '20:00:00+08')
+  -m [ --memory ] arg                        memory limit in MByte
+  -p [ --pid ] arg                           process id used to attach
+  -O [ --stdout_cache_num ] arg (=3)         stdout file cache number
+  -v [ --virtual_memory ] arg                virtual memory limit in MByte
+  -r [ --cpu_shares ] arg                    CPU shares (relative weight)
+  -e [ --env ] arg                           environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used
+                                             to input docker run parameters)
+  --sec_env arg                              security environment variables, encrypt in server side with application owner's
+                                             cipher
+  -i [ --interval ] arg                      start interval seconds for short running app, support ISO 8601 durations and cron
+                                             expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')
+  --cron                                     indicate interval parameter use cron expression
+  -q [ --retention ] arg                     extra timeout seconds for stopping current process, support ISO 8601 durations
+                                             (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
+  --exit arg (=standby)                      default exit behavior [restart,standby,keepalive,remove]
+  --control arg                              exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority
+                                             than default exit behavior
+  -f [ --force ]                             force without confirm
+  --stdin arg                                accept json from stdin (provide 'std' string) or local json file path
+  -h [ --help ]                              Prints command usage to stdout and exits
 
 
 # register a app with a native command
