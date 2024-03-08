@@ -17,13 +17,15 @@ from datetime import datetime
 import requests
 
 
-DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"  # 7 days
+DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"  # default 7 day(s)
 DEFAULT_RUN_APP_TIMEOUT_SECONDS = "PT1H"  # 1 hour
 DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "PT10H"  # 10 hours
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
 _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
+HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
+HTTP_USER_AGENT = "appmeshsdk/py"
 
 
 def _get_str_item(data: dict, key):
@@ -274,7 +276,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def __init__(
         self,
-        auth_enable: bool = True,
         rest_url: str = "https://127.0.0.1:6060",
         rest_ssl_verify=_SSL_CA_PEM_FILE,
         rest_timeout=(60, 300),
@@ -283,14 +284,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """Construct an App Mesh client object
 
         Args:
-            auth_enable (bool, optional): server enabled JWT authentication or not.
             rest_url (str, optional): server URI string.
-            rest_ssl_verify (str, optional): SSL CA certification file path or False to disable SSL verification.
+            rest_ssl_verify (str, optional): SSL CA certification path for verification, True for use system's default certificate store, False to disable SSL verification.
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
             jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
         """
         self.server_url = rest_url
-        self.jwt_auth_enable = auth_enable
         self.__jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify
         self.rest_timeout = rest_timeout
@@ -328,22 +327,21 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             str: JWT token if verify success, otherwise return None.
         """
         self.jwt_token = None
-        if self.jwt_auth_enable:
-            resp = self._request_http(
-                AppMeshClient.Method.POST,
-                path="/appmesh/login",
-                header={
-                    "Username": base64.b64encode(user_name.encode()),
-                    "Password": base64.b64encode(user_pwd.encode()),
-                    "Expire-Seconds": self._parse_duration(timeout_seconds),
-                },
-            )
-            if resp.status_code == HTTPStatus.OK:
-                if "Access-Token" in resp.json():
-                    self.jwt_token = resp.json()["Access-Token"]
-            else:
-                print(resp.text)
-                # resp.raise_for_status()
+        resp = self._request_http(
+            AppMeshClient.Method.POST,
+            path="/appmesh/login",
+            header={
+                "Username": base64.b64encode(user_name.encode()),
+                "Password": base64.b64encode(user_pwd.encode()),
+                "Expire-Seconds": self._parse_duration(timeout_seconds),
+            },
+        )
+        if resp.status_code == HTTPStatus.OK:
+            if "Access-Token" in resp.json():
+                self.jwt_token = resp.json()["Access-Token"]
+        else:
+            print(resp.text)
+            # resp.raise_for_status()
         return self.jwt_token
 
     def authentication(self, token: str, permission=None) -> bool:
@@ -359,19 +357,17 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: authentication success or failure.
         """
-        if self.jwt_auth_enable:
-            self.jwt_token = token
-            headers = {}
-            if permission:
-                headers["Auth-Permission"] = permission
-            resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/auth", header=headers)
-            if resp.status_code == HTTPStatus.OK:
-                return True
-            else:
-                # resp.raise_for_status()
-                print(resp.text)
-                return False
-        return True
+        self.jwt_token = token
+        headers = {}
+        if permission:
+            headers["Auth-Permission"] = permission
+        resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/auth", header=headers)
+        if resp.status_code == HTTPStatus.OK:
+            return True
+        else:
+            # resp.raise_for_status()
+            print(resp.text)
+            return False
 
     ########################################
     # Application view
@@ -1108,6 +1104,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_url = parse.urljoin(self.server_url, path)
         if self.jwt_token:
             header["Authorization"] = "Bearer " + self.jwt_token
+        header[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
@@ -1140,17 +1137,14 @@ class AppMeshClientTCP(AppMeshClient):
     def __init__(
         self,
         tcp_address=("localhost", 6059),
-        auth_enable: bool = True,
     ):
         """Construct an App Mesh client TCP object
 
         Args:
             tcp_address (tuple, optional): TCP connect address.
-            auth_enable (bool, optional): server enabled JWT authentication or not.
         """
-        super().__init__(auth_enable=auth_enable)
+        super().__init__()
         self.tcp_address = tcp_address
-        self.jwt_auth_enable = auth_enable
         self.__socket_client = None
 
     def __del__(self) -> None:
@@ -1243,6 +1237,7 @@ class AppMeshClientTCP(AppMeshClient):
 
         if super().jwt_token:
             header["Authorization"] = "Bearer " + super().jwt_token
+        header[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
         if self.__socket_client is None:
             self.__connect_socket()
         req_id = str(uuid.uuid1())

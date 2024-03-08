@@ -72,7 +72,7 @@ func blockSend(conn net.Conn, buf []byte) error {
 	for totalSentSize < len(buf) {
 		byteSent := 0
 
-		if byteSent, err = tcpConnect.Write(buf[totalSentSize:]); err != nil {
+		if byteSent, err = conn.Write(buf[totalSentSize:]); err != nil {
 			return err
 		}
 		totalSentSize += byteSent

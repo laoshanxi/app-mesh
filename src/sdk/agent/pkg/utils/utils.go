@@ -3,8 +3,6 @@ package utils
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
-	"errors"
 	"io"
 	"log"
 	"os"
@@ -14,20 +12,6 @@ import (
 	"runtime"
 	"strings"
 )
-
-var configJsonData map[string]interface{}
-
-func init() {
-	data, err := os.ReadFile(filepath.Join(GetAppMeshHomeDir(), "config.json"))
-	if err != nil {
-		log.Fatalf("Error reading file: %v", err)
-	}
-	// Unmarshal the JSON data into the map
-	err = json.Unmarshal(data, &configJsonData)
-	if err != nil {
-		log.Fatalf("Error unmarshalling JSON: %v", err)
-	}
-}
 
 func IsFileExist(path string) bool {
 	if len(path) > 0 {
@@ -72,35 +56,7 @@ func MoveFile(src string, dst string) error {
 	return os.Remove(src)
 }
 
-func GetAppMeshHomeDir() string {
-	return getParentDir(getCurrentAbPath())
-}
-
-func GetAppMeshConfig3(level1 string, level2 string, level3 string) (error, interface{}) {
-	// Access data from the map
-	// Read level 3 value in one line
-	if value, ok := configJsonData[level1].(map[string]interface{})[level2].(map[string]interface{})[level3]; ok {
-		log.Printf("Value of %s = %v", level3, value)
-		return nil, value
-	} else {
-		log.Printf("failed to retrieve json value for: %s", level3)
-		return errors.New("failed to retrieve json value"), false
-	}
-}
-
-func GetAppMeshConfig2(level1 string, level2 string) (error, interface{}) {
-	// Access data from the map
-	// Read level 3 value in one line
-	if value, ok := configJsonData[level1].(map[string]interface{})[level2]; ok {
-		log.Printf("Value of %s = %v", level2, value)
-		return nil, value
-	} else {
-		log.Printf("failed to retrieve json value for: %s", level2)
-		return errors.New("failed to retrieve json value"), false
-	}
-}
-
-func getCurrentAbPath() string {
+func GetCurrentAbPath() string {
 	dir := getCurrentAbPathByExecutable()
 	if strings.Contains(dir, getTmpDir()) {
 		return getCurrentAbPathByCaller()
@@ -144,7 +100,7 @@ func substr(s string, pos, length int) string {
 	return string(runes[pos:l])
 }
 
-func getParentDir(dirctory string) string {
+func GetParentDir(dirctory string) string {
 	return substr(dirctory, 0, strings.LastIndex(dirctory, "/"))
 }
 

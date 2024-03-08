@@ -26,11 +26,11 @@ std::chrono::system_clock::time_point AppTimer::nextTime(const std::chrono::syst
     {
         return EPOCH_ZERO_TIME;
     }
-	if (nextTime == now)
-	{
-		// avoid frequency start
-		nextTime += std::chrono::seconds(1);
-	}
+    if (nextTime == now)
+    {
+        // TODO: avoid frequency start, need check any negative performance impact
+        nextTime += std::chrono::seconds(1);
+    }
     return nextTime;
 }
 
@@ -85,8 +85,8 @@ std::chrono::system_clock::time_point AppTimer::adjustDailyTimeRange(std::chrono
 
 bool AppTimer::isInDailyTimeRange(const std::chrono::system_clock::time_point &target)
 {
-    //const static char fname[] = "Application::isInDailyTimeRange() ";
-    // 1. check date range
+    // const static char fname[] = "Application::isInDailyTimeRange() ";
+    //  1. check date range
     if (target < m_startTime || target > m_endTime)
     {
         return false;
@@ -96,7 +96,7 @@ bool AppTimer::isInDailyTimeRange(const std::chrono::system_clock::time_point &t
     {
         // Convert now to day time [%H:%M:%S], less than 24h
         auto now = DateTime::pickDayTimeUtcDuration(target);
-        //LOG_DBG << fname << "now: " << now << ", startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue;
+        // LOG_DBG << fname << "now: " << now << ", startTime: " << m_dailyLimit->m_startTimeValue << ", endTime: " << m_dailyLimit->m_endTimeValue;
         if (m_dailyLimit->m_startTimeValue < m_dailyLimit->m_endTimeValue)
         {
             // Start less than End means valid range should between start and end.

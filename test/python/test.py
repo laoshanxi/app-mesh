@@ -2,10 +2,16 @@
 import json
 import sys
 import os
-import inspect
 
+# For wheel package
 # python3 -m pip install --upgrade appmesh
-from appmesh import appmesh_client
+# from appmesh import appmesh_client
+
+# For source code env:
+current_directory = os.path.dirname(os.path.abspath(__file__))
+source_code_root_dir = os.path.dirname(os.path.dirname(current_directory))
+sys.path.append(os.path.join(source_code_root_dir, "src/sdk/python/appmesh"))
+import appmesh_client
 
 client = appmesh_client.AppMeshClientTCP()
 # authentication

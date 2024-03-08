@@ -6,4 +6,4 @@ COPY . /workspace/
 
 USER root
 
-RUN bash autogen.sh && rm -rf /workspace/*
+RUN bash autogen.sh.apt.sh && rm -rf /workspace/*

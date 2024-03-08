@@ -11,6 +11,8 @@
 #include <log4cpp/Priority.hh>
 #include <openssl/ssl.h>
 
+static const std::string HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
+static const std::string HTTP_USER_AGENT = "appmeshsdk/cpp";
 std::mutex RestClient::m_restLock;
 ClientSSLConfig RestClient::m_sslConfig;
 ClientSSLConfig::ClientSSLConfig()
@@ -55,6 +57,7 @@ RestClient::request(const std::string host, const web::http::method &mtd, const 
 	std::list<std::string> headers;
 	for (const auto &h : header)
 		headers.push_back(std::string(h.first) + ": " + h.second);
+	headers.push_back(std::string(HTTP_USER_AGENT_HEADER_NAME) + ": " + HTTP_USER_AGENT);
 
 	// output headers
 	std::map<std::string, std::string> outputHeaders;

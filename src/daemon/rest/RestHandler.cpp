@@ -327,7 +327,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	headers[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
 	std::string body = HttpRequest::emptyJson().dump();
-	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT))
+	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT_APPMESH_GO))
 	{
 		LOG_DBG << fname << "Downloading file not from App Mesh agent";
 		auto wrapper = convertText2Json("download from TCP stream");
@@ -356,7 +356,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	LOG_DBG << fname << "Uploading file <" << file << ">";
 
 	std::string body = HttpRequest::emptyJson().dump();
-	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT))
+	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT_APPMESH_GO))
 	{
 		LOG_DBG << fname << "Upload file not from App Mesh agent";
 		auto wrapper = convertText2Json("upload from TCP stream");

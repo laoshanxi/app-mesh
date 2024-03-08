@@ -121,7 +121,7 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define APPMESH_LOCAL_HOST_URL "https://localhost:6060"
-#define HTTP_USER_AGENT "appmeshsdk"
+#define HTTP_USER_AGENT_APPMESH_GO "appmeshsdk"
 #define TCP_JSON_MSG_FILE "file"
 
 const char *GET_STATUS_STR(unsigned int status);
