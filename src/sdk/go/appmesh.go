@@ -2,22 +2,17 @@ package appmesh
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strconv"
 	"time"
 )
 
-// defaultHTTPClient initialized AppMesh with appropriate conditions.
-// skip https ssl certification.
-var defaultHTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-var DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 days
+var DEFAULT_TOKEN_EXPIRE_SECONDS = 1 * (60 * 60 * 24) // default 1 day(s)
+
 // Client uses REST API for interacting with REST server.
 type Client struct {
 	baseURL string
@@ -27,72 +22,11 @@ type Client struct {
 
 // NewClient initializes client for interacting with an instance of REST server;
 func NewClient(appmeshUri string) *Client {
-	return &Client{baseURL: appmeshUri, client: defaultHTTPClient}
+	return &Client{baseURL: appmeshUri, client: getRestClient()}
 }
 
 func NewClientWithAuth(appmeshUri string, authenKey string) *Client {
-	return &Client{baseURL: appmeshUri, token: authenKey, client: defaultHTTPClient}
-}
-
-// REST GET
-func (r *Client) get(path string, params url.Values) ([]byte, int, http.Header, error) {
-	return r.doRequest("GET", path, params, nil, nil)
-}
-
-// REST PUT
-func (r *Client) put(path string, params url.Values, headers map[string]string, body []byte) ([]byte, int, error) {
-	raw, code, _, err := r.doRequest("PUT", path, params, headers, bytes.NewBuffer(body))
-	return raw, code, err
-}
-
-// REST POST
-func (r *Client) post(path string, params url.Values, headers map[string]string, body []byte) ([]byte, int, error) {
-	raw, code, _, err := r.doRequest("POST", path, params, headers, bytes.NewBuffer(body))
-	return raw, code, err
-}
-
-// REST DELETE
-func (r *Client) delete(path string) ([]byte, int, error) {
-	raw, code, _, err := r.doRequest("DELETE", path, nil, nil, nil)
-	return raw, code, err
-}
-
-// REST request
-func (r *Client) doRequest(method string, apiPath string, params url.Values, headers map[string]string, buf io.Reader) ([]byte, int, http.Header, error) {
-	u, _ := url.Parse(r.baseURL)
-	u.Path = path.Join(u.Path, apiPath)
-	if params != nil {
-		u.RawQuery = params.Encode()
-	}
-	req, err := http.NewRequest(method, u.String(), buf)
-	if err != nil {
-		return nil, 0, nil, err
-	}
-
-	// headers
-	if r.token != "" {
-		req.Header.Set("Authorization", "Bearer "+r.token)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "autograf")
-	for k, v := range headers {
-		req.Header.Add(k, v)
-	}
-
-	resp, err := r.client.Do(req)
-
-	if err != nil {
-		fmt.Println(err.Error())
-		return nil, 0, nil, err
-	}
-	data, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Println(string(data))
-	}
-	// https://www.cnblogs.com/wangjiale1024/p/10979993.html
-	return data, resp.StatusCode, resp.Header, err
+	return &Client{baseURL: appmeshUri, token: authenKey, client: getRestClient()}
 }
 
 // login with username and password
@@ -288,101 +222,3 @@ func (r *Client) Run(app Application, syncrize bool, maxExectimeSeconds int) (in
 	}
 	return exitCode, err
 }
-
-//////////////////////////////////////////////////////////////////////////
-// Entity definition
-//////////////////////////////////////////////////////////////////////////
-
-// Application json
-type Application struct {
-	// main definition
-	Name           string  `json:"name"`
-	Owner          *string `json:"owner"`
-	Permission     *int    `json:"permission"`
-	ShellMode      *bool   `json:"shell"`
-	Command        *string `json:"command"`
-	Description    *string `json:"description"`
-	WorkingDir     *string `json:"working_dir"`
-	HealthCheckCMD *string `json:"health_check_cmd"`
-	Status         int     `json:"status"`
-	StdoutCacheNum *int    `json:"stdout_cache_num"`
-	Metadata       *string `json:"metadata"`
-
-	// time
-	StartTime     *int64 `json:"start_time"`
-	EndTime       *int64 `json:"end_time"`
-	LastStartTime *int64 `json:"last_start_time"`
-	LastExitTime  *int64 `json:"last_exit_time"`
-	NextStartTime *int64 `json:"next_start_time"`
-	RegisterTime  *int64 `json:"register_time"`
-
-	StopRetention *string   `json:"retention"`
-	Behavior      *Behavior `json:"behavior"`
-	// short running definition
-	StartIntervalSeconds       *string `json:"start_interval_seconds"`
-	StartIntervalSecondsIsCron *bool   `json:"cron"`
-
-	// runtime attributes
-	Pid            *int    `json:"pid"`
-	ReturnCode     *int    `json:"return_code"`
-	Health         *int    `json:"health"`
-	FileDescritors *int    `json:"fd"`
-	Starts         *int    `json:"starts"`
-	PsTree         *string `json:"pstree"`
-	ContainerID    *string `json:"container_id"`
-
-	CPU             *float64 `json:"cpu"`
-	Memory          *int     `json:"memory"`
-	Uuid            *string  `json:"process_uuid"` // for run application
-	StdoutCacheSize *int     `json:"stdout_cache_size"`
-
-	Version   *int    `json:"version"`
-	LastError *string `json:"last_error"`
-
-	DockerImage   *string `json:"docker_image"`
-
-	DailyLimit    *DailyLimitation    `json:"daily_limitation"`
-	ResourceLimit *ResourceLimitation `json:"resource_limit"`
-	Env           *Environments       `json:"env"`
-	SecEnv        *Environments       `json:"sec_env"`
-}
-
-// Behavior
-type Behavior struct {
-	Exit string `json:"exit"`
-}
-
-// Daily time limitation
-type DailyLimitation struct {
-	DailyStart string `json:"daily_start"`
-	DailyEnd   string `json:"daily_end"`
-}
-
-// CPU & Memory limitation
-type ResourceLimitation struct {
-	MemoryMb        int `json:"memory_mb"`
-	MemoryVirtualMb int `json:"memory_virt_mb"`
-	CpuShares       int `json:"cpu_shares"`
-}
-
-// https://mholt.github.io/json-to-go/
-// JWT Response
-type JWTResponse struct {
-	AccessToken   string `json:"Access-Token"`
-	ExpireSeconds int    `json:"expire_seconds"`
-	ExpireTime    int    `json:"expire_time"`
-	Profile       struct {
-		AuthTime int    `json:"auth_time"`
-		Name     string `json:"name"`
-	} `json:"profile"`
-	TokenType string `json:"token_type"`
-}
-
-// Env json
-type Environments = map[string]string
-
-// Label json
-type Labels = map[string]string
-
-// REST Headers
-type Headers = map[string]string

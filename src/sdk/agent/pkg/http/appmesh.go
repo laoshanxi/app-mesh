@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/buaazp/fasthttprouter"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/grafana"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	"github.com/rs/xid"
@@ -40,9 +41,9 @@ var (
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
 	// Load client certificate and key
-	_, clientCert := utils.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateFile")
-	_, clientCertKey := utils.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateKeyFile")
-	_, trustedCA := utils.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
+	clientCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateFile")
+	clientCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateKeyFile")
+	trustedCA, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
 	cert := utils.LoadCertificatePair(clientCert.(string), clientCertKey.(string))
 
 	// load root CA
@@ -240,9 +241,9 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 }
 
 func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
-	_, verifyPeer := utils.GetAppMeshConfig3("REST", "SSL", "VerifyPeer")
-	_, serverCert := utils.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
-	_, serverCertKey := utils.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
+	verifyPeer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyPeer")
+	serverCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
+	serverCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
 
 	conf := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
@@ -277,9 +278,9 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 }
 
 func ListenRest() {
-	_, listenHostName := utils.GetAppMeshConfig2("REST", "RestListenAddress")
-	_, listenHostPort := utils.GetAppMeshConfig2("REST", "RestListenPort")
-	_, restTcpPort := utils.GetAppMeshConfig2("REST", "RestTcpPort")
+	listenHostName, _ := config.GetAppMeshConfig2("REST", "RestListenAddress")
+	listenHostPort, _ := config.GetAppMeshConfig2("REST", "RestListenPort")
+	restTcpPort, _ := config.GetAppMeshConfig2("REST", "RestTcpPort")
 
 	listenAddr := listenHostName.(string) + ":" + strconv.Itoa(int(listenHostPort.(float64)))
 	connectAddr := listenHostName.(string) + ":" + strconv.Itoa(int(restTcpPort.(float64)))

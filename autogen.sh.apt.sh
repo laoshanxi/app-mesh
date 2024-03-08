@@ -4,6 +4,14 @@
 ################################################################################
 set -x
 set -e
+WGET_A="wget --continue --quiet --backups=1 --tries=30 --no-check-certificate"
+architecture="arm64" # TODO: can not get arm64, set to default
+case $(uname -m) in
+    i386)   architecture="386" ;;
+    i686)   architecture="386" ;;
+    x86_64) architecture="amd64" ;;
+    arm)    dpkg --print-architecture | grep -q "arm64" && architecture="arm64" || architecture="arm" ;;
+esac
 export DEBIAN_FRONTEND=noninteractive
 SRC_DIR=$(dirname $(readlink -f "$0"))
 export ROOTDIR=$(pwd)/appmesh.tmp
@@ -13,43 +21,75 @@ cd ${ROOTDIR}
 apt update
 # apt full-upgrade -q -y
 # apt install -y build-essential
-apt install -y wget curl
+apt install -y wget curl libcurl4-openssl-dev libssl-dev
 apt install -y g++ cmake make
 
 # memory tool for debug
-apt install -y valgrind libasan6
+# apt install -y valgrind libasan6
 
 # security
 apt install -y libldap-dev liboath-dev
+apt install -y alien gettext unzip
 
 # cpplint tools
-apt install -y clang
-apt install -y cppcheck
+# apt install -y clang
+# apt install -y cppcheck
 apt install -y git
 
 # dependency libraries
 apt install -y liblog4cpp5-dev
-apt install -y libace-dev libace-ssl-dev
 apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
 
 # curlcpp
-git clone --depth=1 https://github.com/jpbarrette/curlpp.git
-cd curlpp && mkdir -p build && cd build
-cmake ..
-cmake --build .
-make install
+apt install -y libcurlpp-dev
+
+# build ACE
+# apt install -y libace-dev libace-ssl-dev
+if [ true ]; then
+	# https://www.cnblogs.com/tanzi-888/p/5342431.html
+	# http://download.dre.vanderbilt.edu/
+	# https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#aceinstall
+	if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
+		tar zxvf ACE-6.5.16.tar.gz > /dev/null
+	else
+		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
+		tar zxvf ACE-7.1.2.tar.gz > /dev/null
+	fi
+	cd ACE_wrappers
+	export ACE_ROOT=$(pwd)
+	cp ace/config-linux.h ace/config.h
+	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
+	cd ${ACE_ROOT}/ace
+	make ssl=1 -j6
+	make install ssl=1 INSTALL_PREFIX=/usr/local
+	cd ${ACE_ROOT}/protocols/ace
+	make ssl=1 -j6
+	make install ssl=1 INSTALL_PREFIX=/usr/local
+	ls -al /usr/local/lib*/libACE.so
+fi
+cd $ROOTDIR
 
 # json
 wget https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip
 unzip -o include.zip
 mv include/nlohmann /usr/local/include/
 
+# syft for SBOM
+curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
 # Golang
-apt install -y golang
+# apt install -y golang
+GO_ARCH=$architecture
+GO_VER=1.21.5
+$WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
+go version
 # Golang third party library
 export GO111MODULE=on
-export GOPROXY=https://goproxy.io,direct
+#export GOPROXY=https://goproxy.io,direct
 # go binaries
 export GOBIN=/usr/local/bin
 go install github.com/laoshanxi/qrc/cmd/qrc@latest

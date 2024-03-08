@@ -98,7 +98,7 @@ fi
 
 # Golang third party library
 export GO111MODULE=on
-export GOPROXY=https://goproxy.io,direct
+#export GOPROXY=https://goproxy.io,direct
 
 # build static libcurl
 $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
@@ -208,6 +208,9 @@ if [ true ]; then
 	cmake --build . --target install
 fi
 python3 -m pip install --upgrade msgpack requests requests_toolbelt aniso8601 twine wheel
+
+# syft for SBOM
+curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
 cd $ROOTDIR
 git clone --depth=1 https://github.com/schoentoon/hashidsxx.git

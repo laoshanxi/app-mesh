@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/http"
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 )
 
 func monitorParentExit(parentProPid int) {
@@ -59,13 +59,13 @@ func main() {
 	}
 
 	// start listen REST proxy
-	err, restEnabled := utils.GetAppMeshConfig2("REST", "RestEnabled")
+	restEnabled, err := config.GetAppMeshConfig2("REST", "RestEnabled")
 	if err == nil && restEnabled.(bool) {
 		go http.ListenRest()
 	}
 
 	// start prometheus exporter (without SSL)
-	err, prometheusPort := utils.GetAppMeshConfig2("REST", "PrometheusExporterListenPort")
+	prometheusPort, err := config.GetAppMeshConfig2("REST", "PrometheusExporterListenPort")
 	if err == nil && int(prometheusPort.(float64)) > 1024 {
 		go http.ListenPrometheus(int(prometheusPort.(float64)))
 		log.Println("<Prometheus Exporter> listening at: ", prometheusPort)

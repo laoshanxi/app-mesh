@@ -4,7 +4,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/rs/xid"
@@ -49,7 +49,7 @@ func TestMessagePack(t *testing.T) {
 	data.Uuid = xid.New().String()
 	data.RequestUri = "123"
 	data.HttpStatus = 1
-	content, _ := ioutil.ReadFile("/root/app-mesh/1.log")
+	content, _ := os.ReadFile("/root/app-mesh/1.log")
 	data.Body = string(content)
 	data.Headers = make(map[string]string)
 	data.Headers[string("key")] = string("value")

@@ -78,7 +78,12 @@ find_package(msgpack-cxx REQUIRED)
 # libcurl
 ##########################################################################
 find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
-message("CURL_LIB: ${CURL_LIB}")
+message("Found static CURL_LIB: ${CURL_LIB}")
+if (NOT CURL_LIB)
+    find_package(CURL REQUIRED)
+    message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
+    set(CURL_LIB ${CURL_LIBRARIES})
+endif()
 
 ##########################################################################
 # openssl
