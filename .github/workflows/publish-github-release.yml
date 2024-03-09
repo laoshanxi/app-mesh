@@ -172,7 +172,7 @@ jobs:
       # publish release
       # https://github.com/softprops/action-gh-release
       - name: Publish release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           body_path: CHANGELOG.txt
           name: "Python SDK"
