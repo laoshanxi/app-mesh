@@ -57,10 +57,8 @@ overrides:
     depends:
     - psmisc
     - net-tools
-    - curl
     - libldap-common
   rpm:
     depends:
     - psmisc
     - net-tools
-    - curl

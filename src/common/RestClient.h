@@ -22,8 +22,8 @@ struct ClientSSLConfig
 {
 	ClientSSLConfig();
 	unsigned long m_ssl_version;
-	bool m_verify_peer;				  // peer certificate verification
-	bool m_verify_host;				  // checks that the server's certificate matches the host name
+	bool m_verify_client;			  // client certificate verification
+	bool m_verify_server;			  // server's certificate matches the host name
 	std::string m_certificate;		  // certificate file (PEM format)
 	std::string m_private_key;		  // private key file (PEM format)
 	std::string m_private_key_passwd; // private key password

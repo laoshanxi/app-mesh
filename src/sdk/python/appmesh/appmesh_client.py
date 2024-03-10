@@ -24,6 +24,8 @@ REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
 _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
+_SSL_CLIENT_PEM_FILE = "/opt/appmesh/ssl/client.pem"
+_SSL_CLIENT_PEM_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
 HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 HTTP_USER_AGENT = "appmeshsdk/py"
 
@@ -217,13 +219,12 @@ class App(object):
         output["resource_limit"] = copy.deepcopy(self.resource_limit.__dict__)
 
         def clean_empty_item(data, key) -> None:
-            if key != "metadata":
-                value = data[key]
-                if not value:
-                    del data[key]
-                elif isinstance(value, dict):
-                    for k in list(value):
-                        clean_empty_item(value, k)
+            value = data[key]
+            if not value:
+                del data[key]
+            elif isinstance(value, dict) and key != "metadata":
+                for k in list(value):
+                    clean_empty_item(value, k)
 
         for k in list(output):
             clean_empty_item(output, k)
@@ -278,6 +279,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self,
         rest_url: str = "https://127.0.0.1:6060",
         rest_ssl_verify=_SSL_CA_PEM_FILE,
+        rest_ssl_client_cert=(_SSL_CLIENT_PEM_FILE, _SSL_CLIENT_PEM_KEY_FILE),
         rest_timeout=(60, 300),
         jwt_token=None,
     ):
@@ -286,12 +288,14 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Args:
             rest_url (str, optional): server URI string.
             rest_ssl_verify (str, optional): SSL CA certification path for verification, True for use system's default certificate store, False to disable SSL verification.
+            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair, None to disable client verification
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
             jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
         """
         self.server_url = rest_url
         self.__jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify
+        self.ssl_client_cert = rest_ssl_client_cert
         self.rest_timeout = rest_timeout
 
     @property
@@ -1107,22 +1111,23 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         header[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
-            return requests.get(url=rest_url, params=query, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return requests.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(url=rest_url, params=query, headers=header, data=json.dumps(body) if isinstance(body, dict) else body, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return requests.post(url=rest_url, params=query, headers=header, data=json.dumps(body) if type(body) in (dict, list) else body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST_STREAM:
             return requests.post(
                 url=rest_url,
                 params=query,
                 headers=header,
                 data=body,
-                verify=False,
+                cert=self.ssl_client_cert,
+                verify=self.ssl_verify,
                 stream=True,
             )
         elif method is AppMeshClient.Method.DELETE:
-            return requests.delete(url=rest_url, headers=header, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return requests.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.PUT:
-            return requests.put(url=rest_url, params=query, headers=header, json=body, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return requests.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         else:
             raise Exception("Invalid http method", method)
 
@@ -1136,14 +1141,21 @@ class AppMeshClientTCP(AppMeshClient):
 
     def __init__(
         self,
+        rest_ssl_verify=_SSL_CA_PEM_FILE,
+        rest_ssl_client_cert=(_SSL_CLIENT_PEM_FILE, _SSL_CLIENT_PEM_KEY_FILE),
+        jwt_token=None,
         tcp_address=("localhost", 6059),
     ):
         """Construct an App Mesh client TCP object
 
         Args:
+            rest_ssl_verify (str, optional): SSL CA certification path for verification, True for use system's default certificate store, False to disable SSL verification.
+            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair, None to disable client verification
+            jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
+
             tcp_address (tuple, optional): TCP connect address.
         """
-        super().__init__()
+        super().__init__("", rest_ssl_verify, rest_ssl_client_cert, None, jwt_token)
         self.tcp_address = tcp_address
         self.__socket_client = None
 
@@ -1157,7 +1169,12 @@ class AppMeshClientTCP(AppMeshClient):
         sock.setblocking(True)
 
         context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        context.load_verify_locations(_SSL_CA_PEM_FILE)
+        context.verify_mode = ssl.CERT_NONE if self.ssl_verify == False else ssl.CERT_REQUIRED
+        if isinstance(self.ssl_verify, str):
+            context.check_hostname = True
+            context.load_verify_locations(self.ssl_verify)
+        if self.ssl_client_cert is not None:
+            context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])
         self.__socket_client = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
 
     def __close_socket(self) -> None:

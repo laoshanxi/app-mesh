@@ -16,7 +16,7 @@ static const std::string HTTP_USER_AGENT = "appmeshsdk/cpp";
 std::mutex RestClient::m_restLock;
 ClientSSLConfig RestClient::m_sslConfig;
 ClientSSLConfig::ClientSSLConfig()
-	: m_ssl_version(CURL_SSLVERSION_LAST - 1), m_verify_peer(true), m_verify_host(true)
+	: m_ssl_version(CURL_SSLVERSION_LAST - 1), m_verify_client(false), m_verify_server(false)
 {
 	const static char fname[] = "ClientSSLConfig::ClientSSLConfig() ";
 
@@ -213,17 +213,17 @@ void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 void RestClient::setSslConfig(curlpp::Easy &request)
 {
 	request.setOpt(new curlpp::Options::Verbose(log4cpp::Category::getRoot().getPriority() == log4cpp::Priority::DEBUG));
-	request.setOpt(new curlpp::Options::SslVerifyPeer(m_sslConfig.m_verify_peer));
-	request.setOpt(new curlpp::Options::SslVerifyHost(m_sslConfig.m_verify_host));
+	request.setOpt(new curlpp::Options::SslVerifyPeer(m_sslConfig.m_verify_client || m_sslConfig.m_verify_server));
+	request.setOpt(new curlpp::Options::SslVerifyHost(m_sslConfig.m_verify_server));
 	request.setOpt(new curlpp::Options::SslVersion(m_sslConfig.m_ssl_version));
-	if (!m_sslConfig.m_certificate.empty() && !m_sslConfig.m_private_key.empty())
+	if (m_sslConfig.m_verify_client && !m_sslConfig.m_certificate.empty() && !m_sslConfig.m_private_key.empty())
 	{
 		request.setOpt(new curlpp::Options::SslCert(m_sslConfig.m_certificate));
 		request.setOpt(new curlpp::Options::SslKey(m_sslConfig.m_private_key));
 		if (!m_sslConfig.m_private_key_passwd.empty())
 			request.setOpt(new curlpp::Options::SslKeyPasswd(m_sslConfig.m_private_key_passwd));
 	}
-	if (!m_sslConfig.m_ca_location.empty())
+	if (m_sslConfig.m_verify_server && !m_sslConfig.m_ca_location.empty())
 	{
 		if (Utility::isDirExist(m_sslConfig.m_ca_location))
 			request.setOpt(new curlpp::Options::CaPath(m_sslConfig.m_ca_location));

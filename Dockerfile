@@ -1,12 +1,12 @@
-FROM laoshanxi/appmesh:build_ubuntu AS COMPILE_STAGE
+FROM laoshanxi/appmesh:build_ubuntu22 AS COMPILE_STAGE
 RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
 	cd app-mesh && mkdir build && cd build && cmake .. && make -j4 && make pack && ls
 
 
-FROM ubuntu:latest AS PYTHON_STAGE
-RUN apt-get update && \
-	apt-get install -y python3 python3-pip && \
-	python3 -m pip install appmesh
+FROM python:3.10-slim AS PYTHON_STAGE
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir appmesh
 
 
 FROM ubuntu:latest
@@ -14,12 +14,16 @@ ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
 ENV APPMESH_DisableExecUser=true
-COPY --from=PYTHON_STAGE /usr/local/lib/python3* /usr/local/lib/
-COPY --from=PYTHON_STAGE /usr/lib/python3/dist-packages/ /usr/lib/python3/dist-packages/
+# not only listen 127.0.0.1
+ENV APPMESH_REST_RestListenAddress=0.0.0.0
+COPY --from=PYTHON_STAGE /opt/venv /opt/venv
 COPY --from=COMPILE_STAGE /opt/app-mesh/build/appmesh*.deb .
+ENV PATH="$PATH:/opt/venv/bin"
 RUN apt-get update && \
-	apt-get install -y python3 iputils-ping tini && \
-	apt-get install -y ./appmesh*.deb && rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
+	apt-get install -y tini && \
+	apt-get install -y ./appmesh*.deb && \
+	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
+	rm -rf /opt/appmesh/apps/ping.json && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
 	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
 	touch /var/run/appmesh.pid && \

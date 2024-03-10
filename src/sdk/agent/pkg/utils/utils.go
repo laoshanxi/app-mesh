@@ -118,6 +118,17 @@ func LoadCertificatePair(pem string, key string) tls.Certificate {
 	}
 }
 
+// loadCACertificate load CA certificate from a file or directory
+func LoadCA(caPath string) (*x509.CertPool, error) {
+	if IsFileExist(caPath) {
+		info, _ := os.Stat(caPath)
+		if !info.IsDir() {
+			return LoadCACertificate(caPath)
+		}
+	}
+	return LoadCACertificates(caPath)
+}
+
 // loadCACertificate load CA certificate from a file
 func LoadCACertificate(certFile string) (*x509.CertPool, error) {
 	caCrt, err := os.ReadFile(certFile)

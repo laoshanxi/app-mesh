@@ -2,8 +2,6 @@
 #include <fstream>
 #include <memory>
 
-#include <ace/INet/HTTPS_Context.h>
-
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
@@ -254,39 +252,44 @@ bool TcpHandler::reply(const Response &resp)
 	return true;
 }
 
-void TcpHandler::initTcpSSL()
+ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 {
 	const static char fname[] = "TcpHandler::initTcpSSL() ";
 
+	bool verifyClient = Configuration::instance()->getSslVerifyClient();
+	auto cert = Configuration::instance()->getSSLCertificateFile();
+	auto key = Configuration::instance()->getSSLCertificateKeyFile();
+	auto ca = Configuration::instance()->getSSLCaPath();
 
-	ACE::HTTPS::Context::set_default_ssl_mode(ACE_SSL_Context::SSLv23_server);
-	ACE::HTTPS::Context::set_default_verify_mode(Configuration::instance()->getSslVerifyPeer());
-	if (Configuration::instance()->getSslVerifyPeer())
-		ACE::HTTPS::Context::set_default_verify_settings(Configuration::instance()->getSslVerifyPeer());
-	ACE::HTTPS::Context::instance().set_key_files(
-		Configuration::instance()->getSSLCertificateFile().c_str(),
-		Configuration::instance()->getSSLCertificateKeyFile().c_str(),
-		SSL_FILETYPE_PEM);
-	ACE::HTTPS::Context::instance().ssl_context().filter_versions(TCP_SSL_VERSION_LIST);
+	context->set_mode(ACE_SSL_Context::SSLv23_server);
+	context->set_verify_peer(verifyClient, 1, 0);
+	context->certificate(cert.c_str(), SSL_FILETYPE_PEM);
+	context->private_key(key.c_str(), SSL_FILETYPE_PEM);
+	context->filter_versions(TCP_SSL_VERSION_LIST);
 
 	// Enable ECDH cipher
-	if (!SSL_CTX_set_ecdh_auto(ACE::HTTPS::Context::instance().ssl_context().context(), 1))
+	if (!SSL_CTX_set_ecdh_auto(context->context(), 1))
 	{
 		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
 	}
 	auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
 	// auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
-	if (!SSL_CTX_set_cipher_list(ACE::HTTPS::Context::instance().ssl_context().context(), ciphers))
+	if (!SSL_CTX_set_cipher_list(context->context(), ciphers))
 	{
 		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
 	}
-	SSL_CTX_clear_options(ACE::HTTPS::Context::instance().ssl_context().context(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
+	SSL_CTX_clear_options(context->context(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
-	if (Configuration::instance()->getSSLCaPath().length())
+	if (verifyClient && ACE_OS::access(ca.c_str(), R_OK) == 0)
 	{
-		auto result = ACE::HTTPS::Context::instance().load_trusted_ca(Configuration::instance()->getSSLCaPath().c_str());
-		LOG_INF << fname << "load_trusted_ca " << Configuration::instance()->getSSLCaPath() << " with result: " << result;
+		auto isDir = Utility::isDirExist(ca);
+		auto result = context->load_trusted_ca(isDir ? 0 : ca.c_str(), isDir ? ca.c_str() : 0, false);
+		LOG_INF << fname << "load_trusted_ca: " << ca << " with result: " << result;
+		// do this to be sure that these settings have been properly set
+		// ACE_SSL_Context does not handle this quite correctly
+		::SSL_CTX_set_verify(context->context(), context->default_verify_mode(), context->default_verify_callback());
 	}
+	return context;
 }
 
 bool TcpHandler::sendBytes(const char *data, size_t length)

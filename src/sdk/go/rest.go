@@ -3,13 +3,10 @@ package appmesh
 import (
 	"bytes"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
@@ -22,9 +19,9 @@ const (
 
 var (
 	defaultHTTPClient           = &http.Client{Transport: &http.Transport{TLSClientConfig: getTlsConf()}}
-	SSLClientCertificateFile    = "/opt/appmesh/ssl/client.pem"
-	SSLClientCertificateKeyFile = "/opt/appmesh/ssl/client-key.pem"
-	SSLTrustedCA                = "/opt/appmesh/ssl/ca.pem"
+	SSLClientCertificateFile    = "/opt/appmesh/ssl/client.pem"     // set to empty to disable client SSL verification
+	SSLClientCertificateKeyFile = "/opt/appmesh/ssl/client-key.pem" // set to empty to disable client SSL verification
+	SSLTrustedCA                = "/opt/appmesh/ssl/ca.pem"         // set to empty to disable server SSL verification
 )
 
 func getRestClient() *http.Client {
@@ -33,26 +30,14 @@ func getRestClient() *http.Client {
 
 func getTlsConf() *tls.Config {
 	// Load client certificate and key
-	cert := utils.LoadCertificatePair(SSLClientCertificateFile, SSLClientCertificateKeyFile)
-
-	// load root CA
-	var certPool *x509.CertPool
-	if utils.IsFileExist(SSLTrustedCA) {
-		if fileInfo, err := os.Stat(SSLTrustedCA); !os.IsNotExist(err) {
-			if fileInfo.IsDir() {
-				certPool, _ = utils.LoadCACertificates(SSLTrustedCA)
-			} else {
-				certPool, _ = utils.LoadCACertificate(SSLTrustedCA)
-			}
-		} else {
-			log.Printf("ca file %s does not exist or empty.", SSLTrustedCA)
-			panic(err)
-		}
-	}
+	clientCert := utils.LoadCertificatePair(SSLClientCertificateFile, SSLClientCertificateKeyFile)
+	// load server CA
+	caCert, _ := utils.LoadCA(SSLTrustedCA)
 
 	return &tls.Config{
-		RootCAs:      certPool,
-		Certificates: []tls.Certificate{cert},
+		RootCAs:            caCert,
+		InsecureSkipVerify: (caCert == nil),
+		Certificates:       []tls.Certificate{clientCert},
 	}
 }
 

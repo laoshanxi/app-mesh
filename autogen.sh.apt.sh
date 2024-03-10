@@ -45,31 +45,7 @@ apt install -y libcrypto++-dev
 apt install -y libcurlpp-dev
 
 # build ACE
-# apt install -y libace-dev libace-ssl-dev
-if [ true ]; then
-	# https://www.cnblogs.com/tanzi-888/p/5342431.html
-	# http://download.dre.vanderbilt.edu/
-	# https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#aceinstall
-	if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
-		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
-		tar zxvf ACE-6.5.16.tar.gz > /dev/null
-	else
-		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
-		tar zxvf ACE-7.1.2.tar.gz > /dev/null
-	fi
-	cd ACE_wrappers
-	export ACE_ROOT=$(pwd)
-	cp ace/config-linux.h ace/config.h
-	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
-	cd ${ACE_ROOT}/ace
-	make ssl=1 -j6
-	make install ssl=1 INSTALL_PREFIX=/usr/local
-	cd ${ACE_ROOT}/protocols/ace
-	make ssl=1 -j6
-	make install ssl=1 INSTALL_PREFIX=/usr/local
-	ls -al /usr/local/lib*/libACE.so
-fi
-cd $ROOTDIR
+apt install -y libace-dev libace-ssl-dev
 
 # json
 wget https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip

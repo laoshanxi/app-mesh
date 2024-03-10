@@ -28,8 +28,6 @@ target_link_libraries(appsvc
     consul
     common
     client
-    ACE_INet
-    ACE_INet_SSL
 )
 
 ##########################################################################
