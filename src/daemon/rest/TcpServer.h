@@ -18,6 +18,10 @@
 //     clients using the notification mechanisms in the
 //     <ACE_Reactor>.  In addition, it also illustrates how to
 //     utilize the <ACE_Reactor> timer mechanisms, as well.
+//
+//     Note: the construction function of ACE_SSL_SOCK_Stream can used to specify a ACE_SSL_Context
+//       Define a new ACE_SSL_SOCK_Stream if you want to change the global ACE_SSL_Context
+//       ACE_SSL_SOCK_Stream (ACE_SSL_Context *context = ACE_SSL_Context::instance ());
 class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_NULL_SYNCH>
 {
 public:
@@ -49,7 +53,7 @@ protected:
 
 public:
 	static bool replyTcp(int tcpHandlerId, const Response &resp);
-	static void initTcpSSL();
+	static ACE_SSL_Context *initTcpSSL(ACE_SSL_Context *context);
 
 private:
 	std::string m_clientHostName;

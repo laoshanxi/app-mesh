@@ -7,6 +7,7 @@
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
 #include <ace/Reactor.h>
+#include <ace/SSL/SSL_Context.h>
 #include <ace/SSL/SSL_SOCK_Acceptor.h>
 #include <boost/filesystem.hpp>
 
@@ -106,7 +107,7 @@ int main(int argc, char *argv[])
 		TcpAcceptor acceptor; // Acceptor factory.
 		if (config->getRestEnabled())
 		{
-			TcpHandler::initTcpSSL();
+			TcpHandler::initTcpSSL(ACE_SSL_Context::instance());
 			// thread for TCP reactor
 			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, ACE_Reactor::instance())));
 			// threads for REST service pool

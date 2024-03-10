@@ -238,7 +238,8 @@ public:
 #define JSON_KEY_PosixTimezone "PosixTimezone"
 
 #define JSON_KEY_SSL "SSL"
-#define JSON_KEY_SSLVerifyPeer "VerifyPeer"
+#define JSON_KEY_SSLVerifyServer "VerifyServer"
+#define JSON_KEY_SSLVerifyClient "VerifyClient"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"
 #define JSON_KEY_SSLClientCertificateFile "SSLClientCertificateFile"

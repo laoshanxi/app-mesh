@@ -1,20 +1,15 @@
 #!/usr/bin/env python
 import sys
 import socket
-import os
 import uuid
 
 # python3 -m pip install --upgrade appmesh
 from appmesh import appmesh_client
 
-# get host OS ip, depend on [net-tools]
-# https://stackoverflow.com/questions/31324981/how-to-access-host-port-from-docker-container
-HOST_OS_IP = os.popen(r"route -n | awk '/UG[ \t]/{print $2}'").readline().strip()
-
 APP_NAME_SHADOW = socket.gethostname()  # used as shadow native app name
 APP_NAME_MONITOR = str(uuid.uuid1())  # used as monitor app name
 
-client = appmesh_client.AppMeshClient(rest_url=f"https://{HOST_OS_IP}:6060")
+client = appmesh_client.AppMeshClient()
 # authentication
 client.login("admin", "admin123")
 

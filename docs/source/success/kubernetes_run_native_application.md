@@ -14,22 +14,11 @@ AppMesh is a native app manager, provide REST API which can used to manage appli
 
 ## Build Kubernetes Docker image for native command
 
-This Docker image `laoshanxi/appmesh_agent` is used to forward container start command to AppMesh, The image was already built and pushed to `docker.io`, you can use directly without below build process.
+This Docker image `laoshanxi/appmesh:container_agent` is used to forward container start command to AppMesh, The image was already built and pushed to `docker.io` and built by [Dockerfile](https://github.com/laoshanxi/app-mesh/tree/main/docker/Dockerfile.container_agent).
 
+## Test run native command in docker container
 ```shell
-$ tee Dockerfile <<-'EOF'
-FROM laoshanxi/appmesh:latest
-
-USER root
-RUN apt update && apt install net-tools -y
-USER appmesh
-
-ENTRYPOINT ["python3", "/opt/appmesh/bin/appmesh_arm.py"]
-EOF
-
-$ docker build --no-cache -t appmesh_agent .
-$ docker tag appmesh_agent laoshanxi/appmesh_agent
-$ docker push laoshanxi/appmesh_agent
+docker run --net=host -v /opt/appmesh/ssl/:/opt/appmesh/ssl/ laoshanxi/appmesh:container_agent docker ps
 ```
 
 ## Kubernetes job example to run cmd on host OS
@@ -49,9 +38,17 @@ spec:
     spec:
       containers:
       - name: native-cmd-test
-        image: laoshanxi/appmesh_agent
+        image: laoshanxi/appmesh:container_agent
         args: ["docker ps"]
+		volumeMounts:
+        - name: appmesh-volume
+          mountPath: /opt/appmesh/ssl
       restartPolicy: Never
+	  hostNetwork: true
+      volumes:
+      - name: appmesh-volume
+        hostPath:
+          path: /opt/appmesh/ssl
 EOF
 
 $ kubectl apply -f myjob.yml

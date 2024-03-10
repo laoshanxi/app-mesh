@@ -40,31 +40,35 @@ var (
 
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
-	// Load client certificate and key
-	clientCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateFile")
-	clientCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLClientCertificateKeyFile")
-	trustedCA, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
-	cert := utils.LoadCertificatePair(clientCert.(string), clientCertKey.(string))
+	verifyClient, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyClient")
+	verifyServer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyServer")
+	serverCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
+	serverCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
+	sslCaPath, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
 
-	// load root CA
-	var certPool *x509.CertPool
-	caCertPath := trustedCA.(string)
-	if utils.IsFileExist(caCertPath) {
-		if fileInfo, err := os.Stat(caCertPath); !os.IsNotExist(err) {
-			if fileInfo.IsDir() {
-				certPool, _ = utils.LoadCACertificates(caCertPath)
-			} else {
-				certPool, _ = utils.LoadCACertificate(caCertPath)
-			}
-		} else {
-			log.Printf("ca file %s does not exist or empty.", caCertPath)
+	// client: for internal connection, use server side certificate file for client
+	clientCA := tls.Certificate{}
+	if verifyClient.(bool) {
+		clientCA = utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))
+	}
+
+	// server
+	var serverCA *x509.CertPool
+	if verifyServer.(bool) {
+		var err error
+		serverCA, err = utils.LoadCA(sslCaPath.(string))
+		if err != nil {
 			panic(err)
 		}
 	}
 
 	conf := &tls.Config{
-		RootCAs:      certPool,
-		Certificates: []tls.Certificate{cert},
+		// verify server
+		InsecureSkipVerify: !(verifyServer.(bool)),
+		RootCAs:            serverCA,
+
+		// verify client
+		Certificates: []tls.Certificate{clientCA},
 	}
 	return tls.Dial("tcp", tcpAddr, conf)
 }
@@ -241,14 +245,30 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 }
 
 func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
-	verifyPeer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyPeer")
+	verifyClient, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyClient")
+	verifyServer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyServer")
 	serverCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
 	serverCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
+	sslCaPath, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
+
+	// Load server certificate and key
+	serverCA := utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))
+	// client
+	clientAuth := tls.NoClientCert
+	var clientCA *x509.CertPool
+	if verifyClient.(bool) {
+		clientAuth = tls.RequireAndVerifyClientCert
+		var err error
+		clientCA, err = utils.LoadCA(sslCaPath.(string))
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	conf := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
-		InsecureSkipVerify:       !(verifyPeer.(bool)), // Set to false to enable peer verification
-		Certificates:             []tls.Certificate{utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))},
+		InsecureSkipVerify:       !(verifyServer.(bool)), // whether a client verifies the server's certificate chain
+		Certificates:             []tls.Certificate{serverCA},
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
@@ -261,6 +281,10 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 			tls.TLS_AES_256_GCM_SHA384,
 			tls.TLS_CHACHA20_POLY1305_SHA256,
 		},
+
+		// Set clients to authenticate
+		ClientAuth: clientAuth,
+		ClientCAs:  clientCA,
 	}
 
 	// start listen

@@ -22,7 +22,8 @@ public:
 	{
 		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
 		nlohmann::json AsJson() const;
-		bool m_sslVerifyPeer;
+		bool m_sslVerifyServer;
+		bool m_sslVerifyClient;
 		std::string m_certFile;
 		std::string m_certKeyFile;
 		std::string m_clientCertFile;
@@ -125,7 +126,7 @@ public:
 	const std::string getDefaultExecUser() const;
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
-	bool getSslVerifyPeer() const;
+	bool getSslVerifyClient() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;

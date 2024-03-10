@@ -15,7 +15,8 @@
 		"DockerProxyListenAddr": "",
 		"HttpThreadPoolSize": 3,
 		"SSL": {
-			"VerifyPeer": false,
+			"VerifyServer": true,
+			"VerifyClient": false,
 			"SSLCertificateFile": "/opt/appmesh/ssl/server.pem",
 			"SSLCertificateKeyFile": "/opt/appmesh/ssl/server-key.pem",
 			"SSLClientCertificateFile": "/opt/appmesh/ssl/client.pem",

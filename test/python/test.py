@@ -13,7 +13,7 @@ source_code_root_dir = os.path.dirname(os.path.dirname(current_directory))
 sys.path.append(os.path.join(source_code_root_dir, "src/sdk/python/appmesh"))
 import appmesh_client
 
-client = appmesh_client.AppMeshClientTCP()
+client = appmesh_client.AppMeshClient()
 # authentication
 token = client.login("admin", "admin123")
 

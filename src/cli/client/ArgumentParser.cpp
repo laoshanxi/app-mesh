@@ -2058,7 +2058,8 @@ const std::string ArgumentParser::getAppMeshUrl()
 			{
 				auto ssl = rest.at(JSON_KEY_SSL);
 				ClientSSLConfig config;
-				config.m_verify_peer = GET_JSON_BOOL_VALUE(ssl, JSON_KEY_SSLVerifyPeer);
+				config.m_verify_client = GET_JSON_BOOL_VALUE(ssl, JSON_KEY_SSLVerifyClient);
+				config.m_verify_server = GET_JSON_BOOL_VALUE(ssl, JSON_KEY_SSLVerifyServer);
 				config.m_certificate = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLClientCertificateFile);
 				config.m_private_key = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLClientCertificateKeyFile);
 				config.m_ca_location = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLCaPath);

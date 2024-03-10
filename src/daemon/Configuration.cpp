@@ -342,10 +342,10 @@ const std::string Configuration::getWorkDir() const
 		return (fs::path(Utility::getParentDir()) / "work").string();
 }
 
-bool Configuration::getSslVerifyPeer() const
+bool Configuration::getSslVerifyClient() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_ssl->m_sslVerifyPeer;
+	return m_rest->m_ssl->m_sslVerifyClient;
 }
 
 std::string Configuration::getSSLCertificateFile() const
@@ -639,8 +639,10 @@ void Configuration::hotUpdate(const nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_clientCertKeyFile, newConfig->m_rest->m_ssl->m_clientCertKeyFile);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLCaPath))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslCaPath, newConfig->m_rest->m_ssl->m_sslCaPath);
-				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyPeer))
-					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyPeer, newConfig->m_rest->m_ssl->m_sslVerifyPeer);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyServer))
+					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyServer, newConfig->m_rest->m_ssl->m_sslVerifyServer);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyClient))
+					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyClient, newConfig->m_rest->m_ssl->m_sslVerifyClient);
 			}
 
 			// JWT
@@ -898,7 +900,8 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 {
 	const static char fname[] = "Configuration::JsonSsl::FromJson() ";
 	auto ssl = std::make_shared<JsonSsl>();
-	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyPeer, ssl->m_sslVerifyPeer);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServer, ssl->m_sslVerifyServer);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyClient, ssl->m_sslVerifyClient);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
 	ssl->m_clientCertFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLClientCertificateFile);
@@ -925,7 +928,8 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 nlohmann::json Configuration::JsonSsl::AsJson() const
 {
 	auto result = nlohmann::json::object();
-	result[JSON_KEY_SSLVerifyPeer] = (m_sslVerifyPeer);
+	result[JSON_KEY_SSLVerifyServer] = (m_sslVerifyServer);
+	result[JSON_KEY_SSLVerifyClient] = (m_sslVerifyClient);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
 	result[JSON_KEY_SSLCertificateKeyFile] = std::string(m_certKeyFile);
 	result[JSON_KEY_SSLClientCertificateFile] = std::string(m_clientCertFile);
@@ -935,7 +939,7 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 }
 
 Configuration::JsonSsl::JsonSsl()
-	: m_sslVerifyPeer(false)
+	: m_sslVerifyServer(false), m_sslVerifyClient(false)
 {
 }
 
