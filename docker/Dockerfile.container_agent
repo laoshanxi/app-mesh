@@ -1,4 +1,4 @@
-FROM python:3.10-slim AS BUILD_STAGE
+FROM python:3.12-slim AS BUILD_STAGE
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -19,7 +19,7 @@ RUN python -m venv /opt/venv \
 
 
 
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
