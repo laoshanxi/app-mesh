@@ -10,48 +10,48 @@ export PROG=bin/appsvc
 export PROGC=bin/appc
 
 log() {
-	logger "$(date --rfc-3339=seconds): $@"
-	echo "$(date --rfc-3339=seconds): $@"
+	local timestamp
+	timestamp=$(date --rfc-3339=seconds)
+	logger "$timestamp: $@"
+	echo "$timestamp: $@"
 }
 
-cd ${PROG_HOME}
+cd "${PROG_HOME}" || {
+	log "Failed to change directory to ${PROG_HOME}"
+	exit 1
+}
 
 SCRIPT_PID="$$"
 export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 
 pre_start_app() {
 	if [[ $# -gt 0 ]]; then
-		log "wait for app mesh service ready"
-		until [ $(curl -sL -k -w "%{http_code}" -o /dev/null https://localhost:6060/) -eq 200 ]; do sleep 0.25; done
-		${PROG_HOME}/${PROGC} logon -u admin -x admin123 -o ""
-		log "remove default ping app for container"
-		${PROG_HOME}/${PROGC} unreg -n ping -f || true
-		if [ $1 = "appc" ]; then
-			# if arguments start with appc, then just run this native command and ignore appc
+		if [ "$1" = "appc" ]; then
+			# If arguments start with appc, then just run this native command and ignore appc
 			shift
-			log "run native cmd: $@"
-			/bin/sh -c "$@"
+			log "Running native command: $*"
+			/bin/sh -c 'echo "$*"'
 		else
-			# if arguments start with command, then reg as long running application
-			${PROG_HOME}/${PROGC} reg -n start_app -c "$*" -f
-			log "appc reg -n start_app -c $* -f"
+			# If arguments start with command, then register as a long-running application
+			cat <<EOF >/opt/appmesh/apps/start_app.json
+{
+    "name": "start_app",
+    "command": "$*"
+}
+EOF
 		fi
 	fi
 }
 
-FIRST_START="true"
+pre_start_app "$@"
+
 while true; do
 	PID=$(tr -d '\0' </var/run/appmesh.pid)
-	PID_EXIST=$(ps aux | awk '{print $2}' | grep -w $PID)
-	CMD_EXIST=$(ps aux | awk '{print $11}' | grep -w ${PROG_HOME}/${PROG})
+	PID_EXIST=$(ps aux | awk '{print $2}' | grep -w "$PID")
+	CMD_EXIST=$(ps aux | awk '{print $11}' | grep -w "${PROG_HOME}/${PROG}")
 	if [[ ! $PID_EXIST ]] && [[ ! $CMD_EXIST ]]; then
-		nohup ${PROG_HOME}/${PROG} &
-		log "Starting App Mesh service, FIRST_START=$FIRST_START"
-		if [ "$FIRST_START" == "true" ]; then
-			log "Check pre-start application"
-			pre_start_app $*
-			FIRST_START="false"
-		fi
+		nohup "${PROG_HOME}/${PROG}" &
+		log "Starting App Mesh service"
 	fi
 	sleep 1
 done
