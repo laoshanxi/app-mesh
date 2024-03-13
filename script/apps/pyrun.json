@@ -1,11 +1,11 @@
 {
-	"name": "pyrun",
-	"description": "execute Python string script from metadata input",
-	"command": "python3 /opt/appmesh/bin/py_exec.py",
-	"owner": "mesh",
-	"status": 0,
-	"permission": 12,
-	"behavior": {
-		"exit": "standby"
-	}
+  "name": "pyrun",
+  "description": "execute Python string script from metadata input",
+  "command": "python3 /opt/appmesh/bin/py_exec.py",
+  "owner": "mesh",
+  "status": 0,
+  "permission": 12,
+  "behavior": {
+    "exit": "standby"
+  }
 }

@@ -1,4 +1,4 @@
-name: "Build image for ubuntu22"
+name: "build image ubuntu22"
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - ".github/workflows/docker_build/build-ubuntu-22.yml"
       - "docker/Dockerfile.build_ubuntu22"
       - "autogen.sh*"
+      - "script/openssl_update.sh"
       - "go.*"
 
 env:

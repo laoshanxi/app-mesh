@@ -6,7 +6,7 @@ on:
     paths:
       - "src/**"
       - "script/**"
-      - ".github/workflows/publish-github-release.yml"
+      - .github/workflows/github-release.yml
   #workflow_run:
   #  workflows: ["Build image for ubuntu20"]
   #  types:
@@ -65,7 +65,7 @@ jobs:
       - name: build with ubuntu22
         run: |
           BUILD_DIR=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/bash --login -c "mkdir ubuntu22_$BUILD_DIR; cd ubuntu22_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu22 /bin/bash --login -c "mkdir ubuntu22_$BUILD_DIR; cd ubuntu22_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: Generate SBOM
         run: |
@@ -84,19 +84,19 @@ jobs:
         run: |
           if [ "${{ matrix.arch }}" == "amd64" ]; then
             BUILD_DIR=${{ matrix.arch }}
-            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20 /bin/bash --login -c "mkdir ubuntu20_$BUILD_DIR; cd ubuntu20_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu20 /bin/bash --login -c "mkdir ubuntu20_$BUILD_DIR; cd ubuntu20_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j4; make pack; ls; make test ARGS='-V'"
           fi
 
       - name: build with ubuntu18
         run: |
           BUILD_DIR=${{ matrix.arch }}
-          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/bash --login -c "mkdir ubuntu18_$BUILD_DIR; cd ubuntu18_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+          docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu18 /bin/bash --login -c "mkdir ubuntu18_$BUILD_DIR; cd ubuntu18_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j4; make pack; ls; make test ARGS='-V'"
 
       - name: build with centos7
         run: |
           if [ "${{ matrix.arch }}" == "amd64" ]; then
             BUILD_DIR=${{ matrix.arch }}
-            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_centos7 /bin/bash --login -c "mkdir centos7_$BUILD_DIR; cd centos7_$BUILD_DIR; cmake ..; make -j4; make pack; ls; make test ARGS='-V'"
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_centos7 /bin/bash --login -c "mkdir centos7_$BUILD_DIR; cd centos7_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j4; make pack; ls; make test ARGS='-V'"
           fi
 
       - name: Upload packages
@@ -130,7 +130,7 @@ jobs:
           echo "1. Object design for Python SDK" >> CHANGELOG.txt
           echo "2. CentOS7 compatible" >> CHANGELOG.txt
           echo "3. SSL for all connections" >> CHANGELOG.txt
-          echo "4. GPG sign packages (rpm --import gpg_public.key)" >> CHANGELOG.txt
+          echo "4. GPG sign packages (rpm/dpkg --import gpg_public.key)" >> CHANGELOG.txt
           echo "5. Generate SBOM file" >> CHANGELOG.txt
           ls -R
 

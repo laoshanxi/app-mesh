@@ -107,10 +107,7 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
-cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
-
 # clean
-rm -rf ${ROOTDIR}
 go clean -cache
 go clean -fuzzcache
 go clean --modcache
@@ -120,3 +117,6 @@ if [ -f "/usr/bin/yum" ]; then
 else
 	apt-get clean
 fi
+
+cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
+rm -rf ${ROOTDIR}

@@ -6,7 +6,7 @@
 
 #include "DockerProcess.h"
 
-class CurlResponse;
+struct CurlResponse;
 
 /// <summary>
 /// Docker API Object

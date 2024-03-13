@@ -1,4 +1,4 @@
-name: "Publish AppMesh image to docker.io"
+name: "AppMesh image"
 
 on:
   push:
@@ -6,10 +6,10 @@ on:
       - main
     paths:
       - Dockerfile
-      - .github/workflows/build-push-appmesh-image.yml
-  # trigger when the workflow "Publish Github release" succeeded
+      - .github/workflows/appmesh-image.yml
+  # trigger when the workflow "Github release" succeeded
   workflow_run:
-    workflows: ["Publish Github release"]
+    workflows: ["Github release"]
     types:
       - completed
 
@@ -81,3 +81,13 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.APPMESH_VERSION }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Test
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          shell: bash
+          run: |
+            /appmesh-entrypoint.sh &
+            sleep 5
+            appc ls

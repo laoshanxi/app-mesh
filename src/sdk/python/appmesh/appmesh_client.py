@@ -278,8 +278,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def __init__(
         self,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify=_SSL_CA_PEM_FILE,
-        rest_ssl_client_cert=(_SSL_CLIENT_PEM_FILE, _SSL_CLIENT_PEM_KEY_FILE),
+        rest_ssl_verify=_SSL_CA_PEM_FILE if os.path.exists(_SSL_CA_PEM_FILE) else False,
+        rest_ssl_client_cert=(_SSL_CLIENT_PEM_FILE, _SSL_CLIENT_PEM_KEY_FILE) if os.path.exists(_SSL_CLIENT_PEM_FILE) else None,
         rest_timeout=(60, 300),
         jwt_token=None,
     ):
@@ -287,8 +287,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         Args:
             rest_url (str, optional): server URI string.
-            rest_ssl_verify (str, optional): SSL CA certification path for verification, True for use system's default certificate store, False to disable SSL verification.
-            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair, None to disable client verification
+            rest_ssl_verify (str, optional): (optional) SSL CA certification. Either a boolean, in which case it controls whether we verify
+                the server's TLS certificate, or a string, in which case it must be a path to a CA bundle to use. Defaults to ``True``.
+            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair. If String, path to ssl client cert file (.pem). If Tuple, ('cert', 'key') pair.
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
             jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
         """
@@ -1141,16 +1142,17 @@ class AppMeshClientTCP(AppMeshClient):
 
     def __init__(
         self,
-        rest_ssl_verify=_SSL_CA_PEM_FILE,
-        rest_ssl_client_cert=(_SSL_CLIENT_PEM_FILE, _SSL_CLIENT_PEM_KEY_FILE),
+        rest_ssl_verify=_SSL_CA_PEM_FILE if os.path.exists(_SSL_CA_PEM_FILE) else False,
+        rest_ssl_client_cert=(_SSL_CLIENT_PEM_FILE, _SSL_CLIENT_PEM_KEY_FILE) if os.path.exists(_SSL_CLIENT_PEM_FILE) else None,
         jwt_token=None,
         tcp_address=("localhost", 6059),
     ):
         """Construct an App Mesh client TCP object
 
         Args:
-            rest_ssl_verify (str, optional): SSL CA certification path for verification, True for use system's default certificate store, False to disable SSL verification.
-            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair, None to disable client verification
+            rest_ssl_verify (str, optional): (optional) SSL CA certification. Either a boolean, in which case it controls whether we verify
+                the server's TLS certificate, or a string, in which case it must be a path to a CA bundle to use. Defaults to ``True``.
+            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair. If String, path to ssl client cert file (.pem). If Tuple, ('cert', 'key') pair.
             jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
 
             tcp_address (tuple, optional): TCP connect address.

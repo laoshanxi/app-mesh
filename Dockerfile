@@ -1,9 +1,9 @@
 FROM laoshanxi/appmesh:build_ubuntu22 AS COMPILE_STAGE
 RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
-	cd app-mesh && mkdir build && cd build && cmake .. && make -j4 && make pack && ls
+	cd app-mesh && mkdir build && cd build && cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && make -j4 && make pack && ls
 
 
-FROM python:3.10-slim AS PYTHON_STAGE
+FROM python:3.12-slim AS PYTHON_STAGE
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir appmesh
@@ -27,7 +27,8 @@ RUN apt-get update && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
 	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
 	touch /var/run/appmesh.pid && \
-	chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid
+	chown -R appmesh:appmesh /opt/appmesh/ /var/run/appmesh.pid && \
+	. /usr/bin/appc -v && /opt/appmesh/bin/appsvc -v
 EXPOSE 6060
 USER appmesh
 WORKDIR /

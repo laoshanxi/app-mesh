@@ -1,4 +1,4 @@
-name: "docker container agent image"
+name: "container_agent image"
 
 on:
   push:
@@ -6,10 +6,9 @@ on:
       - main
     paths:
       - docker/Dockerfile.container_agent
-      - .github/workflows/build-push-appmesh-image.yml
-  # trigger when the workflow "Publish AppMesh image to docker.io" succeeded
+      - .github/workflows/container-agent.yml
   workflow_run:
-    workflows: ["PyPI python SDK release"]
+    workflows: ["PyPI SDK release"]
     types:
       - completed
 

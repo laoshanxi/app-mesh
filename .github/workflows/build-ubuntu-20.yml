@@ -1,4 +1,4 @@
-name: "Build image for ubuntu20"
+name: "build image ubuntu20"
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - ".github/workflows/docker_build/build-ubuntu-20.yml"
       - "docker/Dockerfile.build_ubuntu20"
       - "autogen.sh*"
+      - "script/openssl_update.sh"
       - "go.*"
 
 env:

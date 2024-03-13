@@ -54,6 +54,7 @@ apidoc_output_dir = "api"
 apidoc_excluded_paths = ["test"]
 apidoc_separate_modules = False
 apidoc_toc_file = False
+autoclass_content = "both"
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]

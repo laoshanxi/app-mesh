@@ -199,6 +199,7 @@ int main(int argc, char *argv[])
 	}
 
 	TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
+	TIMER_MANAGER::instance()->reactor()->close();
 	ACE_Reactor::instance()->end_reactor_event_loop();
 	TcpHandler::closeMsgQueue();
 	for (const auto &t : m_threadPool)

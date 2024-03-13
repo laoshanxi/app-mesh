@@ -1,0 +1,82 @@
+name: "CI test"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ci-test.yml
+  workflow_run:
+    workflows: ["Github release"]
+    types: [completed]
+
+env:
+  APPMESH_VERSION: "2.1.2"
+
+permissions: # added using https://github.com/step-security/secure-workflows
+  contents: read
+
+jobs:
+  ci-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
+
+      - name: test centos:7
+        uses: addnab/docker-run-action@v3
+        with:
+          image: centos:7
+          shell: bash
+          run: |
+            yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_4.8.5_glibc_2.17_x86_64.rpm
+            /opt/appmesh/script/appmesh-entrypoint.sh &
+            sleep 5
+            appc ls
+
+      - name: test ubuntu:18
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ubuntu:18.04
+          shell: bash
+          run: |
+            apt update
+            apt install -y wget iputils-ping
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_7_glibc_2.27_x86_64.deb
+            apt install -y ./appmesh_*.deb
+            /opt/appmesh/script/appmesh-entrypoint.sh &
+            sleep 5
+            appc ls
+
+      - name: test ubuntu:20
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ubuntu:20.04
+          shell: bash
+          run: |
+            apt update
+            apt install -y wget iputils-ping
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_9_glibc_2.31_x86_64.deb
+            apt install -y ./appmesh_*.deb
+            /opt/appmesh/script/appmesh-entrypoint.sh &
+            sleep 5
+            appc ls
+
+      - name: test ubuntu:22
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ubuntu:22.04
+          shell: bash
+          run: |
+            apt update
+            apt install -y wget iputils-ping
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_11_glibc_2.35_x86_64.deb
+            apt install -y ./appmesh_*.deb
+            /opt/appmesh/script/appmesh-entrypoint.sh &
+            sleep 5
+            appc ls

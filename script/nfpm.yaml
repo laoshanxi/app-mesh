@@ -57,8 +57,10 @@ overrides:
     depends:
     - psmisc
     - net-tools
-    - libldap-common
+    - libldap-dev
+# libldap-2.5-0
   rpm:
     depends:
     - psmisc
     - net-tools
+# openldap-devel

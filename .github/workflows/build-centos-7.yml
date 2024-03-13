@@ -1,4 +1,4 @@
-name: "Build image for centos7"
+name: "build image centos7"
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - ".github/workflows/docker_build/build-centos-7.yml"
       - "docker/Dockerfile.build_centos7"
       - "autogen.sh"
+      - "script/openssl_update.sh"
       - "go.*"
 
 env:

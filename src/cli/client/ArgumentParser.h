@@ -9,7 +9,7 @@
 
 #include "../../common/Utility.h"
 
-class CurlResponse;
+struct CurlResponse;
 namespace po = boost::program_options;
 class ACE_Sig_Action;
 

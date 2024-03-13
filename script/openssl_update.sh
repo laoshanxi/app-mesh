@@ -1,76 +1,52 @@
 #!/bin/sh
 ################################################################################
-## This Script file is used to update OS openssl version for
-## CentOS 7.x and Ubuntu 16.04
+## This Script file is used to build openssl for CentOS and Ubuntu to location:
+##  /usr/local/ssl/lib
+##  /usr/local/ssl/include
 ################################################################################
 set -x
-OPEN_SSL_VERSION=openssl-1.1.1k
+set -e
 
-export ROOTDIR=$(pwd)
-mkdir -p ssl_build
-cd ssl_build
+export ROOTDIR=$(pwd)/openssl.tmp
+mkdir -p ${ROOTDIR}
+cd ${ROOTDIR}
+
 if [ -f "/usr/bin/yum" ]; then
-  yum install -y openssl-devel gcc-c++ wget make perl
-  yum install -y zlib zlib-devel
+  RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
+  if [[ $RHEL_VER = "8" ]]; then
+    sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
+    sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*
+  fi
+  yum install -y gcc-c++ wget make perl-core zlib-devel
 elif [ -f "/usr/bin/apt" ]; then
   apt update
-  apt -y install wget g++ make perl
-  apt -y install zlib1g zlib1g-dev
+  apt -y install g++ wget make perl zlib1g-dev
 fi
 
-wget --no-check-certificate https://www.openssl.org/source/${OPEN_SSL_VERSION}.tar.gz
-tar zxvf ${OPEN_SSL_VERSION}.tar.gz
+OPEN_SSL_VERSION=openssl-3.0.13
+wget --quiet --no-check-certificate https://www.openssl.org/source/${OPEN_SSL_VERSION}.tar.gz
+tar zxvf ${OPEN_SSL_VERSION}.tar.gz >/dev/null
 cd ${OPEN_SSL_VERSION}
 
-./config shared zlib
-make -j6
-make install
+# https://www.openssl.org/news/cl31.txt
+# https://blog.csdn.net/weixin_42645653/article/details/121416399
+./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl --libdir=lib shared
+make -j 4 >/dev/null
+make install_sw
 
-# include files
-rm -rf /usr/include/openssl
-ln -s /usr/local/include/openssl /usr/include/openssl
-\cp /usr/local/bin/openssl /usr/bin/
+# https://blog.csdn.net/liuxin638507/article/details/132450367
+rm -f /usr/bin/openssl && ln -s /usr/local/ssl/bin/openssl /usr/bin/openssl
 
-if [ -f "/usr/bin/yum" ]; then
-  ln -s /usr/local/lib64/libssl.so.1.1 /usr/lib64/libssl.so.1.1
-  ln -s /usr/local/lib64/libcrypto.so.1.1 /usr/lib64/libcrypto.so.1.1
-elif [ -f "/usr/bin/apt" ]; then
-  \cp /usr/local/lib/libssl.* /lib/x86_64-linux-gnu/
-  \cp /usr/local/lib/libcrypto.* /lib/x86_64-linux-gnu/
-fi
+echo "/usr/local/ssl/lib" >/etc/ld.so.conf.d/openssl.conf
+ldconfig
+ldd /usr/bin/openssl
+export LD_LIBRARY_PATH=/usr/local/ssl/lib:$LD_LIBRARY_PATH
+ldd /usr/bin/openssl
+/usr/bin/openssl version -a
 
 cd ..
-rm -rf ssl_build
-
-if [ -f "/usr/bin/yum" ]; then
-  cd /usr/lib64/
-elif [ -f "/usr/bin/apt" ]; then
-  cd /lib/x86_64-linux-gnu/
-fi
-
-echo "/usr/local/ssl/lib" >>/etc/ld.so.conf
-ldconfig -v
-
-rm -f libssl.so
-ln -s libssl.so.1.1 libssl.so
-rm -f libcrypto.so
-ln -s libcrypto.so.1.1 libcrypto.so
+rm -rf ${ROOTDIR}
 
 find / -name ssl.h | xargs ls -al
 find / -name libssl.so | xargs ls -al
 find / -name libcrypto.so | xargs ls -al
-
-# https://github.com/vagrant-libvirt/vagrant-libvirt/issues/1127
-if [ -f "/usr/bin/yum" ]; then
-  RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
-  if [[ $RHEL_VER = "8" ]]; then
-    cd $ROOTDIR/ssl_build
-    wget https://vault.centos.org/8.4.2105/BaseOS/Source/SPackages/krb5-1.18.2-8.el8.src.rpm
-    rpm2cpio krb5-1.18.2-8.el8.src.rpm | cpio -imdV
-    tar xf krb5-1.18.2.tar.gz
-    cd krb5-1.18.2/src
-    ./configure
-    make -j6
-    make install
-  fi
-fi

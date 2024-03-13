@@ -1,4 +1,4 @@
-name: "PyPI python SDK release"
+name: "PyPI SDK release"
 
 on:
   push:
@@ -6,8 +6,7 @@ on:
       - main
     paths:
       - "src/sdk/python/**"
-      - ".github/workflows/python-sdk-twine-upload.yml"
-
+      - .github/workflows/pypi-sdk.yml
 permissions:
   contents: read
 

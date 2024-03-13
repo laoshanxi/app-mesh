@@ -25,6 +25,8 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+export LD_LIBRARY_PATH=/usr/local/ssl/lib:$LD_LIBRARY_PATH
+
 # install compiler and tools
 if [ -f "/usr/bin/yum" ]; then
 	#RHEL
@@ -74,8 +76,12 @@ rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 go version
 
 # check libssl in case of openssl_update.sh not executed
-if [ -f "/usr/include/openssl/ssl.h" ] || [ -f "/usr/local/include/openssl/ssl.h" ]; then
-	echo 'ssl installed'
+if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
+	echo 'openssl was alreay installed'
+	# set for appmesh cmake
+	export OPENSSL_ROOT_DIR=/usr/local/ssl
+	# set for ACE SSL: https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#sslinstall
+	export SSL_ROOT=/usr/local/ssl
 else
 	if [ -f "/usr/bin/yum" ]; then
 		yum install -y openssl-devel
@@ -104,8 +110,11 @@ export GO111MODULE=on
 
 # build static libcurl
 $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
-tar zxvf curl-8.5.0.tar.gz > /dev/null; cd curl-8.5.0
-mkdir build; cd build; cmake .. -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF; make; make install
+tar zxvf curl-8.5.0.tar.gz >/dev/null; cd curl-8.5.0
+mkdir build; cd build; 
+cmake .. -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl || cmake .. -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DCURL_USE_OPENSSL=ON
+make -j 4 >/dev/null
+make install
 ldconfig
 cd $ROOTDIR
 
@@ -114,11 +123,11 @@ if [ true ]; then
 	BOOST_VER=76
 	# https://www.boost.org/users/download/
 	$WGET_A https://cytranet.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
-	tar zxvf boost_1_${BOOST_VER}_0.tar.gz > /dev/null
+	tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
 	cd ./boost_1_${BOOST_VER}_0
-	./bootstrap.sh --without-libraries=python,mpi,test,wave,container,graph,graph_parallel
+	./bootstrap.sh --without-libraries=atomic,context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
 	./b2 -j4
-	./b2 install
+	./b2 install >/dev/null
 	ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
 fi
 cd $ROOTDIR
@@ -142,10 +151,10 @@ else
 	# yum install log4cpp -y
 	if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
 		$WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.3.tar.gz
-		tar zxvf log4cpp-1.1.3.tar.gz > /dev/null
+		tar zxvf log4cpp-1.1.3.tar.gz >/dev/null
 	else
 		$WGET_A https://jaist.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-1.1.4.tar.gz
-		tar zxvf log4cpp-1.1.4.tar.gz > /dev/null
+		tar zxvf log4cpp-1.1.4.tar.gz >/dev/null
 	fi
 	cd log4cpp/
 	./autogen.sh
@@ -163,10 +172,10 @@ if [ true ]; then
 	# https://www.dre.vanderbilt.edu/~schmidt/DOC_ROOT/ACE/ACE-INSTALL.html#aceinstall
 	if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
 		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-6_5_16/ACE-6.5.16.tar.gz
-		tar zxvf ACE-6.5.16.tar.gz > /dev/null
+		tar zxvf ACE-6.5.16.tar.gz >/dev/null
 	else
 		$WGET_A https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz
-		tar zxvf ACE-7.1.2.tar.gz > /dev/null
+		tar zxvf ACE-7.1.2.tar.gz >/dev/null
 	fi
 	cd ACE_wrappers
 	export ACE_ROOT=$(pwd)
@@ -175,9 +184,9 @@ if [ true ]; then
 	cd ${ACE_ROOT}/ace
 	make ssl=1 -j6
 	make install ssl=1 INSTALL_PREFIX=/usr/local
-	cd ${ACE_ROOT}/protocols/ace
-	make ssl=1 -j6
-	make install ssl=1 INSTALL_PREFIX=/usr/local
+	# cd ${ACE_ROOT}/protocols/ace
+	# make ssl=1 -j6
+	# make install ssl=1 INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
 fi
 cd $ROOTDIR
@@ -188,7 +197,7 @@ cd cryptopp/
 $WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_9_0/cryptopp890.zip
 unzip -o cryptopp890.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
-make -j6
+make -j 4
 make install
 
 cd $ROOTDIR
@@ -246,9 +255,8 @@ if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
 fi
 make; make install
 ldconfig
-cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
 
-rm -rf ${ROOTDIR}
+# clean
 go clean -cache
 go clean -fuzzcache
 go clean --modcache
@@ -258,6 +266,9 @@ if [ -f "/usr/bin/yum" ]; then
 else
 	apt-get clean
 fi
+
+cd $SRC_DIR; mkdir -p b; cd b; cmake ..; make agent
+rm -rf ${ROOTDIR}
 # memoty test tool
 # https://docs.microsoft.com/en-us/cpp/linux/linux-asan-configuration?view=msvc-170#install-the-asan-debug-symbols
 #asanversion="0"

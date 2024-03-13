@@ -1,4 +1,4 @@
-name: "Build image for ubuntu"
+name: "build image ubuntu"
 
 on:
   schedule:

@@ -1,64 +1,53 @@
 {
-	"Uri": "ldap://127.0.0.1:389",
-	"LoginDN": "cn=admin,dc=example,dc=org",
-	"LoginPWD": "QVBQX2FkbWluX01FU0g=",
-	"SyncPeriodSeconds": 3600,
-	"Roles": {
-		"manage": [
-			"app-control",
-			"app-delete",
-			"cloud-app-reg",
-			"cloud-app-delete",
-			"app-reg",
-			"config-set",
-			"file-download",
-			"file-upload",
-			"label-delete",
-			"label-set"
-		],
-		"usermgr": [
-			"user-add",
-			"passwd-change-user",
-			"user-delete",
-			"user-lock",
-			"role-delete",
-			"role-set",
-			"user-unlock"
-		],
-		"shell": [
-			"app-run-async",
-			"app-run-sync"
-		],
-		"view": [
-			"config-view",
-			"label-view",
-			"role-view",
-			"user-list",
-			"permission-list",
-			"app-view-all",
-			"cloud-app-view",
-			"cloud-host-view",
-			"app-view",
-			"app-output-view",
-			"host-resource-view"
-		]
-	},
-	"Groups": {
-		"admin": {
-			"BindDN": "cn={USER},ou=users,dc=example,dc=org",
-			"roles": [
-				"manage",
-				"view",
-				"shell",
-				"usermgr"
-			]
-		},
-		"mesh": {
-			"BindDN": "cn={USER},ou=users,dc=example,dc=org",
-			"roles": [
-				"view",
-				"shell"
-			]
-		}
-	}
+  "Uri": "ldap://127.0.0.1:389",
+  "LoginDN": "cn=admin,dc=example,dc=org",
+  "LoginPWD": "QVBQX2FkbWluX01FU0g=",
+  "SyncPeriodSeconds": 3600,
+  "Roles": {
+    "manage": [
+      "app-control",
+      "app-delete",
+      "cloud-app-reg",
+      "cloud-app-delete",
+      "app-reg",
+      "config-set",
+      "file-download",
+      "file-upload",
+      "label-delete",
+      "label-set"
+    ],
+    "usermgr": [
+      "user-add",
+      "passwd-change-user",
+      "user-delete",
+      "user-lock",
+      "role-delete",
+      "role-set",
+      "user-unlock"
+    ],
+    "shell": ["app-run-async", "app-run-sync"],
+    "view": [
+      "config-view",
+      "label-view",
+      "role-view",
+      "user-list",
+      "permission-list",
+      "app-view-all",
+      "cloud-app-view",
+      "cloud-host-view",
+      "app-view",
+      "app-output-view",
+      "host-resource-view"
+    ]
+  },
+  "Groups": {
+    "admin": {
+      "BindDN": "cn={USER},ou=users,dc=example,dc=org",
+      "roles": ["manage", "view", "shell", "usermgr"]
+    },
+    "mesh": {
+      "BindDN": "cn={USER},ou=users,dc=example,dc=org",
+      "roles": ["view", "shell"]
+    }
+  }
 }

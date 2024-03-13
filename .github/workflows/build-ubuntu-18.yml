@@ -1,4 +1,4 @@
-name: "Build image for ubuntu18"
+name: "build image ubuntu18"
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - ".github/workflows/docker_build/build-ubuntu-18.yml"
       - "docker/Dockerfile.build_ubuntu18"
       - "autogen.sh*"
+      - "script/openssl_update.sh"
       - "go.*"
 
 env:

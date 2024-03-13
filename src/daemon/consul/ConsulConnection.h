@@ -14,7 +14,7 @@
 #include "../Label.h"
 #include "ConsulEntity.h"
 
-class CurlResponse;
+struct CurlResponse;
 
 /// <summary>
 /// Connect to Consul service
