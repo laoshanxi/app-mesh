@@ -3,7 +3,7 @@ RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
 	cd app-mesh && mkdir build && cd build && cmake .. && make -j4 && make pack && ls
 
 
-FROM python:3.10-slim AS PYTHON_STAGE
+FROM python:3.12-slim AS PYTHON_STAGE
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir appmesh
