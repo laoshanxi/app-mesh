@@ -12,6 +12,7 @@
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
 #include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>
 namespace fs = boost::filesystem;
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
@@ -170,6 +171,9 @@ public:
 	static std::string strTolower(std::string s);
 	static std::string htmlEntitiesDecode(const std::string &str);
 	static std::vector<std::string> str2argv(const std::string &commandLine);
+	static bool containsSpecialCharacters(const std::string &str);
+	static std::string jsonToYaml(const nlohmann::json &j, YAML::Emitter &out, int indent = 0);
+	static nlohmann::json yamlToJson(const YAML::Node &node);
 
 	static void initLogging(const std::string &name);
 	static bool setLogLevel(const std::string &level);

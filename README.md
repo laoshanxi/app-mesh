@@ -101,10 +101,11 @@ to install App Mesh via docker-compose or native way and setup App Mesh cluster.
 
 - [MessagePack](https://msgpack.org/)
 - [boostorg/boost](https://github.com/boostorg/boost)
-- [DOCGroup/ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
+- [ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
 - [curlpp](https://github.com/jpbarrette/curlpp)
 - [Thalhammer/jwt-cpp](https://github.com/Thalhammer/jwt-cpp)
 - [nlohmann/json](https://json.nlohmann.me)
+- [yaml-cpp](https://github.com/jbeder/yaml-cpp)
 - [nfpm](https://github.com/goreleaser/nfpm)
 - [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
 - [zemasoft/wildcards](https://github.com/zemasoft/wildcards)

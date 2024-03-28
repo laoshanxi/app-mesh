@@ -107,6 +107,10 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
 
+cd $ROOTDIR
+git clone --depth=1 https://github.com/jbeder/yaml-cpp.git
+cd yaml-cpp/; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=ON ..; make && make install
+
 # clean
 go clean -cache
 go clean -fuzzcache

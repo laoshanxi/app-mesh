@@ -918,6 +918,161 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 	return boost::program_options::split_unix(commandLine);
 }
 
+bool Utility::containsSpecialCharacters(const std::string &str)
+{
+	for (char c : str)
+	{
+		// Check for common special characters and escape sequences
+		if (c == '\n' || c == '\t' || c == '\\' || c == '\"' || c == '\b' || c == '\f' || c == '\r' || c == ',')
+		{
+			return true;
+		}
+	}
+	// Check for UTF-8 non-printable characters
+	for (char c : str)
+	{
+		if ((unsigned char)c < 32 || (unsigned char)c == 127)
+		{
+			return true;
+		}
+	}
+	// Check for control characters
+	for (char c : str)
+	{
+		if ((unsigned char)c >= 0 && (unsigned char)c <= 31)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+std::string Utility::jsonToYaml(const nlohmann::json &j, YAML::Emitter &out, int indent)
+{
+	if (j.is_object())
+	{
+		out << YAML::BeginMap;
+		for (auto it = j.begin(); it != j.end(); ++it)
+		{
+			out << YAML::Key << it.key();
+			jsonToYaml(it.value(), out, indent + 1);
+		}
+		out << YAML::EndMap;
+	}
+	else if (j.is_array())
+	{
+		out << YAML::BeginSeq;
+		for (const auto &element : j)
+		{
+			jsonToYaml(element, out, indent + 1);
+		}
+		out << YAML::EndSeq;
+	}
+	else if (j.is_boolean())
+	{
+		out << j.get<bool>();
+	}
+	else if (j.is_number())
+	{
+		out << j.get<double>();
+	}
+	else
+	{
+		// String
+		std::string str = j.get<std::string>();
+		if (containsSpecialCharacters(str))
+			out << YAML::Literal << str;
+		else
+			out << str;
+	}
+	return out.c_str(); // Return the YAML string
+}
+
+nlohmann::json Utility::yamlToJson(const YAML::Node &node)
+{
+	nlohmann::json result;
+
+	if (node.IsMap())
+	{
+		for (const auto &pair : node)
+		{
+			// Check if the value is a boolean
+			if (pair.second.IsScalar() && pair.second.Scalar() == "true")
+			{
+				result[pair.first.as<std::string>()] = true;
+			}
+			else if (pair.second.IsScalar() && pair.second.Scalar() == "false")
+			{
+				result[pair.first.as<std::string>()] = false;
+			}
+			else if (pair.second.IsScalar() && pair.second.Scalar() == "null")
+			{
+				result[pair.first.as<std::string>()] = nullptr;
+			}
+			else if (pair.second.IsScalar() && std::isdigit(pair.second.Scalar()[0]))
+			{
+				// Check if the value is a number
+				if (pair.second.Scalar().find('.') != std::string::npos)
+				{
+					result[pair.first.as<std::string>()] = std::stod(pair.second.Scalar());
+				}
+				else
+				{
+					result[pair.first.as<std::string>()] = std::stoi(pair.second.Scalar());
+				}
+			}
+			else
+			{
+				// Recursively convert the value
+				result[pair.first.as<std::string>()] = yamlToJson(pair.second);
+			}
+		}
+	}
+	else if (node.IsSequence())
+	{
+		for (const auto &element : node)
+		{
+			// Recursively convert each element
+			result.push_back(yamlToJson(element));
+		}
+	}
+	else if (node.IsScalar())
+	{
+		// Handle scalar values
+		if (node.Scalar() == "true")
+		{
+			result = true;
+		}
+		else if (node.Scalar() == "false")
+		{
+			result = false;
+		}
+		else if (node.Scalar() == "null")
+		{
+			result = nullptr;
+		}
+		else if (std::isdigit(node.Scalar()[0]))
+		{
+			// Check if the scalar value is a number
+			if (node.Scalar().find('.') != std::string::npos)
+			{
+				result = std::stod(node.Scalar());
+			}
+			else
+			{
+				result = std::stoi(node.Scalar());
+			}
+		}
+		else
+		{
+			// If it's not a boolean or a number, treat it as a string
+			result = node.as<std::string>();
+		}
+	}
+
+	return result;
+}
+
 const std::string Utility::readStdin2End()
 {
 	std::stringstream ss;
