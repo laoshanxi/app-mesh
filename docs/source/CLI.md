@@ -9,7 +9,7 @@ Commands:
   logoff      Clear current login user information
   loginfo     Print current logon user
 
-  list        List application[s]
+  view        View application[s]
   add         Add a new application
   rm          Remove an application
   enable      Enable a application
@@ -34,9 +34,10 @@ Commands:
   passwd      Change user password
   lock        Lock/Unlock a user
   user        View user
+  mfa         Two-factor authentication
 
 Run 'appc COMMAND --help' for more information on a command.
-Use '-b $hostname','-B $port' to run remote command.
+Use '-b $server_url' to connect remote. e.g https://127.0.0.1:6060
 
 Usage:  appc [COMMAND] [ARG...] [flags]
 ```

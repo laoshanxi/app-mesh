@@ -47,6 +47,9 @@ apt install -y libcurlpp-dev
 # build ACE
 apt install -y libace-dev libace-ssl-dev
 
+# yaml-cpp
+apt install -y libyaml-cpp-dev
+
 # json
 wget https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip
 unzip -o include.zip
@@ -68,7 +71,6 @@ export GO111MODULE=on
 #export GOPROXY=https://goproxy.io,direct
 # go binaries
 export GOBIN=/usr/local/bin
-go install github.com/laoshanxi/qrc/cmd/qrc@latest
 go install github.com/cloudflare/cfssl/cmd/cfssl@latest
 go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
@@ -106,6 +108,9 @@ cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
 
 git clone --depth=1 https://github.com/AndreyBarmaley/ldap-cpp.git
 cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make install
+
+git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
+cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp libqrcodegencpp.a /usr/local/lib/
 
 # clean
 go clean -cache

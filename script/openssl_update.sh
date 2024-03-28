@@ -31,7 +31,7 @@ cd ${OPEN_SSL_VERSION}
 # https://www.openssl.org/news/cl31.txt
 # https://blog.csdn.net/weixin_42645653/article/details/121416399
 ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl --libdir=lib shared
-make -j 4 >/dev/null
+make -j 3 >/dev/null
 make install_sw
 
 # https://blog.csdn.net/liuxin638507/article/details/132450367

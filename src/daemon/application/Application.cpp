@@ -239,9 +239,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	}
 	else if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_start_interval_seconds))
 	{
-		// for periodic run, set default startTime to now in case of no specified
-		const auto startTime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-		app->m_startTime = std::chrono::system_clock::from_time_t(startTime);
+		// for periodic run, set default startTime to now if not specified
+		app->m_startTime = std::chrono::system_clock::now() + std::chrono::seconds(1);
 	}
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_SHORT_APP_end_time))
 	{
@@ -488,7 +487,7 @@ void Application::spawn()
 	if (this->isEnabled() && m_startInterval > 0)
 	{
 		// note: timer lock can hold app lock, app lock should not hold timer lock
-		this->scheduleNext(std::chrono::system_clock::now());
+		this->scheduleNext();
 	}
 
 	// 5. registerCheckStdoutTimer() outside of m_appMutex
@@ -1010,7 +1009,6 @@ std::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext
 {
 	const static char fname[] = "Application::scheduleNext() ";
 
-	now += std::chrono::seconds(1); // adjust the parse input which does not contain seconds/milliseconds
 	long timerId = INVALID_TIMER_ID;
 	auto next = m_timer->nextTime(now);
 

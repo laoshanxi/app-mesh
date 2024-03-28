@@ -8,8 +8,8 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
-#include <nlohmann/json.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
@@ -260,6 +260,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << "  passwd      Change user password" << std::endl;
 	std::cout << "  lock        Lock/Unlock a user" << std::endl;
 	std::cout << "  user        View user" << std::endl;
+	std::cout << "  mfa         Two-factor authentication" << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
@@ -424,14 +425,27 @@ void ArgumentParser::processAppAdd()
 			return;
 		}
 	}
+	bool isJsonFormat = true;
 	nlohmann::json jsonObj;
 	if (m_commandLineVariables.count("stdin"))
 	{
-		auto inputJson = m_commandLineVariables["stdin"].as<std::string>();
+		const auto inputJson = m_commandLineVariables["stdin"].as<std::string>();
+		std::string inputContent;
 		if (inputJson == "std")
-			jsonObj = nlohmann::json::parse(Utility::readStdin2End());
+			inputContent = Utility::readStdin2End();
 		else
-			jsonObj = nlohmann::json::parse(Utility::readFileCpp(inputJson));
+			inputContent = Utility::readFileCpp(inputJson);
+		try
+		{
+			// try parse json
+			jsonObj = nlohmann::json::parse(inputContent);
+		}
+		catch (...)
+		{
+			// try parse yaml
+			jsonObj = Utility::yamlToJson(YAML::Load(inputContent));
+			isJsonFormat = false;
+		}
 	}
 
 	std::string appName;
@@ -630,7 +644,15 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_pid] = (m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + appName;
 	auto resp = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
-	std::cout << Utility::prettyJson(resp->text) << std::endl;
+	if (isJsonFormat)
+	{
+		std::cout << Utility::prettyJson(resp->text) << std::endl;
+	}
+	else
+	{
+		YAML::Emitter emitter;
+		std::cout << Utility::jsonToYaml(nlohmann::json::parse(resp->text), emitter) << std::endl;
+	}
 }
 
 void ArgumentParser::processAppDel()
@@ -684,6 +706,7 @@ void ArgumentParser::processAppView()
 		("name,n", po::value<std::string>(), "application name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
+		("yaml,y", "output with YAML format")
 		("pstree,p", "view the application pstree")
 		("stdout_index,O", po::value<int>(), "application output index")
 		("tail,t", "continue view the application output");
@@ -708,9 +731,18 @@ void ArgumentParser::processAppView()
 			}
 			else
 			{
-				// view app json
 				Utility::addExtraAppTimeReferStr(resp);
-				std::cout << Utility::prettyJson(resp.dump()) << std::endl;
+				if (m_commandLineVariables.count("yaml"))
+				{
+					// view app YAML
+					YAML::Emitter emitter;
+					std::cout << Utility::jsonToYaml(resp, emitter) << std::endl;
+				}
+				else
+				{
+					// view app json
+					std::cout << Utility::prettyJson(resp.dump()) << std::endl;
+				}
 			}
 		}
 		else
@@ -1530,7 +1562,8 @@ void ArgumentParser::processUserMfaActive()
 	po::options_description desc("Manage MFA:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("delete,d", "deactive MFA");
+		("delete,d", "deactive MFA")
+		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1554,8 +1587,7 @@ void ArgumentParser::processUserMfaActive()
 			auto result = nlohmann::json::parse(response->text);
 			auto totpUri = Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
 
-			const auto totpCmd = std::string("/opt/appmesh/bin/qrc '").append(totpUri).append("'");
-			system(totpCmd.c_str());
+			Utility::printQRcode(totpUri);
 		}
 	}
 	else
@@ -2098,3 +2130,4 @@ const std::string ArgumentParser::parseUrlHost(const std::string &url)
 	}
 	return domain;
 }
+

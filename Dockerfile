@@ -23,7 +23,7 @@ RUN apt-get update && \
 	apt-get install -y tini && \
 	apt-get install -y ./appmesh*.deb && \
 	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
-	rm -rf /opt/appmesh/apps/ping.json && \
+	rm -rf /opt/appmesh/apps/ping.json && rm -rf /opt/appmesh/apps/backup.yaml && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
 	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
 	touch /var/run/appmesh.pid && \

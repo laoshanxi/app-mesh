@@ -290,11 +290,22 @@ void Configuration::loadApps()
 	const auto appDir = fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR;
 	if (fs::exists(appDir) && fs::is_directory(appDir))
 	{
+		// parse YAML format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			LOG_INF << fname << "loading <" << jsonFile.path().filename() << ">.";
+			if (Utility::endWith(jsonFile.path().filename().string(), ".yml") || Utility::endWith(jsonFile.path().filename().string(), ".yaml"))
+			{
+				LOG_INF << fname << "loading <" << jsonFile.path().filename() << ">.";
+				auto app = this->parseApp(Utility::yamlToJson(YAML::LoadFile(jsonFile.path().string())));
+				this->addApp2Map(app);
+			}
+		}
+		// parse JSON format
+		for (const auto &jsonFile : fs::directory_iterator(appDir))
+		{
 			if (Utility::endWith(jsonFile.path().filename().string(), ".json"))
 			{
+				LOG_INF << fname << "loading <" << jsonFile.path().filename() << ">.";
 				auto app = this->parseApp(nlohmann::json::parse(std::ifstream(jsonFile.path().string())));
 				this->addApp2Map(app);
 			}

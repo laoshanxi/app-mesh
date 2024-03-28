@@ -25,21 +25,30 @@ SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/gen/)
 ##########################################################################
 # debug / release
 ##########################################################################
-if (CMAKE_BUILD_TYPE MATCHES "Debug" OR CMAKE_BUILD_TYPE MATCHES "DEBUG")
-    message("Debug mode")
-    set(CMAKE_CXX_FLAGS_DEBUG   "$ENV{CXXFLAGS} -Wall -ggdb3 -O0 -g")
-else()
-    if (CMAKE_BUILD_TYPE MATCHES "Asan" OR CMAKE_BUILD_TYPE MATCHES "ASAN")
-        # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
-        message("Debug mode with libasan")
-        set(CMAKE_CXX_FLAGS_DEBUG   "$ENV{CXXFLAGS} -Wall -ggdb3 -O0 -g -fsanitize=address -fno-omit-frame-pointer")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -lasan -lstdc++")
-    else()
-        message("Release mode")
-        set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Wall -ggdb3 -Os")
-    endif()
+# Set the default build type if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
 endif()
-message("COMPILE_OPTIONS: ${COMPILE_OPTIONS}")
+string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_UPPERCASE)
+message(STATUS "CMAKE_BUILD_TYPE: ${BUILD_TYPE_UPPERCASE}")
+
+# Set compiler flags based on the build type
+if (BUILD_TYPE_UPPERCASE STREQUAL "DEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -ggdb3 -O0")
+elseif (BUILD_TYPE_UPPERCASE STREQUAL "RELEASE")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall")
+elseif (BUILD_TYPE_UPPERCASE STREQUAL "MINSIZEREL")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL}")
+elseif (BUILD_TYPE_UPPERCASE STREQUAL "ASAN")
+    # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
+    set(CMAKE_CXX_FLAGS_ASAN "${CMAKE_CXX_FLAGS_ASAN} -Wall -ggdb3 -O0 -g -fsanitize=address -fno-omit-frame-pointer")
+    set(CMAKE_EXE_LINKER_FLAGS_ASAN "${CMAKE_EXE_LINKER_FLAGS_ASAN} -fsanitize=address -lasan -lstdc++")
+else ()
+    message(FATAL_ERROR "Invalid build type: ${CMAKE_BUILD_TYPE}")
+endif()
+# Print compile parameters: FLAGS = CMAKE_CXX_FLAGS + CMAKE_CXX_FLAGS_RELEASE
+set(CMAKE_CXX_FLAGS_NAME "CMAKE_CXX_FLAGS_${BUILD_TYPE_UPPERCASE}")
+message(STATUS "${CMAKE_CXX_FLAGS_NAME}: ${CMAKE_CXX_FLAGS} ${${CMAKE_CXX_FLAGS_NAME}}")
 
 # Set the library path to prioritize /usr/local/lib64
 set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} /usr/local/lib64)
@@ -78,12 +87,12 @@ find_package(msgpack-cxx REQUIRED)
 # libcurl
 ##########################################################################
 find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
-message("Found static CURL_LIB: ${CURL_LIB}")
 if (NOT CURL_LIB)
     find_package(CURL REQUIRED)
     message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
     set(CURL_LIB ${CURL_LIBRARIES})
 endif()
+message("Found CURL_LIB: ${CURL_LIB}")
 
 ##########################################################################
 # openssl

@@ -54,7 +54,7 @@ jobs:
 
       - name: Download Syft
         id: syft
-        uses: anchore/sbom-action/download-syft@v0.15.9
+        uses: anchore/sbom-action/download-syft@v0.15.10
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -132,6 +132,7 @@ jobs:
           echo "3. SSL for all connections" >> CHANGELOG.txt
           echo "4. GPG sign packages (rpm/dpkg --import gpg_public.key)" >> CHANGELOG.txt
           echo "5. Generate SBOM file" >> CHANGELOG.txt
+          echo "6. YAML file format for application" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency

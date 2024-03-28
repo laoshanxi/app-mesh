@@ -113,7 +113,7 @@ $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
 tar zxvf curl-8.5.0.tar.gz >/dev/null; cd curl-8.5.0
 mkdir build; cd build; 
 cmake .. -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl || cmake .. -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DCURL_USE_OPENSSL=ON
-make -j 4 >/dev/null
+make -j 3 >/dev/null
 make install
 ldconfig
 cd $ROOTDIR
@@ -197,18 +197,16 @@ cd cryptopp/
 $WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_9_0/cryptopp890.zip
 unzip -o cryptopp890.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
-make -j 4
+make -j 3
 make install
 
 cd $ROOTDIR
 # go binaries
 export GOBIN=/usr/local/bin
-go install github.com/laoshanxi/qrc/cmd/qrc@latest
 go install github.com/cloudflare/cfssl/cmd/cfssl@latest
 go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 # install nfpm
 go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
-upx $GOBIN/qrc
 upx $GOBIN/cfssl
 upx $GOBIN/cfssljson
 
@@ -255,6 +253,14 @@ if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
 fi
 make; make install
 ldconfig
+
+cd $ROOTDIR
+git clone --depth=1 https://github.com/jbeder/yaml-cpp.git
+cd yaml-cpp/; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=ON ..; make && make install
+
+cd $ROOTDIR
+git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
+cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp libqrcodegencpp.a /usr/local/lib/
 
 # clean
 go clean -cache

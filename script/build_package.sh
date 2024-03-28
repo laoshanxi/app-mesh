@@ -34,7 +34,6 @@ cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/container_monitor.py ${PACKAGE_HOME}/bin/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appmesh_arm.py ${PACKAGE_HOME}/bin/
 cp /usr/local/bin/cfssl ${PACKAGE_HOME}/ssl/
 cp /usr/local/bin/cfssljson ${PACKAGE_HOME}/ssl/
-cp /usr/local/bin/qrc ${PACKAGE_HOME}/bin/
 cp -r ${CMAKE_CURRENT_SOURCE_DIR}/script/apps ${PACKAGE_HOME}
 
 chmod +x ${PACKAGE_HOME}/script/*.sh
@@ -50,6 +49,7 @@ ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep libssl | awk '{cmd="cp "$3" ${PACKAGE_
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep libcrypto | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep oath | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep yaml | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 
 GLIBC_VERION=$(ldd --version | head -n 1 | tr ' ' '\n' | tail -n 1)
 GCC_VERION=$(gcc -dumpversion)

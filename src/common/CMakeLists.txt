@@ -14,9 +14,11 @@ target_link_libraries(common
     ACE
     ACE_SSL
     log4cpp
+    yaml-cpp
     boost_regex
     boost_system
     boost_filesystem
     boost_program_options
     ${OPENSSL_LIBRARIES}
+    qrcodegencpp
 )
