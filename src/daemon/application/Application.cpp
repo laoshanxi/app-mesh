@@ -790,7 +790,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		nlohmann::json envs = nlohmann::json::object();
 		std::for_each(m_envMap.begin(), m_envMap.end(), [&envs](const std::pair<std::string, std::string> &pair)
 					  { envs[(pair.first)] = std::string(pair.second); });
-		result[JSON_KEY_APP_env] = envs;
+		result[JSON_KEY_APP_env] = std::move(envs);
 	}
 	if (m_secEnvMap.size())
 	{
@@ -800,7 +800,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 					  {
 						  auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
 						  envs[(pair.first)] = std::string(encryptedEnvValue); });
-		result[JSON_KEY_APP_sec_env] = envs;
+		result[JSON_KEY_APP_sec_env] = std::move(envs);
 	}
 	if (m_dockerImage.length())
 		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);

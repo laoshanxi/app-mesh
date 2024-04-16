@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <set>
@@ -28,13 +29,18 @@ public:
 	void unlock();
 	void updateUser(std::shared_ptr<User> user);
 	void updateKey(const std::string &passwd);
-	const std::string generateMfaKey();
-	void deactiveMfa();
-	bool validateMfaCode(const std::string &totpCode);
+	const std::string totpGenerateKey();
+	void totpActive(bool active);
+	void totpDeactive();
+	bool totpValidateCode(const std::string &totpCode);
+	const std::string totpGenerateChallenge(const std::string &token, const int &timeoutSeconds);
+	bool totpValidateChallenge(const std::string &totpChallenge, std::string &outToken);
 
 	// get user info
 	bool locked() const;
-	const std::string getKey();
+	bool mfaEnabled() const;
+	const std::string &getKey();
+	const std::string &getMfaKey();
 	const std::string &getExecUser() const
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -66,6 +72,8 @@ private:
 	std::string m_metadata;
 	std::string m_execUser;
 	std::string m_mfaKey;
+	std::string m_totpChallenge;
+	std::chrono::system_clock::time_point m_totpChallengeExpire;
 	mutable std::recursive_mutex m_mutex;
 	std::set<std::shared_ptr<Role>> m_roles;
 };

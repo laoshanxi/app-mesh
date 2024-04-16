@@ -6,8 +6,14 @@
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /appmesh/login | Username=base64(USER-NAME) <br> Password=base64(PASSWD) <br> Optional: <br> Expire-Seconds=600 | JWT authenticate login, get JWT token
-POST| /appmesh/auth | curl -X POST -k -H "Authorization:Bearer ${MY-JWT-TOKEN}" https://127.0.0.1:6060/appmesh/auth <br> Optional: <br> Auth-Permission=${PERMISSION-ID} | JWT token and permission authenticate
+POST| /appmesh/login | Username=base64(USER-NAME) <br> Password=base64(PASSWD) <br> Optional: <br> Expire-Seconds=600 <br> Totp=base64(TOTP_KEY) | User login, return JWT token or Totp-Challenge for TOTP validate next
+POST | /appmesh/totp/validate | Totp=base64(TOTP_KEY) <br> Totp-Challenge=base64(TOTP_CHALLENGE) | Validate TOTP key (valid and not expired) and challenge, return JWT token
+POST| /appmesh/auth | Authorization="Bearer <JWT_TOKEN>" <br> Optional: <br> Auth-Permission=<PERMISSION-ID> | JWT token and permission authenticate
+POST| /appmesh/token/renew | Authorization="Bearer <JWT_TOKEN>" <br> Optional: <br> Expire-Seconds=600 | Logoff old token and return new token
+POST| /appmesh/self/logoff | Authorization="Bearer <JWT_TOKEN>" | Logoff token
+POST | /appmesh/totp/secret | | Generate TOTP secret for user to enable TOTP, return Mfa-Uri
+POST | /appmesh/totp/setup | Totp=base64(TOTP_KEY) | Setup TOTP, bind TOTP secret to user, return new JWT token
+POST | /appmesh/totp/${USER}/disable | | disable TOTP, USER can be self
 -|-|-|-
 GET | /appmesh/app/${APP-NAME} | | Get an application information
 GET | /appmesh/app/${APP-NAME}/health | | Get application health status, no authentication required, 0 is health and 1 is unhealthy
@@ -39,13 +45,11 @@ GET | /appmesh/config |  | Get basic configurations
 POST| /appmesh/config |  | Set basic configurations
 -|-|-|-
 POST| /appmesh/user/admin/passwd | New-Password=base64(passwd) | Change user password, username can be `self`
-POST| /appmesh/user/usera/lock | | admin user to lock a user
-POST| /appmesh/user/usera/unlock | | admin user to unlock a user
-POST| /appmesh/user/self/mfa | | active 2fa for current user
-DEL| /appmesh/user/usera/mfa | | deactive 2fa for a user, username can be `self`
+POST| /appmesh/user/${USER}/lock | | admin user to lock a user
+POST| /appmesh/user/${USER}/unlock | | admin user to unlock a user
 GET | /appmesh/user/self | | View user self
-PUT | /appmesh/user/usera | | Add usera to Users
-DEL | /appmesh/user/usera | | Delete usera
+PUT | /appmesh/user/${USER} | | Add a user to Users
+DEL | /appmesh/user/${USER} | | Delete a user
 GET | /appmesh/users | | Get user list
 GET | /appmesh/roles | | Get role list
 POST| /appmesh/role/roleA | | Update roleA with defined permissions

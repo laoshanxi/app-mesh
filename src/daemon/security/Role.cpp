@@ -42,7 +42,7 @@ const std::shared_ptr<Roles> Roles::FromJson(const nlohmann::json &obj)
 	std::shared_ptr<Roles> roles = std::make_shared<Roles>();
 	for (auto &roleJson : obj.items())
 	{
-		auto roleName = (roleJson.key());
+		const auto &roleName = roleJson.key();
 		auto role = Role::FromJson(roleName, roleJson.value());
 		roles->m_roles[roleName] = role;
 	}

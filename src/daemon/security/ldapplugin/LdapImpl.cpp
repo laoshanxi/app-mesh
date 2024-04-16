@@ -144,7 +144,7 @@ void LdapImpl::syncGroupUsers()
     }
 }
 
-bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup)
+bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &userKey)
 {
     const static char fname[] = "LdapImpl::verifyUserKey() ";
     LOG_DBG << fname;
@@ -159,7 +159,6 @@ bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &use
             auto cn = Utility::stringReplace(group.second->m_bindDN, JSON_KEY_USER_LDAP_USER_REPLACE_HOLDER, userName);
             if (ldap->Bind(cn, userKey))
             {
-                outUserGroup = group.second->m_groupName;
                 return true;
             }
             // TODO: validate TOTP

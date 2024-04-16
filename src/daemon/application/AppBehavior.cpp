@@ -47,7 +47,7 @@ nlohmann::json AppBehavior::behaviorAsJson()
         {
             controls[std::to_string(control.first)] = std::string(action2str(control.second));
         }
-        result[JSON_KEY_APP_behavior_control] = controls;
+        result[JSON_KEY_APP_behavior_control] = std::move(controls);
     }
     return result;
 }

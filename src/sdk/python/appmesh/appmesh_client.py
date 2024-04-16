@@ -320,12 +320,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Security
     ########################################
-    def login(self, user_name: str, user_pwd: str, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+    def login(self, user_name: str, user_pwd: str, totp_key="", timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
         """Login with user name and password
 
         Args:
             user_name (str): the name of the user.
             user_pwd (str): the password of the user.
+            totp_key (str, optional): the TOTP key if enabled for the user.
             timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
 
         Returns:
@@ -344,10 +345,41 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if resp.status_code == HTTPStatus.OK:
             if "Access-Token" in resp.json():
                 self.jwt_token = resp.json()["Access-Token"]
+        elif resp.status_code == HTTPStatus.UNAUTHORIZED and "totp_challenge" in resp.json():
+            challenge = resp.json()["totp_challenge"]
+            resp = self._request_http(
+                AppMeshClient.Method.POST,
+                path="/appmesh/totp/validate",
+                header={
+                    "Username": base64.b64encode(user_name.encode()),
+                    "Totp-Challenge": base64.b64encode(challenge.encode()),
+                    "Totp": base64.b64encode(totp_key.encode()),
+                    "Expire-Seconds": self._parse_duration(timeout_seconds),
+                },
+            )
+            if resp.status_code == HTTPStatus.OK:
+                if "Access-Token" in resp.json():
+                    self.jwt_token = resp.json()["Access-Token"]
+            else:
+                print(resp.text)
         else:
             print(resp.text)
             # resp.raise_for_status()
         return self.jwt_token
+
+    def logoff(self) -> bool:
+        """Logoff current session from server
+
+        Returns:
+            bool: logoff success or failure.
+        """
+        resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/self/logoff")
+        if resp.status_code == HTTPStatus.OK:
+            return True
+        else:
+            # resp.raise_for_status()
+            print(resp.text)
+            return False
 
     def authentication(self, token: str, permission=None) -> bool:
         """Login with token and verify permission when specified
@@ -373,6 +405,115 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             # resp.raise_for_status()
             print(resp.text)
             return False
+
+    def renew(self, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+        """Renew current token
+
+        Args:
+            timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
+
+        Returns:
+            str: The new JWT token if renew success, otherwise return None.
+        """
+        assert self.jwt_token
+        resp = self._request_http(
+            AppMeshClient.Method.POST,
+            path="/appmesh/token/renew",
+            header={
+                "Expire-Seconds": self._parse_duration(timeout_seconds),
+            },
+        )
+        if resp.status_code == HTTPStatus.OK:
+            if "Access-Token" in resp.json():
+                self.jwt_token = resp.json()["Access-Token"]
+        else:
+            print(resp.text)
+            # resp.raise_for_status()
+        return self.jwt_token
+
+    def totp_secret(self) -> str:
+        """Generate TOTP key for current login user and return MFA URI with JSON body
+
+        Returns:
+            str: TOTP secret str
+        """
+        resp = self._request_http(method=AppMeshClient.Method.POST, path="/appmesh/totp/secret")
+        if resp.status_code == HTTPStatus.OK:
+            totp_uri = base64.b64decode(resp.json()["Mfa-Uri"]).decode()
+            return self._parse_totp_uri(totp_uri).get("secret")
+        else:
+            print(resp.text)
+            # resp.raise_for_status()
+        return None
+
+    def totp_setup(self, totp_key: str) -> bool:
+        """Setup 2FA for current login user
+
+        Args:
+            totp_key (str): TOTP key
+
+        Returns:
+            bool: success or failure.
+        """
+        resp = self._request_http(
+            method=AppMeshClient.Method.POST,
+            path=f"/appmesh/totp/setup",
+            header={"Totp": base64.b64encode(totp_key.encode())},
+        )
+        return resp.status_code == HTTPStatus.OK
+
+    def totp_validate(self, totp_key: str) -> bool:
+        """Validate TOTP key
+
+        Args:
+            totp_key (str): TOTP key
+
+        Returns:
+            bool: success or failure.
+        """
+        resp = self._request_http(
+            method=AppMeshClient.Method.POST,
+            path=f"/appmesh/totp/validate",
+            header={"Totp": base64.b64encode(totp_key.encode())},
+        )
+        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
+
+    def totp_disable(self, user="self") -> bool:
+        """Disable 2FA for current user
+
+        Args:
+            user (str, optional): user name for disable TOTP.
+
+        Returns:
+            bool: success or failure.
+        """
+        resp = self._request_http(
+            method=AppMeshClient.Method.POST,
+            path=f"/appmesh/totp/{user}/disable",
+        )
+        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
+
+    @staticmethod
+    def _parse_totp_uri(totp_uri: str) -> dict:
+        """Extract TOTP parameters
+
+        Args:
+            totp_uri (str): TOTP uri
+
+        Returns:
+            dict: eextract parameters
+        """
+        parsed_info = {}
+        parsed_uri = parse.urlparse(totp_uri)
+
+        # Extract label from the path
+        parsed_info["label"] = parsed_uri.path[1:]  # Remove the leading slash
+
+        # Extract parameters from the query string
+        query_params = parse.parse_qs(parsed_uri.query)
+        for key, value in query_params.items():
+            parsed_info[key] = value[0]
+        return parsed_info
 
     ########################################
     # Application view
@@ -743,33 +884,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         )
         return resp.status_code == HTTPStatus.OK
 
-    def user_2fa_active(self) -> bool:
-        """Active 2FA for current login user and return MFA URI with JSON body
-
-        Returns:
-            bool: success or failure.
-        """
-        resp = self._request_http(
-            method=AppMeshClient.Method.POST,
-            path="/appmesh/user/self/mfa",
-        )
-        return resp.status_code == HTTPStatus.OK
-
-    def user_2fa_deactive(self, user_name: str = "self") -> bool:
-        """DeActive 2FA for a user
-
-        Args:
-            user_name (str, optional): the user name.
-
-        Returns:
-            bool: success or failure.
-        """
-        resp = self._request_http(
-            method=AppMeshClient.Method.DELETE,
-            path=f"/appmesh/user/{user_name}/mfa",
-        )
-        return resp.status_code == HTTPStatus.OK
-
     def users_view(self):
         """Get all users
 
@@ -1038,9 +1152,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             start = datetime.now()
             interval = 1 if self.__class__.__name__ == "AppMeshClient" else 1000
             while len(run.proc_uid) > 0:
-                success, output, position, exit_code = self.app_output(
-                    app_name=run.app_name, stdout_position=output_position, stdout_index=0, process_uuid=run.proc_uid, timeout=interval
-                )
+                success, output, position, exit_code = self.app_output(app_name=run.app_name, stdout_position=output_position, stdout_index=0, process_uuid=run.proc_uid, timeout=interval)
                 if output and stdout_print:
                     print(output, end="")
                 if position is not None:
@@ -1114,7 +1226,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(url=rest_url, params=query, headers=header, data=json.dumps(body) if type(body) in (dict, list) else body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return requests.post(
+                url=rest_url, params=query, headers=header, data=json.dumps(body) if type(body) in (dict, list) else body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout
+            )
         elif method is AppMeshClient.Method.POST_STREAM:
             return requests.post(
                 url=rest_url,

@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 
-
 /// <summary>
 /// App Process Recover object
 /// </summary>
@@ -28,6 +27,7 @@ struct Snapshot
 
 	std::map<std::string, AppSnap> m_apps;
 	std::string m_consulSessionId;
+	std::unordered_map<std::string, std::chrono::system_clock::time_point> m_tokenBlackList;
 };
 
 /// <summary>

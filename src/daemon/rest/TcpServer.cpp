@@ -16,7 +16,7 @@ std::atomic_int TcpHandler::m_idGenerator = ATOMIC_FLAG_INIT;
 
 struct HttpRequestMsg
 {
-	explicit HttpRequestMsg(std::shared_ptr<char> data, size_t len, int client)
+	explicit HttpRequestMsg(const std::shared_ptr<char> &data, size_t len, int client)
 		: m_data(data), m_dataSize(len), m_tcpHanlerId(client)
 	{
 	}

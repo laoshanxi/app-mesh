@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir appmesh
 
 
-FROM ubuntu:latest
+FROM ubuntu:22.04
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container

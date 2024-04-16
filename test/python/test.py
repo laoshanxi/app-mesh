@@ -16,7 +16,24 @@ import appmesh_client
 client = appmesh_client.AppMeshClient()
 # authentication
 token = client.login("admin", "admin123")
+token2 = client.renew(100)
+assert token != token2
+assert not client.authentication(token)
+token = token2
+assert client.authentication(token)
 
+if True:
+    # pip install pyotp
+    from pyotp import TOTP
+
+    totp = TOTP(client.totp_secret())
+    totp_key = totp.now()
+    print(totp_key)
+    client.totp_setup(totp_key)
+    totp_key = totp.now()
+    print(totp_key)
+    token = client.login("admin", "admin123", totp_key)
+    print(client.totp_disable())
 
 metadata = {
     "subject": "subject",
@@ -28,11 +45,7 @@ client.run_sync(app=appmesh_client.App(app_data), max_time_seconds=5, life_cycle
 print(client.authentication(token, "app-view"))
 print(client.user_passwd_update("admin123"))
 print(json.dumps(client.permissions_view(), indent=2))
-print(
-    client.role_update(
-        "manage", ["app-control", "app-delete", "cloud-app-reg", "cloud-app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]
-    )
-)
+print(client.role_update("manage", ["app-control", "app-delete", "cloud-app-reg", "cloud-app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]))
 print(json.dumps(client.permissions_for_user(), indent=2))
 print(json.dumps(client.groups_view(), indent=2))
 print(json.dumps(client.roles_view(), indent=2))

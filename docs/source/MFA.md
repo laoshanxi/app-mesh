@@ -5,7 +5,7 @@
 - something you know (like a password or PIN),
 - something you have (like a smart card),
 - something you are (like your fingerprint).
-Your credentials must come from two different categories to enhance security, so entering two different passwords would not be considered multi-factor.
+  Your credentials must come from two different categories to enhance security, so entering two different passwords would not be considered multi-factor.
 
 <img src="https://www.nist.gov/sites/default/files/styles/480_x_480_limit/public/images/2019/09/25/multifactor-authentificaton.png" align="middle" />
 
@@ -24,6 +24,46 @@ There are 3 steps for the whole TOTP authentication:
 1. When user logon, the authenticator will compute a 6 digital code, the code is changed every 30s (with the Truncate algorithm by the app, so the important is the mobile device should sync time with server). The code is the one time password used to validate for the server.
 
 <img src="https://davidwalsh.name/demo/2fa-google-auth.png" width="260" height="400" align="middle" />
+
+## TOTP API design
+
+These API endpoints and workflows allow users to generate a TOTP secret key, set up TOTP authentication, validate TOTP tokens, and disable TOTP when necessary.
+
+#### TOTP Secret Generation:
+
+- API Endpoint: `POST /totp/secret`
+- Workflow:
+  - Generate a unique TOTP secret key for the user.
+  - Store the secret key securely on the server (not ready for TOTP validation).
+  - Return the TOTP URI with secret to the client as a response.
+  - The user get TOTP URI that they can scan or enter into a TOTP authenticator app (such as Google Authenticator).
+
+#### TOTP Setup:
+
+- API Endpoint: `POST /totp/setup`
+- Workflow:
+  - Receive the TOTP secret key from the client.
+  - Verify the secret key against the stored secret key on the server.
+  - If the secret key is valid, associate it with the user's account.
+  - Return a success response to the client.
+
+#### TOTP Validation:
+
+- API Endpoint: `POST /totp/validate`
+- Workflow:
+  - Receive the TOTP token from the client.
+  - Retrieve the user's TOTP secret key from the server.
+  - Verify the TOTP token against the secret key.
+  - If the token is valid, return a success response to the client.
+  - If the token is invalid, return an error response to the client.
+
+#### TOTP Disable:
+
+- API Endpoint: `POST /totp/disable`
+- Workflow:
+  - Remove the TOTP secret key association from the user's account.
+  - Invalidate any existing TOTP tokens for the user.
+  - Return a success response to the client.
 
 ## 2FA in AppMesh
 

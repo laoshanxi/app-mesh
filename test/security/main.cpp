@@ -2,9 +2,9 @@
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
 #include "../../src/daemon/security/Security.h"
-#include "../catch.hpp"
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
+#include <catch.hpp>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -27,7 +27,7 @@ TEST_CASE("ldapcpp Test", "[security]")
     SECTION("MFA")
     {
         User u("2fa");
-        std::cout << "MFA secret key: " << u.generateMfaKey() << std::endl;
+        std::cout << "MFA secret key: " << u.totpGenerateKey() << std::endl;
     }
 
     SECTION("password verification")
@@ -57,11 +57,11 @@ TEST_CASE("ldapcpp Test", "[security]")
         success = ldap.Bind("cn=admin,dc=example,dc=org", "admin");
         std::cout << "user <admin> bind success: " << success << std::endl;
 
-        //success = ldap.Bind("cn=admin,ou=users,dc=example,dc=org", "admin123");
-        //std::cout << "user <admin> bind success: " << success << std::endl;
+        // success = ldap.Bind("cn=admin,ou=users,dc=example,dc=org", "admin123");
+        // std::cout << "user <admin> bind success: " << success << std::endl;
 
-        //Base64::SetBinaryOnly(true);
-        // Search mush bind LDAP Administrator user
+        // Base64::SetBinaryOnly(true);
+        //  Search mush bind LDAP Administrator user
         auto result = ldap.Search("ou=users,dc=example,dc=org", Ldap::ScopeTree, "sn=*");
         std::cout << "search developers: " << result.size() << std::endl;
         for (auto &entry : result)

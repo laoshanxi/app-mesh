@@ -112,6 +112,9 @@ cd ldap-cpp; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=OFF ..; make; make
 git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
 cd QR-Code-generator/cpp && cp qrcodegen.* /usr/local/include/ && make && cp libqrcodegencpp.a /usr/local/lib/
 
+git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
+cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
+
 # clean
 go clean -cache
 go clean -fuzzcache

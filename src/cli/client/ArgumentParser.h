@@ -66,7 +66,7 @@ public:
 	std::string readPersistAuthToken(const std::string &hostName);
 	std::string readPersistLastHost();
 	void persistAuthToken(const std::string &hostName, const std::string &token);
-	std::string login(const std::string &user, const std::string &passwd, const std::string &totp, std::string targetHost);
+	std::string login(const std::string &user, const std::string &passwd, std::string targetHost);
 
 private:
 	bool isAppExist(const std::string &appName);
@@ -93,6 +93,5 @@ private:
 	std::string m_currentUrl;
 	std::string m_username;
 	std::string m_userpwd;
-	std::string m_totp;
 	std::unique_ptr<ACE_Sig_Action> m_sigAction;
 };

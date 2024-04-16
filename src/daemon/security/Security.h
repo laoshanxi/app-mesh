@@ -28,7 +28,7 @@ public:
     static void instance(std::shared_ptr<Security> instance);
 
 public:
-    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup);
+    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey);
     virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd);
 
     virtual std::shared_ptr<User> getUserInfo(const std::string &userName);

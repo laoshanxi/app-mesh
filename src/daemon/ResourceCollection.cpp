@@ -161,7 +161,7 @@ nlohmann::json ResourceCollection::AsJson()
 					  net_detail["ipv4"] = (pair.ipv4);
 					  net_detail["address"] = std::string(pair.address);
 					  arr.push_back(net_detail); });
-	result[("net")] = arr;
+	result[("net")] = std::move(arr);
 	result[("cpu_cores")] = (m_resources.m_cores);
 	result[("cpu_sockets")] = (m_resources.m_sockets);
 	result[("cpu_processors")] = (m_resources.m_processors);
@@ -182,7 +182,7 @@ nlohmann::json ResourceCollection::AsJson()
 		sysLoad["1min"] = (load->one);
 		sysLoad["5min"] = (load->five);
 		sysLoad["15min"] = (load->fifteen);
-		result[("load")] = sysLoad;
+		result[("load")] = std::move(sysLoad);
 	}
 	// FS
 	auto mountPoints = os::getMoundPoints();
@@ -201,7 +201,7 @@ nlohmann::json ResourceCollection::AsJson()
 						  fsArr.push_back(fs);
 					  } });
 
-	result[("fs")] = fsArr;
+	result[("fs")] = std::move(fsArr);
 	result[("systime")] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));
 	result[("appmesh_start_time")] = std::string(DateTime::formatLocalTime(m_appmeshStartTime));
 	result[("pid")] = (getPid());

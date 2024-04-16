@@ -66,7 +66,7 @@ static ArgumentParser *WORK_PARSE = nullptr;
 static size_t BOOST_DESC_WIDTH = 130;
 
 ArgumentParser::ArgumentParser(int argc, const char *argv[])
-	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(0)
+	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(DEFAULT_TOKEN_EXPIRE_SECONDS)
 {
 	const std::string posixTimeZone = ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) ? ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) : getPosixTimezone();
 	Utility::initDateTimeZone(posixTimeZone, false);
@@ -272,10 +272,9 @@ void ArgumentParser::printMainHelp()
 
 void ArgumentParser::processLogon()
 {
-	po::options_description desc("Log on to App Mesh:", BOOST_DESC_WIDTH);
+	po::options_description desc("Login to App Mesh:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("totp,o", po::value<std::string>(), "time based one time password")
 		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in 'seconds' or 'ISO 8601 durations'.")
 		("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
@@ -308,16 +307,6 @@ void ArgumentParser::processLogon()
 		std::cout << std::endl;
 	}
 
-	if (!m_commandLineVariables.count("totp"))
-	{
-		std::cout << "TOTP(enter any char to skip when 2FA not activated): ";
-		std::getline(std::cin, m_totp);
-	}
-	else
-	{
-		m_totp = m_commandLineVariables["totp"].as<std::string>();
-	}
-
 	// get token from REST
 	m_jwtToken = getAuthenToken();
 
@@ -338,8 +327,13 @@ void ArgumentParser::processLogoff()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	persistAuthToken(parseUrlHost(m_currentUrl), std::string());
-	std::cout << "User logoff from " << m_currentUrl << " success." << std::endl;
+	std::string restPath = "/appmesh/self/logoff";
+	auto response = requestHttp(true, web::http::methods::POST, restPath);
+	if (response->status_code == web::http::status_codes::OK)
+	{
+		persistAuthToken(parseUrlHost(m_currentUrl), std::string());
+		std::cout << "User logoff from " << m_currentUrl << " success." << std::endl;
+	}
 }
 
 void ArgumentParser::processLoginfo()
@@ -1580,22 +1574,58 @@ void ArgumentParser::processUserMfaActive()
 
 	if (m_commandLineVariables.count("delete") == 0)
 	{
-		if (this->confirmInput(Utility::stringFormat("Do you want active 2FA for <%s>: ", userName.c_str()).c_str()))
+		std::string restPath = "/appmesh/user/self";
+		auto resp = nlohmann::json::parse(requestHttp(true, web::http::methods::GET, restPath)->text);
+		std::string msg = "Do you want active 2FA for <%s>: ";
+		if (GET_JSON_BOOL_VALUE(resp, JSON_KEY_USER_mfa_enabled))
 		{
-			std::string restPath = std::string("/appmesh/user/self/mfa");
+			msg = "2FA already enabled, do you want re-active 2FA for <%s>: ";
+		}
+		if (this->confirmInput(Utility::stringFormat(msg, userName.c_str()).c_str()))
+		{
+			// Generate TOTP secret
+			std::string restPath = std::string("/appmesh/totp/secret");
 			auto response = requestHttp(true, web::http::methods::POST, restPath);
 			auto result = nlohmann::json::parse(response->text);
 			auto totpUri = Utility::decode64(result.at(HTTP_BODY_KEY_MFA_URI).get<std::string>());
-
 			Utility::printQRcode(totpUri);
+
+			// Input TOTP key for validation until success
+			bool validating = true;
+			do
+			{
+				std::string totp;
+				std::cin.clear();
+				std::cout << "Enter TOTP key: ";
+				std::cin >> totp;
+
+				// Setup TOTP
+				restPath = "/appmesh/totp/setup";
+				std::map<std::string, std::string> header;
+				header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+				try
+				{
+					response = requestHttp(true, web::http::methods::POST, restPath, nullptr, std::move(header));
+					if (response->status_code == web::http::status_codes::OK)
+					{
+						validating = false;
+						m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
+						persistAuthToken(parseUrlHost(m_currentUrl), m_jwtToken);
+						std::cout << "TOTP setup for " << userName << " success." << std::endl;
+					}
+				}
+				catch (...)
+				{
+				}
+			} while (validating);
 		}
 	}
 	else
 	{
 		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s>: ", userName.c_str()).c_str()))
 		{
-			std::string restPath = std::string("/appmesh/user/") + userName + "/mfa";
-			auto response = requestHttp(true, web::http::methods::DEL, restPath);
+			std::string restPath = std::string("/appmesh/totp/") + userName + "/disable";
+			auto response = requestHttp(true, web::http::methods::POST, restPath);
 			std::cout << parseOutputMessage(response) << std::endl;
 		}
 	}
@@ -1700,7 +1730,7 @@ std::string ArgumentParser::getAuthenToken()
 	// 1. try to get from REST
 	if (m_username.length() && m_userpwd.length())
 	{
-		token = login(m_username, m_userpwd, m_totp, m_currentUrl);
+		token = login(m_username, m_userpwd, m_currentUrl);
 	}
 	else
 	{
@@ -1710,7 +1740,7 @@ std::string ArgumentParser::getAuthenToken()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp, m_currentUrl);
+			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl);
 		}
 	}
 	return token;
@@ -1731,7 +1761,7 @@ std::string ArgumentParser::getAuthenUser()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_totp, m_currentUrl);
+			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl);
 		}
 		auto decoded_token = jwt::decode(token);
 		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
@@ -1841,25 +1871,50 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	}
 }
 
-std::string ArgumentParser::login(const std::string &user, const std::string &passwd, const std::string &totp, std::string targetHost)
+std::string ArgumentParser::login(const std::string &user, const std::string &passwd, std::string targetHost)
 {
 	auto url = Utility::stdStringTrim(targetHost, '/');
 	// header
 	std::map<std::string, std::string> header;
 	header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
 	header.insert({HTTP_HEADER_JWT_password, Utility::encode64(passwd)});
-	header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
-	if (m_tokenTimeoutSeconds > 0)
-		header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
+	header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 
-	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", nullptr, header, {});
-	if (response->status_code != web::http::status_codes::OK)
+	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", nullptr, std::move(header), {});
+	if (response->status_code == web::http::status_codes::OK)
 	{
-		throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(response).c_str()));
+		m_currentUrl = url;
+		m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
+		return m_jwtToken;
 	}
-	m_currentUrl = url;
-	m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
-	return m_jwtToken;
+	else if (response->status_code == web::http::status_codes::Unauthorized && nlohmann::json::parse(response->text).contains(REST_TEXT_TOTP_CHALLENGE_JSON_KEY))
+	{
+		auto totpChallenge = nlohmann::json::parse(response->text).at(REST_TEXT_TOTP_CHALLENGE_JSON_KEY).get<std::string>();
+		// Input TOTP key for validation until success
+		do
+		{
+			std::string totp;
+			std::cin.clear();
+			std::cout << "Enter TOTP key: ";
+			std::cin >> totp;
+
+			std::map<std::string, std::string> header;
+			header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
+			header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+			header.insert({HTTP_HEADER_JWT_totp_challenge, Utility::encode64(totpChallenge)});
+			header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
+			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", nullptr, std::move(header), {});
+			if (response->status_code == web::http::status_codes::OK)
+			{
+				m_currentUrl = url;
+				m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
+				return m_jwtToken;
+			}
+			else
+				std::cout << parseOutputMessage(response) << std::endl;
+		} while (true);
+	}
+	throw std::invalid_argument(Utility::stringFormat("Login failed: %s", parseOutputMessage(response).c_str()));
 }
 
 void ArgumentParser::printApps(nlohmann::json json, bool reduce)

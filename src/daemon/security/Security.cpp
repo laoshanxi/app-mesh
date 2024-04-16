@@ -111,7 +111,7 @@ nlohmann::json Security::AsJson() const
     return this->m_securityConfig->AsJson();
 }
 
-bool Security::verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup)
+bool Security::verifyUserKey(const std::string &userName, const std::string &userKey)
 {
     const static char fname[] = "Security::verifyUserKey() ";
     auto key = userKey;
@@ -122,8 +122,12 @@ bool Security::verifyUserKey(const std::string &userName, const std::string &use
     auto user = this->getUserInfo(userName);
     if (user)
     {
-        outUserGroup = user->getGroup();
-        return (user->getKey() == key) && !user->locked() && user->validateMfaCode(totp);
+        if (user->getKey() != key)
+            return false;
+        if (user->locked())
+            return false;
+
+        return true;
     }
     LOG_WAR << fname << "user not exist: " << userName;
     throw std::invalid_argument("user not exist");

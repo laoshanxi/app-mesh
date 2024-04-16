@@ -25,6 +25,7 @@
 #include "rest/RestHandler.h"
 #include "rest/TcpServer.h"
 #include "security/Security.h"
+#include "security/TokenBlacklist.h"
 #ifndef NDEBUG
 #include "../common/Valgrind.h"
 #endif
@@ -137,12 +138,15 @@ int main(int argc, char *argv[])
 		auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
 		try
 		{
-			snap = Snapshot::FromJson(nlohmann::json::parse(snapfile.length() ? snapfile : std::string("{}")));
+			snap = Snapshot::FromJson(nlohmann::json::parse(snapfile.length() ? std::move(snapfile) : std::string("{}")));
 		}
 		catch (...)
 		{
 			LOG_ERR << fname << "Recover from snapshot failed with error " << std::strerror(errno);
 		}
+		// token black list recover
+		TOKEN_BLACK_LIST::instance()->init(snap->m_tokenBlackList);
+		// app pid recover
 		std::for_each(apps.begin(), apps.end(),
 					  [&snap](std::vector<std::shared_ptr<Application>>::reference p)
 					  {
@@ -155,7 +159,7 @@ int main(int argc, char *argv[])
 						  }
 					  });
 
-		// init consul
+		// consul id recover
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
 		if (Configuration::instance()->getConsul()->consulEnabled())
 		{

@@ -1,5 +1,6 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/default.h>
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <liboath/oath.h>
 
 #include "../../common/Utility.h"
@@ -33,7 +34,7 @@ std::shared_ptr<Users> Users::FromJson(const nlohmann::json &obj, std::shared_pt
 	std::shared_ptr<Users> users = std::make_shared<Users>();
 	for (auto &user : obj.items())
 	{
-		auto name = (user.key());
+		const auto &name = user.key();
 		users->m_users[name] = User::FromJson(name, user.value(), roles);
 	}
 	return users;
@@ -158,7 +159,7 @@ nlohmann::json User::AsJson() const
 	{
 		roles.push_back(std::string(role->getName()));
 	}
-	result[JSON_KEY_USER_roles] = roles;
+	result[JSON_KEY_USER_roles] = std::move(roles);
 	return result;
 }
 
@@ -222,16 +223,21 @@ void User::updateKey(const std::string &passwd)
 	}
 }
 
-void User::deactiveMfa()
+void User::totpActive(bool active)
+{
+	m_enableMfa = active;
+}
+
+void User::totpDeactive()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_mfaKey.clear();
 	m_enableMfa = false;
 }
 
-const std::string User::generateMfaKey()
+const std::string User::totpGenerateKey()
 {
-	const static char fname[] = "User::generateMfaKey() ";
+	const static char fname[] = "User::totpGenerateKey() ";
 
 	char *secret = NULL;
 	char randomBuffer[32];
@@ -258,7 +264,6 @@ const std::string User::generateMfaKey()
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_mfaKey = secret;
-	m_enableMfa = true;
 	if (m_mfaKey.length() > mfaKeyLen)
 	{
 		m_mfaKey = m_mfaKey.substr(0, mfaKeyLen);
@@ -267,20 +272,10 @@ const std::string User::generateMfaKey()
 	return m_mfaKey;
 }
 
-bool User::validateMfaCode(const std::string &totpCode)
+bool User::totpValidateCode(const std::string &totpCode)
 {
-	const static char fname[] = "User::validateMfaCode() ";
+	const static char fname[] = "User::totpValidateCode() ";
 
-	if (!m_enableMfa)
-	{
-		LOG_DBG << fname << "MFA is not enabled for user: " << m_name;
-		return true;
-	}
-	if (m_mfaKey.empty())
-	{
-		LOG_DBG << fname << "user have not registered 2fa: " << m_name;
-		return true;
-	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	char *key = NULL;
 	size_t keyLen = 0;
@@ -303,15 +298,50 @@ bool User::validateMfaCode(const std::string &totpCode)
 	return true;
 }
 
+const std::string User::totpGenerateChallenge(const std::string &token, const int &timeoutSeconds)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	m_totpChallenge = token;
+	m_totpChallengeExpire = std::chrono::system_clock::now() + std::chrono::seconds(timeoutSeconds);
+	return Utility::hash(m_totpChallenge);
+}
+
+bool User::totpValidateChallenge(const std::string &totpChallenge, std::string &outToken)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (totpChallenge == Utility::hash(m_totpChallenge))
+	{
+		if (std::chrono::system_clock::now() < m_totpChallengeExpire)
+		{
+			outToken = m_totpChallenge;
+			return true;
+		}
+		else
+			throw jwt::error::signature_verification_exception(jwt::error::token_verification_error::token_expired);
+	}
+	throw jwt::error::signature_verification_exception(jwt::error::signature_verification_error::invalid_signature);
+}
+
 bool User::locked() const
 {
 	return m_locked;
 }
 
-const std::string User::getKey()
+bool User::mfaEnabled() const
+{
+	return m_enableMfa;
+}
+
+const std::string &User::getKey()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_key;
+}
+
+const std::string &User::getMfaKey()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	return m_mfaKey;
 }
 
 const std::set<std::shared_ptr<Role>> User::getRoles()
@@ -337,10 +367,10 @@ const std::string User::encrypt(const std::string &message)
 	// https://github.com/weidai11/cryptopp/blob/master/Install.txt
 	// https://github.com/shanet/Crypto-Example/blob/master/crypto_example.cpp
 
-	//#include <cryptopp/osrng.h>
-	// AutoSeededRandomPool rnd;
-	// Generate a random key
-	// rnd.GenerateBlock(key, key.size());
+	// #include <cryptopp/osrng.h>
+	//  AutoSeededRandomPool rnd;
+	//  Generate a random key
+	//  rnd.GenerateBlock(key, key.size());
 
 	using namespace CryptoPP;
 	// prepare Key & IV

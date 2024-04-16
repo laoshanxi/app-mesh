@@ -118,7 +118,7 @@ RestClient::request(const std::string host, const web::http::method &mtd, const 
 	// Get the HTTP response code
 	response->status_code = curlpp::infos::ResponseCode::get(request);
 	response->text = responseStream.str();
-	response->header = outputHeaders;
+	response->header = std::move(outputHeaders);
 
 	return response;
 }

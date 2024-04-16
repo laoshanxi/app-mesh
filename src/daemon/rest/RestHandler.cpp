@@ -2,18 +2,20 @@
 
 #include <boost/algorithm/string_regex.hpp>
 #include <curlpp/cURLpp.hpp>
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
 #include "../../common/DurationParse.h"
+#include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
-#include "../../common/RestClient.h"
 #include "../Configuration.h"
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
 #include "../consul/ConsulConnection.h"
 #include "../security/Security.h"
+#include "../security/TokenBlacklist.h"
 #include "../security/User.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
@@ -21,7 +23,13 @@
 
 // 1. Authentication
 constexpr auto REST_PATH_LOGIN = "/appmesh/login";
+constexpr auto REST_PATH_LOG_OFF = "/appmesh/self/logoff";
 constexpr auto REST_PATH_AUTH = "/appmesh/auth";
+constexpr auto REST_PATH_TOKEN_RENEW = "/appmesh/token/renew";
+constexpr auto REST_PATH_SEC_TOTP_SECRET = "/appmesh/totp/secret";
+constexpr auto REST_PATH_SEC_TOTP_SETUP = "/appmesh/totp/setup";
+constexpr auto REST_PATH_SEC_TOTP_VALIDATE = "/appmesh/totp/validate";
+constexpr auto REST_PATH_SEC_TOTP_DISABLE = R"(/appmesh/totp/([^/\*]+)/disable)";
 
 // 2. View Application
 constexpr auto REST_PATH_APP_VIEW = R"(/appmesh/app/([^/\*]+))";
@@ -67,8 +75,6 @@ constexpr auto REST_PATH_SEC_USER_UNLOCK = R"(/appmesh/user/([^/\*]+)/unlock)";
 constexpr auto REST_PATH_SEC_USER_ADD = R"(/appmesh/user/([^/\*]+))";
 constexpr auto REST_PATH_SEC_USER_VIEW = "/appmesh/user/self";
 constexpr auto REST_PATH_SEC_USER_DELETE = R"(/appmesh/user/([^/\*]+))";
-constexpr auto REST_PATH_SEC_USER_MFA = "/appmesh/user/self/mfa";
-constexpr auto REST_PATH_SEC_USER_MFA_DEL = R"(/appmesh/user/([^/\*]+)/mfa)";
 constexpr auto REST_PATH_SEC_USER_VIEW_ALL = "/appmesh/users";
 constexpr auto REST_PATH_SEC_ROLE_VIEW_ALL = "/appmesh/roles";
 constexpr auto REST_PATH_SEC_ROLE_UPDATE = R"(/appmesh/role/([^/\*]+))";
@@ -85,7 +91,13 @@ RestHandler::RestHandler() : PrometheusRest()
 {
 	// 1. Authentication
 	bindRestMethod(web::http::methods::POST, REST_PATH_LOGIN, std::bind(&RestHandler::apiUserLogin, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_LOG_OFF, std::bind(&RestHandler::apiUserLogoff, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_AUTH, std::bind(&RestHandler::apiUserAuth, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_TOKEN_RENEW, std::bind(&RestHandler::apiUserTokenRenew, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_SECRET, std::bind(&RestHandler::apiUserTotpSecret, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_SETUP, std::bind(&RestHandler::apiUserTotpSetup, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_VALIDATE, std::bind(&RestHandler::apiUserTotpValidate, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_TOTP_DISABLE, std::bind(&RestHandler::apiUserTotpDisable, this, std::placeholders::_1));
 
 	// 2. View Application
 	bindRestMethod(web::http::methods::GET, REST_PATH_APP_VIEW, std::bind(&RestHandler::apiAppView, this, std::placeholders::_1));
@@ -130,8 +142,6 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::PUT, REST_PATH_SEC_USER_ADD, std::bind(&RestHandler::apiUserAdd, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_VIEW, std::bind(&RestHandler::apiUserView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_USER_DELETE, std::bind(&RestHandler::apiUserDel, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_USER_MFA, std::bind(&RestHandler::apiUserActiveMFA, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_USER_MFA_DEL, std::bind(&RestHandler::apiUserDeActiveMFA, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_USER_VIEW_ALL, std::bind(&RestHandler::apiUsersView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_ROLE_VIEW_ALL, std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE, std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
@@ -392,7 +402,7 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 	auto querymap = message.m_querys;
 	if (querymap.find((HTTP_QUERY_KEY_label_value)) != querymap.end())
 	{
-		auto value = (querymap.find((HTTP_QUERY_KEY_label_value))->second);
+		const auto value = (querymap.find((HTTP_QUERY_KEY_label_value))->second);
 
 		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();
@@ -421,8 +431,8 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
 	const auto result = verifyToken(message);
-	const auto userName = std::get<0>(result);
-	const auto groupName = std::get<1>(result);
+	const auto &userName = std::get<0>(result);
+	const auto &groupName = std::get<1>(result);
 	const auto permissions = Security::instance()->getUserPermissions(userName, groupName);
 	auto json = nlohmann::json::array();
 	for (auto &perm : permissions)
@@ -583,55 +593,6 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	message.reply(web::http::status_codes::OK, convertText2Json("User delete success"));
 }
 
-void RestHandler::apiUserActiveMFA(const HttpRequest &message)
-{
-	permissionCheck(message, PERMISSION_KEY_user_mfa_active);
-	auto userName = getJwtUserName(message);
-
-	const auto user = Security::instance()->getUserInfo(userName);
-	const auto mfaSecret = user->generateMfaKey();
-	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
-	const auto totpUri = Utility::stringFormat("otpauth://totp/%s?secret=%s&issuer=%s",
-											   userName.c_str(), mfaSecret.c_str(), "AppMesh");
-
-	auto result = nlohmann::json();
-	result[HTTP_BODY_KEY_MFA_URI] = nlohmann::json(Utility::encode64(totpUri));
-	message.reply(web::http::status_codes::OK, result);
-
-	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
-}
-
-void RestHandler::apiUserDeActiveMFA(const HttpRequest &message)
-{
-	const static char fname[] = "RestHandler::apiUserDeActiveMFA() ";
-
-	permissionCheck(message, PERMISSION_KEY_user_mfa_delete);
-	const auto path = (curlpp::unescape(message.m_relative_uri));
-	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_MFA_DEL);
-	const auto tokenUserName = getJwtUserName(message);
-	auto userName = (pathUserName == "self") ? tokenUserName : pathUserName;
-
-	auto user = Security::instance()->getUserInfo(userName);
-	if (user != nullptr)
-	{
-		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" || pathUserName != tokenUserName))
-		{
-			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
-		}
-		user->deactiveMfa();
-		message.reply(web::http::status_codes::OK, convertText2Json("2FA deactive success"));
-
-		Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-		ConsulConnection::instance()->saveSecurity();
-	}
-	else
-	{
-		LOG_WAR << fname << "No such user exist: " << userName;
-		throw std::invalid_argument("No such user exist");
-	}
-}
-
 void RestHandler::apiUsersView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_get_users);
@@ -733,48 +694,132 @@ void RestHandler::apiRestMetrics(const HttpRequest &message)
 	}
 }
 
+nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string *token)
+{
+	nlohmann::json result = nlohmann::json::object();
+	nlohmann::json profile = nlohmann::json::object();
+	profile[("name")] = std::string(uname);
+	profile[("auth_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
+	result[("profile")] = std::move(profile);
+	result[("token_type")] = std::string(HTTP_HEADER_JWT_Bearer);
+	result[HTTP_HEADER_JWT_access_token] = token ? *token : createJwtToken(uname, ugroup, timeoutSeconds);
+	result[("expire_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
+	result[("expire_seconds")] = (timeoutSeconds);
+	return result;
+}
+
 void RestHandler::apiUserLogin(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserLogin() ";
+
+	// mandatory
+	const auto uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
+	const auto passwd = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_password));
+	// option
+	const auto totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
+	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
+
 	if (message.m_headers.count(HTTP_HEADER_JWT_username) && message.m_headers.count(HTTP_HEADER_JWT_password))
 	{
-		std::string uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
-		std::string passwd = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_password));
-		std::string totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
-		std::string userGroup;
-		if (!Security::instance()->verifyUserKey(uname, passwd, totp, userGroup))
+		const auto user = Security::instance()->getUserInfo(uname);
+		if (!Security::instance()->verifyUserKey(uname, passwd))
 		{
+			// passwd failed
 			message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect user password"));
 		}
-		else
+		else if (user && !user->mfaEnabled())
 		{
-			int timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS; // default timeout is 7 days
-			if (message.m_headers.count(HTTP_HEADER_JWT_expire_seconds))
-			{
-				auto timeout = message.m_headers.find(HTTP_HEADER_JWT_expire_seconds)->second;
-				timeoutSeconds = std::stoi(timeout);
-			}
-
-			auto token = createJwtToken(uname, userGroup, timeoutSeconds);
-
-			nlohmann::json result = nlohmann::json::object();
-			nlohmann::json profile = nlohmann::json::object();
-			profile[("name")] = std::string(uname);
-			profile[("auth_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-			result[("profile")] = profile;
-			result[("token_type")] = std::string(HTTP_HEADER_JWT_Bearer);
-			result[HTTP_HEADER_JWT_access_token] = std::string((token));
-			result[("expire_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
-			result[("expire_seconds")] = (timeoutSeconds);
-
-			message.reply(web::http::status_codes::OK, result);
+			// verify without TOTP
+			message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup()));
 			LOG_DBG << fname << "User <" << uname << "> login success";
+		}
+		else if (user && user->mfaEnabled())
+		{
+			// verify with TOTP
+			if (totp.empty())
+			{
+				// require TOTP valiate, TODO: check standard RFC 7235 https://developer.aliyun.com/article/1430310
+				std::map<std::string, std::string> headers;
+				headers["WWW-Authenticate"] = "TOTP realm=\"TOTP Authentication\", qop=\"auth\"";
+				const int challengeTimeout = 3 * 60; // set to expire after 3 minutes
+				auto result = nlohmann::json::object();
+				result["status"] = std::string("TOTP_CHALLENGE_REQUIRED");
+				result["digits"] = 6;
+				result["algorithm"] = std::string("HS256");
+				result["period"] = 60; // TOTP key refersh period
+				// result["provisioning_uri"] = std::string("otpauth://totp/Example:user@example.com?secret=JBSWY3DNEHXXE5TUN4&issuer=Example");
+				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(createJwtToken(user->getName(), user->getGroup(), timeoutSeconds), challengeTimeout);
+				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = time_t() + challengeTimeout;
+				message.reply(web::http::status_codes::Unauthorized, std::move(result), std::move(headers));
+				LOG_DBG << fname << "User <" << uname << "> request TOTP key success";
+			}
+			else
+			{
+				if (user->totpValidateCode(totp))
+				{
+					message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup()));
+					LOG_DBG << fname << "User <" << uname << "> login with TOTP success";
+				}
+				else
+				{
+					// totp failed
+					message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect totp key"));
+				}
+			}
 		}
 	}
 	else
 	{
 		message.reply(web::http::status_codes::NetworkAuthenticationRequired, convertText2Json("Username or Password missing"));
 	}
+}
+
+void RestHandler::apiUserLogoff(const HttpRequest &message)
+{
+	const static char fname[] = "RestHandler::apiUserLogoff() ";
+
+	// verify current token
+	const auto verify = verifyToken(message);
+	const auto &uname = std::get<0>(verify);
+
+	// retire current token
+	const auto token = getJwtToken(message);
+	TOKEN_BLACK_LIST::instance()->addToken(token, jwt::decode(token).get_expires_at());
+
+	message.reply(web::http::status_codes::OK);
+	LOG_DBG << fname << "User <" << uname << "> logoff success";
+}
+
+void RestHandler::apiUserTokenRenew(const HttpRequest &message)
+{
+	const static char fname[] = "RestHandler::apiUserTokenRenew() ";
+
+	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
+	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
+
+	// verify current token
+	const auto verify = verifyToken(message);
+	const auto &uname = std::get<0>(verify);
+	const auto &userGroup = std::get<1>(verify);
+
+	// TODO: limit renew time, consider setup
+	const auto token = getJwtToken(message);
+	const auto decoded_token = jwt::decode(token);
+	const auto expireTime = decoded_token.get_expires_at();
+	// const auto issueTime = decoded_token.get_issued_at();
+	// const auto oneThirdTime = issueTime + (decoded_token.get_expires_at() - issueTime) / 3;
+	// if (oneThirdTime < std::chrono::system_clock::now())
+	//{
+	//	throw std::invalid_argument("The current time is still before the midpoint of the expire time");
+	//}
+
+	// retire current token
+	TOKEN_BLACK_LIST::instance()->addToken(token, expireTime);
+
+	// create new token
+	message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, userGroup));
+	LOG_DBG << fname << "User <" << uname << "> renew token success";
 }
 
 void RestHandler::apiUserAuth(const HttpRequest &message)
@@ -792,6 +837,115 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 	else
 	{
 		message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
+	}
+}
+
+void RestHandler::apiUserTotpSecret(const HttpRequest &message)
+{
+	const static char fname[] = "RestHandler::apiUserTotpSecret() ";
+	permissionCheck(message, PERMISSION_KEY_user_totp_active);
+	auto userName = getJwtUserName(message);
+
+	const auto user = Security::instance()->getUserInfo(userName);
+	if (user == nullptr)
+		throw std::invalid_argument("no such user");
+	const auto mfaSecret = user->totpGenerateKey();
+	user->totpActive(false); // set to under setup status
+	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
+	const auto totpUri = Utility::stringFormat(
+		"otpauth://totp/%s?secret=%s&issuer=%s", userName.c_str(), mfaSecret.c_str(), "AppMesh");
+
+	auto result = nlohmann::json();
+	result[HTTP_BODY_KEY_MFA_URI] = nlohmann::json(Utility::encode64(totpUri));
+	message.reply(web::http::status_codes::OK, result);
+
+	// save secret
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
+	ConsulConnection::instance()->saveSecurity();
+
+	LOG_DBG << fname << "User <" << uname << "> get TOTP secret";
+}
+
+void RestHandler::apiUserTotpSetup(const HttpRequest &message)
+{
+	const static char fname[] = "RestHandler::apiUserTotpSetup() ";
+	permissionCheck(message, PERMISSION_KEY_user_totp_active);
+	std::string totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+
+	// get user
+	auto userName = getJwtUserName(message);
+	const auto user = Security::instance()->getUserInfo(userName);
+	if (user == nullptr)
+		throw std::invalid_argument("no such user");
+	if (user->getMfaKey().empty())
+		throw std::invalid_argument("please generate TOTP secret first");
+	user->totpValidateCode(totp);
+
+	// re-new token
+	apiUserTokenRenew(message);
+
+	// persist
+	user->totpActive(true);
+	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
+	ConsulConnection::instance()->saveSecurity();
+
+	LOG_DBG << fname << "User <" << userName << "> setup TOTP success";
+}
+
+void RestHandler::apiUserTotpValidate(const HttpRequest &message)
+{
+	const static char fname[] = "RestHandler::apiUserTotpValidate() ";
+
+	const auto uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
+	const auto totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	const auto totpChallenge = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp_challenge));
+	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
+	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
+
+	const auto user = Security::instance()->getUserInfo(uname);
+	if (user == nullptr)
+		throw std::invalid_argument("no such user");
+	if (!user->mfaEnabled())
+		throw std::invalid_argument("TOTP authentication not enabled for current user");
+	if (totp.empty())
+		throw std::invalid_argument("no TOTP key provided");
+
+	std::string token;
+	user->totpValidateChallenge(totpChallenge, token);
+	message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), &token));
+
+	LOG_DBG << fname << "User <" << uname << "> validate TOTP key with result success";
+}
+
+void RestHandler::apiUserTotpDisable(const HttpRequest &message)
+{
+	const static char fname[] = "RestHandler::apiUserTotpDisable() ";
+
+	permissionCheck(message, PERMISSION_KEY_user_totp_disable);
+	const auto path = (curlpp::unescape(message.m_relative_uri));
+	const auto pathUserName = regexSearch(path, REST_PATH_SEC_TOTP_DISABLE);
+	const auto tokenUserName = getJwtUserName(message);
+	const auto &userName = (pathUserName == "self") ? tokenUserName : pathUserName;
+
+	auto user = Security::instance()->getUserInfo(userName);
+	if (user)
+	{
+		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" || pathUserName != tokenUserName))
+		{
+			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
+		}
+		user->totpDeactive();
+		message.reply(web::http::status_codes::OK, convertText2Json("2FA deactive success"));
+
+		// persist
+		Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
+		ConsulConnection::instance()->saveSecurity();
+		LOG_DBG << fname << "User <" << userName << "> disable TOTP success";
+	}
+	else
+	{
+		LOG_WAR << fname << "No such user exist: " << userName;
+		throw std::invalid_argument("No such user exist");
 	}
 }
 
@@ -843,7 +997,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 			}
 			existApp[JSON_KEY_APP_name] = std::string(Utility::createUUID()); // specify a UUID app name
 			existApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
-			jsonApp = existApp;
+			jsonApp = std::move(existApp);
 		}
 		else
 		{
@@ -924,8 +1078,8 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	auto appObj = Configuration::instance()->getApp(appName);
 	auto result = appObj->getOutput(pos, maxSize, processUuid, index, timeout);
 	auto output = std::get<0>(result);
-	auto finished = std::get<1>(result);
-	auto exitCode = std::get<2>(result);
+	const auto &finished = std::get<1>(result);
+	const auto &exitCode = std::get<2>(result);
 	LOG_DBG << fname; // << output;
 	std::map<std::string, std::string> headers;
 	if (pos)
@@ -986,8 +1140,8 @@ void RestHandler::apiCloudAppOutputView(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_cloud_app_out_view);
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto tp = regexSearch2(path, REST_PATH_CLOUD_APP_OUT_VIEW);
-	auto appName = std::get<0>(tp);
-	auto hostName = std::get<1>(tp);
+	const auto &appName = std::get<0>(tp);
+	const auto &hostName = std::get<1>(tp);
 
 	auto querymap = message.m_querys;
 	auto resp = ConsulConnection::instance()->viewCloudAppOutput(appName, hostName, querymap, message.m_headers);

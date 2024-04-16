@@ -70,5 +70,5 @@ protected:
         << " Method: " << message.m_method    \
         << " URI: " << message.m_relative_uri \
         << " Remote: " << message.m_remote_address;
-		// << " Query: " << message.m_querys
-		// << " Header: " << message.m_headers
+// << " Query: " << message.m_querys
+// << " Header: " << message.m_headers

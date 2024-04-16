@@ -24,8 +24,16 @@ protected:
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 
+	nlohmann::json createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string *token = nullptr);
 	void apiUserLogin(const HttpRequest &message);
+	void apiUserLogoff(const HttpRequest &message);
+	void apiUserTokenRenew(const HttpRequest &message);
 	void apiUserAuth(const HttpRequest &message);
+	void apiUserTotpSecret(const HttpRequest &message);
+	void apiUserTotpSetup(const HttpRequest &message);
+	void apiUserTotpValidate(const HttpRequest &message);
+	void apiUserTotpDisable(const HttpRequest &message);
+
 	void apiAppView(const HttpRequest &message);
 	void apiAppOutputView(const HttpRequest &message);
 	void apiAppsView(const HttpRequest &message);
@@ -66,8 +74,6 @@ protected:
 	void apiUserView(const HttpRequest &message);
 	void apiUserAdd(const HttpRequest &message);
 	void apiUserDel(const HttpRequest &message);
-	void apiUserActiveMFA(const HttpRequest &message);
-	void apiUserDeActiveMFA(const HttpRequest &message);
 	void apiUsersView(const HttpRequest &message);
 	void apiUserGroupsView(const HttpRequest &message);
 

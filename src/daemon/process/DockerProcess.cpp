@@ -140,7 +140,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		}
 	}
 	// Docker container does not restrict container user
-	//if (!execUser.empty()) dockerCommand.append(" --user ").append(execUser);
+	// if (!execUser.empty()) dockerCommand.append(" --user ").append(execUser);
 	dockerCommand += " " + m_dockerImage;
 	dockerCommand += " " + cmd;
 	LOG_DBG << fname << "dockerCommand: " << dockerCommand;
@@ -195,7 +195,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 					this->attach(pid);
 					this->containerId(containerId);
 					LOG_INF << fname << "started pid <" << pid << "> for container :" << containerId;
-					//startError("");
+					// startError("");
 					return this->getpid();
 				}
 				else
@@ -229,7 +229,7 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 {
 	const static char fname[] = "DockerProcess::execPullDockerImage() ";
 
-	int pullTimeout = 5 * 60; //set default image pull timeout to 5 minutes
+	int pullTimeout = 5 * 60; // set default image pull timeout to 5 minutes
 	if (envMap.count(ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT) && Utility::isNumber(envMap[ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT]))
 	{
 		pullTimeout = std::stoi(envMap[ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT]);
@@ -269,9 +269,10 @@ int DockerProcess::returnValue(void) const
 {
 	const static char fname[] = "DockerProcess::returnValue() ";
 
-	auto dockerCommand = Utility::stringFormat("docker inspect %s --format='{{.State.ExitCode}}'", m_containerId.c_str());
+	const auto containerId = this->containerId();
+	auto dockerCommand = Utility::stringFormat("docker inspect %s --format='{{.State.ExitCode}}'", containerId.c_str());
 	auto dockerProcess = std::make_shared<AppProcess>();
-	dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
+	dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, containerId);
 	dockerProcess->wait();
 	if (dockerProcess->returnValue() == 0)
 	{
@@ -282,12 +283,12 @@ int DockerProcess::returnValue(void) const
 		}
 		else
 		{
-			LOG_WAR << fname << "docker inspect exit code from container " << m_containerId << " failed with output: " << msg;
+			LOG_WAR << fname << "docker inspect exit code from container " << containerId << " failed with output: " << msg;
 		}
 	}
 	else
 	{
-		LOG_WAR << fname << "docker inspect exit code from container " << m_containerId << " failed with exit code: " << dockerProcess->returnValue();
+		LOG_WAR << fname << "docker inspect exit code from container " << containerId << " failed with exit code: " << dockerProcess->returnValue();
 	}
 	return -200;
 }

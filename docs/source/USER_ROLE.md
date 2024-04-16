@@ -4,20 +4,20 @@ User and Role design for App Mesh
 
 ### What is supported
 
-> * App Mesh REST API support user permission control
-> * App Mesh CLI (based on REST API) support user permission control
-> * Permission KEY is defined for each REST API
-> * Role list is configurable
-> * Each user can define a password and some roles
-> * All the user/role/permission can be defined in local json file and central Consul service
-> * user/role configuration support dynamic update by `systemctl reload appmesh`, WebGUI and CLI
-> * User support metadata attribute for extra usage
-> * User group is defined for a user
-> * App ownership permission can define group permission and other group permission
+> - App Mesh REST API support user permission control
+> - App Mesh CLI (based on REST API) support user permission control
+> - Permission KEY is defined for each REST API
+> - Role list is configurable
+> - Each user can define a password and some roles
+> - All the user/role/permission can be defined in local json file and central Consul service
+> - user/role configuration support dynamic update by `systemctl reload appmesh`, WebGUI and CLI
+> - User support metadata attribute for extra usage
+> - User group is defined for a user
+> - App ownership permission can define group permission and other group permission
 
 ### What is **not** supported
 
-> * One user can only belong to one user group
+> - One user can only belong to one user group
 
 ### User and Role configure json sample
 
@@ -127,13 +127,14 @@ User and Role design for App Mesh
 |    POST     | /appmesh/user/usera/unlock     | `unlock-user`        |
 |     DEL     | /appmesh/user/usera            | `delete-user`        |
 |     PUT     | /appmesh/user/usera            | `add-user`           |
-|     PUT     | /appmesh/user/self/mfa         | `user-mfa-active`    |
-|     DEL     | /appmesh/user/self/mfa         | `user-mfa-delete`    |
+|    POST     | /appmesh/totp/secret           | `user-totp-active`   |
+|    POST     | /appmesh/totp/setup            | `user-totp-active`   |
+|    POST     | /appmesh/totp/usera/disable    | `user-totp-disable`  |
 |     GET     | /appmesh/users                 | `get-users`          |
 
 ### Command line authentication
 
-* Invalid authentication will stop command line
+- Invalid authentication will stop command line
 
 ```shell
 $ appc view
@@ -141,7 +142,7 @@ login failed : Incorrect user password
 invalid token supplied
 ```
 
-* Use `appc logon` to authenticate from App Mesh
+- Use `appc logon` to authenticate from App Mesh
 
 ```shell
 $ appc logon
@@ -154,7 +155,7 @@ id name        user  status   return pid    memory  start_time          command
 1  sleep       root  enabled  0      32646  812 K   2019-10-10 19:25:38 /bin/sleep 60
 ```
 
-* Use `appc logoff` to clear authentication information
+- Use `appc logoff` to clear authentication information
 
 ```shell
 $ appc logoff
@@ -167,15 +168,15 @@ invalid token supplied
 
 ### REST API authentication
 
-* Get token from API  `/appmesh/login`
+- Get token from API `/appmesh/login`
 
 ```shell
 $ curl -X POST -k https://127.0.0.1:6060/appmesh/login -H "Username:`echo -n admin | base64`" -H "Password:`echo -n admin123 | base64`"
 {"Access-Token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NzA3MDc3NzYsImlhdCI6MTU3MDcwNzE3NiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.CF_jXy4IrGpl0HKvM8Vh_T7LsGTGO-K73OkRxQ-BFF8","expire_time":1570707176508714400,"profile":{"auth_time":1570707176508711100,"name":"admin"},"token_type":"Bearer"}
 ```
 
-* All other API should add token in header `Authorization:Bearer xxx`
- Use `POST` `/appmesh/auth` to verify token from above:
+- All other API should add token in header `Authorization:Bearer <JWT_TOKEN>`
+  Use `POST` `/appmesh/auth` to verify token from above:
 
 ```shell
 $ curl -X POST -k -i -H "Authorization:Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NDE4MTM1NzQsImdyb3VwIjoiYWRtaW4iLCJpYXQiOjE2NDEyMDg3NzQsImlzcyI6ImFwcG1lc2gtYXV0aDAiLCJuYW1lIjoiYWRtaW4ifQ.BfiNR2JOk8lB_q3pwwfl8j3PlA3Jxhccrbq2cx-HHtE" https://127.0.0.1:6060/appmesh/auth
@@ -188,6 +189,7 @@ Content-Type: text/plain; charset=utf-8
 
 Each application can define access permission for other users (option), by default, one registered application can be accessed by any user who has specific role permission, application permission is different with role permission, application permission define accessability for the users who does not register the application.
 The permission is a two digital int value:
-* Unit Place : define the same group users permissions. 1=deny, 2=read, 3=write
-* Tenth Place : define the other group users permissions. 1=deny, 2=read, 3=write
-For example, 11 indicates all other user can not access this application, 21 indicates only same group users can read this application.
+
+- Unit Place : define the same group users permissions. 1=deny, 2=read, 3=write
+- Tenth Place : define the other group users permissions. 1=deny, 2=read, 3=write
+  For example, 11 indicates all other user can not access this application, 21 indicates only same group users can read this application.

@@ -212,7 +212,7 @@ public:
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days
+#define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days // TODO: limit max token expire time
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS 60				// run app default timeout
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS 60 * 60 * 12	// run app max lifecycle seconds
 #define MAX_RUN_APP_TIMEOUT_SECONDS 1 * (60 * 60 * 24)	// run app max timeout 1 day
@@ -225,6 +225,8 @@ public:
 #define SEPARATE_PYTHON_EXEC_APP_NAME "pyrun"
 #define REST_ROOT_TEXT_MESSAGE "<html>\n<head><title>App Mesh</title></head>\n<body>App Mesh</body>\n</html>\n"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
+#define REST_TEXT_TOTP_CHALLENGE_JSON_KEY "totp_challenge"
+#define REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY "expires"
 
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
@@ -366,6 +368,7 @@ public:
 #define HTTP_HEADER_JWT_username "Username"
 #define HTTP_HEADER_JWT_password "Password"
 #define HTTP_HEADER_JWT_totp "Totp"
+#define HTTP_HEADER_JWT_totp_challenge "Totp-Challenge"
 #define HTTP_HEADER_JWT_new_password "New-Password"
 #define HTTP_HEADER_JWT_auth_permission "Auth-Permission"
 #define HTTP_HEADER_KEY_exit_code "Exit-Code"
@@ -418,8 +421,8 @@ public:
 #define PERMISSION_KEY_unlock_user "user-unlock"
 #define PERMISSION_KEY_add_user "user-add"
 #define PERMISSION_KEY_delete_user "user-delete"
-#define PERMISSION_KEY_user_mfa_delete "user-mfa-delete"
-#define PERMISSION_KEY_user_mfa_active "user-mfa-active"
+#define PERMISSION_KEY_user_totp_disable "user-totp-disable"
+#define PERMISSION_KEY_user_totp_active "user-totp-active"
 #define PERMISSION_KEY_get_users "user-list"
 #define PERMISSION_KEY_role_update "role-set"
 #define PERMISSION_KEY_role_delete "role-delete"

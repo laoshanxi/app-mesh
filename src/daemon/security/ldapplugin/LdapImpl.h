@@ -1,7 +1,7 @@
 #pragma once
 
-#include <nlohmann/json.hpp>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #include "../../../common/TimerHandler.h"
@@ -36,7 +36,7 @@ public:
     void syncGroupUsers();
 
 public:
-    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey, const std::string &totp, std::string &outUserGroup) override;
+    virtual bool verifyUserKey(const std::string &userName, const std::string &userKey) override;
     virtual void changeUserPasswd(const std::string &userName, const std::string &newPwd) NOT_APPLICABLE_THROW;
 
     virtual std::shared_ptr<User> getUserInfo(const std::string &userName) override;

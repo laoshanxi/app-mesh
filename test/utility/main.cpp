@@ -1,7 +1,6 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
-#include "../catch.hpp"
 #include <ace/Init_ACE.h>
 #include <ace/Map_Manager.h>
 #include <ace/Message_Block.h>
@@ -10,6 +9,7 @@
 #include <ace/SOCK_Connector.h>
 #include <ace/SOCK_Stream.h>
 #include <boost/algorithm/string_regex.hpp>
+#include <catch.hpp>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -207,8 +207,8 @@ TEST_CASE("JSON", "[nlohmann json]")
 	LOG_INF << "nlohmann::json empty json: " << j;
 	LOG_INF << "nlohmann::json empty str: " << s;
 
-	//nlohmann::json c = nlohmann::json::parse("");
-	//LOG_INF << c;
+	// nlohmann::json c = nlohmann::json::parse("");
+	// LOG_INF << c;
 
 	nlohmann::json b = nlohmann::json::parse("{\"abc\": {\"def\": 123}}");
 	s = b.dump();

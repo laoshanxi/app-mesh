@@ -1057,7 +1057,7 @@ std::shared_ptr<CurlResponse> ConsulConnection::requestAppMesh(const std::string
 {
 	ArgumentParser appmesh(0, 0);
 	auto admin = Security::instance()->getUserInfo(JWT_ADMIN_NAME);
-	appmesh.login(admin->getName(), admin->getKey(), "", Utility::stdStringTrim(baseUri, '/'));
+	appmesh.login(admin->getName(), admin->getKey(), Utility::stdStringTrim(baseUri, '/'));
 	return appmesh.requestHttp(false, mtd, requestPath, nullptr, headers, query);
 }
 

@@ -20,10 +20,13 @@
       "user-lock",
       "role-delete",
       "role-set",
-      "user_mfa_delete",
+      "user-totp-disable",
       "user-unlock"
     ],
-    "shell": ["app-run-async", "app-run-sync"],
+    "shell": [
+      "app-run-async",
+      "app-run-sync"
+    ],
     "view": [
       "config-view",
       "label-view",
@@ -37,7 +40,7 @@
       "cloud-host-view",
       "app-view",
       "app-output-view",
-      "user-mfa-active",
+      "user-totp-active",
       "host-resource-view"
     ]
   },
@@ -48,9 +51,14 @@
       "group": "admin",
       "exec_user": "",
       "locked": false,
-      "mfa_enabled": true,
+      "mfa_enabled": false,
       "mfa_key": "",
-      "roles": ["manage", "view", "shell", "usermgr"]
+      "roles": [
+        "manage",
+        "view",
+        "shell",
+        "usermgr"
+      ]
     },
     "test": {
       "key": "test123",
@@ -66,7 +74,10 @@
       "group": "user",
       "exec_user": "",
       "locked": false,
-      "roles": ["view", "shell"]
+      "roles": [
+        "view",
+        "shell"
+      ]
     }
   }
 }

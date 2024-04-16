@@ -6,6 +6,7 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "../security/Security.h"
+#include "../security/TokenBlacklist.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
 
@@ -102,15 +103,20 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
         stdFunction(message);
     }
+    catch (const std::system_error &e)
+    {
+        LOG_WAR << fname << "rest " << path << " failed with error code: " << e.code() << ", message: " << e.what();
+        message.reply(web::http::status_codes::Unauthorized, convertText2Json(e.what()));
+    }
     catch (const std::exception &e)
     {
-        message.dump();
+        // message.dump();
         LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
         message.reply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
     }
     catch (...)
     {
-        message.dump();
+        // message.dump();
         LOG_WAR << fname << "rest " << path << " failed";
         message.reply(web::http::status_codes::BadRequest, convertText2Json("unknow exception"));
     }
@@ -168,6 +174,7 @@ const std::string RestBase::createJwtToken(const std::string &uname, const std::
                            .set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
                            .set_payload_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userGroup))
                            .sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
+    TOKEN_BLACK_LIST::instance()->tryRemoveFromList(token);
     return token;
 }
 
@@ -212,6 +219,10 @@ void RestBase::tranverseJsonTree(nlohmann::json &val)
 const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpRequest &message)
 {
     const auto token = getJwtToken(message);
+
+    if (TOKEN_BLACK_LIST::instance()->isTokenBlacklisted(token))
+        throw std::invalid_argument("token blocked");
+
     const auto decoded_token = jwt::decode(token);
     if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
     {
@@ -227,11 +238,11 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
             throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.as_string().c_str()));
 
         // check user token
-        auto verifier = jwt::verify()
-                            .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
-                            .with_issuer(HTTP_HEADER_JWT_ISSUER)
-                            .with_claim(HTTP_HEADER_JWT_name, userName)
-                            .with_claim(HTTP_HEADER_JWT_user_group, userGroup);
+        const auto verifier = jwt::verify()
+                                  .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
+                                  .with_issuer(HTTP_HEADER_JWT_ISSUER)
+                                  .with_claim(HTTP_HEADER_JWT_name, userName)
+                                  .with_claim(HTTP_HEADER_JWT_user_group, userGroup);
 
         verifier.verify(decoded_token);
 

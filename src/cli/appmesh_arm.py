@@ -32,9 +32,7 @@ client.run_async(
 # TODO: pass container mem/cpu limitation to App Mesh
 # TODO: pass container specific Environments to App Mesh
 run = client.run_async(
-    app=appmesh_client.App(
-        {"name": APP_NAME_SHADOW, "command": COMMANDS, "shell": True}
-    ),
+    app=appmesh_client.App({"name": APP_NAME_SHADOW, "command": COMMANDS, "shell": True}),
 )
 rt = client.run_async_wait(run)
 sys.exit(rt)

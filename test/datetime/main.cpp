@@ -1,9 +1,9 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
-#include "../catch.hpp"
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
+#include <catch.hpp>
 #include <chrono>
 #include <fstream>
 #include <iostream>

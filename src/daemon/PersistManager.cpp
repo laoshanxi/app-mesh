@@ -6,6 +6,7 @@
 #include "application/Application.h"
 #include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
+#include "security/TokenBlacklist.h"
 
 #define SNAPSHOT_JSON_KEY_pid "pid"
 #define SNAPSHOT_JSON_KEY_starttime "starttime"
@@ -53,6 +54,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 		}
 	}
 	snap->m_consulSessionId = ConsulConnection::instance()->consulSessionId();
+	snap->m_tokenBlackList = TOKEN_BLACK_LIST::instance()->getTokens();
 	return snap;
 }
 
@@ -69,7 +71,7 @@ void PersistManager::persistSnapshot()
 		}
 		else
 		{
-			m_persistedSnapshot = snapshot;
+			m_persistedSnapshot = std::move(snapshot);
 			m_persistedSnapshot->persist();
 		}
 	}
@@ -89,15 +91,15 @@ std::unique_ptr<PersistManager> &PersistManager::instance()
 	return singleton;
 }
 
-bool Snapshot::operator==(const Snapshot &snapshort) const
+bool Snapshot::operator==(const Snapshot &snap) const
 {
-	if (snapshort.m_apps.size() != m_apps.size())
+	if (snap.m_apps.size() != m_apps.size())
 		return false;
 	for (const auto &app : m_apps)
 	{
-		if (0 == snapshort.m_apps.count(app.first))
+		if (0 == snap.m_apps.count(app.first))
 			return false;
-		if (app.second == snapshort.m_apps.find(app.first)->second)
+		if (app.second == snap.m_apps.find(app.first)->second)
 		{
 			// continue;
 		}
@@ -106,12 +108,22 @@ bool Snapshot::operator==(const Snapshot &snapshort) const
 			return false;
 		}
 	}
-	return snapshort.m_consulSessionId == m_consulSessionId;
+	if (snap.m_tokenBlackList.size() != m_tokenBlackList.size())
+		return false;
+	else
+		for (const auto &token : m_tokenBlackList)
+		{
+			if (snap.m_tokenBlackList.count(token.first) == 0)
+				return false;
+		}
+
+	return snap.m_consulSessionId == m_consulSessionId;
 }
 
 nlohmann::json Snapshot::AsJson() const
 {
 	nlohmann::json result = nlohmann::json::object();
+
 	// Applications
 	nlohmann::json apps = nlohmann::json::object();
 	for (const auto &app : m_apps)
@@ -119,10 +131,18 @@ nlohmann::json Snapshot::AsJson() const
 		auto json = nlohmann::json::object();
 		json[SNAPSHOT_JSON_KEY_pid] = (app.second.m_pid);
 		json[SNAPSHOT_JSON_KEY_starttime] = (app.second.m_startTime);
-		apps[app.first] = json;
+		apps[app.first] = std::move(json);
 	}
-	result["Applications"] = apps;
+	result["Applications"] = std::move(apps);
+
 	result["ConsulSessionId"] = std::string(m_consulSessionId);
+
+	// TODO: use seperate persist file or move to 3rd storage
+	// TokenBlackList
+	nlohmann::json tokens = nlohmann::json::object();
+	for (const auto &token : m_tokenBlackList)
+		tokens[token.first] = std::chrono::system_clock::to_time_t(token.second);
+	result["TokenBlackList"] = std::move(tokens);
 	return result;
 }
 
@@ -145,6 +165,11 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const nlohmann::json &obj)
 				}
 			}
 		snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
+		if (obj.contains("TokenBlackList"))
+			for (auto &token : obj.at("TokenBlackList").items())
+			{
+				snap->m_tokenBlackList.insert(std::make_pair(token.key(), std::chrono::system_clock::from_time_t(token.value().get<int64_t>())));
+			}
 	}
 	return snap;
 }

@@ -49,6 +49,15 @@ public:
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
 	void reply(web::http::status_code status, const nlohmann::json &body_data) const;
 
+	/// <summary>
+	/// Responds to this HTTP request.
+	/// </summary>
+	/// <param name="status">Response status code.</param>
+	/// <param name="body_data">Json value to use in the response body.</param>
+	/// <param name="headers">Headers value in the response header.</param>
+	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
+	void reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const;
+
 	/// Responds to this HTTP request with a string.
 	/// Assumes the character encoding of the string is UTF-8.
 	/// </summary>
