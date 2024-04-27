@@ -1,4 +1,4 @@
-name: "build image centos8"
+name: "build_img_centos8"
 
 on:
   push:

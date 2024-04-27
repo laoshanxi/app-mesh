@@ -83,7 +83,7 @@ if [ true ]; then
 	cmake .
 	cmake --build . --target install
 fi
-python3 -m pip install --upgrade msgpack requests requests_toolbelt aniso8601 twine wheel
+python3 -m pip install --break-system-packages --upgrade --ignore-installed msgpack requests requests_toolbelt aniso8601 twine wheel
 
 git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
 cp -rf hashidsxx /usr/local/include/

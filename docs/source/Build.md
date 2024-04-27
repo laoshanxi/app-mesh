@@ -36,15 +36,15 @@ Build a Docker image to compile C++ application is a reliable and easy way to ha
 
 There are different Dockerfile(s) with different compiler version could be selected to generate the Docker image:
 
-- docker/Dockerfile.build_centos8
+- docker/Dockerfile.build_centos7
 - docker/Dockerfile.build_ubuntu18
-- docker/Dockerfile.build_ubuntu20
 - docker/Dockerfile.build_ubuntu22
+- docker/Dockerfile.build_ubuntu24
 
 The Docker image build process is simple with this:
 
 ```shell
-TAG_NAME=build_ubuntu20
+TAG_NAME=build_ubuntu24
 MAGE_NAME=laoshanxi/appmesh:${TAG_NAME}
 
 git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
@@ -58,8 +58,7 @@ docker push ${IMAGE_NAME}
 
 The public pre-build Docker images can be used to build binary directly:
 
-- laoshanxi/appmesh:build_centos8
+- laoshanxi/appmesh:build_centos7
 - laoshanxi/appmesh:build_ubuntu18
-- laoshanxi/appmesh:build_ubuntu20
 - laoshanxi/appmesh:build_ubuntu22
-- laoshanxi/appmesh:build_ubuntu18_arm64
+- laoshanxi/appmesh:build_ubuntu24

@@ -1,4 +1,4 @@
-name: "build image ubuntu18"
+name: "build_img_ubuntu18"
 
 on:
   push:

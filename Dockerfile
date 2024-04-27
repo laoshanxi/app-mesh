@@ -3,25 +3,18 @@ RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
 	cd app-mesh && mkdir build && cd build && cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && make -j4 && make pack && ls
 
 
-FROM python:3.12-slim AS PYTHON_STAGE
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir appmesh
-
-
-FROM ubuntu:22.04
+FROM python:3.12-slim
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
 ENV APPMESH_DisableExecUser=true
 # not only listen 127.0.0.1
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
-COPY --from=PYTHON_STAGE /opt/venv /opt/venv
 COPY --from=COMPILE_STAGE /opt/app-mesh/build/appmesh*.deb .
-ENV PATH="$PATH:/opt/venv/bin"
 RUN apt-get update && \
 	apt-get install -y tini && \
 	apt-get install -y ./appmesh*.deb && \
+	pip3 install --break-system-packages --no-cache-dir appmesh && \
 	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
 	rm -rf /opt/appmesh/apps/ping.json && rm -rf /opt/appmesh/apps/backup.yaml && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \

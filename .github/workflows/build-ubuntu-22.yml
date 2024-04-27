@@ -1,4 +1,4 @@
-name: "build image ubuntu22"
+name: "build_img_ubuntu22"
 
 on:
   push:
