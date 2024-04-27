@@ -1,6 +1,7 @@
 #include "RestClient.h"
 #include "Utility.h"
 
+#include <fstream>
 #include <mutex>
 
 #include <curlpp/Easy.hpp>

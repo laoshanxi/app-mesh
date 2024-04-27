@@ -152,6 +152,28 @@ endmacro()
 if(NOT APPMESH_NO_TESTS)
     enable_testing()
     add_subdirectory(test)
+    # Python test
+    #add_test(
+    #    NAME python_tests
+    #    COMMAND python3 ${CMAKE_SOURCE_DIR}/test/python/test.py
+    #)
+    # Golang test
+    #add_test(
+    #    NAME go_tests
+    #    COMMAND go test ${CMAKE_SOURCE_DIR}/src/sdk/go/ -test.v
+    #)
+    add_custom_target(python_tests
+        COMMAND python3 ${CMAKE_SOURCE_DIR}/test/python/test.py
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Running Python tests..."
+        VERBATIM
+    )
+    add_custom_target(go_tests
+        COMMAND go test ${CMAKE_SOURCE_DIR}/src/sdk/go/ -test.v
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Running Golang tests..."
+        VERBATIM
+    )
 endif()
 
 ##########################################################################

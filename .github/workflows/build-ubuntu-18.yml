@@ -1,4 +1,4 @@
-name: "build image ubuntu18"
+name: "build_img_ubuntu18"
 
 on:
   push:
@@ -9,7 +9,6 @@ on:
       - "docker/Dockerfile.build_ubuntu18"
       - "autogen.sh*"
       - "script/openssl_update.sh"
-      - "go.*"
 
 env:
   # Use docker.io for Docker Hub if empty

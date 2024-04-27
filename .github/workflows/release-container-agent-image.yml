@@ -1,15 +1,14 @@
-name: "AppMesh image"
+name: "release_container_agent_image"
 
 on:
   push:
     branches:
       - main
     paths:
-      - Dockerfile
-      - .github/workflows/appmesh-image.yml
-  # trigger when the workflow "Github release" succeeded
+      - docker/Dockerfile.container_agent
+      - .github/workflows/release-container-agent-image.yml
   workflow_run:
-    workflows: ["Github release"]
+    workflows: ["release_PyPI_package"]
     types:
       - completed
 
@@ -18,7 +17,7 @@ env:
   REGISTRY: docker.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: laoshanxi/appmesh
-  APPMESH_VERSION: "2.1.2"
+  IMAGE_TAG: container_agent
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -39,9 +38,6 @@ jobs:
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
-      - name: Checkout Github code
-        uses: actions/checkout@v4
-
       # https://docs.docker.com/build/ci/github-actions/multi-platform/
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -57,37 +53,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Extract metadata (tags, labels) for Docker
-      # https://github.com/docker/metadata-action
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: Dockerfile
+          context: https://github.com/laoshanxi/app-mesh.git#main:docker
+          file: Dockerfile.container_agent
           no-cache: true
-          attests: type=sbom
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.APPMESH_VERSION }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Test
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          shell: bash
-          run: |
-            /appmesh-entrypoint.sh &
-            sleep 5
-            appc ls
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}

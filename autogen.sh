@@ -64,7 +64,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	#apt install -y libboost-all-dev libace-dev libace
 	#apt install -y liblog4cpp5-dev
 fi
-python3 -m pip install --upgrade pip
+python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip
 
 # yum install -y golang
 # apt install -y golang
@@ -219,7 +219,9 @@ if [ true ]; then
 	cmake .
 	cmake --build . --target install
 fi
-python3 -m pip install --upgrade msgpack requests requests_toolbelt aniso8601 twine wheel
+
+PIP_PACKAGES="msgpack requests requests_toolbelt aniso8601 twine wheel"
+python3 -m pip install --upgrade $PIP_PACKAGES || python3 -m pip install --break-system-packages --upgrade --ignore-installed $PIP_PACKAGES
 
 # syft for SBOM
 curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin

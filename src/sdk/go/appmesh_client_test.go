@@ -1,24 +1,22 @@
-package main
-
-// go get github.com/laoshanxi/app-mesh/src/sdk/go
+package appmesh
 
 import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/pquerna/otp/totp"
 	"github.com/rs/xid"
+	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
-
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 func TestAppmeshLogin(t *testing.T) {
 
-	fmt.Println("main")
-	client := appmesh.NewClient("https://localhost:6060")
+	client := NewClient("https://127.0.0.1:6060")
 
-	_, token, _ := client.Login("admin", "admin123", appmesh.DEFAULT_TOKEN_EXPIRE_SECONDS)
+	_, token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
 	client.Authentication(token, "")
 	labels, err := client.GetTags()
 	fmt.Printf("HTTP error %v, returns %v\n", err, labels)
@@ -28,11 +26,41 @@ func TestAppmeshLogin(t *testing.T) {
 	app, err2 := client.GetApp("test")
 	fmt.Printf("Application:%v\n %v\n", err2, app)
 
-	runApp := appmesh.Application{}
+	runApp := Application{}
 	cmd := "ping www.baidu.com -w 5"
 	runApp.Command = &cmd
 	client.Run(runApp, false, 5)
 	fmt.Println("end")
+}
+
+func TestAppmeshTotp(t *testing.T) {
+
+	client := NewClient("https://127.0.0.1:6060")
+
+	success, token, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
+	require.True(t, success, "Login failed")
+	require.NoError(t, err, "Login failed")
+
+	success, err = client.Authentication(token, "")
+	require.True(t, success, "Authentication failed")
+	require.NoError(t, err, "Authentication failed")
+
+	secret, err := client.TotpSecret()
+	require.NoError(t, err, "TotpSecret failed")
+
+	code, _ := totp.GenerateCode(secret, time.Now().UTC())
+	success, err = client.TotpSetup(code)
+	require.True(t, success, "TotpSetup failed")
+	require.NoError(t, err, "TotpSetup failed")
+
+	code, _ = totp.GenerateCode(secret, time.Now().UTC())
+	success, _, err = client.Login("admin", "admin123", code, DEFAULT_TOKEN_EXPIRE_SECONDS)
+	require.True(t, success, "Login with TOTP code failed")
+	require.NoError(t, err, "Login with TOTP code failed")
+
+	success, err = client.TotpDisable()
+	require.True(t, success, "TotpDisable failed")
+	require.NoError(t, err, "TotpDisable failed")
 }
 
 func TestMessagePack(t *testing.T) {
