@@ -1,4 +1,4 @@
-FROM laoshanxi/appmesh:build_ubuntu22 AS COMPILE_STAGE
+FROM laoshanxi/appmesh:build_ubuntu24 AS COMPILE_STAGE
 RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
 	cd app-mesh && mkdir build && cd build && cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && make -j4 && make pack && ls
 
@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir appmesh
 
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container

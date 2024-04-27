@@ -1,13 +1,13 @@
-name: "CI test"
+name: "test_CI"
 
 on:
   push:
     branches:
       - main
     paths:
-      - .github/workflows/ci-test.yml
+      - .github/workflows/test-ci.yml
   workflow_run:
-    workflows: ["Github release"]
+    workflows: ["release_github_package"]
     types: [completed]
 
 env:
@@ -53,20 +53,6 @@ jobs:
             sleep 5
             appc ls
 
-      - name: test ubuntu:20
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ubuntu:20.04
-          shell: bash
-          run: |
-            apt update
-            apt install -y wget iputils-ping
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_9_glibc_2.31_x86_64.deb
-            apt install -y ./appmesh_*.deb
-            /opt/appmesh/script/appmesh-entrypoint.sh &
-            sleep 5
-            appc ls
-
       - name: test ubuntu:22
         uses: addnab/docker-run-action@v3
         with:
@@ -76,6 +62,20 @@ jobs:
             apt update
             apt install -y wget iputils-ping
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_11_glibc_2.35_x86_64.deb
+            apt install -y ./appmesh_*.deb
+            /opt/appmesh/script/appmesh-entrypoint.sh &
+            sleep 5
+            appc ls
+
+      - name: test ubuntu:24
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ubuntu:24.04
+          shell: bash
+          run: |
+            apt update
+            apt install -y wget iputils-ping
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_13_glibc_2.39_x86_64.deb
             apt install -y ./appmesh_*.deb
             /opt/appmesh/script/appmesh-entrypoint.sh &
             sleep 5

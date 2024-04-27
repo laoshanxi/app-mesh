@@ -7,6 +7,16 @@
 set -x
 set -e
 
+SSL_VERSION="3.0.13"
+if (command -v openssl &>/dev/null); then
+  echo "OpenSSL already installed on this system."
+  CURRENT_SSL_VERSION=$(openssl version | cut -d' ' -f2)
+  if [ "$(printf '%s\n' "$CURRENT_SSL_VERSION" "$SSL_VERSION" | sort -V | head -n1)" = "$CURRENT_SSL_VERSION" ]; then
+    echo "OpenSSL version <$CURRENT_SSL_VERSION> is greater than or equal to target <$SSL_VERSION>"
+    exit 0
+  fi
+fi
+
 export ROOTDIR=$(pwd)/openssl.tmp
 mkdir -p ${ROOTDIR}
 cd ${ROOTDIR}
@@ -23,7 +33,7 @@ elif [ -f "/usr/bin/apt" ]; then
   apt -y install g++ wget make perl zlib1g-dev
 fi
 
-OPEN_SSL_VERSION=openssl-3.0.13
+OPEN_SSL_VERSION=openssl-${SSL_VERSION}
 wget --quiet --no-check-certificate https://www.openssl.org/source/${OPEN_SSL_VERSION}.tar.gz
 tar zxvf ${OPEN_SSL_VERSION}.tar.gz >/dev/null
 cd ${OPEN_SSL_VERSION}
