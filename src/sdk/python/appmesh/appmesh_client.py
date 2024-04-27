@@ -320,13 +320,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Security
     ########################################
-    def login(self, user_name: str, user_pwd: str, totp_key="", timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+    def login(self, user_name: str, user_pwd: str, totp_code="", timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
         """Login with user name and password
 
         Args:
             user_name (str): the name of the user.
             user_pwd (str): the password of the user.
-            totp_key (str, optional): the TOTP key if enabled for the user.
+            totp_code (str, optional): the TOTP code if enabled for the user.
             timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
 
         Returns:
@@ -353,7 +353,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 header={
                     "Username": base64.b64encode(user_name.encode()),
                     "Totp-Challenge": base64.b64encode(challenge.encode()),
-                    "Totp": base64.b64encode(totp_key.encode()),
+                    "Totp": base64.b64encode(totp_code.encode()),
                     "Expire-Seconds": self._parse_duration(timeout_seconds),
                 },
             )
@@ -432,7 +432,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return self.jwt_token
 
     def totp_secret(self) -> str:
-        """Generate TOTP key for current login user and return MFA URI with JSON body
+        """Generate TOTP secret for current login user and return MFA URI with JSON body
 
         Returns:
             str: TOTP secret str
@@ -446,11 +446,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             # resp.raise_for_status()
         return None
 
-    def totp_setup(self, totp_key: str) -> bool:
+    def totp_setup(self, totp_code: str) -> bool:
         """Setup 2FA for current login user
 
         Args:
-            totp_key (str): TOTP key
+            totp_code (str): TOTP code
 
         Returns:
             bool: success or failure.
@@ -458,25 +458,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path=f"/appmesh/totp/setup",
-            header={"Totp": base64.b64encode(totp_key.encode())},
+            header={"Totp": base64.b64encode(totp_code.encode())},
         )
         return resp.status_code == HTTPStatus.OK
-
-    def totp_validate(self, totp_key: str) -> bool:
-        """Validate TOTP key
-
-        Args:
-            totp_key (str): TOTP key
-
-        Returns:
-            bool: success or failure.
-        """
-        resp = self._request_http(
-            method=AppMeshClient.Method.POST,
-            path=f"/appmesh/totp/validate",
-            header={"Totp": base64.b64encode(totp_key.encode())},
-        )
-        return (resp.status_code == HTTPStatus.OK), resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
 
     def totp_disable(self, user="self") -> bool:
         """Disable 2FA for current user

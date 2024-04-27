@@ -1,4 +1,4 @@
-name: "Coverity code scan"
+name: "code_scan_Coverity"
 
 on:
   # trigger when code changes
@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - "src/**"
-      - ".github/workflows/coverity_cpp_code_scan.yml"
+      - .github/workflows/code-scan-coverity.yml
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read

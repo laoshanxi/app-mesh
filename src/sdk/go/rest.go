@@ -77,8 +77,8 @@ func (r *AppmeshClient) doRequest(method string, apiPath string, params url.Valu
 	}
 
 	// headers
-	if r.token != "" {
-		req.Header.Set("Authorization", "Bearer "+r.token)
+	if r.getToken() != "" {
+		req.Header.Set("Authorization", "Bearer "+r.getToken())
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -87,17 +87,17 @@ func (r *AppmeshClient) doRequest(method string, apiPath string, params url.Valu
 		req.Header.Add(k, v)
 	}
 
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 	resp, err := r.client.Do(req)
 
 	if err != nil {
 		fmt.Println(err.Error())
 		return nil, 0, nil, err
 	}
-	data, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Println(string(data))
+	if resp != nil {
+		defer resp.Body.Close()
 	}
-	// https://www.cnblogs.com/wangjiale1024/p/10979993.html
+	data, err := io.ReadAll(resp.Body)
 	return data, resp.StatusCode, resp.Header, err
 }

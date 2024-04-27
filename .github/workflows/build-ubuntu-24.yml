@@ -1,15 +1,14 @@
-name: "build image ubuntu20"
+name: "build_img_ubuntu24"
 
 on:
   push:
     branches:
       - main
     paths:
-      - ".github/workflows/docker_build/build-ubuntu-20.yml"
-      - "docker/Dockerfile.build_ubuntu20"
+      - ".github/workflows/docker_build/build-ubuntu-24.yml"
+      - "docker/Dockerfile.build_ubuntu24"
       - "autogen.sh*"
       - "script/openssl_update.sh"
-      - "go.*"
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -56,13 +55,13 @@ jobs:
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
-      - name: Build and push Docker image for ubuntu 20
+      - name: Build and push Docker image for ubuntu 24
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/Dockerfile.build_ubuntu20
+          file: docker/Dockerfile.build_ubuntu24
           no-cache: true
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build_ubuntu20
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build_ubuntu24

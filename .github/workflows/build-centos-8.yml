@@ -1,4 +1,4 @@
-name: "build image centos8"
+name: "build_img_centos8"
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
       - ".github/workflows/docker_build/build-centos-8.yml"
       - "docker/Dockerfile.build_centos8"
       - "autogen.sh"
-      - "go.*"
 
 env:
   # Use docker.io for Docker Hub if empty
