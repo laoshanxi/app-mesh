@@ -7,7 +7,7 @@ require (
 	github.com/pquerna/otp v1.4.0
 	github.com/rs/xid v1.5.0
 	github.com/stretchr/testify v1.9.0
-	github.com/valyala/fasthttp v1.52.0
+	github.com/valyala/fasthttp v1.53.0
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 )
 
