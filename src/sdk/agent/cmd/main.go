@@ -66,8 +66,8 @@ func main() {
 
 	// start prometheus exporter (without SSL)
 	prometheusPort, err := config.GetAppMeshConfig2("REST", "PrometheusExporterListenPort")
-	if err == nil && int(prometheusPort.(float64)) > 1024 {
-		go http.ListenPrometheus(int(prometheusPort.(float64)))
+	if err == nil && (prometheusPort.(int)) > 1024 {
+		go http.ListenPrometheus(prometheusPort.(int))
 		log.Println("<Prometheus Exporter> listening at: ", prometheusPort)
 	}
 

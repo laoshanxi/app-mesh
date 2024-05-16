@@ -1,12 +1,18 @@
 #!/usr/bin/env python
+import os
 import sys
-import socket
 import uuid
+
+import warnings
+from urllib3.exceptions import InsecureRequestWarning
 
 # python3 -m pip install --upgrade appmesh
 from appmesh import appmesh_client
 
-APP_NAME_SHADOW = socket.gethostname()  # used as shadow native app name
+warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+
+# need to set container name before start container
+APP_NAME_SHADOW = os.environ.get("HOSTNAME")  # used as shadow native app name
 APP_NAME_MONITOR = str(uuid.uuid1())  # used as monitor app name
 
 client = appmesh_client.AppMeshClient()
@@ -24,6 +30,9 @@ client.run_async(
         {
             "command": f"python3 /opt/appmesh/bin/container_monitor.py {APP_NAME_SHADOW} {APP_NAME_MONITOR}",
             "name": APP_NAME_MONITOR,
+            "behavior": {
+                "exit": "remove",
+            },
         }
     )
 )
@@ -32,7 +41,7 @@ client.run_async(
 # TODO: pass container mem/cpu limitation to App Mesh
 # TODO: pass container specific Environments to App Mesh
 run = client.run_async(
-    app=appmesh_client.App({"name": APP_NAME_SHADOW, "command": COMMANDS, "shell": True}),
+    app=appmesh_client.App({"name": APP_NAME_SHADOW, "command": COMMANDS, "shell": True, "behavior": {"exit": "remove"}}),
 )
 rt = client.run_async_wait(run)
 sys.exit(rt)

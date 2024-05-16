@@ -294,22 +294,25 @@ void RestHandler::apiAppDisable(const HttpRequest &message)
 
 void RestHandler::apiAppDelete(const HttpRequest &message)
 {
+	permissionCheck(message, PERMISSION_KEY_app_delete);
+
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
-	if (Configuration::instance()->getApp(appName)->isCloudApp())
-		throw std::invalid_argument("not allowed for cloud application");
 
-	if (!(Configuration::instance()->getApp(appName)->getOwner() &&
-		  Configuration::instance()->getApp(appName)->getOwner()->getName() == getJwtUserName(message)))
+	if (!Configuration::instance()->isAppExist(appName))
 	{
-		// only check delete permission for none-self app
-		permissionCheck(message, PERMISSION_KEY_app_delete);
+		message.reply(web::http::status_codes::NotFound);
 	}
+	else
+	{
+		checkAppAccessPermission(message, appName, true);
 
-	checkAppAccessPermission(message, appName, true);
+		if (Configuration::instance()->getApp(appName)->isCloudApp())
+			throw std::invalid_argument("not allowed for cloud application");
 
-	Configuration::instance()->removeApp(appName);
-	message.reply(web::http::status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
+		Configuration::instance()->removeApp(appName);
+		message.reply(web::http::status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
+	}
 }
 
 void RestHandler::apiFileDownload(const HttpRequest &message)
@@ -683,15 +686,8 @@ void RestHandler::apiHealth(const HttpRequest &message)
 
 void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
-	if (Configuration::instance()->prometheusEnabled())
-	{
-		auto body = this->collectData();
-		message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
-	}
-	else
-	{
-		throw std::invalid_argument("Prometheus export not enabled or configured correctly");
-	}
+	auto body = this->collectData();
+	message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
 }
 
 nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string *token)

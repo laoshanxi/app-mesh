@@ -35,4 +35,4 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /appmesh
 
 # Run your application
-ENTRYPOINT ["python", "appmesh_arm.py"]
+ENTRYPOINT ["python3", "appmesh_arm.py"]

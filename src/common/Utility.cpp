@@ -64,21 +64,12 @@ bool Utility::isNumber(const std::string &str)
 
 std::string Utility::stdStringTrim(const std::string &str)
 {
-	char *line = const_cast<char *>(str.c_str());
-	// trim the line on the left and on the right
-	std::size_t len = str.length();
-	std::size_t start = 0;
-	while (isspace(*line))
-	{
-		++line;
-		--len;
-		++start;
-	}
-	while (len > 0 && isspace(line[len - 1]))
-	{
-		--len;
-	}
-	return len >= start ? str.substr(start, len) : str.substr(start);
+	auto front = std::find_if_not(str.begin(), str.end(), [](int c)
+								  { return std::isspace(c); });
+	auto back = std::find_if_not(str.rbegin(), str.rend(), [](int c)
+								 { return std::isspace(c); })
+					.base();
+	return (back <= front ? std::string() : std::string(front, back));
 }
 
 std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool trimStart, bool trimEnd)
@@ -937,45 +928,48 @@ bool Utility::containsSpecialCharacters(const std::string &str)
 	return false;
 }
 
-std::string Utility::jsonToYaml(const nlohmann::json &j, YAML::Emitter &out, int indent)
+std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out, int indent)
 {
+	if (out == nullptr)
+		out = std::make_shared<YAML::Emitter>();
+
 	if (j.is_object())
 	{
-		out << YAML::BeginMap;
+		*out << YAML::BeginMap;
 		for (auto it = j.begin(); it != j.end(); ++it)
 		{
-			out << YAML::Key << it.key();
+			*out << YAML::Key << it.key();
 			jsonToYaml(it.value(), out, indent + 1);
 		}
-		out << YAML::EndMap;
+		*out << YAML::EndMap;
 	}
 	else if (j.is_array())
 	{
-		out << YAML::BeginSeq;
+		*out << YAML::BeginSeq;
 		for (const auto &element : j)
 		{
 			jsonToYaml(element, out, indent + 1);
 		}
-		out << YAML::EndSeq;
+		*out << YAML::EndSeq;
 	}
 	else if (j.is_boolean())
 	{
-		out << j.get<bool>();
+		*out << j.get<bool>();
 	}
 	else if (j.is_number())
 	{
-		out << j.get<double>();
+		*out << j.get<double>();
 	}
 	else
 	{
 		// String
 		std::string str = j.get<std::string>();
 		if (containsSpecialCharacters(str))
-			out << YAML::Literal << str;
+			*out << YAML::Literal << str;
 		else
-			out << str;
+			*out << str;
 	}
-	return out.c_str(); // Return the YAML string
+	return out->c_str(); // Return the YAML string
 }
 
 nlohmann::json Utility::yamlToJson(const YAML::Node &node)
@@ -999,17 +993,10 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 			{
 				result[pair.first.as<std::string>()] = nullptr;
 			}
-			else if (pair.second.IsScalar() && std::isdigit(pair.second.Scalar()[0]))
+			else if (pair.second.IsScalar() && Utility::isNumber(pair.second.Scalar()))
 			{
-				// Check if the value is a number
-				if (pair.second.Scalar().find('.') != std::string::npos)
-				{
-					result[pair.first.as<std::string>()] = std::stod(pair.second.Scalar());
-				}
-				else
-				{
-					result[pair.first.as<std::string>()] = std::stoi(pair.second.Scalar());
-				}
+				// TODO: check double
+				result[pair.first.as<std::string>()] = std::stoi(pair.second.Scalar());
 			}
 			else
 			{
@@ -1041,22 +1028,15 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 		{
 			result = nullptr;
 		}
-		else if (std::isdigit(node.Scalar()[0]))
+		else if (Utility::isNumber(node.Scalar()))
 		{
-			// Check if the scalar value is a number
-			if (node.Scalar().find('.') != std::string::npos)
-			{
-				result = std::stod(node.Scalar());
-			}
-			else
-			{
-				result = std::stoi(node.Scalar());
-			}
+			// TODO: check double
+			result = std::stoi(node.Scalar());
 		}
 		else
 		{
 			// If it's not a boolean or a number, treat it as a string
-			result = node.as<std::string>();
+			result = stdStringTrim(node.as<std::string>());
 		}
 	}
 

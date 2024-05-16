@@ -59,7 +59,7 @@ services:
      - /etc/ssl/ca-bundle.pem:/opt/appmesh/ssl/ca.pem
      - ./server.pem:/opt/appmesh/ssl/server.pem
      - ./server-key.pem:/opt/appmesh/ssl/server-key.pem
-     - ./security.json:/opt/appmesh/security.json:rw
+     - ./security.yaml:/opt/appmesh/security.yaml:rw
     ports:
      - "6060:6060"
     environment:

@@ -7,6 +7,7 @@ type Application struct {
 	Owner          *string `json:"owner"`
 	Permission     *int    `json:"permission"`
 	ShellMode      *bool   `json:"shell"`
+	SessionLogin   *bool   `json:"session_login"`
 	Command        *string `json:"command"`
 	Description    *string `json:"description"`
 	WorkingDir     *string `json:"working_dir"`

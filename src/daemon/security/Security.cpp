@@ -24,8 +24,8 @@ void Security::init(const std::string &interface)
 
     if (interface == JSON_KEY_USER_key_method_local)
     {
-        const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
-        const auto security = Security::FromJson(nlohmann::json::parse(Utility::readFileCpp(securityJsonFile)));
+        const auto securityYamlFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_YAML_FILE).string();
+        const auto security = Security::FromJson(Utility::yamlToJson(YAML::LoadFile(securityYamlFile)));
         Security::instance(security);
     }
     else if (interface == JSON_KEY_USER_key_method_ldap)
@@ -59,44 +59,37 @@ void Security::save(const std::string &interface)
 {
     const static char fname[] = "Security::save() ";
 
-    // distinguish security.json and ldap.json
-    std::string securityFile = APPMESH_SECURITY_JSON_FILE;
+    // distinguish security.yaml and ldap.yaml
+    std::string securityFile = APPMESH_SECURITY_YAML_FILE;
     if (interface == JSON_KEY_USER_key_method_ldap)
     {
-        securityFile = APPMESH_SECURITY_LDAP_JSON_FILE;
+        securityFile = APPMESH_SECURITY_LDAP_YAML_FILE;
     }
 
-    auto content = this->AsJson().dump();
-    if (content.length())
+    auto content = this->AsJson();
+    const auto securityYamlFile = (fs::path(Utility::getParentDir()) / securityFile).string();
+    auto tmpFile = securityYamlFile + std::string(".") + std::to_string(Utility::getThreadId());
+    if (Utility::runningInContainer())
     {
-        const auto securityJsonFile = (fs::path(Utility::getParentDir()) / securityFile).string();
-        auto tmpFile = securityJsonFile + std::string(".") + std::to_string(Utility::getThreadId());
-        if (Utility::runningInContainer())
+        tmpFile = securityYamlFile;
+    }
+    std::ofstream ofs(tmpFile, ios::trunc);
+    if (ofs.is_open())
+    {
+        auto formatJson = Utility::jsonToYaml(content);
+        ofs << formatJson;
+        ofs.close();
+        if (tmpFile != securityYamlFile)
         {
-            tmpFile = securityJsonFile;
-        }
-        std::ofstream ofs(tmpFile, ios::trunc);
-        if (ofs.is_open())
-        {
-            auto formatJson = Utility::prettyJson(content);
-            ofs << formatJson;
-            ofs.close();
-            if (tmpFile != securityJsonFile)
+            if (ACE_OS::rename(tmpFile.c_str(), securityYamlFile.c_str()) == 0)
             {
-                if (ACE_OS::rename(tmpFile.c_str(), securityJsonFile.c_str()) == 0)
-                {
-                    LOG_DBG << fname << "local security saved";
-                }
-                else
-                {
-                    LOG_ERR << fname << "Failed to write configuration file <" << securityJsonFile << ">, error :" << std::strerror(errno);
-                }
+                LOG_DBG << fname << "local security saved";
+            }
+            else
+            {
+                LOG_ERR << fname << "Failed to write configuration file <" << securityYamlFile << ">, error :" << std::strerror(errno);
             }
         }
-    }
-    else
-    {
-        LOG_ERR << fname << "Configuration content is empty";
     }
 }
 

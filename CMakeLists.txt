@@ -155,7 +155,7 @@ if(NOT APPMESH_NO_TESTS)
     # Python test
     #add_test(
     #    NAME python_tests
-    #    COMMAND python3 ${CMAKE_SOURCE_DIR}/test/python/test.py
+    #    COMMAND python3 -m unittest ${CMAKE_SOURCE_DIR}/test/python/test_appmesh_client.py
     #)
     # Golang test
     #add_test(
@@ -163,8 +163,8 @@ if(NOT APPMESH_NO_TESTS)
     #    COMMAND go test ${CMAKE_SOURCE_DIR}/src/sdk/go/ -test.v
     #)
     add_custom_target(python_tests
-        COMMAND python3 ${CMAKE_SOURCE_DIR}/test/python/test.py
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND python3 -m unittest
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/test/python/
         COMMENT "Running Python tests..."
         VERBATIM
     )
