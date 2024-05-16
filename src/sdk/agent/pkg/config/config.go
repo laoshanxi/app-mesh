@@ -1,53 +1,73 @@
 package config
 
 import (
-	"encoding/json"
-	"errors"
 	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	"gopkg.in/yaml.v3"
 )
 
-var configJsonData map[string]interface{}
+// configuration definition
+type (
+	SSLConfig struct {
+		VerifyClient                bool   `yaml:"VerifyClient"`
+		VerifyServer                bool   `yaml:"VerifyServer"`
+		SSLCaPath                   string `yaml:"SSLCaPath"`
+		SSLCertificateFile          string `yaml:"SSLCertificateFile"`
+		SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
+		SSLClientCertificateFile    string `yaml:"SSLClientCertificateFile"`
+		SSLClientCertificateKeyFile string `yaml:"SSLClientCertificateKeyFile"`
+	}
+
+	RESTConfig struct {
+		RestEnabled                  bool   `yaml:"RestEnabled"`
+		RestListenAddress            string `yaml:"RestListenAddress"`
+		RestListenPort               int    `yaml:"RestListenPort"`
+		RestTcpPort                  int    `yaml:"RestTcpPort"`
+		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
+
+		SSL SSLConfig `yaml:"SSL"`
+	}
+
+	Configuration struct {
+		REST RESTConfig `yaml:"REST"`
+	}
+)
+
+// config with some default value
+var ConfigData = Configuration{
+	REST: RESTConfig{
+		RestEnabled:                  true,
+		RestListenAddress:            "localhost",
+		RestListenPort:               6060,
+		RestTcpPort:                  6059,
+		PrometheusExporterListenPort: 0,
+
+		SSL: SSLConfig{
+			SSLCaPath:                   "/opt/appmesh/ssl/ca.pem",
+			SSLCertificateFile:          "/opt/appmesh/ssl/server.pem",
+			SSLCertificateKeyFile:       "/opt/appmesh/ssl/server-key.pem",
+			SSLClientCertificateFile:    "/opt/appmesh/ssl/client.pem",
+			SSLClientCertificateKeyFile: "/opt/appmesh/ssl/client-key.pem",
+			VerifyClient:                false,
+			VerifyServer:                true,
+		},
+	},
+}
 
 func init() {
-	data, err := os.ReadFile(filepath.Join(GetAppMeshHomeDir(), "config.json"))
+	yamlFile, err := os.ReadFile(filepath.Join(GetAppMeshHomeDir(), "config.yaml"))
 	if err != nil {
-		log.Fatalf("Error reading file: %v", err)
+		log.Fatalf("Error os.ReadFile: %v", err)
 	}
-	// Unmarshal the JSON data into the map
-	err = json.Unmarshal(data, &configJsonData)
+	err = yaml.Unmarshal(yamlFile, &ConfigData)
 	if err != nil {
-		log.Fatalf("Error unmarshalling JSON: %v", err)
+		log.Fatalf("Error yaml.Unmarshal: %v", err)
 	}
 }
 
 func GetAppMeshHomeDir() string {
 	return utils.GetParentDir(utils.GetCurrentAbPath())
-}
-
-func GetAppMeshConfig3(level1 string, level2 string, level3 string) (interface{}, error) {
-	// Access data from the map
-	// Read level 3 value in one line
-	if value, ok := configJsonData[level1].(map[string]interface{})[level2].(map[string]interface{})[level3]; ok {
-		log.Printf("Value of %s = %v", level3, value)
-		return value, nil
-	} else {
-		log.Printf("failed to retrieve json value for: %s", level3)
-		return false, errors.New("failed to retrieve json value")
-	}
-}
-
-func GetAppMeshConfig2(level1 string, level2 string) (interface{}, error) {
-	// Access data from the map
-	// Read level 3 value in one line
-	if value, ok := configJsonData[level1].(map[string]interface{})[level2]; ok {
-		log.Printf("Value of %s = %v", level2, value)
-		return value, nil
-	} else {
-		log.Printf("failed to retrieve json value for: %s", level2)
-		return false, errors.New("failed to retrieve json value")
-	}
 }

@@ -59,15 +59,14 @@ func main() {
 	}
 
 	// start listen REST proxy
-	restEnabled, err := config.GetAppMeshConfig2("REST", "RestEnabled")
-	if err == nil && restEnabled.(bool) {
+	if config.ConfigData.REST.RestEnabled {
 		go http.ListenRest()
 	}
 
 	// start prometheus exporter (without SSL)
-	prometheusPort, err := config.GetAppMeshConfig2("REST", "PrometheusExporterListenPort")
-	if err == nil && int(prometheusPort.(float64)) > 1024 {
-		go http.ListenPrometheus(int(prometheusPort.(float64)))
+	prometheusPort := config.ConfigData.REST.PrometheusExporterListenPort
+	if (prometheusPort) > 1024 {
+		go http.ListenPrometheus(prometheusPort)
 		log.Println("<Prometheus Exporter> listening at: ", prometheusPort)
 	}
 

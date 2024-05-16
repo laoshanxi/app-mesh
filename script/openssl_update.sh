@@ -7,7 +7,8 @@
 set -x
 set -e
 
-SSL_VERSION="3.0.13"
+SSL_VERSION="3.0.13" # 3.0 series is a Long Term Support (LTS) version and is supported until 7th September 2026
+
 if (command -v openssl &>/dev/null); then
   echo "OpenSSL already installed on this system."
   CURRENT_SSL_VERSION=$(openssl version | cut -d' ' -f2)

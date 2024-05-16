@@ -128,7 +128,7 @@ std::shared_ptr<CurlResponse>
 RestClient::upload(const std::string host, const std::string &path, const std::string file, std::map<std::string, std::string> header)
 {
 	std::lock_guard<std::mutex> guard(m_restLock);
-	auto url = (fs::path(host) / path).string();
+	const auto url = (fs::path(host) / path).string();
 
 	curlpp::Cleanup cleaner;
 	curlpp::Easy request;
@@ -172,7 +172,7 @@ std::shared_ptr<CurlResponse>
 RestClient::download(const std::string host, const std::string &path, const std::string remoteFile, const std::string localFile, std::map<std::string, std::string> header)
 {
 	std::lock_guard<std::mutex> guard(m_restLock);
-	auto url = (fs::path(host) / path).string();
+	const auto url = (fs::path(host) / path).string();
 
 	curlpp::Cleanup cleaner;
 	curlpp::Easy request;

@@ -40,23 +40,19 @@ var (
 
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
-	verifyClient, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyClient")
-	verifyServer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyServer")
-	serverCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
-	serverCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
-	sslCaPath, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
-
 	// client: for internal connection, use server side certificate file for client
 	clientCA := tls.Certificate{}
-	if verifyClient.(bool) {
-		clientCA = utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))
+	if config.ConfigData.REST.SSL.VerifyClient {
+		clientCA = utils.LoadCertificatePair(
+			config.ConfigData.REST.SSL.SSLCertificateFile,
+			config.ConfigData.REST.SSL.SSLCertificateKeyFile)
 	}
 
 	// server
 	var serverCA *x509.CertPool
-	if verifyServer.(bool) {
+	if config.ConfigData.REST.SSL.VerifyServer {
 		var err error
-		serverCA, err = utils.LoadCA(sslCaPath.(string))
+		serverCA, err = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
 		if err != nil {
 			panic(err)
 		}
@@ -64,7 +60,7 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 
 	conf := &tls.Config{
 		// verify server
-		InsecureSkipVerify: !(verifyServer.(bool)),
+		InsecureSkipVerify: !(config.ConfigData.REST.SSL.VerifyServer),
 		RootCAs:            serverCA,
 
 		// verify client
@@ -245,21 +241,17 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 }
 
 func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
-	verifyClient, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyClient")
-	verifyServer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyServer")
-	serverCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
-	serverCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
-	sslCaPath, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
-
 	// Load server certificate and key
-	serverCA := utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))
+	serverCA := utils.LoadCertificatePair(
+		config.ConfigData.REST.SSL.SSLCertificateFile,
+		config.ConfigData.REST.SSL.SSLCertificateKeyFile)
 	// client
 	clientAuth := tls.NoClientCert
 	var clientCA *x509.CertPool
-	if verifyClient.(bool) {
+	if config.ConfigData.REST.SSL.VerifyClient {
 		clientAuth = tls.RequireAndVerifyClientCert
 		var err error
-		clientCA, err = utils.LoadCA(sslCaPath.(string))
+		clientCA, err = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
 		if err != nil {
 			panic(err)
 		}
@@ -267,7 +259,7 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 
 	conf := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
-		InsecureSkipVerify:       !(verifyServer.(bool)), // whether a client verifies the server's certificate chain
+		InsecureSkipVerify:       !(config.ConfigData.REST.SSL.VerifyServer), // whether a client verifies the server's certificate chain
 		Certificates:             []tls.Certificate{serverCA},
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
@@ -302,12 +294,8 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 }
 
 func ListenRest() {
-	listenHostName, _ := config.GetAppMeshConfig2("REST", "RestListenAddress")
-	listenHostPort, _ := config.GetAppMeshConfig2("REST", "RestListenPort")
-	restTcpPort, _ := config.GetAppMeshConfig2("REST", "RestTcpPort")
-
-	listenAddr := listenHostName.(string) + ":" + strconv.Itoa(int(listenHostPort.(float64)))
-	connectAddr := listenHostName.(string) + ":" + strconv.Itoa(int(restTcpPort.(float64)))
+	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
+	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
 	// connect to TCP rest server
 	conn, err := connectServer(strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1))
 	if err != nil {

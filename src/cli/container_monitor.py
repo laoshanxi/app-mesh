@@ -28,6 +28,6 @@ else:
 
 # remove related applications
 for app_name in args:
-    print(appmesh.app_delete(app_name))
+    appmesh.app_delete(app_name)
 
 print("Finished")

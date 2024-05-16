@@ -97,9 +97,9 @@ std::shared_ptr<T> make_shared_array(size_t size)
 
 #define GET_HTTP_HEADER(message, headerName) \
 	message.m_headers.count(headerName) > 0 ? message.m_headers.find(headerName)->second : std::string()
-#define APPMESH_CONFIG_JSON_FILE "config.json"
-#define APPMESH_SECURITY_JSON_FILE "security.json"
-#define APPMESH_SECURITY_LDAP_JSON_FILE "ldap.json"
+#define APPMESH_CONFIG_YAML_FILE "config.yaml"
+#define APPMESH_SECURITY_YAML_FILE "security.yaml"
+#define APPMESH_SECURITY_LDAP_YAML_FILE "ldap.yaml"
 #define APPMESH_APPLICATION_DIR "apps"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
@@ -173,7 +173,7 @@ public:
 	static std::string htmlEntitiesDecode(const std::string &str);
 	static std::vector<std::string> str2argv(const std::string &commandLine);
 	static bool containsSpecialCharacters(const std::string &str);
-	static std::string jsonToYaml(const nlohmann::json &j, YAML::Emitter &out, int indent = 0);
+	static std::string jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out = nullptr, int indent = 0);
 	static nlohmann::json yamlToJson(const YAML::Node &node);
 	static void printQRcode(const std::string &src);
 
@@ -228,6 +228,7 @@ public:
 #define REST_TEXT_TOTP_CHALLENGE_JSON_KEY "totp_challenge"
 #define REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY "expires"
 
+#define JSON_KEY_BaseConfig "BaseConfig"
 #define JSON_KEY_Description "Description"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
 #define JSON_KEY_DisableExecUser "DisableExecUser"
@@ -280,6 +281,7 @@ public:
 #define JSON_KEY_APP_owner_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
 #define JSON_KEY_APP_shell_mode "shell"
+#define JSON_KEY_APP_session_login "session_login"
 #define JSON_KEY_APP_command "command"
 #define JSON_KEY_APP_description "description"
 #define JSON_KEY_APP_stdout_cache_size "stdout_cache_size"
@@ -346,7 +348,7 @@ public:
 #define JSON_KEY_USER_mfa_key "mfa_key"
 #define JSON_KEY_USER_mfa_enabled "mfa_enabled"
 
-#define JSON_KEY_USER_key_method_local "json"
+#define JSON_KEY_USER_key_method_local "local"
 #define JSON_KEY_USER_key_method_ldap "ldap"
 #define JSON_KEY_USER_LDAP_ldap_uri "Uri"
 #define JSON_KEY_USER_LDAP_ldap_LoginDN "LoginDN"

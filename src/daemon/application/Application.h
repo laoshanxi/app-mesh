@@ -56,7 +56,7 @@ public:
 	virtual void save();
 	virtual void remove();
 	virtual void dump();
-	virtual std::string getJsonPath();
+	virtual std::string getYamlPath();
 
 	// operate
 	void execute(void *ptree = nullptr);
@@ -112,6 +112,7 @@ protected:
 	std::string m_stdoutFile;
 	nlohmann::json m_metadata;
 	bool m_shellApp;
+	bool m_sessionLogin;
 	int m_stdoutCacheNum;
 	int m_stdoutCacheSize;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;

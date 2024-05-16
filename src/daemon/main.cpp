@@ -78,8 +78,8 @@ int main(int argc, char *argv[])
 		}
 
 		// get configuration
-		const auto configTxt = Configuration::readConfiguration();
-		auto config = Configuration::FromJson(configTxt, true);
+		auto configJson = Utility::yamlToJson(YAML::Load(Configuration::readConfiguration()));
+		auto config = Configuration::FromJson(configJson, true);
 		Configuration::instance(config);
 		Utility::initDateTimeZone(Configuration::instance()->getPosixTimezone(), true);
 

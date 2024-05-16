@@ -13,8 +13,8 @@ Wants=network.target
 [Service]
 Type=simple
 PIDFile=/var/run/appmesh.pid
-Environment="LD_LIBRARY_PATH=/opt/appmesh/lib64:${LD_LIBRARY_PATH}"
-EnvironmentFile=-/opt/appmesh/script/appmesh.environment
+Environment=
+EnvironmentFile=/opt/appmesh/script/appmesh.environment
 # work dir will force set to /opt/appmesh/work in main.cpp
 WorkingDirectory=/opt/appmesh/
 ExecStart=/opt/appmesh/bin/appsvc
