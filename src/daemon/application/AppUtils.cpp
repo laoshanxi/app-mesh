@@ -8,11 +8,13 @@
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 
-ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser)
+ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
-	auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", Configuration::instance()->getWorkDir().c_str(), name.c_str());
+	const auto shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
+	Utility::createDirectory(shellDir);
+	const auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", shellDir.c_str(), name.c_str());
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (shellFile.is_open() && shellFile.good())
 	{
@@ -22,13 +24,25 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		shellFile << cmd << std::endl;
 		shellFile.close();
 		// only read permission
-		os::chmod(fileName, 444);
+		os::chmod(fileName, 500);
 		if (execUser.length() > 0 && Utility::getOsUserName() != execUser)
 		{
 			os::chown(fileName, execUser);
 		}
 		m_fileName = fileName;
-		m_shellCmd = Utility::stringFormat("/bin/sh '%s'", m_fileName.c_str());
+
+		if (sessionLogin && execUser.length())
+		{
+			m_shellCmd = Utility::stringFormat("/usr/bin/sudo -u %s /bin/bash '%s'", execUser.c_str(), m_fileName.c_str());
+			if (getuid() != 0)
+			{
+				LOG_ERR << fname << "session login mode requires root privilege, but current user is <" << Utility::getOsUserName() << ">";
+			}
+		}
+		else
+		{
+			m_shellCmd = Utility::stringFormat("/bin/sh '%s'", m_fileName.c_str());
+		}
 
 		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> run in shell mode";
 	}

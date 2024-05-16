@@ -377,6 +377,7 @@ void ArgumentParser::processAppAdd()
 		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
 		("cmd,c", po::value<std::string>(), "full command line with arguments")
 		("shell,S", "use shell mode, cmd can be more shell commands with string format")
+		("session_login", "run with session login")
 		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
 		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (for docker container application)")
 		("workdir,w", po::value<std::string>(), "working directory")
@@ -398,7 +399,7 @@ void ArgumentParser::processAppAdd()
 		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "default exit behavior [restart,standby,keepalive,remove]")
 		("control", po::value<std::vector<std::string>>(), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
 		("force,f", "force without confirm")
-		("stdin", po::value<std::string>(), "accept json from stdin (provide 'std' string) or local json file path")
+		("stdin", po::value<std::string>(), "accept yaml from stdin (provide 'std' string) or local yaml file path")
 		("help,h", "Prints command usage to stdout and exits");
 
 	shiftCommandLineArgs(desc);
@@ -419,7 +420,6 @@ void ArgumentParser::processAppAdd()
 			return;
 		}
 	}
-	bool isJsonFormat = true;
 	nlohmann::json jsonObj;
 	if (m_commandLineVariables.count("stdin"))
 	{
@@ -429,17 +429,8 @@ void ArgumentParser::processAppAdd()
 			inputContent = Utility::readStdin2End();
 		else
 			inputContent = Utility::readFileCpp(inputJson);
-		try
-		{
-			// try parse json
-			jsonObj = nlohmann::json::parse(inputContent);
-		}
-		catch (...)
-		{
-			// try parse yaml
-			jsonObj = Utility::yamlToJson(YAML::Load(inputContent));
-			isJsonFormat = false;
-		}
+		// parse yaml
+		jsonObj = Utility::yamlToJson(YAML::Load(inputContent));
 	}
 
 	std::string appName;
@@ -526,6 +517,7 @@ void ArgumentParser::processAppAdd()
 	if (m_commandLineVariables.count("desc"))
 		jsonObj[JSON_KEY_APP_description] = std::string(m_commandLineVariables["desc"].as<std::string>());
 	jsonObj[JSON_KEY_APP_shell_mode] = (m_commandLineVariables.count("shell") > 0);
+	jsonObj[JSON_KEY_APP_session_login] = (m_commandLineVariables.count("session_login") > 0);
 	if (m_commandLineVariables.count("health_check"))
 		jsonObj[JSON_KEY_APP_health_check_cmd] = std::string(m_commandLineVariables["health_check"].as<std::string>());
 	if (m_commandLineVariables.count("perm"))
@@ -638,15 +630,7 @@ void ArgumentParser::processAppAdd()
 		jsonObj[JSON_KEY_APP_pid] = (m_commandLineVariables["pid"].as<int>());
 	std::string restPath = std::string("/appmesh/app/") + appName;
 	auto resp = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
-	if (isJsonFormat)
-	{
-		std::cout << Utility::prettyJson(resp->text) << std::endl;
-	}
-	else
-	{
-		YAML::Emitter emitter;
-		std::cout << Utility::jsonToYaml(nlohmann::json::parse(resp->text), emitter) << std::endl;
-	}
+	std::cout << Utility::jsonToYaml(nlohmann::json::parse(resp->text)) << std::endl;
 }
 
 void ArgumentParser::processAppDel()
@@ -700,7 +684,6 @@ void ArgumentParser::processAppView()
 		("name,n", po::value<std::string>(), "application name.")
 		("long,l", "display the complete information without reduce")
 		("output,o", "view the application output")
-		("yaml,y", "output with YAML format")
 		("pstree,p", "view the application pstree")
 		("stdout_index,O", po::value<int>(), "application output index")
 		("tail,t", "continue view the application output");
@@ -726,17 +709,7 @@ void ArgumentParser::processAppView()
 			else
 			{
 				Utility::addExtraAppTimeReferStr(resp);
-				if (m_commandLineVariables.count("yaml"))
-				{
-					// view app YAML
-					YAML::Emitter emitter;
-					std::cout << Utility::jsonToYaml(resp, emitter) << std::endl;
-				}
-				else
-				{
-					// view app json
-					std::cout << Utility::prettyJson(resp.dump()) << std::endl;
-				}
+				std::cout << Utility::jsonToYaml(resp) << std::endl;
 			}
 		}
 		else
@@ -823,7 +796,7 @@ void ArgumentParser::processResource()
 
 void ArgumentParser::processAppControl(bool start)
 {
-	po::options_description desc("Start application:", BOOST_DESC_WIDTH);
+	po::options_description desc("Control application:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
@@ -881,7 +854,8 @@ int ArgumentParser::processAppRun()
 		COMMON_OPTIONS
 		("desc,a", po::value<std::string>(), "application description")
 		("cmd,c", po::value<std::string>(), "full command line with arguments (run application do not need specify command line)")
-		("shell,S", po::value<bool>()->default_value(true), "use shell mode, cmd can be more commands")
+		("shell,S", "use shell mode, cmd can be more shell commands with string format")
+		("session_login", "run with session login")
 		("name,n", po::value<std::string>(), "existing application name to run or specify a application name for run, empty will generate a random name in server")
 		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
 		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
@@ -907,13 +881,13 @@ int ArgumentParser::processAppRun()
 	nlohmann::json jsonObj;
 	nlohmann::json jsonBehavior;
 	jsonBehavior[JSON_KEY_APP_behavior_exit] = std::string(JSON_KEY_APP_behavior_remove);
-	jsonObj[JSON_KEY_APP_behavior] = jsonBehavior;
+	jsonObj[JSON_KEY_APP_behavior] = std::move(jsonBehavior);
 	if (m_commandLineVariables.count("cmd"))
 		jsonObj[JSON_KEY_APP_command] = std::string(m_commandLineVariables["cmd"].as<std::string>());
 	if (m_commandLineVariables.count("desc"))
 		jsonObj[JSON_KEY_APP_description] = std::string(m_commandLineVariables["desc"].as<std::string>());
-	if (m_commandLineVariables["shell"].as<bool>())
-		jsonObj[JSON_KEY_APP_shell_mode] = (true);
+	jsonObj[JSON_KEY_APP_shell_mode] = (m_commandLineVariables.count("shell") > 0);
+	jsonObj[JSON_KEY_APP_session_login] = (m_commandLineVariables.count("session_login") > 0);
 	if (m_commandLineVariables.count(JSON_KEY_APP_name))
 		jsonObj[JSON_KEY_APP_name] = std::string(m_commandLineVariables["name"].as<std::string>());
 	if (m_commandLineVariables.count(JSON_KEY_APP_metadata))
@@ -1026,7 +1000,7 @@ void SIGINT_Handler(int signo)
 	if (SIGINIT_BREAKING)
 	{
 		//std::cout << "You pressed SIGINT(Ctrl+C) twice, session will exit." << std::endl;
-		auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
+		const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
 		WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
 		// if ctrl+c typed twice, just exit current
 		ACE_OS::_exit(SIGINT);
@@ -1035,7 +1009,7 @@ void SIGINT_Handler(int signo)
 	{
 		//std::cout << "You pressed SIGINT(Ctrl+C)" << std::endl;
 		SIGINIT_BREAKING = true;
-		auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME).append("/disable");
+		const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME).append("/disable");
 		WORK_PARSE->requestHttp(false, web::http::methods::POST, restPath);
 	}
 }
@@ -1394,12 +1368,12 @@ void ArgumentParser::processLoglevel()
 
 	auto level = m_commandLineVariables["level"].as<std::string>();
 
-	nlohmann::json jsonObj;
-	jsonObj[JSON_KEY_LogLevel] = std::string(level);
+	nlohmann::json jsonObj = {
+		{JSON_KEY_BaseConfig, {{JSON_KEY_LogLevel, level}}}};
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
 	auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
-	std::cout << "Log level set to: " << nlohmann::json::parse(response->text).at(JSON_KEY_LogLevel).get<std::string>() << std::endl;
+	std::cout << "Log level set to: " << nlohmann::json::parse(response->text).at(JSON_KEY_BaseConfig).at(JSON_KEY_LogLevel).get<std::string>() << std::endl;
 }
 
 void ArgumentParser::processCloudJoinMaster()
@@ -1435,7 +1409,7 @@ void ArgumentParser::processCloudJoinMaster()
 	jsonConsul[JSON_KEY_CONSUL_SECURITY] = (m_commandLineVariables.count("security"));
 	jsonConsul[JSON_KEY_CONSUL_AUTH_USER] = std::string(m_commandLineVariables["user"].as<std::string>());
 	jsonConsul[JSON_KEY_CONSUL_AUTH_PASS] = std::string(m_commandLineVariables["pass"].as<std::string>());
-	jsonObj[JSON_KEY_CONSUL] = jsonConsul;
+	jsonObj[JSON_KEY_CONSUL] = std::move(jsonConsul);
 
 	// /app-manager/config
 	auto restPath = std::string("/appmesh/config");
@@ -1576,10 +1550,10 @@ void ArgumentParser::processUserMfaActive()
 	{
 		std::string restPath = "/appmesh/user/self";
 		auto resp = nlohmann::json::parse(requestHttp(true, web::http::methods::GET, restPath)->text);
-		std::string msg = "Do you want active 2FA for <%s>: ";
+		std::string msg = "Do you want active 2FA for <%s> [y/n]:";
 		if (GET_JSON_BOOL_VALUE(resp, JSON_KEY_USER_mfa_enabled))
 		{
-			msg = "2FA already enabled, do you want re-active 2FA for <%s>: ";
+			msg = "2FA already enabled, do you want re-active 2FA for <%s> [y/n]:";
 		}
 		if (this->confirmInput(Utility::stringFormat(msg, userName.c_str()).c_str()))
 		{
@@ -1602,7 +1576,7 @@ void ArgumentParser::processUserMfaActive()
 				// Setup TOTP
 				restPath = "/appmesh/totp/setup";
 				std::map<std::string, std::string> header;
-				header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+				header.insert({HTTP_HEADER_JWT_totp, totp});
 				try
 				{
 					response = requestHttp(true, web::http::methods::POST, restPath, nullptr, std::move(header));
@@ -1622,7 +1596,7 @@ void ArgumentParser::processUserMfaActive()
 	}
 	else
 	{
-		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s>: ", userName.c_str()).c_str()))
+		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s> [y/n]:", userName.c_str()).c_str()))
 		{
 			std::string restPath = std::string("/appmesh/totp/") + userName + "/disable";
 			auto response = requestHttp(true, web::http::methods::POST, restPath);
@@ -1634,46 +1608,49 @@ void ArgumentParser::processUserMfaActive()
 void ArgumentParser::initRadomPassword()
 {
 	// only for root user generate password for admin user after installation
-	// for docker container, this is done when docker image building
-	if (geteuid() != 0)
+	if (geteuid() != 0 && !Utility::runningInContainer())
 	{
 		std::cerr << "only root user can generate a initial password" << std::endl;
 		return;
 	}
 
-	const auto configFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string();
-	auto fileContentJsonObj = nlohmann::json::parse(Utility::readFileCpp(configFilePath));
+	const auto flagFile = fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_APPMG_INIT_FLAG_FILE;
+	if (Utility::isFileExist(flagFile.string()))
+	{
+		std::cerr << "The 'appc appmginit' should only run once." << std::endl;
+		return;
+	}
+	std::ofstream(flagFile.string(), std::ios::trunc).close();
+
+	auto configFile = YAML::LoadFile(Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE));
 	// check JWT enabled
-	if (HAS_JSON_FIELD(fileContentJsonObj, JSON_KEY_REST) &&
-		HAS_JSON_FIELD(fileContentJsonObj.at(JSON_KEY_REST), JSON_KEY_JWT))
+	if (configFile[JSON_KEY_REST] && configFile[JSON_KEY_REST][JSON_KEY_JWT])
 	{
 		// update JWT salt
-		fileContentJsonObj[JSON_KEY_REST][JSON_KEY_JWT][JSON_KEY_JWTSalt] = generatePassword(8, true, true, true, false);
+		configFile[JSON_KEY_REST][JSON_KEY_JWT][JSON_KEY_JWTSalt] = generatePassword(8, true, true, true, false);
 		// serialize and save JSON config
-		std::ofstream ofsCfg(configFilePath, ios::trunc);
+		std::ofstream ofsCfg(Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true), ios::trunc);
 		if (ofsCfg.is_open())
 		{
-			ofsCfg << Utility::prettyJson(fileContentJsonObj.dump());
+			ofsCfg << configFile;
 			ofsCfg.close();
 		}
 
-		auto jwtSection = fileContentJsonObj[JSON_KEY_REST][JSON_KEY_JWT];
 		// check JWT configured as local JSON plugin
-		if (GET_JSON_STR_VALUE(jwtSection, JSON_KEY_SECURITY_Interface) == JSON_KEY_USER_key_method_local)
+		if (configFile[JSON_KEY_REST][JSON_KEY_JWT][JSON_KEY_SECURITY_Interface].as<std::string>() == JSON_KEY_USER_key_method_local)
 		{
-			const auto securityFilePath = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_JSON_FILE).string();
-			auto jsonSecurity = nlohmann::json::parse(Utility::readFileCpp(securityFilePath));
-			jsonSecurity[JSON_KEY_SECURITY_EncryptKey] = true;
+			auto securityFile = YAML::LoadFile(Utility::getConfigFilePath(APPMESH_SECURITY_YAML_FILE));
+			securityFile[JSON_KEY_SECURITY_EncryptKey] = true;
 			// update with generated password
 			const std::string genPassword = generatePassword(8, true, true, true, false);
 			const std::string encryptPassword = Utility::hash(genPassword);
-			jsonSecurity[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = encryptPassword;
+			securityFile[JSON_KEY_JWT_Users][JWT_ADMIN_NAME][JSON_KEY_USER_key] = encryptPassword;
 
 			// serialize and save security JSON config
-			std::ofstream ofsSec(securityFilePath, ios::trunc);
+			std::ofstream ofsSec(Utility::getConfigFilePath(APPMESH_SECURITY_YAML_FILE, true), ios::trunc);
 			if (ofsSec.is_open())
 			{
-				ofsSec << Utility::prettyJson(jsonSecurity.dump());
+				ofsSec << securityFile;
 				ofsSec.close();
 				std::cout << "!Important! This will only occure once, password for user <admin> is <" << genPassword << ">." << std::endl;
 			}
@@ -1876,8 +1853,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 	auto url = Utility::stdStringTrim(targetHost, '/');
 	// header
 	std::map<std::string, std::string> header;
-	header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
-	header.insert({HTTP_HEADER_JWT_password, Utility::encode64(passwd)});
+	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_Auth_BasicSpace) + Utility::encode64(user + ":" + passwd)});
 	header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 
 	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", nullptr, std::move(header), {});
@@ -1900,7 +1876,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 
 			std::map<std::string, std::string> header;
 			header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
-			header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+			header.insert({HTTP_HEADER_JWT_totp, totp});
 			header.insert({HTTP_HEADER_JWT_totp_challenge, Utility::encode64(totpChallenge)});
 			header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", nullptr, std::move(header), {});
@@ -2133,10 +2109,10 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 const std::string ArgumentParser::getAppMeshUrl()
 {
 	std::string url = APPMESH_LOCAL_HOST_URL;
-	auto file = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string());
+	auto file = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE);
 	if (file.length() > 0)
 	{
-		auto jsonValue = nlohmann::json::parse((file));
+		auto jsonValue = Utility::yamlToJson(YAML::Load(file));
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST) &&
 			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_RestListenPort))
 		{
@@ -2161,10 +2137,10 @@ const std::string ArgumentParser::getAppMeshUrl()
 
 const std::string ArgumentParser::getPosixTimezone()
 {
-	auto file = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string());
-	if (file.length() > 0)
+	const auto file = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE);
+	if (Utility::isFileExist(file))
 	{
-		return GET_JSON_STR_VALUE(nlohmann::json::parse(file), JSON_KEY_PosixTimezone);
+		return YAML::LoadFile(file)[JSON_KEY_BaseConfig][JSON_KEY_PosixTimezone].as<std::string>();
 	}
 	return "";
 }

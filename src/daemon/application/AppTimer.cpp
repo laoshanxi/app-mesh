@@ -14,7 +14,7 @@ AppTimer::AppTimer(const std::chrono::system_clock::time_point &startTime, const
                    std::shared_ptr<DailyLimitation> dailyLimit)
     : m_startTime(startTime == EPOCH_ZERO_TIME ? std::chrono::system_clock::now() : startTime),
       m_endTime(endTime == EPOCH_ZERO_TIME ? std::chrono::system_clock::now() + std::chrono::hours(24 * 365 * 10) : endTime),
-      m_dailyLimit(dailyLimit)
+      m_dailyLimit(std::move(dailyLimit))
 {
 }
 

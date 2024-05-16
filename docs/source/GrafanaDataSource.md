@@ -21,7 +21,7 @@ After that, you could see simplejson data source plugin from Grafana.
 
 ### Add App Mesh data source to monitor applications
 
-Add simplejson data source with URL `http://appmesh_server:6060/appmesh/grafana`
+Add simplejson data source with URL `http://appmesh_server:6060/appmesh_grafana`
 
 ![datasource](https://raw.githubusercontent.com/laoshanxi/picture/master/grafana/02_add_appmesh.png)
 

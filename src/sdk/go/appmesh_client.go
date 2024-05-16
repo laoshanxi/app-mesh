@@ -52,8 +52,7 @@ func (r *AppmeshClient) Login(user string, password string, totpCode string, tim
 		timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS
 	}
 	headers := map[string]string{
-		"Username":       base64.StdEncoding.EncodeToString([]byte(user)),
-		"Password":       base64.StdEncoding.EncodeToString([]byte(password)),
+		"Authorization":  "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
 		"Expire-Seconds": strconv.Itoa(timeoutSeconds),
 	}
 	raw, code, err := r.post("appmesh/login", nil, headers, nil)
@@ -68,10 +67,10 @@ func (r *AppmeshClient) Login(user string, password string, totpCode string, tim
 		m := make(map[string]interface{})
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		_ = decoder.Decode(&m)
-		if challenge, ok := m["totp_challenge"].(string); ok {
+		if challenge, ok := m["Totp-Challenge"].(string); ok {
 			headers = map[string]string{
 				"Username":       base64.StdEncoding.EncodeToString([]byte(user)),
-				"Totp":           base64.StdEncoding.EncodeToString([]byte(totpCode)),
+				"Totp":           totpCode,
 				"Totp-Challenge": base64.StdEncoding.EncodeToString([]byte(challenge)),
 				"Expire-Seconds": strconv.Itoa(timeoutSeconds),
 			}
@@ -139,7 +138,7 @@ func (r *AppmeshClient) TotpSecret() (string, error) {
 }
 
 func (r *AppmeshClient) TotpSetup(totpCode string) (bool, error) {
-	headers := map[string]string{"Totp": base64.StdEncoding.EncodeToString([]byte(totpCode))}
+	headers := map[string]string{"Totp": totpCode}
 	_, code, err := r.post("appmesh/totp/setup", nil, headers, nil)
 	return code == http.StatusOK, err
 }

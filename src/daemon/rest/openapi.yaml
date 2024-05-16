@@ -1,0 +1,1069 @@
+---
+openapi: 3.1.0
+info:
+  title: App Mesh REST API
+  description: REST API for App Mesh services
+  version: 2.1.2
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    BasicAuth:
+      type: http
+      scheme: basic
+
+  responses:
+    BAD_REQUEST:
+      description: Invalid request.
+    FORBIDDEN:
+      description: Access denied due to authentication or permissions.
+    GetTokenSuccess:
+      description: Successful token generation.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              Access-Token:
+                type: string
+                example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              token_type:
+                type: string
+                example: "Bearer"
+              expire_seconds:
+                type: integer
+                example: 3600
+
+paths:
+  /appmesh/login:
+    post:
+      summary: Authenticate user and obtain access token.
+      tags:
+        - Authentication
+      security:
+        - BasicAuth: []
+      parameters:
+        - name: Totp
+          in: header
+          schema:
+            type: string
+          description: Optional TOTP code for two-factor authentication.
+        - name: Expire-Seconds
+          in: header
+          schema:
+            type: integer
+          description: Optional token expiration time in seconds.
+      responses:
+        "200":
+          $ref: "#/components/responses/GetTokenSuccess"
+        "400":
+          $ref: "#/components/responses/BAD_REQUEST"
+        "401":
+          description: Two-factor authentication required.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  WWW-Authenticate:
+                    type: string
+                    example: 'TOTP realm="TOTP Authentication", qop="auth"'
+                  Totp-Challenge:
+                    type: string
+                    example: "CHALLENGE-ABC"
+                  status:
+                    type: string
+                    example: "TOTP_CHALLENGE_REQUIRED"
+                  algorithm:
+                    type: string
+                    example: "HS256"
+                  expires:
+                    type: int
+                    example: 1704067200
+
+  /appmesh/auth:
+    post:
+      summary: Verify user token and permission.
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Auth-Permission
+          in: header
+          schema:
+            type: string
+          description: Permission name to verify.
+      responses:
+        "200":
+          description: Verified successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permission:
+                    type: string
+                    example: "app-view"
+                  success:
+                    type: boolean
+                    example: true
+                  user:
+                    type: string
+                    example: "admin"
+        "401":
+          $ref: "#/components/responses/BAD_REQUEST"
+        "403":
+          $ref: "#/components/responses/FORBIDDEN"
+
+  /appmesh/self/logoff:
+    post:
+      summary: Log out the current user.
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User logged out successfully.
+        "401":
+          $ref: "#/components/responses/BAD_REQUEST"
+
+  /appmesh/token/renew:
+    post:
+      summary: Renew access token.
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Expire-Seconds
+          in: header
+          schema:
+            type: integer
+          description: Optional token expiration time in seconds.
+      responses:
+        "200":
+          $ref: "#/components/responses/GetTokenSuccess"
+        "401":
+          $ref: "#/components/responses/BAD_REQUEST"
+
+  /appmesh/totp/secret:
+    post:
+      summary: Generate TOTP secret.
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: TOTP secret generated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Mfa-Uri:
+                    type: string
+                    example: "otpauth://totp/admin?secret=secret&issuer=AppMesh"
+        "401":
+          description: Unauthorized access.
+
+  /appmesh/totp/setup:
+    post:
+      summary: Setup TOTP for user.
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Totp
+          in: header
+          required: true
+          schema:
+            type: string
+          description: 6-digit TOTP code.
+      responses:
+        "200":
+          description: TOTP setup completed.
+        "401":
+          description: Unauthorized access.
+
+  /appmesh/totp/validate:
+    post:
+      summary: Validate TOTP code.
+      tags:
+        - Authentication
+      parameters:
+        - name: Username
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Base64 encoded username.
+        - name: Totp-Challenge
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Base64 encoded TOTP challenge from login response.
+        - name: Totp
+          in: header
+          required: true
+          schema:
+            type: string
+          description: 6-digit TOTP code.
+        - name: Expire-Seconds
+          in: header
+          schema:
+            type: integer
+          description: Optional token expiration time in seconds.
+      responses:
+        "200":
+          $ref: "#/components/responses/GetTokenSuccess"
+        "401":
+          description: Unauthorized access.
+
+  /appmesh/totp/{user}/disable:
+    post:
+      summary: Disable TOTP for user.
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: TOTP disabled successfully.
+        "401":
+          description: Unauthorized access.
+
+  /appmesh/app/{name}/output:
+    get:
+      summary: Retrieve application output.
+      tags:
+        - Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: stdout_position
+          in: query
+          schema:
+            type: integer
+          description: Starting read position, 0 means from the beginning.
+        - name: stdout_index
+          in: query
+          schema:
+            type: integer
+          description: History process stdout index, 0 for current running process.
+        - name: stdout_maxsize
+          in: query
+          schema:
+            type: integer
+          description: Maximum buffer size to read.
+        - name: process_uuid
+          in: query
+          schema:
+            type: string
+          description: Specify the process ID for asynchronous app run.
+        - name: timeout
+          in: query
+          schema:
+            type: integer
+          description: Wait time (seconds) for the running process to get the output.
+      responses:
+        "200":
+          description: Application output retrieved successfully.
+        "404":
+          description: Application not found.
+
+  /appmesh/applications:
+    get:
+      summary: List all applications.
+      tags:
+        - Application
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of applications retrieved successfully.
+
+  /appmesh/app/{name}/health:
+    get:
+      summary: Check application health status.
+      tags:
+        - Application
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application health status retrieved successfully.
+        "404":
+          description: Application not found.
+
+  /appmesh/app/{name}/disable:
+    post:
+      summary: Disable Application
+      tags:
+        - Manage Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application name.
+      responses:
+        "200":
+          description: Application disabled successfully.
+        "404":
+          description: Application not found.
+
+  /appmesh/app/{name}:
+    get:
+      summary: View Application
+      tags:
+        - Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application name.
+      responses:
+        "200":
+          description: Application details retrieved successfully.
+        "404":
+          description: Application not found.
+    put:
+      summary: Add Application
+      tags:
+        - Manage Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application name.
+      requestBody:
+        description: JSON definition for ping test
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "test-ping"
+                description:
+                  type: string
+                  example: "appmesh ping test"
+                command:
+                  type: string
+                  example: "ping github.com -w 300"
+                shell:
+                  type: boolean
+                  example: true
+                behavior:
+                  type: object
+                  properties:
+                    control:
+                      type: object
+                      additionalProperties:
+                        type: string
+                      example:
+                        "0": "standby"
+                    exit:
+                      type: string
+                      example: "standby"
+              required:
+                - name
+                - command
+      responses:
+        "201":
+          description: Application added successfully.
+        "400":
+          description: Invalid request.
+
+    delete:
+      summary: Delete Application
+      tags:
+        - Manage Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application name.
+      responses:
+        "200":
+          description: Application deleted successfully.
+        "404":
+          description: Application not found.
+
+  /appmesh/app/{name}/enable:
+    post:
+      summary: Enable Application
+      tags:
+        - Manage Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Application name.
+      responses:
+        "200":
+          description: Application enabled successfully.
+        "404":
+          description: Application not found.
+
+  /appmesh/app/run:
+    post:
+      summary: Run Application Asynchronously
+      tags:
+        - Operate Application
+      security:
+        - BearerAuth: []
+      requestBody:
+        description: Application JSON definition.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                command:
+                  type: string
+                shell:
+                  type: boolean
+                session_login:
+                  type: boolean
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Maximum run time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
+        - name: lifecycle
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Maximum lifecycle time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
+      responses:
+        "200":
+          description: Application running asynchronously.
+        "400":
+          description: Invalid request.
+
+  /appmesh/app/syncrun:
+    post:
+      summary: Run Application Synchronously
+      tags:
+        - Operate Application
+      security:
+        - BearerAuth: []
+      requestBody:
+        description: Application JSON definition.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                command:
+                  type: string
+                shell:
+                  type: boolean
+                session_login:
+                  type: boolean
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Maximum run time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
+        - name: lifecycle
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Maximum lifecycle time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
+      responses:
+        "200":
+          description: Application running synchronously.
+        "400":
+          description: Invalid request.
+
+  /appmesh/file/download:
+    get:
+      summary: Download File
+      tags:
+        - File Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: File-Path
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The remote file path.
+      responses:
+        "200":
+          description: File downloaded.
+        "404":
+          description: File not found.
+
+  /appmesh/file/upload:
+    post:
+      summary: Upload File
+      tags:
+        - File Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: File-Path
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The remote file path.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: File uploaded successfully.
+        "400":
+          description: Bad request.
+
+  /appmesh/labels:
+    get:
+      summary: View All Labels
+      tags:
+        - Label Management
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of labels.
+
+  /appmesh/label/{name}:
+    put:
+      summary: Add Label
+      tags:
+        - Label Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Label name.
+        - name: value
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Label value.
+      responses:
+        "201":
+          description: Label added.
+        "400":
+          description: Bad request.
+
+    delete:
+      summary: Delete Label
+      tags:
+        - Label Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Label name.
+      responses:
+        "200":
+          description: Label deleted.
+        "404":
+          description: Label not found.
+
+  /appmesh/config:
+    get:
+      summary: View Config
+      tags:
+        - Config
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Configuration details.
+
+    post:
+      summary: Set Config
+      tags:
+        - Config
+      security:
+        - BearerAuth: []
+      requestBody:
+        description: Configuration JSON segment.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Configuration set.
+        "400":
+          description: Bad request.
+
+  /appmesh/user/{name}/passwd:
+    post:
+      summary: Change User Password
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User name.
+        - name: New-Password
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Base64 encoded new password.
+      responses:
+        "200":
+          description: Password changed.
+        "404":
+          description: User not found.
+
+  /appmesh/user/{name}/lock:
+    post:
+      summary: Lock User
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User name.
+      responses:
+        "200":
+          description: User locked.
+        "404":
+          description: User not found.
+
+  /appmesh/user/{name}/unlock:
+    post:
+      summary: Unlock User
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User name.
+      responses:
+        "200":
+          description: User unlocked.
+        "404":
+          description: User not found.
+
+  /appmesh/user/{name}:
+    put:
+      summary: Add User
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User name.
+      requestBody:
+        description: User definition.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                exec_user:
+                  type: string
+                group:
+                  type: string
+                key:
+                  type: string
+                locked:
+                  type: boolean
+                mfa_enabled:
+                  type: boolean
+                mfa_key:
+                  type: string
+                roles:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "201":
+          description: User added.
+        "400":
+          description: Bad request.
+
+    delete:
+      summary: Delete User
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User name.
+      responses:
+        "200":
+          description: User deleted.
+        "404":
+          description: User not found.
+
+  /appmesh/user/self:
+    get:
+      summary: View Self User
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User details.
+
+  /appmesh/users:
+    get:
+      summary: View All Users
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of users.
+
+  /appmesh/roles:
+    get:
+      summary: View All Roles
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of roles.
+
+  /appmesh/role/{name}:
+    post:
+      summary: Update Role
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Role name.
+      requestBody:
+        description: |
+          Role permission definition.
+          example: ["app-control", "app-delete", "cloud-app-reg", "cloud-app-delete"]
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Role updated.
+        "404":
+          description: Role not found.
+
+    delete:
+      summary: Delete Role
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Role name.
+      responses:
+        "200":
+          description: Role deleted.
+        "404":
+          description: Role not found.
+
+  /appmesh/user/permissions:
+    get:
+      summary: View User Permissions
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of user permissions.
+
+  /appmesh/permissions:
+    get:
+      summary: View All Permissions
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of permissions.
+
+  /appmesh/user/groups:
+    get:
+      summary: View User Groups
+      tags:
+        - Security
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of user groups.
+
+  /appmesh/metrics:
+    get:
+      summary: View Prometheus Metrics
+      tags:
+        - Metrics
+      responses:
+        "200":
+          description: Prometheus text-based exposition format.
+
+  /appmesh/resources:
+    get:
+      summary: View Server Resources Usage Information
+      tags:
+        - Metrics
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Resource details in JSON format.
+
+  /appmesh/cloud/applications:
+    get:
+      summary: List all cloud applications.
+      tags:
+        - Cloud Application
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of cloud applications retrieved successfully.
+
+  /appmesh/cloud/app/{name}:
+    get:
+      summary: Retrieve cloud application details.
+      tags:
+        - Cloud Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cloud application details retrieved successfully.
+        "404":
+          description: Cloud application not found.
+
+    put:
+      summary: Add a cloud application.
+      tags:
+        - Cloud Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Cloud application added successfully.
+        "400":
+          description: Invalid request.
+
+    delete:
+      summary: Remove a cloud application.
+      tags:
+        - Cloud Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cloud application removed successfully.
+        "404":
+          description: Cloud application not found.
+
+  /appmesh/cloud/app/{name}/output/{outputId}:
+    get:
+      summary: View Cloud Application Output
+      tags:
+        - Cloud Application
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Cloud application name.
+        - name: outputId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Identifier for the output.
+        - name: stdout_position
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Start read position, 0 means start from the beginning.
+        - name: stdout_index
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Index of history process stdout, 0 means get from the current running process.
+        - name: stdout_maxsize
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Maximum buffer size to read.
+        - name: process_uuid
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Specify the process ID for async app run.
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: int
+          description: Wait time (seconds) for the running process to get the output.
+      responses:
+        "200":
+          description: Cloud application output retrieved successfully.
+        "404":
+          description: Cloud application not found.
+
+  /appmesh/cloud/nodes:
+    get:
+      summary: View Cloud Nodes
+      tags:
+        - Cloud Application
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of cloud nodes retrieved successfully.

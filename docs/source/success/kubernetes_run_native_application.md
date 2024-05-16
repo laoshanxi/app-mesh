@@ -18,7 +18,7 @@ This Docker image `laoshanxi/appmesh:container_agent` is used to forward contain
 
 ## Test run native command in docker container
 ```shell
-docker run --net=host -v /opt/appmesh/ssl/:/opt/appmesh/ssl/ laoshanxi/appmesh:container_agent docker ps
+docker run --net=host --cidfile=/tmp/container.id -v /tmp/container.id:/tmp/container.id -v /opt/appmesh/ssl/:/opt/appmesh/ssl/ laoshanxi/appmesh:container_agent docker ps
 ```
 
 ## Kubernetes job example to run cmd on host OS

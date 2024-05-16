@@ -134,7 +134,8 @@ cd $ROOTDIR
 
 # curlcpp
 git clone --depth=1 https://github.com/jpbarrette/curlpp.git
-cd curlpp; mkdir build; cd build; cmake ..; make; make install
+cd curlpp; grep -v 'target_link_libraries(${PROJECT_NAME} PUBLIC CURL::libcurl ${CONAN_LIBS})' CMakeLists.txt > CMakeLists.tmp && mv -f CMakeLists.tmp CMakeLists.txt
+mkdir build; cd build; cmake ..; make; make install
 cd $ROOTDIR
 
 # json

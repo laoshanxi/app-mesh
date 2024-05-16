@@ -8,9 +8,9 @@
 
 # App Mesh
 
-App Mesh is a `Multi-Tenant`, `Cloud Native`, `Micro Service` application management platform, used to manage, schedule and monitor applications. Each app can be a specific microservice for service discovery or a normal app with replication, the app-mesh will guarantee all defined applications run on time with defined behavior and resource requests. The platform can run in standalone or cluster mode, and provide REST APIs, command-line and web-ui.
+App Mesh is a `Multi-Tenant`, `Cloud Native`, `Micro Service` application management platform designed to manage, schedule, and monitor applications. Each app can be a specific microservice for service discovery or a standard app with replication. App Mesh ensures all defined applications run on time with the specified behavior and resource requests. The platform supports both standalone and cluster modes and provides REST APIs, a command-line interface, and a web UI.
 
-App Mesh is similar to Kubernetes but much more lightweight, supporting both container apps and native apps.
+App Mesh is similar to Kubernetes but is much more lightweight, supporting both containerized and native applications.
 
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/diagram.jpg" align=center /></div>
 
@@ -18,18 +18,17 @@ App Mesh is similar to Kubernetes but much more lightweight, supporting both con
 
 Feature | Description
 ---|---
-Application management | 1. Manage independent applications and guard the process running, similar with systemd but more flexible (long/short running, periodic long running, cron schedule, customized day time and error handling control) and comprehensive monitoring (number of starts, return code, error message, health-check) for both native and docker application. <br> 2. Use SDK/CLI run application on a remote host with sync/async mode and fetch result to client. <br> 3. Full control of application lifecycle (cgroup for resource limitation, specific OS user for execution user). <br> 4. Interactive application start support specify input data by pipe and environment variables.<br> 5. All functionality provides by [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) and [WebGUI](https://github.com/laoshanxi/app-mesh-ui) interface.<br>
+Application management | 1. Manage independent applications with flexible process control (long/short running, periodic, cron schedule, custom timings, error handling) and comprehensive monitoring (start counts, return codes, error messages, health checks) for both native and Docker applications. <br> 2. Run applications on remote hosts using SDK/CLI with sync/async modes and fetch results to the client. <br> 3. Full control over application lifecycle (cgroup resource limitation, specific OS user for execution). <br> 4. Support interactive application start with specific input data via pipe and environment variables. <br> 5. Access all functionalities via [CLI](https://app-mesh.readthedocs.io/en/latest/CLI.html), [REST](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis), [SDK](https://github.com/laoshanxi/app-mesh/tree/main/src/sdk) and [WebGUI](https://github.com/laoshanxi/app-mesh-ui) interface.<br>
 Security |  ⚡️ [JWT authentication](https://app-mesh.readthedocs.io/en/latest/JWT.html) for CLI and REST interface <br> ⚡️ [LDAP support](https://app-mesh.readthedocs.io/en/latest/LDAP.html) <br> ⚡️ [Role based permission control](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html) <br> ⚡️ [Multi-factor authentication](https://app-mesh.readthedocs.io/en/latest/MFA.html)<br> SSL support (ECDH and secure ciphers) for REST http connection  <br> Multi-tenant support
-Cloud native | Schedule cloud level applications for running on multile hosts with resource size request.<br> ⚡️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> ⚡️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> ⚡️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br>⚡️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile)
+Cloud native | Schedule cloud-level applications to run on multiple hosts with resource size requests. <br> ⚡️ [Prometheus Exporter (build-in)](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html) <br> ⚡️ [Grafana SimpleJson datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html) <br> ⚡️ [Grafana Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) <br>⚡️ [Dockerfile](https://github.com/laoshanxi/app-mesh/blob/main/Dockerfile)
 Micro service application | ⚡️ [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
-Extra Features | Collect host/app resource usage <br> Remote run shell commands <br> Download/Upload files interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
+Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> [Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32 <br> ARM64
-SDK | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh_client.html) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/appmesh_client.go)
+SDK | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh_client.html) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/appmesh_client.go) <br> Swagger [OpenAPI Specification](https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml) `https://localhost:6060/swagger` 
 
 ## Getting started
 
-The [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html) introduces how
-to install App Mesh via docker-compose or native way and setup App Mesh cluster.
+Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Install.html) to learn how to install App Mesh via Docker Compose or natively and set up an App Mesh cluster.
 
 ## Documentation
 

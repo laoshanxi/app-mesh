@@ -1,11 +1,12 @@
 #pragma once
 
-#include <nlohmann/json.hpp>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 class RestHandler;
 class User;
@@ -13,11 +14,25 @@ class Label;
 class Application;
 
 /// <summary>
-/// Configuration file <config.json> parse/update
+/// Configuration file <config.yaml> parse/update
 /// </summary>
 class Configuration
 {
 public:
+	struct BaseConfig
+	{
+		BaseConfig();
+		static std::shared_ptr<BaseConfig> FromJson(const nlohmann::json &jsonObj);
+		nlohmann::json AsJson() const;
+
+		std::string m_hostDescription;
+		std::string m_defaultExecUser;
+		std::string m_defaultWorkDir;
+		int m_scheduleInterval;
+		bool m_disableExecUser;
+		std::string m_logLevel;
+		std::string m_posixTimezone;
+	};
 	struct JsonSsl
 	{
 		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
@@ -92,11 +107,11 @@ public:
 	static std::string readConfiguration();
 	static void handleSignal();
 
-	static std::shared_ptr<Configuration> FromJson(const std::string &str, bool applyEnv = false) noexcept(false);
+	static std::shared_ptr<Configuration> FromJson(nlohmann::json &jsonValue, bool applyEnv = false) noexcept(false);
 	nlohmann::json AsJson();
-	void loadApps();
+	void loadApps(const boost::filesystem::path &appDir);
 	void saveConfigToDisk();
-	void hotUpdate(const nlohmann::json &config);
+	void hotUpdate(nlohmann::json &config);
 	static bool readConfigFromEnv(nlohmann::json &jsonConfig);
 	static bool applyEnvConfig(nlohmann::json &jsonValue, std::string envValue);
 	void registerPrometheus();
@@ -146,20 +161,12 @@ private:
 
 private:
 	std::vector<std::shared_ptr<Application>> m_apps;
-	std::string m_hostDescription;
-	std::string m_defaultExecUser;
-	std::string m_defaultWorkDir;
-	int m_scheduleInterval;
-	bool m_disableExecUser;
+	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonConsul> m_consul;
 
-	std::string m_logLevel;
-	std::string m_posixTimezone;
-
 	mutable std::recursive_mutex m_appMutex;
 	mutable std::recursive_mutex m_hotupdateMutex;
-	std::string m_jsonFilePath;
 
 	std::shared_ptr<Label> m_label;
 

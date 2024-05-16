@@ -183,7 +183,7 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 	long rt = defaultValue;
 	if (querymap.find((key)) != querymap.end())
 	{
-		auto value = querymap.find((key))->second;
+		const auto &value = querymap.find((key))->second;
 		rt = DurationParse::parse(value);
 		if (rt > 0)
 		{
@@ -296,20 +296,29 @@ void RestHandler::apiAppDelete(const HttpRequest &message)
 {
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
-	if (Configuration::instance()->getApp(appName)->isCloudApp())
-		throw std::invalid_argument("not allowed for cloud application");
 
-	if (!(Configuration::instance()->getApp(appName)->getOwner() &&
-		  Configuration::instance()->getApp(appName)->getOwner()->getName() == getJwtUserName(message)))
+	if (!Configuration::instance()->isAppExist(appName))
 	{
-		// only check delete permission for none-self app
-		permissionCheck(message, PERMISSION_KEY_app_delete);
+		message.reply(web::http::status_codes::NotFound);
 	}
+	else
+	{
+		auto app = Configuration::instance()->getApp(appName);
 
-	checkAppAccessPermission(message, appName, true);
+		if (app->isCloudApp())
+			throw std::invalid_argument("not allowed for cloud application");
 
-	Configuration::instance()->removeApp(appName);
-	message.reply(web::http::status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
+		if (!(app->getOwner() && app->getOwner()->getName() == getJwtUserName(message)))
+		{
+			// only check delete permission for none-self app
+			permissionCheck(message, PERMISSION_KEY_app_delete);
+		}
+
+		checkAppAccessPermission(message, appName, true);
+
+		Configuration::instance()->removeApp(appName);
+		message.reply(web::http::status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
+	}
 }
 
 void RestHandler::apiFileDownload(const HttpRequest &message)
@@ -402,7 +411,7 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 	auto querymap = message.m_querys;
 	if (querymap.find((HTTP_QUERY_KEY_label_value)) != querymap.end())
 	{
-		const auto value = (querymap.find((HTTP_QUERY_KEY_label_value))->second);
+		const auto &value = (querymap.find((HTTP_QUERY_KEY_label_value))->second);
 
 		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();
@@ -683,15 +692,8 @@ void RestHandler::apiHealth(const HttpRequest &message)
 
 void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
-	if (Configuration::instance()->prometheusEnabled())
-	{
-		auto body = this->collectData();
-		message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
-	}
-	else
-	{
-		throw std::invalid_argument("Prometheus export not enabled or configured correctly");
-	}
+	auto body = this->collectData();
+	message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
 }
 
 nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string *token)
@@ -713,14 +715,22 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserLogin() ";
 
 	// mandatory
-	const auto uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
-	const auto passwd = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_password));
+	auto authorization = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_Authorization);
+	if (!Utility::startWith(authorization, HTTP_HEADER_Auth_BasicSpace))
+	{
+		throw std::invalid_argument("unrecognized authorization type");
+	}
+	authorization = Utility::stdStringTrim(authorization, HTTP_HEADER_Auth_BasicSpace, true, false);
+	authorization = Utility::decode64(authorization);
+	const auto authPair = Utility::splitString(authorization, ":");
+	const auto uname = authPair.size() == 2 ? authPair[0] : "";
+	const auto passwd = authPair.size() == 2 ? authPair[1] : "";
 	// option
-	const auto totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
-	if (message.m_headers.count(HTTP_HEADER_JWT_username) && message.m_headers.count(HTTP_HEADER_JWT_password))
+	if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
 	{
 		const auto user = Security::instance()->getUserInfo(uname);
 		if (!Security::instance()->verifyUserKey(uname, passwd))
@@ -829,9 +839,9 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 	if (permissionCheck(message, permission))
 	{
 		auto result = nlohmann::json::object();
-		result["user"] = std::string(getJwtUserName(message));
+		result["user"] = std::move(getJwtUserName(message));
 		result["success"] = (true);
-		result["permission"] = std::string(permission);
+		result["permission"] = std::move(permission);
 		message.reply(web::http::status_codes::OK, result);
 	}
 	else
@@ -870,7 +880,7 @@ void RestHandler::apiUserTotpSetup(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserTotpSetup() ";
 	permissionCheck(message, PERMISSION_KEY_user_totp_active);
-	std::string totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	std::string totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 
 	// get user
 	auto userName = getJwtUserName(message);
@@ -897,7 +907,7 @@ void RestHandler::apiUserTotpValidate(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserTotpValidate() ";
 
 	const auto uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
-	const auto totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 	const auto totpChallenge = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp_challenge));
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
@@ -1041,8 +1051,8 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 
 	auto processUuid = appObj->runAsyncrize(timeout);
 	auto result = nlohmann::json::object();
-	result[JSON_KEY_APP_name] = std::string(appObj->getName());
-	result[HTTP_QUERY_KEY_process_uuid] = std::string(processUuid);
+	result[JSON_KEY_APP_name] = std::move(appObj->getName());
+	result[HTTP_QUERY_KEY_process_uuid] = std::move(processUuid);
 	message.reply(web::http::status_codes::OK, result);
 }
 
@@ -1061,6 +1071,7 @@ void RestHandler::apiRunSync(const HttpRequest &message)
 void RestHandler::apiAppOutputView(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiAppOutputView() ";
+
 	permissionCheck(message, PERMISSION_KEY_view_app_output);
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_OUT_VIEW);
@@ -1080,7 +1091,10 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 	auto output = std::get<0>(result);
 	const auto &finished = std::get<1>(result);
 	const auto &exitCode = std::get<2>(result);
-	LOG_DBG << fname; // << output;
+	if (output.length())
+	{
+		LOG_INF << fname << "Get application output size <" << output.size() << ">";
+	}
 	std::map<std::string, std::string> headers;
 	if (pos)
 		headers[HTTP_HEADER_KEY_output_pos] = std::to_string(pos);

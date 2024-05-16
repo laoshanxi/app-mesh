@@ -26,7 +26,8 @@
 ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(0, 1000L * 30); // 30 millisecond
 
 Application::Application()
-	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
+	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false),
+	  m_sessionLogin(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false), m_nextStartTimerId(INVALID_TIMER_ID),
 	  m_health(true), m_appId(Utility::createUUID()), m_version(0), m_pid(ACE_INVALID_PID),
 	  m_suicideTimerId(INVALID_TIMER_ID), m_starts(std::make_shared<prometheus::Counter>())
@@ -59,6 +60,7 @@ bool Application::operator==(const std::shared_ptr<Application> &app)
 
 	return (this->m_name == app->m_name &&
 			this->m_shellApp == app->m_shellApp &&
+			this->m_sessionLogin == app->m_sessionLogin &&
 			this->m_commandLine == app->m_commandLine &&
 			this->m_owner == app->m_owner &&
 			this->m_ownerPermission == app->m_ownerPermission &&
@@ -156,6 +158,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		app->m_owner = Security::instance()->getUserInfo(ownerStr);
 	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_owner_permission);
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell_mode);
+	app->m_sessionLogin = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_session_login);
 	if (jsonObj.contains(JSON_KEY_APP_metadata))
 	{
 		app->m_metadata = jsonObj.at(JSON_KEY_APP_metadata);
@@ -177,7 +180,9 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 	// TODO: consider i18n and  legal file name
-	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", Configuration::instance()->getWorkDir().c_str(), app->m_name.c_str());
+	const auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout").string();
+	Utility::createDirectory(outputDir);
+	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", outputDir.c_str(), app->m_name.c_str());
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 	app->m_stdoutCacheSize = app->m_stdoutFileQueue->size();
@@ -735,6 +740,8 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		result[JSON_KEY_APP_owner_permission] = (m_ownerPermission);
 	if (m_shellApp)
 		result[JSON_KEY_APP_shell_mode] = (m_shellApp);
+	if (m_sessionLogin)
+		result[JSON_KEY_APP_session_login] = (m_sessionLogin);
 	if (m_commandLine.length())
 		result[(JSON_KEY_APP_command)] = std::string(m_commandLine);
 	if (m_description.length())
@@ -799,7 +806,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		std::for_each(m_secEnvMap.begin(), m_secEnvMap.end(), [&envs, &owner](const std::pair<std::string, std::string> &pair)
 					  {
 						  auto encryptedEnvValue = owner ? owner->encrypt(pair.second) : pair.second;
-						  envs[(pair.first)] = std::string(encryptedEnvValue); });
+						  envs[(pair.first)] = std::move(encryptedEnvValue); });
 		result[JSON_KEY_APP_sec_env] = std::move(envs);
 	}
 	if (m_dockerImage.length())
@@ -844,11 +851,10 @@ void Application::save()
 
 	if (this->isPersistAble())
 	{
-		const auto appPath = getJsonPath();
+		const auto appPath = getYamlPath();
 		LOG_DBG << fname << appPath;
-		// write prettified JSON to another file
-		std::ofstream ofs(getJsonPath(), ios::trunc);
-		ofs << std::setw(4) << AsJson(false) << std::endl;
+		std::ofstream ofs(appPath, ios::trunc);
+		ofs << std::setw(4) << Utility::jsonToYaml(AsJson(false)) << std::endl;
 		if (ofs.fail())
 		{
 			throw std::invalid_argument("failed to save application, please check your app name or folder permission");
@@ -857,14 +863,14 @@ void Application::save()
 	}
 }
 
-std::string Application::getJsonPath()
+std::string Application::getYamlPath()
 {
-	return (fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR / (getName() + ".json")).string();
+	return (fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string();
 }
 
 void Application::remove()
 {
-	Utility::removeFile(getJsonPath());
+	Utility::removeFile(getYamlPath());
 }
 
 void Application::dump()
@@ -878,6 +884,7 @@ void Application::dump()
 	LOG_DBG << fname << "m_description:" << m_description;
 	LOG_DBG << fname << "m_metadata:" << m_metadata;
 	LOG_DBG << fname << "m_shellApp:" << m_shellApp;
+	LOG_DBG << fname << "m_sessionLogin:" << m_sessionLogin;
 	LOG_DBG << fname << "behavior:" << behaviorAsJson();
 	LOG_DBG << fname << "m_workdir:" << m_workdir;
 	if (m_owner)
@@ -911,10 +918,10 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	m_starts->Increment();
 
 	// prepare shell mode script
-	if (m_shellApp && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
+	if ((m_shellApp || m_sessionLogin) && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
 		m_shellAppFile = nullptr;
-		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, (m_owner ? m_owner->getExecUser() : ""));
+		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, (m_owner ? m_owner->getExecUser() : ""), m_sessionLogin);
 	}
 
 	// alloc process object

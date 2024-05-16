@@ -2,6 +2,7 @@
 #include <ldapc++/cldap.h>
 
 #include "../../../common/Utility.h"
+#include "../../Configuration.h"
 #include "LdapGroup.h"
 #include "LdapImpl.h"
 
@@ -24,8 +25,8 @@ void LdapImpl::init(const std::string &interface)
 
     if (interface == JSON_KEY_USER_key_method_ldap)
     {
-        const auto securityJsonFile = (fs::path(Utility::getParentDir()) / APPMESH_SECURITY_LDAP_JSON_FILE).string();
-        const auto security = LdapImpl::FromJson(nlohmann::json::parse(Utility::readFileCpp(securityJsonFile)));
+        const auto securityYamlFile = Utility::getConfigFilePath(APPMESH_SECURITY_LDAP_YAML_FILE);
+        const auto security = LdapImpl::FromJson(Utility::yamlToJson(YAML::LoadFile(securityYamlFile)));
         Security::instance(security);
 
         security->syncGroupUsers();
@@ -55,9 +56,9 @@ std::shared_ptr<LdapImpl> LdapImpl::FromJson(const nlohmann::json &obj) noexcept
 
 std::shared_ptr<User> LdapImpl::getUserInfo(const std::string &userName)
 {
-	const static char fname[] = "LdapImpl::getUserInfo() ";
+    const static char fname[] = "LdapImpl::getUserInfo() ";
 
-	auto groups = this->m_ldap->m_groups->getGroups();
+    auto groups = this->m_ldap->m_groups->getGroups();
     for (const auto &group : groups)
     {
         auto user = group.second->getUser(userName);

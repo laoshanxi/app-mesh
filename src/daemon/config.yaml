@@ -1,0 +1,52 @@
+---
+BaseConfig:
+  Description: MYHOST
+  # default app execution OS user name
+  DefaultExecUser: ""
+  # disable specify app execution OS user
+  # all apps will follow appmesh systemd user (by installation env: APPMESH_DAEMON_EXEC_USER/APPMESH_DAEMON_EXEC_USER_GROUP)
+  DisableExecUser: false
+  # schedule interval for period applications
+  ScheduleIntervalSeconds: 1
+  # working directory for appmesh
+  WorkingDirectory: ""
+  # log level (DEBUG/INFO/NOTICE/WARN/ERROR)
+  LogLevel: INFO
+  # specify a timezone for appmesh output time format, default is server's timezone
+  PosixTimezone: "+08"
+
+REST:
+  RestEnabled: true
+  RestListenAddress: localhost
+  RestListenPort: 6060
+  RestTcpPort: 6059
+
+  PrometheusExporterListenPort: 0
+  DockerProxyListenAddr: ""
+  HttpThreadPoolSize: 3
+  JWT:
+    JWTSalt: HelloWorld
+    SecurityInterface: local
+
+  SSL:
+    SSLCaPath: /opt/appmesh/ssl/ca.pem
+    SSLCertificateFile: /opt/appmesh/ssl/server.pem
+    SSLCertificateKeyFile: /opt/appmesh/ssl/server-key.pem
+    SSLClientCertificateFile: /opt/appmesh/ssl/client.pem
+    SSLClientCertificateKeyFile: /opt/appmesh/ssl/client-key.pem
+    VerifyClient: false
+    VerifyServer: true
+
+Consul:
+  AppmeshProxyUrl: ""
+  EnableConsulSecurity: false
+  IsMainNode: true
+  IsWorkerNode: true
+  Pass: ""
+  SessionTTL: 30
+  Url: ""
+  User: ""
+
+Labels:
+  arch: x86_64
+  os_version: centos7.6

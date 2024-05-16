@@ -12,7 +12,9 @@ Start App Mesh daemon docker container with 4g memory limited:
 docker run -d --memory=8g --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
 ```
 
-The startup support use environment variable override default configuration with format `APPMESH_${BASE-JSON-KEY}_${SUB-JSON-KEY}=NEW_VALUE`, E.g. `export APPMESH_REST_HttpThreadPoolSize=10`, `export APPMESH_REST_SSL_VerifyPeer=true`.
+The startup support use environment variable override default configuration with format `APPMESH_${BASE-JSON-KEY}_${SUB-JSON-KEY}=NEW_VALUE`, E.g. `-e APPMESH_REST_HttpThreadPoolSize=10`, `-e APPMESH_REST_SSL_VerifyPeer=true`, `-e APPMESH_SECURE_INSTALLATION=Y`.
+
+The directory `/opt/appmesh/work` will store all data, allowing it to be mounted from a host directory to ensure data persistence for the container.
 
 ### Native installation
 
@@ -61,9 +63,9 @@ Note:
 
 ```
     $ tree -L 1 /opt/appmesh/
-	├── apps                         ====> application json files dir
-    ├── config.json                  ====> configuration fileGUI)
-    ├── security.json                ====> local JSON security configuration file
+	  ├── apps                         ====> application json files dir
+    ├── config.yaml                  ====> configuration fileGUI)
+    ├── security.yaml                ====> local security configuration file
     ├── bin                          ====> execution binaries dir
     ├── lib64
     ├── log                          ====> app mesh engine log dir
@@ -113,7 +115,7 @@ For production environment, Consul is better to be a cluster with 3+ server agen
 
 #### Option 1: Update configuration
 
-When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/config.json`:
+When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/config.yaml`:
 
 ```
   "Consul": {
@@ -121,7 +123,7 @@ When installed a new App Mesh node and want to connect to existing cluster, just
   }
 ```
 
-If App Mesh is running in Docker container, need mount `/opt/appmesh/config.json` out of container to persist the configuration. After configuration change, just restart App Mesh container.
+If App Mesh is running in Docker container, need mount `/opt/appmesh/config.yaml` out of container to persist the configuration. After configuration change, just restart App Mesh container.
 
 #### Option 2: Update from UI
 

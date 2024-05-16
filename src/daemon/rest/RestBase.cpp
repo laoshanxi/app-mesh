@@ -130,13 +130,13 @@ void RestBase::bindRestMethod(const web::http::method &method, const std::string
 
     // bind to map
     if (method == web::http::methods::GET)
-        m_restGetFunctions[path] = func;
+        m_restGetFunctions[path] = std::move(func);
     else if (method == web::http::methods::PUT)
-        m_restPutFunctions[path] = func;
+        m_restPutFunctions[path] = std::move(func);
     else if (method == web::http::methods::POST)
-        m_restPstFunctions[path] = func;
+        m_restPstFunctions[path] = std::move(func);
     else if (method == web::http::methods::DEL)
-        m_restDelFunctions[path] = func;
+        m_restDelFunctions[path] = std::move(func);
     else
         LOG_ERR << fname << method << " not supported.";
 }

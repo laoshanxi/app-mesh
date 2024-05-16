@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
-	"html"
 	"log"
 	"math"
 	"net"
@@ -20,7 +19,6 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/grafana"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
-	"github.com/rs/xid"
 	"github.com/valyala/fasthttp"
 )
 
@@ -40,23 +38,19 @@ var (
 
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
-	verifyClient, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyClient")
-	verifyServer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyServer")
-	serverCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
-	serverCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
-	sslCaPath, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
-
 	// client: for internal connection, use server side certificate file for client
 	clientCA := tls.Certificate{}
-	if verifyClient.(bool) {
-		clientCA = utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))
+	if config.ConfigData.REST.SSL.VerifyClient {
+		clientCA = utils.LoadCertificatePair(
+			config.ConfigData.REST.SSL.SSLCertificateFile,
+			config.ConfigData.REST.SSL.SSLCertificateKeyFile)
 	}
 
 	// server
 	var serverCA *x509.CertPool
-	if verifyServer.(bool) {
+	if config.ConfigData.REST.SSL.VerifyServer {
 		var err error
-		serverCA, err = utils.LoadCA(sslCaPath.(string))
+		serverCA, err = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
 		if err != nil {
 			panic(err)
 		}
@@ -64,7 +58,7 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 
 	conf := &tls.Config{
 		// verify server
-		InsecureSkipVerify: !(verifyServer.(bool)),
+		InsecureSkipVerify: !(config.ConfigData.REST.SSL.VerifyServer),
 		RootCAs:            serverCA,
 
 		// verify client
@@ -92,10 +86,141 @@ func readMsgLoop() {
 	}
 }
 
+func ListenRest() {
+	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
+	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
+	// connect to TCP rest server
+	conn, err := connectServer(strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1))
+	if err != nil {
+		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
+		os.Exit(-1)
+	}
+	tcpConnect = conn
+	go readMsgLoop()
+
+	// http router
+	router := fasthttprouter.New()
+	router.HandleOPTIONS = false
+	router.HandleMethodNotAllowed = false
+	// openapi swagger
+	RegOpenapiRestHandler(router)
+	// grafana
+	grafana.RegGrafanaRestHandler(router)
+	// appmesh
+	router.GET("/appmesh/*path", utils.Cors(handleAppmeshRest))
+	router.PUT("/appmesh/*path", utils.Cors(handleAppmeshRest))
+	router.POST("/appmesh/*path", utils.Cors(handleAppmeshRest))
+	router.DELETE("/appmesh/*path", utils.Cors(handleAppmeshRest))
+	// OPTIONS & HEAD
+	router.OPTIONS("/*path", utils.Cors(func(ctx *fasthttp.RequestCtx) { ctx.SetStatusCode(fasthttp.StatusOK) }))
+	router.HEAD("/*path", utils.Cors(func(ctx *fasthttp.RequestCtx) { ctx.SetStatusCode(fasthttp.StatusOK) }))
+	router.GET("/", utils.Cors(handleIndex))
+	// router.NotFound = utils.Cors(handleAppmeshRest)
+
+	err = listenAgentTls(listenAddr, router)
+	if err != nil {
+		log.Fatalf("Error in fasthttp Serve: %v", err)
+		os.Exit(-1)
+	}
+}
+
+func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
+	// Load server certificate and key
+	serverCA := utils.LoadCertificatePair(
+		config.ConfigData.REST.SSL.SSLCertificateFile,
+		config.ConfigData.REST.SSL.SSLCertificateKeyFile)
+	// client
+	clientAuth := tls.NoClientCert
+	var clientCA *x509.CertPool
+	if config.ConfigData.REST.SSL.VerifyClient {
+		clientAuth = tls.RequireAndVerifyClientCert
+		var err error
+		clientCA, err = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	conf := &tls.Config{
+		MinVersion:               tls.VersionTLS12,
+		InsecureSkipVerify:       !(config.ConfigData.REST.SSL.VerifyServer), // whether a client verifies the server's certificate chain
+		Certificates:             []tls.Certificate{serverCA},
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			// TLS 1.2
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+			// TLS 1.3 streamlined set of cipher suites
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+		},
+
+		// Set clients to authenticate
+		ClientAuth: clientAuth,
+		ClientCAs:  clientCA,
+	}
+
+	// start listen
+	ln, err := net.Listen("tcp4", restAgentAddr)
+	if err != nil {
+		log.Fatalf("Error in Listen tcp4: %v", err)
+		panic(err)
+	}
+	s := &fasthttp.Server{
+		Handler:            router.Handler,
+		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
+	}
+	log.Println("<App Mesh Agent> listening at: ", restAgentAddr)
+	return s.Serve(tls.NewListener(ln, conf))
+}
+
+func handleIndex(ctx *fasthttp.RequestCtx) {
+	htmlContent := `
+		<!DOCTYPE html>
+		<html lang="en">
+		<head>
+			<meta charset="UTF-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1.0">
+			<title>App Mesh</title>
+			<style>
+				body {
+					display: flex;
+					flex-direction: column;
+					min-height: 100vh;
+					margin: 0;
+					font-family: Arial, sans-serif;
+				}
+				.content {
+					flex: 1;
+				}
+				.footer {
+					text-align: center;
+					padding: 1em;
+					background-color: #f1f1f1;
+				}
+			</style>
+		</head>
+		<body>
+			<div class="content">
+				<p>Welcome to App Mesh!</p>
+			</div>
+			<div class="footer">
+			<a href="/swagger">View Swagger Documentation</a>
+			</div>
+		</body>
+		</html>`
+
+	ctx.Response.Header.Set("Content-Type", "text/html; charset=utf-8")
+	ctx.Response.SetBodyString(htmlContent)
+}
+
 // https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 	// body buffer, read from fasthttp
-	request := readRequestData(&ctx.Request)
+	request := convertHttpRequestData(&ctx.Request)
 	bodyData, err := request.serialize()
 	if err != nil {
 		log.Fatalf("Failed to serialize request: %v", err)
@@ -123,58 +248,10 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 		// wait chan to get response
 		protocResponse := <-ch
 		// reply to client
-		applyResponse(ctx, protocResponse)
+		convertResponseToHttp(ctx, protocResponse)
 	} else {
 		ctx.Logger().Printf("Failed to send request to server with error:: %v", sendErr)
 		log.Fatal(sendErr)
-	}
-}
-
-func readRequestData(req *fasthttp.Request) *Request {
-	// do not proxy "Connection" header.
-	req.Header.Del("Connection")
-
-	data := new(Request)
-	data.Uuid = xid.New().String()
-	data.HttpMethod = string(req.Header.Method())
-	data.RequestUri = string(req.URI().Path())
-	data.ClientAddress = string(req.Host())
-	data.Headers = make(map[string]string)
-	req.Header.VisitAll(func(key, value []byte) {
-		data.Headers[string(key)] = string(value)
-	})
-	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
-	data.Querys = make(map[string]string)
-	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
-		data.Querys[string(key)] = string(value)
-	})
-
-	// do not read body for file upload
-	if !(req.Header.IsPost() && string(req.URI().Path()) == REST_PATH_UPLOAD) {
-		data.Body = html.UnescapeString(string(req.Body()))
-	}
-	return data
-}
-
-func applyResponse(ctx *fasthttp.RequestCtx, data *Response) {
-	// headers
-	for k, v := range data.Headers {
-		ctx.Response.Header.Set(k, v)
-	}
-	// cross site header
-	ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
-	ctx.Response.Header.Set("Access-Control-Allow-Headers", "*")
-	// user agent
-	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
-	// status code
-	ctx.Response.SetStatusCode(int(data.HttpStatus))
-	// body
-	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && handleRestFile(ctx, data) {
-		ctx.Logger().Printf("File REST call Finished  %s", data.Uuid)
-	} else {
-		ctx.Response.SetBodyRaw([]byte(data.Body))
-		ctx.SetContentType(data.BodyMsgType)
-		ctx.Logger().Printf("REST call Finished  %s", data.Uuid)
 	}
 }
 
@@ -182,8 +259,9 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 	ctx.Logger().Printf(string(ctx.Request.URI().Path()))
 	if ctx.Request.Header.IsGet() && string(ctx.Request.URI().Path()) == REST_PATH_DOWNLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle download file
-		ctx.Logger().Printf("download file")
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
+		ctx.Logger().Printf("download file: %s", filePath)
+
 		_, fileName := filepath.Split(filePath)
 		ctx.Response.Header.Set("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName))
 		ctx.Response.Header.Set("Content-Description", "File Transfer")
@@ -241,89 +319,5 @@ func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
 		// compatibile with none-multipart upload
 		ctx.Logger().Printf("SaveFile: %s", filePath)
 		return os.WriteFile(filePath, ctx.Request.Body(), 0444)
-	}
-}
-
-func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
-	verifyClient, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyClient")
-	verifyServer, _ := config.GetAppMeshConfig3("REST", "SSL", "VerifyServer")
-	serverCert, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateFile")
-	serverCertKey, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCertificateKeyFile")
-	sslCaPath, _ := config.GetAppMeshConfig3("REST", "SSL", "SSLCaPath")
-
-	// Load server certificate and key
-	serverCA := utils.LoadCertificatePair(serverCert.(string), serverCertKey.(string))
-	// client
-	clientAuth := tls.NoClientCert
-	var clientCA *x509.CertPool
-	if verifyClient.(bool) {
-		clientAuth = tls.RequireAndVerifyClientCert
-		var err error
-		clientCA, err = utils.LoadCA(sslCaPath.(string))
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	conf := &tls.Config{
-		MinVersion:               tls.VersionTLS12,
-		InsecureSkipVerify:       !(verifyServer.(bool)), // whether a client verifies the server's certificate chain
-		Certificates:             []tls.Certificate{serverCA},
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-		PreferServerCipherSuites: true,
-		CipherSuites: []uint16{
-			// TLS 1.2
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-			// TLS 1.3 streamlined set of cipher suites
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-		},
-
-		// Set clients to authenticate
-		ClientAuth: clientAuth,
-		ClientCAs:  clientCA,
-	}
-
-	// start listen
-	ln, err := net.Listen("tcp4", restAgentAddr)
-	if err != nil {
-		log.Fatalf("Error in Listen tcp4: %v", err)
-		panic(err)
-	}
-	s := &fasthttp.Server{
-		Handler:            router.Handler,
-		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
-	}
-	log.Println("<App Mesh Agent> listening at: ", restAgentAddr)
-	return s.Serve(tls.NewListener(ln, conf))
-}
-
-func ListenRest() {
-	listenHostName, _ := config.GetAppMeshConfig2("REST", "RestListenAddress")
-	listenHostPort, _ := config.GetAppMeshConfig2("REST", "RestListenPort")
-	restTcpPort, _ := config.GetAppMeshConfig2("REST", "RestTcpPort")
-
-	listenAddr := listenHostName.(string) + ":" + strconv.Itoa(int(listenHostPort.(float64)))
-	connectAddr := listenHostName.(string) + ":" + strconv.Itoa(int(restTcpPort.(float64)))
-	// connect to TCP rest server
-	conn, err := connectServer(strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1))
-	if err != nil {
-		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
-		os.Exit(-1)
-	}
-	tcpConnect = conn
-	go readMsgLoop()
-
-	// setup REST listener
-	router := fasthttprouter.New()
-	router.NotFound = handleAppmeshRest // set all default router to restProxyHandler
-	grafana.RegGrafanaRestHandler(router)
-	err = listenAgentTls(listenAddr, router)
-	if err != nil {
-		log.Fatalf("Error in fasthttp Serve: %v", err)
-		os.Exit(-1)
 	}
 }

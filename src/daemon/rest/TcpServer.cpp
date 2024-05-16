@@ -318,7 +318,7 @@ bool TcpHandler::sendBytes(const char *data, size_t length)
 		}
 		totalSent += sendSize;
 	}
-	LOG_INF << fname << m_clientHostName << " success";
+	LOG_DBG << fname << m_clientHostName << " success";
 	return true;
 }
 

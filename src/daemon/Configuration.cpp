@@ -25,13 +25,11 @@ extern char **environ; // unistd.h
 
 std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
-	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL), m_disableExecUser(false)
 {
-	m_jsonFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string();
+	m_baseConfig = std::make_shared<BaseConfig>();
 	m_label = std::make_unique<Label>();
 	m_rest = std::make_shared<JsonRest>();
 	m_consul = std::make_shared<JsonConsul>();
-	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
 }
 
 Configuration::~Configuration()
@@ -48,12 +46,10 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 	m_instance = config;
 }
 
-std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, bool applyEnv)
+std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue, bool applyEnv)
 {
-	nlohmann::json jsonValue;
 	try
 	{
-		jsonValue = nlohmann::json::parse((str));
 		if (applyEnv)
 		{
 			Configuration::readConfigFromEnv(jsonValue);
@@ -71,26 +67,10 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	}
 	auto config = std::make_shared<Configuration>();
 
-	// Global Parameters
-	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
-	config->m_defaultExecUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
-	config->m_disableExecUser = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_DisableExecUser);
-	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
-	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
-	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
-	config->m_posixTimezone = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_PosixTimezone);
-
-	unsigned int gid, uid;
-	if (!config->m_defaultExecUser.empty() && !Utility::getUid(config->m_defaultExecUser, uid, gid))
+	// Base config
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 	{
-		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
-		throw std::invalid_argument("No such OS user for default execution");
-	}
-	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
-	{
-		// Use default value instead
-		config->m_scheduleInterval = DEFAULT_SCHEDULE_INTERVAL;
-		LOG_INF << "Default value <" << config->m_scheduleInterval << "> will by used for ScheduleIntervalSec";
+		config->m_baseConfig = BaseConfig::FromJson(jsonValue.at(JSON_KEY_BaseConfig));
 	}
 
 	// REST
@@ -117,8 +97,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 
 std::string Configuration::readConfiguration()
 {
-	const auto jsonPath = fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE;
-	return Utility::readFileCpp(jsonPath.string());
+	return Utility::readFileCpp(Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE));
 }
 
 void SigHupHandler(int signo)
@@ -131,7 +110,8 @@ void SigHupHandler(int signo)
 	{
 		try
 		{
-			config->hotUpdate(nlohmann::json::parse(Configuration::readConfiguration()));
+			auto configJson = Utility::yamlToJson(YAML::Load(Configuration::readConfiguration()));
+			config->hotUpdate(configJson);
 		}
 		catch (const std::exception &e)
 		{
@@ -168,14 +148,8 @@ nlohmann::json Configuration::AsJson()
 
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
-	// Global parameters
-	result[JSON_KEY_Description] = std::string(m_hostDescription);
-	result[JSON_KEY_DefaultExecUser] = std::string(m_defaultExecUser);
-	result[JSON_KEY_DisableExecUser] = (m_disableExecUser);
-	result[JSON_KEY_WorkingDirectory] = std::string(m_defaultWorkDir);
-	result[JSON_KEY_ScheduleIntervalSeconds] = (m_scheduleInterval);
-	result[JSON_KEY_LogLevel] = std::string(m_logLevel);
-	result[JSON_KEY_PosixTimezone] = std::string(m_posixTimezone);
+	// base config
+	result[JSON_KEY_BaseConfig] = m_baseConfig->AsJson();
 
 	// REST
 	result[JSON_KEY_REST] = m_rest->AsJson();
@@ -217,7 +191,7 @@ void Configuration::addApp2Map(std::shared_ptr<Application> app)
 int Configuration::getScheduleInterval()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_scheduleInterval;
+	return m_baseConfig->m_scheduleInterval;
 }
 
 int Configuration::getRestListenPort()
@@ -283,11 +257,10 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	return result;
 }
 
-void Configuration::loadApps()
+void Configuration::loadApps(const boost::filesystem::path &appDir)
 {
 	const static char fname[] = "Configuration::loadApps() ";
 
-	const auto appDir = fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR;
 	if (fs::exists(appDir) && fs::is_directory(appDir))
 	{
 		// parse YAML format
@@ -330,27 +303,27 @@ void Configuration::enableApp(const std::string &appName)
 const std::string Configuration::getLogLevel() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_logLevel;
+	return m_baseConfig->m_logLevel;
 }
 
 const std::string Configuration::getDefaultExecUser() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_defaultExecUser;
+	return m_baseConfig->m_defaultExecUser;
 }
 
 bool Configuration::getDisableExecUser() const
 {
-	return m_disableExecUser;
+	return m_baseConfig->m_disableExecUser;
 }
 
 const std::string Configuration::getWorkDir() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	if (m_defaultWorkDir.length())
-		return m_defaultWorkDir;
+	if (m_baseConfig->m_defaultWorkDir.length())
+		return m_baseConfig->m_defaultWorkDir;
 	else
-		return (fs::path(Utility::getParentDir()) / "work").string();
+		return (fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR).string();
 }
 
 bool Configuration::getSslVerifyClient() const
@@ -392,13 +365,13 @@ std::size_t Configuration::getThreadPoolSize() const
 const std::string Configuration::getDescription() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_hostDescription;
+	return m_baseConfig->m_hostDescription;
 }
 
 const std::string Configuration::getPosixTimezone() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_posixTimezone;
+	return m_baseConfig->m_posixTimezone;
 }
 
 const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
@@ -549,73 +522,74 @@ void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = (this->AsJson().dump());
-	if (content.length())
+	auto content = this->AsJson();
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	const auto configFilePath = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true);
+	auto tmpFile = configFilePath + "." + std::to_string(Utility::getThreadId());
+	if (Utility::runningInContainer())
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-		auto tmpFile = m_jsonFilePath + "." + std::to_string(Utility::getThreadId());
-		if (Utility::runningInContainer())
+		tmpFile = configFilePath;
+	}
+	std::ofstream ofs(tmpFile, ios::trunc);
+	if (ofs.is_open())
+	{
+		auto formatJson = Utility::jsonToYaml(content);
+		ofs << formatJson;
+		ofs.close();
+		if (tmpFile != configFilePath)
 		{
-			tmpFile = m_jsonFilePath;
-		}
-		std::ofstream ofs(tmpFile, ios::trunc);
-		if (ofs.is_open())
-		{
-			auto formatJson = Utility::prettyJson(content);
-			ofs << formatJson;
-			ofs.close();
-			if (tmpFile != m_jsonFilePath)
+			if (ACE_OS::rename(tmpFile.c_str(), configFilePath.c_str()) == 0)
 			{
-				if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
-				{
-					LOG_DBG << fname << formatJson;
-				}
-				else
-				{
-					LOG_ERR << fname << "Failed to write configuration file <" << m_jsonFilePath << ">, error :" << std::strerror(errno);
-				}
+				LOG_INF << fname << "saving config file to disk <" << configFilePath << ">";
+				LOG_DBG << fname << formatJson;
+			}
+			else
+			{
+				LOG_ERR << fname << "Failed to write configuration file <" << configFilePath << ">, error :" << std::strerror(errno);
 			}
 		}
 	}
-	else
-	{
-		LOG_ERR << fname << "Configuration content is empty";
-	}
+
 	LOG_DBG << fname;
 }
 
-void Configuration::hotUpdate(const nlohmann::json &jsonValue)
+void Configuration::hotUpdate(nlohmann::json &jsonValue)
 {
 	const static char fname[] = "Configuration::hotUpdate() ";
 
-	LOG_DBG << fname << "Entered";
+	LOG_DBG << fname << "update configuration: " << jsonValue.dump();
 	bool consulUpdated = false;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
 		// parse
-		auto newConfig = Configuration::FromJson((jsonValue.dump()));
+		auto newConfig = Configuration::FromJson(jsonValue);
 
-		// update
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Description))
-			SET_COMPARE(this->m_hostDescription, newConfig->m_hostDescription);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_LogLevel))
+		// Base config
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 		{
-			if (this->m_logLevel != newConfig->m_logLevel)
+			auto baseConfig = jsonValue.at(JSON_KEY_BaseConfig);
+			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_Description))
+				SET_COMPARE(this->m_baseConfig->m_hostDescription, newConfig->m_baseConfig->m_hostDescription);
+			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_LogLevel))
 			{
-				Utility::setLogLevel(newConfig->m_logLevel);
-				SET_COMPARE(this->m_logLevel, newConfig->m_logLevel);
+				if (this->m_baseConfig->m_logLevel != newConfig->m_baseConfig->m_logLevel)
+				{
+					Utility::setLogLevel(newConfig->m_baseConfig->m_logLevel);
+					SET_COMPARE(this->m_baseConfig->m_logLevel, newConfig->m_baseConfig->m_logLevel);
+				}
 			}
+
+			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_ScheduleIntervalSeconds))
+				SET_COMPARE(this->m_baseConfig->m_scheduleInterval, newConfig->m_baseConfig->m_scheduleInterval);
+			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_DefaultExecUser))
+				SET_COMPARE(this->m_baseConfig->m_defaultExecUser, newConfig->m_baseConfig->m_defaultExecUser);
+			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_DisableExecUser))
+				SET_COMPARE(this->m_baseConfig->m_disableExecUser, newConfig->m_baseConfig->m_disableExecUser);
+			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_WorkingDirectory))
+				SET_COMPARE(this->m_baseConfig->m_defaultWorkDir, newConfig->m_baseConfig->m_defaultWorkDir);
 		}
 
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_ScheduleIntervalSeconds))
-			SET_COMPARE(this->m_scheduleInterval, newConfig->m_scheduleInterval);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DefaultExecUser))
-			SET_COMPARE(this->m_defaultExecUser, newConfig->m_defaultExecUser);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_DisableExecUser))
-			SET_COMPARE(this->m_disableExecUser, newConfig->m_disableExecUser);
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_WorkingDirectory))
-			SET_COMPARE(this->m_defaultWorkDir, newConfig->m_defaultWorkDir);
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 		{
@@ -860,7 +834,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
 	{
 		rest->m_restListenPort = DEFAULT_REST_LISTEN_PORT;
-		LOG_INF << fname << "Default value <" << rest->m_restListenPort << "> will by used for RestListenPort";
+		LOG_DBG << fname << "Default value <" << rest->m_restListenPort << "> will by used for RestListenPort";
 	}
 	if (!Utility::isFileExist("/var/run/docker.sock"))
 	{
@@ -878,6 +852,50 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 		rest->m_jwt = JsonJwt::FromJson(jsonValue.at(JSON_KEY_JWT));
 	}
 	return rest;
+}
+
+Configuration::BaseConfig::BaseConfig()
+	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL), m_disableExecUser(false)
+{
+}
+
+std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(const nlohmann::json &jsonValue)
+{
+	auto config = std::make_shared<BaseConfig>();
+	config->m_hostDescription = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Description);
+	config->m_defaultExecUser = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DefaultExecUser);
+	config->m_disableExecUser = GET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_DisableExecUser);
+	config->m_defaultWorkDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_WorkingDirectory);
+	config->m_scheduleInterval = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_ScheduleIntervalSeconds);
+	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
+	config->m_posixTimezone = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_PosixTimezone);
+
+	unsigned int gid, uid;
+	if (!config->m_defaultExecUser.empty() && !Utility::getUid(config->m_defaultExecUser, uid, gid))
+	{
+		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
+		throw std::invalid_argument("No such OS user for default execution");
+	}
+	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
+	{
+		// Use default value instead
+		config->m_scheduleInterval = DEFAULT_SCHEDULE_INTERVAL;
+		LOG_INF << "Default value <" << config->m_scheduleInterval << "> will by used for ScheduleIntervalSec";
+	}
+	return config;
+}
+
+nlohmann::json Configuration::BaseConfig::AsJson() const
+{
+	auto result = nlohmann::json::object();
+	result[JSON_KEY_Description] = std::string(m_hostDescription);
+	result[JSON_KEY_DefaultExecUser] = std::string(m_defaultExecUser);
+	result[JSON_KEY_DisableExecUser] = (m_disableExecUser);
+	result[JSON_KEY_WorkingDirectory] = std::string(m_defaultWorkDir);
+	result[JSON_KEY_ScheduleIntervalSeconds] = (m_scheduleInterval);
+	result[JSON_KEY_LogLevel] = std::string(m_logLevel);
+	result[JSON_KEY_PosixTimezone] = std::string(m_posixTimezone);
+	return result;
 }
 
 nlohmann::json Configuration::JsonRest::AsJson() const
