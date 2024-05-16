@@ -9,6 +9,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/valyala/fasthttp v1.52.0
 	github.com/vmihailenco/msgpack/v5 v5.4.1
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (

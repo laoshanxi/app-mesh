@@ -306,8 +306,8 @@ func ListenRest() {
 	listenHostPort, _ := config.GetAppMeshConfig2("REST", "RestListenPort")
 	restTcpPort, _ := config.GetAppMeshConfig2("REST", "RestTcpPort")
 
-	listenAddr := listenHostName.(string) + ":" + strconv.Itoa(int(listenHostPort.(float64)))
-	connectAddr := listenHostName.(string) + ":" + strconv.Itoa(int(restTcpPort.(float64)))
+	listenAddr := listenHostName.(string) + ":" + strconv.Itoa(listenHostPort.(int))
+	connectAddr := listenHostName.(string) + ":" + strconv.Itoa(restTcpPort.(int))
 	// connect to TCP rest server
 	conn, err := connectServer(strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1))
 	if err != nil {

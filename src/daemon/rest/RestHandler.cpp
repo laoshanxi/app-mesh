@@ -683,15 +683,8 @@ void RestHandler::apiHealth(const HttpRequest &message)
 
 void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
-	if (Configuration::instance()->prometheusEnabled())
-	{
-		auto body = this->collectData();
-		message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
-	}
-	else
-	{
-		throw std::invalid_argument("Prometheus export not enabled or configured correctly");
-	}
+	auto body = this->collectData();
+	message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
 }
 
 nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string *token)

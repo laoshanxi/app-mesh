@@ -13,7 +13,7 @@ class Label;
 class Application;
 
 /// <summary>
-/// Configuration file <config.json> parse/update
+/// Configuration file <config.yaml> parse/update
 /// </summary>
 class Configuration
 {
@@ -159,7 +159,7 @@ private:
 
 	mutable std::recursive_mutex m_appMutex;
 	mutable std::recursive_mutex m_hotupdateMutex;
-	std::string m_jsonFilePath;
+	std::string m_yamlFilePath;
 
 	std::shared_ptr<Label> m_label;
 

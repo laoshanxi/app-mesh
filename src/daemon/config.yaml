@@ -1,0 +1,42 @@
+---
+Description: MYHOST
+DefaultExecUser: ""
+DisableExecUser: false
+ScheduleIntervalSeconds: 1
+WorkingDirectory: ""
+LogLevel: DEBUG
+PosixTimezone: "+08"
+
+REST:
+  DockerProxyListenAddr: ""
+  HttpThreadPoolSize: 3
+  JWT:
+    JWTSalt: HelloWorld
+    SecurityInterface: local
+  PrometheusExporterListenPort: 0
+  RestEnabled: true
+  RestListenAddress: localhost
+  RestListenPort: 6060
+  RestTcpPort: 6059
+  SSL:
+    SSLCaPath: /opt/appmesh/ssl/ca.pem
+    SSLCertificateFile: /opt/appmesh/ssl/server.pem
+    SSLCertificateKeyFile: /opt/appmesh/ssl/server-key.pem
+    SSLClientCertificateFile: /opt/appmesh/ssl/client.pem
+    SSLClientCertificateKeyFile: /opt/appmesh/ssl/client-key.pem
+    VerifyClient: false
+    VerifyServer: true
+
+Consul:
+  AppmeshProxyUrl: ""
+  EnableConsulSecurity: false
+  IsMainNode: true
+  IsWorkerNode: true
+  Pass: ""
+  SessionTTL: 30
+  Url: ""
+  User: ""
+
+Labels:
+  arch: x86_64
+  os_version: centos7.6

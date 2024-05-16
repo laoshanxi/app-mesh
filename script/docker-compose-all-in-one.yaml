@@ -33,7 +33,7 @@ services:
       - /opt/appmesh/work:/opt/appmesh/work
       - /opt/appmesh/log:/opt/appmesh/log
       # mount this to enable configuration persist
-      #- /opt/appmesh/config.json:/opt/appmesh/config.json
+      #- /opt/appmesh/config.yaml:/opt/appmesh/config.yaml
     privileged: true
     user: root
     network_mode: host

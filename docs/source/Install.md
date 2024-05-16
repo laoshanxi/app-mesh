@@ -61,9 +61,9 @@ Note:
 
 ```
     $ tree -L 1 /opt/appmesh/
-	├── apps                         ====> application json files dir
-    ├── config.json                  ====> configuration fileGUI)
-    ├── security.json                ====> local JSON security configuration file
+	  ├── apps                         ====> application json files dir
+    ├── config.yaml                  ====> configuration fileGUI)
+    ├── security.yaml                ====> local security configuration file
     ├── bin                          ====> execution binaries dir
     ├── lib64
     ├── log                          ====> app mesh engine log dir
@@ -113,7 +113,7 @@ For production environment, Consul is better to be a cluster with 3+ server agen
 
 #### Option 1: Update configuration
 
-When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/config.json`:
+When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/config.yaml`:
 
 ```
   "Consul": {
@@ -121,7 +121,7 @@ When installed a new App Mesh node and want to connect to existing cluster, just
   }
 ```
 
-If App Mesh is running in Docker container, need mount `/opt/appmesh/config.json` out of container to persist the configuration. After configuration change, just restart App Mesh container.
+If App Mesh is running in Docker container, need mount `/opt/appmesh/config.yaml` out of container to persist the configuration. After configuration change, just restart App Mesh container.
 
 #### Option 2: Update from UI
 

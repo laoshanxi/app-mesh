@@ -27,11 +27,11 @@ std::shared_ptr<Configuration> Configuration::m_instance = nullptr;
 Configuration::Configuration()
 	: m_scheduleInterval(DEFAULT_SCHEDULE_INTERVAL), m_disableExecUser(false)
 {
-	m_jsonFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE).string();
+	m_yamlFilePath = (fs::path(Utility::getParentDir()) / APPMESH_CONFIG_YAML_FILE).string();
 	m_label = std::make_unique<Label>();
 	m_rest = std::make_shared<JsonRest>();
 	m_consul = std::make_shared<JsonConsul>();
-	LOG_INF << "Configuration file <" << m_jsonFilePath << ">";
+	LOG_INF << "Configuration file <" << m_yamlFilePath << ">";
 }
 
 Configuration::~Configuration()
@@ -53,7 +53,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 	nlohmann::json jsonValue;
 	try
 	{
-		jsonValue = nlohmann::json::parse((str));
+		jsonValue = Utility::yamlToJson(YAML::Load(str));
 		if (applyEnv)
 		{
 			Configuration::readConfigFromEnv(jsonValue);
@@ -117,7 +117,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(const std::string &str, b
 
 std::string Configuration::readConfiguration()
 {
-	const auto jsonPath = fs::path(Utility::getParentDir()) / APPMESH_CONFIG_JSON_FILE;
+	const auto jsonPath = fs::path(Utility::getParentDir()) / APPMESH_CONFIG_YAML_FILE;
 	return Utility::readFileCpp(jsonPath.string());
 }
 
@@ -549,38 +549,32 @@ void Configuration::saveConfigToDisk()
 {
 	const static char fname[] = "Configuration::saveConfigToDisk() ";
 
-	auto content = (this->AsJson().dump());
-	if (content.length())
+	auto content = this->AsJson();
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	auto tmpFile = m_yamlFilePath + "." + std::to_string(Utility::getThreadId());
+	if (Utility::runningInContainer())
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-		auto tmpFile = m_jsonFilePath + "." + std::to_string(Utility::getThreadId());
-		if (Utility::runningInContainer())
+		tmpFile = m_yamlFilePath;
+	}
+	std::ofstream ofs(tmpFile, ios::trunc);
+	if (ofs.is_open())
+	{
+		auto formatJson = Utility::jsonToYaml(content);
+		ofs << formatJson;
+		ofs.close();
+		if (tmpFile != m_yamlFilePath)
 		{
-			tmpFile = m_jsonFilePath;
-		}
-		std::ofstream ofs(tmpFile, ios::trunc);
-		if (ofs.is_open())
-		{
-			auto formatJson = Utility::prettyJson(content);
-			ofs << formatJson;
-			ofs.close();
-			if (tmpFile != m_jsonFilePath)
+			if (ACE_OS::rename(tmpFile.c_str(), m_yamlFilePath.c_str()) == 0)
 			{
-				if (ACE_OS::rename(tmpFile.c_str(), m_jsonFilePath.c_str()) == 0)
-				{
-					LOG_DBG << fname << formatJson;
-				}
-				else
-				{
-					LOG_ERR << fname << "Failed to write configuration file <" << m_jsonFilePath << ">, error :" << std::strerror(errno);
-				}
+				LOG_DBG << fname << formatJson;
+			}
+			else
+			{
+				LOG_ERR << fname << "Failed to write configuration file <" << m_yamlFilePath << ">, error :" << std::strerror(errno);
 			}
 		}
 	}
-	else
-	{
-		LOG_ERR << fname << "Configuration content is empty";
-	}
+
 	LOG_DBG << fname;
 }
 

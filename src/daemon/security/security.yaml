@@ -1,0 +1,73 @@
+---
+EncryptKey: false
+
+Users:
+  admin:
+    email: admin@appmesh.com
+    exec_user: ""
+    group: admin
+    key: admin123
+    locked: false
+    mfa_enabled: false
+    mfa_key: ""
+    roles:
+      - manage
+      - view
+      - shell
+      - usermgr
+  mesh:
+    email: mesh@appmesh.com
+    exec_user: ""
+    group: user
+    key: mesh123
+    locked: false
+    roles:
+      - view
+      - shell
+  test:
+    email: test@appmesh.com
+    exec_user: appmesh
+    group: user
+    key: test123
+    locked: false
+    roles: []
+
+Roles:
+  manage:
+    - app-control
+    - app-delete
+    - cloud-app-reg
+    - cloud-app-delete
+    - app-reg
+    - config-set
+    - file-download
+    - file-upload
+    - label-delete
+    - label-set
+  shell:
+    - app-run-async
+    - app-run-sync
+  usermgr:
+    - user-add
+    - passwd-change-user
+    - user-delete
+    - user-lock
+    - role-delete
+    - role-set
+    - user-totp-disable
+    - user-unlock
+  view:
+    - config-view
+    - label-view
+    - role-view
+    - user-list
+    - permission-list
+    - passwd-change-self
+    - app-view-all
+    - cloud-app-view
+    - cloud-app-output-view
+    - cloud-host-view
+    - app-view
+    - app-output-view
+    - user-totp-active
+    - host-resource-view
