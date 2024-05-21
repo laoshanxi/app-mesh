@@ -1,4 +1,5 @@
 import json
+import shutil
 import unittest
 from unittest import TestCase
 from pyotp import TOTP
@@ -9,11 +10,11 @@ import os
 current_directory = os.path.dirname(os.path.abspath(__file__))
 source_code_root_dir = os.path.dirname(os.path.dirname(current_directory))
 sys.path.append(os.path.join(source_code_root_dir, "src/sdk/python/appmesh"))
-import appmesh_client
+# import appmesh_client
 
 # For wheel package
 # python3 -m pip install --upgrade appmesh
-# from appmesh import appmesh_client
+from appmesh import appmesh_client
 
 # python3 -m unittest test_appmesh_client.TestAppMeshClient.test_user
 
@@ -72,7 +73,7 @@ class TestAppMeshClient(TestCase):
 
     def test_file(self):
         """test file"""
-        client = appmesh_client.AppMeshClientTCP()
+        client = appmesh_client.AppMeshClient()
         client.login("admin", "admin123")
         if os.path.exists("1.log"):
             os.remove("1.log")
@@ -83,6 +84,13 @@ class TestAppMeshClient(TestCase):
             os.remove("/tmp/2.log")
         self.assertTrue(client.file_upload(local_file="1.log", file_path="/tmp/2.log"))
         self.assertTrue(os.path.exists("/tmp/2.log"))
+
+        shutil.copy("/etc/os-release", "/tmp/os-release")
+        self.assertTrue(client.file_download("/tmp/os-release", "os-release"))
+        with open("/tmp/os-release", "r", encoding="utf-8") as etc:
+            with open("os-release", "r", encoding="utf-8") as local:
+                self.assertEqual(etc.read(), local.read())
+        os.remove("os-release")
 
     def test_config(self):
         """test config"""

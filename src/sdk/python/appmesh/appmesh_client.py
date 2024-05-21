@@ -1389,7 +1389,7 @@ class AppMeshClientTCP(AppMeshClient):
             request_uri: str = ""
             http_status: int = 0
             body_msg_type: str = ""
-            body: bytes = b""
+            body: str = ""
             headers: dict = {}
 
             def desirialize(self, buf: bytes):
@@ -1439,7 +1439,7 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_resp = ResponseMsg().desirialize(resp_data)
         http_resp = requests.Response()
         http_resp.status_code = appmesh_resp.http_status
-        http_resp._content = appmesh_resp.body if "application/octet-stream" in appmesh_resp.body_msg_type.lower() else appmesh_resp.body.encode("utf8")
+        http_resp._content = appmesh_resp.body.encode("utf8")
         http_resp.headers = appmesh_resp.headers
         http_resp.encoding = MESSAGE_ENCODING_UTF8
         if appmesh_resp.body_msg_type:

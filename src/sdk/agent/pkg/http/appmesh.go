@@ -178,8 +178,9 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 	ctx.Logger().Printf(string(ctx.Request.URI().Path()))
 	if ctx.Request.Header.IsGet() && string(ctx.Request.URI().Path()) == REST_PATH_DOWNLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle download file
-		ctx.Logger().Printf("download file")
 		filePath := string(ctx.Request.Header.Peek("File-Path"))
+		ctx.Logger().Printf("download file: %s", filePath)
+
 		_, fileName := filepath.Split(filePath)
 		ctx.Response.Header.Set("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName))
 		ctx.Response.Header.Set("Content-Description", "File Transfer")
