@@ -30,7 +30,7 @@ ENTRYPOINT ["tini", "--", "/appmesh-entrypoint.sh"]
 ##################################################################################
 # docker container, accept parameters as bellow format:
 #  1. Run docker container and register a long running application
-#     docker run -d laoshanxi/appmesh ping www.baidu.com
+#     docker run -d laoshanxi/appmesh ping github.com
 #  2. Run docker container and excute an external cmd
 #     docker run -d laoshanxi/appmesh appc ls
 ##################################################################################

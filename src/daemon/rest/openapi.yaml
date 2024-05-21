@@ -1,0 +1,687 @@
+---
+openapi: 3.1.0
+info:
+  title: AppMesh REST API
+  description: REST API for AppMesh services
+  version: 2.1.2
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      in: header
+    BasicAuth:
+      type: http
+      scheme: basic
+      in: header
+    ApiKey:
+      type: apiKey
+      name: X-API-Key
+      in: header
+
+  responses:
+    UnauthorizedError:
+      description: Access token is missing or invalid.
+    ForbiddenError:
+      description: Authentication succeeded, but the user does not have the necessary permissions.
+
+paths:
+  /appmesh/login:
+    post:
+      summary: User Login
+      tags:
+        - Authentication
+      security:
+        - BasicAuth: []
+      parameters:
+        - name: TOTP code
+          in: header
+          required: false
+          schema:
+            type: string
+          description: TOTP code if enabled and verify with password together.
+        - name: Expire-Seconds
+          in: header
+          required: false
+          schema:
+            type: integer
+          description: Expiration time in seconds
+      responses:
+        "200":
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Access-Token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  token_type:
+                    type: string
+                    example: "Bearer"
+                  expire_seconds:
+                    type: integer
+                    example: 3600
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /appmesh/auth:
+    post:
+      summary: Authenticate User
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Auth-Permission
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Name of the permission to verify for the authenticated user
+      responses:
+        "200":
+          description: Authentication successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permission:
+                    type: string
+                    example: "app-view"
+                  success:
+                    type: bool
+                    example: true
+                  user:
+                    type: string
+                    example: "admin"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+  /appmesh/self/logoff:
+    post:
+      summary: Log out the current user from the server
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Successful logout
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /appmesh/token/renew:
+    post:
+      summary: Token Renewal
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: Token renewed successfully
+        "401":
+          description: Unauthorized
+
+  /appmesh/totp/secret:
+    post:
+      summary: Get TOTP Secret
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: TOTP secret generated
+        "401":
+          description: Unauthorized
+
+  /appmesh/totp/setup:
+    post:
+      summary: Setup TOTP
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: TOTP setup completed
+        "401":
+          description: Unauthorized
+
+  /appmesh/totp/validate:
+    post:
+      summary: Validate TOTP
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: TOTP validated
+        "401":
+          description: Unauthorized
+
+  /appmesh/totp/{id}/disable:
+    post:
+      summary: Disable TOTP
+      tags:
+        - Authentication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: TOTP disabled
+        "401":
+          description: Unauthorized
+
+  /appmesh/app/{id}/output:
+    get:
+      summary: View Application Output
+      tags:
+        - Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application output
+        "404":
+          description: Application not found
+
+  /appmesh/applications:
+    get:
+      summary: View All Applications
+      tags:
+        - Application
+      responses:
+        "200":
+          description: List of applications
+
+  /appmesh/app/{id}/health:
+    get:
+      summary: Application Health
+      tags:
+        - Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application health status
+        "404":
+          description: Application not found
+
+  /appmesh/cloud/applications:
+    get:
+      summary: View All Cloud Applications
+      tags:
+        - Cloud Application
+      responses:
+        "200":
+          description: List of cloud applications
+
+  /appmesh/cloud/app/{id}:
+    get:
+      summary: View Cloud Application
+      tags:
+        - Cloud Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cloud application details
+        "404":
+          description: Cloud application not found
+
+    put:
+      summary: Add Cloud Application
+      tags:
+        - Cloud Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Cloud application added
+        "400":
+          description: Bad request
+
+    delete:
+      summary: Delete Cloud Application
+      tags:
+        - Cloud Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cloud application deleted
+        "404":
+          description: Cloud application not found
+
+  /appmesh/cloud/app/{id}/output/{outputId}:
+    get:
+      summary: View Cloud Application Output
+      tags:
+        - Cloud Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: outputId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cloud application output
+        "404":
+          description: Cloud application not found
+
+  /appmesh/cloud/nodes:
+    get:
+      summary: View Cloud Nodes
+      tags:
+        - Cloud Application
+      responses:
+        "200":
+          description: List of cloud nodes
+
+  /appmesh/app/{id}:
+    get:
+      summary: View Application
+      tags:
+        - Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application details
+        "404":
+          description: Application not found
+    put:
+      summary: Add Application
+      tags:
+        - Manage Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Application added
+        "400":
+          description: Bad request
+
+    delete:
+      summary: Delete Application
+      tags:
+        - Manage Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application deleted
+        "404":
+          description: Application not found
+
+  /appmesh/app/{id}/enable:
+    post:
+      summary: Enable Application
+      tags:
+        - Manage Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application enabled
+        "404":
+          description: Application not found
+
+  /appmesh/app/{id}/disable:
+    post:
+      summary: Disable Application
+      tags:
+        - Manage Application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application disabled
+        "404":
+          description: Application not found
+
+  /appmesh/app/run:
+    post:
+      summary: Run Application Asynchronously
+      tags:
+        - Operate Application
+      responses:
+        "200":
+          description: Application running asynchronously
+        "400":
+          description: Bad request
+
+  /appmesh/app/syncrun:
+    post:
+      summary: Run Application Synchronously
+      tags:
+        - Operate Application
+      responses:
+        "200":
+          description: Application running synchronously
+        "400":
+          description: Bad request
+
+  /appmesh/file/download:
+    get:
+      summary: Download File
+      tags:
+        - File Management
+      responses:
+        "200":
+          description: File downloaded
+        "404":
+          description: File not found
+
+  /appmesh/file/upload:
+    post:
+      summary: Upload File
+      tags:
+        - File Management
+      responses:
+        "201":
+          description: File uploaded
+        "400":
+          description: Bad request
+
+  /appmesh/labels:
+    get:
+      summary: View All Labels
+      tags:
+        - Label Management
+      responses:
+        "200":
+          description: List of labels
+
+  /appmesh/label/{id}:
+    put:
+      summary: Add Label
+      tags:
+        - Label Management
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Label added
+        "400":
+          description: Bad request
+
+    delete:
+      summary: Delete Label
+      tags:
+        - Label Management
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Label deleted
+        "404":
+          description: Label not found
+
+  /appmesh/config:
+    get:
+      summary: View Config
+      tags:
+        - Config
+      responses:
+        "200":
+          description: Configuration details
+
+    post:
+      summary: Set Config
+      tags:
+        - Config
+      responses:
+        "200":
+          description: Configuration set
+        "400":
+          description: Bad request
+
+  /appmesh/user/{id}/passwd:
+    post:
+      summary: Change User Password
+      tags:
+        - Security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Password changed
+        "404":
+          description: User not found
+
+  /appmesh/user/{id}/lock:
+    post:
+      summary: Lock User
+      tags:
+        - Security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User locked
+        "404":
+          description: User not found
+
+  /appmesh/user/{id}/unlock:
+    post:
+      summary: Unlock User
+      tags:
+        - Security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User unlocked
+        "404":
+          description: User not found
+
+  /appmesh/user/{id}:
+    put:
+      summary: Add User
+      tags:
+        - Security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: User added
+        "400":
+          description: Bad request
+
+    delete:
+      summary: Delete User
+      tags:
+        - Security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User deleted
+        "404":
+          description: User not found
+
+  /appmesh/user/self:
+    get:
+      summary: View Self User
+      tags:
+        - Security
+      responses:
+        "200":
+          description: User details
+
+  /appmesh/users:
+    get:
+      summary: View All Users
+      tags:
+        - Security
+      responses:
+        "200":
+          description: List of users
+
+  /appmesh/roles:
+    get:
+      summary: View All Roles
+      tags:
+        - Security
+      responses:
+        "200":
+          description: List of roles
+
+  /appmesh/role/{id}:
+    post:
+      summary: Update Role
+      tags:
+        - Security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Role updated
+        "404":
+          description: Role not found
+
+    delete:
+      summary: Delete Role
+      tags:
+        - Security
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Role deleted
+        "404":
+          description: Role not found
+
+  /appmesh/user/permissions:
+    get:
+      summary: View User Permissions
+      tags:
+        - Security
+      responses:
+        "200":
+          description: List of permissions
+
+  /appmesh/permissions:
+    get:
+      summary: View All Permissions
+      tags:
+        - Security
+      responses:
+        "200":
+          description: List of permissions
+
+  /appmesh/user/groups:
+    get:
+      summary: View User Groups
+      tags:
+        - Security
+      responses:
+        "200":
+          description: List of groups
+
+  /appmesh/metrics:
+    get:
+      summary: View Prometheus Metrics
+      tags:
+        - Metrics
+      responses:
+        "200":
+          description: Prometheus metrics
+
+  /appmesh/resources:
+    get:
+      summary: View Resources
+      tags:
+        - Metrics
+      responses:
+        "200":
+          description: Resource details

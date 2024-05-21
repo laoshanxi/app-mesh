@@ -346,8 +346,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             AppMeshClient.Method.POST,
             path="/appmesh/login",
             header={
-                "Username": base64.b64encode(user_name.encode()),
-                "Password": base64.b64encode(user_pwd.encode()),
+                "Authorization": "Basic " + base64.b64encode((user_name + ":" + user_pwd).encode()).decode(),
                 "Expire-Seconds": self._parse_duration(timeout_seconds),
             },
         )
@@ -362,7 +361,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 header={
                     "Username": base64.b64encode(user_name.encode()),
                     "Totp-Challenge": base64.b64encode(challenge.encode()),
-                    "Totp": base64.b64encode(totp_code.encode()),
+                    "Totp": totp_code,
                     "Expire-Seconds": self._parse_duration(timeout_seconds),
                 },
             )
@@ -458,7 +457,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path="/appmesh/totp/setup",
-            header={"Totp": base64.b64encode(totp_code.encode())},
+            header={"Totp": totp_code},
         )
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
@@ -1300,11 +1299,14 @@ class AppMeshClientTCP(AppMeshClient):
     def __connect_socket(self) -> None:
         """Establish tcp connection"""
         context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.verify_mode = ssl.CERT_NONE if self.ssl_verify is False else ssl.CERT_REQUIRED
+        if hasattr(context, "minimum_version"):
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+        else:
+            context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+        if self.ssl_verify:
+            context.verify_mode = ssl.CERT_REQUIRED
         if isinstance(self.ssl_verify, str):
             # Load server-side certificate authority (CA) certificates
-            context.check_hostname = True
             context.load_verify_locations(self.ssl_verify)
         if self.ssl_client_cert is not None:
             # Load client-side certificate and private key
@@ -1389,7 +1391,7 @@ class AppMeshClientTCP(AppMeshClient):
             request_uri: str = ""
             http_status: int = 0
             body_msg_type: str = ""
-            body: bytes = b""
+            body: str = ""
             headers: dict = {}
 
             def desirialize(self, buf: bytes):
@@ -1439,7 +1441,7 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_resp = ResponseMsg().desirialize(resp_data)
         http_resp = requests.Response()
         http_resp.status_code = appmesh_resp.http_status
-        http_resp._content = appmesh_resp.body if "application/octet-stream" in appmesh_resp.body_msg_type.lower() else appmesh_resp.body.encode("utf8")
+        http_resp._content = appmesh_resp.body.encode("utf8")
         http_resp.headers = appmesh_resp.headers
         http_resp.encoding = MESSAGE_ENCODING_UTF8
         if appmesh_resp.body_msg_type:

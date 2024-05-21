@@ -1,7 +1,7 @@
 ---
 name: ping
 description: appmesh ping test
-command: ping www.baidu.com -w 300
+command: ping github.com -w 300
 owner: mesh
 permission: 33
 behavior:

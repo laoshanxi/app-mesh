@@ -15,13 +15,12 @@ Type=simple
 PIDFile=/var/run/appmesh.pid
 Environment=
 EnvironmentFile=/opt/appmesh/script/appmesh.environment
-# work dir will force set to /opt/appmesh/work in main.cpp
 WorkingDirectory=/opt/appmesh/
 ExecStart=/opt/appmesh/bin/appsvc
-ExecStop=/bin/killall /opt/appmesh/bin/appsvc
+ExecStop=/bin/kill -TERM $MAINPID
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=2
-ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 # inherit/null/tty/journal/syslog/kmsg
 StandardOutput=null

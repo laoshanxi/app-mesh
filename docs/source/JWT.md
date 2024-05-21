@@ -23,11 +23,11 @@ What is **not** supported:
 
 | Method | URI                    | Body/Headers                                                                                                          | Desc                                                       |
 | ------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| POST   | /appmesh/login         | Username=base64(uname) <br> Password=base64(passwd) <br> Optional: <br> Expire-Seconds=600 <br> Totp=base64(TOTP_KEY) | User login, return JWT token or require next TOTP validate |
+| POST   | /appmesh/login         | Authorization=Basic base64(NAME:PASSWD) <br> Optional: <br> Expire-Seconds=600 <br> Totp=base64(TOTP_KEY) | User login, return JWT token or require next TOTP validate |
 | POST   | /appmesh/totp/validate | Totp=base64(TOTP_KEY)                                                                                                 | Validate TOTP key, return JWT token                        |
 
 ```shell
-curl -X POST -k -s -H "Username:$(echo -n user | base64)" -H "Password:$(echo -n Password | base64)" -H "Expire-Seconds:2" https://localhost:6060/appmesh/login | python -m json.tool
+curl -X POST -k -s -H "Authorization:$(echo -n 'user:pwd' | base64)" -H "Expire-Seconds:2" https://localhost:6060/appmesh/login | python -m json.tool
 ```
 
 The REST will response bellow json when authentication success:

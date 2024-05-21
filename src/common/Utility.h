@@ -368,7 +368,6 @@ public:
 #define HTTP_HEADER_JWT_access_token "Access-Token"
 #define HTTP_HEADER_JWT_expire_seconds "Expire-Seconds"
 #define HTTP_HEADER_JWT_username "Username"
-#define HTTP_HEADER_JWT_password "Password"
 #define HTTP_HEADER_JWT_totp "Totp"
 #define HTTP_HEADER_JWT_totp_challenge "Totp-Challenge"
 #define HTTP_HEADER_JWT_new_password "New-Password"

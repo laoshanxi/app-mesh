@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buaazp/fasthttprouter"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	"github.com/valyala/fasthttp"
 )
 
@@ -38,13 +39,13 @@ func New(opts ...Opt) *GrafanaHandler {
 }
 
 func (h *GrafanaHandler) handleRestRouter(router *fasthttprouter.Router) {
-	router.GET("/appmesh/grafana", cors(h.HandleRoot))
-	router.POST("/appmesh/grafana/query", cors(h.HandleQuery))
-	router.POST("/appmesh/grafana/annotations", cors(h.HandleAnnotations))
-	router.OPTIONS("/appmesh/grafana/annotations", cors(h.HandleAnnotations))
-	router.POST("/appmesh/grafana/search", cors(h.HandleSearch))
-	router.POST("/appmesh/grafana/tag-keys", cors(h.HandleTagKeys))
-	router.POST("/appmesh/grafana/tag-values", cors(h.HandleTagValues))
+	router.GET("/appmesh_grafana", utils.Cors(h.HandleRoot))
+	router.POST("/appmesh_grafana/query", utils.Cors(h.HandleQuery))
+	router.POST("/appmesh_grafana/annotations", utils.Cors(h.HandleAnnotations))
+	router.POST("/appmesh_grafana/search", utils.Cors(h.HandleSearch))
+	router.POST("/appmesh_grafana/tag-keys", utils.Cors(h.HandleTagKeys))
+	router.POST("/appmesh_grafana/tag-values", utils.Cors(h.HandleTagValues))
+	// router.OPTIONS("/appmesh_grafana/annotations", utils.Cors(h.HandleAnnotations))
 }
 
 // WithSource will attempt to use the datasource provided as

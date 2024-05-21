@@ -27,7 +27,7 @@ start_time = datetime.now()
 runs = []
 for i in range(100):
     # example: 100 run shell command:
-    runs.append(client.run_async(appmesh_client.App({"command": "ping www.baidu.com -w {0}".format(i), "shell": True}), max_time_seconds=8))
+    runs.append(client.run_async(appmesh_client.App({"command": "ping github.com -w {0}".format(i), "shell": True}), max_time_seconds=8))
     # example: 100 run python code segment:
     runs.append(client.run_async(appmesh_client.App({"name": "pyrun", "metadata": "import time;print({0});time.sleep({0})".format(i)}), max_time_seconds=10))
 

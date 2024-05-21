@@ -11,7 +11,7 @@ BaseConfig:
   # working directory for appmesh
   WorkingDirectory: ""
   # log level (DEBUG/INFO/NOTICE/WARN/ERROR)
-  LogLevel: DEBUG
+  LogLevel: INFO
   # specify a timezone for appmesh output time format, default is server's timezone
   PosixTimezone: "+08"
 

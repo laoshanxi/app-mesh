@@ -1550,10 +1550,10 @@ void ArgumentParser::processUserMfaActive()
 	{
 		std::string restPath = "/appmesh/user/self";
 		auto resp = nlohmann::json::parse(requestHttp(true, web::http::methods::GET, restPath)->text);
-		std::string msg = "Do you want active 2FA for <%s>: ";
+		std::string msg = "Do you want active 2FA for <%s> [y/n]:";
 		if (GET_JSON_BOOL_VALUE(resp, JSON_KEY_USER_mfa_enabled))
 		{
-			msg = "2FA already enabled, do you want re-active 2FA for <%s>: ";
+			msg = "2FA already enabled, do you want re-active 2FA for <%s> [y/n]:";
 		}
 		if (this->confirmInput(Utility::stringFormat(msg, userName.c_str()).c_str()))
 		{
@@ -1576,7 +1576,7 @@ void ArgumentParser::processUserMfaActive()
 				// Setup TOTP
 				restPath = "/appmesh/totp/setup";
 				std::map<std::string, std::string> header;
-				header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+				header.insert({HTTP_HEADER_JWT_totp, totp});
 				try
 				{
 					response = requestHttp(true, web::http::methods::POST, restPath, nullptr, std::move(header));
@@ -1596,7 +1596,7 @@ void ArgumentParser::processUserMfaActive()
 	}
 	else
 	{
-		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s>: ", userName.c_str()).c_str()))
+		if (this->confirmInput(Utility::stringFormat("Do you want deactive 2FA for <%s> [y/n]:", userName.c_str()).c_str()))
 		{
 			std::string restPath = std::string("/appmesh/totp/") + userName + "/disable";
 			auto response = requestHttp(true, web::http::methods::POST, restPath);
@@ -1850,8 +1850,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 	auto url = Utility::stdStringTrim(targetHost, '/');
 	// header
 	std::map<std::string, std::string> header;
-	header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
-	header.insert({HTTP_HEADER_JWT_password, Utility::encode64(passwd)});
+	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_Auth_BasicSpace) + Utility::encode64(user + ":" + passwd)});
 	header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 
 	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", nullptr, std::move(header), {});
@@ -1874,7 +1873,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 
 			std::map<std::string, std::string> header;
 			header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
-			header.insert({HTTP_HEADER_JWT_totp, Utility::encode64(totp)});
+			header.insert({HTTP_HEADER_JWT_totp, totp});
 			header.insert({HTTP_HEADER_JWT_totp_challenge, Utility::encode64(totpChallenge)});
 			header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", nullptr, std::move(header), {});
