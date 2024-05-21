@@ -15,6 +15,7 @@ elif [ -f $SYSTEMD_FILE ] || [ -f "/etc/init.d/appmesh" ]; then
 fi
 
 chmod +x ${PROG_HOME}/script/*.sh
+chmod +x ${PROG_HOME}/script/*.environment
 
 # systemd environment file: ${PROG_HOME}/script/appmesh.environment
 cat /dev/null >${PROG_HOME}/script/appmesh.environment

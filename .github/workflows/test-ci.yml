@@ -23,6 +23,7 @@ jobs:
       contents: read
 
     steps:
+      - uses: actions/checkout@v4
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
@@ -32,51 +33,95 @@ jobs:
         uses: addnab/docker-run-action@v3
         with:
           image: centos:7
+          options: -v ${{ github.workspace }}:/work
           shell: bash
           run: |
             yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_4.8.5_glibc_2.17_x86_64.rpm
+
+            # start appmesh
             /opt/appmesh/script/appmesh-entrypoint.sh &
             sleep 5
             appc ls
+
+            # test appmesh golang sdk
+            (cd src/sdk/go && go test -v)
+
+            # test appmesh python sdk
+            yum install -y python3 python3-pip
+            python3 -m pip install --upgrade appmesh pyotp
+            (cd /work/test/python && python3 -m unittest)
 
       - name: test ubuntu:18
         uses: addnab/docker-run-action@v3
         with:
           image: ubuntu:18.04
+          options: -v ${{ github.workspace }}:/work
           shell: bash
           run: |
             apt update
             apt install -y wget iputils-ping
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_7_glibc_2.27_x86_64.deb
             apt install -y ./appmesh_*.deb
+
+            # start appmesh
             /opt/appmesh/script/appmesh-entrypoint.sh &
             sleep 5
             appc ls
+
+            # test appmesh golang sdk
+            (cd /work/src/sdk/go && go test -v)
+
+            # test appmesh python sdk
+            apt install -y python3 python3-pip
+            python3 -m pip install --upgrade appmesh pyotp
+            (cd /work/test/python && python3 -m unittest)
 
       - name: test ubuntu:22
         uses: addnab/docker-run-action@v3
         with:
           image: ubuntu:22.04
+          options: -v ${{ github.workspace }}:/work
           shell: bash
           run: |
             apt update
             apt install -y wget iputils-ping
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_11_glibc_2.35_x86_64.deb
             apt install -y ./appmesh_*.deb
+
+            # start appmesh
             /opt/appmesh/script/appmesh-entrypoint.sh &
             sleep 5
             appc ls
+
+            # test appmesh golang sdk
+            (cd /work/src/sdk/go && go test -v)
+
+            # test appmesh python sdk
+            apt install -y python3 python3-pip
+            python3 -m pip install --upgrade appmesh pyotp
+            (cd /work/test/python && python3 -m unittest)
 
       - name: test ubuntu:24
         uses: addnab/docker-run-action@v3
         with:
           image: ubuntu:24.04
+          options: -v ${{ github.workspace }}:/work
           shell: bash
           run: |
             apt update
             apt install -y wget iputils-ping
             wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_13_glibc_2.39_x86_64.deb
             apt install -y ./appmesh_*.deb
+
+            # start appmesh
             /opt/appmesh/script/appmesh-entrypoint.sh &
             sleep 5
             appc ls
+
+            # test appmesh golang sdk
+            (cd /work/src/sdk/go && go test -v)
+
+            # test appmesh python sdk
+            apt install -y python3 python3-pip
+            python3 -m pip install --break-system-packages --upgrade appmesh pyotp
+            (cd /work/test/python && python3 -m unittest)

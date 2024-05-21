@@ -2,9 +2,12 @@ package http
 
 import (
 	"encoding/binary"
-	"log"
+	"html"
 	"net"
+	"strings"
 
+	"github.com/rs/xid"
+	"github.com/valyala/fasthttp"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -56,7 +59,7 @@ func blockRead(conn net.Conn, msgLength uint32) ([]byte, error) {
 		if n > 0 {
 			bodyBuf = append(bodyBuf, data[:n]...)
 			totalReadSize += uint32(n)
-			log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, msgLength-totalReadSize)
+			//log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, msgLength-totalReadSize)
 			continue
 		} else if err != nil {
 			return nil, err
@@ -76,7 +79,7 @@ func blockSend(conn net.Conn, buf []byte) error {
 			return err
 		}
 		totalSentSize += byteSent
-		log.Printf("total send size %d bytes", totalSentSize)
+		//log.Printf("total send size %d bytes", totalSentSize)
 	}
 	return err
 }
@@ -98,4 +101,49 @@ func (r *Response) readResponse(conn net.Conn) error {
 
 func (r *Request) serialize() ([]byte, error) {
 	return msgpack.Marshal(*r)
+}
+
+func convertHttpRequestData(req *fasthttp.Request) *Request {
+	// do not proxy "Connection" header.
+	req.Header.Del("Connection")
+
+	data := new(Request)
+	data.Uuid = xid.New().String()
+	data.HttpMethod = string(req.Header.Method())
+	data.RequestUri = string(req.URI().Path())
+	data.ClientAddress = string(req.Host())
+	data.Headers = make(map[string]string)
+	req.Header.VisitAll(func(key, value []byte) {
+		data.Headers[string(key)] = string(value)
+	})
+	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
+	data.Querys = make(map[string]string)
+	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
+		data.Querys[string(key)] = string(value)
+	})
+
+	// do not read body for file upload
+	if !(req.Header.IsPost() && string(req.URI().Path()) == REST_PATH_UPLOAD) {
+		data.Body = html.UnescapeString(string(req.Body()))
+	}
+	return data
+}
+
+func convertResponseToHttp(ctx *fasthttp.RequestCtx, data *Response) {
+	// headers
+	for k, v := range data.Headers {
+		ctx.Response.Header.Set(k, v)
+	}
+	// user agent
+	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
+	// status code
+	ctx.Response.SetStatusCode(int(data.HttpStatus))
+	// body
+	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && handleRestFile(ctx, data) {
+		ctx.Logger().Printf("File REST call Finished  %s", data.Uuid)
+	} else {
+		ctx.Response.SetBodyRaw([]byte(data.Body))
+		ctx.SetContentType(data.BodyMsgType)
+		ctx.Logger().Printf("REST call Finished  %s", data.Uuid)
+	}
 }

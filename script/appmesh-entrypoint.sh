@@ -6,8 +6,8 @@
 ################################################################################
 
 export PROG_HOME=/opt/appmesh
-export PROG=bin/appsvc
-export PROGC=bin/appc
+export PROG=${PROG_HOME}/bin/appsvc
+export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 
 log() {
 	local timestamp
@@ -20,9 +20,6 @@ cd "${PROG_HOME}" || {
 	log "Failed to change directory to ${PROG_HOME}"
 	exit 1
 }
-
-SCRIPT_PID="$$"
-export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 
 pre_start_app() {
 	if [[ $# -gt 0 ]]; then
@@ -46,12 +43,9 @@ EOF
 pre_start_app "$@"
 
 while true; do
-	PID=$(tr -d '\0' </var/run/appmesh.pid)
-	PID_EXIST=$(ps aux | awk '{print $2}' | grep -w "$PID")
-	CMD_EXIST=$(ps aux | awk '{print $11}' | grep -w "${PROG_HOME}/${PROG}")
-	if [[ ! $PID_EXIST ]] && [[ ! $CMD_EXIST ]]; then
-		nohup "${PROG_HOME}/${PROG}" &
-		log "Starting App Mesh service"
-	fi
-	sleep 1
+	log "Starting App Mesh service: $PROG"
+	$PROG >/dev/null 2>&1
+	EXIT_STATUS=$?
+	log "App Mesh exit status: $EXIT_STATUS"
+	sleep 2
 done

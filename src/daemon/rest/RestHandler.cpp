@@ -715,14 +715,22 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserLogin() ";
 
 	// mandatory
-	const auto uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
-	const auto passwd = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_password));
+	auto authorization = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_Authorization);
+	if (!Utility::startWith(authorization, HTTP_HEADER_Auth_BasicSpace))
+	{
+		throw std::invalid_argument("unrecognized authorization type");
+	}
+	authorization = Utility::stdStringTrim(authorization, HTTP_HEADER_Auth_BasicSpace, true, false);
+	authorization = Utility::decode64(authorization);
+	const auto authPair = Utility::splitString(authorization, ":");
+	const auto uname = authPair.size() == 2 ? authPair[0] : "";
+	const auto passwd = authPair.size() == 2 ? authPair[1] : "";
 	// option
-	const auto totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
-	if (message.m_headers.count(HTTP_HEADER_JWT_username) && message.m_headers.count(HTTP_HEADER_JWT_password))
+	if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
 	{
 		const auto user = Security::instance()->getUserInfo(uname);
 		if (!Security::instance()->verifyUserKey(uname, passwd))
@@ -872,7 +880,7 @@ void RestHandler::apiUserTotpSetup(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserTotpSetup() ";
 	permissionCheck(message, PERMISSION_KEY_user_totp_active);
-	std::string totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	std::string totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 
 	// get user
 	auto userName = getJwtUserName(message);
@@ -899,7 +907,7 @@ void RestHandler::apiUserTotpValidate(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserTotpValidate() ";
 
 	const auto uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
-	const auto totp = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp));
+	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 	const auto totpChallenge = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp_challenge));
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);

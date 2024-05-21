@@ -12,7 +12,7 @@ root
 Run a command with normal exit:
 
 ```shell
-# appc run -c 'ping www.baidu.com -w 2' -t 5; echo $?
+# appc run -c 'ping github.com -w 2' -t 5; echo $?
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.8 ms
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=2 ttl=55 time=31.9 ms
@@ -26,7 +26,7 @@ rtt min/avg/max/mdev = 31.844/31.850/31.857/0.006 ms
 Run a command and exit due to timeout:
 
 ```shell
-# appc run -c 'ping www.baidu.com -w 2' -t 5
+# appc run -c 'ping github.com -w 2' -t 5
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.9 ms
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=2 ttl=55 time=31.7 ms
@@ -34,7 +34,7 @@ PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 --- www.a.shifen.com ping statistics ---
 2 packets transmitted, 2 received, 0% packet loss, time 1001ms
 rtt min/avg/max/mdev = 31.722/31.827/31.933/0.105 ms
-(base) root@appmesh:~# appc run -c 'ping www.baidu.com -w 20' -t 5; echo $?
+(base) root@appmesh:~# appc run -c 'ping github.com -w 20' -t 5; echo $?
 PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=1 ttl=55 time=31.8 ms
 64 bytes from 14.215.177.39 (14.215.177.39): icmp_seq=2 ttl=55 time=31.8 ms

@@ -54,16 +54,16 @@ ID NAME        OWNER STATUS   HEALTH PID     MEMORY   %CPU RETURN LAST_START_TIM
 1  qqmail      admin enabled  0      -       -        -    0      2021-03-26 10:54:26+08  sh /opt/qqmail/launch.sh
 2  ssd         admin enabled  1      -       -        -    -      -                       /usr/sbin/fstrim -a -v
 3  loki        admin enabled  0      4789    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping www.sina.com
-4  ping        admin enabled  0      4790    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping www.baidu.com
+4  ping        admin enabled  0      4790    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping github.com
 5  docker            enabled  0      2866    2.5 Mi   0    -      2021-03-26 08:03:28+08  ping www.sina.com
 ```
 
 - View application output
 
 ```text
-$ appc add -n ping -c 'ping www.baidu.com'
+$ appc add -n ping -c 'ping github.com'
 {
- "command": "ping www.baidu.com",
+ "command": "ping github.com",
  "name": "ping",
  "owner": "admin",
  "register_time": "2020-10-24 07:31:40+08",
@@ -72,7 +72,7 @@ $ appc add -n ping -c 'ping www.baidu.com'
 
 $ appc view -n ping
 {
-  "command": "ping www.baidu.com",
+  "command": "ping github.com",
   "cpu": 0,
   "fd": 5,
   "health": 0,

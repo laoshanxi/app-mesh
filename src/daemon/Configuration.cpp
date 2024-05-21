@@ -836,7 +836,7 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	if (rest->m_restListenPort < 1000 || rest->m_restListenPort > 65534)
 	{
 		rest->m_restListenPort = DEFAULT_REST_LISTEN_PORT;
-		LOG_INF << fname << "Default value <" << rest->m_restListenPort << "> will by used for RestListenPort";
+		LOG_DBG << fname << "Default value <" << rest->m_restListenPort << "> will by used for RestListenPort";
 	}
 	if (!Utility::isFileExist("/var/run/docker.sock"))
 	{

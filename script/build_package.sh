@@ -20,6 +20,7 @@ cp ${CMAKE_BINARY_DIR}/gen/appsvc ${PACKAGE_HOME}/bin/
 cp ${CMAKE_BINARY_DIR}/gen/agent ${PACKAGE_HOME}/bin/
 
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/config.yaml ${PACKAGE_HOME}/
+cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/security.yaml ${PACKAGE_HOME}/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/ldapplugin/ldap.yaml ${PACKAGE_HOME}/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/script/app*.sh ${PACKAGE_HOME}/script/
