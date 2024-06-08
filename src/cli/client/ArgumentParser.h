@@ -38,6 +38,7 @@ private:
 	void processAppControl(bool start);
 	int processAppRun();
 	int processExec();
+	void saveUserCmdHistory(const char *input);
 
 	void processCloudAppView();
 	void processCloudNodesView();
@@ -64,7 +65,7 @@ public:
 	std::string getAuthenToken();
 	std::string getAuthenUser();
 	std::string readPersistAuthToken(const std::string &hostName);
-	std::string readPersistLastHost();
+	std::string readPersistLastHost(const std::string &defaultAddress);
 	void persistAuthToken(const std::string &hostName, const std::string &token);
 	std::string login(const std::string &user, const std::string &passwd, std::string targetHost);
 
@@ -79,6 +80,7 @@ private:
 	void regSignal();
 	void unregSignal();
 	std::string parseOutputMessage(std::shared_ptr<CurlResponse> &resp);
+	int runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds);
 	const std::string getAppMeshUrl();
 	const std::string getPosixTimezone();
 	const std::string parseUrlHost(const std::string &url);

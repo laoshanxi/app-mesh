@@ -45,8 +45,10 @@ overrides:
       - net-tools
       - libldap-dev
       # libldap-2.5-0
+      - libreadline-dev
   rpm:
     depends:
       - psmisc
       - net-tools
+      - readline-devel
 # openldap-devel

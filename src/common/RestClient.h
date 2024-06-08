@@ -43,6 +43,5 @@ private:
 	static void setSslConfig(curlpp::Easy &request);
 
 private:
-	static std::mutex m_restLock;
 	static ClientSSLConfig m_sslConfig;
 };

@@ -14,7 +14,6 @@
 
 static const std::string HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
 static const std::string HTTP_USER_AGENT = "appmeshsdk/cpp";
-std::mutex RestClient::m_restLock;
 ClientSSLConfig RestClient::m_sslConfig;
 ClientSSLConfig::ClientSSLConfig()
 	: m_ssl_version(CURL_SSLVERSION_LAST - 1), m_verify_client(false), m_verify_server(false)
@@ -37,7 +36,11 @@ ClientSSLConfig::ClientSSLConfig()
 std::shared_ptr<CurlResponse>
 RestClient::request(const std::string host, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
-	std::lock_guard<std::mutex> guard(m_restLock);
+	// only initialize once
+	static std::once_flag executeOnceFlag;
+	std::call_once(executeOnceFlag, []()
+				   { curlpp::initialize(CURL_GLOBAL_ALL); });
+
 	auto url = (fs::path(host) / path).string();
 
 	curlpp::Easy request;
@@ -126,7 +129,6 @@ RestClient::request(const std::string host, const web::http::method &mtd, const 
 std::shared_ptr<CurlResponse>
 RestClient::upload(const std::string host, const std::string &path, const std::string file, std::map<std::string, std::string> header)
 {
-	std::lock_guard<std::mutex> guard(m_restLock);
 	const auto url = (fs::path(host) / path).string();
 
 	curlpp::Easy request;
@@ -169,7 +171,6 @@ RestClient::upload(const std::string host, const std::string &path, const std::s
 std::shared_ptr<CurlResponse>
 RestClient::download(const std::string host, const std::string &path, const std::string remoteFile, const std::string localFile, std::map<std::string, std::string> header)
 {
-	std::lock_guard<std::mutex> guard(m_restLock);
 	const auto url = (fs::path(host) / path).string();
 
 	curlpp::Easy request;
@@ -204,7 +205,6 @@ RestClient::download(const std::string host, const std::string &path, const std:
 
 void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 {
-	std::lock_guard<std::mutex> guard(m_restLock);
 	m_sslConfig = sslConfig;
 }
 

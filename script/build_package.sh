@@ -51,6 +51,8 @@ ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep libcrypto | awk '{cmd="cp "$3" ${PACKA
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep log4cpp | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep oath | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep yaml | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+#ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep readline | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
+#ldd ${CMAKE_BINARY_DIR}/gen/appsvc | grep libtinfo | awk '{cmd="cp "$3" ${PACKAGE_HOME}/lib64";print(cmd);system(cmd)}'
 
 GLIBC_VERION=$(ldd --version | head -n 1 | tr ' ' '\n' | tail -n 1)
 GCC_VERION=$(gcc -dumpversion)
@@ -60,7 +62,7 @@ template=$(cat "${CMAKE_CURRENT_SOURCE_DIR}/script/nfpm.yaml")
 # Substitute environment variables
 config=$(echo "$template" | envsubst)
 # Save the substituted config to a temporary file
-echo "$config" > ${CMAKE_BINARY_DIR}/nfpm_config.yaml
+echo "$config" >${CMAKE_BINARY_DIR}/nfpm_config.yaml
 nfpm pkg --config ${CMAKE_BINARY_DIR}/nfpm_config.yaml --packager deb
 nfpm pkg --config ${CMAKE_BINARY_DIR}/nfpm_config.yaml --packager rpm
 

@@ -1,7 +1,8 @@
 all:
-	python3 -mvirtualenv venv
+	python3 -m venv venv
+	venv/bin/pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 	venv/bin/python -m pip install --upgrade pip setuptools
-	venv/bin/python -m pip install --upgrade pillow mock==1.0.1 alabaster commonmark==0.9.1 recommonmark==0.5.0 sphinx sphinx-rtd-theme readthedocs-sphinx-ext
+	venv/bin/python -m pip install --upgrade sphinx readthedocs-sphinx-ext
 	venv/bin/python -m pip install -r ./requirements.txt
 	venv/bin/python -m pip install appmesh
 	venv/bin/python source/conf.py

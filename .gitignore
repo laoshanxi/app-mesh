@@ -273,8 +273,10 @@ _build
 .cache
 api/
 docs/source/README.md
+venv
 
 
 *.egg-info
 *.whl
 dist
+src/sdk/python/appmesh_client.py

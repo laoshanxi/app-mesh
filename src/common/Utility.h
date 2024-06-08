@@ -158,6 +158,7 @@ public:
 
 	// String functions
 	static bool isNumber(const std::string &str);
+	static bool isDouble(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
 	static std::string stdStringTrim(const std::string &str, char trimChar, bool trimStart = true, bool trimEnd = true);
 	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool trimStart = true, bool trimEnd = true);
@@ -177,7 +178,7 @@ public:
 	static std::string htmlEntitiesDecode(const std::string &str);
 	static std::vector<std::string> str2argv(const std::string &commandLine);
 	static bool containsSpecialCharacters(const std::string &str);
-	static std::string jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out = nullptr, int indent = 0);
+	static std::string jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out = nullptr);
 	static nlohmann::json yamlToJson(const YAML::Node &node);
 	static void printQRcode(const std::string &src);
 

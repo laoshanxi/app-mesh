@@ -21,7 +21,7 @@ Commands:
   nodes       List cloud nodes
 
   run         Run commands or an existing application and get output
-  exec        Run command by appmesh and impersonate current shell context
+  shell       Run command by appmesh and impersonate current shell context
 
   resource    Display host resources
   label       Manage host labels

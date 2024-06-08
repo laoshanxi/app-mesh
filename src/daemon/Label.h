@@ -23,6 +23,8 @@ public:
 	void addLabel(const std::string &name, const std::string &value);
 	void delLabel(const std::string &name);
 
+	void readDefaultLabel();
+
 	bool match(const std::shared_ptr<Label> &condition) const;
 
 private:

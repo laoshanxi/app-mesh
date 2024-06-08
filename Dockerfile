@@ -12,7 +12,7 @@ ENV APPMESH_DisableExecUser=true
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
 COPY --from=COMPILE_STAGE /opt/app-mesh/build/appmesh*.deb .
 RUN apt-get update && \
-	apt-get install -y tini && \
+	apt-get install -y tini procps && \
 	apt-get install -y ./appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
 	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \

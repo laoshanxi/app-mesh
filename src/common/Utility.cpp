@@ -53,13 +53,42 @@ Utility::~Utility()
 bool Utility::isNumber(const std::string &str)
 {
 	std::string s = str;
-	// if the number is -123, just remove the first char to check left
-	if (s.length() && s[0] == '-')
+	if (s.empty())
+		return false;
+
+	size_t start = (s[0] == '-' || s[0] == '+') ? 1 : 0;
+	if (start == 1 && s.size() == 1)
+		return false;
+
+	return std::all_of(s.begin() + start, s.end(), ::isdigit);
+}
+
+bool Utility::isDouble(const std::string &str)
+{
+	std::string s = str;
+	if (s.empty())
+		return false;
+
+	// Handle optional leading sign
+	size_t start = (s[0] == '-' || s[0] == '+') ? 1 : 0;
+	if (start == 1 && s.size() == 1)
+		return false; // Only a sign
+
+	bool decimalPointSeen = false;
+	for (size_t i = start; i < s.size(); ++i)
 	{
-		s = s.substr(1);
+		if (s[i] == '.')
+		{
+			if (decimalPointSeen)
+				return false; // Multiple decimal points
+			decimalPointSeen = true;
+		}
+		else if (!std::isdigit(s[i]))
+		{
+			return false;
+		}
 	}
-	return !s.empty() && std::find_if(s.begin(), s.end(), [](char c)
-									  { return !std::isdigit(c); }) == s.end();
+	return true;
 }
 
 std::string Utility::stdStringTrim(const std::string &str)
@@ -938,10 +967,12 @@ bool Utility::containsSpecialCharacters(const std::string &str)
 	return false;
 }
 
-std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out, int indent)
+std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out)
 {
 	if (out == nullptr)
+	{
 		out = std::make_shared<YAML::Emitter>();
+	}
 
 	if (j.is_object())
 	{
@@ -949,7 +980,7 @@ std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::E
 		for (auto it = j.begin(); it != j.end(); ++it)
 		{
 			*out << YAML::Key << it.key();
-			jsonToYaml(it.value(), out, indent + 1);
+			jsonToYaml(it.value(), out);
 		}
 		*out << YAML::EndMap;
 	}
@@ -958,7 +989,7 @@ std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::E
 		*out << YAML::BeginSeq;
 		for (const auto &element : j)
 		{
-			jsonToYaml(element, out, indent + 1);
+			jsonToYaml(element, out);
 		}
 		*out << YAML::EndSeq;
 	}
@@ -973,17 +1004,21 @@ std::string Utility::jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::E
 	else if (j.is_null())
 	{
 		*out << YAML::Null;
-		// *out << YAML::BeginSeq << YAML::EndSeq;
 	}
 	else
 	{
 		// String
 		std::string str = j.get<std::string>();
 		if (containsSpecialCharacters(str))
+		{
 			*out << YAML::Literal << str;
+		}
 		else
+		{
 			*out << str;
+		}
 	}
+
 	return out->c_str(); // Return the YAML string
 }
 
@@ -991,35 +1026,38 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 {
 	nlohmann::json result;
 
+	auto parseScalar = [](const YAML::Node &scalarNode) -> nlohmann::json
+	{
+		const std::string scalar = scalarNode.Scalar();
+		if (scalar == "true")
+			return true;
+		if (scalar == "false")
+			return false;
+		if (scalar == "null")
+			return nullptr;
+		if (Utility::isNumber(scalar))
+			return std::stoi(scalar);
+		if (Utility::isDouble(scalar))
+			return std::stod(scalar);
+		return Utility::stdStringTrim(scalar);
+	};
+
 	if (node.IsMap())
 	{
 		for (const auto &pair : node)
 		{
-			// Check if the value is a boolean
-			if (pair.second.IsScalar() && pair.second.Scalar() == "true")
+			const std::string key = pair.first.as<std::string>();
+			if (pair.second.IsScalar() && (key == JSON_KEY_PosixTimezone || key == JSON_KEY_USER_key))
 			{
-				result[pair.first.as<std::string>()] = true;
+				result[key] = pair.second.Scalar();
 			}
-			else if (pair.second.IsScalar() && pair.second.Scalar() == "false")
+			else if (pair.second.IsScalar())
 			{
-				result[pair.first.as<std::string>()] = false;
-			}
-			else if (pair.second.IsScalar() && pair.second.Scalar() == "null")
-			{
-				result[pair.first.as<std::string>()] = nullptr;
-			}
-			else if (pair.second.IsScalar() &&
-					 pair.second.Scalar() != JSON_KEY_PosixTimezone &&
-					 pair.second.Scalar() != JSON_KEY_USER_key &&
-					 Utility::isNumber(pair.second.Scalar()))
-			{
-				// TODO: check double/float
-				result[pair.first.as<std::string>()] = std::stoi(pair.second.Scalar());
+				result[key] = parseScalar(pair.second);
 			}
 			else
 			{
-				// Recursively convert the value
-				result[pair.first.as<std::string>()] = yamlToJson(pair.second);
+				result[key] = yamlToJson(pair.second);
 			}
 		}
 	}
@@ -1027,37 +1065,16 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 	{
 		for (const auto &element : node)
 		{
-			// Recursively convert each element
 			result.push_back(yamlToJson(element));
 		}
 	}
 	else if (node.IsScalar())
 	{
-		// Handle scalar values
-		if (node.Scalar() == "true")
-		{
-			result = true;
-		}
-		else if (node.Scalar() == "false")
-		{
-			result = false;
-		}
-		else if (node.Scalar() == "null")
-		{
-			result = nullptr;
-		}
-		else if (node.Scalar() != JSON_KEY_PosixTimezone &&
-				 node.Scalar() != JSON_KEY_USER_key &&
-				 Utility::isNumber(node.Scalar()))
-		{
-			// TODO: check double
-			result = std::stoi(node.Scalar());
-		}
-		else
-		{
-			// If it's not a boolean or a number, treat it as a string
-			result = stdStringTrim(node.as<std::string>());
-		}
+		result = parseScalar(node);
+	}
+	else
+	{
+		LOG_ERR << "Failed to parse YAML node: " << node;
 	}
 
 	return result;

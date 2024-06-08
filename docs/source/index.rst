@@ -51,3 +51,9 @@ Welcome to AppMesh's documentation!
 
    api/appmesh_client
    api/sample
+
+.. automodule:: appmesh_client
+    :members:
+    :undoc-members:
+    :show-inheritance:
+    :noindex:

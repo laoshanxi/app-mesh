@@ -4,6 +4,7 @@
 #include <wildcards/wildcards.hpp>
 #endif
 #endif
+#include <ace/OS_NS_sys_utsname.h>
 
 #include "../common/Utility.h"
 #include "Label.h"
@@ -62,6 +63,36 @@ void Label::delLabel(const std::string &name)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	if (m_labels.count(name))
 		m_labels.erase(name);
+}
+
+void Label::readDefaultLabel()
+{
+	// 1. HOST_NAME
+	addLabel(DEFAULT_LABEL_HOST_NAME, MY_HOST_NAME);
+
+	// 2. arch
+	struct utsname buffer;
+	if (uname(&buffer) == 0)
+	{
+		addLabel("arch", buffer.machine);
+	}
+
+	// 3. os_version
+	std::ifstream file("/etc/os-release");
+	if (file.is_open())
+	{
+		std::string line;
+		while (std::getline(file, line))
+		{
+			if (line.find("PRETTY_NAME=") == 0)
+			{
+				const std::string osName = line.substr(13, line.size() - 14); // Remove `PRETTY_NAME="` and ending `"`
+				addLabel("os_version", osName);
+				break;
+			}
+		}
+		file.close();
+	}
 }
 
 bool Label::match(const std::shared_ptr<Label> &condition) const

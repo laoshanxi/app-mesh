@@ -84,7 +84,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue
 	{
 		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
 		// add default label here
-		config->m_label->addLabel(DEFAULT_LABEL_HOST_NAME, MY_HOST_NAME);
+		config->m_label->readDefaultLabel();
 	}
 	// Consul
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSUL))

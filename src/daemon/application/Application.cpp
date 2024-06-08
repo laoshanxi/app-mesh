@@ -42,6 +42,8 @@ Application::~Application()
 {
 	const static char fname[] = "Application::~Application() ";
 	LOG_DBG << fname << "Entered. Application: " << m_name;
+	// #include <boost/stacktrace.hpp>
+	// std::cout << boost::stacktrace::stacktrace();
 }
 
 bool Application::operator==(const std::shared_ptr<Application> &app)
@@ -871,6 +873,7 @@ std::string Application::getYamlPath()
 void Application::remove()
 {
 	Utility::removeFile(getYamlPath());
+	Utility::removeFile((fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
 }
 
 void Application::dump()
@@ -921,7 +924,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	if ((m_shellApp || m_sessionLogin) && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
 		m_shellAppFile = nullptr;
-		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, (m_owner ? m_owner->getExecUser() : ""), m_sessionLogin);
+		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, getExecUser(), m_sessionLogin);
 	}
 
 	// alloc process object

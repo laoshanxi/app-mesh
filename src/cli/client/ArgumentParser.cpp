@@ -10,6 +10,8 @@
 #include <boost/regex.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
+#include <readline/history.h>
+#include <readline/readline.h>
 
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
@@ -55,6 +57,7 @@
 	m_currentUrl = m_commandLineVariables["url"].as<std::string>();
 // Each user should have its own token path
 const static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
+const static std::string m_shellHistoryFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.shell.history";
 static std::string m_jwtToken;
 extern char **environ;
 
@@ -163,7 +166,7 @@ int ArgumentParser::parse()
 	{
 		return processAppRun();
 	}
-	else if (cmd == "exec")
+	else if (cmd == "exec" || cmd == "shell")
 	{
 		processExec();
 	}
@@ -244,7 +247,7 @@ void ArgumentParser::printMainHelp()
 	std::cout << std::endl;
 
 	std::cout << "  run         Run commands or an existing application and get output" << std::endl;
-	std::cout << "  exec        Run command by appmesh and impersonate current shell context" << std::endl;
+	std::cout << "  shell       Run command by appmesh and impersonate current shell context" << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "  resource    Display host resources" << std::endl;
@@ -283,8 +286,12 @@ void ArgumentParser::processLogon()
 	m_tokenTimeoutSeconds = DurationParse::parse(m_commandLineVariables["timeout"].as<std::string>());
 	if (!m_commandLineVariables.count("user"))
 	{
-		std::cout << "User: ";
-		std::cin >> m_username;
+		while (m_username.length() == 0)
+		{
+			std::cout << "User: ";
+			std::cin >> m_username;
+			m_username = Utility::stdStringTrim(m_username);
+		}
 	}
 	else
 	{
@@ -298,13 +305,16 @@ void ArgumentParser::processLogon()
 			std::cin.clear();
 			std::cin.ignore(1024, '\n');
 		}
-		std::cout << "Password: ";
-		char buffer[256] = {0};
-		char *str = buffer;
-		FILE *fp = stdin;
-		inputSecurePasswd(&str, sizeof(buffer), '*', fp);
-		m_userpwd = buffer;
-		std::cout << std::endl;
+		while (m_userpwd.length() == 0)
+		{
+			std::cout << "Password: ";
+			char buffer[256] = {0};
+			char *str = buffer;
+			FILE *fp = stdin;
+			inputSecurePasswd(&str, sizeof(buffer), '*', fp);
+			m_userpwd = buffer;
+			std::cout << std::endl;
+		}
 	}
 
 	// get token from REST
@@ -314,7 +324,7 @@ void ArgumentParser::processLogon()
 	if (m_jwtToken.length())
 	{
 		persistAuthToken(parseUrlHost(m_currentUrl), m_jwtToken);
-		std::cout << "User <" << m_username << "> logon to " << m_currentUrl << " success." << std::endl;
+		std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
 	}
 }
 
@@ -949,6 +959,19 @@ int ArgumentParser::processAppRun()
 	}
 	else
 	{
+		returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
+	}
+	return returnCode;
+}
+
+int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds)
+{
+	std::map<std::string, std::string> query;
+	query[HTTP_QUERY_KEY_timeout] = std::to_string(timeoutSeconds);
+	query[HTTP_QUERY_KEY_lifecycle] = std::to_string(lifeCycleSeconds);
+	int returnCode = -99;
+	if (1)
+	{
 		// Use run and output
 		// /app/run?timeout=5
 		std::string restPath = "/appmesh/app/run";
@@ -994,23 +1017,22 @@ int ArgumentParser::processAppRun()
 
 void SIGINT_Handler(int signo)
 {
+	std::cout << std::endl;
 	// make sure we only process SIGINT here
 	// SIGINT 	ctrl - c
 	assert(signo == SIGINT);
+	const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
+	WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
 	if (SIGINIT_BREAKING)
 	{
-		//std::cout << "You pressed SIGINT(Ctrl+C) twice, session will exit." << std::endl;
-		const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
-		WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
-		// if ctrl+c typed twice, just exit current
+		// std::cout << "You pressed SIGINT(Ctrl+C) twice, session will exit." << std::endl;
+		write_history(m_shellHistoryFile.c_str());
 		ACE_OS::_exit(SIGINT);
 	}
 	else
 	{
-		//std::cout << "You pressed SIGINT(Ctrl+C)" << std::endl;
+		std::cout << "appmesh> ";
 		SIGINIT_BREAKING = true;
-		const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME).append("/disable");
-		WORK_PARSE->requestHttp(false, web::http::methods::POST, restPath);
 	}
 }
 
@@ -1054,8 +1076,14 @@ void ArgumentParser::unregSignal()
 
 int ArgumentParser::processExec()
 {
-	int returnCode = 0;
-	m_currentUrl = APPMESH_LOCAL_HOST_URL;
+	po::options_description desc("Shell execute:", BOOST_DESC_WIDTH);
+	desc.add_options()
+		("help,h", "Prints command usage to stdout and exits")
+		COMMON_OPTIONS;
+	shiftCommandLineArgs(desc);
+	HELP_ARG_CHECK_WITH_RETURN_ZERO;
+
+	int returnCode = -99;
 	// Get current session id (bash pid)
 	auto bashId = getppid();
 	// Get appmesh user
@@ -1088,6 +1116,7 @@ int ArgumentParser::processExec()
 	nlohmann::json jsonObj;
 	jsonObj[JSON_KEY_APP_name] = std::string(APPC_EXEC_APP_NAME);
 	jsonObj[JSON_KEY_APP_shell_mode] = (true);
+	jsonObj[JSON_KEY_APP_session_login] = (true);
 	jsonObj[JSON_KEY_APP_command] = std::string(initialCmd);
 	jsonObj[JSON_KEY_APP_description] = std::string("App Mesh exec environment");
 	jsonObj[JSON_KEY_APP_env] = objEnvs;
@@ -1096,107 +1125,74 @@ int ArgumentParser::processExec()
 	behavior[JSON_KEY_APP_behavior_exit] = std::string(JSON_KEY_APP_behavior_remove);
 	jsonObj[JSON_KEY_APP_behavior] = behavior;
 
-	std::string process_uuid;
-	long outputPosition = 0;
-	bool currentRunFinished = true; // one submitted run finished
-	bool runOnce = false;			// if appc exec specify one cmd, then just run once
-	SIGINIT_BREAKING = false;		// if ctrl + c is triggered, stop run and start read input from stdin
-	// clean first
+	SIGINIT_BREAKING = false; // if ctrl + c is triggered, stop run and start read input from stdin
+	std::cout << "Execute on <" << m_currentUrl << ">" << std::endl;
+	// clean
 	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	if (initialCmd.length())
 	{
-		runOnce = true;
-		std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
-		std::string restPath = "/appmesh/app/run";
-		auto response = requestHttp(false, web::http::methods::POST, restPath, &jsonObj, {}, query);
-		if (response->status_code == web::http::status_codes::OK)
-		{
-			auto result = nlohmann::json::parse(response->text);
-			process_uuid = result[HTTP_QUERY_KEY_process_uuid].get<std::string>();
-			currentRunFinished = false;
-		}
-		else
-		{
-			std::cout << parseOutputMessage(response) << std::endl;
-		}
+		returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
 	}
 	else
 	{
-		// only capture SIGINT in continues mode
-		this->regSignal();
-		runOnce = false;
-	}
+		this->regSignal(); // capture SIGINT
 
-	while (true)
-	{
-		// no need read stdin when run for once
-		if (!runOnce && (SIGINIT_BREAKING || currentRunFinished))
+		using_history();
+		read_history(m_shellHistoryFile.c_str());
+		while (true)
 		{
-			SIGINIT_BREAKING = false;
-			std::string input;
-			std::cout << "appmesh # ";
-			while (std::getline(std::cin, input) && input.length() > 0)
+			const static char* prompt = "appmesh> ";
+			char *input;
+			while ((input = readline(prompt)) != nullptr)
 			{
+				std::string cmd(input);
+				free(input);
+				cmd = Utility::stdStringTrim(cmd);
+				if (cmd.length() <= 0)
+					continue;
+				add_history(cmd.c_str());
+				saveUserCmdHistory(cmd.c_str());
+
+				SIGINIT_BREAKING = false; // reset breaking to normal after read a input
 				requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
-				if (input == "exit")
+				if (cmd == "exit" || cmd == "q")
 				{
+					write_history(m_shellHistoryFile.c_str());
 					ACE_OS::_exit(returnCode);
 				}
-				process_uuid.clear();
-				outputPosition = 0;
-				jsonObj[JSON_KEY_APP_command] = std::string(input);
-				std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_timeout, std::to_string(-1)}}; // disable timeout
-				std::string restPath = "/appmesh/app/run";
-				auto response = requestHttp(false, web::http::methods::POST, restPath, &jsonObj, {}, query);
-				if (response->status_code == web::http::status_codes::OK)
-				{
-					auto result = nlohmann::json::parse(response->text);
-					process_uuid = result[HTTP_QUERY_KEY_process_uuid].get<std::string>();
-					currentRunFinished = false;
-				}
-				else
-				{
-					std::cout << parseOutputMessage(response) << std::endl;
-					currentRunFinished = true;
-					process_uuid.clear();
-				}
-				returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
+				jsonObj[JSON_KEY_APP_command] = cmd;
+				returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
 				// always exit loop when get one input
 				break;
 			}
 		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(150));
-		// Process Read
-		if (!process_uuid.empty())
-		{
-			std::map<std::string, std::string> query = {{HTTP_QUERY_KEY_process_uuid, process_uuid}, {HTTP_QUERY_KEY_stdout_position, std::to_string(outputPosition)}};
-			auto restPath = Utility::stringFormat("/appmesh/app/%s/output", APPC_EXEC_APP_NAME.c_str());
-			auto response = requestHttp(false, web::http::methods::GET, restPath, nullptr, {}, query);
-			std::cout << nlohmann::json::parse(response->text);
-			outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
-			returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
-			if (response->header.count(HTTP_HEADER_KEY_exit_code) || response->status_code != web::http::status_codes::OK)
-			{
-				currentRunFinished = true;
-				process_uuid.clear();
-				if (runOnce)
-				{
-					break;
-				}
-			}
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(150));
 	}
 	// clean
 	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	return returnCode;
 }
 
+void ArgumentParser::saveUserCmdHistory(const char *input)
+{
+	std::ofstream outfile;
+	outfile.open(m_shellHistoryFile, std::ios_base::app); // append instead of overwrite
+	if (outfile.is_open())
+	{
+		outfile << input << std::endl;
+		outfile.close();
+	}
+	else
+	{
+		std::cerr << "Unable to open history file: " << m_shellHistoryFile << std::endl;
+	}
+}
+
 void ArgumentParser::processFileDownload()
 {
 	po::options_description desc("Download file:", BOOST_DESC_WIDTH);
 	desc.add_options()
-		COMMON_OPTIONS("remote,r", po::value<std::string>(), "remote file path to download")("local,l", po::value<std::string>(), "local file path to save")("help,h", "Prints command usage to stdout and exits");
+		COMMON_OPTIONS
+		("remote,r", po::value<std::string>(), "remote file path to download")("local,l", po::value<std::string>(), "local file path to save")("help,h", "Prints command usage to stdout and exits");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1346,7 +1342,7 @@ void ArgumentParser::processTags()
 	auto tags = nlohmann::json::parse(response->text);
 	for (auto &tag : tags.items())
 	{
-		std::cout << tag.key() << "=" << tag.value() << std::endl;
+		std::cout << tag.key() << "=" << tag.value().get<std::string>() << std::endl;
 	}
 }
 
@@ -1776,9 +1772,8 @@ std::string ArgumentParser::readPersistAuthToken(const std::string &hostName)
 	return jwtToken;
 }
 
-std::string ArgumentParser::readPersistLastHost()
+std::string ArgumentParser::readPersistLastHost(const std::string &defaultAddress)
 {
-	std::string lastHost = "localhost";
 	if (Utility::isFileExist(m_tokenFile))
 	{
 		try
@@ -1789,7 +1784,7 @@ std::string ArgumentParser::readPersistLastHost()
 				auto config = nlohmann::json::parse(configFile);
 				if (config.contains("last_host"))
 				{
-					lastHost = config.at("last_host").get<std::string>();
+					return config.at("last_host").get<std::string>();
 				}
 			}
 		}
@@ -1798,7 +1793,7 @@ std::string ArgumentParser::readPersistLastHost()
 			std::cerr << "failed to parse " << m_tokenFile << " as json format" << '\n';
 		}
 	}
-	return lastHost;
+	return defaultAddress;
 }
 
 void ArgumentParser::persistAuthToken(const std::string &hostName, const std::string &token)
@@ -2112,27 +2107,32 @@ const std::string ArgumentParser::getAppMeshUrl()
 	auto file = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE);
 	if (file.length() > 0)
 	{
-		auto jsonValue = Utility::yamlToJson(YAML::Load(file));
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST) &&
-			HAS_JSON_FIELD(jsonValue.at(JSON_KEY_REST), JSON_KEY_RestListenPort))
+		auto config = YAML::LoadFile(file);
+		if (config[JSON_KEY_REST].IsDefined() && config[JSON_KEY_REST][JSON_KEY_RestListenPort].IsDefined())
 		{
-			auto rest = jsonValue.at(JSON_KEY_REST);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_SSL))
+			auto port = config[JSON_KEY_REST][JSON_KEY_RestListenPort].as<int>();
+			auto address = config[JSON_KEY_REST][JSON_KEY_RestListenAddress].Scalar();
+			auto restConfig = config[JSON_KEY_REST];
+			if (restConfig[JSON_KEY_SSL].IsDefined())
 			{
-				auto ssl = rest.at(JSON_KEY_SSL);
+				auto sslConfig = restConfig[JSON_KEY_SSL];
 				ClientSSLConfig config;
-				config.m_verify_client = GET_JSON_BOOL_VALUE(ssl, JSON_KEY_SSLVerifyClient);
-				config.m_verify_server = GET_JSON_BOOL_VALUE(ssl, JSON_KEY_SSLVerifyServer);
-				config.m_certificate = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLClientCertificateFile);
-				config.m_private_key = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLClientCertificateKeyFile);
-				config.m_ca_location = GET_JSON_STR_VALUE(ssl, JSON_KEY_SSLCaPath);
+				if (sslConfig[JSON_KEY_SSLVerifyClient].IsDefined())
+					config.m_verify_client = sslConfig[JSON_KEY_SSLVerifyClient].as<bool>();
+				if (sslConfig[JSON_KEY_SSLVerifyServer].IsDefined())
+					config.m_verify_server = sslConfig[JSON_KEY_SSLVerifyServer].as<bool>();
+				if (sslConfig[JSON_KEY_SSLClientCertificateFile].IsDefined())
+					config.m_certificate = sslConfig[JSON_KEY_SSLClientCertificateFile].Scalar();
+				if (sslConfig[JSON_KEY_SSLClientCertificateKeyFile].IsDefined())
+					config.m_private_key = sslConfig[JSON_KEY_SSLClientCertificateKeyFile].Scalar();
+				if (sslConfig[JSON_KEY_SSLCaPath].IsDefined())
+					config.m_ca_location = sslConfig[JSON_KEY_SSLCaPath].Scalar();
 				RestClient::defaultSslConfiguration(config);
 			}
-			auto port = GET_JSON_INT_VALUE(rest, JSON_KEY_RestListenPort);
-			return Utility::stringFormat("https://%s:%d", readPersistLastHost().c_str(), port);
+			url = Utility::stringFormat("https://%s:%d", readPersistLastHost(address).c_str(), port);
 		}
 	}
-	return url;
+	return Utility::stringReplace(url, "0.0.0.0", "127.0.0.1");
 }
 
 const std::string ArgumentParser::getPosixTimezone()

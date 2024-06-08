@@ -14,6 +14,7 @@ sphinx-rtd-theme
 
 # api doc
 sphinxcontrib-apidoc
+sphinx-autodoc-typehints
 
 # dependency for appmesh_client.py
 appmesh

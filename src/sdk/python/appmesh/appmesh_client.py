@@ -53,14 +53,18 @@ class AppOutput(object):
     """App output object for app_output() method"""
 
     def __init__(self, status_code: HTTPStatus, output: str, out_position: Optional[int], exit_code: Optional[int]) -> None:
-        # HTTP status code
+
         self.status_code = status_code
-        # HTTP response text
+        """HTTP status code"""
+
         self.output = output
-        # Current read position (int or None)
+        """HTTP response text"""
+
         self.out_position = out_position
-        # Process exit code (int or None)
+        """Current read position (int or None)"""
+
         self.exit_code = exit_code
+        """Process exit code (int or None)"""
 
 
 class App(object):
@@ -93,10 +97,12 @@ class App(object):
         def __init__(self, data=None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
-            # default exit behavior [restart,standby,keepalive,remove]
+
             self.exit = _get_str_item(data, "exit")
-            # exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior
+            """default exit behavior [restart,standby,keepalive,remove]"""
+
             self.control = _get_native_item(data, "control") if _get_native_item(data, "control") else dict()
+            """exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior"""
 
         def set_exit_behavior(self, a: Action) -> None:
             """Set error handling behavior while application exit"""
@@ -114,10 +120,12 @@ class App(object):
         def __init__(self, data=None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
-            # daily start time (e.g., '09:00:00+08')
+
             self.daily_start = _get_int_item(data, "daily_start")
-            # daily end time (e.g., '20:00:00+08')
+            """daily start time (e.g., '09:00:00+08')"""
+
             self.daily_end = _get_int_item(data, "daily_end")
+            """daily end time (e.g., '20:00:00+08')"""
 
         def set_daily_range(self, start: datetime, end: datetime) -> None:
             """Set valid day hour range"""
@@ -132,12 +140,15 @@ class App(object):
         def __init__(self, data=None) -> None:
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
-            # CPU shares (relative weight)
+
             self.cpu_shares = _get_int_item(data, "cpu_shares")
-            # memory limit in MByte
+            """CPU shares (relative weight)"""
+
             self.memory_mb = _get_int_item(data, "memory_mb")
-            # virtual memory limit in MByte
+            """physical memory limit in MByte"""
+
             self.memory_virt_mb = _get_int_item(data, "memory_virt_mb")
+            """virtual memory limit in MByte"""
 
     def __init__(self, data=None):
         """Construct an App Mesh Application object
@@ -149,73 +160,99 @@ class App(object):
         if isinstance(data, (str, bytes, bytearray)):
             data = json.loads(data)
 
-        # application name
         self.name = _get_str_item(data, "name")
-        # full command line with arguments
+        """application name (unique)"""
+
         self.command = _get_str_item(data, "command")
+        """full command line with arguments"""
 
-        # use shell mode, cmd can be more shell commands with string format
         self.shell = _get_bool_item(data, "shell")
-        # app run in session login mode
-        self.session_login = _get_bool_item(data, "session_login")
-        # application description
-        self.description = _get_str_item(data, "description")
-        # metadata string/JSON (input for application, pass to process stdin)
-        self.metadata = _get_native_item(data, "metadata")
-        # working directory
-        self.working_dir = _get_str_item(data, "working_dir")
-        # initial application status (true is enable, false is disabled)
-        self.status = _get_int_item(data, "status")
-        # docker image which used to run command line (for docker container application)
-        self.docker_image = _get_str_item(data, "docker_image")
-        # stdout file cache number
-        self.stdout_cache_num = _get_int_item(data, "stdout_cache_num")
+        """use shell mode, cmd can be more shell commands with string format"""
 
-        # start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')
+        self.session_login = _get_bool_item(data, "session_login")
+        """app run in session login mode"""
+
+        self.description = _get_str_item(data, "description")
+        """application description string"""
+
+        self.metadata = _get_native_item(data, "metadata")
+        """metadata string/JSON (input for application, pass to process stdin)"""
+
+        self.working_dir = _get_str_item(data, "working_dir")
+        """working directory"""
+
+        self.status = _get_int_item(data, "status")
+        """initial application status (true is enable, false is disabled)"""
+
+        self.docker_image = _get_str_item(data, "docker_image")
+        """docker image which used to run command line (for docker container application)"""
+
+        self.stdout_cache_num = _get_int_item(data, "stdout_cache_num")
+        """stdout file cache number"""
+
         self.start_time = _get_int_item(data, "start_time")
-        # end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')
+        """start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')"""
+
         self.end_time = _get_int_item(data, "end_time")
-        # start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')
+        """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
+
         self.interval = _get_int_item(data, "interval")
-        # indicate interval parameter use cron expression
+        """start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')"""
+
         self.cron = _get_bool_item(data, "cron")
+        """indicate interval parameter use cron expression or not"""
+
         self.daily_limitation = App.DailyLimitation(_get_native_item(data, "daily_limitation"))
 
-        # extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
         self.retention = _get_str_item(data, "retention")
+        """extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')."""
 
-        # health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)
         self.health_check_cmd = _get_str_item(data, "health_check_cmd")
-        # application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.
+        """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
+
         self.permission = _get_int_item(data, "permission")
+        """application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3."""
         self.behavior = App.Behavior(_get_native_item(data, "behavior"))
 
-        # environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)
         self.env = dict()
+        """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
         if data and "env" in data:
             for k, v in data["env"].items():
                 self.env[k] = v
-        # security environment variables, encrypt in server side with application owner's cipher
+
         self.sec_env = dict()
+        """security environment variables, encrypt in server side with application owner's cipher"""
         if data and "sec_env" in data:
             for k, v in data["sec_env"].items():
                 self.sec_env[k] = v
-        # process id used to attach
+
         self.pid = _get_int_item(data, "pid")
+        """process id used to attach to the running process"""
         self.resource_limit = App.ResourceLimitation(_get_native_item(data, "resource_limit"))
 
         # readonly attributes
         self.owner = _get_str_item(data, "owner")
+        """owner name"""
         self.pstree = _get_str_item(data, "pstree")
+        """process tree"""
         self.container_id = _get_str_item(data, "container_id")
+        """container id"""
         self.memory = _get_int_item(data, "memory")
+        """memory usage"""
         self.cpu = _get_int_item(data, "cpu")
+        """cpu usage"""
         self.fd = _get_int_item(data, "fd")
+        """file descriptor usage"""
         self.last_start_time = _get_int_item(data, "last_start_time")
+        """last start time"""
         self.last_exit_time = _get_int_item(data, "last_exit_time")
+        """last exit time"""
         self.health = _get_int_item(data, "health")
+        """health status"""
         self.version = _get_int_item(data, "version")
+        """version number"""
         self.return_code = _get_int_item(data, "return_code")
+        """last exit code"""
 
     def set_valid_time(self, start: datetime, end: datetime) -> None:
         """Set avialable time window"""
@@ -265,8 +302,11 @@ class Run(object):
 
     def __init__(self, client, app_name: str, process_id: str):
         self.app_name = app_name
+        """application name"""
         self.proc_uid = process_id
+        """process_uuid from run_async()"""
         self.__client = client
+        """AppMeshClient object"""
 
     def wait(self, stdout_print: bool = True, timeout: int = 0) -> int:
         """Wait for an async run to be finished
@@ -317,6 +357,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
             jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
         """
+
         self.server_url = rest_url
         self.__jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify

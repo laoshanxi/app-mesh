@@ -14,9 +14,6 @@ elif [ -f $SYSTEMD_FILE ] || [ -f "/etc/init.d/appmesh" ]; then
 	sleep 1
 fi
 
-chmod +x ${PROG_HOME}/script/*.sh
-chmod +x ${PROG_HOME}/script/*.environment
-
 # systemd environment file: ${PROG_HOME}/script/appmesh.environment
 cat /dev/null >${PROG_HOME}/script/appmesh.environment
 echo "LD_LIBRARY_PATH=/opt/appmesh/lib64:$LD_LIBRARY_PATH" >>${PROG_HOME}/script/appmesh.environment
@@ -30,6 +27,10 @@ for e in $(env); do
 		echo "$e" >>${PROG_HOME}/script/appmesh.environment
 	fi
 done
+
+chmod +x ${PROG_HOME}/script/*.sh
+chmod +x ${PROG_HOME}/script/appmesh.environment
+
 # set default execute user to current user
 # https://cloud.tencent.com/developer/ask/sof/878838
 if [ 0"$APPMESH_DefaultExecUser" = "0" ]; then

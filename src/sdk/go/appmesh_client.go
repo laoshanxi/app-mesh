@@ -25,6 +25,14 @@ type AppmeshClient struct {
 	mutex sync.Mutex
 }
 
+type AppOutputResponse struct {
+	HttpSuccess    bool
+	HttpBody       string
+	OutputPosition *int64
+	ExitCode       *int
+	Error          error
+}
+
 func (r *AppmeshClient) getToken() string {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -180,21 +188,30 @@ func (r *AppmeshClient) GetApp(appName string) (*Application, error) {
 }
 
 // Get application stdout
-func (r *AppmeshClient) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string) (bool, string, http.Header, error) {
+func (r *AppmeshClient) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string) AppOutputResponse {
 	query := url.Values{}
-	query.Add("stdout_position", strconv.FormatInt(int64(stdoutPosition), 10))
-	query.Add("stdout_index", strconv.Itoa(stdoutIndex))
-	query.Add("stdout_maxsize", strconv.Itoa(stdoutMaxsize))
-	query.Add("process_uuid", processUuid)
-	raw, code, header, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query)
-	if code == http.StatusOK {
-		return true, string(raw), header, err
-	} else {
-		if err != nil {
-			return false, string(raw), header, err
+	query.Set("stdout_position", strconv.FormatInt(stdoutPosition, 10))
+	query.Set("stdout_index", strconv.Itoa(stdoutIndex))
+	query.Set("stdout_maxsize", strconv.Itoa(stdoutMaxsize))
+	query.Set("process_uuid", processUuid)
+
+	body, code, header, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query)
+	resp := AppOutputResponse{Error: err, HttpSuccess: code == http.StatusOK, HttpBody: string(body)}
+
+	// Extract and parse headers
+	if exitCodeStr := header.Get("Exit-Code"); exitCodeStr != "" {
+		if exitCode, err := strconv.Atoi(exitCodeStr); err == nil {
+			resp.ExitCode = &exitCode
 		}
-		return false, string(raw), header, fmt.Errorf("HTTP error: %s", string(raw))
 	}
+
+	if outputPositionStr := header.Get("Output-Position"); outputPositionStr != "" {
+		if outputPosition, err := strconv.ParseInt(outputPositionStr, 10, 64); err == nil {
+			resp.OutputPosition = &outputPosition
+		}
+	}
+
+	return resp
 }
 
 // Enable an application
@@ -285,18 +302,18 @@ func (r *AppmeshClient) Run(app Application, syncrize bool, maxExectimeSeconds i
 						query.Add("process_uuid", *uuid)
 						query.Add("stdout_position", strconv.FormatInt(outputPosition, 10))
 
-						success, output, header, _ := r.GetAppOutput(resultApp.Name, outputPosition, 0, 10240, *uuid)
-						if len(output) > 0 {
-							fmt.Print(string(output))
+						resp := r.GetAppOutput(resultApp.Name, outputPosition, 0, 10240, *uuid)
+						if len(resp.HttpBody) > 0 {
+							fmt.Print(resp.HttpBody)
 						}
-						if header.Get("Output-Position") != "" {
-							outputPosition, err = strconv.ParseInt(header.Get("Output-Position"), 10, 64)
+						if resp.OutputPosition != nil {
+							outputPosition = *resp.OutputPosition
 						}
-						if header.Get("Exit-Code") != "" {
-							exitCode, err = strconv.Atoi(header.Get("Exit-Code"))
+						if resp.ExitCode != nil {
+							exitCode = *resp.ExitCode
 							break
 						}
-						if !success {
+						if !resp.HttpSuccess {
 							break
 						}
 						time.Sleep(time.Microsecond * 500)

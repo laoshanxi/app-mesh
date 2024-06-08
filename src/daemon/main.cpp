@@ -181,7 +181,8 @@ int main(int argc, char *argv[])
 			{
 				try
 				{
-					app->execute((void *)(&ptree));
+					if (app->isEnabled()) // only check valid app
+						app->execute((void *)(&ptree));
 				}
 				catch (...)
 				{

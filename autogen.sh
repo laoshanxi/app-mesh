@@ -42,7 +42,7 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y wget which gettext unzip
 	yum install -y python3-pip
 	yum install -y zlib-devel #for libcurl
-	yum install -y upx
+	yum install -y readline-devel
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
 	#export BOOST_INCLUDEDIR=/usr/include/boost169
@@ -60,7 +60,7 @@ elif [ -f "/usr/bin/apt" ]; then
 	apt install -y wget alien gettext unzip
 	apt install -y python3-pip
 	apt install -y zlib1g-dev #for libcurl
-	apt install -y upx
+	apt install -y libreadline-dev
 	#apt install -y libboost-all-dev libace-dev libace
 	#apt install -y liblog4cpp5-dev
 fi
@@ -208,8 +208,6 @@ go install github.com/cloudflare/cfssl/cmd/cfssl@latest
 go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 # install nfpm
 go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
-upx $GOBIN/cfssl
-upx $GOBIN/cfssljson
 
 cd $ROOTDIR
 # Message Pack

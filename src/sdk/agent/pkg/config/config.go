@@ -58,7 +58,7 @@ var ConfigData = Configuration{
 }
 
 func init() {
-	yamlFile, err := os.ReadFile(filepath.Join(GetAppMeshHomeDir(), "config.yaml"))
+	yamlFile, err := os.ReadFile(getConfigFilePath())
 	if err != nil {
 		log.Fatalf("Error os.ReadFile: %v", err)
 	}
@@ -66,6 +66,14 @@ func init() {
 	if err != nil {
 		log.Fatalf("Error yaml.Unmarshal: %v", err)
 	}
+}
+
+func getConfigFilePath() string {
+	workConfig := filepath.Join(GetAppMeshHomeDir(), "work/config/config.yaml")
+	if utils.IsFileExist(workConfig) {
+		return workConfig
+	}
+	return filepath.Join(GetAppMeshHomeDir(), "config.yaml")
 }
 
 func GetAppMeshHomeDir() string {
