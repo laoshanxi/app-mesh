@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -117,14 +118,10 @@ func ListenRest() {
 	router.GET("/", utils.Cors(handleIndex))
 	// router.NotFound = utils.Cors(handleAppmeshRest)
 
-	err = listenAgentTls(listenAddr, router)
-	if err != nil {
-		log.Fatalf("Error in fasthttp Serve: %v", err)
-		os.Exit(-1)
-	}
+	listenAgentTls(listenAddr, router)
 }
 
-func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
+func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) {
 	// Load server certificate and key
 	serverCA := utils.LoadCertificatePair(
 		config.ConfigData.REST.SSL.SSLCertificateFile,
@@ -164,17 +161,36 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) error {
 	}
 
 	// start listen
-	ln, err := net.Listen("tcp4", restAgentAddr)
-	if err != nil {
-		log.Fatalf("Error in Listen tcp4: %v", err)
-		panic(err)
-	}
-	s := &fasthttp.Server{
+	server := &fasthttp.Server{
 		Handler:            router.Handler,
 		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
 	}
-	log.Println("<App Mesh Agent> listening at: ", restAgentAddr)
-	return s.Serve(tls.NewListener(ln, conf))
+
+	listenFunc := func(network string) {
+		ln, err := net.Listen(network, restAgentAddr)
+		if err != nil {
+			log.Printf("Error in Listen %s: %v", network, err)
+			return
+		}
+		log.Printf("<App Mesh Agent> listening %s at %s", network, restAgentAddr)
+		if err := server.Serve(tls.NewListener(ln, conf)); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Listen server error: %v", err)
+		}
+	}
+
+	if addr, err := net.ResolveTCPAddr("tcp", restAgentAddr); err == nil {
+		if addr.IP.To4() != nil {
+			// IP is an IPv4 address
+			listenFunc("tcp4")
+		} else if addr.IP.To16() != nil {
+			// IP is an IPv6 address
+			listenFunc("tcp6")
+		} else {
+			log.Fatalf("Invalid address %s", restAgentAddr)
+		}
+	} else {
+		log.Fatalf("Failed to resolve address %s: %v", restAgentAddr, err)
+	}
 }
 
 func handleIndex(ctx *fasthttp.RequestCtx) {

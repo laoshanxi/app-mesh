@@ -350,6 +350,7 @@ public:
 #define JSON_KEY_USER_locked "locked"
 #define JSON_KEY_USER_metadata "metadata"
 #define JSON_KEY_USER_exec_user "exec_user"
+#define JSON_KEY_USER_exec_user_override "exec_user_override"
 #define JSON_KEY_USER_mfa_key "mfa_key"
 #define JSON_KEY_USER_mfa_enabled "mfa_enabled"
 

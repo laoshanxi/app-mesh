@@ -595,18 +595,20 @@ std::string Application::runApp(int timeoutSeconds)
 
 const std::string Application::getExecUser() const
 {
-	if (!Configuration::instance()->getDisableExecUser())
+	std::string executeUser;
+	if (m_owner)
 	{
-		if (m_owner && !(m_owner->getExecUser().empty()))
-		{
-			return m_owner->getExecUser();
-		}
-		else
-		{
-			return Configuration::instance()->getDefaultExecUser();
-		}
+		// get correct execute user when Application has user info
+		executeUser = m_owner->getExecUserOverride();
 	}
-	return std::string();
+	else if (!Configuration::instance()->getDisableExecUser())
+	{
+		// get default execute user when Application have no user info
+		executeUser = Configuration::instance()->getDefaultExecUser();
+	}
+	if (executeUser.empty())
+		executeUser = Utility::getOsUserName();
+	return executeUser;
 }
 
 const std::string &Application::getCmdLine() const

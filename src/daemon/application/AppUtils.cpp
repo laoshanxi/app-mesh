@@ -31,7 +31,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		}
 		m_fileName = fileName;
 
-		if (sessionLogin && execUser.length())
+		if (sessionLogin && execUser.length() && execUser != Utility::getOsUserName())
 		{
 			m_shellCmd = Utility::stringFormat("/usr/bin/sudo -u %s /bin/bash '%s'", execUser.c_str(), m_fileName.c_str());
 			if (getuid() != 0)

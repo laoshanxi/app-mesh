@@ -37,7 +37,7 @@ private:
 	void processAppView();
 	void processAppControl(bool start);
 	int processAppRun();
-	int processExec();
+	int processShell();
 	void saveUserCmdHistory(const char *input);
 
 	void processCloudAppView();
