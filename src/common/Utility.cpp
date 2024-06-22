@@ -250,19 +250,26 @@ bool Utility::removeDir(const std::string &path)
 {
 	const static char fname[] = "Utility::removeDir() ";
 
-	if (isDirExist(path))
+	boost::system::error_code ec;
+	if (fs::exists(path, ec))
 	{
-		if (ACE_OS::rmdir(path.c_str()) == 0)
+		auto removed = fs::remove_all(path, ec);
+		if (ec)
 		{
-			LOG_INF << fname << "Removed directory : " << path;
+			LOG_ERR << fname << "remove <" << path << "> failed with error: " << ec.message();
+			return false;
 		}
 		else
 		{
-			LOG_WAR << fname << "Remove directory <" << path << "> failed with error: " << std::strerror(errno);
-			return false;
+			LOG_INF << fname << "removed <" << removed << "> files/directories from <" << path << ">";
+			return true;
 		}
 	}
-	return true;
+	else
+	{
+		LOG_WAR << fname << "remove <" << path << "> failed with error: " << ec.message();
+		return true;
+	}
 }
 
 void Utility::removeFile(const std::string &path)
@@ -1140,4 +1147,12 @@ namespace web
 #undef DAT
 #endif
 	}
+}
+
+NotFoundException::NotFoundException(const char *what) noexcept : std::logic_error(what)
+{
+}
+
+NotFoundException::NotFoundException(const std::string &what) noexcept : std::logic_error(what)
+{
 }

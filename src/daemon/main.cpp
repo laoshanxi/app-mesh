@@ -23,6 +23,7 @@
 #include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
 #include "rest/RestHandler.h"
+#include "rest/TcpClient.h"
 #include "rest/TcpServer.h"
 #include "security/Security.h"
 #include "security/TokenBlacklist.h"
@@ -87,6 +88,7 @@ int main(int argc, char *argv[])
 		Security::init(Configuration::instance()->getJwt()->m_jwtInterface);
 
 		// recover applications
+		Utility::removeDir((fs::path(config->getWorkDir()) / "shell").string());
 		config->loadApps(fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR);
 		config->loadApps(fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR);
 
@@ -107,6 +109,7 @@ int main(int argc, char *argv[])
 
 		// init REST
 		TcpAcceptor acceptor; // Acceptor factory.
+		ACE_INET_Addr acceptorAddr(Configuration::instance()->getRestTcpPort(), Configuration::instance()->getRestListenAddress().c_str());
 		if (config->getRestEnabled())
 		{
 			TcpHandler::initTcpSSL(ACE_SSL_Context::instance());
@@ -119,7 +122,7 @@ int main(int argc, char *argv[])
 			}
 			LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
-			if (acceptor.open(ACE_INET_Addr(Configuration::instance()->getRestTcpPort(), Configuration::instance()->getRestListenAddress().c_str()), ACE_Reactor::instance()) == -1)
+			if (acceptor.open(acceptorAddr, ACE_Reactor::instance()) == -1)
 			{
 				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
 			}
@@ -167,10 +170,22 @@ int main(int argc, char *argv[])
 			ConsulConnection::instance()->init(consulSsnIdFromRecover);
 		}
 
+		TcpClient client;
+		if (config->getRestEnabled())
+			client.connect(acceptorAddr);
+
 		// monitor applications
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
-			std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
+			// wait and test connect
+			if (Configuration::instance()->getRestEnabled())
+			{
+				// check tcp and wait
+				if (!client.testConnection(Configuration::instance()->getScheduleInterval()))
+					ACE_OS::_exit(-1);
+			}
+			else
+				std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
 
 			// monitor application
 			std::list<os::Process> ptree;

@@ -8,7 +8,7 @@
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 
-ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin)
+ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin, const std::string &workingDir)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
@@ -21,6 +21,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		shellFile << "#!/bin/sh" << std::endl;
 		shellFile << "# App Mesh app: <" << name << ">" << std::endl;
 		shellFile << "set -e" << std::endl;
+		shellFile << "cd " << workingDir << std::endl;
 		shellFile << cmd << std::endl;
 		shellFile.close();
 		// only read permission
@@ -31,16 +32,17 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		}
 		m_fileName = fileName;
 
-		if (sessionLogin && execUser.length())
+		if (execUser.length() && execUser != Utility::getOsUserName())
 		{
-			m_shellCmd = Utility::stringFormat("/usr/bin/sudo -u %s /bin/bash '%s'", execUser.c_str(), m_fileName.c_str());
-			if (getuid() != 0)
-			{
-				LOG_ERR << fname << "session login mode requires root privilege, but current user is <" << Utility::getOsUserName() << ">";
-			}
+			// need switch user
+			if (getuid() == 0 && sessionLogin)
+				m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash %s", execUser.c_str(), m_fileName.c_str());
+			else
+				m_shellCmd = Utility::stringFormat("/usr/bin/sudo --user=%s bash %s", execUser.c_str(), m_fileName.c_str());
 		}
 		else
 		{
+			// keep current user
 			m_shellCmd = Utility::stringFormat("/bin/sh '%s'", m_fileName.c_str());
 		}
 
@@ -147,5 +149,5 @@ const std::string LogFileQueue::getFileName(int index)
 	{
 		return m_fileQueue[index]->getFileName();
 	}
-	throw std::invalid_argument(Utility::stringFormat("no such index <%d> of stdout log file for <%s>", index, baseFileName.c_str()));
+	throw NotFoundException(Utility::stringFormat("no such index <%d> of stdout log file for <%s>", index, baseFileName.c_str()));
 }

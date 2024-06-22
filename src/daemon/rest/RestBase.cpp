@@ -5,6 +5,7 @@
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
+#include "../ResourceCollection.h"
 #include "../security/Security.h"
 #include "../security/TokenBlacklist.h"
 #include "HttpRequest.h"
@@ -102,6 +103,11 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
         }
 
         stdFunction(message);
+    }
+    catch (const NotFoundException &e)
+    {
+        LOG_WAR << fname << web::http::status_codes::NotFound << e.what();
+        message.reply(web::http::status_codes::NotFound, convertText2Json(e.what()));
     }
     catch (const std::system_error &e)
     {

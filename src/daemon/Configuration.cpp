@@ -212,6 +212,12 @@ std::string Configuration::getRestListenAddress()
 	return m_rest->m_restListenAddress;
 }
 
+std::string Configuration::getRestJwtIssuer()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_jwt->m_jwtIssuer;
+}
+
 std::string Configuration::getDockerProxyAddress() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -636,6 +642,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				auto sec = rest.at(JSON_KEY_JWT);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTSalt))
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtSalt, newConfig->m_rest->m_jwt->m_jwtSalt);
+				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTIssuer))
+					SET_COMPARE(this->m_rest->m_jwt->m_jwtIssuer, newConfig->m_rest->m_jwt->m_jwtIssuer);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_SECURITY_Interface))
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtInterface, newConfig->m_rest->m_jwt->m_jwtInterface);
 			}
@@ -773,7 +781,7 @@ std::shared_ptr<Application> Configuration::getApp(const std::string &appName) c
 		return *iter;
 
 	LOG_WAR << fname << "No such application: " << appName;
-	throw std::invalid_argument("No such application");
+	throw NotFoundException("No such application");
 }
 
 bool Configuration::isAppExist(const std::string &appName)
@@ -980,6 +988,7 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 {
 	auto security = std::make_shared<Configuration::JsonJwt>();
 	security->m_jwtSalt = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTSalt);
+	security->m_jwtIssuer = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTIssuer);
 	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);
 	return security;
 }
@@ -988,6 +997,7 @@ nlohmann::json Configuration::JsonJwt::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_JWTSalt] = std::string(m_jwtSalt);
+	result[JSON_KEY_JWTIssuer] = std::string(m_jwtIssuer);
 	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);
 	return result;
 }

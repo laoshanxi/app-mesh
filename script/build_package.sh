@@ -19,6 +19,12 @@ cp ${CMAKE_BINARY_DIR}/gen/appc ${PACKAGE_HOME}/bin/
 cp ${CMAKE_BINARY_DIR}/gen/appsvc ${PACKAGE_HOME}/bin/
 cp ${CMAKE_BINARY_DIR}/gen/agent ${PACKAGE_HOME}/bin/
 
+# version compatibility for libreadline
+LIB_READLINE_VER=$(ldd ${PACKAGE_HOME}/bin/appc | grep 'libreadline.so' | awk '{print $1}')
+LIB_READLINE=$(echo $LIB_READLINE_VER | sed 's/\.[0-9.]*$//')
+patchelf --replace-needed $LIB_READLINE_VER $LIB_READLINE ${PACKAGE_HOME}/bin/appc --debug
+patchelf --replace-needed $LIB_READLINE_VER $LIB_READLINE ${PACKAGE_HOME}/bin/appsvc --debug
+
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/config.yaml ${PACKAGE_HOME}/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/security.yaml ${PACKAGE_HOME}/

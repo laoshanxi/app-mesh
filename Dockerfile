@@ -12,11 +12,11 @@ ENV APPMESH_DisableExecUser=true
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
 COPY --from=COMPILE_STAGE /opt/app-mesh/build/appmesh*.deb .
 RUN apt-get update && \
-	apt-get install -y tini procps && \
+	apt-get install -y tini && \
 	apt-get install -y ./appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
 	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
-	rm -rf /opt/appmesh/apps/ping.json && rm -rf /opt/appmesh/apps/backup.yaml && \
+	rm -rf /opt/appmesh/apps/ping.yaml && rm -rf /opt/appmesh/apps/backup.yaml && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
 	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
 	touch /var/run/appmesh.pid && \

@@ -55,6 +55,7 @@ public:
 		std::string getJwtInterface() const;
 
 		std::string m_jwtSalt;
+		std::string m_jwtIssuer;
 		std::string m_jwtInterface;
 	};
 
@@ -126,6 +127,7 @@ public:
 	int getRestListenPort();
 	int getPromListenPort() const;
 	std::string getRestListenAddress();
+	std::string getRestJwtIssuer();
 	std::string getDockerProxyAddress() const;
 	int getRestTcpPort();
 	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;

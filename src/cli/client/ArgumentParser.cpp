@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <ace/Signal.h>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
@@ -63,6 +64,7 @@ extern char **environ;
 
 // Global variable for appc exec
 static bool SIGINIT_BREAKING = false;
+static std::atomic_bool READING_LINE(false);
 static std::string APPC_EXEC_APP_NAME;
 static ArgumentParser *WORK_PARSE = nullptr;
 // command line help width
@@ -168,7 +170,7 @@ int ArgumentParser::parse()
 	}
 	else if (cmd == "exec" || cmd == "shell")
 	{
-		processExec();
+		return processShell();
 	}
 	else if (cmd == "get")
 	{
@@ -979,9 +981,8 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 		auto result = nlohmann::json::parse(response->text);
 		auto appName = result[JSON_KEY_APP_name].get<std::string>();
 		auto process_uuid = result[HTTP_QUERY_KEY_process_uuid].get<std::string>();
-		std::atomic<int> continueFailure(0);
 		long outputPosition = 0;
-		while (process_uuid.length() && continueFailure < 3)
+		while (process_uuid.length())
 		{
 			// /app/testapp/output?process_uuid=ABDJDD-DJKSJDKF
 			restPath = std::string("/appmesh/app/").append(appName).append("/output");
@@ -994,19 +995,10 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 			outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
 			returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 
-			// check continues failure
-			if (response->status_code != web::http::status_codes::OK && 0 == response->header.count(HTTP_HEADER_KEY_exit_code))
-			{
-				continueFailure++;
-				std::this_thread::sleep_for(std::chrono::milliseconds(500));
-				continue;
-			}
-
 			if (response->header.count(HTTP_HEADER_KEY_exit_code) || response->status_code != web::http::status_codes::OK)
 			{
 				break;
 			}
-			continueFailure = 0;
 		}
 		// delete
 		restPath = std::string("/appmesh/app/").append(appName);
@@ -1021,18 +1013,14 @@ void SIGINT_Handler(int signo)
 	// make sure we only process SIGINT here
 	// SIGINT 	ctrl - c
 	assert(signo == SIGINT);
+	SIGINIT_BREAKING = true;
 	const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
 	WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
-	if (SIGINIT_BREAKING)
+	if (READING_LINE.load())
 	{
-		// std::cout << "You pressed SIGINT(Ctrl+C) twice, session will exit." << std::endl;
-		write_history(m_shellHistoryFile.c_str());
-		ACE_OS::_exit(SIGINT);
-	}
-	else
-	{
-		std::cout << "appmesh> ";
-		SIGINIT_BREAKING = true;
+		rl_replace_line("", 0); // Clean up after the signal and redraw the prompt
+		rl_on_new_line();		// Notify readline that we're on a new line
+		rl_redisplay();			// Redisplay the prompt
 	}
 }
 
@@ -1074,18 +1062,52 @@ void ArgumentParser::unregSignal()
 		m_sigAction = nullptr;
 }
 
-int ArgumentParser::processExec()
+pid_t get_bash_pid()
+{
+	pid_t pid = getpid();
+	pid_t ppid = getppid();
+
+	while (ppid != 1) // 1 is the init process
+	{
+		std::string proc_path = "/proc/" + std::to_string(ppid) + "/comm";
+		std::ifstream comm_file(proc_path);
+		std::string comm;
+		std::getline(comm_file, comm);
+
+		if (comm == "bash")
+			return ppid;
+
+		// Move up the process tree
+		pid = ppid;
+		proc_path = "/proc/" + std::to_string(pid) + "/stat";
+		std::ifstream stat_file(proc_path);
+		std::string stat_line;
+		std::getline(stat_file, stat_line);
+
+		// Extract parent PID from stat file
+		size_t pos = stat_line.find(')');
+		if (pos != std::string::npos)
+			sscanf(stat_line.c_str() + pos + 2, "%*c %d", &ppid);
+		else
+			return ppid; // Error
+	}
+	return ppid; // No bash found in the process tree
+}
+
+int ArgumentParser::processShell()
 {
 	po::options_description desc("Shell execute:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
+		("retry,r", "Retry command until success")
 		COMMON_OPTIONS;
-	shiftCommandLineArgs(desc);
+	shiftCommandLineArgs(desc, true);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
-	int returnCode = -99;
+	bool retry = m_commandLineVariables.count("retry");
+	int returnCode = 0;
 	// Get current session id (bash pid)
-	auto bashId = getppid();
+	auto bashId = get_bash_pid();
 	// Get appmesh user
 	auto appmeshUser = getAuthenUser();
 	// Get current user name
@@ -1093,12 +1115,13 @@ int ArgumentParser::processExec()
 	// Unique session id as appname
 	APPC_EXEC_APP_NAME = appmeshUser + "_" + osUser + "_" + std::to_string(bashId);
 
-	// Get current command line, use raw argv here
-	std::string initialCmd;
-	for (int i = 2; i < m_argc; i++)
-	{
-		initialCmd.append(m_argv[i]).append(" ");
-	}
+	// Collect Unrecognized options as initial commands
+	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
+	if (opts.size())
+		opts.erase(opts.begin()); // remove [command] option and parse all others
+	auto parsed = po::command_line_parser(opts).options(desc).allow_unregistered().run();
+	std::vector<std::string> unrecognized = po::collect_unrecognized(parsed.options, po::include_positional);
+	std::string initialCmd = boost::algorithm::join(unrecognized, " ");
 
 	// Get current ENV
 	nlohmann::json objEnvs = nlohmann::json::object();
@@ -1125,49 +1148,68 @@ int ArgumentParser::processExec()
 	behavior[JSON_KEY_APP_behavior_exit] = std::string(JSON_KEY_APP_behavior_remove);
 	jsonObj[JSON_KEY_APP_behavior] = behavior;
 
+	auto sleepSeconds = [](int sec) -> bool
+	{ACE_OS::sleep(sec);	return true; };
 	SIGINIT_BREAKING = false; // if ctrl + c is triggered, stop run and start read input from stdin
-	std::cout << "Execute on <" << m_currentUrl << ">" << std::endl;
+	this->regSignal();		  // capture SIGINT
 	// clean
-	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
-	if (initialCmd.length())
+	if (unrecognized.size())
 	{
-		returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
+		do
+		{
+			requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
+			returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
+		} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
 	}
 	else
 	{
-		this->regSignal(); // capture SIGINT
+		auto response = requestHttp(true, web::http::methods::GET, std::string("/appmesh/user/self"));
+		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user_override].get<std::string>();
+		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
+		std::ofstream(m_shellHistoryFile, std::ios::trunc).close();
 		using_history();
 		read_history(m_shellHistoryFile.c_str());
+		const static char *prompt = "appmesh> ";
 		while (true)
 		{
-			const static char* prompt = "appmesh> ";
-			char *input;
-			while ((input = readline(prompt)) != nullptr)
+			READING_LINE.store(true);
+			char *input = readline(prompt);
+			READING_LINE.store(false);
+			if (input == nullptr)
 			{
-				std::string cmd(input);
-				free(input);
-				cmd = Utility::stdStringTrim(cmd);
-				if (cmd.length() <= 0)
-					continue;
-				add_history(cmd.c_str());
-				saveUserCmdHistory(cmd.c_str());
+				std::cout << "End of input (Ctrl+D pressed)" << std::endl;
+				break;
+			}
+			std::string cmd(input);
+			free(input);
+			cmd = Utility::stdStringTrim(cmd);
+			if (cmd.length())
+			{
+				static std::string lastCmd;
+				if (lastCmd != cmd)
+				{
+					lastCmd = cmd;
+					add_history(cmd.c_str());
+					saveUserCmdHistory(cmd.c_str());
+				}
 
 				SIGINIT_BREAKING = false; // reset breaking to normal after read a input
-				requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 				if (cmd == "exit" || cmd == "q")
 				{
-					write_history(m_shellHistoryFile.c_str());
-					ACE_OS::_exit(returnCode);
+					break;
 				}
 				jsonObj[JSON_KEY_APP_command] = cmd;
-				returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
-				// always exit loop when get one input
-				break;
+				do
+				{
+					requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
+					returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
+				} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
 			}
 		}
 	}
 	// clean
+	Utility::removeFile(m_shellHistoryFile);
 	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	return returnCode;
 }
@@ -1997,14 +2039,17 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 	}
 }
 
-void ArgumentParser::shiftCommandLineArgs(po::options_description &desc)
+void ArgumentParser::shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered)
 {
 	m_commandLineVariables.clear();
 	std::vector<std::string> opts = po::collect_unrecognized(m_parsedOptions, po::include_positional);
 	// remove [command] option and parse all others in m_commandLineVariables
 	if (opts.size())
 		opts.erase(opts.begin());
-	po::store(po::command_line_parser(opts).options(desc).run(), m_commandLineVariables);
+	if (allowUnregistered)
+		po::store(po::command_line_parser(opts).options(desc).allow_unregistered().run(), m_commandLineVariables);
+	else
+		po::store(po::command_line_parser(opts).options(desc).run(), m_commandLineVariables);
 	po::notify(m_commandLineVariables);
 }
 

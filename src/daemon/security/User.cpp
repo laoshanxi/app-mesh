@@ -4,6 +4,7 @@
 #include <liboath/oath.h>
 
 #include "../../common/Utility.h"
+#include "../Configuration.h"
 #include "Security.h"
 #include "User.h"
 
@@ -58,7 +59,7 @@ std::shared_ptr<User> Users::getUser(std::string name) const
 	else
 	{
 		LOG_WAR << fname << "no such user: " << name;
-		throw std::invalid_argument("no such user");
+		throw NotFoundException("no such user");
 	}
 }
 
@@ -148,6 +149,7 @@ nlohmann::json User::AsJson() const
 	result[JSON_KEY_USER_email] = std::string(m_email);
 	result[JSON_KEY_USER_group] = std::string(m_group);
 	result[JSON_KEY_USER_exec_user] = std::string(m_execUser);
+	result[JSON_KEY_USER_exec_user_override] = getExecUserOverride();
 	result[JSON_KEY_USER_locked] = (m_locked);
 	result[JSON_KEY_USER_mfa_enabled] = (m_enableMfa);
 	if (!m_metadata.empty())
@@ -342,6 +344,22 @@ const std::string &User::getMfaKey()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	return m_mfaKey;
+}
+
+const std::string User::getExecUserOverride() const
+{
+	std::string executeUser;
+	if (!Configuration::instance()->getDisableExecUser())
+	{
+		executeUser = getExecUser();
+		if (executeUser.empty())
+		{
+			executeUser = Configuration::instance()->getDefaultExecUser();
+		}
+	}
+	if (executeUser.empty())
+		executeUser = Utility::getOsUserName();
+	return executeUser;
 }
 
 const std::set<std::shared_ptr<Role>> User::getRoles()

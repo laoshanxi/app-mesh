@@ -595,18 +595,20 @@ std::string Application::runApp(int timeoutSeconds)
 
 const std::string Application::getExecUser() const
 {
-	if (!Configuration::instance()->getDisableExecUser())
+	std::string executeUser;
+	if (m_owner)
 	{
-		if (m_owner && !(m_owner->getExecUser().empty()))
-		{
-			return m_owner->getExecUser();
-		}
-		else
-		{
-			return Configuration::instance()->getDefaultExecUser();
-		}
+		// get correct execute user when Application has user info
+		executeUser = m_owner->getExecUserOverride();
 	}
-	return std::string();
+	else if (!Configuration::instance()->getDisableExecUser())
+	{
+		// get default execute user when Application have no user info
+		executeUser = Configuration::instance()->getDefaultExecUser();
+	}
+	if (executeUser.empty())
+		executeUser = Utility::getOsUserName();
+	return executeUser;
 }
 
 const std::string &Application::getCmdLine() const
@@ -654,7 +656,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	{
 		if (processUuid.length() && m_process->getuuid() != processUuid)
 		{
-			throw std::invalid_argument("No corresponding process running or the given process uuid is wrong");
+			throw NotFoundException("No corresponding process running or the given process uuid is wrong");
 		}
 		if (m_process->getuuid() == processUuid)
 		{
@@ -924,7 +926,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	if ((m_shellApp || m_sessionLogin) && (m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
 		m_shellAppFile = nullptr;
-		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, getExecUser(), m_sessionLogin);
+		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, getExecUser(), m_sessionLogin, m_workdir);
 	}
 
 	// alloc process object

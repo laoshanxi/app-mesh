@@ -34,7 +34,6 @@ public:
 	/// <summary>
 	/// Process TCP request
 	/// </summary>
-	/// <param name="message"></param>
 	static void handleTcpRest();
 	static void closeMsgQueue();
 	const int &id();

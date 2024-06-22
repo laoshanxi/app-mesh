@@ -40,7 +40,7 @@ apt install -y git
 apt install -y liblog4cpp5-dev
 apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
-apt install -y libreadline-dev
+apt install -y libreadline-dev patchelf
 
 # curlcpp
 apt install -y libcurlpp-dev

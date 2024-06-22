@@ -573,16 +573,8 @@ void RestHandler::apiUserView(const HttpRequest &message)
 
 	const auto tokenUserName = getJwtUserName(message);
 	auto user = Security::instance()->getUserInfo(tokenUserName);
-	if (user != nullptr)
-	{
-		auto userJson = user->AsJson();
-		message.reply(web::http::status_codes::OK, User::clearConfidentialInfo(userJson));
-	}
-	else
-	{
-		LOG_WAR << fname << "no such user: " << tokenUserName;
-		throw std::invalid_argument("no such user");
-	}
+	auto userJson = user->AsJson();
+	message.reply(web::http::status_codes::OK, User::clearConfidentialInfo(userJson));
 }
 
 void RestHandler::apiUserDel(const HttpRequest &message)
@@ -857,8 +849,6 @@ void RestHandler::apiUserTotpSecret(const HttpRequest &message)
 	auto userName = getJwtUserName(message);
 
 	const auto user = Security::instance()->getUserInfo(userName);
-	if (user == nullptr)
-		throw std::invalid_argument("no such user");
 	const auto mfaSecret = user->totpGenerateKey();
 	user->totpActive(false); // set to under setup status
 	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
@@ -885,8 +875,6 @@ void RestHandler::apiUserTotpSetup(const HttpRequest &message)
 	// get user
 	auto userName = getJwtUserName(message);
 	const auto user = Security::instance()->getUserInfo(userName);
-	if (user == nullptr)
-		throw std::invalid_argument("no such user");
 	if (user->getMfaKey().empty())
 		throw std::invalid_argument("please generate TOTP secret first");
 	user->totpValidateCode(totp);
@@ -913,8 +901,6 @@ void RestHandler::apiUserTotpValidate(const HttpRequest &message)
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
 	const auto user = Security::instance()->getUserInfo(uname);
-	if (user == nullptr)
-		throw std::invalid_argument("no such user");
 	if (!user->mfaEnabled())
 		throw std::invalid_argument("TOTP authentication not enabled for current user");
 	if (totp.empty())

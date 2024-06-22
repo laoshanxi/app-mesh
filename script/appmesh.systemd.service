@@ -19,8 +19,10 @@ WorkingDirectory=/opt/appmesh/
 ExecStart=/opt/appmesh/bin/appsvc
 ExecStop=/bin/kill -TERM $MAINPID
 ExecReload=/bin/kill -HUP $MAINPID
-Restart=on-failure
-RestartSec=2
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+StartLimitBurst=0
 KillMode=process
 # inherit/null/tty/journal/syslog/kmsg
 StandardOutput=null

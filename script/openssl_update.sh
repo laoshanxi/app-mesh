@@ -24,6 +24,13 @@ cd ${ROOTDIR}
 
 if [ -f "/usr/bin/yum" ]; then
   RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
+	if [[ $RHEL_VER = "7" ]]; then
+		cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
+		rm -f /etc/yum.repos.d/*.repo
+		curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+		yum clean all
+		yum makecache
+	fi
   if [[ $RHEL_VER = "8" ]]; then
     sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
     sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*

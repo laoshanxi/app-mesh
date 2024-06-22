@@ -37,7 +37,7 @@ private:
 	void processAppView();
 	void processAppControl(bool start);
 	int processAppRun();
-	int processExec();
+	int processShell();
 	void saveUserCmdHistory(const char *input);
 
 	void processCloudAppView();
@@ -73,7 +73,7 @@ private:
 	bool isAppExist(const std::string &appName);
 	std::map<std::string, bool> getAppList();
 	void printApps(nlohmann::json json, bool reduce);
-	void shiftCommandLineArgs(po::options_description &desc);
+	void shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered = false);
 	std::string reduceStr(std::string source, int limit);
 	bool confirmInput(const char *msg);
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);

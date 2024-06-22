@@ -26,6 +26,7 @@ REST:
   HttpThreadPoolSize: 3
   JWT:
     JWTSalt: HelloWorld
+    Issuer: ""
     SecurityInterface: local
 
   SSL:
