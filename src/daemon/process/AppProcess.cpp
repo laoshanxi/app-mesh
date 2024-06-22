@@ -54,6 +54,7 @@ void AppProcess::attach(int pid, const std::string &stdoutFile)
 	this->child_id_ = pid;
 	m_stdoutFileName = stdoutFile;
 
+	CLOSE_ACE_HANDLER(m_stdoutHandler);
 	auto stdout = Utility::stringFormat("/proc/%d/fd/1", getpid());
 	m_stdoutHandler = ACE_OS::open(stdout.c_str(), O_RDWR);
 	m_stdOutMaxSize = APP_STD_OUT_MAX_FILE_SIZE;

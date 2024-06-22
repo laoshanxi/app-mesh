@@ -41,6 +41,7 @@ public:
 	bool mfaEnabled() const;
 	const std::string &getKey();
 	const std::string &getMfaKey();
+	const std::string getExecUserOverride() const;
 	const std::string &getExecUser() const
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_mutex);

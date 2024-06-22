@@ -6,8 +6,9 @@ permission: 11
 shell: true
 start_interval_seconds: P1D
 start_time: 3600
-working_dir: /opt/appmesh/backup
+working_dir: /opt/appmesh/work/
 command: |
-  mkdir -p /opt/appmesh/backup
-  find /opt/appmesh/backup/ -type f -name '*.tar.gz' -mtime +30 -exec rm -f {} \;
-  tar czvf $(date +%Y-%m-%d_%M-%H).tar.gz /opt/appmesh/apps /opt/appmesh/ssl /opt/appmesh/*.json
+  mkdir -p /opt/appmesh/work/backup
+  cd /opt/appmesh/work/backup
+  find /opt/appmesh/work/backup/ -type f -name '*.tar.gz' -mtime +30 -exec rm -f {} \;
+  tar czvf $(date +%Y-%m-%d_%M-%H).tar.gz /opt/appmesh/work/apps /opt/appmesh/ssl /opt/appmesh/work/config

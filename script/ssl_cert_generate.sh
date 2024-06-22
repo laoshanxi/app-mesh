@@ -64,9 +64,11 @@ EOF
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
 
 # https://stackoverflow.com/questions/13322485/how-to-get-the-primary-ip-address-of-the-local-machine-on-linux-and-os-x
-IPADDR=$(hostname -i | cut -d' ' -f1)
-HOSTNAME=$(hostname --fqdn)
-HOSTS="$IPADDR,$HOSTNAME,localhost,127.0.0.1"
+IPADDR=$(hostname -I | tr ' ' ',' | sed 's/,$//')
+HOSTNAME_L=$(hostname --fqdn)
+HOSTNAME_S=$(hostname)
+LOCAL_ADDR="localhost,127.0.0.1"
+HOSTS="$IPADDR,$HOSTNAME_S,$HOSTNAME_L,$LOCAL_ADDR"
 echo $HOSTS
 
 echo '{"CN":"'"$HOSTNAME"'","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server -hostname=$HOSTS - | cfssljson -bare server

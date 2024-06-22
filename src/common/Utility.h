@@ -262,6 +262,7 @@ public:
 
 #define JSON_KEY_JWT "JWT"
 #define JSON_KEY_JWTSalt "JWTSalt"
+#define JSON_KEY_JWTIssuer "Issuer"
 #define JSON_KEY_SECURITY_Interface "SecurityInterface"
 
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
@@ -350,6 +351,7 @@ public:
 #define JSON_KEY_USER_locked "locked"
 #define JSON_KEY_USER_metadata "metadata"
 #define JSON_KEY_USER_exec_user "exec_user"
+#define JSON_KEY_USER_exec_user_override "exec_user_override"
 #define JSON_KEY_USER_mfa_key "mfa_key"
 #define JSON_KEY_USER_mfa_enabled "mfa_enabled"
 
@@ -363,7 +365,7 @@ public:
 #define JSON_KEY_USER_LDAP_USER_REPLACE_HOLDER "{USER}"
 
 #define HTTP_HEADER_JWT "JWT"
-#define HTTP_HEADER_JWT_ISSUER "appmesh-auth0"
+#define HTTP_HEADER_JWT_ISSUER Configuration::instance()->getRestJwtIssuer().empty() ? Configuration::instance()->getRestListenAddress() : Configuration::instance()->getRestJwtIssuer()
 #define HTTP_HEADER_JWT_name "name"
 #define HTTP_HEADER_JWT_user_group "group"
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization

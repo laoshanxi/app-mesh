@@ -32,6 +32,13 @@ if [ -f "/usr/bin/yum" ]; then
 	#RHEL
 	# yum update -q -y
 	RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
+	if [[ $RHEL_VER = "7" ]]; then
+		cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
+		rm -f /etc/yum.repos.d/*.repo
+		curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+		yum clean all
+		yum makecache
+	fi
 	if [[ $RHEL_VER = "8" ]]; then
 		sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
 		sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*
@@ -42,7 +49,7 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y wget which gettext unzip
 	yum install -y python3-pip
 	yum install -y zlib-devel #for libcurl
-	yum install -y readline-devel
+	yum install -y readline-devel patchelf
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
 	#export BOOST_INCLUDEDIR=/usr/include/boost169
@@ -60,11 +67,11 @@ elif [ -f "/usr/bin/apt" ]; then
 	apt install -y wget alien gettext unzip
 	apt install -y python3-pip
 	apt install -y zlib1g-dev #for libcurl
-	apt install -y libreadline-dev
+	apt install -y libreadline-dev patchelf
 	#apt install -y libboost-all-dev libace-dev libace
 	#apt install -y liblog4cpp5-dev
 fi
-python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip
+python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip || true
 
 # yum install -y golang
 # apt install -y golang

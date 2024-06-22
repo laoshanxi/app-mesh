@@ -19,6 +19,16 @@ cp ${CMAKE_BINARY_DIR}/gen/appc ${PACKAGE_HOME}/bin/
 cp ${CMAKE_BINARY_DIR}/gen/appsvc ${PACKAGE_HOME}/bin/
 cp ${CMAKE_BINARY_DIR}/gen/agent ${PACKAGE_HOME}/bin/
 
+LIB_READLINE_VER=$(ldd ${PACKAGE_HOME}/bin/appc | grep 'libreadline.so' | awk '{print $1}')
+LIB_READLINE_VER_NO=$(echo $LIB_READLINE_VER | sed 's/\.[0-9.]*$//')
+patchelf --replace-needed $LIB_READLINE_VER $LIB_READLINE_VER_NO ${PACKAGE_HOME}/bin/appc
+patchelf --replace-needed $LIB_READLINE_VER $LIB_READLINE_VER_NO ${PACKAGE_HOME}/bin/appsvc
+
+LIB_TINFO_VER=$(ldd ${PACKAGE_HOME}/bin/appc | grep 'libtinfo.so' | awk '{print $1}')
+LIB_TINFO_VER_NO=$(echo $LIB_TINFO_VER_VER | sed 's/\.[0-9.]*$//')
+patchelf --replace-needed $LIB_TINFO_VER_VER $LIB_TINFO_VER_NO ${PACKAGE_HOME}/bin/appc
+patchelf --replace-needed $LIB_TINFO_VER_VER $LIB_TINFO_VER_NO ${PACKAGE_HOME}/bin/appsvc
+
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/config.yaml ${PACKAGE_HOME}/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml ${PACKAGE_HOME}/script/
 cp ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/security/security.yaml ${PACKAGE_HOME}/

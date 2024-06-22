@@ -1,6 +1,7 @@
 #include <cerrno>
 #include <fstream>
 #include <memory>
+#include <thread>
 
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
@@ -155,6 +156,7 @@ void TcpHandler::handleTcpRest()
 			// TODO: check request without reply
 		}
 	}
+	LOG_WAR << fname << "Exit";
 }
 
 void TcpHandler::closeMsgQueue()

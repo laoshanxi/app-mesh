@@ -41,14 +41,11 @@ scripts:
 overrides:
   deb:
     depends:
-      - psmisc
-      - net-tools
-      - libldap-dev
-      # libldap-2.5-0
+      - procps
       - libreadline-dev
+      - libldap-dev
   rpm:
     depends:
-      - psmisc
-      - net-tools
+      - procps
       - readline-devel
-# openldap-devel
+      # openldap-devel

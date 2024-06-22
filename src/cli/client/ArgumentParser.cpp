@@ -168,7 +168,7 @@ int ArgumentParser::parse()
 	}
 	else if (cmd == "exec" || cmd == "shell")
 	{
-		processExec();
+		return processShell();
 	}
 	else if (cmd == "get")
 	{
@@ -1074,7 +1074,7 @@ void ArgumentParser::unregSignal()
 		m_sigAction = nullptr;
 }
 
-int ArgumentParser::processExec()
+int ArgumentParser::processShell()
 {
 	po::options_description desc("Shell execute:", BOOST_DESC_WIDTH);
 	desc.add_options()
@@ -1083,7 +1083,7 @@ int ArgumentParser::processExec()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
-	int returnCode = -99;
+	int returnCode = 0;
 	// Get current session id (bash pid)
 	auto bashId = getppid();
 	// Get appmesh user
@@ -1126,7 +1126,6 @@ int ArgumentParser::processExec()
 	jsonObj[JSON_KEY_APP_behavior] = behavior;
 
 	SIGINIT_BREAKING = false; // if ctrl + c is triggered, stop run and start read input from stdin
-	std::cout << "Execute on <" << m_currentUrl << ">" << std::endl;
 	// clean
 	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	if (initialCmd.length())
@@ -1135,6 +1134,9 @@ int ArgumentParser::processExec()
 	}
 	else
 	{
+		auto response = requestHttp(true, web::http::methods::GET, std::string("/appmesh/user/self"));
+		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user_override].get<std::string>();
+		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 		this->regSignal(); // capture SIGINT
 
 		using_history();
