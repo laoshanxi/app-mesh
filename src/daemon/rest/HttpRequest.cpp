@@ -122,8 +122,8 @@ HttpRequestWithAppRef::HttpRequestWithAppRef(const HttpRequest &message, const s
 
 HttpRequestWithAppRef::~HttpRequestWithAppRef()
 {
+	// avoid use Application lock access Configuration
 	if (m_app)
-	{
-		m_app->onSuicide();
-	}
+		m_app->regSuicideTimer(0);
+	m_app.reset();
 }

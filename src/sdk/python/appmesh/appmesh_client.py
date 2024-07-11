@@ -21,8 +21,8 @@ import requests
 # pylint: disable=broad-exception-raised,line-too-long,broad-exception-caught,too-many-lines, import-outside-toplevel
 
 DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"  # default 7 day(s)
-DEFAULT_RUN_APP_TIMEOUT_SECONDS = "PT1H"  # 1 hour
-DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "PT10H"  # 10 hours
+DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"  # 2 days
+DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"  # 2.5 days
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
 TCP_MESSAGE_HEADER_LENGTH = 4
@@ -1371,6 +1371,8 @@ class AppMeshClientTCP(AppMeshClient):
         self.__socket_client = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
         # Connect to the server
         self.__socket_client.connect(self.tcp_address)
+        # Disable Nagle's algorithm
+        self.__socket_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
     def __close_socket(self) -> None:
         """Close socket connection"""

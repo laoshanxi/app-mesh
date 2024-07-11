@@ -6,3 +6,4 @@ owner: mesh
 permission: 12
 behavior:
   exit: standby
+status: 0

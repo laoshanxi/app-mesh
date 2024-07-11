@@ -3,6 +3,8 @@
 #include <memory>
 #include <thread>
 
+#include <ace/os_include/netinet/os_tcp.h>
+
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
@@ -101,9 +103,15 @@ int TcpHandler::open(void *)
 		}
 		else
 		{
+			// Disable Nagle's algorithm on both sides if you're sending small, frequent messages.
+			int flag = 1;
+			if (this->peer().set_option(ACE_IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) == -1)
+			{
+				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << std::strerror(errno);
+			}
 			if (this->peer().disable(ACE_NONBLOCK) == -1)
 			{
-				LOG_ERR << fname << "Can't disable nonblocking";
+				LOG_ERR << fname << "Can't disable nonblocking with error: " << std::strerror(errno);
 			}
 			LOG_INF << fname << "client <" << m_clientHostName << ":" << addr.get_port_number() << "> connected";
 		}

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/buaazp/fasthttprouter"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
@@ -87,6 +88,19 @@ func readMsgLoop() {
 	}
 }
 
+// Disable Nagle's algorithm on both sides if you're sending small, frequent messages.
+func setNoDelay(conn net.Conn) {
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		rawConn, err := tcpConn.SyscallConn()
+		if err != nil {
+			log.Fatalf("Error getting syscall connection: %v", err)
+		}
+		rawConn.Control(func(fd uintptr) {
+			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
+		})
+	}
+}
+
 func ListenRest() {
 	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
 	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
@@ -97,6 +111,7 @@ func ListenRest() {
 		os.Exit(-1)
 	}
 	tcpConnect = conn
+	setNoDelay(tcpConnect)
 	go readMsgLoop()
 
 	// http router

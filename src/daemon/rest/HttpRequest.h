@@ -124,5 +124,5 @@ public:
 	virtual ~HttpRequestWithAppRef();
 
 private:
-	const std::shared_ptr<Application> m_app;
+	std::shared_ptr<Application> m_app;
 };

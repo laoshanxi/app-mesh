@@ -23,8 +23,6 @@
 #include "AppTimer.h"
 #include "Application.h"
 
-ACE_Time_Value Application::m_waitTimeout = ACE_Time_Value(0, 1000L * 30); // 30 millisecond
-
 Application::Application()
 	: m_persistAble(true), m_status(STATUS::ENABLED), m_ownerPermission(0), m_shellApp(false),
 	  m_sessionLogin(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
@@ -312,14 +310,6 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 			if (m_process->running())
 			{
 				m_pid = m_process->getpid();
-				if (m_process->wait(m_waitTimeout) > 0)
-				{
-					m_return = std::make_shared<int>(m_process->returnValue());
-					exitCode = m_return;
-					m_pid = ACE_INVALID_PID;
-					m_procExitTime = std::chrono::system_clock::now();
-					setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_process->startError().c_str()));
-				}
 			}
 			else if (m_pid > 0)
 			{
@@ -333,14 +323,12 @@ std::shared_ptr<int> Application::refresh(void *ptree)
 
 		// 2. Try to get return code from Buffer process again
 		//    If there have buffer process, current process is still running, so get return code from buffer process
-		if (m_bufferProcess && m_bufferProcess->running())
+		if (m_bufferProcess && !m_bufferProcess->running())
 		{
-			if (m_bufferProcess->wait(m_waitTimeout) > 0)
-			{
-				m_return = std::make_shared<int>(m_bufferProcess->returnValue());
-				m_procExitTime = std::chrono::system_clock::now();
-				setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_bufferProcess->startError().c_str()));
-			}
+			m_return = std::make_shared<int>(m_bufferProcess->returnValue());
+			m_procExitTime = std::chrono::system_clock::now();
+			setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", *m_return, m_bufferProcess->startError().c_str()));
+			m_bufferProcess = nullptr;
 		}
 	}
 
@@ -480,7 +468,8 @@ void Application::spawn()
 		m_process.reset();
 		m_process = allocProcess(false, m_dockerImage, m_name);
 		m_procStartTime = std::chrono::system_clock::now();
-		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
+		bool sudoSwitchUser = (m_shellAppFile != nullptr && Utility::startWith(m_shellAppFile->getShellStartCmd(), "/usr/bin/sudo"));
+		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE, sudoSwitchUser);
 		if (m_pid > 0)
 			checkProcStdoutFile = m_process;
 
@@ -574,7 +563,8 @@ std::string Application::runApp(int timeoutSeconds)
 	const auto execUser = getExecUser();
 	LOG_INF << fname << "Running application <" << m_name << "> with timeout <" << timeoutSeconds << "> seconds";
 	m_procStartTime = std::chrono::system_clock::now();
-	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata);
+	bool sudoSwitchUser = (m_shellAppFile != nullptr && Utility::startWith(m_shellAppFile->getShellStartCmd(), "/usr/bin/sudo"));
+	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE, sudoSwitchUser);
 	// TODO: run app does not call registerCheckStdoutTimer() for now
 	setLastError(m_process->startError());
 	if (m_metricStartCount)
@@ -639,14 +629,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 	}
 	if (process != nullptr && index == 0 && process->getuuid() == processUuid && process->running() && timeout > 0)
 	{
-		auto start = std::chrono::system_clock::now();
-		auto end = start + std::chrono::seconds(timeout);
-		ACE_Time_Value shortInterval;
-		shortInterval.msec(100);
-		while (process->running() && std::chrono::system_clock::now() < end)
-		{
-			process->wait(shortInterval);
-		}
+		process->wait(ACE_Time_Value(timeout));
 	}
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -971,20 +954,7 @@ void Application::destroy()
 
 void Application::onSuicide()
 {
-	const static char fname[] = "Application::onSuicide() ";
-
-	try
-	{
-		Configuration::instance()->removeApp(m_name);
-	}
-	catch (const std::exception &e)
-	{
-		LOG_ERR << fname << e.what();
-	}
-	catch (...)
-	{
-		LOG_ERR << fname << "unknown exception";
-	}
+	Configuration::instance()->removeApp(m_name);
 }
 
 void Application::onExit(int code)

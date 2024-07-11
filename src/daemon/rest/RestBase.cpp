@@ -106,7 +106,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     catch (const NotFoundException &e)
     {
-        LOG_WAR << fname << web::http::status_codes::NotFound << e.what();
+        LOG_WAR << fname << web::http::status_codes::NotFound << " : " << e.what();
         message.reply(web::http::status_codes::NotFound, convertText2Json(e.what()));
     }
     catch (const std::system_error &e)

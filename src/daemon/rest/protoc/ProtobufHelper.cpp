@@ -107,7 +107,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	}
 	// parse header data (get body length). network to host byte order
 	const auto bodySize = ntohl(*((int *)(data.get()))); // host to network byte order
-	LOG_DBG << fname << "read length :" << bodySize << " from header";
+	LOG_DBG << fname << "read length : " << bodySize << " from header";
 	if (bodySize > MAX_TCP_BLOCK_SIZE)
 	{
 		LOG_ERR << fname << "read data size reached limitation, aborting connection";

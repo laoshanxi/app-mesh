@@ -42,30 +42,29 @@ func getTlsConf() *tls.Config {
 }
 
 // REST GET
-func (r *AppmeshClient) get(path string, params url.Values) ([]byte, int, http.Header, error) {
+func (r *AppmeshClient) get(path string, params url.Values) (int, []byte, http.Header, error) {
 	return r.doRequest("GET", path, params, nil, nil)
 }
 
 // REST PUT
-func (r *AppmeshClient) put(path string, params url.Values, headers map[string]string, body []byte) ([]byte, int, error) {
-	raw, code, _, err := r.doRequest("PUT", path, params, headers, bytes.NewBuffer(body))
-	return raw, code, err
+func (r *AppmeshClient) put(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, error) {
+	code, raw, _, err := r.doRequest("PUT", path, params, headers, bytes.NewBuffer(body))
+	return code, raw, err
 }
 
 // REST POST
-func (r *AppmeshClient) post(path string, params url.Values, headers map[string]string, body []byte) ([]byte, int, error) {
-	raw, code, _, err := r.doRequest("POST", path, params, headers, bytes.NewBuffer(body))
-	return raw, code, err
+func (r *AppmeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, http.Header, error) {
+	return r.doRequest("POST", path, params, headers, bytes.NewBuffer(body))
 }
 
 // REST DELETE
-func (r *AppmeshClient) delete(path string) ([]byte, int, error) {
-	raw, code, _, err := r.doRequest("DELETE", path, nil, nil, nil)
-	return raw, code, err
+func (r *AppmeshClient) delete(path string) (int, []byte, error) {
+	code, raw, _, err := r.doRequest("DELETE", path, nil, nil, nil)
+	return code, raw, err
 }
 
 // REST request
-func (r *AppmeshClient) doRequest(method string, apiPath string, params url.Values, headers map[string]string, buf io.Reader) ([]byte, int, http.Header, error) {
+func (r *AppmeshClient) doRequest(method string, apiPath string, params url.Values, headers map[string]string, buf io.Reader) (int, []byte, http.Header, error) {
 	u, _ := url.Parse(r.baseURL)
 	u.Path = path.Join(u.Path, apiPath)
 	if params != nil {
@@ -73,7 +72,7 @@ func (r *AppmeshClient) doRequest(method string, apiPath string, params url.Valu
 	}
 	req, err := http.NewRequest(method, u.String(), buf)
 	if err != nil {
-		return nil, 0, nil, err
+		return 0, nil, nil, err
 	}
 
 	// headers
@@ -93,11 +92,11 @@ func (r *AppmeshClient) doRequest(method string, apiPath string, params url.Valu
 
 	if err != nil {
 		fmt.Println(err.Error())
-		return nil, 0, nil, err
+		return 0, nil, nil, err
 	}
 	if resp != nil {
 		defer resp.Body.Close()
 	}
 	data, err := io.ReadAll(resp.Body)
-	return data, resp.StatusCode, resp.Header, err
+	return resp.StatusCode, data, resp.Header, err
 }
