@@ -9,7 +9,7 @@
 /// <summary>
 /// Docker command line process object
 /// </summary>
-class DockerProcess : public AppProcess
+class DockerProcess : public AppProcess, public ACE_Process
 {
 public:
 	/// <summary>
@@ -37,7 +37,7 @@ public:
 	/// <param name="stdinFileContent"></param>
 	/// <param name="maxStdoutSize"></param>
 	/// <returns></returns>
-	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON, const int maxStdoutSize = 0) override;
+	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON, const int maxStdoutSize = 0, bool sudoSwitchUser = false) override;
 
 	/// <summary>
 	/// override with docker cli behavior

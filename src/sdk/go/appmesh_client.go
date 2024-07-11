@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/pquerna/otp"
 )
@@ -63,7 +62,7 @@ func (r *AppmeshClient) Login(user string, password string, totpCode string, tim
 		"Authorization":  "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
 		"Expire-Seconds": strconv.Itoa(timeoutSeconds),
 	}
-	raw, code, err := r.post("appmesh/login", nil, headers, nil)
+	code, raw, _, err := r.post("appmesh/login", nil, headers, nil)
 	if code == http.StatusOK {
 		result := JWTResponse{}
 		err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
@@ -82,7 +81,7 @@ func (r *AppmeshClient) Login(user string, password string, totpCode string, tim
 				"Totp-Challenge": base64.StdEncoding.EncodeToString([]byte(challenge)),
 				"Expire-Seconds": strconv.Itoa(timeoutSeconds),
 			}
-			raw, code, err = r.post("appmesh/totp/validate", nil, headers, nil)
+			code, raw, _, err = r.post("appmesh/totp/validate", nil, headers, nil)
 			if code == http.StatusOK {
 				result := JWTResponse{}
 				err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
@@ -97,7 +96,7 @@ func (r *AppmeshClient) Login(user string, password string, totpCode string, tim
 }
 
 func (r *AppmeshClient) Logoff() (bool, error) {
-	_, code, err := r.post("appmesh/self/logoff", nil, nil, nil)
+	code, _, _, err := r.post("appmesh/self/logoff", nil, nil, nil)
 	r.updateToken("")
 	return code == http.StatusOK, err
 }
@@ -108,7 +107,7 @@ func (r *AppmeshClient) Authentication(jwtToken string, permission string) (bool
 	if permission != "" {
 		headers["Auth-Permission"] = permission
 	}
-	_, code, err := r.post("appmesh/auth", nil, headers, nil)
+	code, _, _, err := r.post("appmesh/auth", nil, headers, nil)
 	if code == http.StatusOK {
 		r.updateToken(jwtToken)
 		return true, nil
@@ -117,7 +116,7 @@ func (r *AppmeshClient) Authentication(jwtToken string, permission string) (bool
 }
 
 func (r *AppmeshClient) Renew() (bool, error) {
-	raw, code, err := r.post("appmesh/token/renew", nil, nil, nil)
+	code, raw, _, err := r.post("appmesh/token/renew", nil, nil, nil)
 	if code == http.StatusOK {
 		result := JWTResponse{}
 		err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
@@ -130,7 +129,7 @@ func (r *AppmeshClient) Renew() (bool, error) {
 }
 
 func (r *AppmeshClient) TotpSecret() (string, error) {
-	raw, code, err := r.post("appmesh/totp/secret", nil, nil, nil)
+	code, raw, _, err := r.post("appmesh/totp/secret", nil, nil, nil)
 	if code == http.StatusOK {
 		m := make(map[string]interface{})
 		decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -147,18 +146,18 @@ func (r *AppmeshClient) TotpSecret() (string, error) {
 
 func (r *AppmeshClient) TotpSetup(totpCode string) (bool, error) {
 	headers := map[string]string{"Totp": totpCode}
-	_, code, err := r.post("appmesh/totp/setup", nil, headers, nil)
+	code, _, _, err := r.post("appmesh/totp/setup", nil, headers, nil)
 	return code == http.StatusOK, err
 }
 
 func (r *AppmeshClient) TotpDisable() (bool, error) {
-	_, code, err := r.post("appmesh/totp/self/disable", nil, nil, nil)
+	code, _, _, err := r.post("appmesh/totp/self/disable", nil, nil, nil)
 	return code == http.StatusOK, err
 }
 
 // GetTags gets all lables.
 func (r *AppmeshClient) GetTags() (Labels, error) {
-	raw, code, _, err := r.get("appmesh/labels", nil)
+	code, raw, _, err := r.get("appmesh/labels", nil)
 	label := Labels{}
 	if code == http.StatusOK {
 		err = json.Unmarshal(raw, &label)
@@ -168,7 +167,7 @@ func (r *AppmeshClient) GetTags() (Labels, error) {
 
 // Get all applications
 func (r *AppmeshClient) GetApps() ([]Application, error) {
-	raw, code, _, err := r.get("appmesh/applications", nil)
+	code, raw, _, err := r.get("appmesh/applications", nil)
 	apps := []Application{}
 	if code == http.StatusOK {
 		err = json.Unmarshal(raw, &apps)
@@ -178,7 +177,7 @@ func (r *AppmeshClient) GetApps() ([]Application, error) {
 
 // Get one application
 func (r *AppmeshClient) GetApp(appName string) (*Application, error) {
-	raw, code, _, err := r.get(fmt.Sprintf("/appmesh/app/%s", appName), nil)
+	code, raw, _, err := r.get(fmt.Sprintf("/appmesh/app/%s", appName), nil)
 	if code == http.StatusOK {
 		app := Application{}
 		err = json.Unmarshal(raw, &app)
@@ -195,7 +194,7 @@ func (r *AppmeshClient) GetAppOutput(appName string, stdoutPosition int64, stdou
 	query.Set("stdout_maxsize", strconv.Itoa(stdoutMaxsize))
 	query.Set("process_uuid", processUuid)
 
-	body, code, header, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query)
+	code, body, header, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query)
 	resp := AppOutputResponse{Error: err, HttpSuccess: code == http.StatusOK, HttpBody: string(body)}
 
 	// Extract and parse headers
@@ -216,7 +215,7 @@ func (r *AppmeshClient) GetAppOutput(appName string, stdoutPosition int64, stdou
 
 // Enable an application
 func (r *AppmeshClient) EnableApp(appName string) error {
-	raw, code, err := r.post(fmt.Sprintf("/appmesh/app/%s/enable", appName), nil, nil, nil)
+	code, raw, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/enable", appName), nil, nil, nil)
 	if code == http.StatusOK {
 		return nil
 	} else {
@@ -229,7 +228,7 @@ func (r *AppmeshClient) EnableApp(appName string) error {
 
 // Disable an application
 func (r *AppmeshClient) DisableApp(appName string) error {
-	raw, code, err := r.post(fmt.Sprintf("/appmesh/app/%s/disable", appName), nil, nil, nil)
+	code, raw, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/disable", appName), nil, nil, nil)
 	if code == http.StatusOK {
 		return nil
 	} else {
@@ -242,7 +241,7 @@ func (r *AppmeshClient) DisableApp(appName string) error {
 
 // Remove an application
 func (r *AppmeshClient) RemoveApp(appName string) error {
-	raw, code, err := r.delete(fmt.Sprintf("/appmesh/app/%s", appName))
+	code, raw, err := r.delete(fmt.Sprintf("/appmesh/app/%s", appName))
 	if code == http.StatusOK {
 		return nil
 	} else {
@@ -257,7 +256,7 @@ func (r *AppmeshClient) RemoveApp(appName string) error {
 func (r *AppmeshClient) AddApp(app Application) (*Application, error) {
 	appJson, err := json.Marshal(app)
 	if err == nil {
-		raw, code, err := r.put(fmt.Sprintf("/appmesh/app/%s", app.Name), nil, nil, appJson)
+		code, raw, err := r.put(fmt.Sprintf("/appmesh/app/%s", app.Name), nil, nil, appJson)
 		if code == http.StatusOK {
 			resultApp := Application{}
 			json.Unmarshal(raw, &resultApp)
@@ -273,53 +272,64 @@ func (r *AppmeshClient) AddApp(app Application) (*Application, error) {
 }
 
 // Remote run application
-func (r *AppmeshClient) Run(app Application, syncrize bool, maxExectimeSeconds int) (int, error) {
+func (r *AppmeshClient) RunSync(app Application, maxTimeoutSeconds int) (int, error) {
 	appJson, err := json.Marshal(app)
 	exitCode := 0
 	if err == nil {
-		path := ""
-		if syncrize {
-			path = "/appmesh/app/syncrun"
-		} else {
-			path = "/appmesh/app/run"
-		}
+		path := "/appmesh/app/syncrun"
 		query := url.Values{}
-		query.Add("timeout", strconv.Itoa(maxExectimeSeconds))
+		query.Add("timeout", strconv.Itoa(maxTimeoutSeconds))
 
-		raw, code, _ := r.post(path, query, nil, appJson)
+		code, raw, headers, err := r.post(path, query, nil, appJson)
+		if headers.Get("Exit-Code") != "" {
+			exitCode, err = strconv.Atoi(headers.Get("Exit-Code"))
+		}
 		if code == http.StatusOK {
-			if syncrize {
-				fmt.Print(string(raw))
-				return exitCode, nil
-			} else {
-				resultApp := Application{}
-				json.Unmarshal(raw, &resultApp)
-				uuid := resultApp.Uuid
-				if uuid != nil && *uuid != "" {
-					var outputPosition int64 = 0
-					for {
-						query = url.Values{}
-						query.Add("process_uuid", *uuid)
-						query.Add("stdout_position", strconv.FormatInt(outputPosition, 10))
+			fmt.Print(string(raw))
+		}
+		return exitCode, err
+	}
+	return exitCode, err
+}
 
-						resp := r.GetAppOutput(resultApp.Name, outputPosition, 0, 10240, *uuid)
-						if len(resp.HttpBody) > 0 {
-							fmt.Print(resp.HttpBody)
-						}
-						if resp.OutputPosition != nil {
-							outputPosition = *resp.OutputPosition
-						}
-						if resp.ExitCode != nil {
-							exitCode = *resp.ExitCode
-							break
-						}
-						if !resp.HttpSuccess {
-							break
-						}
-						time.Sleep(time.Microsecond * 500)
+// Remote run application
+func (r *AppmeshClient) RunAsync(app Application, maxTimeoutSeconds int) (int, error) {
+	appJson, err := json.Marshal(app)
+	exitCode := 0
+	if err == nil {
+		path := "/appmesh/app/run"
+		query := url.Values{}
+		query.Add("timeout", strconv.Itoa(maxTimeoutSeconds))
+
+		code, raw, _, _ := r.post(path, query, nil, appJson)
+		if code == http.StatusOK {
+			resultApp := Application{}
+			json.Unmarshal(raw, &resultApp)
+			uuid := resultApp.Uuid
+			if uuid != nil && *uuid != "" {
+				var outputPosition int64 = 0
+				for {
+					query = url.Values{}
+					query.Add("process_uuid", *uuid)
+					query.Add("stdout_position", strconv.FormatInt(outputPosition, 10))
+					query.Add("stdout_timeout", strconv.FormatInt(1, 10))
+
+					resp := r.GetAppOutput(resultApp.Name, outputPosition, 0, 10240, *uuid)
+					if len(resp.HttpBody) > 0 {
+						fmt.Print(resp.HttpBody)
 					}
-					r.RemoveApp(resultApp.Name)
+					if resp.OutputPosition != nil {
+						outputPosition = *resp.OutputPosition
+					}
+					if resp.ExitCode != nil {
+						exitCode = *resp.ExitCode
+						break
+					}
+					if !resp.HttpSuccess {
+						break
+					}
 				}
+				r.RemoveApp(resultApp.Name)
 			}
 		}
 	}

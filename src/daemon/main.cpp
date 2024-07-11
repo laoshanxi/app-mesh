@@ -6,6 +6,7 @@
 #include <ace/Acceptor.h>
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
+#include <ace/Process_Manager.h>
 #include <ace/Reactor.h>
 #include <ace/SSL/SSL_Context.h>
 #include <ace/SSL/SSL_SOCK_Acceptor.h>
@@ -102,9 +103,12 @@ int main(int argc, char *argv[])
 		Configuration::instance()->saveConfigToDisk();
 
 		// Register QUIT_HANDLER to receive SIGINT commands.
-		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
-		ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
+		TIMER_MANAGER::instance()->reactor()->register_handler(SIGINT, QUIT_HANDLER::instance());
+		TIMER_MANAGER::instance()->reactor()->register_handler(SIGTERM, QUIT_HANDLER::instance());
+		// process manager share timer threads and reactor, do open before start threads
+		ACE_Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, TIMER_MANAGER::instance()->reactor());
 		// threads for timer (application & process event & healthcheck & consul report event)
+		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 
 		// init REST

@@ -19,7 +19,7 @@ class ResourceLimitation;
 ///  3. auto kill
 ///  4. timer kill
 /// </summary>
-class AppProcess : public ACE_Process, public TimerHandler
+class AppProcess : public TimerHandler
 {
 public:
 	AppProcess();
@@ -37,6 +37,19 @@ public:
 	/// </summary>
 	/// <returns></returns>
 	virtual int returnValue(void) const;
+	/// <summary>
+	/// Set process exit code
+	/// </summary>
+	virtual void returnValue(int value);
+
+	/// <summary>
+	/// Process running status
+	/// </summary>
+	/// <returns></returns>
+	virtual bool running() const;
+
+	pid_t wait(const ACE_Time_Value &tv, ACE_exitcode *status = 0);
+	pid_t wait(ACE_exitcode *status = 0);
 
 	/// <summary>
 	/// Process UUID
@@ -54,7 +67,7 @@ public:
 	/// Set Docker container ID
 	/// </summary>
 	/// <param name="containerId"></param>
-	virtual void containerId(const std::string &containerId){};
+	virtual void containerId(const std::string &containerId) {};
 
 	/// <summary>
 	/// get process memory and cpu usage
@@ -123,7 +136,10 @@ public:
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
-							 const int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
+							 const int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE, bool sudoSwitchUser = false);
+
+	// overwrite ACE_Process spawn method
+	virtual pid_t spawn(ACE_Process_Options &options);
 
 	/// <summary>
 	/// get all std out content from stdoutFile with given position
@@ -169,4 +185,16 @@ private:
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	const std::string m_uuid;
 	std::string m_startError;
+	std::atomic<pid_t> m_pid;
+	std::atomic<int> m_returnValue;
 };
+
+class ProcessExitHandler : public ACE_Event_Handler
+{
+public:
+	ProcessExitHandler();
+	virtual int handle_exit(ACE_Process *process);
+	void onTerminate(pid_t pid);
+};
+
+typedef ACE_Singleton<ProcessExitHandler, ACE_Null_Mutex> EXITHANDLER;

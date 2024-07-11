@@ -737,18 +737,17 @@ void ArgumentParser::processAppView()
 			bool exit = false;
 			std::map<std::string, std::string> query;
 			query[HTTP_QUERY_KEY_stdout_index] = std::to_string(index);
+			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1);
 			while (!exit)
 			{
 				query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 				auto response = requestHttp(true, web::http::methods::GET, restPath, nullptr, {}, query);
-				std::cout << response->text;
+				std::cout << response->text << std::flush;
 				if (m_commandLineVariables.count("tail") == 0)
 					break;
 				outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
 				// check continues failure
 				exit = response->header.count(HTTP_HEADER_KEY_exit_code);
-				if (!exit)
-					std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			}
 		}
 	}
@@ -956,7 +955,7 @@ int ArgumentParser::processAppRun()
 		// /app/syncrun?timeout=5
 		std::string restPath = "/appmesh/app/syncrun";
 		auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj, {}, query);
-		std::cout << response->text;
+		std::cout << response->text << std::flush;
 		returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 	}
 	else
@@ -991,7 +990,7 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1); // wait max 1 second in server side
 			response = requestHttp(false, web::http::methods::GET, restPath, nullptr, {}, query);
-			std::cout << response->text;
+			std::cout << response->text << std::flush;
 			outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
 			returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 
@@ -1099,8 +1098,10 @@ int ArgumentParser::processShell()
 	po::options_description desc("Shell execute:", BOOST_DESC_WIDTH);
 	desc.add_options()
 		("help,h", "Prints command usage to stdout and exits")
+		COMMON_OPTIONS
 		("retry,r", "Retry command until success")
-		COMMON_OPTIONS;
+		("lifecycle,l", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "max lifecycle time[seconds] for the shell command run. default is 12 hours, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	shiftCommandLineArgs(desc, true);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
@@ -1147,22 +1148,27 @@ int ArgumentParser::processShell()
 	nlohmann::json behavior;
 	behavior[JSON_KEY_APP_behavior_exit] = std::string(JSON_KEY_APP_behavior_remove);
 	jsonObj[JSON_KEY_APP_behavior] = behavior;
+	std::map<std::string, std::string> query;
+	int timeout = DurationParse::parse(m_commandLineVariables["timeout"].as<std::string>());
+	int lifecycle = DurationParse::parse(m_commandLineVariables["lifecycle"].as<std::string>());
 
 	auto sleepSeconds = [](int sec) -> bool
 	{ACE_OS::sleep(sec);	return true; };
 	SIGINIT_BREAKING = false; // if ctrl + c is triggered, stop run and start read input from stdin
 	this->regSignal();		  // capture SIGINT
 	// clean
+	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	if (unrecognized.size())
 	{
+		// run once
 		do
 		{
-			requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
-			returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
+			returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
 		} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
 	}
 	else
 	{
+		// shell interactive
 		auto response = requestHttp(true, web::http::methods::GET, std::string("/appmesh/user/self"));
 		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user_override].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
@@ -1202,15 +1208,11 @@ int ArgumentParser::processShell()
 				jsonObj[JSON_KEY_APP_command] = cmd;
 				do
 				{
-					requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
-					returnCode = runAsyncApp(jsonObj, MAX_RUN_APP_TIMEOUT_SECONDS, MAX_RUN_APP_TIMEOUT_SECONDS);
+					returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
 				} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
 			}
 		}
 	}
-	// clean
-	Utility::removeFile(m_shellHistoryFile);
-	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	return returnCode;
 }
 

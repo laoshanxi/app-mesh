@@ -217,10 +217,10 @@ public:
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
-#define DEFAULT_TOKEN_EXPIRE_SECONDS 7 * (60 * 60 * 24) // default 7 days // TODO: limit max token expire time
-#define DEFAULT_RUN_APP_TIMEOUT_SECONDS 60				// run app default timeout
-#define DEFAULT_RUN_APP_LIFECYCLE_SECONDS 60 * 60 * 12	// run app max lifecycle seconds
-#define MAX_RUN_APP_TIMEOUT_SECONDS 1 * (60 * 60 * 24)	// run app max timeout 1 day
+#define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24))		// default 7 days // TODO: limit max token expire time
+#define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)		// run app default timeout 2 days
+#define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
+#define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)			// run app max timeout 3 days
 #define SECURIRE_USER_KEY "******"
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M

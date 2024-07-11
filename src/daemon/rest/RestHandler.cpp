@@ -569,8 +569,6 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 
 void RestHandler::apiUserView(const HttpRequest &message)
 {
-	const static char fname[] = "RestHandler::apiUserView() ";
-
 	const auto tokenUserName = getJwtUserName(message);
 	auto user = Security::instance()->getUserInfo(tokenUserName);
 	auto userJson = user->AsJson();
@@ -1022,7 +1020,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 		LOG_INF << fname << "Run application <" << app->getName() << "> from " << fromApp->getName();
 	else
 		LOG_INF << fname << "Run application <" << app->getName() << ">";
-	int lifecycle = getHttpQueryValue(message, HTTP_QUERY_KEY_lifecycle, DEFAULT_RUN_APP_LIFECYCLE_SECONDS, 3, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int lifecycle = getHttpQueryValue(message, HTTP_QUERY_KEY_lifecycle, DEFAULT_RUN_APP_LIFECYCLE_SECONDS, timeout, MAX_RUN_APP_TIMEOUT_SECONDS);
 	app->regSuicideTimer(lifecycle);
 	app->dump();
 	return app;
@@ -1032,7 +1031,7 @@ void RestHandler::apiRunAsync(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_async);
 
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 1, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
 	auto processUuid = appObj->runAsyncrize(timeout);
@@ -1046,11 +1045,11 @@ void RestHandler::apiRunSync(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_run_app_sync);
 
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 3, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	auto appObj = parseAndRegRunApp(message);
 
 	// Use async reply here
-	HttpRequest *asyncRequest = new HttpRequestWithAppRef(message, appObj);
+	HttpRequestWithAppRef *asyncRequest = new HttpRequestWithAppRef(message, appObj);
 	appObj->runSyncrize(timeout, asyncRequest);
 }
 

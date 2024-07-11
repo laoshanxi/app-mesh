@@ -1,38 +1,32 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 
 #include "AppProcess.h"
 
 class ACE_Process_Options;
+class HttpRequestWithAppRef;
 /// <summary>
 /// Monitor process and reply http request when finished
 /// <summary>
-class MonitoredProcess : public AppProcess
+class MonitoredProcess : public AppProcess, public ACE_Process
 {
 public:
 	explicit MonitoredProcess();
 	virtual ~MonitoredProcess();
 
-	// overwrite ACE_Process spawn method
-	virtual pid_t spawn(ACE_Process_Options &options) override;
-	void setAsyncHttpRequest(void *httpRequest) { m_httpRequest = httpRequest; }
+	/// <summary>
+	/// Set process exit code
+	/// </summary>
+	virtual void returnValue(int value) override;
+
+	void setAsyncHttpRequest(void *httpRequest);
 	void replyAsyncRequest();
 
-	/// <summary>
-	/// kill the process group
-	/// </summary>
-	virtual void killgroup() override;
-
-protected:
-	virtual void waitThread();
-	void runPipeReaderThread();
-
 private:
-	void *m_httpRequest;
-	mutable std::recursive_mutex m_httpRequestMutex;
-	std::unique_ptr<std::thread> m_thread;
+	std::unique_ptr<HttpRequestWithAppRef> m_httpRequest;
+	std::atomic_flag m_httpRequestReplyFlag;
 };

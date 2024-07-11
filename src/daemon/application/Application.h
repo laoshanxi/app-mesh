@@ -98,7 +98,6 @@ protected:
 protected:
 	mutable std::recursive_mutex m_appMutex;
 	std::shared_ptr<AppTimer> m_timer;
-	static ACE_Time_Value m_waitTimeout;
 	bool m_persistAble;
 
 	std::atomic<STATUS> m_status;
