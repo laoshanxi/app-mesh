@@ -7,6 +7,8 @@
 #include <string>
 #include <tuple>
 
+#include <boost/smart_ptr/shared_ptr.hpp>
+#include <boost/thread/synchronized_value.hpp>
 #include <nlohmann/json.hpp>
 
 #include "../../common/TimerHandler.h"
@@ -25,6 +27,7 @@ namespace prometheus
 {
 	class Counter;
 };
+
 //////////////////////////////////////////////////////////////////////////
 /// An Application is used to define and manage a process job.
 //////////////////////////////////////////////////////////////////////////
@@ -65,10 +68,12 @@ public:
 	void destroy();
 
 	// behavior
-	std::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
+	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
-	void onSuicide();
-	void onExit(int code);
+	void handleRemove();
+	void handleError();
+	void onExitUpdate(int code);
+	void terminate(std::shared_ptr<AppProcess> &process);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
@@ -87,7 +92,7 @@ protected:
 	// process
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
 	void spawn();
-	std::shared_ptr<int> refresh(void *ptree = nullptr);
+	void refresh(void *ptree = nullptr);
 	void healthCheck();
 
 	std::string runApp(int timeoutSeconds) noexcept(false);
@@ -100,7 +105,6 @@ protected:
 	std::shared_ptr<AppTimer> m_timer;
 	bool m_persistAble;
 
-	std::atomic<STATUS> m_status;
 	std::string m_name;
 	std::string m_commandLine;
 	std::string m_description;
@@ -116,7 +120,7 @@ protected:
 	int m_stdoutCacheSize;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
-	std::shared_ptr<int> m_return; // the exit code of last instance
+
 	std::chrono::system_clock::time_point m_startTime;
 	std::chrono::system_clock::time_point m_endTime;
 
@@ -127,24 +131,31 @@ protected:
 	int m_bufferTime;
 	bool m_startIntervalValueIsCronExpr;
 	std::shared_ptr<AppProcess> m_bufferProcess;
-	std::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	std::atomic<long> m_nextStartTimerId;
 
 	std::chrono::system_clock::time_point m_regTime;
-	bool m_health;
 	std::string m_healthCheckCmd;
 	const std::string m_appId;
 	unsigned int m_version;
-	std::shared_ptr<AppProcess> m_process;
-	pid_t m_pid;
+
 	std::atomic<long> m_suicideTimerId;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;
 	std::map<std::string, std::string> m_secEnvMap;
 	std::string m_dockerImage;
-	std::chrono::system_clock::time_point m_procStartTime;
-	std::chrono::system_clock::time_point m_procExitTime;
+
+	// runtime dynamic variables (which will also be read by API)
+	std::shared_ptr<AppProcess> m_process;
+	std::atomic<pid_t> m_pid;
+	std::atomic<int> m_return; // the exit code of last instance
+	std::atomic_bool m_health;
+	std::atomic<STATUS> m_status;
+	boost::shared_ptr<std::chrono::system_clock::time_point> m_procStartTime;
+	boost::shared_ptr<std::chrono::system_clock::time_point> m_procExitTime;
+	boost::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
+	// error
+	boost::synchronized_value<std::string> m_lastError;
 
 	// Prometheus
 	std::shared_ptr<CounterMetric> m_metricStartCount;
@@ -153,8 +164,4 @@ protected:
 	std::shared_ptr<GaugeMetric> m_metricAppPid;
 	std::shared_ptr<GaugeMetric> m_metricFileDesc;
 	std::shared_ptr<prometheus::Counter> m_starts;
-
-	// error
-	mutable std::recursive_mutex m_errorMutex;
-	std::string m_lastError;
 };

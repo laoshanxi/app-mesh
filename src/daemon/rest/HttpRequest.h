@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 #include "protoc/ProtobufHelper.h"
 
@@ -125,4 +126,22 @@ public:
 
 private:
 	std::shared_ptr<Application> m_app;
+};
+
+/// <summary>
+/// HttpRequest used to reply app output
+/// </summary>
+class HttpRequestOutputView : public TimerHandler, public HttpRequest
+{
+public:
+	HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
+	virtual ~HttpRequestOutputView();
+	void init();
+	void response();
+
+private:
+	long m_delayReplyTimerId;
+	pid_t m_pid;
+	std::shared_ptr<Application> m_app;
+	std::atomic_flag m_httpRequestReplyFlag;
 };

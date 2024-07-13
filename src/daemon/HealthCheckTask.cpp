@@ -24,13 +24,13 @@ void HealthCheckTask::doHealthCheck()
 		{
 			if (app->available())
 			{
-				auto proc = std::make_shared<AppProcess>();
+				auto proc = std::make_shared<AppProcess>(nullptr);
 				proc->spawnProcess(app->healthCheckCmd(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0);
 				proc->delayKill(DEFAULT_HEALTH_CHECK_INTERVAL, fname);
 				ACE_exitcode exitCode;
 				proc->wait(&exitCode);
 				app->health(0 == exitCode);
-				// proc->killgroup();
+				// proc->terminate();
 				LOG_DBG << fname << app->getName() << " health check :" << app->healthCheckCmd() << ", return " << exitCode << ", last error: " << proc->startError();
 			}
 			else

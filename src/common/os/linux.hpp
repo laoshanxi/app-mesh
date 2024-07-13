@@ -162,7 +162,7 @@ namespace os
 			static const long ticks_per_second = sysconf(_SC_CLK_TCK);
 			// Read system uptime from /proc/uptime
 			static double uptime_seconds = 0;
-			std::atomic_flag flag = ATOMIC_FLAG_INIT;
+			static std::atomic_flag flag = ATOMIC_FLAG_INIT;
 			if (!flag.test_and_set(std::memory_order_acquire))
 			{
 				std::ifstream uptime_file("/proc/uptime");

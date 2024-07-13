@@ -21,7 +21,8 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		shellFile << "#!/bin/sh" << std::endl;
 		shellFile << "# App Mesh app: <" << name << ">" << std::endl;
 		shellFile << "set -e" << std::endl;
-		shellFile << "cd " << workingDir << std::endl;
+		if (workingDir.length())
+			shellFile << "cd " << workingDir << std::endl;
 		shellFile << cmd << std::endl;
 		shellFile.close();
 		// only read permission

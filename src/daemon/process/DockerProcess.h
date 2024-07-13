@@ -17,13 +17,13 @@ public:
 	/// </summary>
 	/// <param name="dockerImage"></param>
 	/// <param name="containerName"></param>
-	DockerProcess(const std::string &dockerImage, const std::string &containerName);
+	DockerProcess(const std::string &containerName, const std::string &dockerImage);
 	virtual ~DockerProcess();
 
 	/// <summary>
 	/// override with docker cli behavior
 	/// </summary>
-	virtual void killgroup() override;
+	virtual void terminate() override;
 
 	/// <summary>
 	/// override with docker cli behavior
@@ -100,9 +100,10 @@ private:
 	virtual int syncSpawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile) noexcept(false);
 
 protected:
-	std::string m_dockerImage;
+	const std::string m_containerName;
+	const std::string m_dockerImage;
 	std::string m_containerId;
-	std::string m_containerName;
+
 	std::shared_ptr<AppProcess> m_imagePullProc;
 	mutable std::recursive_mutex m_processMutex;
 };

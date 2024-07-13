@@ -57,7 +57,7 @@
 	}                                             \
 	m_currentUrl = m_commandLineVariables["url"].as<std::string>();
 // Each user should have its own token path
-const static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
+static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
 const static std::string m_shellHistoryFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.shell.history";
 static std::string m_jwtToken;
 extern char **environ;
@@ -81,6 +81,12 @@ void ArgumentParser::initArgs()
 {
 	WORK_PARSE = this;
 	m_defaultUrl = this->getAppMeshUrl();
+	static std::atomic_flag flag = ATOMIC_FLAG_INIT;
+	if (!flag.test_and_set(std::memory_order_acquire) && getuid() == 0 && getenv("SUDO_USER") && getpwnam(getenv("SUDO_USER")))
+	{
+		m_tokenFile = std::string(getpwnam(getenv("SUDO_USER"))->pw_dir) + "/.appmesh.config";
+		seteuid(getpwnam(getenv("SUDO_USER"))->pw_uid);
+	}
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
 	global.add_options()
 	("command", po::value<std::string>(), "command to execute")

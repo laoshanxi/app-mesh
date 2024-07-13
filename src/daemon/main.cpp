@@ -106,9 +106,8 @@ int main(int argc, char *argv[])
 		TIMER_MANAGER::instance()->reactor()->register_handler(SIGINT, QUIT_HANDLER::instance());
 		TIMER_MANAGER::instance()->reactor()->register_handler(SIGTERM, QUIT_HANDLER::instance());
 		// process manager share timer threads and reactor, do open before start threads
-		ACE_Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, TIMER_MANAGER::instance()->reactor());
+		Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, TIMER_MANAGER::instance()->reactor());
 		// threads for timer (application & process event & healthcheck & consul report event)
-		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 
 		// init REST
@@ -179,6 +178,7 @@ int main(int argc, char *argv[])
 			client.connect(acceptorAddr);
 
 		// monitor applications
+		int tcpErrorCounter = 0;
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
 			// wait and test connect
@@ -186,10 +186,24 @@ int main(int argc, char *argv[])
 			{
 				// check tcp and wait
 				if (!client.testConnection(Configuration::instance()->getScheduleInterval()))
-					ACE_OS::_exit(-1);
+				{
+					tcpErrorCounter++;
+					if (tcpErrorCounter > 30)
+					{
+						ACE_OS::_exit(-1);
+					}
+					std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
+					client.connect(acceptorAddr);
+				}
+				else
+				{
+					tcpErrorCounter = 0;
+				}
 			}
 			else
+			{
 				std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
+			}
 
 			// monitor application
 			std::list<os::Process> ptree;
@@ -200,8 +214,7 @@ int main(int argc, char *argv[])
 			{
 				try
 				{
-					if (app->isEnabled()) // only check valid app
-						app->execute((void *)(&ptree));
+					app->execute((void *)(&ptree));
 				}
 				catch (...)
 				{

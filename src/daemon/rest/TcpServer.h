@@ -3,11 +3,11 @@
 #include <mutex>
 
 #include <ace/Map_Manager.h>
-#include <ace/Message_Queue.h>
 #include <ace/Recursive_Thread_Mutex.h>
 #include <ace/SSL/SSL_SOCK_Stream.h>
 #include <ace/Svc_Handler.h>
 
+#include "../../common/MessageQueue.h"
 #include "protoc/ProtobufHelper.h"
 
 // = TITLE
@@ -60,6 +60,6 @@ private:
 	const int m_id;
 
 	static ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> m_handlers;
-	static ACE_Message_Queue<ACE_MT_SYNCH> m_messageQueue;
+	static MessageQueue m_messageQueue;
 	static std::atomic_int m_idGenerator;
 };

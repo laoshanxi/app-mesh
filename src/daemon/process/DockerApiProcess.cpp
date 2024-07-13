@@ -11,8 +11,8 @@
 #include "DockerApiProcess.h"
 #include "LinuxCgroup.h"
 
-DockerApiProcess::DockerApiProcess(const std::string &dockerImage, const std::string &appName)
-	: DockerProcess(dockerImage, appName)
+DockerApiProcess::DockerApiProcess(const std::string &appName, const std::string &dockerImage)
+	: DockerProcess(appName, dockerImage)
 {
 	const static char fname[] = "DockerApiProcess::DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -23,12 +23,12 @@ DockerApiProcess::~DockerApiProcess()
 	const static char fname[] = "DockerApiProcess::~DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	DockerApiProcess::killgroup();
+	DockerApiProcess::terminate();
 }
 
-void DockerApiProcess::killgroup()
+void DockerApiProcess::terminate()
 {
-	const static char fname[] = "DockerApiProcess::killgroup() ";
+	const static char fname[] = "DockerApiProcess::terminate() ";
 
 	// get and clean container id
 	std::string containerId = this->containerId();
@@ -83,7 +83,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		for (const auto &container : result.as_array())
 		{
 			this->containerId(container.at("Id").get<std::string>());
-			killgroup();
+			terminate();
 		}
 	}
 	else
@@ -118,7 +118,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		{
 			array.push_back(std::string(argv[i]));
 		}
-		createBody["Cmd"] = array;
+		createBody["Cmd"] = std::move(array);
 	}
 
 	if (limit != nullptr)
@@ -155,28 +155,28 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 			}
 			else
 			{
-				auto errorMsg = resp->text;
+				const auto &errorMsg = resp->text;
 				this->startError(errorMsg);
 				LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 			}
 		}
 		else
 		{
-			auto errorMsg = resp->text;
+			const auto &errorMsg = resp->text;
 			this->startError(errorMsg);
 			LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 		}
 	}
 	else
 	{
-		auto errorMsg = resp->text;
+		const auto &errorMsg = resp->text;
 		this->startError(errorMsg);
 		LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 	}
 
 	// failed
 	this->detach();
-	killgroup();
+	terminate();
 	return this->getpid();
 }
 

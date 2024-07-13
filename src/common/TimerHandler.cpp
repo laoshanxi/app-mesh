@@ -89,7 +89,7 @@ long TimerManager::registerTimer(long int delayMillisecond, std::size_t interval
 	}
 	TimerEvent *timer = new TimerEvent(callOnce, timerObj, handler);
 	long timerId = m_reactor.schedule_timer(timer, (void *)timer, delay, interval);
-	LOG_DBG << fname << from << " " << timer << " register timer <" << timerId << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
+	LOG_DBG << fname << from << " object <" << timerObj.get() << "> register timer <" << timerId << "> event <" << timer << "> delay seconds <" << (delayMillisecond / 1000) << "> interval seconds <" << intervalSeconds << ">.";
 	if (timerId < 0)
 	{
 		timer->handle_close(ACE_INVALID_HANDLE, (ACE_Reactor_Mask)0); // self-destruct

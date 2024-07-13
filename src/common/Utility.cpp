@@ -1054,11 +1054,7 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 		for (const auto &pair : node)
 		{
 			const std::string key = pair.first.as<std::string>();
-			if (pair.second.IsScalar() && (key == JSON_KEY_PosixTimezone || key == JSON_KEY_USER_key))
-			{
-				result[key] = pair.second.Scalar();
-			}
-			else if (pair.second.IsScalar())
+			if (pair.second.IsScalar())
 			{
 				result[key] = parseScalar(pair.second);
 			}

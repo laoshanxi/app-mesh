@@ -12,8 +12,6 @@
 TcpClient::TcpClient(void) : m_sslStream(nullptr)
 {
 	m_buffer = make_shared_array<char>(PROTOBUF_HEADER_LENGTH);
-	// make sure init ACE_SSL_Context before set to ACE_SSL_SOCK_Stream
-	m_sslStream = std::make_shared<ACE_SSL_SOCK_Stream>(initTcpSSL(&m_sslContext));
 }
 
 TcpClient::~TcpClient()
@@ -23,7 +21,8 @@ TcpClient::~TcpClient()
 bool TcpClient::connect(const ACE_INET_Addr &addr)
 {
 	const static char fname[] = "TcpClient::connect() ";
-
+	// make sure init ACE_SSL_Context before set to ACE_SSL_SOCK_Stream
+	m_sslStream = std::make_shared<ACE_SSL_SOCK_Stream>(initTcpSSL(&m_sslContext));
 	if (m_connector.connect(*m_sslStream, addr) == 0)
 	{
 		LOG_INF << fname << "Connect test stream to TCP server success";
@@ -40,8 +39,15 @@ bool TcpClient::testConnection(int timeoutSeconds)
 {
 	const static char fname[] = "TcpClient::testConnection() ";
 
+	if (m_sslStream == nullptr)
+	{
+		LOG_ERR << fname << "not connected";
+		return false;
+	}
+
 	m_timeout.sec(timeoutSeconds);
-	auto recvReturn = m_sslStream->recv(m_buffer.get(), PROTOBUF_HEADER_LENGTH, &m_timeout);
+	errno = 0;
+	auto recvReturn = m_sslStream->recv_n(m_buffer.get(), PROTOBUF_HEADER_LENGTH, &m_timeout);
 	if (recvReturn == -1 && errno == ETIME)
 	{
 		// LOG_DBG << fname << "Read from TCP server: " << std::strerror(errno);

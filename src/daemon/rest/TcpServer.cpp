@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <thread>
 
@@ -14,7 +15,7 @@
 #include "protoc/ProtobufHelper.h"
 
 ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> TcpHandler::m_handlers;
-ACE_Message_Queue<ACE_MT_SYNCH> TcpHandler::m_messageQueue;
+MessageQueue TcpHandler::m_messageQueue;
 std::atomic_int TcpHandler::m_idGenerator = ATOMIC_FLAG_INIT;
 
 struct HttpRequestMsg

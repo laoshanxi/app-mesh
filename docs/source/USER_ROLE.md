@@ -137,7 +137,7 @@ User and Role design for App Mesh
 - Invalid authentication will stop command line
 
 ```shell
-$ appc view
+$ appc ls
 login failed : Incorrect user password
 invalid token supplied
 ```
@@ -150,7 +150,7 @@ User: admin
 Password: *********
 User <admin> logon to localhost success.
 
-$ appc view
+$ appc ls
 id name        user  status   return pid    memory  start_time          command
 1  sleep       root  enabled  0      32646  812 K   2019-10-10 19:25:38 /bin/sleep 60
 ```
@@ -161,7 +161,7 @@ id name        user  status   return pid    memory  start_time          command
 $ appc logoff
 User <admin> logoff from localhost success.
 
-$ appc view
+$ appc ls
 login failed : Incorrect user password
 invalid token supplied
 ```

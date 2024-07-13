@@ -15,13 +15,13 @@ class HttpRequestWithAppRef;
 class MonitoredProcess : public AppProcess, public ACE_Process
 {
 public:
-	explicit MonitoredProcess();
+	explicit MonitoredProcess(void *owner);
 	virtual ~MonitoredProcess();
 
 	/// <summary>
 	/// Set process exit code
 	/// </summary>
-	virtual void returnValue(int value) override;
+	virtual void onExit(int exitCode) override;
 
 	void setAsyncHttpRequest(void *httpRequest);
 	void replyAsyncRequest();

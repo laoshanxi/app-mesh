@@ -19,13 +19,13 @@ public:
 	/// </summary>
 	/// <param name="dockerImage"></param>
 	/// <param name="containerName"></param>
-	DockerApiProcess(const std::string &dockerImage, const std::string &containerName);
+	DockerApiProcess(const std::string &appName, const std::string &dockerImage);
 	virtual ~DockerApiProcess();
 
 	/// <summary>
 	/// override with docker REST behavior
 	/// </summary>
-	virtual void killgroup() override;
+	virtual void terminate() override;
 
 	/// <summary>
 	/// override with docker REST request

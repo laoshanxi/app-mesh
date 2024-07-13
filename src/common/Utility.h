@@ -59,6 +59,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	return std::shared_ptr<T>(new T[size], std::default_delete<T[]>());
 }
 
+#define PROCESS_MAP_TYPE ACE_Map_Manager<pid_t, AppProcess *, ACE_Recursive_Thread_Mutex>
+#define APP_OUT_MULTI_MAP_TYPE ACE_Hash_Multi_Map_Manager<pid_t, std::shared_ptr<HttpRequestOutputView>, ACE_Hash<pid_t>, ACE_Equal_To<pid_t>, ACE_Recursive_Thread_Mutex>
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object
@@ -74,6 +76,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	if (HAS_JSON_FIELD(jsonObj, key))            \
 		value = GET_JSON_BOOL_VALUE(jsonObj, key);
 #define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
+#define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? (jsonObj.at(key).is_string() ? jsonObj.at(key).get<std::string>() : std::to_string(jsonObj.at(key).get<int64_t>())) : std::string(""))
 
 #define CLOSE_ACE_HANDLER(handler)         \
 	do                                     \

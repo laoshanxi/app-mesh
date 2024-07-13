@@ -9,7 +9,7 @@ Commands:
   logoff      Clear current login user information
   loginfo     Print current logon user
 
-  view        View application[s]
+  ls          View application[s]
   add         Add a new application
   rm          Remove an application
   enable      Enable a application
@@ -49,7 +49,7 @@ Usage:  appc [COMMAND] [ARG...] [flags]
 - List application[s]
 
 ```text
-$ appc view
+$ appc ls
 ID NAME        OWNER STATUS   HEALTH PID     MEMORY   %CPU RETURN LAST_START_TIME         COMMAND
 1  qqmail      admin enabled  0      -       -        -    0      2021-03-26 10:54:26+08  sh /opt/qqmail/launch.sh
 2  ssd         admin enabled  1      -       -        -    -      -                       /usr/sbin/fstrim -a -v
@@ -70,7 +70,7 @@ $ appc add -n ping -c 'ping github.com'
  "status": 1
 }
 
-$ appc view -n ping
+$ appc ls -n ping
 {
   "command": "ping github.com",
   "cpu": 0,
@@ -88,7 +88,7 @@ $ appc view -n ping
 }
 
 
-$ appc view -n ping -o
+$ appc ls -n ping -o
 PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=1 ttl=54 time=35.5 ms
 64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=2 ttl=54 time=35.5 ms
@@ -171,7 +171,7 @@ $ appc add -n mydocker -c 'sleep 30' -d ubuntu
         "status" : 1
 }
 
-$ appc view
+$ appc ls
 id name        user  status   return pid    memory  start_time          command_line
 1  sleep       root  enabled  0      4206   356 K   2019-09-20 09:36:08 /bin/sleep 60
 2  mydocker    root  enabled  0      4346   388 K   2019-09-20 09:36:33 sleep 30
@@ -328,7 +328,7 @@ $ appc resource
 - View application resource (application process tree memory usage)
 
 ```text
-$ appc view -n ping
+$ appc ls -n ping
 {
         "command" : "/bin/sleep 60",
         "last_start_time" : 1568893521,
@@ -359,11 +359,11 @@ PING www.a.shifen.com (220.181.112.244) 56(84) bytes of data.
 - Run a shell command and get stdout
 
 ```text
-$ appc run -c 'su -l -c "appc view"'
+$ appc run -c 'su -l -c "appc ls"'
 id name        user  status   health pid    memory  return last_start_time     command
 1  appweb      root  enabled  0      3195   3 Mi    -      -
 2  myapp       root  enabled  0      20163  356 Ki  0      2020-03-26 19:46:30 sleep 30
-3  78d92c24-6* root  N/A      0      20181  3.4 Mi  -      2020-03-26 19:46:46 su -l -c "appc view"
+3  78d92c24-6* root  N/A      0      20181  3.4 Mi  -      2020-03-26 19:46:46 su -l -c "appc ls"
 ```
 
 ---

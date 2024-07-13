@@ -17,10 +17,11 @@ public:
 	explicit RestHandler();
 	virtual ~RestHandler();
 
+	static long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max);
+	static std::string getHttpQueryString(const HttpRequest &message, const std::string &key);
+
 protected:
 	void checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite);
-	long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max) const;
-	std::string getHttpQueryString(const HttpRequest &message, const std::string &key) const;
 	std::string regexSearch(const std::string &value, const char *regex);
 	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
 

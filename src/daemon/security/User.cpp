@@ -171,7 +171,7 @@ std::shared_ptr<User> User::FromJson(const std::string &userName, const nlohmann
 	if (!obj.is_null())
 	{
 		result = std::make_shared<User>(userName);
-		result->m_key = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_key);
+		result->m_key = GET_JSON_STR_INT_TEXT(obj, JSON_KEY_USER_key);
 		result->m_email = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_email);
 		result->m_group = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_group);
 		result->m_execUser = GET_JSON_STR_VALUE(obj, JSON_KEY_USER_exec_user);

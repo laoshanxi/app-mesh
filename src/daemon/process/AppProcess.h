@@ -5,12 +5,58 @@
 #include <tuple>
 
 #include <ace/Process.h>
+#include <ace/Process_Manager.h>
 
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 
 class LinuxCgroup;
 class ResourceLimitation;
+
+/// <summary>
+/// Construct a ACE_Process with a given pid
+/// </summary>
+class AttachProcess : public ACE_Process
+{
+public:
+	explicit AttachProcess(pid_t pid);
+	virtual ~AttachProcess();
+};
+
+/// <summary>
+/// ACE_Process_Manager with Thread_Mutex
+/// </summary>
+class Process_Manager : public ACE_Process_Manager
+{
+public:
+	virtual ~Process_Manager();
+	static Process_Manager *instance();
+	ACE_Recursive_Thread_Mutex &mutex();
+
+private:
+	ACE_Recursive_Thread_Mutex m_mutex;
+};
+
+/// <summary>
+/// Used to register to ACE_Process_Manager
+/// handle_exit() will be triggered when process exit
+/// </summary>
+class ProcessExitHandler : public ACE_Event_Handler, public TimerHandler
+{
+public:
+	ProcessExitHandler();
+	virtual ~ProcessExitHandler();
+	virtual int handle_exit(ACE_Process *process) override;
+	void terminate(pid_t pid);
+
+private:
+	void handleClean();
+
+private:
+	std::atomic<pid_t> m_exitPid;
+	std::atomic<int> m_exitCode;
+};
+
 /// <summary>
 /// Process Object, inherit from ACE_Process
 /// Support:
@@ -19,10 +65,10 @@ class ResourceLimitation;
 ///  3. auto kill
 ///  4. timer kill
 /// </summary>
-class AppProcess : public TimerHandler
+class AppProcess : public ProcessExitHandler
 {
 public:
-	AppProcess();
+	AppProcess(void *owner);
 	virtual ~AppProcess();
 
 	/// <summary>
@@ -40,13 +86,15 @@ public:
 	/// <summary>
 	/// Set process exit code
 	/// </summary>
-	virtual void returnValue(int value);
+	virtual void onExit(int exitCode);
+	virtual void handleAppExit();
 
 	/// <summary>
 	/// Process running status
 	/// </summary>
 	/// <returns></returns>
 	virtual bool running() const;
+	static bool running(pid_t pid);
 
 	pid_t wait(const ACE_Time_Value &tv, ACE_exitcode *status = 0);
 	pid_t wait(ACE_exitcode *status = 0);
@@ -97,7 +145,7 @@ public:
 	/// <summary>
 	/// kill the process group
 	/// </summary>
-	virtual void killgroup();
+	virtual void terminate();
 
 	/// <summary>
 	/// set resource limitation
@@ -119,7 +167,7 @@ public:
 	/// <summary>
 	/// check stdout file size
 	/// </summary>
-	void checkStdout();
+	void handleCheckStdout();
 
 	/// <summary>
 	/// Start process
@@ -159,18 +207,13 @@ public:
 	const std::string startError() const;
 
 protected:
-	/// <summary>
-	/// Parse command line, get cmdRoot and parameters
-	/// </summary>
-	/// <param name="cmd"></param>
-	/// <returns>tuple: 1 cmdRoot, 2 parameters</returns>
-	std::tuple<std::string, std::string> extractCommand(const std::string &cmd);
+	const void *m_owner;
 
 private:
 	long m_delayKillTimerId;
 	long m_stdOutSizeTimerId;
 	off_t m_stdOutMaxSize;
-	mutable std::recursive_mutex m_processMutex; // checkStdout, delayKill, killgroup
+	mutable std::recursive_mutex m_processMutex; // handleCheckStdout, delayKill, terminate
 
 	ACE_HANDLE m_stdinHandler;
 	ACE_HANDLE m_stdoutHandler;
@@ -188,13 +231,3 @@ private:
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_returnValue;
 };
-
-class ProcessExitHandler : public ACE_Event_Handler
-{
-public:
-	ProcessExitHandler();
-	virtual int handle_exit(ACE_Process *process);
-	void onTerminate(pid_t pid);
-};
-
-typedef ACE_Singleton<ProcessExitHandler, ACE_Null_Mutex> EXITHANDLER;
