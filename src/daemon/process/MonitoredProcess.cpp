@@ -1,6 +1,3 @@
-#include <fstream>
-#include <thread>
-
 #include <ace/Process.h>
 
 #include "../../common/Utility.h"
@@ -8,7 +5,8 @@
 #include "../rest/TcpServer.h"
 #include "MonitoredProcess.h"
 
-MonitoredProcess::MonitoredProcess() : m_httpRequestReplyFlag(ATOMIC_FLAG_INIT)
+MonitoredProcess::MonitoredProcess(const std::string &appName)
+	: AppProcess(appName), m_httpRequestReplyFlag(ATOMIC_FLAG_INIT)
 {
 }
 
@@ -18,9 +16,9 @@ MonitoredProcess::~MonitoredProcess()
 	LOG_DBG << fname << "Process <" << AppProcess::getpid() << "> released";
 }
 
-void MonitoredProcess::returnValue(int value)
+void MonitoredProcess::onExit(int exitCode)
 {
-	AppProcess::returnValue(value);
+	AppProcess::onExit(exitCode);
 	replyAsyncRequest();
 }
 

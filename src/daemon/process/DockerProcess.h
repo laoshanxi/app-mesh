@@ -17,7 +17,7 @@ public:
 	/// </summary>
 	/// <param name="dockerImage"></param>
 	/// <param name="containerName"></param>
-	DockerProcess(const std::string &dockerImage, const std::string &containerName);
+	DockerProcess(const std::string &appName, const std::string &dockerImage);
 	virtual ~DockerProcess();
 
 	/// <summary>
@@ -102,7 +102,7 @@ private:
 protected:
 	std::string m_dockerImage;
 	std::string m_containerId;
-	std::string m_containerName;
+	const std::string m_containerName;
 	std::shared_ptr<AppProcess> m_imagePullProc;
 	mutable std::recursive_mutex m_processMutex;
 };

@@ -2,6 +2,8 @@
 #include <thread>
 
 #include <ace/File_Lock.h>
+#include <ace/Hash_Multi_Map_Manager_T.h>
+#include <ace/Map_Manager.h>
 #include <ace/OS.h>
 #include <ace/Process_Manager.h>
 #include <boost/filesystem.hpp>
@@ -11,16 +13,18 @@
 #include "../../common/os/pstree.hpp"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
+#include "../application/Application.h"
+#include "../rest/HttpRequest.h"
 #include "AppProcess.h"
 #include "LinuxCgroup.h"
-#include <ace/Map_Manager.h>
 
+extern APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
+PROCESS_MAP_TYPE PROCESS_MAP(ACE_Process_Manager::DEFAULT_SIZE);
 constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
-ACE_Map_Manager<pid_t, AppProcess *, ACE_Recursive_Thread_Mutex> m_processMap(ACE_Process_Manager::DEFAULT_SIZE);
 
-AppProcess::AppProcess()
-	: m_delayKillTimerId(INVALID_TIMER_ID), m_stdOutSizeTimerId(INVALID_TIMER_ID), m_stdOutMaxSize(0),
-	  m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
+AppProcess::AppProcess(const std::string &appName)
+	: m_appName(appName), m_delayKillTimerId(INVALID_TIMER_ID), m_stdOutSizeTimerId(INVALID_TIMER_ID),
+	  m_stdOutMaxSize(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID()),
 	  m_pid(ACE_INVALID_PID), m_returnValue(-1)
 {
@@ -49,7 +53,7 @@ AppProcess::~AppProcess()
 		Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 	}
 
-	m_processMap.unbind(m_pid.load());
+	PROCESS_MAP.unbind(m_pid.load());
 }
 
 void AppProcess::attach(int pid, const std::string &stdoutFile)
@@ -78,29 +82,48 @@ int AppProcess::returnValue(void) const
 	return m_returnValue.load();
 }
 
-void AppProcess::returnValue(int value)
+void AppProcess::onExit(int exitCode)
 {
-	m_returnValue.store(value);
+	m_returnValue.store(exitCode);
+
+	// Note: here hold PROCESS_MAP.mutex(), avoid get App
+	auto app = Configuration::instance()->getApp(m_appName, false);
+	if (app)
+	{
+		// update app exit information
+		app->handleExit(exitCode);
+	}
 }
 
 bool AppProcess::running() const
 {
-	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_processMap.mutex());
-	return (m_processMap.find(m_pid.load()) == 0);
+	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(PROCESS_MAP.mutex());
+	return (PROCESS_MAP.find(m_pid.load()) == 0);
+}
+
+bool AppProcess::running(pid_t pid)
+{
+	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(PROCESS_MAP.mutex());
+	return (PROCESS_MAP.find(pid) == 0);
 }
 
 pid_t AppProcess::wait(const ACE_Time_Value &tv, ACE_exitcode *status)
 {
 	// Not use timed wait for ACE_Process_Manager, that will impact ProcessExitHandler::handle_exit
-	ACE_Time_Value shortInterval;
-	shortInterval.msec(10);
-	const auto endTime = (ACE_OS::gettimeofday() + tv);
-	while (this->running() && ACE_OS::gettimeofday() < endTime)
+	const static ACE_Time_Value shortInterval(0, 10000); // 10 milliseconds
+
+	if (tv != ACE_Time_Value::zero)
 	{
-		auto pid = ACE_Process_Manager::instance()->wait(m_pid.load(), ACE_Time_Value::zero, status);
-		if (pid > 0)
-			return pid;
-		ACE_OS::sleep(shortInterval);
+		const auto endTime = (ACE_OS::gettimeofday() + tv);
+		while (this->running() && ACE_OS::gettimeofday() < endTime)
+		{
+			auto pid = ACE_Process_Manager::instance()->wait(m_pid.load(), ACE_Time_Value::zero, status);
+			if (pid > 0)
+			{
+				return pid;
+			}
+			ACE_OS::sleep(shortInterval);
+		}
 	}
 	return ACE_Process_Manager::instance()->wait(m_pid.load(), ACE_Time_Value::zero, status);
 }
@@ -114,11 +137,11 @@ void AppProcess::killgroup()
 {
 	const static char fname[] = "AppProcess::killgroup() ";
 
-	LOG_INF << fname << "kill process <" << getpid() << ">.";
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 		if (this->running() && this->getpid() > 1)
 		{
+			LOG_INF << fname << "kill process <" << getpid() << ">.";
 			ACE_OS::kill(-(this->getpid()), 9);
 			EXITHANDLER::instance()->onTerminate(this->getpid());
 			LOG_DBG << fname << "process <" << getpid() << "> killed";
@@ -396,7 +419,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 	m_pid.store(pid);
 	if (pid != ACE_INVALID_PID)
 	{
-		m_processMap.bind(pid, this);
+		PROCESS_MAP.bind(pid, this);
 		ACE_Process_Manager::instance()->register_handler(EXITHANDLER::instance(), pid);
 	}
 	return pid;
@@ -457,14 +480,26 @@ int ProcessExitHandler::handle_exit(ACE_Process *process)
 {
 	const static char fname[] = "ProcessExitHandler::handle_exit() ";
 
-	LOG_INF << fname << "Process <" << process->getpid() << "> exited with exit code <" << process->return_value() << ">, process map size: " << m_processMap.current_size();
+	LOG_INF << fname << "Process <" << process->getpid() << "> exited with exit code <" << process->return_value() << ">, process map size: " << PROCESS_MAP.current_size();
 
-	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_processMap.mutex());
-	AppProcess *p = nullptr;
-	if (m_processMap.find(process->getpid(), p) == 0 && p)
+	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(PROCESS_MAP.mutex());
 	{
-		p->returnValue(process->return_value());
-		m_processMap.unbind(process->getpid());
+		AppProcess *p = nullptr;
+		if (PROCESS_MAP.find(process->getpid(), p) == 0 && p)
+		{
+			p->onExit(process->return_value());
+			PROCESS_MAP.unbind(process->getpid());
+		}
+	}
+
+	// Handle AppOutView Request (hold PROCESS_MAP lock)
+	{
+		ACE_Unbounded_Set<std::shared_ptr<HttpRequestOutputView>> requests;
+		if (APP_OUT_VIEW_MAP.find(process->getpid(), requests) != -1)
+			for (auto &req : requests)
+				req->response();
+		APP_OUT_VIEW_MAP.unbind(process->getpid());
+		LOG_DBG << fname << "APP_OUT_VIEW_MAP size: " << APP_OUT_VIEW_MAP.current_size();
 	}
 	return 0;
 }
@@ -472,15 +507,15 @@ int ProcessExitHandler::handle_exit(ACE_Process *process)
 void ProcessExitHandler::onTerminate(pid_t pid)
 {
 	const static char fname[] = "ProcessExitHandler::onTerminate() ";
-	LOG_INF << fname << "Process <" << pid << "> killed, process map size: " << m_processMap.current_size();
+	LOG_INF << fname << "Process <" << pid << "> killed, process map size: " << PROCESS_MAP.current_size();
 	{
-		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_processMap.mutex());
+		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(PROCESS_MAP.mutex());
 		ACE_Process_Manager::instance()->remove(pid);
 		AppProcess *p = nullptr;
-		if (m_processMap.find(pid, p) == 0 && p)
+		if (PROCESS_MAP.find(pid, p) == 0 && p)
 		{
-			p->returnValue(9);
-			m_processMap.unbind(pid);
+			p->onExit(9);
+			PROCESS_MAP.unbind(pid);
 		}
 	}
 	ACE_Process_Manager::instance()->wait(pid);

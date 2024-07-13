@@ -7,6 +7,7 @@
 #include <string>
 #include <tuple>
 
+#include <boost/smart_ptr/shared_ptr.hpp>
 #include <nlohmann/json.hpp>
 
 #include "../../common/TimerHandler.h"
@@ -65,10 +66,11 @@ public:
 	void destroy();
 
 	// behavior
-	std::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
+	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
 	void onSuicide();
-	void onExit(int code);
+	void onExit();
+	void handleExit(int code);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
@@ -87,7 +89,7 @@ protected:
 	// process
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
 	void spawn();
-	std::shared_ptr<int> refresh(void *ptree = nullptr);
+	void refresh(void *ptree = nullptr);
 	void healthCheck();
 
 	std::string runApp(int timeoutSeconds) noexcept(false);
@@ -116,7 +118,7 @@ protected:
 	int m_stdoutCacheSize;
 	std::shared_ptr<ShellAppFileGen> m_shellAppFile;
 	std::shared_ptr<LogFileQueue> m_stdoutFileQueue;
-	std::shared_ptr<int> m_return; // the exit code of last instance
+
 	std::chrono::system_clock::time_point m_startTime;
 	std::chrono::system_clock::time_point m_endTime;
 
@@ -127,7 +129,6 @@ protected:
 	int m_bufferTime;
 	bool m_startIntervalValueIsCronExpr;
 	std::shared_ptr<AppProcess> m_bufferProcess;
-	std::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	std::atomic<long> m_nextStartTimerId;
 
 	std::chrono::system_clock::time_point m_regTime;
@@ -136,15 +137,20 @@ protected:
 	const std::string m_appId;
 	unsigned int m_version;
 	std::shared_ptr<AppProcess> m_process;
-	pid_t m_pid;
+
 	std::atomic<long> m_suicideTimerId;
 	std::shared_ptr<DailyLimitation> m_dailyLimit;
 	std::shared_ptr<ResourceLimitation> m_resourceLimit;
 	std::map<std::string, std::string> m_envMap;
 	std::map<std::string, std::string> m_secEnvMap;
 	std::string m_dockerImage;
-	std::chrono::system_clock::time_point m_procStartTime;
-	std::chrono::system_clock::time_point m_procExitTime;
+
+	// runtime dynamic variables (which will also be read by API)
+	boost::shared_ptr<pid_t> m_pid;
+	boost::shared_ptr<int> m_return; // the exit code of last instance
+	boost::shared_ptr<std::chrono::system_clock::time_point> m_procStartTime;
+	boost::shared_ptr<std::chrono::system_clock::time_point> m_procExitTime;
+	boost::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 
 	// Prometheus
 	std::shared_ptr<CounterMetric> m_metricStartCount;

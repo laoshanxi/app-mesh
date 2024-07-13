@@ -22,7 +22,7 @@ class ResourceLimitation;
 class AppProcess : public TimerHandler
 {
 public:
-	AppProcess();
+	AppProcess(const std::string &appName);
 	virtual ~AppProcess();
 
 	/// <summary>
@@ -40,13 +40,14 @@ public:
 	/// <summary>
 	/// Set process exit code
 	/// </summary>
-	virtual void returnValue(int value);
+	virtual void onExit(int exitCode);
 
 	/// <summary>
 	/// Process running status
 	/// </summary>
 	/// <returns></returns>
 	virtual bool running() const;
+	static bool running(pid_t pid);
 
 	pid_t wait(const ACE_Time_Value &tv, ACE_exitcode *status = 0);
 	pid_t wait(ACE_exitcode *status = 0);
@@ -165,6 +166,8 @@ protected:
 	/// <param name="cmd"></param>
 	/// <returns>tuple: 1 cmdRoot, 2 parameters</returns>
 	std::tuple<std::string, std::string> extractCommand(const std::string &cmd);
+
+	const std::string m_appName;
 
 private:
 	long m_delayKillTimerId;

@@ -1,11 +1,19 @@
 #include <map>
 #include <string>
 
+#include <ace/Hash_Multi_Map_Manager_T.h>
+
 #include "../../common/Utility.h"
-#include "../../daemon/application/Application.h"
+#include "../Configuration.h"
+#include "../application/Application.h"
+#include "../process/AppProcess.h"
 #include "HttpRequest.h"
+#include "RestHandler.h"
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
+
+extern PROCESS_MAP_TYPE PROCESS_MAP;
+APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
 
 HttpRequest::HttpRequest(const Request &request, int tcpHandlerId)
 	: m_tcpHanlerId(tcpHandlerId)
@@ -126,4 +134,99 @@ HttpRequestWithAppRef::~HttpRequestWithAppRef()
 	if (m_app)
 		m_app->regSuicideTimer(0);
 	m_app.reset();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// HttpRequest used to handle view app output
+////////////////////////////////////////////////////////////////////////////////
+HttpRequestOutputView::HttpRequestOutputView(const HttpRequest &message, const std::string &appName)
+	: HttpRequest(message), m_delayReplyTimerId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_appName(appName), m_httpRequestReplyFlag(ATOMIC_FLAG_INIT)
+{
+}
+HttpRequestOutputView::~HttpRequestOutputView()
+{
+}
+
+void HttpRequestOutputView::init()
+{
+	const static char fname[] = "HttpRequestOutputView::init() ";
+
+	size_t timeout = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
+	m_pid = Configuration::instance()->getApp(m_appName)->getpid();
+
+	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(PROCESS_MAP.mutex());
+	if (AppProcess::running(m_pid) && timeout > 0)
+	{
+		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(TimerHandler::shared_from_this()));
+		m_delayReplyTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&HttpRequestOutputView::response, this), fname);
+
+		LOG_DBG << fname << "app <" << m_appName << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();
+	}
+	else
+	{
+		response();
+	}
+}
+
+void HttpRequestOutputView::response()
+{
+	const static char fname[] = "HttpRequestOutputView::response() ";
+	LOG_DBG << fname;
+	try
+	{
+		if (!m_httpRequestReplyFlag.test_and_set())
+		{
+			this->cancelTimer(m_delayReplyTimerId);
+			long pos = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
+			int index = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
+			long maxSize = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
+			size_t timeout = 0; // getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
+			std::string processUuid = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_process_uuid);
+			bool outputHtml = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_html).length();
+			bool outputJson = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_json).length();
+
+			auto result = Configuration::instance()->getApp(m_appName)->getOutput(pos, maxSize, processUuid, index, timeout);
+			auto output = std::get<0>(result);
+			const auto &finished = std::get<1>(result);
+			const auto &exitCode = std::get<2>(result);
+			if (output.length())
+			{
+				LOG_INF << fname << "Get application output size <" << output.size() << ">";
+			}
+			std::map<std::string, std::string> headers;
+			if (pos)
+				headers[HTTP_HEADER_KEY_output_pos] = std::to_string(pos);
+			if (finished)
+				headers[HTTP_HEADER_KEY_exit_code] = std::to_string(exitCode);
+			if (outputHtml)
+			{
+				// https://github.com/yesoreyeram/grafana-infinity-datasource/blob/main/testdata/users.html
+				// https://sriramajeyam.com/grafana-infinity-datasource/wiki/html
+				static const auto html = Utility::readFileCpp("/opt/appmesh/script/grafana_infinity.html");
+				auto lines = Utility::splitString(output, "\n");
+				std::stringstream ss;
+				for (const auto &line : lines)
+				{
+					ss << line << "</pre>\n<pre>";
+				}
+				output = Utility::stringFormat(html, m_appName.c_str(), ss.str().c_str());
+			}
+			else if (outputJson)
+			{
+				auto lines = Utility::splitString(output, "\n");
+				auto jsonArray = nlohmann::json::array();
+				// Build Json
+				for (std::size_t i = 0; i < lines.size(); ++i)
+				{
+					jsonArray[i] = nlohmann::json{{"index", i + 1}, {"stdout", lines[i]}};
+				}
+				output = jsonArray.dump();
+			}
+			HttpRequest::reply(web::http::status_codes::OK, output, headers);
+		}
+	}
+	catch (const std::exception &e)
+	{
+		HttpRequest::reply(web::http::status_codes::ExpectationFailed);
+	}
 }

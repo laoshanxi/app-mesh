@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <ace/Map_Manager.h>
+#include <ace/Recursive_Thread_Mutex.h>
 #include <nlohmann/json.hpp>
 
 class RestHandler;
@@ -131,7 +133,7 @@ public:
 	std::string getDockerProxyAddress() const;
 	int getRestTcpPort();
 	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
-	std::shared_ptr<Application> getApp(const std::string &appName) const noexcept(false);
+	std::shared_ptr<Application> getApp(const std::string &appName, bool throwOnNotFound = true) const noexcept(false);
 	bool isAppExist(const std::string &appName);
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
@@ -162,12 +164,11 @@ private:
 	void addApp2Map(std::shared_ptr<Application> app);
 
 private:
-	std::vector<std::shared_ptr<Application>> m_apps;
+	mutable ACE_Map_Manager<std::string, std::shared_ptr<Application>, ACE_Recursive_Thread_Mutex> m_apps;
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonConsul> m_consul;
 
-	mutable std::recursive_mutex m_appMutex;
 	mutable std::recursive_mutex m_hotupdateMutex;
 
 	std::shared_ptr<Label> m_label;
