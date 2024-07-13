@@ -59,6 +59,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 	return std::shared_ptr<T>(new T[size], std::default_delete<T[]>());
 }
 
+#define PROCESS_MAP_TYPE ACE_Map_Manager<pid_t, AppProcess *, ACE_Recursive_Thread_Mutex>
+#define APP_OUT_MULTI_MAP_TYPE ACE_Hash_Multi_Map_Manager<pid_t, std::shared_ptr<HttpRequestOutputView>, ACE_Hash<pid_t>, ACE_Equal_To<pid_t>, ACE_Recursive_Thread_Mutex>
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object

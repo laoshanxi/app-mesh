@@ -11,8 +11,8 @@
 #include "DockerApiProcess.h"
 #include "LinuxCgroup.h"
 
-DockerApiProcess::DockerApiProcess(const std::string &dockerImage, const std::string &appName)
-	: DockerProcess(dockerImage, appName)
+DockerApiProcess::DockerApiProcess(const std::string &appName, const std::string &dockerImage)
+	: DockerProcess(appName, dockerImage)
 {
 	const static char fname[] = "DockerApiProcess::DockerApiProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -118,7 +118,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		{
 			array.push_back(std::string(argv[i]));
 		}
-		createBody["Cmd"] = array;
+		createBody["Cmd"] = std::move(array);
 	}
 
 	if (limit != nullptr)
@@ -155,21 +155,21 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 			}
 			else
 			{
-				auto errorMsg = resp->text;
+				const auto &errorMsg = resp->text;
 				this->startError(errorMsg);
 				LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 			}
 		}
 		else
 		{
-			auto errorMsg = resp->text;
+			const auto &errorMsg = resp->text;
 			this->startError(errorMsg);
 			LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 		}
 	}
 	else
 	{
-		auto errorMsg = resp->text;
+		const auto &errorMsg = resp->text;
 		this->startError(errorMsg);
 		LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 	}

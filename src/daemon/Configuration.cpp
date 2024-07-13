@@ -168,24 +168,24 @@ nlohmann::json Configuration::AsJson()
 
 std::vector<std::shared_ptr<Application>> Configuration::getApps() const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	return m_apps;
+	std::vector<std::shared_ptr<Application>> apps;
+	apps.reserve(m_apps.current_size());
+
+	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_apps.mutex());
+	for (const auto &entry : m_apps)
+	{
+		apps.push_back(entry.int_id_);
+	}
+	return apps;
 }
 
 void Configuration::addApp2Map(std::shared_ptr<Application> app)
 {
 	const static char fname[] = "Configuration::addApp2Map() ";
-
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	for (std::size_t i = 0; i < m_apps.size(); i++)
+	if (m_apps.bind(app->getName(), app) == 1)
 	{
-		if (m_apps[i]->getName() == app->getName())
-		{
-			LOG_INF << fname << "Application <" << app->getName() << "> already exist.";
-			return;
-		}
+		LOG_ERR << fname << "Application <" << app->getName() << "> already exist.";
 	}
-	m_apps.push_back(app);
 }
 
 int Configuration::getScheduleInterval()
@@ -232,9 +232,9 @@ int Configuration::getRestTcpPort()
 
 nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	auto allApp = getApps();
 	std::vector<std::shared_ptr<Application>> apps;
-	std::copy_if(m_apps.begin(), m_apps.end(), std::back_inserter(apps),
+	std::copy_if(allApp.begin(), allApp.end(), std::back_inserter(apps),
 				 [this, &user, returnUnPersistApp](std::shared_ptr<Application> app)
 				 {
 					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&			 // access permission check
@@ -453,42 +453,30 @@ void Configuration::dump()
 std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp, std::shared_ptr<Application> fromApp, bool persistable)
 {
 	auto app = parseApp(jsonApp);
-	bool update = false;
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	std::for_each(m_apps.begin(), m_apps.end(), [&app, &update](std::shared_ptr<Application> &mapApp)
-				  {
-					  if (mapApp->getName() == app->getName())
-					  {
-						  // Stop existing app and replace
-						  mapApp->disable();
-						  mapApp = app;
-						  update = true;
-						  return;
-					  } });
-
-	if (!update)
+	std::shared_ptr<Application> oldApp;
+	m_apps.rebind(app->getName(), app, oldApp);
+	if (oldApp)
 	{
-		// Register app
-		addApp2Map(app);
+		oldApp->disable();
+		oldApp.reset();
 	}
+
 	// Write to disk
+	if (!persistable)
 	{
-		if (!persistable)
-		{
-			app->setUnPersistable();
-		}
-		if (fromApp)
-		{
-			app->initMetrics(fromApp);
-		}
-		else
-		{
-			app->initMetrics();
-		}
-
-		// invoke immediately
-		app->execute();
+		app->setUnPersistable();
 	}
+	if (fromApp)
+	{
+		app->initMetrics(fromApp);
+	}
+	else
+	{
+		app->initMetrics();
+	}
+
+	// invoke immediately
+	app->execute();
 	app->dump();
 	return app;
 }
@@ -499,28 +487,13 @@ void Configuration::removeApp(const std::string &appName)
 
 	LOG_DBG << fname << appName;
 	std::shared_ptr<Application> app;
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		// Update in-memory app
-		for (auto iterA = m_apps.begin(); iterA != m_apps.end();)
-		{
-			if ((*iterA)->getName() == appName)
-			{
-				app = (*iterA);
-				iterA = m_apps.erase(iterA);
-				LOG_DBG << fname << "removed " << appName;
-			}
-			else
-			{
-				iterA++;
-			}
-		}
-	}
+	m_apps.unbind(appName, app);
 	if (app)
 	{
 		// Write to disk
 		app->destroy();
 		app->remove();
+		LOG_DBG << fname << "removed " << appName;
 	}
 }
 
@@ -754,9 +727,9 @@ bool Configuration::applyEnvConfig(nlohmann::json &jsonValue, std::string envVal
 
 void Configuration::registerPrometheus()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	std::for_each(m_apps.begin(), m_apps.end(), [](std::vector<std::shared_ptr<Application>>::reference p)
-				  { p->initMetrics(); });
+	auto allApp = getApps();
+	for (const auto &app : allApp)
+		app->initMetrics();
 }
 
 bool Configuration::prometheusEnabled() const
@@ -771,24 +744,24 @@ std::shared_ptr<Application> Configuration::parseApp(const nlohmann::json &jsonA
 	return app;
 }
 
-std::shared_ptr<Application> Configuration::getApp(const std::string &appName) const
+std::shared_ptr<Application> Configuration::getApp(const std::string &appName, bool throwOnNotFound) const
 {
 	const static char fname[] = "Configuration::getApp() ";
-	std::vector<std::shared_ptr<Application>> apps = getApps();
-	auto iter = std::find_if(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app)
-							 { return app->getName() == appName; });
-	if (iter != apps.end())
-		return *iter;
+	std::shared_ptr<Application> app;
+	if (m_apps.find(appName, app) == 0 && app)
+		return app;
 
-	LOG_WAR << fname << "No such application: " << appName;
-	throw NotFoundException("No such application");
+	if (throwOnNotFound)
+	{
+		LOG_WAR << fname << "No such application: " << appName;
+		throw NotFoundException("No such application");
+	}
+	return nullptr;
 }
 
 bool Configuration::isAppExist(const std::string &appName)
 {
-	std::vector<std::shared_ptr<Application>> apps = getApps();
-	return std::any_of(apps.begin(), apps.end(), [&appName](const std::shared_ptr<Application> &app)
-					   { return app->getName() == appName; });
+	return (m_apps.find(appName) == 0);
 }
 
 const nlohmann::json Configuration::getAgentAppJson() const
