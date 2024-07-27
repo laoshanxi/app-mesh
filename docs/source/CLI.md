@@ -5,48 +5,48 @@ App Mesh command lines provide the same functionality with Web GUI for *stand-al
 ```text
 $ appc
 Commands:
-  logon       Log on to App Mesh for a specific time period.
-  logoff      Clear current login user information
-  loginfo     Print current logon user
+  logon       Log in to App Mesh for a specified duration.
+  logoff      Clear current user session.
+  loginfo     Display current logged-in user.
 
-  ls          View application[s]
-  add         Add a new application
-  rm          Remove an application
-  enable      Enable a application
-  disable     Disable a application
-  restart     Restart a application
+  view        View applications.
+  add         Add a new application.
+  rm          Remove an application.
+  enable      Enable an application.
+  disable     Disable an application.
+  restart     Restart an application.
 
-  join        Join to a Consul cluster
-  cloud       List cloud application[s]
-  nodes       List cloud nodes
+  join        Join a Consul cluster.
+  cloud       List cloud applications.
+  nodes       List cloud nodes.
 
-  run         Run commands or an existing application and get output
-  shell       Run command by appmesh and impersonate current shell context
+  run         Execute commands or applications and retrieve output.
+  shell       Execute commands in App Mesh, emulating the current shell context.
 
-  resource    Display host resources
-  label       Manage host labels
-  config      Manage basic configurations
-  log         Set log level
+  resource    Show host resources.
+  label       Manage host labels.
+  config      Manage configurations.
+  log         Set log level.
 
-  get         Download remote file to local
-  put         Upload local file to App Mesh server
+  get         Download a remote file.
+  put         Upload a local file to the App Mesh server.
 
-  passwd      Change user password
-  lock        Lock/Unlock a user
-  user        View user
-  mfa         Two-factor authentication
+  passwd      Change user password.
+  lock        Lock or unlock a user.
+  user        View user information.
+  mfa         Manage two-factor authentication.
 
 Run 'appc COMMAND --help' for more information on a command.
-Use '-b $server_url' to connect remote. e.g https://127.0.0.1:6060
+Use '-b $server_url' to connect remotely, e.g., https://127.0.0.1:6060.
 
-Usage:  appc [COMMAND] [ARG...] [flags]
+Usage: appc [COMMAND] [ARG...] [flags]
 ```
 
 ---
 
 ### App management
 
-- List application[s]
+- List applications
 
 ```text
 $ appc ls
@@ -106,47 +106,49 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 ```text
 $ appc add
 Register a new application:
-  -b [ --url ] arg (=https://localhost:6060) server URL
-  -u [ --user ] arg                          Specifies the name of the user to connect to App Mesh for this command.
-  -x [ --password ] arg                      Specifies the user password to connect to App Mesh for this command.
-  -V [ --verbose ]                           enable verbose output
-  -n [ --name ] arg                          application name
-  -a [ --desc ] arg                          application description
-  -g [ --metadata ] arg                      metadata string/JSON (input for application, pass to process stdin), '@' allowed to
-                                             read from file
-  --perm arg                                 application user permission, value is 2 bit integer: [group & other], each bit can
+  -b [ --url ] arg (=https://localhost:6060) Server URL.
+  -z [ --delegate ] arg                      Target host name (or with port) for request forwarding.
+  -u [ --user ] arg                          User name for App Mesh connection.
+  -x [ --password ] arg                      User password for App Mesh connection.
+  -V [ --verbose ]                           Enable verbose output.
+  -n [ --name ] arg                          Application name.
+  -a [ --desc ] arg                          Application description.
+  -g [ --metadata ] arg                      Metadata string/JSON (input for application, pass to process stdin), '@' allowed to 
+                                             read from file.
+  --perm arg                                 Application user permission, value is a 2-bit integer: [group & other], each bit can
                                              be deny:1, read:2, write: 3.
-  -c [ --cmd ] arg                           full command line with arguments
-  -S [ --shell ]                             use shell mode, cmd can be more shell commands with string format
-  -l [ --health_check ] arg                  health check script command (e.g., sh -x 'curl host:port/health', return 0 is
+  -c [ --cmd ] arg                           Full command line with arguments.
+  -S [ --shell ]                             Use shell mode, cmd can be more shell commands with string format.
+  --session_login                            Run with session login.
+  -l [ --health_check ] arg                  Health check script command (e.g., sh -x 'curl host:port/health', return 0 is 
                                              health)
-  -d [ --docker_image ] arg                  docker image which used to run command line (for docker container application)
-  -w [ --workdir ] arg                       working directory
-  -s [ --status ] arg (=1)                   initial application status (true is enable, false is disabled)
-  -t [ --start_time ] arg                    start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')
-  -E [ --end_time ] arg                      end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')
-  -j [ --daily_start ] arg                   daily start time (e.g., '09:00:00+08')
-  -y [ --daily_end ] arg                     daily end time (e.g., '20:00:00+08')
-  -m [ --memory ] arg                        memory limit in MByte
-  -p [ --pid ] arg                           process id used to attach
-  -O [ --stdout_cache_num ] arg (=3)         stdout file cache number
-  -v [ --virtual_memory ] arg                virtual memory limit in MByte
-  -r [ --cpu_shares ] arg                    CPU shares (relative weight)
-  -e [ --env ] arg                           environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used
-                                             to input docker run parameters)
-  --sec_env arg                              security environment variables, encrypt in server side with application owner's
+  -d [ --docker_image ] arg                  Docker image used to run command line (for docker container application).
+  -w [ --workdir ] arg                       Working directory.
+  -s [ --status ] arg (=1)                   Initial application status (true is enable, false is disabled).
+  -t [ --start_time ] arg                    Start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05').
+  -E [ --end_time ] arg                      End date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05').
+  -j [ --daily_start ] arg                   Daily start time (e.g., '09:00:00+08').
+  -y [ --daily_end ] arg                     Daily end time (e.g., '20:00:00+08').
+  -m [ --memory ] arg                        Memory limit in MByte.
+  -v [ --virtual_memory ] arg                Virtual memory limit in MByte.
+  -r [ --cpu_shares ] arg                    CPU shares (relative weight).
+  -p [ --pid ] arg                           Process id used to attach.
+  -O [ --stdout_cache_num ] arg (=3)         Stdout file cache number.
+  -e [ --env ] arg                           Environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used 
+                                             to input docker run parameters).
+  --sec_env arg                              Security environment variables, encrypt in server side with application owner's 
                                              cipher
-  -i [ --interval ] arg                      start interval seconds for short running app, support ISO 8601 durations and cron
-                                             expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')
-  --cron                                     indicate interval parameter use cron expression
-  -q [ --retention ] arg                     extra timeout seconds for stopping current process, support ISO 8601 durations
+  -i [ --interval ] arg                      Start interval seconds for short running app, support ISO 8601 durations and cron 
+                                             expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *').
+  --cron                                     Indicate interval parameter use cron expression.
+  -q [ --retention ] arg                     Extra timeout seconds for stopping current process, support ISO 8601 durations 
                                              (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
-  --exit arg (=standby)                      default exit behavior [restart,standby,keepalive,remove]
-  --control arg                              exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority
-                                             than default exit behavior
-  -f [ --force ]                             force without confirm
-  --stdin arg                                accept json from stdin (provide 'std' string) or local json file path
-  -h [ --help ]                              Prints command usage to stdout and exits
+  --exit arg (=standby)                      Default exit behavior [restart,standby,keepalive,remove].
+  --control arg                              Exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority 
+                                             than default exit behavior.
+  -f [ --force ]                             Force without confirm.
+  --stdin arg                                Accept yaml from stdin (provide 'std' string) or local yaml file path.
+  -h [ --help ]                              Display command usage and exit.
 
 
 # register a app with a native command
@@ -206,20 +208,21 @@ appc restart -n ping
 
 ```text
 # appc join
-Join App Mesh cluster::
-  -b [ --host ] arg (=localhost) host name or ip address
-  -B [ --port ] arg              port number
-  -u [ --user ] arg              Specifies the name of the user to connect to App Mesh for this command.
-  -x [ --password ] arg          Specifies the user password to connect to App Mesh for this command.
-  -c [ --consul ] arg            Consul url (e.g., http://localhost:8500)
-  -m [ --main ]                  Join as main node
-  -w [ --worker ]                Join as worker node
-  -r [ --proxy ] arg             appmesh_proxy_url
-  -u [ --user ] arg              Basic auth user name for Consul REST
-  -p [ --pass ] arg              Basic auth user password for Consul REST
-  -l [ --ttl ] arg (=30)         Consul session TTL seconds
-  -s [ --security ]              Enable Consul security (security persist will use Consul storage)
-  -h [ --help ]                  Prints command usage to stdout and exits
+Join App Mesh cluster:
+  -b [ --url ] arg (=https://localhost:6060) Server URL.
+  -z [ --delegate ] arg                      Target host name (or with port) for request forwarding.
+  -u [ --user ] arg                          User name for App Mesh connection.
+  -x [ --password ] arg                      User password for App Mesh connection.
+  -V [ --verbose ]                           Enable verbose output.
+  -c [ --consul ] arg                        Consul URL (e.g., http://localhost:8500).
+  -m [ --main ]                              Join as main node.
+  -w [ --worker ]                            Join as worker node.
+  -r [ --proxy ] arg                         App Mesh proxy URL.
+  -u [ --user ] arg                          Basic auth user name for Consul REST.
+  -p [ --pass ] arg                          Basic auth user password for Consul REST.
+  -l [ --ttl ] arg (=30)                     Consul session TTL in seconds.
+  -s [ --security ]                          Enable Consul security (security persist will use Consul storage).
+  -h [ --help ]                              Display command usage and exit.
 
 appc join -c http://127.0.0.1:8500 -l 30 -m -w
 App Mesh will join cluster with parameter:

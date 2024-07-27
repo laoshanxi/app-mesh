@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 )
@@ -78,6 +79,13 @@ func (r *AppmeshClient) doRequest(method string, apiPath string, params url.Valu
 	// headers
 	if r.getToken() != "" {
 		req.Header.Set("Authorization", "Bearer "+r.getToken())
+	}
+	if r.getDelegateHost() != "" {
+		if strings.Contains(r.getDelegateHost(), ":") {
+			req.Header.Set("X-Target-Host", r.getDelegateHost())
+		} else {
+			req.Header.Set("X-Target-Host", r.getDelegateHost()+":"+u.Port())
+		}
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")

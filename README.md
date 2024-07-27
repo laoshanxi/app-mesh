@@ -75,9 +75,9 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 
 ---
 
-### Component diagram
+### Mind diagram
 
-![block-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/block_diagram.png)
+![mind-diagram](https://github.com/laoshanxi/picture/raw/master/appmesh/mind.png)
 
 ---
 

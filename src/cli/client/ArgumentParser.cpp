@@ -24,13 +24,14 @@
 #include "ArgumentParser.h"
 
 #define OPTION_URL \
-	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "server URL")
+	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "Server URL.") \
+	("delegate,z", po::value<std::string>()->default_value(""), "Target host name (or with port) for request forwarding.")
 
 #define COMMON_OPTIONS                                                                                              \
 	OPTION_URL                                                                                                      \
-	("user,u", po::value<std::string>(), "Specifies the name of the user to connect to App Mesh for this command.") \
-	("password,x", po::value<std::string>(), "Specifies the user password to connect to App Mesh for this command.") \
-	("verbose,V", "enable verbose output")
+	("user,u", po::value<std::string>(), "User name for App Mesh connection.") \
+	("password,x", po::value<std::string>(), "User password for App Mesh connection.") \
+	("verbose,V", "Enable verbose output.")
 
 #define GET_USER_NAME_PASS                                                                \
 	if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
@@ -47,7 +48,8 @@
 		std::cout << desc << std::endl;           \
 		return;                                   \
 	}                                             \
-	m_currentUrl = m_commandLineVariables["url"].as<std::string>();
+	m_currentUrl = m_commandLineVariables["url"].as<std::string>(); \
+	m_delegateHost = m_commandLineVariables["delegate"].as<std::string>();
 #define HELP_ARG_CHECK_WITH_RETURN_ZERO           \
 	GET_USER_NAME_PASS                            \
 	if (m_commandLineVariables.count("help") > 0) \
@@ -55,11 +57,11 @@
 		std::cout << desc << std::endl;           \
 		return 0;                                 \
 	}                                             \
-	m_currentUrl = m_commandLineVariables["url"].as<std::string>();
+	m_currentUrl = m_commandLineVariables["url"].as<std::string>(); \
+	m_delegateHost = m_commandLineVariables["delegate"].as<std::string>();
 // Each user should have its own token path
 static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
 const static std::string m_shellHistoryFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.shell.history";
-static std::string m_jwtToken;
 extern char **environ;
 
 // Global variable for appc exec
@@ -89,8 +91,8 @@ void ArgumentParser::initArgs()
 	}
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
 	global.add_options()
-	("command", po::value<std::string>(), "command to execute")
-	("subargs", po::value<std::vector<std::string>>(), "arguments for command");
+	("command", po::value<std::string>(), "Command to execute.")
+	("subargs", po::value<std::vector<std::string>>(), "Arguments for command.");
 
 	po::positional_options_description pos;
 	pos.add("command", 1).add("subargs", -1);
@@ -236,58 +238,58 @@ int ArgumentParser::parse()
 void ArgumentParser::printMainHelp()
 {
 	std::cout << "Commands:" << std::endl;
-	std::cout << "  logon       Log on to App Mesh for a specific time period." << std::endl;
-	std::cout << "  logoff      Clear current login user information" << std::endl;
-	std::cout << "  loginfo     Print current logon user" << std::endl;
+	std::cout << "  logon       Log in to App Mesh for a specified duration." << std::endl;
+	std::cout << "  logoff      Clear current user session." << std::endl;
+	std::cout << "  loginfo     Display current logged-in user." << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  view        View application[s]" << std::endl;
-	std::cout << "  add         Add a new application" << std::endl;
-	std::cout << "  rm          Remove an application" << std::endl;
-	std::cout << "  enable      Enable a application" << std::endl;
-	std::cout << "  disable     Disable a application" << std::endl;
-	std::cout << "  restart     Restart a application" << std::endl;
+	std::cout << "  view        View applications." << std::endl;
+	std::cout << "  add         Add a new application." << std::endl;
+	std::cout << "  rm          Remove an application." << std::endl;
+	std::cout << "  enable      Enable an application." << std::endl;
+	std::cout << "  disable     Disable an application." << std::endl;
+	std::cout << "  restart     Restart an application." << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  join        Join to a Consul cluster" << std::endl;
-	std::cout << "  cloud       List cloud application[s]" << std::endl;
-	std::cout << "  nodes       List cloud nodes" << std::endl;
+	std::cout << "  join        Join a Consul cluster." << std::endl;
+	std::cout << "  cloud       List cloud applications." << std::endl;
+	std::cout << "  nodes       List cloud nodes." << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  run         Run commands or an existing application and get output" << std::endl;
-	std::cout << "  shell       Run command by appmesh and impersonate current shell context" << std::endl;
+	std::cout << "  run         Execute commands or applications and retrieve output." << std::endl;
+	std::cout << "  shell       Execute commands in App Mesh, emulating the current shell context." << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  resource    Display host resources" << std::endl;
-	std::cout << "  label       Manage host labels" << std::endl;
-	std::cout << "  config      Manage basic configurations" << std::endl;
-	std::cout << "  log         Set log level" << std::endl;
+	std::cout << "  resource    Show host resources." << std::endl;
+	std::cout << "  label       Manage host labels." << std::endl;
+	std::cout << "  config      Manage configurations." << std::endl;
+	std::cout << "  log         Set log level." << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  get         Download remote file to local" << std::endl;
-	std::cout << "  put         Upload local file to App Mesh server" << std::endl;
+	std::cout << "  get         Download a remote file." << std::endl;
+	std::cout << "  put         Upload a local file to the App Mesh server." << std::endl;
 	std::cout << std::endl;
 
-	std::cout << "  passwd      Change user password" << std::endl;
-	std::cout << "  lock        Lock/Unlock a user" << std::endl;
-	std::cout << "  user        View user" << std::endl;
-	std::cout << "  mfa         Two-factor authentication" << std::endl;
+	std::cout << "  passwd      Change user password." << std::endl;
+	std::cout << "  lock        Lock or unlock a user." << std::endl;
+	std::cout << "  user        View user information." << std::endl;
+	std::cout << "  mfa         Manage two-factor authentication." << std::endl;
 	std::cout << std::endl;
 
 	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
-	std::cout << "Use '-b $server_url' to connect remote. e.g https://127.0.0.1:6060" << std::endl;
+	std::cout << "Use '-b $server_url' to connect remotely, e.g., https://127.0.0.1:6060." << std::endl;
 
 	std::cout << std::endl;
-	std::cout << "Usage:  appc [COMMAND] [ARG...] [flags]" << std::endl;
+	std::cout << "Usage: appc [COMMAND] [ARG...] [flags]" << std::endl;
 }
 
 void ArgumentParser::processLogon()
 {
-	po::options_description desc("Login to App Mesh:", BOOST_DESC_WIDTH);
+	po::options_description desc("Log in to App Mesh", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Specifies the command session duration in 'seconds' or 'ISO 8601 durations'.")
-		("help,h", "Prints command usage to stdout and exits");
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -338,10 +340,10 @@ void ArgumentParser::processLogon()
 
 void ArgumentParser::processLogoff()
 {
-	po::options_description desc("Logoff to App Mesh:", BOOST_DESC_WIDTH);
+	po::options_description desc("Logoff to App Mesh", BOOST_DESC_WIDTH);
 	desc.add_options()
 		OPTION_URL
-		("help,h", "Prints command usage to stdout and exits");
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -356,10 +358,10 @@ void ArgumentParser::processLogoff()
 
 void ArgumentParser::processLoginfo()
 {
-	po::options_description desc("Print logon user:", BOOST_DESC_WIDTH);
+	po::options_description desc("Print current user", BOOST_DESC_WIDTH);
 	desc.add_options()
 		OPTION_URL
-		("help,h", "Prints command usage to stdout and exits");
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -389,36 +391,36 @@ void ArgumentParser::processAppAdd()
 	po::options_description desc("Register a new application", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("name,n", po::value<std::string>(), "application name")
-		("desc,a", po::value<std::string>(), "application description")
-		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
-		("perm", po::value<int>(), "application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
-		("cmd,c", po::value<std::string>(), "full command line with arguments")
-		("shell,S", "use shell mode, cmd can be more shell commands with string format")
-		("session_login", "run with session login")
-		("health_check,l", po::value<std::string>(), "health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
-		("docker_image,d", po::value<std::string>(), "docker image which used to run command line (for docker container application)")
-		("workdir,w", po::value<std::string>(), "working directory")
-		("status,s", po::value<bool>()->default_value(true), "initial application status (true is enable, false is disabled)")
-		("start_time,t", po::value<std::string>(), "start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')")
-		("end_time,E", po::value<std::string>(), "end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')")
-		("daily_start,j", po::value<std::string>(), "daily start time (e.g., '09:00:00+08')")
-		("daily_end,y", po::value<std::string>(), "daily end time (e.g., '20:00:00+08')")
-		("memory,m", po::value<int>(), "memory limit in MByte")
-		("pid,p", po::value<int>(), "process id used to attach")
-		("stdout_cache_num,O", po::value<int>()->default_value(3), "stdout file cache number")
-		("virtual_memory,v", po::value<int>(), "virtual memory limit in MByte")
-		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
-		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)")
-		("sec_env", po::value<std::vector<std::string>>(), "security environment variables, encrypt in server side with application owner's cipher")
-		("interval,i", po::value<std::string>(), "start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')")
-		("cron", "indicate interval parameter use cron expression")
-		("retention,q", po::value<std::string>(), "extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "default exit behavior [restart,standby,keepalive,remove]")
-		("control", po::value<std::vector<std::string>>(), "exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior")
-		("force,f", "force without confirm")
-		("stdin", po::value<std::string>(), "accept yaml from stdin (provide 'std' string) or local yaml file path")
-		("help,h", "Prints command usage to stdout and exits");
+		("name,n", po::value<std::string>(), "Application name.")
+		("desc,a", po::value<std::string>(), "Application description.")
+		("metadata,g", po::value<std::string>(), "Metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file.")
+		("perm", po::value<int>(), "Application user permission, value is a 2-bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
+		("cmd,c", po::value<std::string>(), "Full command line with arguments.")
+		("shell,S", "Use shell mode, cmd can be more shell commands with string format.")
+		("session_login", "Run with session login.")
+		("health_check,l", po::value<std::string>(), "Health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
+		("docker_image,d", po::value<std::string>(), "Docker image used to run command line (for docker container application).")
+		("workdir,w", po::value<std::string>(), "Working directory.")
+		("status,s", po::value<bool>()->default_value(true), "Initial application status (true is enable, false is disabled).")
+		("start_time,t", po::value<std::string>(), "Start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05').")
+		("end_time,E", po::value<std::string>(), "End date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05').")
+		("daily_start,j", po::value<std::string>(), "Daily start time (e.g., '09:00:00+08').")
+		("daily_end,y", po::value<std::string>(), "Daily end time (e.g., '20:00:00+08').")
+		("memory,m", po::value<int>(), "Memory limit in MByte.")
+		("virtual_memory,v", po::value<int>(), "Virtual memory limit in MByte.")
+		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight).")
+		("pid,p", po::value<int>(), "Process id used to attach.")
+		("stdout_cache_num,O", po::value<int>()->default_value(3), "Stdout file cache number.")
+		("env,e", po::value<std::vector<std::string>>(), "Environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters).")
+		("sec_env", po::value<std::vector<std::string>>(), "Security environment variables, encrypt in server side with application owner's cipher")
+		("interval,i", po::value<std::string>(), "Start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *').")
+		("cron", "Indicate interval parameter use cron expression.")
+		("retention,q", po::value<std::string>(), "Extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Default exit behavior [restart,standby,keepalive,remove].")
+		("control", po::value<std::vector<std::string>>(), "Exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior.")
+		("force,f", "Force without confirm.")
+		("stdin", po::value<std::string>(), "Accept yaml from stdin (provide 'std' string) or local yaml file path.")
+		("help,h", "Display command usage and exit.");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -653,12 +655,12 @@ void ArgumentParser::processAppAdd()
 
 void ArgumentParser::processAppDel()
 {
-	po::options_description desc("Unregister and remove an application", BOOST_DESC_WIDTH);
+	po::options_description desc("Remove an application", BOOST_DESC_WIDTH);
 	desc.add_options()
-		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("name,n", po::value<std::vector<std::string>>(), "application name[s]")
-		("force,f", "force without confirm.");
+		("name,n", po::value<std::vector<std::string>>(), "Application name(s).")
+		("force,f", "force without confirm.")
+		("help,h", "Display command usage and exit.");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -695,16 +697,16 @@ void ArgumentParser::processAppDel()
 
 void ArgumentParser::processAppView()
 {
-	po::options_description desc("List application[s]", BOOST_DESC_WIDTH);
+	po::options_description desc("List applications", BOOST_DESC_WIDTH);
 	desc.add_options()
-		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("name,n", po::value<std::string>(), "application name.")
-		("long,l", "display the complete information without reduce")
-		("output,o", "view the application output")
-		("pstree,p", "view the application pstree")
-		("stdout_index,O", po::value<int>(), "application output index")
-		("tail,t", "continue view the application output");
+		("name,n", po::value<std::string>(), "Application name.")
+		("long,l", "Display complete information without reduction.")
+		("output,o", "View application output.")
+		("pstree,p", "View application process tree.")
+		("stdout_index,O", po::value<int>(), "Application output index.")
+		("tail,t", "Continuously view application output.")
+		("help,h", "Display command usage and exit.");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -767,11 +769,11 @@ void ArgumentParser::processAppView()
 
 void ArgumentParser::processCloudAppView()
 {
-	po::options_description desc("List cloud applications usage:", BOOST_DESC_WIDTH);
+	po::options_description desc("List cloud applications", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("name,n", po::value<std::string>(), "application name.")
-		("help,h", "Prints command usage to stdout and exits");
+		("name,n", po::value<std::string>(), "Application name.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -786,9 +788,10 @@ void ArgumentParser::processCloudAppView()
 
 void ArgumentParser::processCloudNodesView()
 {
-	po::options_description desc("List cluster nodes usage:", BOOST_DESC_WIDTH);
+	po::options_description desc("List cluster nodes", BOOST_DESC_WIDTH);
 	desc.add_options()
-		COMMON_OPTIONS("help,h", "Prints command usage to stdout and exits");
+		COMMON_OPTIONS
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -799,10 +802,10 @@ void ArgumentParser::processCloudNodesView()
 
 void ArgumentParser::processResource()
 {
-	po::options_description desc("View host resource usage:", BOOST_DESC_WIDTH);
+	po::options_description desc("View host resource usage", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("help,h", "Prints command usage to stdout and exits");
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -813,12 +816,12 @@ void ArgumentParser::processResource()
 
 void ArgumentParser::processAppControl(bool start)
 {
-	po::options_description desc("Control application:", BOOST_DESC_WIDTH);
+	po::options_description desc("Control application", BOOST_DESC_WIDTH);
 	desc.add_options()
-		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("all,a", "apply for all applications")
-		("name,n", po::value<std::vector<std::string>>(), "application name[s] to enable or disable.");
+		("all,a", "Apply to all applications.")
+		("name,n", po::value<std::vector<std::string>>(), "Application name(s) to control.")
+		("help,h", "Display command usage and exit.");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -865,20 +868,20 @@ void ArgumentParser::processAppControl(bool start)
 
 int ArgumentParser::processAppRun()
 {
-	po::options_description desc("Run commands or application:", BOOST_DESC_WIDTH);
+	po::options_description desc("Run commands or applications", BOOST_DESC_WIDTH);
 	desc.add_options()
-		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("desc,a", po::value<std::string>(), "application description")
-		("cmd,c", po::value<std::string>(), "full command line with arguments (run application do not need specify command line)")
-		("shell,S", "use shell mode, cmd can be more shell commands with string format")
-		("session_login", "run with session login")
-		("name,n", po::value<std::string>(), "existing application name to run or specify a application name for run, empty will generate a random name in server")
-		("metadata,g", po::value<std::string>(), "metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file")
-		("workdir,w", po::value<std::string>(), "working directory (default '/opt/appmesh/work', used for run commands)")
-		("env,e", po::value<std::vector<std::string>>(), "environment variables (e.g., -e env1=value1 -e env2=value2)")
-		("lifecycle,l", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "max lifecycle time[seconds] for the shell command run. default is 12 hours, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
+		("desc,a", po::value<std::string>(), "Application description.")
+		("cmd,c", po::value<std::string>(), "Full command line with arguments (not needed for running an application).")
+		("shell,S", "Use shell mode; cmd can be multiple shell commands in string format.")
+		("session_login", "Run with session login.")
+		("name,n", po::value<std::string>(), "Existing application name to run, or specify a name for a new run; defaults to a random name if empty.")
+		("metadata,g", po::value<std::string>(), "Metadata string/JSON (input for application, passed to process stdin), '@' allowed to read from file.")
+		("workdir,w", po::value<std::string>(), "Working directory (default '/opt/appmesh/work').")
+		("env,e", po::value<std::vector<std::string>>(), "Environment variables (e.g., -e env1=value1 -e env2=value2).")
+		("lifecycle,l", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
@@ -1101,13 +1104,13 @@ pid_t get_bash_pid()
 
 int ArgumentParser::processShell()
 {
-	po::options_description desc("Shell execute:", BOOST_DESC_WIDTH);
+	po::options_description desc("Shell execute", BOOST_DESC_WIDTH);
 	desc.add_options()
-		("help,h", "Prints command usage to stdout and exits")
 		COMMON_OPTIONS
-		("retry,r", "Retry command until success")
-		("lifecycle,l", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "max lifecycle time[seconds] for the shell command run. default is 12 hours, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "max time[seconds] for the shell command run. Greater than 0 means output can be print repeatedly, less than 0 means output will be print until process exited, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
+		("retry,r", "Retry command until success.")
+		("lifecycle,l", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("timeout,t", po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc, true);
 	HELP_ARG_CHECK_WITH_RETURN_ZERO;
 
@@ -1239,10 +1242,12 @@ void ArgumentParser::saveUserCmdHistory(const char *input)
 
 void ArgumentParser::processFileDownload()
 {
-	po::options_description desc("Download file:", BOOST_DESC_WIDTH);
+	po::options_description desc("Download file", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("remote,r", po::value<std::string>(), "remote file path to download")("local,l", po::value<std::string>(), "local file path to save")("help,h", "Prints command usage to stdout and exits");
+		("remote,r", po::value<std::string>(), "Remote file path to download.")
+		("local,l", po::value<std::string>(), "Local file path to save.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1276,12 +1281,12 @@ void ArgumentParser::processFileDownload()
 
 void ArgumentParser::processFileUpload()
 {
-	po::options_description desc("Upload file:", BOOST_DESC_WIDTH);
+	po::options_description desc("Upload file", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("remote,r", po::value<std::string>(), "remote file path to save")
-		("local,l", po::value<std::string>(), "local file to upload")
-		("help,h", "Prints command usage to stdout and exits");
+		("remote,r", po::value<std::string>(), "Remote file path to save.")
+		("local,l", po::value<std::string>(), "Local file to upload.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1324,14 +1329,14 @@ void ArgumentParser::processFileUpload()
 
 void ArgumentParser::processTags()
 {
-	po::options_description desc("Manage labels:", BOOST_DESC_WIDTH);
+	po::options_description desc("Manage labels", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("view,v", "list labels")
-		("add,a", "add labels")
-		("remove,r", "remove labels")
-		("label,l", po::value<std::vector<std::string>>(), "labels (e.g., -l os=linux -t arch=arm64)")
-		("help,h", "Prints command usage to stdout and exits");
+		("view,v", "List labels.")
+		("add,a", "Add labels.")
+		("remove,r", "Remove labels.")
+		("label,l", po::value<std::vector<std::string>>(), "Labels (e.g., -l os=linux -l arch=arm64).")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1398,11 +1403,11 @@ void ArgumentParser::processTags()
 
 void ArgumentParser::processLoglevel()
 {
-	po::options_description desc("Set log level:", BOOST_DESC_WIDTH);
+	po::options_description desc("Set log level", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("level,l", po::value<std::string>(), "log level (e.g., DEBUG,INFO,NOTICE,WARN,ERROR)")
-		("help,h", "Prints command usage to stdout and exits");
+		("level,l", po::value<std::string>(), "Log level (e.g., DEBUG, INFO, NOTICE, WARN, ERROR).")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1424,18 +1429,18 @@ void ArgumentParser::processLoglevel()
 
 void ArgumentParser::processCloudJoinMaster()
 {
-	po::options_description desc("Join App Mesh cluster:", BOOST_DESC_WIDTH);
+	po::options_description desc("Join App Mesh cluster", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("consul,c", po::value<std::string>(), "Consul url (e.g., http://localhost:8500)")
-		("main,m", "Join as main node")
-		("worker,w", "Join as worker node")
-		("proxy,r", po::value<std::string>()->default_value(""), "appmesh_proxy_url")
-		("user,u", po::value<std::string>()->default_value(""), "Basic auth user name for Consul REST")
-		("pass,p", po::value<std::string>()->default_value(""), "Basic auth user password for Consul REST")
-		("ttl,l", po::value<std::int16_t>()->default_value(30), "Consul session TTL seconds")
-		("security,s", "Enable Consul security (security persist will use Consul storage)")
-		("help,h", "Prints command usage to stdout and exits");
+		("consul,c", po::value<std::string>(), "Consul URL (e.g., http://localhost:8500).")
+		("main,m", "Join as main node.")
+		("worker,w", "Join as worker node.")
+		("proxy,r", po::value<std::string>()->default_value(""), "App Mesh proxy URL.")
+		("user,u", po::value<std::string>()->default_value(""), "Basic auth user name for Consul REST.")
+		("pass,p", po::value<std::string>()->default_value(""), "Basic auth user password for Consul REST.")
+		("ttl,l", po::value<std::int16_t>()->default_value(30), "Consul session TTL in seconds.")
+		("security,s", "Enable Consul security (security persist will use Consul storage).")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1466,11 +1471,11 @@ void ArgumentParser::processCloudJoinMaster()
 
 void ArgumentParser::processConfigView()
 {
-	po::options_description desc("View configurations:", BOOST_DESC_WIDTH);
+	po::options_description desc("View configurations", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("view,v", "view basic configurations with json output")
-		("help,h", "Prints command usage to stdout and exits");
+		("view,v", "View basic configurations in JSON format.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1481,12 +1486,12 @@ void ArgumentParser::processConfigView()
 
 void ArgumentParser::processUserChangePwd()
 {
-	po::options_description desc("Change password:", BOOST_DESC_WIDTH);
+	po::options_description desc("Change password", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("target,t", po::value<std::string>(), "target user to change passwd")
-		("newpasswd,p", po::value<std::string>(), "new password")
-		("help,h", "Prints command usage to stdout and exits");
+		("target,t", po::value<std::string>(), "Target user to change password.")
+		("newpasswd,p", po::value<std::string>(), "New password.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1508,12 +1513,12 @@ void ArgumentParser::processUserChangePwd()
 
 void ArgumentParser::processUserLock()
 {
-	po::options_description desc("Manage users:", BOOST_DESC_WIDTH);
+	po::options_description desc("Manage user", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("target,t", po::value<std::string>(), "target user")
-		("lock,k", po::value<bool>(), "lock or unlock user, 'true' for lock, 'false' for unlock")
-		("help,h", "Prints command usage to stdout and exits");
+		("target,t", po::value<std::string>(), "Target user.")
+		("lock,k", po::value<bool>(), "Lock or unlock user ('true' to lock, 'false' to unlock).")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1533,11 +1538,11 @@ void ArgumentParser::processUserLock()
 
 void ArgumentParser::processUserView()
 {
-	po::options_description desc("View users:", BOOST_DESC_WIDTH);
+	po::options_description desc("View users", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("all,a", "all users")
-		("help,h", "Prints command usage to stdout and exits");
+		("all,a", "View all users.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1573,11 +1578,11 @@ void ArgumentParser::processUserPwdEncrypt()
 
 void ArgumentParser::processUserMfaActive()
 {
-	po::options_description desc("Manage MFA:", BOOST_DESC_WIDTH);
+	po::options_description desc("Manage 2 factor authentication", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("delete,d", "deactive MFA")
-		("help,h", "Prints command usage to stdout and exits");
+		("delete,d", "Deactivate MFA.")
+		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
@@ -1719,6 +1724,13 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool throwAble, const 
 		m_jwtToken = getAuthenToken();
 	}
 	header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken;
+	if (m_delegateHost.length())
+	{
+		if (m_delegateHost.find(':') == std::string::npos)
+			header[HTTP_HEADER_KEY_delegate_host] = m_delegateHost + ":" + parseUrlPort(m_currentUrl);
+		else
+			header[HTTP_HEADER_KEY_delegate_host] = m_delegateHost;
+	}
 	auto resp = RestClient::request(m_currentUrl, mtd, path, body, header, query);
 	if (throwAble && resp->status_code != web::http::status_codes::OK)
 	{
@@ -2215,3 +2227,15 @@ const std::string ArgumentParser::parseUrlHost(const std::string &url)
 	return domain;
 }
 
+const std::string ArgumentParser::parseUrlPort(const std::string &url)
+{
+	// https://stackoverflow.com/questions/2616011/easy-way-to-parse-a-url-in-c-cross-platform
+	std::string port;
+	boost::regex ex("(http|https)://([^/ :]+):?([^/ ]*)(/?[^ #?]*)\\x3f?([^ #]*)#?([^ ]*)");
+	boost::cmatch what;
+	if (boost::regex_match(url.c_str(), what, ex))
+	{
+		port = std::string(what[3].first, what[3].second);
+	}
+	return port;
+}

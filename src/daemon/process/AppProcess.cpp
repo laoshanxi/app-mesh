@@ -297,7 +297,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 	// check command file existence & permission
 	auto argv = Utility::str2argv(cmd);
-	auto cmdRoot = argv.size() > 0 ? argv[0] : cmd;
+	auto &cmdRoot = argv.size() > 0 ? argv[0] : cmd;
 	bool checkCmd = true;
 	if (cmdRoot.rfind('/') == std::string::npos && cmdRoot.rfind('\\') == std::string::npos)
 	{

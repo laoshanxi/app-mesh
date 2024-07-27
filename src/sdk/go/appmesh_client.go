@@ -17,9 +17,10 @@ var DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
 
 // AppmeshClient uses REST API for interacting with REST server.
 type AppmeshClient struct {
-	baseURL string
-	token   string
-	client  *http.Client
+	baseURL      string
+	delegateHost string
+	token        string
+	client       *http.Client
 
 	mutex sync.Mutex
 }
@@ -30,6 +31,20 @@ type AppOutputResponse struct {
 	OutputPosition *int64
 	ExitCode       *int
 	Error          error
+}
+
+// delegate request to target host
+func (r *AppmeshClient) getDelegateHost() string {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	return r.delegateHost
+}
+
+// delegate request to target host
+func (r *AppmeshClient) updateDelegateHost(host string) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.delegateHost = host
 }
 
 func (r *AppmeshClient) getToken() string {

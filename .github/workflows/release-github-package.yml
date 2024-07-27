@@ -19,6 +19,8 @@ env:
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -133,6 +135,7 @@ jobs:
           echo "4. GPG sign packages (rpm/dpkg --import gpg_public.key)" >> CHANGELOG.txt
           echo "5. Generate SBOM file" >> CHANGELOG.txt
           echo "6. YAML file format for application" >> CHANGELOG.txt
+          echo "7. Delegate request to cluster host" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
@@ -170,6 +173,11 @@ jobs:
           # sign deb pkg
           dpkg-sig --sign builder -k appmesh --gpg-options '--batch --pinentry-mode loopback' */*.deb
           dpkg-sig --verify */*.deb
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v1.3.3
+        with:
+          subject-path: "*/*.rpm"
 
       # publish release
       # https://github.com/softprops/action-gh-release

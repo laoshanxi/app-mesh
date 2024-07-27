@@ -84,6 +84,7 @@ private:
 	const std::string getAppMeshUrl();
 	const std::string getPosixTimezone();
 	const std::string parseUrlHost(const std::string &url);
+	const std::string parseUrlPort(const std::string &url);
 
 private:
 	po::variables_map m_commandLineVariables;
@@ -96,4 +97,6 @@ private:
 	std::string m_username;
 	std::string m_userpwd;
 	std::unique_ptr<ACE_Sig_Action> m_sigAction;
+	std::string m_jwtToken;
+	std::string m_delegateHost;
 };

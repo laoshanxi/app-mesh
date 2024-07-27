@@ -2,6 +2,7 @@
 """App Mesh Python SDK"""
 import abc
 import base64
+from contextlib import contextmanager
 import copy
 import json
 import os
@@ -305,21 +306,33 @@ class Run(object):
         """application name"""
         self.proc_uid = process_id
         """process_uuid from run_async()"""
-        self.__client = client
+        self._client = client
         """AppMeshClient object"""
+        self._delegate_host = client.delegate_host
+        """delegate host indicates the target server for this app run"""
+
+    @contextmanager
+    def delegate_host(self):
+        """context manager for delegate host override to self._client"""
+        original_value = self._client.delegate_host
+        self._client.delegate_host = self._delegate_host
+        try:
+            yield
+        finally:
+            self._client.delegate_host = original_value
 
     def wait(self, stdout_print: bool = True, timeout: int = 0) -> int:
         """Wait for an async run to be finished
 
         Args:
-            run (Run): asyncrized run result from run_async().
             stdout_print (bool, optional): print remote stdout to local or not.
             timeout (int, optional): wait max timeout seconds and return if not finished, 0 means wait until finished
 
         Returns:
             int: return exit code if process finished, return None for timeout or exception.
         """
-        return self.__client.run_async_wait(self, stdout_print, timeout)
+        with self.delegate_host():
+            return self._client.run_async_wait(self, stdout_print, timeout)
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -359,10 +372,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
 
         self.server_url = rest_url
-        self.__jwt_token = jwt_token
+        self._jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify
         self.ssl_client_cert = rest_ssl_client_cert
         self.rest_timeout = rest_timeout
+        self._delegate_host = None
 
     @property
     def jwt_token(self) -> str:
@@ -371,7 +385,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             str: _description_
         """
-        return self.__jwt_token
+        return self._jwt_token
 
     @jwt_token.setter
     def jwt_token(self, token: str) -> None:
@@ -380,7 +394,25 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Args:
             token (str): _description_
         """
-        self.__jwt_token = token
+        self._jwt_token = token
+
+    @property
+    def delegate_host(self) -> str:
+        """property for delegate_host
+
+        Returns:
+            str: delegate request to target host (host:port)
+        """
+        return self._delegate_host
+
+    @delegate_host.setter
+    def delegate_host(self, host: str) -> None:
+        """setter for delegate_host
+
+        Args:
+            host (str): delegate request to target host (host:port)
+        """
+        self._delegate_host = host
 
     ########################################
     # Security
@@ -1298,6 +1330,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         header = {} if header is None else header
         if self.jwt_token:
             header["Authorization"] = "Bearer " + self.jwt_token
+        if self.delegate_host and len(self.delegate_host) > 0:
+            if ":" in self.delegate_host:
+                header["X-Target-Host"] = self.delegate_host
+            else:
+                header["X-Target-Host"] = self.delegate_host + ":" + str(parse.urlsplit(self.server_url).port)
         header[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
@@ -1461,6 +1498,11 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_requst = RequestMsg()
         if super().jwt_token:
             appmesh_requst.headers["Authorization"] = "Bearer " + super().jwt_token
+        if super().delegate_host and len(super().delegate_host) > 0:
+            if ":" in super().delegate_host:
+                appmesh_requst.headers["X-Target-Host"] = super().delegate_host
+            else:
+                appmesh_requst.headers["X-Target-Host"] = super().delegate_host + ":" + str(parse.urlsplit(self.server_url).port)
         appmesh_requst.headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
         appmesh_requst.uuid = str(uuid.uuid1())
         appmesh_requst.http_method = method.value

@@ -55,6 +55,7 @@ class TestAppMeshClient(TestCase):
         """test app run"""
         client = appmesh_client.AppMeshClient()
         client.login("admin", "admin123")
+        client.delegate_host = "localhost"
         metadata = {
             "subject": "subject",
             "message": "msg",

@@ -388,6 +388,7 @@ public:
 #define HTTP_HEADER_KEY_file_mode "File-Mode"
 #define HTTP_HEADER_KEY_file_user "File-User"
 #define HTTP_HEADER_KEY_file_group "File-Group"
+#define HTTP_HEADER_KEY_delegate_host "X-Target-Host"
 #define HTTP_BODY_KEY_MFA_URI "Mfa-Uri"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"

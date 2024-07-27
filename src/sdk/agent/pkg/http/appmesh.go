@@ -250,6 +250,16 @@ func handleIndex(ctx *fasthttp.RequestCtx) {
 
 // https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
+	// handle forward request
+	targetHost := string(ctx.Request.Header.Peek("X-Target-Host"))
+	if len(targetHost) > 0 {
+		// in order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
+		ctx.Logger().Printf("Forward request to %s", targetHost)
+		ctx.Request.Header.Del("X-Target-Host")
+		delegateAppmeshRest(ctx, targetHost)
+		return
+	}
+
 	// body buffer, read from fasthttp
 	request := convertHttpRequestData(&ctx.Request)
 	bodyData, err := request.serialize()
@@ -284,6 +294,34 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 		ctx.Logger().Printf("Failed to send request to server with error:: %v", sendErr)
 		log.Fatal(sendErr)
 	}
+}
+
+func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
+	// Create a new request to be sent to the target server
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	// Copy the original request
+	ctx.Request.CopyTo(req)
+
+	// Set the URL of the target server including the query string
+	req.SetRequestURI("https://" + targetHost + string(ctx.Path()) + "?" + ctx.QueryArgs().String())
+
+	// Create a response object to store the response from the target server
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+
+	// Perform the request
+	insecureClient := &fasthttp.Client{TLSConfig: &tls.Config{InsecureSkipVerify: true}}
+	err := insecureClient.Do(req, resp)
+	if err != nil {
+		ctx.Error("Failed to forward request: "+err.Error(), fasthttp.StatusInternalServerError)
+		return
+	}
+
+	// Copy response
+	resp.CopyTo(&ctx.Response)
+	ctx.SetStatusCode(resp.StatusCode())
 }
 
 func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
