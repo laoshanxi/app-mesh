@@ -15,7 +15,7 @@
   "author": "laoshanxi",
   "license": "MIT",
   "dependencies": {
-    "axios": "^0.21.4",
+    "axios": "^0.28.0",
     "iso8601-duration": "^2.1.2"
   },
   "devDependencies": {
