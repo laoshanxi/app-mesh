@@ -210,39 +210,51 @@ func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) {
 
 func handleIndex(ctx *fasthttp.RequestCtx) {
 	htmlContent := `
-		<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1.0">
-			<title>App Mesh</title>
-			<style>
-				body {
-					display: flex;
-					flex-direction: column;
-					min-height: 100vh;
-					margin: 0;
-					font-family: Arial, sans-serif;
-				}
-				.content {
-					flex: 1;
-				}
-				.footer {
-					text-align: center;
-					padding: 1em;
-					background-color: #f1f1f1;
-				}
-			</style>
-		</head>
-		<body>
-			<div class="content">
-				<p>Welcome to App Mesh!</p>
-			</div>
-			<div class="footer">
-			<a href="/swagger">View Swagger Documentation</a>
-			</div>
-		</body>
-		</html>`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>App Mesh</title>
+	<style>
+		body {
+			display: flex;
+			flex-direction: column;
+			min-height: 100vh;
+			margin: 0;
+			font-family: Arial, sans-serif;
+		}
+		.content {
+			flex: 1;
+		}
+		.footer {
+			text-align: center;
+			padding: 1em;
+			background-color: #f1f1f1;
+		}
+	</style>
+</head>
+<body>
+	<div class="content">
+		<p>Welcome to App Mesh!</p>
+	</div>
+	<div class="footer">
+		<a id="swagger-link" href="#">View Swagger Documentation</a> | <a href="/openapi.yaml">OpenAPI definition</a>
+	</div>
+	<script>
+		document.addEventListener("DOMContentLoaded", function() {
+			var swaggerLink = document.getElementById("swagger-link");
+			swaggerLink.addEventListener("click", function(event) {
+				event.preventDefault();
+				var currentDomain = window.location.origin;
+				var swaggerURL = "https://petstore.swagger.io/?url=" + encodeURIComponent(currentDomain + "/openapi.yaml");
+				window.location.href = swaggerURL;
+			});
+		});
+	</script>
+</body>
+</html>
+`
 
 	ctx.Response.Header.Set("Content-Type", "text/html; charset=utf-8")
 	ctx.Response.SetBodyString(htmlContent)

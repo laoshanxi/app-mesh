@@ -1,4 +1,4 @@
-name: "release_PyPI_package"
+name: Publish PyPI SDK package
 
 on:
   push:

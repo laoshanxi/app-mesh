@@ -1,0 +1,36 @@
+name: Publish npm SDK package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/sdk/js/**"
+      - .github/workflows/release-npm-package.yml
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18" # specify the version of Node.js you want to use
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        working-directory: "src/sdk/javascript/"
+        run: npm install
+
+      - name: Build project
+        working-directory: "src/sdk/javascript/"
+        run: npm run build
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: "src/sdk/javascript/"
+        run: npm publish --access public --registry=https://registry.npmjs.org
