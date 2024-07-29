@@ -347,6 +347,7 @@ public:
 
 #define JSON_KEY_TIME_POSTTIX_STR "_TEXT"
 
+#define JSON_KEY_USER_readonly_name "name"
 #define JSON_KEY_USER_key "key"
 #define JSON_KEY_USER_email "email"
 #define JSON_KEY_USER_group "group"

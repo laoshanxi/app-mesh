@@ -3,7 +3,7 @@
 App Mesh can manage all app applications running on Linux and provide build-in Prometheus exporter the metrics can be used to monitor hosted application detail running behavior. Loki can be used to collect all applications and App Mesh logs.
 
 Grafana can be used as Prometheus and Loki web portal, with those components, we can build a runtime metrics and log aggregate system with a flexible GUI.
-<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/diagram.jpg" width=600 height=400 align=center /></div>
+<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" width=600 height=400 align=center /></div>
 
 ## Deploy all component by docker compose
 

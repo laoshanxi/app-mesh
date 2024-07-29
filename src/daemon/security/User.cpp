@@ -145,6 +145,7 @@ nlohmann::json User::AsJson() const
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	nlohmann::json result = nlohmann::json::object();
 
+	result[JSON_KEY_USER_readonly_name] = std::string(m_name);
 	result[JSON_KEY_USER_key] = std::string(m_key);
 	result[JSON_KEY_USER_email] = std::string(m_email);
 	result[JSON_KEY_USER_group] = std::string(m_group);

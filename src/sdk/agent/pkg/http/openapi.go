@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/buaazp/fasthttprouter"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
@@ -39,8 +37,6 @@ func handleOpenAPI(ctx *fasthttp.RequestCtx) {
 }
 
 func handleSwaggerUI(ctx *fasthttp.RequestCtx) {
-	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
-	listenAddr = strings.Replace(listenAddr, "0.0.0.0", "127.0.0.1", 1)
-	swaggerURL := fmt.Sprintf("https://petstore.swagger.io/?url=https://%s/openapi.yaml", listenAddr)
+	swaggerURL := fmt.Sprintf("https://petstore.swagger.io/?url=https://%s/openapi.yaml", string(ctx.Host()))
 	ctx.Redirect(swaggerURL, fasthttp.StatusTemporaryRedirect)
 }

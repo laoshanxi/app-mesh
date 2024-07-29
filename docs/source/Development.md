@@ -71,4 +71,4 @@ App Mesh can test memory issue by valgrind to find potential memory leaks. build
 
 ## Mind diagram
 
-![mind-diagram](https://github.com/laoshanxi/app-mesh/raw/main/docs/source/mind.png)
+![mind-diagram](https://github.com/laoshanxi/picture/raw/master/appmesh/mind.png)

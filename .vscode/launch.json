@@ -12,6 +12,17 @@
       "program": "${file}"
     },
     {
+      "name": "Go Attach",
+      "type": "go", // go install github.com/go-delve/delve/cmd/dlv@latest
+      "request": "attach",
+      "mode": "remote",
+      "remotePath": "${workspaceFolder}",
+      "port": 2345, // replace with your dlv server port (~/go/bin/dlv --check-go-version=false --headless --listen=:2345 --api-version=2 --accept-multiclient attach 984370)
+      "host": "127.0.0.1", // replace with your host if different
+      "trace": "verbose", // optional: enable to see detailed debug information
+      "showLog": true // optional: shows logs from the delve debugger
+    },
+    {
       "name": "GDB: launch appsvc",
       "type": "cppdbg",
       "request": "launch",

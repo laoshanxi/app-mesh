@@ -1,29 +1,14 @@
 import io
 import os
-import json
-import requests
 import setuptools
 
 readme_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../../../README.md")
 with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-skip_versions = ["0.1.6"]
-start_version = "0.2.0"
-
 
 def get_version():
-    resp = requests.get("https://pypi.org/pypi/appmesh/json")
-    if resp.status_code == 200:
-        data = json.loads(resp.text)
-        if "info" in data and "version" in data["info"]:
-            version = data["info"]["version"]
-            if version not in skip_versions:
-                version_list = list(str(int(version.replace(".", "")) + 1))
-                while len(version_list) < 3:
-                    version_list = ["0"] + version_list
-                return ".".join(version_list)
-    return start_version
+    return "1.2.9"
 
 
 setuptools.setup(

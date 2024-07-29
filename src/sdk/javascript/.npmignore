@@ -1,0 +1,30 @@
+# Exclude source files
+src/
+
+# Exclude test files
+test/
+
+# Exclude build scripts and configuration files
+webpack.config.js
+.babelrc
+.jest.config.js
+eslint.config.js
+tsconfig.json
+
+# Exclude node_modules (usually not necessary since npm automatically ignores this)
+node_modules/
+
+# Exclude local environment files
+.env
+.env.local
+
+# Exclude other unnecessary files and directories
+*.log
+.DS_Store
+.idea/
+.vscode/
+.nyc_output/
+coverage/
+dist/
+build/
+tmp/

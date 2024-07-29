@@ -1,0 +1,45 @@
+name: Publish JAR SDK to GitHub Packages
+
+# https://docs.github.com/en/actions/publishing-packages/publishing-java-packages-with-maven
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/sdk/java/**"
+      - .github/workflows/release-jar-package.yml
+
+permissions: # added using https://github.com/step-security/secure-workflows
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Maven settings.xml
+        run: |
+          mkdir -p ~/.m2
+          echo "<settings><servers><server><id>github</id><username>${GITHUB_ACTOR}</username><password>${GITHUB_TOKEN}</password></server></servers></settings>" > ~/.m2/settings.xml
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "11"
+          distribution: "temurin"
+
+      - name: Publish package
+        working-directory: "src/sdk/java/"
+        run: mvn --batch-mode deploy -DskipTests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

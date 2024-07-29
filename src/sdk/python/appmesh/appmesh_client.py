@@ -13,7 +13,7 @@ import uuid
 from enum import Enum, unique
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional
+from typing import Optional, Tuple
 from urllib import parse
 
 import aniso8601
@@ -31,7 +31,7 @@ _SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
 _SSL_CLIENT_PEM_FILE = "/opt/appmesh/ssl/client.pem"
 _SSL_CLIENT_PEM_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
 HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
-HTTP_USER_AGENT = "appmeshsdk/py"
+HTTP_USER_AGENT = "appmesh/python"
 
 
 def _get_str_item(data: dict, key):
@@ -296,7 +296,7 @@ class App(object):
         return output
 
 
-class Run(object):
+class AppRun(object):
     """
     Application run object indicate to a remote run from run_async()
     """
@@ -657,19 +657,19 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         exit_code = int(resp.headers["Exit-Code"]) if "Exit-Code" in resp.headers else None
         return AppOutput(status_code=resp.status_code, output=resp.text, out_position=out_position, exit_code=exit_code)
 
-    def app_health(self, app_name: str) -> int:
+    def app_health(self, app_name: str) -> bool:
         """Get application health status, 0 is health.
 
         Args:
             app_name (str): the application name.
 
         Returns:
-            int: '0' is heathy, '1' is unhealthy.
+            bool: healthy or not
         """
         resp = self._request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}/health")
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
-        return int(resp.text)
+        return int(resp.text) == 0
 
     ########################################
     # Application manage
@@ -1241,13 +1241,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         )
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
-        return Run(self, resp.json()["name"], resp.json()["process_uuid"])
+        return AppRun(self, resp.json()["name"], resp.json()["process_uuid"])
 
-    def run_async_wait(self, run: Run, stdout_print: bool = True, timeout: int = 0) -> int:
+    def run_async_wait(self, run: AppRun, stdout_print: bool = True, timeout: int = 0) -> int:
         """Wait for an async run to be finished
 
         Args:
-            run (Run): asyncrized run result from run_async().
+            run (AppRun): asyncrized run result from run_async().
             stdout_print (bool, optional): print remote stdout to local or not.
             timeout (int, optional): wait max timeout seconds and return if not finished, 0 means wait until finished
 
@@ -1282,7 +1282,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         stdout_print: bool = True,
         max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
         life_cycle_seconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
-    ) -> int:
+    ) -> Tuple[int, str]:
         """Block run a command remotely, 'name' attribute in app_json dict used to run an existing application
         The synchronized run will block the process until the remote run is finished then return the result from HTTP response
 
@@ -1294,6 +1294,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         Returns:
             int: process exit code, return None if no exit code.
+            str: stdout text
         """
         path = "/appmesh/app/syncrun"
         resp = self._request_http(
@@ -1310,7 +1311,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 exit_code = int(resp.headers.get("Exit-Code"))
         elif stdout_print:
             print(resp.text)
-        return exit_code
+        return exit_code, resp.text
 
     def _request_http(self, method: Method, path: str, query: dict = None, header: dict = None, body=None) -> requests.Response:
         """REST API

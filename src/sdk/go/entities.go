@@ -1,5 +1,17 @@
 package appmesh
 
+const (
+	DefaultServerUri         = "https://localhost:6060"
+	DefaultClientCertFile    = "/opt/appmesh/ssl/client.pem"
+	DefaultClientCertKeyFile = "/opt/appmesh/ssl/client-key.pem"
+	DefaultCAFile            = "/opt/appmesh/ssl/ca.pem"
+
+	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
+	HTTP_USER_AGENT             = "appmesh/golang"
+
+	DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
+)
+
 // Application json
 type Application struct {
 	// main definition
@@ -84,6 +96,14 @@ type JWTResponse struct {
 		Name     string `json:"name"`
 	} `json:"profile"`
 	TokenType string `json:"token_type"`
+}
+
+type AppOutput struct {
+	HttpSuccess    bool
+	HttpBody       string
+	OutputPosition *int64
+	ExitCode       *int
+	Error          error
 }
 
 // Env json
