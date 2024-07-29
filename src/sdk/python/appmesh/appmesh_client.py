@@ -657,19 +657,19 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         exit_code = int(resp.headers["Exit-Code"]) if "Exit-Code" in resp.headers else None
         return AppOutput(status_code=resp.status_code, output=resp.text, out_position=out_position, exit_code=exit_code)
 
-    def app_health(self, app_name: str) -> int:
+    def app_health(self, app_name: str) -> bool:
         """Get application health status, 0 is health.
 
         Args:
             app_name (str): the application name.
 
         Returns:
-            int: '0' is heathy, '1' is unhealthy.
+            bool: healthy or not
         """
         resp = self._request_http(AppMeshClient.Method.GET, path=f"/appmesh/app/{app_name}/health")
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
-        return int(resp.text)
+        return int(resp.text) == 0
 
     ########################################
     # Application manage

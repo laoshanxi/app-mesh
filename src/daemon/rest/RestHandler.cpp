@@ -1013,6 +1013,11 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 		}
 	}
 
+	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	int lifecycle = getHttpQueryValue(message, HTTP_QUERY_KEY_lifecycle, DEFAULT_RUN_APP_LIFECYCLE_SECONDS, timeout, MAX_RUN_APP_TIMEOUT_SECONDS);
+	if (lifecycle == 0)
+		throw std::invalid_argument("Zero timeout and lifecycle speficied");
+
 	jsonApp[JSON_KEY_APP_status] = (static_cast<int>(STATUS::NOTAVIALABLE));
 	jsonApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
 	auto app = Configuration::instance()->addApp(jsonApp, fromApp, false);
@@ -1020,8 +1025,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 		LOG_INF << fname << "Run application <" << app->getName() << "> from " << fromApp->getName();
 	else
 		LOG_INF << fname << "Run application <" << app->getName() << ">";
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
-	int lifecycle = getHttpQueryValue(message, HTTP_QUERY_KEY_lifecycle, DEFAULT_RUN_APP_LIFECYCLE_SECONDS, timeout, MAX_RUN_APP_TIMEOUT_SECONDS);
+
 	app->regSuicideTimer(lifecycle);
 	app->dump();
 	return app;

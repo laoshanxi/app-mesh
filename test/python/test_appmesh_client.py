@@ -144,7 +144,7 @@ class TestAppMeshClient(TestCase):
             self.assertTrue(hasattr(app, "name"))
             self.assertTrue(hasattr(app, "shell"))
             self.assertTrue(hasattr(app, "session_login"))
-        self.assertEqual(client.app_health("ping"), 0)
+        self.assertEqual(client.app_health("ping"), True)
         client.app_output("ping")
 
     def test_app_mgt(self):
