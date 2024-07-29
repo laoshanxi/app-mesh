@@ -1,0 +1,31 @@
+{
+  "name": "appmesh_client",
+  "version": "0.0.1",
+  "description": "JavaScript SDK for App Mesh API",
+  "main": "src/appmesh_client.js",
+  "scripts": {
+    "test": "jest",
+    "build": "babel src -d lib"
+  },
+  "keywords": [
+    "app-mesh",
+    "sdk",
+    "api"
+  ],
+  "author": "laoshanxi",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.21.4",
+    "iso8601-duration": "^2.1.2"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.8",
+    "@babel/core": "^7.24.9",
+    "@babel/preset-env": "^7.25.0",
+    "axios-mock-adapter": "^1.22.0",
+    "jest": "^27.5.1"
+  },
+  "directories": {
+    "test": "test"
+  }
+}

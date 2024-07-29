@@ -275,8 +275,12 @@ api/
 docs/source/README.md
 venv
 
-
 *.egg-info
 *.whl
 dist
 src/sdk/python/appmesh_client.py
+
+node_modules/
+coverage/
+src/sdk/js/package-lock.json
+src/sdk/js/lib/

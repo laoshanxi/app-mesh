@@ -1,0 +1,34 @@
+name: Publish npm SDK package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/sdk/js/**"
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "14" # specify the version of Node.js you want to use
+
+      - name: Install dependencies
+        working-directory: "src/sdk/js/"
+        run: npm install
+
+      - name: Build project
+        working-directory: "src/sdk/js/"
+        run: npm run build
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: "src/sdk/js/"
+        run: npm publish --access public
