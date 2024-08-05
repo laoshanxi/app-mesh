@@ -13,6 +13,11 @@ async function userTest() {
     const auth = await appmesh.authentication(token);
     console.log("authentication response:", auth);
 
+    console.log("permissions_for_user:", await appmesh.permissions_for_user());
+    console.log("roles_view:", await appmesh.roles_view());
+    console.log("users_view:", await appmesh.users_view());
+    console.log("user_self:", await appmesh.user_self());
+
     const host_resource = await appmesh.host_resource();
     console.log("host_resource:", host_resource);
 

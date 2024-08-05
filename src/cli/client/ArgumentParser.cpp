@@ -706,6 +706,7 @@ void ArgumentParser::processAppView()
 		("pstree,p", "View application process tree.")
 		("stdout_index,O", po::value<int>(), "Application output index.")
 		("tail,t", "Continuously view application output.")
+		("json,j", "Display with JSON format.")
 		("help,h", "Display command usage and exit.");
 
 	shiftCommandLineArgs(desc);
@@ -729,7 +730,10 @@ void ArgumentParser::processAppView()
 			else
 			{
 				Utility::addExtraAppTimeReferStr(resp);
-				std::cout << Utility::jsonToYaml(resp) << std::endl;
+				if (m_commandLineVariables.count("json"))
+					std::cout << Utility::prettyJson(resp.dump()) << std::endl;
+				else
+					std::cout << Utility::jsonToYaml(resp) << std::endl;
 			}
 		}
 		else

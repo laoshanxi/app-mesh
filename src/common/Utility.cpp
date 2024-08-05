@@ -1043,7 +1043,7 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 		if (scalar == "null")
 			return nullptr;
 		if (Utility::isNumber(scalar))
-			return std::stoi(scalar);
+			return std::stol(scalar);
 		if (Utility::isDouble(scalar))
 			return std::stod(scalar);
 		return Utility::stdStringTrim(scalar);
