@@ -30,6 +30,7 @@ constexpr int INVALID_RETURN_CODE = std::numeric_limits<int>::min();
 Application::Application()
 	: m_persistAble(true), m_ownerPermission(0), m_metadata(EMPTY_STR_JSON),
 	  m_shellApp(false), m_sessionLogin(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
+	  m_endTime(std::chrono::system_clock::time_point::max()),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false),
 	  m_nextStartTimerId(INVALID_TIMER_ID), m_regTime(std::chrono::system_clock::now()), m_appId(Utility::createUUID()),
 	  m_version(0), m_suicideTimerId(INVALID_TIMER_ID),
@@ -144,7 +145,7 @@ bool Application::available(const std::chrono::system_clock::time_point &now)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// check expired
-	if (m_endTime != AppTimer::EPOCH_ZERO_TIME && now >= m_endTime)
+	if (m_endTime != AppTimer::EPOCH_ZERO_TIME && m_endTime != std::chrono::system_clock::time_point::max() && now >= m_endTime)
 	{
 		return false;
 	}
@@ -372,7 +373,7 @@ void Application::execute(void *ptree)
 		if (m_process && m_process->running() && !inDailyRange)
 		{
 			// check run status and kill for invalid runs
-			LOG_INF << fname << "Application <" << m_name << "> was not in start time";
+			LOG_INF << fname << "Application <" << m_name << "> was not in start time, startTime:" << DateTime::formatLocalTime(m_startTime) << " endTime:" << DateTime::formatLocalTime(m_endTime);
 			terminate(m_process);
 			setInvalidError();
 			m_nextLaunchTime.reset();
@@ -773,7 +774,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 
 	if (m_startTime.time_since_epoch().count())
 		result[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
-	if (m_endTime.time_since_epoch().count())
+	if (m_endTime.time_since_epoch().count() && m_endTime != std::chrono::system_clock::time_point::max())
 		result[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());
 	result[JSON_KEY_APP_REG_TIME] = (std::chrono::duration_cast<std::chrono::seconds>(m_regTime.time_since_epoch()).count());
 	if (returnRuntimeInfo)

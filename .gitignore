@@ -286,3 +286,7 @@ src/sdk/javascript/package-lock.json
 src/sdk/javascript/lib/
 *.tgz
 src/sdk/javascript/lib/appmesh.js
+
+*.class
+*.jar
+target

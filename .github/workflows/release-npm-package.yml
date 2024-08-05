@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "src/sdk/js/**"
+      - "src/sdk/javascript/**"
       - .github/workflows/release-npm-package.yml
 jobs:
   publish:
