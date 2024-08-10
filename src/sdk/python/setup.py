@@ -8,8 +8,8 @@ readme_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../../.
 with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-skip_versions = ["0.1.6"]
-start_version = "0.2.0"
+skip_versions = ["1.2.8", "1.2.7"]
+start_version = "1.2.8"
 
 
 def get_version():
@@ -18,11 +18,14 @@ def get_version():
         data = json.loads(resp.text)
         if "info" in data and "version" in data["info"]:
             version = data["info"]["version"]
-            if version not in skip_versions:
-                version_list = list(str(int(version.replace(".", "")) + 1))
-                while len(version_list) < 3:
-                    version_list = ["0"] + version_list
-                return ".".join(version_list)
+            increase = 1
+            version_list = list(str(int(version.replace(".", "")) + increase))
+            while ".".join(version_list) in skip_versions:
+                increase = increase + 1
+                version_list = list(str(int(version.replace(".", "")) + increase))
+            if len(version_list) < 3:
+                version_list = ["0"] + version_list
+            return ".".join(version_list)
     return start_version
 
 

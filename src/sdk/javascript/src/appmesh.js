@@ -5,6 +5,8 @@ const base64 = require("base-64");
 const { parse, toSeconds } = require("iso8601-duration");
 const validate_params = require("./validate_params");
 
+const HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
+const HTTP_USER_AGENT = "appmesh/javascript";
 const DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"; // default 7 day(s)
 const DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"; // 2 days
 const DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"; // 2.5 days
@@ -24,9 +26,16 @@ class AppMeshClient {
    * This client object is used to access the App Mesh REST Service.
    *
    * @param {string} baseURL - The base URL of the App Mesh REST Service.
-   * @param {boolean} [verifySSL=false] - Whether to verify SSL certificates. Default is false.
+   * @param {Object} [sslConfig=null] - sslConfig definition. Default is null to disable SSL verify.
+   * const sslConfig = {
+   *   cert: fs.readFileSync("/opt/appmesh/ssl/client.pem"),
+   *   key: fs.readFileSync("/opt/appmesh/ssl/client-key.pem"),
+   *   ca: fs.readFileSync("/opt/appmesh/ssl/ca.pem"),  // Optional: if using a custom CA
+   *   rejectUnauthorized: true,                        // Set to false if you want to ignore unauthorized SSL certificates
+   * };
+   * @param {string} jwtToken - Authentication JWT token for API requests.
    */
-  constructor(baseURL, verifySSL = false) {
+  constructor(baseURL, sslConfig = null, jwtToken = null) {
     /**
      * @property {string} baseURL - The base URL of the App Mesh REST Service.
      */
@@ -34,7 +43,7 @@ class AppMeshClient {
     /**
      * @property {string|null} _jwtToken - Authentication JWT token for API requests. Initially null.
      */
-    this._jwtToken = null;
+    this._jwtToken = jwtToken;
     /**
      * @property {string|null} delegateHost - The host to delegate requests to, if any. Initially null.
      */
@@ -45,9 +54,7 @@ class AppMeshClient {
      */
     this._client = axios.create({
       baseURL,
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: verifySSL,
-      }),
+      httpsAgent: sslConfig ? new https.Agent(sslConfig) : new https.Agent({ rejectUnauthorized: false }),
     });
   }
 
@@ -84,7 +91,7 @@ class AppMeshClient {
 
     try {
       this._jwtToken = null;
-      const response = await this._client.post("/appmesh/login", null, { headers });
+      const response = await this._request("post", "/appmesh/login", null, { headers: headers });
       if (response.status !== 200) {
         throw new Error(response.data);
       }
@@ -353,7 +360,6 @@ class AppMeshClient {
   })
   async app_output(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240, process_uuid = "", timeout = 0) {
     try {
-      const headers = this._commonHeaders();
       const params = {};
       params.stdout_position = stdout_position.toString();
       params.stdout_index = stdout_index.toString();
@@ -361,7 +367,7 @@ class AppMeshClient {
       params.process_uuid = process_uuid;
       params.timeout = this._toSeconds(timeout);
 
-      const response = await this._client.get(`/appmesh/app/${app_name}/output`, { headers: headers, params: params });
+      const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params: params });
       const outPosition = response.headers["output-position"] ? parseInt(response.headers["output-position"]) : null;
       const exitCode = response.headers["exit-code"] ? parseInt(response.headers["exit-code"]) : null;
       return new AppOutput(response.status, response.data, outPosition, exitCode);
@@ -393,11 +399,9 @@ class AppMeshClient {
     maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
     lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS
   ) {
-    const headers = this._commonHeaders();
     const params = { timeout: this._toSeconds(maxTimeSeconds), lifecycle: this._toSeconds(lifeCycleSeconds) };
-
     try {
-      const response = await this._client.post(`/appmesh/app/syncrun`, app, { headers: headers, params: params });
+      const response = await this._request("post", "/appmesh/app/syncrun", app, { params: params });
       let exitCode = null;
       if (response.status === 200) {
         if (outputHandler) {
@@ -499,11 +503,12 @@ class AppMeshClient {
    */
   async file_download(filePath, localFile) {
     try {
-      const headers = this._commonHeaders();
-      headers["File-Path"] = filePath;
-      const response = await this._client.get("/appmesh/file/download", {
+      const headers = { "File-Path": filePath };
+      const response = await this._request("get", "/appmesh/file/download", null, {
         headers: headers,
-        responseType: "arraybuffer", // This is crucial for binary files
+        config: {
+          responseType: "arraybuffer", // This is crucial for binary files
+        },
       });
 
       if (response.status !== 200) {
@@ -594,10 +599,12 @@ class AppMeshClient {
         // In browser, Axios will set the correct Content-Type header automatically
       }
 
-      const response = await this._client.post("/appmesh/file/upload", formData, {
+      const response = await this._request("post", "/appmesh/file/upload", formData, {
         headers: headers,
-        maxBodyLength: Infinity, // Allow for large file uploads
-        maxContentLength: Infinity,
+        config: {
+          maxBodyLength: Infinity, // Allow for large file uploads
+          maxContentLength: Infinity,
+        },
       });
 
       if (response.status !== 200) {
@@ -898,10 +905,10 @@ class AppMeshClient {
 
   // Common function to create headers
   _commonHeaders() {
-    const headers = {
-      Authorization: `Bearer ${this._jwtToken}`,
-      "User-Agent": "AppMesh-JavaScript-SDK",
-    };
+    const headers = { HTTP_USER_AGENT_HEADER_NAME: HTTP_USER_AGENT };
+    if (this._jwtToken) {
+      headers["Authorization"] = `Bearer ${this._jwtToken}`;
+    }
     if (this.delegateHost) {
       if (this.delegateHost.includes(":")) {
         headers["X-Target-Host"] = this.delegateHost;
@@ -965,10 +972,6 @@ class AppMeshClient {
           break;
         default:
           throw new Error(`Unsupported HTTP method: ${method}`);
-      }
-
-      if (response.status !== 200) {
-        throw new Error(response.data);
       }
 
       return response;
