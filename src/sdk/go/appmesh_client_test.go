@@ -13,10 +13,17 @@ import (
 
 func TestAppmeshLogin(t *testing.T) {
 
-	client := NewClient("https://localhost:6060")
+	emptyStr := ""
+	client := NewClient(AppMeshOption{
+		AppMeshUri:                  "https://localhost:6060",
+		SslClientCertificateFile:    &emptyStr,
+		SslClientCertificateKeyFile: &emptyStr,
+		SslTrustedCA:                &emptyStr})
 
 	_, token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
-	client.Authentication(token, "")
+	ret, err := client.Authentication(token, "")
+	require.Equal(t, ret, true)
+	require.Nil(t, err)
 	labels, _ := client.GetTags()
 	t.Log(labels)
 	apps, _ := client.GetApps()
@@ -32,9 +39,24 @@ func TestAppmeshLogin(t *testing.T) {
 	client.RunAsync(runApp, 5)
 }
 
+func TestAppmeshFile(t *testing.T) {
+
+	client := NewClient(AppMeshOption{AppMeshUri: "https://localhost:6060"})
+
+	client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
+	if _, err := os.Stat("appsvc"); err == nil {
+		os.Remove("appsvc")
+	}
+	if _, err := os.Stat("/tmp/appsvc"); err == nil {
+		os.Remove("/tmp/appsvc")
+	}
+	client.FileDownload("/opt/appmesh/bin/appsvc", "appsvc")
+	client.FileUpload("appsvc", "/tmp/appsvc")
+}
+
 func TestAppmeshTotp(t *testing.T) {
 
-	client := NewClient("https://localhost:6060")
+	client := NewClient(AppMeshOption{AppMeshUri: "https://localhost:6060"})
 
 	success, token, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
 	require.True(t, success, "Login failed")

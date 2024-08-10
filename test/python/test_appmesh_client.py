@@ -63,12 +63,12 @@ class TestAppMeshClient(TestCase):
         app_data = {"name": "ping", "metadata": json.dumps(metadata)}
         app = appmesh_client.App(app_data)
         app.behavior.set_exit_behavior(appmesh_client.App.Behavior.Action.REMOVE)
-        self.assertEqual(9, client.run_sync(app=app, max_time_seconds=3, life_cycle_seconds=4))
+        self.assertEqual(9, client.run_sync(app=app, max_time_seconds=3, life_cycle_seconds=4)[0])
 
         app_data = {"name": "whoami", "command": "whoami", "metadata": json.dumps(metadata)}
-        self.assertEqual(0, client.run_sync(app=appmesh_client.App(app_data), max_time_seconds=5, life_cycle_seconds=6))
+        self.assertEqual(0, client.run_sync(app=appmesh_client.App(app_data), max_time_seconds=5, life_cycle_seconds=6)[0])
 
-        self.assertEqual(9, client.run_sync(appmesh_client.App({"command": "ping github.com -w 5", "shell": True}), max_time_seconds=4))
+        self.assertEqual(9, client.run_sync(appmesh_client.App({"command": "ping github.com -w 5", "shell": True}), max_time_seconds=4)[0])
         run = client.run_async(appmesh_client.App({"command": "ping github.com -w 4", "shell": True}), max_time_seconds=6)
         run.wait()
 
@@ -90,7 +90,7 @@ class TestAppMeshClient(TestCase):
                         "metadata": "import os; [os.remove('/tmp/2.log') if os.path.exists('/tmp/2.log') else None]",
                     }
                 )
-            ),
+            )[0],
         )
         self.assertTrue(client.file_upload(local_file="1.log", file_path="/tmp/2.log"))
         self.assertTrue(client.file_download(file_path="/tmp/2.log", local_file="/tmp/3.log"))
@@ -105,7 +105,7 @@ class TestAppMeshClient(TestCase):
                         "metadata": "import shutil;shutil.copy('/etc/os-release', '/tmp/os-release')",
                     }
                 )
-            ),
+            )[0],
         )
         self.assertTrue(client.file_download("/tmp/os-release", "os-release"))
         if os.path.exists("/tmp/os-release-1"):

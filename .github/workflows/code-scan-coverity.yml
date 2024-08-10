@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup curl
-        run: apt-get install --fix-missing -y curl
+        uses: kordlib/setup-curl@v1.0.0
 
       - name: Cmake init with Debug mode
         run: |

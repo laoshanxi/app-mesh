@@ -1,9 +1,17 @@
+const fs = require("fs");
 const { AppMeshClient } = require("../src/appmesh");
 // const { AppMeshClient } = require("appmesh");
 // const twofactor = require("node-2fa");
 
 async function userTest() {
-  const appmesh = new AppMeshClient("https://localhost:6060");
+  const sslConfig = {
+    cert: fs.readFileSync("/opt/appmesh/ssl/client.pem"),
+    key: fs.readFileSync("/opt/appmesh/ssl/client-key.pem"),
+    ca: fs.readFileSync("/opt/appmesh/ssl/ca.pem"),
+    rejectUnauthorized: true,
+  };
+
+  const appmesh = new AppMeshClient("https://localhost:6060", sslConfig);
 
   try {
     // Test login
@@ -88,6 +96,10 @@ async function userTest() {
     const app_output = await appmesh.app_output("ping");
     //console.log("app_output:", app_output);
 
+    try {
+      await appmesh.app_delete("test-run");
+    } catch {}
+
     const runApp = {
       name: "test-run",
       description: "appmesh ping test",
@@ -99,6 +111,7 @@ async function userTest() {
       },
     };
 
+    console.log(runApp);
     // For Node.js backend:
     const nodeOutputHandler = (output) => process.stdout.write(output);
     // web frontend

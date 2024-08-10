@@ -8,8 +8,8 @@ readme_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../../.
 with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-skip_versions = ["0.1.6"]
-start_version = "0.2.0"
+skip_versions = ["1.2.8", "1.2.7"]
+start_version = "1.2.8"
 
 
 def get_version():
