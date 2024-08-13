@@ -52,6 +52,7 @@ func TestAppmeshFile(t *testing.T) {
 	}
 	client.FileDownload("/opt/appmesh/bin/appsvc", "appsvc")
 	client.FileUpload("appsvc", "/tmp/appsvc")
+	os.Remove("appsvc")
 }
 
 func TestAppmeshTotp(t *testing.T) {

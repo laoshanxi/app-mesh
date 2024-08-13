@@ -28,9 +28,6 @@ jobs:
       - name: Checkout Github code
         uses: actions/checkout@v4
 
-      - name: Setup curl
-        uses: kordlib/setup-curl@v1.0.2
-
       - name: Cmake init with Debug mode
         run: |
           mkdir build
