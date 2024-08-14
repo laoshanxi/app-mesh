@@ -78,12 +78,11 @@ public class AppMeshClient {
         }
     }
 
-    public static class AppOutputResponse {
+    public static class AppOutput {
         public boolean httpSuccess;
         public String httpBody;
         public Long outputPosition;
         public Integer exitCode;
-        public String error;
     }
 
     public class AppRun {
@@ -271,7 +270,7 @@ public class AppMeshClient {
         return new JSONObject(responseContent);
     }
 
-    public AppOutputResponse appOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize, String processUuid,
+    public AppOutput appOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize, String processUuid,
             int timeout) throws IOException {
 
         Map<String, String> querys = new HashMap<>();
@@ -283,7 +282,7 @@ public class AppMeshClient {
 
         HttpURLConnection conn = request("GET", "/appmesh/app/" + appName + "/output", null, null, querys);
 
-        AppOutputResponse response = new AppOutputResponse();
+        AppOutput response = new AppOutput();
         response.httpSuccess = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
         response.httpBody = AppMeshUtils.readResponse(conn);
 
@@ -347,7 +346,7 @@ public class AppMeshClient {
             int interval = 1;
 
             while (!run.getProcUid().isEmpty()) {
-                AppOutputResponse appOut = this.appOutput(run.getAppName(), lastOutputPosition, 0, 10240, run.getProcUid(), interval);
+                AppOutput appOut = this.appOutput(run.getAppName(), lastOutputPosition, 0, 10240, run.getProcUid(), interval);
 
                 if (appOut.httpBody != null && stdoutPrint) {
                     System.out.print(appOut.httpBody);
