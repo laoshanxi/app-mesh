@@ -70,7 +70,7 @@ public class AppMeshClientTest {
     public void testApp() throws Exception {
         client.login(USERNAME, PASSWORD, null, "P1W");
 
-        AppMeshClient.AppOutputResponse out = client.appOutput("ping", 0, 0, 0, "", 0); // System.out.println(out.httpBody);
+        AppMeshClient.AppOutput out = client.appOutput("ping", 0, 0, 0, "", 0); // System.out.println(out.httpBody);
 
         boolean appDisable = client.appDisable("ping");
         assertTrue(appDisable, "appDisable");

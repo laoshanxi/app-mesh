@@ -7,6 +7,10 @@ on:
     paths:
       - "src/sdk/javascript/**"
       - .github/workflows/release-npm-package.yml
+
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest

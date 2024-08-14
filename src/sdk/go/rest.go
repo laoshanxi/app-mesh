@@ -13,11 +13,6 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 )
 
-const (
-	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
-	HTTP_USER_AGENT             = "appmesh/golang"
-)
-
 func NewHttpClient(clientCertFile string, clientCertKeyFile string, caFile string) *http.Client {
 	// Load client certificate and key
 	clientCert := utils.LoadCertificatePair(clientCertFile, clientCertKeyFile)
@@ -87,7 +82,7 @@ func (r *AppMeshClient) doRequest(method string, apiPath string, params url.Valu
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	resp, err := r.client.Do(req)
+	resp, err := r.httpClient.Do(req)
 
 	if err != nil {
 		fmt.Println(err.Error())
