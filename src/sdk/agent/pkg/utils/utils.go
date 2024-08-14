@@ -3,8 +3,10 @@ package utils
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -186,4 +188,44 @@ func IsValidFileName(fileName string) bool {
 	}
 
 	return true
+}
+
+func ParseURL(input string) (*url.URL, error) {
+	// Trim whitespace
+	input = strings.TrimSpace(input)
+
+	// Check if the input is empty
+	if input == "" {
+		return nil, fmt.Errorf("empty input")
+	}
+
+	// Regular expression to match IP addresses
+	ipRegex := regexp.MustCompile(`^(\d{1,3}\.){3}\d{1,3}`)
+
+	// If it's an IP address without a scheme, add https://
+	if ipRegex.MatchString(input) && !strings.Contains(input, "://") {
+		input = "https://" + input
+	}
+
+	// If no scheme is present, add https:// as default
+	if !strings.Contains(input, "://") {
+		input = "https://" + input
+	}
+
+	// Parse the URL
+	parsedURL, err := url.Parse(input)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure the scheme is lowercase
+	parsedURL.Scheme = strings.ToLower(parsedURL.Scheme)
+
+	// If no host is present, assume the path is actually the host
+	if parsedURL.Host == "" && parsedURL.Path != "" {
+		parsedURL.Host = parsedURL.Path
+		parsedURL.Path = ""
+	}
+
+	return parsedURL, nil
 }

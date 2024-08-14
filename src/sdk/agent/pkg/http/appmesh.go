@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"net"
@@ -36,6 +37,8 @@ var (
 	tcpConnect  net.Conn   // tcp connection to the server
 	socketMutex sync.Mutex // tcp connection lock
 	requestMap  sync.Map   // request map cache for asyncrized response
+
+	insecureClient = &fasthttp.Client{TLSConfig: &tls.Config{InsecureSkipVerify: true}}
 )
 
 // https://www.jianshu.com/p/dce19fb167f4
@@ -69,7 +72,7 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 	return tls.Dial("tcp", tcpAddr, conf)
 }
 
-func readMsgLoop() {
+func readResponseLoop() {
 	for {
 		// read response from server
 		response := new(Response)
@@ -112,7 +115,7 @@ func ListenRest() {
 	}
 	tcpConnect = conn
 	setNoDelay(tcpConnect)
-	go readMsgLoop()
+	go readResponseLoop()
 
 	// http router
 	router := fasthttprouter.New()
@@ -273,7 +276,7 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 	}
 
 	// body buffer, read from fasthttp
-	request := convertHttpRequestData(&ctx.Request)
+	request := convertHttpRequest(&ctx.Request)
 	bodyData, err := request.serialize()
 	if err != nil {
 		log.Fatalf("Failed to serialize request: %v", err)
@@ -292,8 +295,8 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 	// send header and body to app mesh server
 	{
 		socketMutex.Lock()
-		if sendErr = blockSend(tcpConnect, headerData); sendErr == nil {
-			sendErr = blockSend(tcpConnect, bodyData)
+		if sendErr = sendTcpData(tcpConnect, headerData); sendErr == nil {
+			sendErr = sendTcpData(tcpConnect, bodyData)
 		}
 		socketMutex.Unlock()
 	}
@@ -301,9 +304,9 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 		// wait chan to get response
 		protocResponse := <-ch
 		// reply to client
-		convertResponseToHttp(ctx, protocResponse)
+		applyHttpResponse(ctx, protocResponse)
 	} else {
-		ctx.Logger().Printf("Failed to send request to server with error:: %v", sendErr)
+		ctx.Logger().Printf("Failed to send request to server with error: %v", sendErr)
 		log.Fatal(sendErr)
 	}
 }
@@ -313,20 +316,31 @@ func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 
-	// Copy the original request
-	ctx.Request.CopyTo(req)
+	req.SetBody(ctx.Request.Body())                      // Copy the request body
+	ctx.Request.Header.CopyTo(&req.Header)               // Copy the original request headers
+	req.Header.SetMethod(string(ctx.Method()))           // Set the request method
+	req.Header.SetContentLength(len(ctx.Request.Body())) // Ensure Content-Length is set correctly
 
 	// Set the URL of the target server including the query string
-	req.SetRequestURI("https://" + targetHost + string(ctx.Path()) + "?" + ctx.QueryArgs().String())
+	parsedURL, err := utils.ParseURL(targetHost)
+	if err != nil {
+		ctx.Logger().Printf("Failed to parse delegate URL: %v", err)
+		ctx.Error("Failed to parse delegate URL: "+err.Error(), fasthttp.StatusInternalServerError)
+		return
+	}
+	targetURL := fmt.Sprintf("https://%s%s?%s", parsedURL.Host, ctx.Path(), ctx.QueryArgs().String())
+	req.SetRequestURI(targetURL)
+
+	ctx.Logger().Printf("Forwarding request: %s %s", ctx.Method(), targetURL)
 
 	// Create a response object to store the response from the target server
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
 
 	// Perform the request
-	insecureClient := &fasthttp.Client{TLSConfig: &tls.Config{InsecureSkipVerify: true}}
-	err := insecureClient.Do(req, resp)
+	err = insecureClient.Do(req, resp)
 	if err != nil {
+		ctx.Logger().Printf("Forward request failed with error: %v", err)
 		ctx.Error("Failed to forward request: "+err.Error(), fasthttp.StatusInternalServerError)
 		return
 	}

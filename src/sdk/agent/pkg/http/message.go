@@ -39,7 +39,7 @@ type Request struct {
 	Querys        map[string]string `msg:"querys" msgpack:"querys"`
 }
 
-func blockRead(conn net.Conn, msgLength uint32) ([]byte, error) {
+func readTcpData(conn net.Conn, msgLength uint32) ([]byte, error) {
 	// read body buffer
 	var chunkSize uint32 = TCP_CHUNK_READ_BLOCK_SIZE
 	if msgLength < chunkSize {
@@ -69,7 +69,7 @@ func blockRead(conn net.Conn, msgLength uint32) ([]byte, error) {
 	return bodyBuf, nil
 }
 
-func blockSend(conn net.Conn, buf []byte) error {
+func sendTcpData(conn net.Conn, buf []byte) error {
 	var totalSentSize int = 0
 	var err error = nil
 	for totalSentSize < len(buf) {
@@ -87,12 +87,12 @@ func blockSend(conn net.Conn, buf []byte) error {
 func (r *Response) readResponse(conn net.Conn) error {
 
 	// read header 4 bytes (int)
-	headerBuf, err := blockRead(conn, PROTOBUF_HEADER_LENGTH)
+	headerBuf, err := readTcpData(conn, PROTOBUF_HEADER_LENGTH)
 	if err != nil {
 		return err
 	}
 	// read body
-	bodyBuf, err := blockRead(conn, binary.BigEndian.Uint32(headerBuf))
+	bodyBuf, err := readTcpData(conn, binary.BigEndian.Uint32(headerBuf))
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func (r *Request) serialize() ([]byte, error) {
 	return msgpack.Marshal(*r)
 }
 
-func convertHttpRequestData(req *fasthttp.Request) *Request {
+func convertHttpRequest(req *fasthttp.Request) *Request {
 	// do not proxy "Connection" header.
 	req.Header.Del("Connection")
 
@@ -129,7 +129,7 @@ func convertHttpRequestData(req *fasthttp.Request) *Request {
 	return data
 }
 
-func convertResponseToHttp(ctx *fasthttp.RequestCtx, data *Response) {
+func applyHttpResponse(ctx *fasthttp.RequestCtx, data *Response) {
 	// headers
 	for k, v := range data.Headers {
 		ctx.Response.Header.Set(k, v)

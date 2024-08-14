@@ -14,46 +14,38 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/pquerna/otp"
 )
-
-var DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
 
 // AppMeshClient uses REST API for interacting with REST server.
 type AppMeshClient struct {
 	baseURL      string
 	delegateHost string
-	token        string
-	client       *http.Client
+	jwtToken     string
+	httpClient   *http.Client
 
 	mutex sync.Mutex
 }
 
-type AppMeshOption struct {
+type Option struct {
 	AppMeshUri                  string
-	Token                       *string
-	DelegateHost                *string
+	Token                       string
+	DelegateHost                string
 	SslClientCertificateFile    *string
 	SslClientCertificateKeyFile *string
 	SslTrustedCA                *string
-}
-
-type AppOutputResponse struct {
-	HttpSuccess    bool
-	HttpBody       string
-	OutputPosition *int64
-	ExitCode       *int
-	Error          error
+	HttpTimeoutMinutes          *time.Duration
 }
 
 // NewClient initializes client for interacting with an instance of REST server;
-func NewClient(options AppMeshOption) *AppMeshClient {
+func NewClient(options Option) *AppMeshClient {
 
 	// set default value
-	clientCertFile := "/opt/appmesh/ssl/client.pem"        // set to empty to disable client SSL verification
-	clientCertKeyFile := "/opt/appmesh/ssl/client-key.pem" // set to empty to disable client SSL verification
-	caFile := "/opt/appmesh/ssl/ca.pem"                    // set to empty to disable server SSL verification
+	clientCertFile := DefaultClientCertFile       // set to empty to disable client SSL verification
+	clientCertKeyFile := DefaultClientCertKeyFile // set to empty to disable client SSL verification
+	caFile := DefaultCAFile                       // set to empty to disable server SSL verification
 
 	// Apply the provided options
 	if options.SslClientCertificateFile != nil {
@@ -68,22 +60,23 @@ func NewClient(options AppMeshOption) *AppMeshClient {
 		caFile = *options.SslTrustedCA
 	}
 
-	appmesh := &AppMeshClient{
-		baseURL: options.AppMeshUri,
-		client:  NewHttpClient(clientCertFile, clientCertKeyFile, caFile),
+	c := &AppMeshClient{
+		baseURL:    DefaultServerUri,
+		httpClient: NewHttpClient(clientCertFile, clientCertKeyFile, caFile),
 	}
 
-	if options.DelegateHost == nil {
-		appmesh.delegateHost = ""
-	} else {
-		appmesh.delegateHost = *options.DelegateHost
+	if options.AppMeshUri != "" {
+		c.baseURL = options.AppMeshUri
 	}
 
-	if options.Token != nil {
-		appmesh.token = *options.Token
+	if options.HttpTimeoutMinutes != nil {
+		c.httpClient.Timeout = (*options.HttpTimeoutMinutes)
 	}
 
-	return appmesh
+	c.updateDelegateHost(options.DelegateHost)
+	c.updateToken(options.Token)
+
+	return c
 }
 
 // login with username and password
@@ -220,7 +213,7 @@ func (r *AppMeshClient) GetApp(appName string) (*Application, error) {
 }
 
 // Get application stdout
-func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string) AppOutputResponse {
+func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdoutIndex int, stdoutMaxsize int, processUuid string) AppOutput {
 	query := url.Values{}
 	query.Set("stdout_position", strconv.FormatInt(stdoutPosition, 10))
 	query.Set("stdout_index", strconv.Itoa(stdoutIndex))
@@ -228,7 +221,7 @@ func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdou
 	query.Set("process_uuid", processUuid)
 
 	code, body, header, err := r.get(fmt.Sprintf("/appmesh/app/%s/output", appName), query, nil)
-	resp := AppOutputResponse{Error: err, HttpSuccess: code == http.StatusOK, HttpBody: string(body)}
+	resp := AppOutput{Error: err, HttpSuccess: code == http.StatusOK, HttpBody: string(body)}
 
 	// Extract and parse headers
 	if exitCodeStr := header.Get("Exit-Code"); exitCodeStr != "" {
@@ -490,11 +483,11 @@ func (r *AppMeshClient) updateDelegateHost(host string) {
 func (r *AppMeshClient) getToken() string {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	return r.token
+	return r.jwtToken
 }
 
 func (r *AppMeshClient) updateToken(token string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	r.token = token
+	r.jwtToken = token
 }

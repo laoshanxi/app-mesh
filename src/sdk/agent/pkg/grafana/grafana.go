@@ -9,8 +9,6 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var appmeshRestAddr = "" //"https://0.0.0.0:6060"
-
 // https://grafana.com/grafana/plugins/grafana-simple-json-datasource/
 type AppmeshGrafanaJson struct{}
 
@@ -26,7 +24,7 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 			authKey = string(value)
 		}
 	})
-	client := appmesh.NewClient(appmesh.AppMeshOption{AppMeshUri: appmeshRestAddr, Token: &authKey})
+	client := appmesh.NewClient(appmesh.Option{Token: authKey})
 	apps, err := client.GetApps()
 
 	result := make([]TableColumn, len(apps))
