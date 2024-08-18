@@ -39,3 +39,18 @@ updates:
     directory: /src/sdk/python
     schedule:
       interval: daily
+
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: daily
+
+  - package-ecosystem: npm
+    directory: /src/sdk/javascript
+    schedule:
+      interval: daily
+
+  - package-ecosystem: maven
+    directory: /src/sdk/java
+    schedule:
+      interval: daily
