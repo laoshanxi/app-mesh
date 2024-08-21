@@ -1,9 +1,9 @@
-FROM laoshanxi/appmesh:build_ubuntu22 AS COMPILE_STAGE
+FROM laoshanxi/appmesh:build_ubuntu22@sha256:e6379df544bdf93c90a1c9724a21a390373ab4f23ccbb3550f7c9fdff0422ee2 AS COMPILE_STAGE
 RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
 	cd app-mesh && mkdir build && cd build && cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && make -j4 && make pack && ls
 
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:59c7332a4a24373861c4a5f0eec2c92b87e3efeb8ddef011744ef9a751b1d11c
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container

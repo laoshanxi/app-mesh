@@ -23,14 +23,14 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: Harden Runner
-        uses: step-security/harden-runner@v2
+        uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
       - name: test ubuntu:18
-        uses: addnab/docker-run-action@v3
+        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
         with:
           image: ubuntu:18.04
           options: -v ${{ github.workspace }}:/work
@@ -62,7 +62,7 @@ jobs:
             python3 -m unittest
 
       - name: test ubuntu:22
-        uses: addnab/docker-run-action@v3
+        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
         with:
           image: ubuntu:22.04
           options: -v ${{ github.workspace }}:/work
@@ -94,7 +94,7 @@ jobs:
             python3 -m unittest
 
       - name: test ubuntu:24
-        uses: addnab/docker-run-action@v3
+        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
         with:
           image: ubuntu:24.04
           options: -v ${{ github.workspace }}:/work
@@ -126,7 +126,7 @@ jobs:
             python3 -m unittest
 
       - name: test centos:7
-        uses: addnab/docker-run-action@v3
+        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
         with:
           image: centos:7
           options: -v ${{ github.workspace }}:/work

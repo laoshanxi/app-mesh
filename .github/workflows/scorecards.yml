@@ -25,12 +25,12 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@v2
+        uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
       - name: "Checkout code"
-        uses: actions/checkout@v4 # tag=v3.0.0
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           persist-credentials: false
 
@@ -54,7 +54,7 @@ jobs:
       # Upload the results as artifacts (optional). Commenting out will disable uploads of run results in SARIF
       # format to the repository Actions tab.
       - name: "Upload artifact"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
         with:
           name: SARIF file
           path: results.sarif
@@ -62,6 +62,6 @@ jobs:
 
       # Upload the results to GitHub's code scanning dashboard.
       - name: "Upload to code-scanning"
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@883d8588e56d1753a8a58c1c86e88976f0c23449 # v3.26.3
         with:
           sarif_file: results.sarif
