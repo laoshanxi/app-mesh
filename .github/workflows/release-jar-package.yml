@@ -10,10 +10,6 @@ on:
       - "src/sdk/java/**"
       - .github/workflows/release-jar-package.yml
 
-permissions: # added using https://github.com/step-security/secure-workflows
-  contents: read
-  packages: write
-
 jobs:
   publish:
     runs-on: ubuntu-latest

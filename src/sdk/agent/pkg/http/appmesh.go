@@ -38,8 +38,25 @@ var (
 	socketMutex sync.Mutex // tcp connection lock
 	requestMap  sync.Map   // request map cache for asyncrized response
 
-	insecureClient = &fasthttp.Client{TLSConfig: &tls.Config{InsecureSkipVerify: true}}
+	forwardClientPool sync.Pool
 )
+
+func init() {
+	forwardClientPool = sync.Pool{
+		New: func() interface{} {
+			var serverCA *x509.CertPool
+			if config.ConfigData.REST.SSL.VerifyServer {
+				serverCA, _ = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
+			}
+			return &fasthttp.Client{
+				TLSConfig: &tls.Config{
+					InsecureSkipVerify: !(config.ConfigData.REST.SSL.VerifyServer),
+					RootCAs:            serverCA,
+				},
+			}
+		},
+	}
+}
 
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
@@ -69,6 +86,7 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 		// verify client
 		Certificates: []tls.Certificate{clientCA},
 	}
+
 	return tls.Dial("tcp", tcpAddr, conf)
 }
 
@@ -338,7 +356,9 @@ func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
 	defer fasthttp.ReleaseResponse(resp)
 
 	// Perform the request
-	err = insecureClient.Do(req, resp)
+	delegateClient := forwardClientPool.Get().(*fasthttp.Client)
+	defer forwardClientPool.Put(delegateClient)
+	err = delegateClient.Do(req, resp)
 	if err != nil {
 		ctx.Logger().Printf("Forward request failed with error: %v", err)
 		ctx.Error("Failed to forward request: "+err.Error(), fasthttp.StatusInternalServerError)
