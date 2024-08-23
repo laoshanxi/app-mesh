@@ -7,7 +7,6 @@
 #include "../../common/DurationParse.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 #include "../Label.h"
@@ -346,12 +345,11 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	headers[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
 	std::string body = HttpRequest::emptyJson().dump();
-	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT_APPMESH_GO))
+	if (message.m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) && message.m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
 	{
-		LOG_DBG << fname << "Downloading file not from App Mesh agent";
-		auto wrapper = convertText2Json("download from TCP stream");
-		wrapper[TCP_JSON_MSG_FILE] = file;
-		body = wrapper.dump();
+		LOG_DBG << fname << "Download file from socket";
+		headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = Utility::encode64(file);
+		body = convertText2Json("Please recieve file from socket").dump();
 	}
 	message.reply(web::http::status_codes::OK, body, headers, web::http::mime_types::application_octetstream);
 }
@@ -374,25 +372,17 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 
 	LOG_DBG << fname << "Uploading file <" << file << ">";
 
+	std::map<std::string, std::string> headers;
 	std::string body = HttpRequest::emptyJson().dump();
-	if (!(message.m_headers.count(web::http::header_names::user_agent) && message.m_headers.find(web::http::header_names::user_agent)->second == HTTP_USER_AGENT_APPMESH_GO))
+	if (message.m_headers.count(HTTP_HEADER_KEY_X_Send_File_Socket) && message.m_headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second == "true")
 	{
-		LOG_DBG << fname << "Upload file not from App Mesh agent";
-		auto wrapper = convertText2Json("upload from TCP stream");
-		wrapper[TCP_JSON_MSG_FILE] = file;
-		body = wrapper.dump();
+		LOG_DBG << fname << "Upload file from socket";
+		headers[HTTP_HEADER_KEY_X_Send_File_Socket] = Utility::encode64(file);
+		body = convertText2Json("Please send file from socket").dump();
 	}
-	message.reply(web::http::status_codes::OK, body, {}, web::http::mime_types::application_octetstream);
+	message.reply(web::http::status_codes::OK, body, headers, web::http::mime_types::application_octetstream);
 	// set permission
-	if (Utility::isFileExist(file))
-	{
-		if (message.m_headers.count(HTTP_HEADER_KEY_file_mode))
-			os::fileChmod(file, std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_mode)->second));
-		if (message.m_headers.count(HTTP_HEADER_KEY_file_user) && message.m_headers.count(HTTP_HEADER_KEY_file_group))
-			os::chown(std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_user)->second),
-					  std::stoi(message.m_headers.find(HTTP_HEADER_KEY_file_group)->second),
-					  file, false);
-	}
+	Utility::applyFilePermission(file, message.m_headers);
 }
 
 void RestHandler::apiLabelsView(const HttpRequest &message)

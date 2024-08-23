@@ -1,11 +1,13 @@
 #pragma once
 #include <atomic>
+#include <memory>
 #include <mutex>
 
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
 #include <ace/SSL/SSL_SOCK_Stream.h>
 #include <ace/Svc_Handler.h>
+#include <boost/lockfree/spsc_queue.hpp>
 
 #include "../../common/MessageQueue.h"
 #include "protoc/ProtobufHelper.h"
@@ -24,6 +26,17 @@
 //       ACE_SSL_SOCK_Stream (ACE_SSL_Context *context = ACE_SSL_Context::instance ());
 class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_NULL_SYNCH>
 {
+	struct FileUploadInfo
+	{
+		std::string m_filePath;
+		std::map<std::string, std::string> m_requestHeaders;
+
+		// Default constructor
+		FileUploadInfo() = default;
+		// Constructor for easy creation
+		FileUploadInfo(const std::string &uploadFilePath, const std::map<std::string, std::string> &requestHeaders);
+	};
+
 public:
 	TcpHandler(void);
 	virtual ~TcpHandler(void);
@@ -50,6 +63,9 @@ protected:
 	bool sendBytes(const char *data, size_t length);
 	bool sendBytes(size_t intValue);
 
+	bool noSocketData();
+	bool recvUploadFile();
+
 public:
 	static bool replyTcp(int tcpHandlerId, const Response &resp);
 	static ACE_SSL_Context *initTcpSSL(ACE_SSL_Context *context);
@@ -58,6 +74,7 @@ private:
 	std::string m_clientHostName;
 	std::mutex m_socketLock;
 	const int m_id;
+	boost::lockfree::spsc_queue<std::shared_ptr<FileUploadInfo>> m_pendingUploadFile;
 
 	static ACE_Map_Manager<int, TcpHandler *, ACE_Recursive_Thread_Mutex> m_handlers;
 	static MessageQueue m_messageQueue;

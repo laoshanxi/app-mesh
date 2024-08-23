@@ -129,8 +129,6 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define APPMESH_LOCAL_HOST_URL "https://localhost:6060"
-#define HTTP_USER_AGENT_APPMESH_GO "appmeshsdk"
-#define TCP_JSON_MSG_FILE "file"
 
 const char *GET_STATUS_STR(unsigned int status);
 const nlohmann::json EMPTY_STR_JSON(nullptr);
@@ -193,6 +191,7 @@ public:
 	static bool getUid(std::string userName, unsigned int &uid, unsigned int &groupid);
 	static std::string getOsUserName();
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
+	static void applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers);
 
 	// Base64
 	static std::string encode64(const std::string &val);
@@ -309,6 +308,8 @@ public:
 #define JSON_KEY_APP_last_error "last_error"
 #define JSON_KEY_APP_from_recover "from_recover"
 #define JSON_KEY_APP_starts "starts"
+#define REST_PATH_UPLOAD "/appmesh/file/upload"
+#define REST_PATH_DOWNLOAD "/appmesh/file/download"
 
 #define JSON_KEY_APP_behavior "behavior"
 #define JSON_KEY_APP_behavior_exit "exit"
@@ -389,6 +390,8 @@ public:
 #define HTTP_HEADER_KEY_file_mode "File-Mode"
 #define HTTP_HEADER_KEY_file_user "File-User"
 #define HTTP_HEADER_KEY_file_group "File-Group"
+#define HTTP_HEADER_KEY_X_Send_File_Socket "X-Send-File-Socket"
+#define HTTP_HEADER_KEY_X_Recv_File_Socket "X-Recv-File-Socket"
 #define HTTP_HEADER_KEY_delegate_host "X-Target-Host"
 #define HTTP_BODY_KEY_MFA_URI "Mfa-Uri"
 

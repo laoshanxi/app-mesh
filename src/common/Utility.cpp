@@ -28,6 +28,7 @@
 #include "Password.h"
 #include "Utility.h"
 #include "os/chown.hpp"
+#include "os/linux.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)
 {
@@ -847,6 +848,19 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMa
 
 	totalEnvArgs += numEntriesConst;
 	totalEnvSize += bufferSizeConst;
+}
+
+void Utility::applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers)
+{
+	if (Utility::isFileExist(file))
+	{
+		if (headers.count(HTTP_HEADER_KEY_file_mode))
+			os::fileChmod(file, std::stoi(headers.find(HTTP_HEADER_KEY_file_mode)->second));
+		if (headers.count(HTTP_HEADER_KEY_file_user) && headers.count(HTTP_HEADER_KEY_file_group))
+			os::chown(std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
+					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second),
+					  file, false);
+	}
 }
 
 std::string Utility::prettyJson(const std::string &jsonStr)

@@ -1,19 +1,28 @@
 package http
 
 import (
+	"bufio"
+	"encoding/base64"
 	"encoding/binary"
 	"html"
+	"io"
+	"log"
 	"net"
-	"strings"
+	"os"
+	"path"
 
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/rs/xid"
 	"github.com/valyala/fasthttp"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
 const (
-	TCP_CHUNK_READ_BLOCK_SIZE = 2048
-	PROTOBUF_HEADER_LENGTH    = 4
+	TCP_CHUNK_READ_BLOCK_SIZE          = 8192
+	PROTOBUF_HEADER_LENGTH             = 4
+	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
+	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
+	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
 )
 
 type ResponseMessage struct {
@@ -21,12 +30,14 @@ type ResponseMessage struct {
 }
 
 type Response struct {
-	Uuid        string            `msg:"uuid" msgpack:"uuid"`
-	RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
-	HttpStatus  int               `msg:"http_status" msgpack:"http_status"`
-	BodyMsgType string            `msg:"body_msg_type" msgpack:"body_msg_type"`
-	Body        string            `msg:"body" msgpack:"body"`
-	Headers     map[string]string `msg:"headers" msgpack:"headers"`
+	Uuid                 string            `msg:"uuid" msgpack:"uuid"`
+	RequestUri           string            `msg:"request_uri" msgpack:"request_uri"`
+	HttpStatus           int               `msg:"http_status" msgpack:"http_status"`
+	BodyMsgType          string            `msg:"body_msg_type" msgpack:"body_msg_type"`
+	Body                 string            `msg:"body" msgpack:"body"`
+	Headers              map[string]string `msg:"headers" msgpack:"headers"`
+	TempDownloadFilePath string
+	TempUploadFilePath   string
 }
 
 type Request struct {
@@ -96,14 +107,72 @@ func (r *Response) readResponse(conn net.Conn) error {
 	if err != nil {
 		return err
 	}
-	return msgpack.Unmarshal(bodyBuf, r)
+	err = msgpack.Unmarshal(bodyBuf, r)
+	if err != nil {
+		return err
+	}
+
+	// handle TCP file download
+	if value, exists := r.Headers[HTTP_HEADER_KEY_X_Recv_File_Socket]; exists && r.HttpStatus == fasthttp.StatusOK {
+		r.TempDownloadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.Uuid)
+
+		bytes, _ := base64.StdEncoding.DecodeString(value)
+		file := string(bytes)
+		log.Printf("will download remote file <%s> to local file <%s>", file, r.TempDownloadFilePath)
+
+		err = r.readDownloadFileData(conn, r.TempDownloadFilePath)
+	}
+
+	// handle TCP file upload
+	if value, exists := r.Headers[HTTP_HEADER_KEY_X_Send_File_Socket]; exists && r.HttpStatus == fasthttp.StatusOK {
+		r.TempUploadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.Uuid)
+
+		bytes, _ := base64.StdEncoding.DecodeString(value)
+		file := string(bytes)
+		log.Printf("will upload local file <%s> to remote file <%s>", r.TempUploadFilePath, file)
+	}
+	return err
+}
+
+func (r *Response) readDownloadFileData(conn net.Conn, targetFilePath string) error {
+	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		log.Printf("Failed create file: %v", err)
+		return err
+	}
+	defer f.Close()
+	for {
+		headerBuf, err := readTcpData(conn, PROTOBUF_HEADER_LENGTH)
+		if err == nil {
+			chunkSize := binary.BigEndian.Uint32(headerBuf)
+			if chunkSize > 0 {
+				buf, err := readTcpData(conn, chunkSize)
+				if err == nil {
+					if _, err = f.Write(buf); err != nil {
+						log.Printf("Failed write to file: %v", err)
+					}
+				} else {
+					log.Printf("Error read TCP file: %v", err)
+					break
+				}
+			} else {
+				log.Printf("Read TCP file to: <%s> finished", targetFilePath)
+				break
+			}
+		} else {
+			log.Printf("Error read TCP file: %v", err)
+			break
+		}
+	}
+	return nil
 }
 
 func (r *Request) serialize() ([]byte, error) {
 	return msgpack.Marshal(*r)
 }
 
-func convertHttpRequest(req *fasthttp.Request) *Request {
+func convertHttpRequest(ctx *fasthttp.RequestCtx) *Request {
+	req := &ctx.Request
 	// do not proxy "Connection" header.
 	req.Header.Del("Connection")
 
@@ -111,12 +180,11 @@ func convertHttpRequest(req *fasthttp.Request) *Request {
 	data.Uuid = xid.New().String()
 	data.HttpMethod = string(req.Header.Method())
 	data.RequestUri = string(req.URI().Path())
-	data.ClientAddress = string(req.Host())
+	data.ClientAddress = ctx.RemoteAddr().String()
 	data.Headers = make(map[string]string)
 	req.Header.VisitAll(func(key, value []byte) {
 		data.Headers[string(key)] = string(value)
 	})
-	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
 	data.Querys = make(map[string]string)
 	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
 		data.Querys[string(key)] = string(value)
@@ -135,15 +203,68 @@ func applyHttpResponse(ctx *fasthttp.RequestCtx, data *Response) {
 		ctx.Response.Header.Set(k, v)
 	}
 	// user agent
-	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
+	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, USER_AGENT_APPMESH_SDK)
 	// status code
 	ctx.Response.SetStatusCode(int(data.HttpStatus))
 	// body
-	if strings.HasPrefix(string(ctx.Request.URI().Path()), REST_PATH_FILE) && handleRestFile(ctx, data) {
-		ctx.Logger().Printf("File REST call Finished  %s", data.Uuid)
+	if (REST_PATH_DOWNLOAD == string(ctx.Request.URI().Path()) || REST_PATH_UPLOAD == string(ctx.Request.URI().Path())) &&
+		handleRestFile(ctx, data) {
+		ctx.Logger().Printf("File REST call Finished %s", data.Uuid)
 	} else {
 		ctx.Response.SetBodyRaw([]byte(data.Body))
 		ctx.SetContentType(data.BodyMsgType)
 		ctx.Logger().Printf("REST call Finished  %s", data.Uuid)
 	}
+}
+
+func sendUploadFileData(localFile string, targetConnection *safeConn) error {
+	var err error
+	var file *os.File
+	if file, err = os.Open(localFile); err == nil {
+		defer os.Remove(localFile)
+		defer file.Close()
+		// Create a buffered reader for the file
+		reader := bufio.NewReader(file)
+		chunkSize := 1024 * 8 // 8 KB chunks
+		// Create a buffer to store chunks
+		bodyData := make([]byte, chunkSize)
+
+		// header buffer
+		headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
+
+		targetConnection.mu.Lock()
+		defer targetConnection.mu.Unlock()
+		// Read the file in chunks and send each chunk over the TCP connection
+		for {
+			// Read a chunk from the file
+			n, err := reader.Read(bodyData)
+
+			if err != nil && err != io.EOF {
+				log.Printf("Error reading file: %v", err)
+				break
+			}
+
+			// If we've reached the end of the file, break out of the loop
+			if n == 0 {
+				break
+			}
+
+			binary.BigEndian.PutUint32(headerData, uint32(n))
+			if err = sendTcpData(targetConnection.conn, headerData); err == nil {
+				err = sendTcpData(targetConnection.conn, bodyData[:n])
+			}
+
+			if err != nil {
+				break
+			}
+		}
+
+		binary.BigEndian.PutUint32(headerData, uint32(0))
+		err = sendTcpData(targetConnection.conn, headerData)
+
+		log.Printf("upload socket file %s finished", localFile)
+	} else {
+		log.Printf("Error opening file: %v", err)
+	}
+	return err
 }

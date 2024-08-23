@@ -19,6 +19,7 @@ public:
 	std::string body_msg_type;
 	std::string body;
 	std::map<std::string, std::string> headers;
+	std::map<std::string, std::string> file_upload_request_headers;
 
 	MSGPACK_DEFINE_MAP(uuid, request_uri, http_status, body_msg_type, body, headers);
 };

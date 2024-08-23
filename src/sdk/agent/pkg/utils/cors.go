@@ -9,9 +9,7 @@ import (
 
 // Define the allowed headers
 var allowedHeaders = []string{
-	"accept",
 	"Accept",
-	"content-type",
 	"Content-Type",
 	"Authorization",
 	"Auth-Permission",
@@ -21,6 +19,9 @@ var allowedHeaders = []string{
 	"Totp",
 	"New-Password",
 	"File-Path",
+	"X-Send-File-Socket",
+	"X-Recv-File-Socket",
+	"X-Target-Host",
 }
 
 // cross-origin

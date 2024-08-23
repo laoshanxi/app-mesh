@@ -28,21 +28,31 @@ import (
 const (
 	REST_PATH_UPLOAD            = "/appmesh/file/upload"
 	REST_PATH_DOWNLOAD          = "/appmesh/file/download"
-	REST_PATH_FILE              = "/appmesh/file/"
 	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
-	HTTP_USER_AGENT             = "appmeshsdk"
+	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
+	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 )
 
-var (
-	tcpConnect  net.Conn   // tcp connection to the server
-	socketMutex sync.Mutex // tcp connection lock
-	requestMap  sync.Map   // request map cache for asyncrized response
+type safeConn struct {
+	conn net.Conn
+	mu   sync.Mutex
+}
 
-	forwardClientPool sync.Pool
+type tcpConnections struct {
+	mu          sync.Mutex
+	connections map[string]*safeConn
+}
+
+var (
+	localConnection *safeConn // tcp connection to the server
+	requestMap      sync.Map  // request map cache for asyncrized response
+
+	clientPoolHttp sync.Pool
+	clientPoolTcp  = &tcpConnections{connections: make(map[string]*safeConn)}
 )
 
 func init() {
-	forwardClientPool = sync.Pool{
+	clientPoolHttp = sync.Pool{
 		New: func() interface{} {
 			var serverCA *x509.CertPool
 			if config.ConfigData.REST.SSL.VerifyServer {
@@ -60,6 +70,7 @@ func init() {
 
 // https://www.jianshu.com/p/dce19fb167f4
 func connectServer(tcpAddr string) (net.Conn, error) {
+	log.Printf("Connecting to: %s", tcpAddr)
 	// client: for internal connection, use server side certificate file for client
 	clientCA := tls.Certificate{}
 	if config.ConfigData.REST.SSL.VerifyClient {
@@ -90,12 +101,19 @@ func connectServer(tcpAddr string) (net.Conn, error) {
 	return tls.Dial("tcp", tcpAddr, conf)
 }
 
-func readResponseLoop() {
+func readResponseLoop(conn *safeConn, targetHost string, allowError bool) {
 	for {
 		// read response from server
 		response := new(Response)
-		if err := response.readResponse(tcpConnect); err != nil {
-			log.Fatalf("Failed read response: %v", err)
+		err := response.readResponse(conn.conn)
+		if err != nil {
+			if !allowError {
+				log.Fatalf("Failed read response from host %s: %v", targetHost, err)
+			} else {
+				log.Printf("Failed read response from host %s: %v", targetHost, err)
+				deleteConnection(targetHost)
+				return
+			}
 		}
 
 		// forward to channel and release map
@@ -126,14 +144,15 @@ func ListenRest() {
 	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
 	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
 	// connect to TCP rest server
-	conn, err := connectServer(strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1))
+	targetHost := strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1)
+	conn, err := connectServer(targetHost)
 	if err != nil {
 		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
 		os.Exit(-1)
 	}
-	tcpConnect = conn
-	setNoDelay(tcpConnect)
-	go readResponseLoop()
+	localConnection = &safeConn{conn: conn}
+	setNoDelay(localConnection.conn)
+	go readResponseLoop(localConnection, targetHost, false)
 
 	// http router
 	router := fasthttprouter.New()
@@ -283,18 +302,44 @@ func handleIndex(ctx *fasthttp.RequestCtx) {
 
 // https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
+	targetConnection := localConnection
+
 	// handle forward request
-	targetHost := string(ctx.Request.Header.Peek("X-Target-Host"))
-	if len(targetHost) > 0 {
-		// in order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
+	// in order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
+	targetHost := string(ctx.Request.Header.Peek(HTTP_HEADER_KEY_X_TARGET_HOST))
+	if targetHost != "" {
 		ctx.Logger().Printf("Forward request to %s", targetHost)
-		ctx.Request.Header.Del("X-Target-Host")
-		delegateAppmeshRest(ctx, targetHost)
-		return
+
+		parsedURL, _ := utils.ParseURL(targetHost)
+		if parsedURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
+			// forward with HTTP protocal
+			ctx.Request.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
+			delegateAppmeshRest(ctx, targetHost)
+			return
+		} else {
+			// forward with TCP protocal
+			var err error
+			targetConnection, err = getTcpConnection(parsedURL.Host)
+			if err != nil {
+				ctx.Logger().Printf("Failed to connect TCP to target host %s with error: %v", targetHost, err)
+				ctx.Error(err.Error(), fasthttp.StatusInternalServerError)
+				return
+			}
+		}
 	}
 
 	// body buffer, read from fasthttp
-	request := convertHttpRequest(&ctx.Request)
+	request := convertHttpRequest(ctx)
+	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
+	if targetConnection != localConnection {
+		request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_TCP
+		// file download & upload
+		if request.RequestUri == REST_PATH_DOWNLOAD {
+			request.Headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = "true"
+		} else if request.RequestUri == REST_PATH_UPLOAD {
+			request.Headers[HTTP_HEADER_KEY_X_Send_File_Socket] = "true"
+		}
+	}
 	bodyData, err := request.serialize()
 	if err != nil {
 		log.Fatalf("Failed to serialize request: %v", err)
@@ -312,20 +357,65 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 	var sendErr error
 	// send header and body to app mesh server
 	{
-		socketMutex.Lock()
-		if sendErr = sendTcpData(tcpConnect, headerData); sendErr == nil {
-			sendErr = sendTcpData(tcpConnect, bodyData)
+		targetConnection.mu.Lock()
+		if sendErr = sendTcpData(targetConnection.conn, headerData); sendErr == nil {
+			sendErr = sendTcpData(targetConnection.conn, bodyData)
 		}
-		socketMutex.Unlock()
+		targetConnection.mu.Unlock()
 	}
+
 	if sendErr == nil {
 		// wait chan to get response
 		protocResponse := <-ch
 		// reply to client
 		applyHttpResponse(ctx, protocResponse)
-	} else {
+
+		// handle file upload after response to client
+		if protocResponse.TempUploadFilePath != "" {
+			log.Printf("TempUploadFilePath: %s", protocResponse.TempUploadFilePath)
+			sendErr = sendUploadFileData(protocResponse.TempUploadFilePath, targetConnection)
+		}
+	}
+
+	if sendErr != nil {
 		ctx.Logger().Printf("Failed to send request to server with error: %v", sendErr)
-		log.Fatal(sendErr)
+		defer deleteConnection(targetHost)
+	}
+}
+
+func getTcpConnection(targetHost string) (*safeConn, error) {
+	clientPoolTcp.mu.Lock()
+	defer clientPoolTcp.mu.Unlock()
+
+	// Check for existing connection
+	if conn, ok := clientPoolTcp.connections[targetHost]; ok {
+		return conn, nil
+	}
+
+	// No available connection, create a new one
+	conn, err := connectServer(targetHost)
+	if err != nil {
+		return nil, err
+	}
+	setNoDelay(conn)
+	// Store the new connection
+	sConn := &safeConn{conn: conn}
+	clientPoolTcp.connections[targetHost] = sConn
+
+	// start thread to monitor response
+	go readResponseLoop(sConn, targetHost, true)
+
+	return sConn, nil
+}
+
+func deleteConnection(targetHost string) {
+	clientPoolTcp.mu.Lock()
+	defer clientPoolTcp.mu.Unlock()
+
+	if conn, ok := clientPoolTcp.connections[targetHost]; ok {
+		conn.conn.Close()                             // Close the connection
+		delete(clientPoolTcp.connections, targetHost) // Remove it from the map
+		log.Printf("remove connection: %s", targetHost)
 	}
 }
 
@@ -356,8 +446,8 @@ func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
 	defer fasthttp.ReleaseResponse(resp)
 
 	// Perform the request
-	delegateClient := forwardClientPool.Get().(*fasthttp.Client)
-	defer forwardClientPool.Put(delegateClient)
+	delegateClient := clientPoolHttp.Get().(*fasthttp.Client)
+	defer clientPoolHttp.Put(delegateClient)
 	err = delegateClient.Do(req, resp)
 	if err != nil {
 		ctx.Logger().Printf("Forward request failed with error: %v", err)
@@ -372,10 +462,15 @@ func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
 
 func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 	ctx.Logger().Printf(string(ctx.Request.URI().Path()))
+
+	filePath := string(ctx.Request.Header.Peek("File-Path"))
 	if ctx.Request.Header.IsGet() && string(ctx.Request.URI().Path()) == REST_PATH_DOWNLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle download file
-		filePath := string(ctx.Request.Header.Peek("File-Path"))
-		ctx.Logger().Printf("download file: %s", filePath)
+		if data.TempDownloadFilePath != "" {
+			// handle file which transfer with delegation
+			filePath = data.TempDownloadFilePath
+			defer os.Remove(data.TempDownloadFilePath)
+		}
 
 		_, fileName := filepath.Split(filePath)
 		ctx.Response.Header.Set("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName))
@@ -388,6 +483,7 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		if utils.IsValidFileName(filePath) {
 			ctx.Logger().Printf("ServeFile: %s", fileName)
 			fasthttp.ServeFile(ctx, filePath)
+			ctx.Logger().Printf("download file %s finished", filePath)
 			return true
 		} else {
 			ctx.Error(string("not invalid file name"), fasthttp.StatusNotAcceptable)
@@ -395,13 +491,18 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		}
 	} else if ctx.Request.Header.IsPost() && string(ctx.Request.URI().Path()) == REST_PATH_UPLOAD && data.HttpStatus == fasthttp.StatusOK {
 		// handle upload file
-		filePath := string(ctx.Request.Header.Peek("File-Path"))
+		if data.TempUploadFilePath != "" {
+			// handle file which transfer with delegation
+			filePath = data.TempUploadFilePath
+		}
 		ctx.Logger().Printf("uploading file: %s", filePath)
+
 		if utils.IsValidFileName(filePath) {
 			if err := saveFile(ctx, filePath); err != nil {
+				ctx.Logger().Printf("saveFile failed with error: %v", err)
 				errorJson, _ := json.Marshal(ResponseMessage{Message: err.Error()})
 				ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
-			} else {
+			} else if data.TempUploadFilePath == "" {
 				ctx.Logger().Printf("file saved: %s", filePath)
 				// https://www.jianshu.com/p/216cb89c4d81
 				mode, err := strconv.Atoi(string(ctx.Request.Header.Peek("File-Mode")))
@@ -426,6 +527,7 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 
 // https://freshman.tech/file-upload-golang/
 func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
+	ctx.Logger().Printf("saveFile: %s", filePath)
 	if file, err := ctx.FormFile("file"); err == nil {
 		ctx.Logger().Printf("SaveMultipartFile: %s", filePath)
 		defer ctx.Request.RemoveMultipartFormFiles()

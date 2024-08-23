@@ -113,6 +113,8 @@ void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	response.headers = headers;
 	response.http_status = status;
 	response.body_msg_type = bodyType;
+	if (requestUri == REST_PATH_UPLOAD)
+		response.file_upload_request_headers = m_headers;
 
 	if (m_tcpHanlerId > 0)
 	{

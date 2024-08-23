@@ -14,7 +14,7 @@
 
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
-#include "../common/os/linux.hpp"
+#include "../common/os/chown.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
@@ -96,6 +96,12 @@ int main(int argc, char *argv[])
 		// working dir
 		Utility::createDirectory(config->getWorkDir());
 		fs::current_path(config->getWorkDir());
+		auto tmpDir = (fs::path(config->getWorkDir()) / "tmp").string();
+		Utility::createDirectory(tmpDir);
+		if (!Configuration::instance()->getDefaultExecUser().empty())
+		{
+			os::chown(tmpDir, Configuration::instance()->getDefaultExecUser(), false);
+		}
 
 		// set log level
 		Utility::setLogLevel(config->getLogLevel());

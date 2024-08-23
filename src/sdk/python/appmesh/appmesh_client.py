@@ -13,7 +13,7 @@ import uuid
 from enum import Enum, unique
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional, Tuple
+from typing import Optional, Tuple, final
 from urllib import parse
 
 import aniso8601
@@ -32,6 +32,10 @@ _SSL_CLIENT_PEM_FILE = "/opt/appmesh/ssl/client.pem"
 _SSL_CLIENT_PEM_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
 HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 HTTP_USER_AGENT = "appmesh/python"
+HTTP_USER_AGENT_TCP = "appmesh/python/tcp"
+HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
+HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
+HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
 
 
 def _get_str_item(data: dict, key):
@@ -397,6 +401,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._jwt_token = token
 
     @property
+    @final
     def delegate_host(self) -> str:
         """property for delegate_host
 
@@ -406,6 +411,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return self._delegate_host
 
     @delegate_host.setter
+    @final
     def delegate_host(self, host: str) -> None:
         """setter for delegate_host
 
@@ -1333,9 +1339,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header["Authorization"] = "Bearer " + self.jwt_token
         if self.delegate_host and len(self.delegate_host) > 0:
             if ":" in self.delegate_host:
-                header["X-Target-Host"] = self.delegate_host
+                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.delegate_host
             else:
-                header["X-Target-Host"] = self.delegate_host + ":" + str(parse.urlsplit(self.server_url).port)
+                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.delegate_host + ":" + str(parse.urlsplit(self.server_url).port)
         header[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
@@ -1500,11 +1506,8 @@ class AppMeshClientTCP(AppMeshClient):
         if super().jwt_token:
             appmesh_requst.headers["Authorization"] = "Bearer " + super().jwt_token
         if super().delegate_host and len(super().delegate_host) > 0:
-            if ":" in super().delegate_host:
-                appmesh_requst.headers["X-Target-Host"] = super().delegate_host
-            else:
-                appmesh_requst.headers["X-Target-Host"] = super().delegate_host + ":" + str(parse.urlsplit(self.server_url).port)
-        appmesh_requst.headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
+            raise Exception("Not support delegate request in TCP mode")
+        appmesh_requst.headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_TCP
         appmesh_requst.uuid = str(uuid.uuid1())
         appmesh_requst.http_method = method.value
         appmesh_requst.request_uri = path
@@ -1525,13 +1528,13 @@ class AppMeshClientTCP(AppMeshClient):
             for k, v in query.items():
                 appmesh_requst.querys[k] = v
         data = appmesh_requst.serialize()
-        self.__socket_client.sendall(len(data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
+        self.__socket_client.sendall(len(data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
         self.__socket_client.sendall(data)
 
         # https://developers.google.com/protocol-buffers/docs/pythontutorial
         # https://stackoverflow.com/questions/33913308/socket-module-how-to-send-integer
         resp_data = bytes()
-        resp_data = self.__recvall(int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False))
+        resp_data = self.__recvall(int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False))
         if resp_data is None or len(resp_data) == 0:
             self.__close_socket()
             raise Exception("socket connection broken")
@@ -1558,18 +1561,21 @@ class AppMeshClientTCP(AppMeshClient):
         Returns:
             bool: success or failure.
         """
-        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
-        if resp.status_code == HTTPStatus.OK:
+        header = {}
+        header["File-Path"] = file_path
+        header[HTTP_HEADER_KEY_X_RECV_FILE_SOCKET] = "true"
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header=header)
+        if resp.status_code == HTTPStatus.OK and HTTP_HEADER_KEY_X_RECV_FILE_SOCKET in resp.headers:
             with open(local_file, "wb") as fp:
                 chunk_data = bytes()
-                chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
+                chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False)
                 while chunk_size > 0:
                     chunk_data = self.__recvall(chunk_size)
                     if chunk_data is None or len(chunk_data) == 0:
                         self.__close_socket()
                         raise Exception("socket connection broken")
                     fp.write(chunk_data)
-                    chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), "big", signed=False)
+                    chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False)
             if "File-Mode" in resp.headers:
                 os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
             if "File-User" in resp.headers and "File-Group" in resp.headers:
@@ -1605,15 +1611,16 @@ class AppMeshClientTCP(AppMeshClient):
             header["File-User"] = str(file_stat.st_uid)
             header["File-Group"] = str(file_stat.st_gid)
             header["Content-Type"] = "text/plain"
+            header[HTTP_HEADER_KEY_X_SEND_FILE_SOCKET] = "true"
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
-            if resp.status_code == HTTPStatus.OK:
-                chunk_size = 1024 * 4  # 131072 bytes, default max ssl buffer size
+            if resp.status_code == HTTPStatus.OK and HTTP_HEADER_KEY_X_SEND_FILE_SOCKET in resp.headers:
+                chunk_size = 8 * 1024  # (8 KB in bytes), 131072 bytes (128 KB) is default max ssl buffer size
                 chunk_data = fp.read(chunk_size)
                 while chunk_data:
-                    self.__socket_client.sendall(len(chunk_data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
+                    self.__socket_client.sendall(len(chunk_data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
                     self.__socket_client.sendall(chunk_data)
                     chunk_data = fp.read(chunk_size)
-                self.__socket_client.sendall(int(0).to_bytes(TCP_MESSAGE_HEADER_LENGTH, "big", signed=False))
+                self.__socket_client.sendall(int(0).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
                 return True, ""
             return False, resp.json()[REST_TEXT_MESSAGE_JSON_KEY]

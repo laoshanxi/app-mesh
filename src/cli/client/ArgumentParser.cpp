@@ -19,7 +19,6 @@
 #include "../../common/Password.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
 #include "ArgumentParser.h"
 
@@ -1261,7 +1260,7 @@ void ArgumentParser::processFileDownload()
 		return;
 	}
 
-	std::string restPath = "/appmesh/file/download";
+	std::string restPath = REST_PATH_DOWNLOAD;
 	auto file = m_commandLineVariables["remote"].as<std::string>();
 	auto local = m_commandLineVariables["local"].as<std::string>();
 
@@ -1271,12 +1270,7 @@ void ArgumentParser::processFileDownload()
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	auto response = RestClient::download(m_currentUrl, restPath, file, local, header);
 
-	if (response->header.count(HTTP_HEADER_KEY_file_mode))
-		os::fileChmod(local, std::stoi(response->header.find(HTTP_HEADER_KEY_file_mode)->second));
-	if (response->header.count(HTTP_HEADER_KEY_file_user) && response->header.count(HTTP_HEADER_KEY_file_group))
-		os::chown(std::stoi(response->header.find(HTTP_HEADER_KEY_file_user)->second),
-				  std::stoi(response->header.find(HTTP_HEADER_KEY_file_group)->second),
-				  local, false);
+	Utility::applyFilePermission(file, response->header);
 	if (response->status_code == web::http::status_codes::OK)
 		std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
 	else
@@ -1309,7 +1303,7 @@ void ArgumentParser::processFileUpload()
 		return;
 	}
 	local = boost::filesystem::canonical(local).string();
-	std::string restPath = "/appmesh/file/upload";
+	std::string restPath = REST_PATH_UPLOAD;
 	auto fileInfo = os::fileStat(local);
 	// header
 	std::map<std::string, std::string> header;
@@ -1319,12 +1313,6 @@ void ArgumentParser::processFileUpload()
 	header.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	auto response = RestClient::upload(m_currentUrl, restPath, local, header);
-	if (response->header.count(HTTP_HEADER_KEY_file_mode))
-		os::fileChmod(local, std::stoi(response->header.find(HTTP_HEADER_KEY_file_mode)->second));
-	if (response->header.count(HTTP_HEADER_KEY_file_user) && response->header.count(HTTP_HEADER_KEY_file_group))
-		os::chown(std::stoi(response->header.find(HTTP_HEADER_KEY_file_user)->second),
-				  std::stoi(response->header.find(HTTP_HEADER_KEY_file_group)->second),
-				  local, false);
 	if (response->status_code == web::http::status_codes::OK)
 		std::cout << "Uploaded file <" << local << ">" << std::endl;
 	else

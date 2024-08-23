@@ -4,6 +4,7 @@
 #include <memory>
 #include <thread>
 
+#include <ace/OS_NS_sys_select.h>
 #include <ace/os_include/netinet/os_tcp.h>
 
 #include "../../common/TimerHandler.h"
@@ -31,11 +32,16 @@ struct HttpRequestMsg
 
 // Default constructor.
 TcpHandler::TcpHandler(void)
-	: m_id(++m_idGenerator)
+	: m_id(++m_idGenerator), m_pendingUploadFile(1)
 {
 	const static char fname[] = "TcpHandler::TcpHandler() ";
 	m_handlers.bind(m_id, this);
 	LOG_DBG << fname << "client=" << m_id << ", total client number: " << m_handlers.current_size();
+}
+
+TcpHandler::FileUploadInfo::FileUploadInfo(const std::string &uploadFilePath, const std::map<std::string, std::string> &requestHeaders)
+	: m_filePath(uploadFilePath), m_requestHeaders(requestHeaders)
+{
 }
 
 TcpHandler::~TcpHandler()
@@ -54,6 +60,17 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	LOG_DBG << fname << "from client=" << m_id;
 
 	std::lock_guard<std::mutex> guard(m_socketLock); // hold this lock to avoid recv TCP file stream data
+
+	if (recvUploadFile())
+	{
+		// if (noSocketData())
+		// {
+		//	LOG_WAR << fname << "no socket data";
+		//	return 0;
+		// }
+		return 0;
+	}
+
 	auto result = ProtobufHelper::readMessageBlock(this->peer());
 	auto data = std::get<0>(result);
 	auto readCount = std::get<1>(result);
@@ -81,6 +98,53 @@ int TcpHandler::handle_input(ACE_HANDLE)
 		LOG_ERR << fname << "Problems in receiving data from " << m_clientHostName << ": " << std::strerror(errno);
 		return -1;
 	}
+}
+
+bool TcpHandler::noSocketData()
+{
+	auto handle = this->peer().get_handle();
+	fd_set read_set;
+	fd_set except_set;
+	FD_ZERO(&read_set);
+	FD_ZERO(&except_set);
+	FD_SET(handle, &read_set);
+	FD_SET(handle, &except_set);
+
+	// Use a zero timeout to perform a non-blocking check
+	const static ACE_Time_Value timeout(0, 0);
+
+	// Perform the select operation
+	return 0 == ACE_OS::select(handle + 1, &read_set, nullptr, &except_set, &timeout);
+
+	/*
+	another solution is use peek with enable(ACE_NONBLOCK)
+	char peek_buffer[1];
+	return this->peer().recv(peek_buffer, sizeof(peek_buffer), MSG_PEEK) <= 0;
+	*/
+}
+
+bool TcpHandler::recvUploadFile()
+{
+	const static char fname[] = "TcpHandler::recvUploadFile() ";
+	if (!m_pendingUploadFile.empty())
+	{
+		std::shared_ptr<FileUploadInfo> uploadInfo;
+		m_pendingUploadFile.pop(uploadInfo);
+		std::ofstream file(uploadInfo->m_filePath, std::ios::binary | std::ios::out | std::ios::trunc);
+		auto msg = ProtobufHelper::readMessageBlock(this->peer());
+		while (std::get<0>(msg) != nullptr)
+		{
+			auto msgData = std::get<0>(msg);
+			auto msgSize = std::get<1>(msg);
+			file.write(msgData.get(), msgSize);
+			msg = ProtobufHelper::readMessageBlock(this->peer());
+		}
+		LOG_INF << fname << "upload finished";
+		// set permission
+		Utility::applyFilePermission(uploadInfo->m_filePath, uploadInfo->m_requestHeaders);
+		return true;
+	}
+	return false;
 }
 
 int TcpHandler::open(void *)
@@ -196,6 +260,17 @@ bool TcpHandler::reply(const Response &resp)
 			this->peer().close();
 			return false;
 		}
+
+		// set upload flag before send to client
+		if (resp.http_status == web::http::status_codes::OK &&
+			resp.request_uri == REST_PATH_UPLOAD && resp.body.size() &&
+			resp.headers.count(HTTP_HEADER_KEY_X_Send_File_Socket))
+		{
+			auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second);
+			m_pendingUploadFile.push(std::make_shared<FileUploadInfo>(fileName, resp.file_upload_request_headers));
+			LOG_INF << fname << "upload from socket to : " << fileName;
+		}
+
 		if (!sendBytes(length) || !sendBytes(buffer, length))
 		{
 			LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
@@ -203,11 +278,11 @@ bool TcpHandler::reply(const Response &resp)
 		}
 
 		if (resp.http_status == web::http::status_codes::OK &&
-			resp.body_msg_type == web::http::mime_types::application_octetstream &&
-			resp.request_uri == "/appmesh/file/download" && resp.body.size() &&
-			nlohmann::json::parse(resp.body).contains(TCP_JSON_MSG_FILE))
+			resp.request_uri == REST_PATH_DOWNLOAD && resp.body.size() &&
+			resp.headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket))
 		{
-			auto path = nlohmann::json::parse(resp.body)[TCP_JSON_MSG_FILE].get<std::string>();
+			auto path = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
+			LOG_INF << fname << "download socket file : " << path;
 			// send file via TCP with chunks
 			auto pBuffer = make_shared_array<char>(BLOCK_CHUNK_SIZE);
 			std::ifstream file(path, std::ios::binary | std::ios::in);
@@ -235,23 +310,6 @@ bool TcpHandler::reply(const Response &resp)
 			}
 			// send last 0 for delimiter
 			sendBytes(0);
-		}
-
-		if (resp.http_status == web::http::status_codes::OK &&
-			resp.body_msg_type == web::http::mime_types::application_octetstream &&
-			resp.request_uri == "/appmesh/file/upload" && resp.body.size() &&
-			nlohmann::json::parse(resp.body).contains(TCP_JSON_MSG_FILE))
-		{
-			auto path = nlohmann::json::parse(resp.body)[TCP_JSON_MSG_FILE].get<std::string>();
-			std::ofstream file(path, std::ios::binary | std::ios::out | std::ios::trunc);
-			auto msg = ProtobufHelper::readMessageBlock(this->peer());
-			while (std::get<0>(msg) != nullptr)
-			{
-				auto msgData = std::get<0>(msg);
-				auto msgSize = std::get<1>(msg);
-				file.write(msgData.get(), msgSize);
-				msg = ProtobufHelper::readMessageBlock(this->peer());
-			}
 		}
 	}
 	else
@@ -314,7 +372,7 @@ bool TcpHandler::sendBytes(const char *data, size_t length)
 		size_t sendReturn = 0;
 		errno = 0;
 		sendReturn = (size_t)this->peer().send_n((void *)(data + totalSent), (length - totalSent), 0, &sendSize);
-		LOG_DBG << fname << m_clientHostName << " total length: " << (length - totalSent) << " sent length:" << sendSize << " with result: " << std::strerror(errno);
+		// LOG_DBG << fname << m_clientHostName << " total length: " << (length - totalSent) << " sent length:" << sendSize << " with result: " << std::strerror(errno);
 		if (sendReturn == 0)
 		{
 			if (EINTR == errno)
@@ -329,12 +387,14 @@ bool TcpHandler::sendBytes(const char *data, size_t length)
 		}
 		totalSent += sendSize;
 	}
-	LOG_DBG << fname << m_clientHostName << " success";
 	return true;
 }
 
 bool TcpHandler::sendBytes(size_t intValue)
 {
+	const static char fname[] = "TcpHandler::sendBytes() ";
+	LOG_DBG << fname << "sending <" << intValue << "> data to " << m_clientHostName;
+
 	char headerBuff[PROTOBUF_HEADER_LENGTH];
 	// write data size to header
 	*((uint32_t *)headerBuff) = htonl(intValue); // host to network byte order

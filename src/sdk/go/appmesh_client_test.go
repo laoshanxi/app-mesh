@@ -41,16 +41,14 @@ func TestAppmeshLogin(t *testing.T) {
 func TestAppmeshFile(t *testing.T) {
 
 	client := NewClient(Option{})
-	client.updateDelegateHost("localhost:6060")
+	client.updateDelegateHost("localhost:6059")
 
 	success, _, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
 	require.True(t, success)
-	if _, err := os.Stat("appsvc"); err == nil {
-		os.Remove("appsvc")
-	}
-	if _, err := os.Stat("/tmp/appsvc"); err == nil {
-		os.Remove("/tmp/appsvc")
-	}
+
+	os.Remove("appsvc")
+	os.Remove("/tmp/appsvc")
+
 	require.Nil(t, client.FileDownload("/opt/appmesh/bin/appsvc", "appsvc"))
 	require.Nil(t, client.FileUpload("appsvc", "/tmp/appsvc"))
 	os.Remove("appsvc")

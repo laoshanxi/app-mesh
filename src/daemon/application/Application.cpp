@@ -373,7 +373,7 @@ void Application::execute(void *ptree)
 		if (m_process && m_process->running() && !inDailyRange)
 		{
 			// check run status and kill for invalid runs
-			LOG_INF << fname << "Application <" << m_name << "> was not in start time, startTime:" << DateTime::formatLocalTime(m_startTime) << " endTime:" << DateTime::formatLocalTime(m_endTime);
+			LOG_INF << fname << DateTime::formatLocalTime(now) << " Application <" << m_name << "> was not in start time, startTime:" << DateTime::formatLocalTime(m_startTime) << " endTime:" << DateTime::formatLocalTime(m_endTime);
 			terminate(m_process);
 			setInvalidError();
 			m_nextLaunchTime.reset();

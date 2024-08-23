@@ -88,7 +88,8 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(co
 	const auto bodySize = readMsgHeader(socket, recvReturn);
 	if (bodySize <= 0)
 	{
-		LOG_ERR << fname << "parse header length with error :" << std::strerror(errno);
+		if (errno != 0)
+			LOG_ERR << fname << "parse header length with error :" << std::strerror(errno);
 		return std::make_tuple(nullptr, recvReturn);
 	}
 	return readBytes(socket, bodySize, recvReturn);

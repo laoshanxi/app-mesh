@@ -76,6 +76,7 @@ class TestAppMeshClient(TestCase):
         """test file"""
         client = appmesh_client.AppMeshClient()
         client.login("admin", "admin123")
+        client.delegate_host = "127.0.0.1:6059"
         if os.path.exists("1.log"):
             os.remove("1.log")
         self.assertTrue(client.file_download("/opt/appmesh/work/server.log", "1.log"))
