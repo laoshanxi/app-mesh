@@ -6,7 +6,7 @@
 ################################################################################
 
 export PROG_HOME=/opt/appmesh
-export PROG=${PROG_HOME}/bin/appsvc
+export PROGRAM=${PROG_HOME}/bin/appsvc
 export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 
 log() {
@@ -54,9 +54,9 @@ EOF
 pre_start_app "$@"
 
 while true; do
-	log "Starting App Mesh service: $PROG"
-	$PROG >/dev/null 2>&1
+	log "Starting App Mesh service: $PROGRAM"
+	$PROGRAM >/dev/null 2>&1
 	EXIT_STATUS=$?
 	log "App Mesh exit status: $EXIT_STATUS"
-	sleep 2
+	sleep 1
 done

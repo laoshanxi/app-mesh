@@ -3,7 +3,6 @@ package http
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/buaazp/fasthttprouter"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
@@ -31,36 +29,32 @@ const (
 	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
+
+	TCP_CHUNK_READ_BLOCK_SIZE          = 8192
+	PROTOBUF_HEADER_LENGTH             = 4
+	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
+	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
+	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
 )
 
-type safeConn struct {
-	conn net.Conn
-	mu   sync.Mutex
-}
-
-type tcpConnections struct {
-	mu          sync.Mutex
-	connections map[string]*safeConn
-}
-
 var (
-	localConnection *safeConn // tcp connection to the server
-	requestMap      sync.Map  // request map cache for asyncrized response
+	httpRequestMap sync.Map // request map cache for asyncrized response
 
-	clientPoolHttp sync.Pool
-	clientPoolTcp  = &tcpConnections{connections: make(map[string]*safeConn)}
+	localConnection   *Connection // tcp connection to the local server
+	remoteConnections = &tcpConnections{connections: make(map[string]*Connection)}
+	delegatePool      sync.Pool
 )
 
 func init() {
-	clientPoolHttp = sync.Pool{
+	delegatePool = sync.Pool{
 		New: func() interface{} {
 			var serverCA *x509.CertPool
-			if config.ConfigData.REST.SSL.VerifyServer {
+			if config.ConfigData.REST.SSL.VerifyServerDelegate {
 				serverCA, _ = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
 			}
 			return &fasthttp.Client{
 				TLSConfig: &tls.Config{
-					InsecureSkipVerify: !(config.ConfigData.REST.SSL.VerifyServer),
+					InsecureSkipVerify: !(config.ConfigData.REST.SSL.VerifyServerDelegate),
 					RootCAs:            serverCA,
 				},
 			}
@@ -68,44 +62,10 @@ func init() {
 	}
 }
 
-// https://www.jianshu.com/p/dce19fb167f4
-func connectServer(tcpAddr string) (net.Conn, error) {
-	log.Printf("Connecting to: %s", tcpAddr)
-	// client: for internal connection, use server side certificate file for client
-	clientCA := tls.Certificate{}
-	if config.ConfigData.REST.SSL.VerifyClient {
-		clientCA = utils.LoadCertificatePair(
-			config.ConfigData.REST.SSL.SSLCertificateFile,
-			config.ConfigData.REST.SSL.SSLCertificateKeyFile)
-	}
-
-	// server
-	var serverCA *x509.CertPool
-	if config.ConfigData.REST.SSL.VerifyServer {
-		var err error
-		serverCA, err = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	conf := &tls.Config{
-		// verify server
-		InsecureSkipVerify: !(config.ConfigData.REST.SSL.VerifyServer),
-		RootCAs:            serverCA,
-
-		// verify client
-		Certificates: []tls.Certificate{clientCA},
-	}
-
-	return tls.Dial("tcp", tcpAddr, conf)
-}
-
-func readResponseLoop(conn *safeConn, targetHost string, allowError bool) {
+func monitorResponse(conn *Connection, targetHost string, allowError bool) {
 	for {
 		// read response from server
-		response := new(Response)
-		err := response.readResponse(conn.conn)
+		response, err := ReadNewResponse(conn.conn)
 		if err != nil {
 			if !allowError {
 				log.Fatalf("Failed read response from host %s: %v", targetHost, err)
@@ -117,7 +77,7 @@ func readResponseLoop(conn *safeConn, targetHost string, allowError bool) {
 		}
 
 		// forward to channel and release map
-		if t, ok := requestMap.LoadAndDelete(response.Uuid); !ok {
+		if t, ok := httpRequestMap.LoadAndDelete(response.Uuid); !ok {
 			log.Fatalf("Not found request ID <%s> for Response", response.Uuid)
 		} else {
 			// notify
@@ -127,32 +87,18 @@ func readResponseLoop(conn *safeConn, targetHost string, allowError bool) {
 	}
 }
 
-// Disable Nagle's algorithm on both sides if you're sending small, frequent messages.
-func setNoDelay(conn net.Conn) {
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		rawConn, err := tcpConn.SyscallConn()
-		if err != nil {
-			log.Fatalf("Error getting syscall connection: %v", err)
-		}
-		rawConn.Control(func(fd uintptr) {
-			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
-		})
-	}
-}
-
 func ListenRest() {
 	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
 	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
 	// connect to TCP rest server
 	targetHost := strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1)
-	conn, err := connectServer(targetHost)
+
+	var err error
+	localConnection, err = NewConnection(targetHost, config.ConfigData.REST.SSL.VerifyServer, false)
 	if err != nil {
 		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
 		os.Exit(-1)
 	}
-	localConnection = &safeConn{conn: conn}
-	setNoDelay(localConnection.conn)
-	go readResponseLoop(localConnection, targetHost, false)
 
 	// http router
 	router := fasthttprouter.New()
@@ -163,20 +109,20 @@ func ListenRest() {
 	// grafana
 	grafana.RegGrafanaRestHandler(router)
 	// appmesh
-	router.GET("/appmesh/*path", utils.Cors(handleAppmeshRest))
-	router.PUT("/appmesh/*path", utils.Cors(handleAppmeshRest))
-	router.POST("/appmesh/*path", utils.Cors(handleAppmeshRest))
-	router.DELETE("/appmesh/*path", utils.Cors(handleAppmeshRest))
+	router.GET("/appmesh/*path", utils.Cors(handleAppmeshResquest))
+	router.PUT("/appmesh/*path", utils.Cors(handleAppmeshResquest))
+	router.POST("/appmesh/*path", utils.Cors(handleAppmeshResquest))
+	router.DELETE("/appmesh/*path", utils.Cors(handleAppmeshResquest))
 	// OPTIONS & HEAD
 	router.OPTIONS("/*path", utils.Cors(func(ctx *fasthttp.RequestCtx) { ctx.SetStatusCode(fasthttp.StatusOK) }))
 	router.HEAD("/*path", utils.Cors(func(ctx *fasthttp.RequestCtx) { ctx.SetStatusCode(fasthttp.StatusOK) }))
 	router.GET("/", utils.Cors(handleIndex))
 	// router.NotFound = utils.Cors(handleAppmeshRest)
 
-	listenAgentTls(listenAddr, router)
+	startHttpsServer(listenAddr, router)
 }
 
-func listenAgentTls(restAgentAddr string, router *fasthttprouter.Router) {
+func startHttpsServer(restAgentAddr string, router *fasthttprouter.Router) {
 	// Load server certificate and key
 	serverCA := utils.LoadCertificatePair(
 		config.ConfigData.REST.SSL.SSLCertificateFile,
@@ -301,8 +247,8 @@ func handleIndex(ctx *fasthttp.RequestCtx) {
 }
 
 // https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
-func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
-	targetConnection := localConnection
+func handleAppmeshResquest(ctx *fasthttp.RequestCtx) {
+	var targetConnection = localConnection
 
 	// handle forward request
 	// in order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
@@ -319,7 +265,7 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 		} else {
 			// forward with TCP protocal
 			var err error
-			targetConnection, err = getTcpConnection(parsedURL.Host)
+			targetConnection, err = NewConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				ctx.Logger().Printf("Failed to connect TCP to target host %s with error: %v", targetHost, err)
 				ctx.Error(err.Error(), fasthttp.StatusInternalServerError)
@@ -329,7 +275,7 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 	}
 
 	// body buffer, read from fasthttp
-	request := convertHttpRequest(ctx)
+	request := NewRequest(ctx)
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
 	if targetConnection != localConnection {
 		request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_TCP
@@ -340,82 +286,27 @@ func handleAppmeshRest(ctx *fasthttp.RequestCtx) {
 			request.Headers[HTTP_HEADER_KEY_X_Send_File_Socket] = "true"
 		}
 	}
-	bodyData, err := request.serialize()
-	if err != nil {
-		log.Fatalf("Failed to serialize request: %v", err)
-	}
-
-	// header buffer
-	headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
-	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
-	ctx.Logger().Printf("Requesting: %s with msg length: %d", request.Uuid, len(bodyData))
 
 	// create a chan for accept Response
 	ch := make(chan *Response)
-	requestMap.Store(request.Uuid, ch)
+	httpRequestMap.Store(request.Uuid, ch)
 
-	var sendErr error
-	// send header and body to app mesh server
-	{
-		targetConnection.mu.Lock()
-		if sendErr = sendTcpData(targetConnection.conn, headerData); sendErr == nil {
-			sendErr = sendTcpData(targetConnection.conn, bodyData)
-		}
-		targetConnection.mu.Unlock()
-	}
-
+	sendErr := targetConnection.sendRequestData(request)
 	if sendErr == nil {
 		// wait chan to get response
-		protocResponse := <-ch
+		resp := <-ch
 		// reply to client
-		applyHttpResponse(ctx, protocResponse)
+		resp.applyResponse(ctx)
 
 		// handle file upload after response to client
-		if protocResponse.TempUploadFilePath != "" {
-			log.Printf("TempUploadFilePath: %s", protocResponse.TempUploadFilePath)
-			sendErr = sendUploadFileData(protocResponse.TempUploadFilePath, targetConnection)
+		if resp.TempUploadFilePath != "" {
+			sendErr = targetConnection.sendUploadFileData(resp.TempUploadFilePath)
 		}
 	}
 
 	if sendErr != nil {
 		ctx.Logger().Printf("Failed to send request to server with error: %v", sendErr)
 		defer deleteConnection(targetHost)
-	}
-}
-
-func getTcpConnection(targetHost string) (*safeConn, error) {
-	clientPoolTcp.mu.Lock()
-	defer clientPoolTcp.mu.Unlock()
-
-	// Check for existing connection
-	if conn, ok := clientPoolTcp.connections[targetHost]; ok {
-		return conn, nil
-	}
-
-	// No available connection, create a new one
-	conn, err := connectServer(targetHost)
-	if err != nil {
-		return nil, err
-	}
-	setNoDelay(conn)
-	// Store the new connection
-	sConn := &safeConn{conn: conn}
-	clientPoolTcp.connections[targetHost] = sConn
-
-	// start thread to monitor response
-	go readResponseLoop(sConn, targetHost, true)
-
-	return sConn, nil
-}
-
-func deleteConnection(targetHost string) {
-	clientPoolTcp.mu.Lock()
-	defer clientPoolTcp.mu.Unlock()
-
-	if conn, ok := clientPoolTcp.connections[targetHost]; ok {
-		conn.conn.Close()                             // Close the connection
-		delete(clientPoolTcp.connections, targetHost) // Remove it from the map
-		log.Printf("remove connection: %s", targetHost)
 	}
 }
 
@@ -446,8 +337,8 @@ func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
 	defer fasthttp.ReleaseResponse(resp)
 
 	// Perform the request
-	delegateClient := clientPoolHttp.Get().(*fasthttp.Client)
-	defer clientPoolHttp.Put(delegateClient)
+	delegateClient := delegatePool.Get().(*fasthttp.Client)
+	defer delegatePool.Put(delegateClient)
 	err = delegateClient.Do(req, resp)
 	if err != nil {
 		ctx.Logger().Printf("Forward request failed with error: %v", err)
@@ -498,7 +389,7 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 		ctx.Logger().Printf("uploading file: %s", filePath)
 
 		if utils.IsValidFileName(filePath) {
-			if err := saveFile(ctx, filePath); err != nil {
+			if err := saveHttpFile(ctx, filePath); err != nil {
 				ctx.Logger().Printf("saveFile failed with error: %v", err)
 				errorJson, _ := json.Marshal(ResponseMessage{Message: err.Error()})
 				ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
@@ -526,7 +417,7 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 }
 
 // https://freshman.tech/file-upload-golang/
-func saveFile(ctx *fasthttp.RequestCtx, filePath string) error {
+func saveHttpFile(ctx *fasthttp.RequestCtx, filePath string) error {
 	ctx.Logger().Printf("saveFile: %s", filePath)
 	if file, err := ctx.FormFile("file"); err == nil {
 		ctx.Logger().Printf("SaveMultipartFile: %s", filePath)

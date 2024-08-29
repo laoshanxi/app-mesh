@@ -495,6 +495,7 @@ void Configuration::removeApp(const std::string &appName)
 		app->remove();
 		LOG_DBG << fname << "removed " << appName;
 	}
+	m_appNameIndexMap.unbind(appName);
 }
 
 void Configuration::saveConfigToDisk()
@@ -605,6 +606,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_sslCaPath, newConfig->m_rest->m_ssl->m_sslCaPath);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyServer))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyServer, newConfig->m_rest->m_ssl->m_sslVerifyServer);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyServerDelegate))
+					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyServerDelegate, newConfig->m_rest->m_ssl->m_sslVerifyServerDelegate);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyClient))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyClient, newConfig->m_rest->m_ssl->m_sslVerifyClient);
 			}
@@ -775,6 +778,26 @@ bool Configuration::isAppExist(const std::string &appName)
 	return (m_apps.find(appName) == 0);
 }
 
+std::string Configuration::generateRunAppName(const std::string &provideAppName)
+{
+	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_appNameIndexMap.mutex());
+	int appIndex = 1;
+	if (m_appNameIndexMap.find(provideAppName, appIndex) == 0)
+	{
+		appIndex++;
+	}
+	while (true)
+	{
+		auto newName = provideAppName + "_" + std::to_string(appIndex);
+		if (isAppExist(newName))
+			appIndex++;
+		else
+			break;
+	}
+	m_appNameIndexMap.rebind(provideAppName, appIndex);
+	return provideAppName + "_" + std::to_string(appIndex);
+}
+
 const nlohmann::json Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
@@ -922,6 +945,7 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 	const static char fname[] = "Configuration::JsonSsl::FromJson() ";
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServer, ssl->m_sslVerifyServer);
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServerDelegate, ssl->m_sslVerifyServerDelegate);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyClient, ssl->m_sslVerifyClient);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
 	ssl->m_certKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateKeyFile);
@@ -950,6 +974,7 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_SSLVerifyServer] = (m_sslVerifyServer);
+	result[JSON_KEY_SSLVerifyServerDelegate] = (m_sslVerifyServerDelegate);
 	result[JSON_KEY_SSLVerifyClient] = (m_sslVerifyClient);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
 	result[JSON_KEY_SSLCertificateKeyFile] = std::string(m_certKeyFile);
@@ -960,7 +985,7 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 }
 
 Configuration::JsonSsl::JsonSsl()
-	: m_sslVerifyServer(false), m_sslVerifyClient(false)
+	: m_sslVerifyServer(false), m_sslVerifyServerDelegate(false), m_sslVerifyClient(false)
 {
 }
 

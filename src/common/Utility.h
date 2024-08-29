@@ -255,6 +255,7 @@ public:
 
 #define JSON_KEY_SSL "SSL"
 #define JSON_KEY_SSLVerifyServer "VerifyServer"
+#define JSON_KEY_SSLVerifyServerDelegate "VerifyServerDelegate"
 #define JSON_KEY_SSLVerifyClient "VerifyClient"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
 #define JSON_KEY_SSLCertificateKeyFile "SSLCertificateKeyFile"

@@ -8,7 +8,7 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 
 def get_version():
-    return "1.3.0"
+    return "1.3.1"
 
 
 setuptools.setup(

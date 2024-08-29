@@ -13,7 +13,7 @@ import uuid
 from enum import Enum, unique
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional, Tuple, final
+from typing import Optional, Tuple
 from urllib import parse
 
 import aniso8601
@@ -401,7 +401,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._jwt_token = token
 
     @property
-    @final
     def delegate_host(self) -> str:
         """property for delegate_host
 
@@ -411,7 +410,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return self._delegate_host
 
     @delegate_host.setter
-    @final
     def delegate_host(self, host: str) -> None:
         """setter for delegate_host
 

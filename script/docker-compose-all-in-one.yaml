@@ -1,89 +1,91 @@
 version: "3"
 
+name: appmesh_monitor
+
 networks:
-  appmesh:
+  frontend:
+  backend:
 
 services:
-  # Consul
   consul:
+    hostname: consul
     restart: always
-    image: docker.io/consul
-    # https://www.consul.io/docs/agent/options
+    image: hashicorp/consul # https://www.consul.io/docs/agent/options
     command: consul agent -server=true -data-dir /consul/data -config-dir /consul/config --client=0.0.0.0 --bind=0.0.0.0 -bootstrap-expect=1 -ui
     volumes:
       - /etc/hosts:/etc/hosts:ro
-    ports:
-      # https://www.consul.io/docs/install/ports
+    ports: # https://www.consul.io/docs/install/ports
       - "8500:8500"
       - "8600:8600"
       - "8301:8301"
       - "8302:8302"
       - "8300:8300"
+    networks:
+      - frontend
+      - backend
 
-  # appmesh, container docker use host docker engine
-  appmesh:
+  appmesh_node:
+    hostname: appmesh_node
     restart: always
     image: laoshanxi/appmesh
     environment:
-      - APPMESH_Consul_Url=http://localhost:8500
+      - APPMESH_Consul_Url=http://consul:8500
       - APPMESH_REST_PrometheusExporterListenPort=6061
       - APPMESH_REST_DockerProxyListenAddr=http://127.0.0.1:6058
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /opt/appmesh/work:/opt/appmesh/work
-      - /opt/appmesh/log:/opt/appmesh/log
-      # mount this to enable configuration persist
-      #- /opt/appmesh/config.yaml:/opt/appmesh/config.yaml
+      - /opt/appmesh/work # mount this to enable configuration persist
     privileged: true
     user: root
-    network_mode: host
-    #ports:
-    #  - "6060:6060" # App Mesh Engine
-    #  - "6061:6061" # Prometheus Exporter
+    ports:
+      - "443:443" # for appmesh_ui
+      - "6061:6061" # Prometheus Exporter
     depends_on:
       - consul
+    networks:
+      - frontend
+      - backend
 
-  # appmesh UI, use host mode (port 443) to support reverse nginx proxy to Consul ad App Mesh
   appmesh-ui:
     restart: always
     image: laoshanxi/appmesh-ui
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    network_mode: host
     depends_on:
-      - appmesh
+      - appmesh_node
+    network_mode: "service:appmesh_node" # make sure in same network with appmesh
 
   loki:
     restart: always
     image: grafana/loki:latest
     ports:
       - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
     networks:
-      - appmesh
+      - backend
 
   promtail:
     restart: always
     image: grafana/promtail:latest
     volumes:
       - /var/log:/var/log
-      - /opt/appmesh/:/opt/appmesh/
       - ./promtail.yml:/etc/promtail/config.yml
-    # override default container config: /etc/promtail/config.yml
+    volumes_from:
+      - appmesh_node
     command: -config.file=/etc/promtail/config.yml
     networks:
-      - appmesh
+      - backend
     depends_on:
       - loki
 
   grafana:
     restart: always
     image: grafana/grafana:latest
-    #ports:
-    #  - "3000:3000"
-    network_mode: host
+    ports:
+      - "3000:3000"
+    networks:
+      - frontend
+      - backend
 
-  # Prometheus, use host mode to scrap from other nodes
   prometheus:
     restart: always
     image: prom/prometheus:latest
@@ -92,12 +94,14 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./prom_alert_rules.yml:/etc/prometheus/rules.yml
-    #ports:
-    #  - "9090:9090"
-    network_mode: host
+    ports:
+      - "9090:9090"
+    networks:
+      - frontend
+      - backend
 
-  # https://www.cnblogs.com/weifeng1463/p/12828961.html
-  node_exporter:
+  node_exporter: # https://www.cnblogs.com/weifeng1463/p/12828961.html
+    hostname: node_exporter
     restart: always
     image: prom/node-exporter:latest
     command: --path.procfs=/host/proc --path.rootfs=/rootfs --path.sysfs=/host/sys --collector.filesystem.ignored-mount-points='^/(sys|proc|dev|host|etc)($$|/)'
@@ -107,18 +111,21 @@ services:
       - /:/rootfs:ro
     ports:
       - "9100:9100"
+    networks:
+      - frontend
+      - backend
 
-  # https://www.cnblogs.com/aixing/archive/2004/01/13/13327157.html
-  alertmanager:
+  alertmanager: # https://www.cnblogs.com/aixing/archive/2004/01/13/13327157.html
+    hostname: alertmanager
     restart: always
     image: prom/alertmanager:latest
     volumes:
       - ./prom_alertmanager.yml:/etc/alertmanager/config.yml
-    # override default container config: /etc/alertmanager/config.yml
     command: --config.file=/etc/alertmanager/config.yml
     ports:
       - "9093:9093"
     networks:
-      - appmesh
+      - frontend
+      - backend
     depends_on:
       - prometheus

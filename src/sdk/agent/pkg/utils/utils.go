@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 )
 
 func IsFileExist(path string) bool {
@@ -228,4 +230,17 @@ func ParseURL(input string) (*url.URL, error) {
 	}
 
 	return parsedURL, nil
+}
+
+// Disable Nagle's algorithm on both sides if you're sending small, frequent messages.
+func SetTcpNoDelay(conn net.Conn) {
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		rawConn, err := tcpConn.SyscallConn()
+		if err != nil {
+			log.Fatalf("Error getting syscall connection: %v", err)
+		}
+		rawConn.Control(func(fd uintptr) {
+			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
+		})
+	}
 }

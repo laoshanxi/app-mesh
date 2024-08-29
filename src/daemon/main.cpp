@@ -172,16 +172,16 @@ int main(int argc, char *argv[])
 						  }
 					  });
 
+		TcpClient client;
+		if (config->getRestEnabled())
+			client.connect(acceptorAddr);
+
 		// consul id recover
 		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
 		if (Configuration::instance()->getConsul()->consulEnabled())
 		{
 			ConsulConnection::instance()->init(consulSsnIdFromRecover);
 		}
-
-		TcpClient client;
-		if (config->getRestEnabled())
-			client.connect(acceptorAddr);
 
 		// monitor applications
 		int tcpErrorCounter = 0;

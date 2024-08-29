@@ -23,7 +23,7 @@ scrape_configs:
           - localhost
         labels:
           job: app
-          __path__: /opt/appmesh/work/*.out
+          __path__: /opt/appmesh/work/stdout/*.out
 
   - job_name: appmesh
     static_configs:
@@ -31,4 +31,13 @@ scrape_configs:
           - localhost
         labels:
           job: appmesh
-          __path__: /opt/appmesh/log/*.log
+          __path__: /opt/appmesh/work/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[(?P<thread_id>\d+)\] (?P<level>\w+) : (?P<message>.*)$'
+      - labels:
+          level:
+          thread_id:
+      - timestamp:
+          source: timestamp
+          format: "2006-01-02 15:04:05.000"
