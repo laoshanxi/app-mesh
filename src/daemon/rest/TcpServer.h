@@ -31,8 +31,6 @@ class TcpHandler : public ACE_Svc_Handler<ACE_SSL_SOCK_Stream, ACE_NULL_SYNCH>
 		std::string m_filePath;
 		std::map<std::string, std::string> m_requestHeaders;
 
-		// Default constructor
-		FileUploadInfo() = default;
 		// Constructor for easy creation
 		FileUploadInfo(const std::string &uploadFilePath, const std::map<std::string, std::string> &requestHeaders);
 	};
@@ -63,7 +61,7 @@ protected:
 	bool sendBytes(const char *data, size_t length);
 	bool sendBytes(size_t intValue);
 
-	bool noSocketData();
+	int testStream();
 	bool recvUploadFile();
 
 public:

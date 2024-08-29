@@ -40,6 +40,7 @@ public:
 		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
 		nlohmann::json AsJson() const;
 		bool m_sslVerifyServer;
+		bool m_sslVerifyServerDelegate;
 		bool m_sslVerifyClient;
 		std::string m_certFile;
 		std::string m_certKeyFile;
@@ -136,6 +137,7 @@ public:
 	std::shared_ptr<Application> getApp(const std::string &appName, bool throwOnNotFound = true) const noexcept(false);
 	std::shared_ptr<Application> getApp(const void *app) const;
 	bool isAppExist(const std::string &appName);
+	std::string generateRunAppName(const std::string& provideAppName);
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
 	const nlohmann::json getAgentAppJson() const;
@@ -166,6 +168,7 @@ private:
 
 private:
 	mutable ACE_Map_Manager<std::string, std::shared_ptr<Application>, ACE_Recursive_Thread_Mutex> m_apps;
+	mutable ACE_Map_Manager<std::string, int, ACE_Recursive_Thread_Mutex> m_appNameIndexMap;
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonConsul> m_consul;

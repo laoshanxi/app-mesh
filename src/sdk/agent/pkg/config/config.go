@@ -14,6 +14,7 @@ type (
 	SSLConfig struct {
 		VerifyClient                bool   `yaml:"VerifyClient"`
 		VerifyServer                bool   `yaml:"VerifyServer"`
+		VerifyServerDelegate        bool   `yaml:"VerifyServerDelegate"`
 		SSLCaPath                   string `yaml:"SSLCaPath"`
 		SSLCertificateFile          string `yaml:"SSLCertificateFile"`
 		SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
@@ -53,6 +54,7 @@ var ConfigData = Configuration{
 			SSLClientCertificateKeyFile: "/opt/appmesh/ssl/client-key.pem",
 			VerifyClient:                false,
 			VerifyServer:                true,
+			VerifyServerDelegate:        true,
 		},
 	},
 }

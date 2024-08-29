@@ -37,6 +37,7 @@ REST:
     SSLClientCertificateKeyFile: /opt/appmesh/ssl/client-key.pem
     VerifyClient: false
     VerifyServer: true
+    VerifyServerDelegate: false
 
 Consul:
   AppmeshProxyUrl: ""

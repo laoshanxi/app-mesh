@@ -10,7 +10,7 @@ Grafana can be used as Prometheus and Loki web portal, with those components, we
 ### install docker-compose
 
 ```shell
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.14.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
@@ -64,7 +64,7 @@ In Grafana Explorer page, you can query App Mesh metrics
 
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/wiki/04.png" />
 
-Add Loki Data Source with default address(<http://localhost:3100/>)
+Add Loki Data Source with default address(<http://loki:3100/>)
 
 <img src="https://raw.githubusercontent.com/laoshanxi/picture/master/wiki/05.png" />
 

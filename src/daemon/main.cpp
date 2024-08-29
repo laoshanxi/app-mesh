@@ -117,6 +117,7 @@ int main(int argc, char *argv[])
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
 
 		// init REST
+		TcpClient client;
 		TcpAcceptor acceptor; // Acceptor factory.
 		ACE_INET_Addr acceptorAddr(Configuration::instance()->getRestTcpPort(), Configuration::instance()->getRestListenAddress().c_str());
 		if (config->getRestEnabled())
@@ -135,12 +136,12 @@ int main(int argc, char *argv[])
 			{
 				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
 			}
+			client.connect(acceptorAddr);
 			// start agent
 			if (!Configuration::instance()->isAppExist(SEPARATE_AGENT_APP_NAME))
 			{
 				Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
 			}
-
 			// reg prometheus
 			config->registerPrometheus();
 		}
@@ -178,10 +179,6 @@ int main(int argc, char *argv[])
 		{
 			ConsulConnection::instance()->init(consulSsnIdFromRecover);
 		}
-
-		TcpClient client;
-		if (config->getRestEnabled())
-			client.connect(acceptorAddr);
 
 		// monitor applications
 		int tcpErrorCounter = 0;

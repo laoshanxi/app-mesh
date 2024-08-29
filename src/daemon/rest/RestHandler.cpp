@@ -330,7 +330,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
-	auto file = (message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+	const auto &file = (message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
 		message.reply(web::http::status_codes::NotAcceptable, convertText2Json("file not found"));
@@ -363,7 +363,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
-	auto file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
+	const auto &file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
 	if (Utility::isFileExist(file))
 	{
 		message.reply(web::http::status_codes::Forbidden, convertText2Json("file already exist"));
@@ -951,7 +951,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 	auto jsonApp = message.extractJson();
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	std::shared_ptr<Application> fromApp;
-	if (clientProvideAppName.length())
+	if (clientProvideAppName.length() > 0)
 	{
 		if (Configuration::instance()->isAppExist(clientProvideAppName))
 		{
@@ -979,7 +979,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 			{
 				existApp[JSON_KEY_APP_sec_env] = jsonApp[JSON_KEY_APP_sec_env];
 			}
-			existApp[JSON_KEY_APP_name] = std::string(Utility::createUUID()); // specify a UUID app name
+			existApp[JSON_KEY_APP_name] = Configuration::instance()->generateRunAppName(clientProvideAppName);
 			existApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
 			jsonApp = std::move(existApp);
 		}
@@ -996,7 +996,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 	else
 	{
 		// CASE: new a application and run, client did not provide app name
-		jsonApp[JSON_KEY_APP_name] = std::string(Utility::createUUID()); // specify a UUID app name
+		jsonApp[JSON_KEY_APP_name] = Utility::createUUID(); // specify a UUID app name
 		if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 		{
 			throw std::invalid_argument("Should specify command run application");

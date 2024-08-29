@@ -30,7 +30,7 @@ constexpr int INVALID_RETURN_CODE = std::numeric_limits<int>::min();
 Application::Application()
 	: m_persistAble(true), m_ownerPermission(0), m_metadata(EMPTY_STR_JSON),
 	  m_shellApp(false), m_sessionLogin(false), m_stdoutCacheNum(0), m_stdoutCacheSize(0),
-	  m_endTime(std::chrono::system_clock::time_point::max()),
+	  m_startTime(AppTimer::EPOCH_ZERO_TIME), m_endTime(std::chrono::system_clock::time_point::max()),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false),
 	  m_nextStartTimerId(INVALID_TIMER_ID), m_regTime(std::chrono::system_clock::now()), m_appId(Utility::createUUID()),
 	  m_version(0), m_suicideTimerId(INVALID_TIMER_ID),

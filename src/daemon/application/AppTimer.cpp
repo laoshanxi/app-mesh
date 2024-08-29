@@ -5,15 +5,15 @@
 #include "../DailyLimitation.h"
 #include "AppTimer.h"
 
-std::chrono::system_clock::time_point AppTimer::EPOCH_ZERO_TIME;
+std::chrono::system_clock::time_point AppTimer::EPOCH_ZERO_TIME = std::chrono::system_clock::time_point::min();
 
 //////////////////////////////////////////////////////////////////////////
 /// Calculate Application next start time
 //////////////////////////////////////////////////////////////////////////
 AppTimer::AppTimer(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime,
                    std::shared_ptr<DailyLimitation> dailyLimit)
-    : m_startTime(startTime == EPOCH_ZERO_TIME ? std::chrono::system_clock::now() : startTime),
-      m_endTime(endTime == EPOCH_ZERO_TIME ? std::chrono::system_clock::now() + std::chrono::hours(24 * 365 * 10) : endTime),
+    : m_startTime(startTime == EPOCH_ZERO_TIME ? (std::chrono::system_clock::now() - std::chrono::hours(24)) : startTime),
+      m_endTime(endTime == EPOCH_ZERO_TIME ? std::chrono::system_clock::time_point::max() : endTime),
       m_dailyLimit(std::move(dailyLimit))
 {
 }

@@ -88,11 +88,11 @@ void ConsulConnection::reportNode()
 			auto result = resp->text;
 			if (result == "true")
 			{
-				LOG_INF << fname << "report resource to " << path << " success";
+				LOG_INF << fname << "report resource to " << path << " with session id " << sessionId << " success";
 			}
 			else
 			{
-				LOG_WAR << fname << "report resource to " << path << " failed with response : " << result;
+				LOG_WAR << fname << "report resource to " << path << " with session id " << sessionId << result;
 			}
 		}
 	}
@@ -415,7 +415,7 @@ std::string ConsulConnection::requestSessionId()
 		if (HAS_JSON_FIELD(json, "ID"))
 		{
 			sessionId = GET_JSON_STR_VALUE(json, "ID");
-			LOG_DBG << fname << "sessionId=" << sessionId;
+			LOG_INF << fname << "sessionId=" << sessionId;
 		}
 	}
 	return sessionId;
@@ -428,7 +428,7 @@ void ConsulConnection::releaseSessionId(const std::string &sessionId)
 	if (sessionId.length())
 	{
 		requestConsul(web::http::methods::PUT, std::string("/v1/session/destroy/").append(sessionId), {}, {}, nullptr);
-		LOG_DBG << fname << "release session " << sessionId;
+		LOG_INF << fname << "release session " << sessionId;
 	}
 }
 

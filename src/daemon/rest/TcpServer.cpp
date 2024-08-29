@@ -4,6 +4,7 @@
 #include <memory>
 #include <thread>
 
+#include <ace/Handle_Set.h>
 #include <ace/OS_NS_sys_select.h>
 #include <ace/os_include/netinet/os_tcp.h>
 
@@ -63,12 +64,12 @@ int TcpHandler::handle_input(ACE_HANDLE)
 
 	if (recvUploadFile())
 	{
-		// if (noSocketData())
-		// {
-		//	LOG_WAR << fname << "no socket data";
-		//	return 0;
-		// }
-		return 0;
+		int test = testStream();
+		LOG_DBG << fname << "testStream: " << test;
+		if (test <= 0)
+		{
+			return test;
+		}
 	}
 
 	auto result = ProtobufHelper::readMessageBlock(this->peer());
@@ -100,37 +101,51 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	}
 }
 
-bool TcpHandler::noSocketData()
+int TcpHandler::testStream()
 {
-	auto handle = this->peer().get_handle();
-	fd_set read_set;
-	fd_set except_set;
-	FD_ZERO(&read_set);
-	FD_ZERO(&except_set);
-	FD_SET(handle, &read_set);
-	FD_SET(handle, &except_set);
+	// Create a handle set for the current socket
+	ACE_Handle_Set handleSet;
+	handleSet.set_bit(this->peer().get_handle());
 
-	// Use a zero timeout to perform a non-blocking check
-	const static ACE_Time_Value timeout(0, 0);
+	// Use a zero timeout for immediate return
+	ACE_Time_Value timeout(ACE_Time_Value::zero);
 
-	// Perform the select operation
-	return 0 == ACE_OS::select(handle + 1, &read_set, nullptr, &except_set, &timeout);
+	// Use select to check if data is available for reading
+	int ret = ACE_OS::select(int(this->peer().get_handle()) + 1,
+							 handleSet, // read set
+							 nullptr,	// write set (not used)
+							 nullptr,	// exception set (not used)
+							 &timeout);
 
-	/*
-	another solution is use peek with enable(ACE_NONBLOCK)
-	char peek_buffer[1];
-	return this->peer().recv(peek_buffer, sizeof(peek_buffer), MSG_PEEK) <= 0;
-	*/
+	if (ret == -1)
+	{
+		if (errno == EINTR)
+		{
+			return 0; // Interrupted, try again later
+		}
+		else
+		{
+			return -1; // Error occurred
+		}
+	}
+	else if (ret == 0)
+	{
+		// No data available
+		return 0; // No data, but no error
+	}
+
+	// Data is available, proceed with reading
+	return ret;
 }
 
 bool TcpHandler::recvUploadFile()
 {
 	const static char fname[] = "TcpHandler::recvUploadFile() ";
-	if (!m_pendingUploadFile.empty())
+
+	std::shared_ptr<FileUploadInfo> fileInfo;
+	if (m_pendingUploadFile.pop(fileInfo))
 	{
-		std::shared_ptr<FileUploadInfo> uploadInfo;
-		m_pendingUploadFile.pop(uploadInfo);
-		std::ofstream file(uploadInfo->m_filePath, std::ios::binary | std::ios::out | std::ios::trunc);
+		std::ofstream file(fileInfo->m_filePath, std::ios::binary | std::ios::out | std::ios::trunc);
 		auto msg = ProtobufHelper::readMessageBlock(this->peer());
 		while (std::get<0>(msg) != nullptr)
 		{
@@ -141,7 +156,7 @@ bool TcpHandler::recvUploadFile()
 		}
 		LOG_INF << fname << "upload finished";
 		// set permission
-		Utility::applyFilePermission(uploadInfo->m_filePath, uploadInfo->m_requestHeaders);
+		Utility::applyFilePermission(fileInfo->m_filePath, fileInfo->m_requestHeaders);
 		return true;
 	}
 	return false;
