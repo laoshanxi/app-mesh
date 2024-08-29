@@ -330,7 +330,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
-	auto file = (message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+	const auto &file = (message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
 		message.reply(web::http::status_codes::NotAcceptable, convertText2Json("file not found"));
@@ -363,7 +363,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
 		return;
 	}
-	auto file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
+	const auto &file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
 	if (Utility::isFileExist(file))
 	{
 		message.reply(web::http::status_codes::Forbidden, convertText2Json("file already exist"));
