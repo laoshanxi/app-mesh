@@ -5,6 +5,7 @@
 #include <msgpack.hpp>
 
 #include "../../../common/Utility.h"
+#include "../../security/HMACVerifier.h"
 #include "ProtobufHelper.h"
 
 Response::Response()
@@ -70,12 +71,24 @@ bool Request::deserialize(const char *data, int dataSize)
 		Request rest = obj.as<Request>();
 		*this = rest;
 		// this->body = Utility::htmlEntitiesDecode(this->body);
+		// LOG_INF << fname << "verifyHMAC :" << this->verifyHMAC(); // on-demand
 		return true;
 	}
 	catch (const std::exception &e)
 	{
 		LOG_ERR << fname << "failed with error :" << e.what();
 	}
+	return false;
+}
+
+bool Request::verifyHMAC()
+{
+	const static char fname[] = "Request::verifyHMAC() ";
+
+	if (this->headers.count("X-Request-HMAC"))
+		return HMACVerifierSingleton::instance()->verifyHMAC(this->uuid, this->headers["X-Request-HMAC"]);
+	else
+		LOG_ERR << fname << "missing X-Request-HMAC header";
 	return false;
 }
 

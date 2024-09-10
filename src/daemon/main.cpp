@@ -26,6 +26,7 @@
 #include "rest/RestHandler.h"
 #include "rest/TcpClient.h"
 #include "rest/TcpServer.h"
+#include "security/HMACVerifier.h"
 #include "security/Security.h"
 #include "security/TokenBlacklist.h"
 #ifndef NDEBUG
@@ -140,7 +141,10 @@ int main(int argc, char *argv[])
 			// start agent
 			if (!Configuration::instance()->isAppExist(SEPARATE_AGENT_APP_NAME))
 			{
-				Configuration::instance()->addApp(config->getAgentAppJson(), nullptr, false)->execute();
+				bool psk = HMACVerifierSingleton::instance()->writePSKToSHM();
+				Configuration::instance()->addApp(config->getAgentAppJson(HMACVerifierSingleton::instance()->getShmName()), nullptr, false)->execute();
+				if (psk)
+					HMACVerifierSingleton::instance()->waitPSKRead();
 			}
 			// reg prometheus
 			config->registerPrometheus();

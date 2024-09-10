@@ -48,6 +48,12 @@ func main() {
 		dockerAgentAddr = *dockerAddr
 	}
 
+	// init PSK HMAC
+	var err error
+	if http.HMAC, err = http.NewHMACVerifier(); err != nil {
+		log.Printf("HMAC Verifier initialization failed: %v", err)
+	}
+
 	// exit when parent not exist
 	go monitorParentExit(os.Getppid())
 

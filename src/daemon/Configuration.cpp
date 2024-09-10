@@ -13,6 +13,7 @@
 #include "consul/ConsulConnection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
+#include "security/HMACVerifier.h"
 #include "security/Security.h"
 #include "security/User.h"
 
@@ -805,7 +806,7 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 	}
 }
 
-const nlohmann::json Configuration::getAgentAppJson() const
+const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
@@ -825,14 +826,20 @@ const nlohmann::json Configuration::getAgentAppJson() const
 
 	nlohmann::json restApp;
 	restApp[JSON_KEY_APP_name] = std::string(SEPARATE_AGENT_APP_NAME);
-	restApp[JSON_KEY_APP_command] = std::string(cmd);
+	restApp[JSON_KEY_APP_command] = std::move(cmd);
 	restApp[JSON_KEY_APP_description] = std::string("REST agent for App Mesh");
 	restApp[JSON_KEY_APP_owner_permission] = (11);
 	restApp[JSON_KEY_APP_owner] = std::string(JWT_ADMIN_NAME);
 	restApp[JSON_KEY_APP_stdout_cache_num] = (3);
+
 	auto objBehavior = nlohmann::json::object();
 	objBehavior[JSON_KEY_APP_behavior_exit] = std::string(AppBehavior::action2str(AppBehavior::Action::RESTART));
-	restApp[JSON_KEY_APP_behavior] = objBehavior;
+	restApp[JSON_KEY_APP_behavior] = std::move(objBehavior);
+
+	nlohmann::json objEnvs = nlohmann::json::object();
+	objEnvs[PSK_SHM_ENV] = shmName;
+	restApp[JSON_KEY_APP_env] = std::move(objEnvs);
+
 	return restApp;
 }
 

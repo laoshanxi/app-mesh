@@ -137,10 +137,10 @@ public:
 	std::shared_ptr<Application> getApp(const std::string &appName, bool throwOnNotFound = true) const noexcept(false);
 	std::shared_ptr<Application> getApp(const void *app) const;
 	bool isAppExist(const std::string &appName);
-	std::string generateRunAppName(const std::string& provideAppName);
+	std::string generateRunAppName(const std::string &provideAppName);
 	void disableApp(const std::string &appName);
 	void enableApp(const std::string &appName);
-	const nlohmann::json getAgentAppJson() const;
+	const nlohmann::json getAgentAppJson(const std::string &shmName) const;
 
 	std::shared_ptr<Label> getLabel() { return m_label; }
 

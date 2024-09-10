@@ -31,6 +31,7 @@ public:
 	virtual ~Request();
 	std::shared_ptr<msgpack::sbuffer> serialize() const;
 	bool deserialize(const char *data, int dataSize);
+	bool verifyHMAC();
 
 public:
 	std::string uuid;

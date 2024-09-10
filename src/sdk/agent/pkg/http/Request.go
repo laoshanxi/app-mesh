@@ -1,12 +1,15 @@
 package http
 
 import (
+	"fmt"
 	"html"
 
 	"github.com/rs/xid"
 	"github.com/valyala/fasthttp"
 	"github.com/vmihailenco/msgpack/v5"
 )
+
+var HMAC *HMACVerifier
 
 type Request struct {
 	Uuid          string            `msg:"uuid" msgpack:"uuid"`
@@ -41,9 +44,19 @@ func NewRequest(ctx *fasthttp.RequestCtx) *Request {
 	if !(req.Header.IsPost() && string(req.URI().Path()) == REST_PATH_UPLOAD) {
 		data.Body = html.UnescapeString(string(req.Body()))
 	}
+	// data.setHMACVerify() // on-demand
 	return data
 }
 
 func (r *Request) serialize() ([]byte, error) {
 	return msgpack.Marshal(*r)
+}
+
+func (r *Request) setHMACVerify() error {
+	if HMAC != nil {
+		r.Headers[string("X-Request-HMAC")] = HMAC.GenerateHMAC(r.Uuid)
+	} else {
+		return fmt.Errorf("HMAC not initialized")
+	}
+	return nil
 }

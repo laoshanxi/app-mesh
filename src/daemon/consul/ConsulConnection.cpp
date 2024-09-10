@@ -415,7 +415,7 @@ std::string ConsulConnection::requestSessionId()
 		if (HAS_JSON_FIELD(json, "ID"))
 		{
 			sessionId = GET_JSON_STR_VALUE(json, "ID");
-			LOG_INF << fname << "sessionId=" << sessionId;
+			LOG_DBG << fname << "sessionId=" << sessionId;
 		}
 	}
 	return sessionId;
@@ -428,7 +428,7 @@ void ConsulConnection::releaseSessionId(const std::string &sessionId)
 	if (sessionId.length())
 	{
 		requestConsul(web::http::methods::PUT, std::string("/v1/session/destroy/").append(sessionId), {}, {}, nullptr);
-		LOG_INF << fname << "release session " << sessionId;
+		LOG_DBG << fname << "release session " << sessionId;
 	}
 }
 
@@ -987,7 +987,7 @@ void ConsulConnection::init(const std::string &recoverSsnId)
 	{
 		m_ssnRenewTimerId = this->registerTimer(
 			0,
-			getConfig()->m_ttl - 3,
+			getConfig()->m_ttl - 5,
 			std::bind(&ConsulConnection::refreshSession, this),
 			__FUNCTION__);
 	}

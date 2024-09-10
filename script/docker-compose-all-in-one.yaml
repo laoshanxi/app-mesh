@@ -24,7 +24,7 @@ services:
   appmesh_node:
     hostname: appmesh_node
     restart: always
-    image: laoshanxi/appmesh
+    image: laoshanxi/appmesh:latest
     environment:
       - APPMESH_Consul_Url=http://consul:8500
       - APPMESH_REST_PrometheusExporterListenPort=6061
@@ -45,7 +45,7 @@ services:
 
   appmesh-ui:
     restart: always
-    image: laoshanxi/appmesh-ui
+    image: laoshanxi/appmesh-ui:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
