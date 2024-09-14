@@ -393,7 +393,7 @@ public:
 #define HTTP_HEADER_KEY_file_group "File-Group"
 #define HTTP_HEADER_KEY_X_Send_File_Socket "X-Send-File-Socket"
 #define HTTP_HEADER_KEY_X_Recv_File_Socket "X-Recv-File-Socket"
-#define HTTP_HEADER_KEY_delegate_host "X-Target-Host"
+#define HTTP_HEADER_KEY_Forwarding_Host "X-Target-Host"
 #define HTTP_BODY_KEY_MFA_URI "Mfa-Uri"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"

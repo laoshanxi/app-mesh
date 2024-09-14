@@ -5,19 +5,25 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
-
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	"sync"
 )
 
-func NewHttpClient(clientCertFile string, clientCertKeyFile string, caFile string) *http.Client {
+func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile string) *http.Client {
 	// Load client certificate and key
-	clientCert := utils.LoadCertificatePair(clientCertFile, clientCertKeyFile)
+	clientCert, err := LoadCertificatePair(clientCertFile, clientCertKeyFile)
+	if err != nil {
+		log.Println(err)
+	}
 	// load server CA
-	caCert, _ := utils.LoadCA(caFile)
+	caCert, err := LoadCA(caFile)
+	if err != nil {
+		log.Println(err)
+	}
 
 	return &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -30,47 +36,54 @@ func NewHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 // REST GET
 
 func (r *AppMeshClient) get(path string, params url.Values, headers map[string]string) (int, []byte, http.Header, error) {
-	return r.doRequest("GET", path, params, headers, nil)
+	return r.proxy.doRequest("GET", path, params, headers, nil, r.getToken(), r.getForwardingHost())
 }
 
 // REST PUT
 func (r *AppMeshClient) put(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, error) {
-	code, raw, _, err := r.doRequest("PUT", path, params, headers, bytes.NewBuffer(body))
+	code, raw, _, err := r.proxy.doRequest("PUT", path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardingHost())
 	return code, raw, err
 }
 
 // REST POST
 func (r *AppMeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, http.Header, error) {
-	return r.doRequest("POST", path, params, headers, bytes.NewBuffer(body))
+	return r.proxy.doRequest("POST", path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardingHost())
 }
 
 // REST DELETE
 func (r *AppMeshClient) delete(path string) (int, []byte, error) {
-	code, raw, _, err := r.doRequest("DELETE", path, nil, nil, nil)
+	code, raw, _, err := r.proxy.doRequest("DELETE", path, nil, nil, nil, r.getToken(), r.getForwardingHost())
 	return code, raw, err
 }
 
+// HTTP Request executor
+type ClientRequesterRest struct {
+	baseURL    string
+	httpClient *http.Client
+	mutex      sync.Mutex
+}
+
 // REST request
-func (r *AppMeshClient) doRequest(method string, apiPath string, params url.Values, headers map[string]string, buf io.Reader) (int, []byte, http.Header, error) {
+func (r *ClientRequesterRest) doRequest(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
 	u, _ := url.Parse(r.baseURL)
 	u.Path = path.Join(u.Path, apiPath)
-	if params != nil {
-		u.RawQuery = params.Encode()
+	if queries != nil {
+		u.RawQuery = queries.Encode()
 	}
-	req, err := http.NewRequest(method, u.String(), buf)
+	req, err := http.NewRequest(method, u.String(), body)
 	if err != nil {
 		return 0, nil, nil, err
 	}
 
 	// headers
-	if r.getToken() != "" {
-		req.Header.Set("Authorization", "Bearer "+r.getToken())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	if r.getDelegateHost() != "" {
-		if strings.Contains(r.getDelegateHost(), ":") {
-			req.Header.Set("X-Target-Host", r.getDelegateHost())
+	if forwardingHost != "" {
+		if strings.Contains(forwardingHost, ":") {
+			req.Header.Set("X-Target-Host", forwardingHost)
 		} else {
-			req.Header.Set("X-Target-Host", r.getDelegateHost()+":"+u.Port())
+			req.Header.Set("X-Target-Host", forwardingHost+":"+u.Port())
 		}
 	}
 	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)

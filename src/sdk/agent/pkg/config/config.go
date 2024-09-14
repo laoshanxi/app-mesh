@@ -6,22 +6,12 @@ import (
 	"path/filepath"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"gopkg.in/yaml.v3"
 )
 
 // configuration definition
 type (
-	SSLConfig struct {
-		VerifyClient                bool   `yaml:"VerifyClient"`
-		VerifyServer                bool   `yaml:"VerifyServer"`
-		VerifyServerDelegate        bool   `yaml:"VerifyServerDelegate"`
-		SSLCaPath                   string `yaml:"SSLCaPath"`
-		SSLCertificateFile          string `yaml:"SSLCertificateFile"`
-		SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
-		SSLClientCertificateFile    string `yaml:"SSLClientCertificateFile"`
-		SSLClientCertificateKeyFile string `yaml:"SSLClientCertificateKeyFile"`
-	}
-
 	RESTConfig struct {
 		RestEnabled                  bool   `yaml:"RestEnabled"`
 		RestListenAddress            string `yaml:"RestListenAddress"`
@@ -29,7 +19,7 @@ type (
 		RestTcpPort                  int    `yaml:"RestTcpPort"`
 		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
 
-		SSL SSLConfig `yaml:"SSL"`
+		SSL appmesh.SSLConfig `yaml:"SSL"`
 	}
 
 	Configuration struct {
@@ -46,7 +36,7 @@ var ConfigData = Configuration{
 		RestTcpPort:                  6059,
 		PrometheusExporterListenPort: 0,
 
-		SSL: SSLConfig{
+		SSL: appmesh.SSLConfig{
 			SSLCaPath:                   "/opt/appmesh/ssl/ca.pem",
 			SSLCertificateFile:          "/opt/appmesh/ssl/server.pem",
 			SSLCertificateKeyFile:       "/opt/appmesh/ssl/server-key.pem",
@@ -72,7 +62,7 @@ func init() {
 
 func getConfigFilePath() string {
 	workConfig := filepath.Join(GetAppMeshHomeDir(), "work/config/config.yaml")
-	if utils.IsFileExist(workConfig) {
+	if appmesh.IsFileExist(workConfig) {
 		return workConfig
 	}
 	return filepath.Join(GetAppMeshHomeDir(), "config.yaml")

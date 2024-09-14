@@ -2,8 +2,6 @@ package http
 
 import (
 	"bufio"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
 	"io"
 	"log"
@@ -12,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 type Connection struct {
@@ -35,7 +33,7 @@ func NewConnection(targetHost string, verifyServer bool, allowError bool) (*Conn
 	}
 
 	// No available connection, create a new one
-	conn, err := connectAppMeshServer(targetHost, verifyServer)
+	conn, err := appmesh.ConnectAppMeshServer(targetHost, verifyServer, &config.ConfigData.REST.SSL)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +48,7 @@ func NewConnection(targetHost string, verifyServer bool, allowError bool) (*Conn
 }
 
 func (r *Connection) sendRequestData(request *Request) error {
-	bodyData, err := request.serialize()
+	bodyData, err := request.Serialize()
 	if err != nil {
 		log.Fatalf("Failed to serialize request: %v", err)
 		return err
@@ -121,41 +119,6 @@ func (r *Connection) sendUploadFileData(localFile string) error {
 		log.Printf("Error opening file: %v", err)
 	}
 	return err
-}
-
-// https://www.jianshu.com/p/dce19fb167f4
-func connectAppMeshServer(tcpAddr string, verifyServer bool) (net.Conn, error) {
-	log.Printf("Connecting to: %s", tcpAddr)
-	// client: for internal connection, use server side certificate file for client
-	clientCA := tls.Certificate{}
-	if config.ConfigData.REST.SSL.VerifyClient {
-		clientCA = utils.LoadCertificatePair(
-			config.ConfigData.REST.SSL.SSLCertificateFile,
-			config.ConfigData.REST.SSL.SSLCertificateKeyFile)
-	}
-
-	// server
-	var serverCA *x509.CertPool
-	if verifyServer {
-		var err error
-		serverCA, err = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	conf := &tls.Config{
-		// verify server
-		InsecureSkipVerify: !(verifyServer),
-		RootCAs:            serverCA,
-
-		// verify client
-		Certificates: []tls.Certificate{clientCA},
-	}
-
-	conn, err := tls.Dial("tcp", tcpAddr, conf)
-	utils.SetTcpNoDelay(conn)
-	return conn, err
 }
 
 func deleteConnection(targetHost string) {

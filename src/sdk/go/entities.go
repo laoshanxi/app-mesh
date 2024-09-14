@@ -1,16 +1,33 @@
 package appmesh
 
-const (
-	DefaultServerUri         = "https://localhost:6060"
-	DefaultClientCertFile    = "/opt/appmesh/ssl/client.pem"
-	DefaultClientCertKeyFile = "/opt/appmesh/ssl/client-key.pem"
-	DefaultCAFile            = "/opt/appmesh/ssl/ca.pem"
+import (
+	"io"
+	"net/http"
+	"net/url"
 
-	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
-	HTTP_USER_AGENT             = "appmesh/golang"
+	"github.com/vmihailenco/msgpack/v5"
+)
+
+const (
+	DEFAULT_HTTP_URI             = "https://localhost:6060"
+	DEFAULT_TCP_URI              = "localhost:6059"
+	DEFAULT_CLIENT_CERT_FILE     = "/opt/appmesh/ssl/client.pem"
+	DEFAULT_CLIENT_CERT_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
+	DEFAULT_CA_FILE              = "/opt/appmesh/ssl/ca.pem"
+
+	HTTP_USER_AGENT_HEADER_NAME        = "User-Agent"
+	HTTP_USER_AGENT                    = "appmesh/golang"
+	HTTP_USER_AGENT_TCP                = "appmesh/golang/tcp"
+	HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
+	HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
 
 	DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
 )
+
+// Requester interface
+type ClientRequester interface {
+	doRequest(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error)
+}
 
 // Application json
 type Application struct {
@@ -85,7 +102,6 @@ type ResourceLimitation struct {
 	CpuShares       int `json:"cpu_shares"`
 }
 
-// https://mholt.github.io/json-to-go/
 // JWT Response
 type JWTResponse struct {
 	AccessToken   string `json:"Access-Token"`
@@ -114,3 +130,43 @@ type Labels = map[string]string
 
 // REST Headers
 type Headers = map[string]string
+
+type SSLConfig struct {
+	VerifyClient                bool   `yaml:"VerifyClient"`
+	VerifyServer                bool   `yaml:"VerifyServer"`
+	VerifyServerDelegate        bool   `yaml:"VerifyServerDelegate"`
+	SSLCaPath                   string `yaml:"SSLCaPath"`
+	SSLCertificateFile          string `yaml:"SSLCertificateFile"`
+	SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
+	SSLClientCertificateFile    string `yaml:"SSLClientCertificateFile"`
+	SSLClientCertificateKeyFile string `yaml:"SSLClientCertificateKeyFile"`
+}
+
+// Request represents the message sent over TCP
+type Request struct {
+	Uuid          string            `msg:"uuid" msgpack:"uuid"`
+	RequestUri    string            `msg:"request_uri" msgpack:"request_uri"`
+	HttpMethod    string            `msg:"http_method" msgpack:"http_method"`
+	ClientAddress string            `msg:"client_addr" msgpack:"client_addr"`
+	Body          string            `msg:"body" msgpack:"body"`
+	Headers       map[string]string `msg:"headers" msgpack:"headers"`
+	Queries       map[string]string `msg:"querys" msgpack:"querys"`
+}
+
+func (r *Request) Serialize() ([]byte, error) {
+	return msgpack.Marshal(r)
+}
+
+// Response represents the message received over TCP
+type Response struct {
+	Uuid        string            `msg:"uuid" msgpack:"uuid"`
+	RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
+	HttpStatus  int               `msg:"http_status" msgpack:"http_status"`
+	BodyMsgType string            `msg:"body_msg_type" msgpack:"body_msg_type"`
+	Body        string            `msg:"body" msgpack:"body"`
+	Headers     map[string]string `msg:"headers" msgpack:"headers"`
+}
+
+func (r *Response) Deserialize(data []byte) error {
+	return msgpack.Unmarshal(data, r)
+}

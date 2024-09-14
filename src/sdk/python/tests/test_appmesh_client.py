@@ -8,8 +8,8 @@ import os
 
 # For source code env:
 current_directory = os.path.dirname(os.path.abspath(__file__))
-source_code_root_dir = os.path.dirname(os.path.dirname(current_directory))
-sys.path.append(os.path.join(source_code_root_dir, "src/sdk/python/appmesh"))
+parent_dir = os.path.dirname(current_directory)
+sys.path.append(os.path.join(parent_dir, "appmesh"))
 import appmesh_client
 
 # For wheel package
@@ -55,7 +55,7 @@ class TestAppMeshClient(TestCase):
         """test app run"""
         client = appmesh_client.AppMeshClient()
         client.login("admin", "admin123")
-        client.delegate_host = "localhost"
+        client.forwarding_host = "localhost"
         metadata = {
             "subject": "subject",
             "message": "msg",
@@ -76,7 +76,7 @@ class TestAppMeshClient(TestCase):
         """test file"""
         client = appmesh_client.AppMeshClient()
         client.login("admin", "admin123")
-        client.delegate_host = "127.0.0.1:6059"
+        client.forwarding_host = "127.0.0.1:6059"
         if os.path.exists("1.log"):
             os.remove("1.log")
         self.assertTrue(client.file_download("/opt/appmesh/work/server.log", "1.log"))

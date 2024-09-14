@@ -24,7 +24,7 @@
 
 #define OPTION_URL \
 	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "Server URL.") \
-	("delegate,z", po::value<std::string>()->default_value(""), "Target host name (or with port) for request forwarding.")
+	("forward,z", po::value<std::string>()->default_value(""), "Target host name (or with port) for request forwarding.")
 
 #define COMMON_OPTIONS                                                                                              \
 	OPTION_URL                                                                                                      \
@@ -48,7 +48,7 @@
 		return;                                   \
 	}                                             \
 	m_currentUrl = m_commandLineVariables["url"].as<std::string>(); \
-	m_delegateHost = m_commandLineVariables["delegate"].as<std::string>();
+	m_forwardingHost = m_commandLineVariables["forward"].as<std::string>();
 #define HELP_ARG_CHECK_WITH_RETURN_ZERO           \
 	GET_USER_NAME_PASS                            \
 	if (m_commandLineVariables.count("help") > 0) \
@@ -57,7 +57,7 @@
 		return 0;                                 \
 	}                                             \
 	m_currentUrl = m_commandLineVariables["url"].as<std::string>(); \
-	m_delegateHost = m_commandLineVariables["delegate"].as<std::string>();
+	m_forwardingHost = m_commandLineVariables["forward"].as<std::string>();
 // Each user should have its own token path
 static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
 const static std::string m_shellHistoryFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.shell.history";
@@ -1716,12 +1716,12 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool throwAble, const 
 		m_jwtToken = getAuthenToken();
 	}
 	header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken;
-	if (m_delegateHost.length())
+	if (m_forwardingHost.length())
 	{
-		if (m_delegateHost.find(':') == std::string::npos)
-			header[HTTP_HEADER_KEY_delegate_host] = m_delegateHost + ":" + parseUrlPort(m_currentUrl);
+		if (m_forwardingHost.find(':') == std::string::npos)
+			header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardingHost + ":" + parseUrlPort(m_currentUrl);
 		else
-			header[HTTP_HEADER_KEY_delegate_host] = m_delegateHost;
+			header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardingHost;
 	}
 	auto resp = RestClient::request(m_currentUrl, mtd, path, body, header, query);
 	if (throwAble && resp->status_code != web::http::status_codes::OK)

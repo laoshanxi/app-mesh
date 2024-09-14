@@ -50,7 +50,7 @@ func main() {
 
 	// init PSK HMAC
 	var err error
-	if http.HMAC, err = http.NewHMACVerifier(); err != nil {
+	if http.HMAC, err = http.NewHMACVerify(); err != nil {
 		log.Printf("HMAC Verifier initialization failed: %v", err)
 	}
 

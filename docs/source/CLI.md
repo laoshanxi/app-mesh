@@ -107,7 +107,7 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 $ appc add
 Register a new application:
   -b [ --url ] arg (=https://localhost:6060) Server URL.
-  -z [ --delegate ] arg                      Target host name (or with port) for request forwarding.
+  -z [ --forward ] arg                       Target host name (or with port) for request forwarding.
   -u [ --user ] arg                          User name for App Mesh connection.
   -x [ --password ] arg                      User password for App Mesh connection.
   -V [ --verbose ]                           Enable verbose output.
@@ -210,7 +210,7 @@ appc restart -n ping
 # appc join
 Join App Mesh cluster:
   -b [ --url ] arg (=https://localhost:6060) Server URL.
-  -z [ --delegate ] arg                      Target host name (or with port) for request forwarding.
+  -z [ --forward ] arg                       Target host name (or with port) for request forwarding.
   -u [ --user ] arg                          User name for App Mesh connection.
   -x [ --password ] arg                      User password for App Mesh connection.
   -V [ --verbose ]                           Enable verbose output.

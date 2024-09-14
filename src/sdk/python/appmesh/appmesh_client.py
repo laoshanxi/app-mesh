@@ -312,18 +312,18 @@ class AppRun(object):
         """process_uuid from run_async()"""
         self._client = client
         """AppMeshClient object"""
-        self._delegate_host = client.delegate_host
-        """delegate host indicates the target server for this app run"""
+        self._forwarding_host = client.forwarding_host
+        """forward host indicates the target server for this app run"""
 
     @contextmanager
-    def delegate_host(self):
-        """context manager for delegate host override to self._client"""
-        original_value = self._client.delegate_host
-        self._client.delegate_host = self._delegate_host
+    def forwarding_host(self):
+        """context manager for forward host override to self._client"""
+        original_value = self._client.forwarding_host
+        self._client.forwarding_host = self._forwarding_host
         try:
             yield
         finally:
-            self._client.delegate_host = original_value
+            self._client.forwarding_host = original_value
 
     def wait(self, stdout_print: bool = True, timeout: int = 0) -> int:
         """Wait for an async run to be finished
@@ -335,7 +335,7 @@ class AppRun(object):
         Returns:
             int: return exit code if process finished, return None for timeout or exception.
         """
-        with self.delegate_host():
+        with self.forwarding_host():
             return self._client.run_async_wait(self, stdout_print, timeout)
 
 
@@ -380,7 +380,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self.ssl_verify = rest_ssl_verify
         self.ssl_client_cert = rest_ssl_client_cert
         self.rest_timeout = rest_timeout
-        self._delegate_host = None
+        self._forwarding_host = None
 
     @property
     def jwt_token(self) -> str:
@@ -401,22 +401,22 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._jwt_token = token
 
     @property
-    def delegate_host(self) -> str:
-        """property for delegate_host
+    def forwarding_host(self) -> str:
+        """property for forwarding_host
 
         Returns:
-            str: delegate request to target host (host:port)
+            str: forward request to target host (host:port)
         """
-        return self._delegate_host
+        return self._forwarding_host
 
-    @delegate_host.setter
-    def delegate_host(self, host: str) -> None:
-        """setter for delegate_host
+    @forwarding_host.setter
+    def forwarding_host(self, host: str) -> None:
+        """setter for forwarding_host
 
         Args:
-            host (str): delegate request to target host (host:port)
+            host (str): forward request to target host (host:port)
         """
-        self._delegate_host = host
+        self._forwarding_host = host
 
     ########################################
     # Security
@@ -1335,11 +1335,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         header = {} if header is None else header
         if self.jwt_token:
             header["Authorization"] = "Bearer " + self.jwt_token
-        if self.delegate_host and len(self.delegate_host) > 0:
-            if ":" in self.delegate_host:
-                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.delegate_host
+        if self.forwarding_host and len(self.forwarding_host) > 0:
+            if ":" in self.forwarding_host:
+                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host
             else:
-                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.delegate_host + ":" + str(parse.urlsplit(self.server_url).port)
+                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host + ":" + str(parse.urlsplit(self.server_url).port)
         header[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
@@ -1503,8 +1503,8 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_requst = RequestMsg()
         if super().jwt_token:
             appmesh_requst.headers["Authorization"] = "Bearer " + super().jwt_token
-        if super().delegate_host and len(super().delegate_host) > 0:
-            raise Exception("Not support delegate request in TCP mode")
+        if super().forwarding_host and len(super().forwarding_host) > 0:
+            raise Exception("Not support forward request in TCP mode")
         appmesh_requst.headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_TCP
         appmesh_requst.uuid = str(uuid.uuid1())
         appmesh_requst.http_method = method.value

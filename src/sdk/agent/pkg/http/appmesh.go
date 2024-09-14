@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,6 +19,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/grafana"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/valyala/fasthttp"
 )
 
@@ -50,7 +50,7 @@ func init() {
 		New: func() interface{} {
 			var serverCA *x509.CertPool
 			if config.ConfigData.REST.SSL.VerifyServerDelegate {
-				serverCA, _ = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
+				serverCA, _ = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
 			}
 			return &fasthttp.Client{
 				TLSConfig: &tls.Config{
@@ -124,16 +124,19 @@ func ListenRest() {
 
 func startHttpsServer(restAgentAddr string, router *fasthttprouter.Router) {
 	// Load server certificate and key
-	serverCA := utils.LoadCertificatePair(
+	serverCA, err := appmesh.LoadCertificatePair(
 		config.ConfigData.REST.SSL.SSLCertificateFile,
 		config.ConfigData.REST.SSL.SSLCertificateKeyFile)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	// client
 	clientAuth := tls.NoClientCert
 	var clientCA *x509.CertPool
 	if config.ConfigData.REST.SSL.VerifyClient {
 		clientAuth = tls.RequireAndVerifyClientCert
 		var err error
-		clientCA, err = utils.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
+		clientCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
 		if err != nil {
 			panic(err)
 		}
@@ -252,22 +255,22 @@ func handleAppmeshResquest(ctx *fasthttp.RequestCtx) {
 
 	// handle forward request
 	// in order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
-	targetHost := string(ctx.Request.Header.Peek(HTTP_HEADER_KEY_X_TARGET_HOST))
-	if targetHost != "" {
-		ctx.Logger().Printf("Forward request to %s", targetHost)
+	forwardingHost := string(ctx.Request.Header.Peek(HTTP_HEADER_KEY_X_TARGET_HOST))
+	if forwardingHost != "" {
+		ctx.Logger().Printf("Forward request to %s", forwardingHost)
 
-		parsedURL, _ := utils.ParseURL(targetHost)
+		parsedURL, _ := appmesh.ParseURL(forwardingHost)
 		if parsedURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
 			// forward with HTTP protocal
 			ctx.Request.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
-			delegateAppmeshRest(ctx, targetHost)
+			delegateAppmeshRest(ctx, forwardingHost)
 			return
 		} else {
 			// forward with TCP protocal
 			var err error
 			targetConnection, err = NewConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
-				ctx.Logger().Printf("Failed to connect TCP to target host %s with error: %v", targetHost, err)
+				ctx.Logger().Printf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
 				ctx.Error(err.Error(), fasthttp.StatusInternalServerError)
 				return
 			}
@@ -306,11 +309,11 @@ func handleAppmeshResquest(ctx *fasthttp.RequestCtx) {
 
 	if sendErr != nil {
 		ctx.Logger().Printf("Failed to send request to server with error: %v", sendErr)
-		defer deleteConnection(targetHost)
+		defer deleteConnection(forwardingHost)
 	}
 }
 
-func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
+func delegateAppmeshRest(ctx *fasthttp.RequestCtx, forwardingHost string) {
 	// Create a new request to be sent to the target server
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
@@ -321,10 +324,10 @@ func delegateAppmeshRest(ctx *fasthttp.RequestCtx, targetHost string) {
 	req.Header.SetContentLength(len(ctx.Request.Body())) // Ensure Content-Length is set correctly
 
 	// Set the URL of the target server including the query string
-	parsedURL, err := utils.ParseURL(targetHost)
+	parsedURL, err := appmesh.ParseURL(forwardingHost)
 	if err != nil {
-		ctx.Logger().Printf("Failed to parse delegate URL: %v", err)
-		ctx.Error("Failed to parse delegate URL: "+err.Error(), fasthttp.StatusInternalServerError)
+		ctx.Logger().Printf("Failed to parse forward URL: %v", err)
+		ctx.Error("Failed to parse forward URL: "+err.Error(), fasthttp.StatusInternalServerError)
 		return
 	}
 	targetURL := fmt.Sprintf("https://%s%s?%s", parsedURL.Host, ctx.Path(), ctx.QueryArgs().String())
@@ -395,18 +398,13 @@ func handleRestFile(ctx *fasthttp.RequestCtx, data *Response) bool {
 				ctx.Error(string(errorJson), fasthttp.StatusBadRequest)
 			} else if data.TempUploadFilePath == "" {
 				ctx.Logger().Printf("file saved: %s", filePath)
-				// https://www.jianshu.com/p/216cb89c4d81
-				mode, err := strconv.Atoi(string(ctx.Request.Header.Peek("File-Mode")))
-				if err == nil && mode > 0 && mode < math.MaxInt32 {
-					os.Chmod(filePath, os.FileMode(mode))
-				}
-				fileUserId := string(ctx.Request.Header.Peek("File-User"))
-				uid, errUid := strconv.Atoi(fileUserId)
-				fileGroupId := string(ctx.Request.Header.Peek("File-Group"))
-				gid, errGid := strconv.Atoi(fileGroupId)
-				if errUid == nil && errGid == nil {
-					os.Chown(filePath, uid, gid)
-				}
+
+				httpHeaders := make(http.Header)
+				ctx.Request.Header.VisitAll(func(key, value []byte) {
+					httpHeaders.Add(string(key), string(value))
+				})
+				appmesh.SetFileAttributes(filePath, httpHeaders)
+
 				return true
 			}
 		} else {

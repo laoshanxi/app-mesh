@@ -98,5 +98,5 @@ private:
 	std::string m_userpwd;
 	std::unique_ptr<ACE_Sig_Action> m_sigAction;
 	std::string m_jwtToken;
-	std::string m_delegateHost;
+	std::string m_forwardingHost;
 };

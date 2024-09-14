@@ -13,67 +13,66 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/pquerna/otp"
 )
 
-// AppMeshClient uses REST API for interacting with REST server.
+// AppMeshClient interacts with the REST server using REST API requests.
 type AppMeshClient struct {
-	baseURL      string
-	delegateHost string
-	jwtToken     string
-	httpClient   *http.Client
+	proxy          ClientRequester
+	forwardingHost string // The target host to which all requests will be forwarded;
+	jwtToken       string // JWT authentication token for API requests
+
+	sslClientCert    string //client SSL certificate file
+	sslClientCertKey string //client SSL certificate key file
+	sslCAFile        string //trusted CA file/dir
 
 	mutex sync.Mutex
 }
 
 type Option struct {
-	AppMeshUri                  string
-	Token                       string
-	DelegateHost                string
-	SslClientCertificateFile    *string
-	SslClientCertificateKeyFile *string
-	SslTrustedCA                *string
+	AppMeshUri                  string  // URI of the App Mesh server; use "https://localhost:6060" for HTTP or "localhost:6059" for TCP
+	Token                       string  // JWT authentication token for API requests
+	ForwardingHost              string  // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests
+	SslClientCertificateFile    string  // Path to the client SSL certificate file; leave empty to disable client SSL authentication
+	SslClientCertificateKeyFile string  // Path to the client SSL certificate key file; leave empty to disable client SSL authentication
+	SslTrustedCA                *string // Path to the trusted CA file/dir for server verification; set to nil to disable server SSL verification
 	HttpTimeoutMinutes          *time.Duration
 }
 
-// NewClient initializes client for interacting with an instance of REST server;
-func NewClient(options Option) *AppMeshClient {
-
-	// set default value
-	clientCertFile := DefaultClientCertFile       // set to empty to disable client SSL verification
-	clientCertKeyFile := DefaultClientCertKeyFile // set to empty to disable client SSL verification
-	caFile := DefaultCAFile                       // set to empty to disable server SSL verification
-
+// NewHttpClient creates a new AppMeshClient instance for interacting with a REST server.
+func NewHttpClient(options Option) *AppMeshClient {
 	// Apply the provided options
-	if options.SslClientCertificateFile != nil {
-		clientCertFile = *options.SslClientCertificateFile
-	}
-
-	if options.SslClientCertificateKeyFile != nil {
-		clientCertKeyFile = *options.SslClientCertificateKeyFile
-	}
-
+	clientCertFile := options.SslClientCertificateFile
+	clientCertKeyFile := options.SslClientCertificateKeyFile
+	caFile := DEFAULT_CA_FILE
 	if options.SslTrustedCA != nil {
 		caFile = *options.SslTrustedCA
 	}
 
-	c := &AppMeshClient{
-		baseURL:    DefaultServerUri,
-		httpClient: NewHttpClient(clientCertFile, clientCertKeyFile, caFile),
+	httpRequester := &ClientRequesterRest{
+		baseURL: func() string {
+			if options.AppMeshUri != "" {
+				return options.AppMeshUri
+			}
+			return DEFAULT_HTTP_URI
+		}(),
+		httpClient: newHttpClient(clientCertFile, clientCertKeyFile, caFile),
 	}
 
-	if options.AppMeshUri != "" {
-		c.baseURL = options.AppMeshUri
+	c := &AppMeshClient{
+		proxy: httpRequester,
+
+		sslClientCert:    clientCertFile,
+		sslClientCertKey: clientCertKeyFile,
+		sslCAFile:        caFile,
 	}
 
 	if options.HttpTimeoutMinutes != nil {
-		c.httpClient.Timeout = (*options.HttpTimeoutMinutes)
+		httpRequester.httpClient.Timeout = (*options.HttpTimeoutMinutes)
 	}
-
-	c.updateDelegateHost(options.DelegateHost)
+	c.updateForwardingHost(options.ForwardingHost)
 	c.updateToken(options.Token)
 
 	return c
@@ -396,12 +395,11 @@ func (r *AppMeshClient) FileUpload(filePath string, remotePath string) error {
 	}
 
 	// Get the file attributes
-	fileInfo, _ := os.Stat(filePath)
-	stat, _ := fileInfo.Sys().(*syscall.Stat_t)
-
-	headers["File-Mode"] = strconv.Itoa(int(fileInfo.Mode().Perm()))
-	headers["File-User"] = strconv.Itoa(int(stat.Uid))
-	headers["File-Group"] = strconv.Itoa(int(stat.Gid))
+	attrs, err := GetFileAttributes(filePath)
+	MergeStringMaps(headers, attrs)
+	if err != nil {
+		return err
+	}
 
 	code, raw, _, err := r.post("/appmesh/file/upload", nil, headers, body.Bytes())
 	if err != nil {
@@ -432,52 +430,23 @@ func (r *AppMeshClient) FileDownload(remotePath string, localPath string) error 
 	defer out.Close()
 	_, err = out.Write(raw)
 
-	// Apply file mode if provided
-	if respHeaders.Get("File-Mode") != "" {
-		mode, err := strconv.ParseUint(respHeaders.Get("File-Mode"), 10, 32)
-		if err != nil {
-			fmt.Println("Invalid file mode:", err)
-		} else {
-			err := os.Chmod(localPath, os.FileMode(uint32(mode)))
-			if err != nil {
-				fmt.Println("Failed to change file mode:", err)
-			}
-		}
-	}
-
-	// Apply file ownership (UID, GID) if provided
-	if respHeaders.Get("File-User") != "" {
-		if respHeaders.Get("File-Group") != "" {
-			uid, err := strconv.Atoi(respHeaders.Get("File-User"))
-			if err != nil {
-				fmt.Println("Invalid UID:", err)
-			}
-			gid, err := strconv.Atoi(respHeaders.Get("File-Group"))
-			if err != nil {
-				fmt.Println("Invalid GID:", err)
-			}
-			err = os.Chown(localPath, uid, gid)
-			if err != nil {
-				fmt.Println("Failed to change file ownership:", err)
-			}
-		}
-	}
+	SetFileAttributes(localPath, respHeaders)
 
 	return err
 }
 
-// delegate request to target host
-func (r *AppMeshClient) getDelegateHost() string {
+// forward request to target host
+func (r *AppMeshClient) getForwardingHost() string {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	return r.delegateHost
+	return r.forwardingHost
 }
 
-// delegate request to target host
-func (r *AppMeshClient) updateDelegateHost(host string) {
+// forward request to target host
+func (r *AppMeshClient) updateForwardingHost(host string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	r.delegateHost = host
+	r.forwardingHost = host
 }
 
 func (r *AppMeshClient) getToken() string {

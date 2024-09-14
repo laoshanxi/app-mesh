@@ -25,29 +25,29 @@ var (
 )
 
 // Hash-based Message Authentication Code
-// HMACVerifier handles HMAC operations using a pre-shared key (PSK).
-type HMACVerifier struct {
+// HMACVerify handles HMAC operations using a pre-shared key (PSK).
+type HMACVerify struct {
 	psk []byte
 }
 
-// NewHMACVerifier creates and initializes a new HMACVerifier.
-func NewHMACVerifier() (*HMACVerifier, error) {
+// NewHMACVerify creates and initializes a new HMACVerifier.
+func NewHMACVerify() (*HMACVerify, error) {
 	psk, err := readPSKFromSHM()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize HMACVerifier: %w", err)
 	}
-	return &HMACVerifier{psk: psk}, nil
+	return &HMACVerify{psk: psk}, nil
 }
 
 // GenerateHMAC generates an HMAC for the given message.
-func (h *HMACVerifier) GenerateHMAC(message string) string {
+func (h *HMACVerify) GenerateHMAC(message string) string {
 	mac := hmac.New(sha256.New, h.psk)
 	mac.Write([]byte(message))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // VerifyHMAC verifies the HMAC for the given message.
-func (h *HMACVerifier) VerifyHMAC(message, receivedHMAC string) bool {
+func (h *HMACVerify) VerifyHMAC(message, receivedHMAC string) bool {
 	calculatedHMAC := h.GenerateHMAC(message)
 	return hmac.Equal([]byte(calculatedHMAC), []byte(receivedHMAC))
 }

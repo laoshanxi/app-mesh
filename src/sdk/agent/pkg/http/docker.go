@@ -11,7 +11,7 @@ import (
 	"net"
 	"net/url"
 
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/valyala/fasthttp"
 )
 
@@ -50,7 +50,7 @@ func listenDockerAgent(dockerAgentAddr string) {
 
 func ListenDocker(dockerAgentAddr string) {
 
-	if utils.IsFileExist(DockerSocketFilePath) {
+	if appmesh.IsFileExist(DockerSocketFilePath) {
 		addr, err := url.Parse(dockerAgentAddr)
 		if err != nil {
 			panic(err)

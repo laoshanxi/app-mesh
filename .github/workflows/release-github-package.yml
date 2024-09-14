@@ -140,7 +140,7 @@ jobs:
           echo "4. GPG sign packages (rpm/dpkg --import gpg_public.key)" >> CHANGELOG.txt
           echo "5. Generate SBOM file" >> CHANGELOG.txt
           echo "6. YAML file format for application" >> CHANGELOG.txt
-          echo "7. Delegate request to cluster host" >> CHANGELOG.txt
+          echo "7. Forward requests to cluster host" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency

@@ -45,9 +45,9 @@ class AppMeshClient {
      */
     this._jwtToken = jwtToken;
     /**
-     * @property {string|null} delegateHost - The host to delegate requests to, if any. Initially null.
+     * @property {string|null} forwardingHost - The host to forward requests to, if any. Initially null.
      */
-    this.delegateHost = null;
+    this.forwardingHost = null;
     /**
      * @property {AxiosInstance} _client - Axios instance for making HTTP requests.
      * Configured with the base URL and custom HTTPS agent for SSL verification.
@@ -909,12 +909,12 @@ class AppMeshClient {
     if (this._jwtToken) {
       headers["Authorization"] = `Bearer ${this._jwtToken}`;
     }
-    if (this.delegateHost) {
-      if (this.delegateHost.includes(":")) {
-        headers["X-Target-Host"] = this.delegateHost;
+    if (this.forwardingHost) {
+      if (this.forwardingHost.includes(":")) {
+        headers["X-Target-Host"] = this.forwardingHost;
       } else {
         const parsedUrl = new URL(this.baseURL);
-        headers["X-Target-Host"] = `${this.delegateHost}:${parsedUrl.port}`;
+        headers["X-Target-Host"] = `${this.forwardingHost}:${parsedUrl.port}`;
       }
     }
     return headers;
@@ -1043,21 +1043,21 @@ class AppRun {
     this._client = client;
 
     /** @type {string} Delegate host indicates the target server for this app run */
-    this._delegateHost = client.delegateHost;
+    this._forwardingHost = client.forwardingHost;
   }
 
   /**
-   * Context manager for delegate host override to self._client
-   * @param {function} callback - Function to execute within the delegate host context
+   * Context manager for forward host override to self._client
+   * @param {function} callback - Function to execute within the forward host context
    * @returns {Promise<*>} Result of the callback function
    */
-  async withDelegateHost(callback) {
-    const originalValue = this._client.delegateHost;
-    this._client.delegateHost = this._delegateHost;
+  async withForwardingHost(callback) {
+    const originalValue = this._client.forwardingHost;
+    this._client.forwardingHost = this._forwardingHost;
     try {
       return await callback();
     } finally {
-      this._client.delegateHost = originalValue;
+      this._client.forwardingHost = originalValue;
     }
   }
 
@@ -1068,7 +1068,7 @@ class AppRun {
    * @returns {Promise<number|null>} Return exit code if process finished, return null for timeout or exception
    */
   async wait(outputHandler = defaultOutputHandler, timeout = 0) {
-    return this.withDelegateHost(() => this._client.run_async_wait(this, outputHandler, timeout));
+    return this.withForwardingHost(() => this._client.run_async_wait(this, outputHandler, timeout));
   }
 }
 

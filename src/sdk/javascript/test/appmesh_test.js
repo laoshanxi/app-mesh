@@ -17,7 +17,7 @@ async function userTest() {
     // Test login
     const token = await appmesh.login("admin", "admin123");
     console.log("login response:", token);
-    //appmesh.delegateHost = "localhost"
+    //appmesh.forwardingHost = "localhost"
     const auth = await appmesh.authentication(token);
     console.log("authentication response:", auth);
 

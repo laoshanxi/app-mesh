@@ -14,10 +14,7 @@ import (
 func TestAppmeshLogin(t *testing.T) {
 
 	emptyStr := ""
-	client := NewClient(Option{
-		SslClientCertificateFile:    &emptyStr,
-		SslClientCertificateKeyFile: &emptyStr,
-		SslTrustedCA:                &emptyStr})
+	client := NewHttpClient(Option{SslTrustedCA: &emptyStr})
 
 	_, token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
 	ret, err := client.Authentication(token, "")
@@ -40,8 +37,8 @@ func TestAppmeshLogin(t *testing.T) {
 
 func TestAppmeshFile(t *testing.T) {
 
-	client := NewClient(Option{})
-	client.updateDelegateHost("localhost:6059")
+	client := NewHttpClient(Option{})
+	client.updateForwardingHost("localhost:6059")
 
 	success, _, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
 	require.True(t, success)
@@ -56,7 +53,7 @@ func TestAppmeshFile(t *testing.T) {
 
 func TestAppmeshTotp(t *testing.T) {
 
-	client := NewClient(Option{})
+	client := NewHttpClient(Option{})
 
 	success, token, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
 	require.True(t, success, "Login failed")

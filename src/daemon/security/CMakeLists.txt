@@ -16,6 +16,7 @@ add_library(${PROJECT_NAME}::security ALIAS security)
 target_link_libraries(security
   PRIVATE
     cryptopp
+    rt
     ldapplugin
     oath
 )

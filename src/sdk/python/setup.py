@@ -8,7 +8,7 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 
 def get_version():
-    return "1.3.1"
+    return "1.3.2"
 
 
 setuptools.setup(
@@ -27,7 +27,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    packages=["appmesh"],
+    packages=setuptools.find_packages(exclude=["tests*"]),
     # requests for REST call
     # msgpack for TCP serialization
     # requests_toolbelt for MultipartEncoder

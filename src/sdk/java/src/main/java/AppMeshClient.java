@@ -31,7 +31,7 @@ public class AppMeshClient {
 
     private final String baseURL;
     private String jwtToken;
-    private String delegateHost;
+    private String forwardingHost;
 
     private AppMeshClient(Builder builder) {
         this.baseURL = Objects.requireNonNull(builder.baseURL, "Base URL cannot be null");
@@ -89,16 +89,16 @@ public class AppMeshClient {
         private String appName;
         private String procUid;
         private AppMeshClient client;
-        private String delegateHost;
+        private String forwardingHost;
 
         public AppRun(AppMeshClient client, String appName, String processId) {
             this.appName = appName;
             this.procUid = processId;
             this.client = client;
-            this.delegateHost = client.delegateHost;
+            this.forwardingHost = client.forwardingHost;
         }
 
-        // Getters and setters for appName, procUid, client, and delegateHost
+        // Getters and setters for appName, procUid, client, and forwardingHost
         public String getAppName() {
             return appName;
         }
@@ -111,35 +111,35 @@ public class AppMeshClient {
             return client;
         }
 
-        public String getDelegateHost() {
-            return delegateHost;
+        public String getForwardingHost() {
+            return forwardingHost;
         }
 
         // Context manager equivalent in Java
-        public class DelegateHostManager implements Closeable {
-            private String originalDelegateHost;
+        public class ForwardingHostManager implements Closeable {
+            private String originalForwardingHost;
 
-            public DelegateHostManager() {
-                this.originalDelegateHost = client.delegateHost;
-                client.delegateHost(delegateHost);
+            public ForwardingHostManager() {
+                this.originalForwardingHost = client.forwardingHost;
+                client.forwardingHost(forwardingHost);
             }
 
             @Override
             public void close() throws IOException {
-                client.delegateHost(originalDelegateHost);
+                client.forwardingHost(originalForwardingHost);
             }
         }
 
         // Equivalent to the wait method in Python
         public Integer wait(boolean stdoutPrint, int timeout) throws Exception {
-            try (DelegateHostManager manager = new DelegateHostManager()) {
+            try (ForwardingHostManager manager = new ForwardingHostManager()) {
                 return client.runAsyncWait(this, stdoutPrint, timeout);
             }
         }
     }
 
-    public void delegateHost(String host) {
-        this.delegateHost = host;
+    public void forwardingHost(String host) {
+        this.forwardingHost = host;
     }
 
     public String login(String username, String password, String totpCode, Object expireSeconds) throws IOException {
@@ -406,7 +406,7 @@ public class AppMeshClient {
                 Files.getFileAttributeView(Paths.get(localFile), PosixFileAttributeView.class)
                         .setGroup(FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByGroupName(fileGroup));
             } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Failed to set file owner or group", e);
+                LOGGER.log(Level.WARNING, "Failed to set file owner or group: {0}", e.toString());
             }
         }
 
@@ -472,16 +472,16 @@ public class AppMeshClient {
         if (this.jwtToken != null) {
             headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + this.jwtToken);
         }
-        if (this.delegateHost != null) {
-            String host = this.delegateHost;
+        if (this.forwardingHost != null) {
+            String host = this.forwardingHost;
             if (!host.contains(":")) {
                 try {
                     URL url = new URL(this.baseURL);
                     int port = url.getPort();
-                    host = this.delegateHost + ":" + port;
+                    host = this.forwardingHost + ":" + port;
                 } catch (IOException e) {
                     LOGGER.log(Level.SEVERE, "Failed to parse baseURL", e);
-                    throw new RuntimeException("Failed to set delegate host", e);
+                    throw new RuntimeException("Failed to set forward host", e);
                 }
             }
             headers.put("X-Target-Host", host);

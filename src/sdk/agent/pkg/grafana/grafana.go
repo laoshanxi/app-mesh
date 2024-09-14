@@ -24,7 +24,7 @@ func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, 
 			authKey = string(value)
 		}
 	})
-	client := appmesh.NewClient(appmesh.Option{Token: authKey})
+	client := appmesh.NewHttpClient(appmesh.Option{Token: authKey})
 	apps, err := client.GetApps()
 
 	result := make([]TableColumn, len(apps))

@@ -9,17 +9,13 @@ import (
 	"path"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/valyala/fasthttp"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
+// Response represents the message received over TCP
 type Response struct {
-	Uuid                 string            `msg:"uuid" msgpack:"uuid"`
-	RequestUri           string            `msg:"request_uri" msgpack:"request_uri"`
-	HttpStatus           int               `msg:"http_status" msgpack:"http_status"`
-	BodyMsgType          string            `msg:"body_msg_type" msgpack:"body_msg_type"`
-	Body                 string            `msg:"body" msgpack:"body"`
-	Headers              map[string]string `msg:"headers" msgpack:"headers"`
+	appmesh.Response
 	TempDownloadFilePath string
 	TempUploadFilePath   string
 }
@@ -41,7 +37,7 @@ func ReadNewResponse(conn net.Conn) (*Response, error) {
 	}
 
 	r := new(Response)
-	err = msgpack.Unmarshal(bodyBuf, r)
+	err = r.Deserialize(bodyBuf)
 	if err != nil {
 		return nil, err
 	}
