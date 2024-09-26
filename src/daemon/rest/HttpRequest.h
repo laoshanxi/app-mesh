@@ -89,6 +89,7 @@ public:
 	static std::shared_ptr<HttpRequest> deserialize(const char *input, int inputSize, int tcpHandlerId);
 	static const nlohmann::json emptyJson();
 	void dump() const;
+	void verifyHMAC() const;
 
 	std::string m_uuid;
 	web::http::method m_method;
@@ -143,5 +144,5 @@ private:
 	long m_delayReplyTimerId;
 	pid_t m_pid;
 	std::shared_ptr<Application> m_app;
-	std::atomic_flag m_httpRequestReplyFlag;
+	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
 };

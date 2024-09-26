@@ -93,6 +93,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [Kubernetes run none-container applications](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
 - [Remote execute](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
 - [Python parallel run](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
+- [Secure consul cluster](https://app-mesh.readthedocs.io/en/latest/success/secure_consul_cluster.html)
 
 ---
 

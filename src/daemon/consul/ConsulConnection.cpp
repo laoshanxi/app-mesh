@@ -80,7 +80,7 @@ void ConsulConnection::reportNode()
 			LOG_DBG << fname << "host info " << MY_HOST_NAME << " is the same with server";
 			return;
 		}
-
+		body["resource"] = ResourceCollection::instance()->AsJson();
 		auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 		auto resp = requestConsul(web::http::methods::PUT, path, {{"acquire", sessionId}, {"flags", timestamp}}, {}, &body);
 		if (resp->status_code == web::http::status_codes::OK)

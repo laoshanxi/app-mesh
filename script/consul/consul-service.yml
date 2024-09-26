@@ -1,0 +1,98 @@
+version: "3"
+
+# Consul Servers: We have 3 Consul servers (consul-server1, consul-server2, consul-server3) running on the consul-cluster network. Each server has a static IP assigned from that network (172.20.0.x).
+# Gossip Encryption: The GOSSIP_KEY (JBvV1gYpE2ykEtx/qbtp7jRc2ybwBK+dFDHq/R/QpPo=) is shared across all servers and agents for encrypted communication.
+# TLS/SSL: These servers use the TLS certificates from the config directory.
+
+services:
+  consul-server1:
+    image: hashicorp/consul:latest
+    hostname: server1
+    command: agent -server -bootstrap-expect=3 -node=server1 -retry-join=server2 -retry-join=server3 -client=0.0.0.0 -ui -bind=0.0.0.0 -datacenter=dc1 -encrypt=JBvV1gYpE2ykEtx/qbtp7jRc2ybwBK+dFDHq/R/QpPo= -data-dir=/consul/data -config-dir=/consul/config
+    volumes:
+      - ./data/server1:/consul/data
+      - ./config/consul-server.json:/consul/config/tls.json
+      - /opt/appmesh/ssl:/opt/appmesh/ssl
+    #ports:
+    #  - 8500:8500
+    #  - 8600:8600
+    #  - 8301:8301
+    #  - 8301:8301/udp
+    #  - 8300:8300
+
+  consul-server2:
+    image: hashicorp/consul:latest
+    hostname: server2
+    command: agent -server -node=server2 -retry-join=server1 -retry-join=server3 -client=0.0.0.0 -ui -bind=0.0.0.0 -datacenter=dc1 -encrypt=JBvV1gYpE2ykEtx/qbtp7jRc2ybwBK+dFDHq/R/QpPo= -data-dir=/consul/data -config-dir=/consul/config
+    volumes:
+      - ./data/server2:/consul/data
+      - ./config/consul-server.json:/consul/config/tls.json
+      - /opt/appmesh/ssl:/opt/appmesh/ssl
+
+  consul-server3:
+    image: hashicorp/consul:latest
+    hostname: server3
+    command: agent -server -node=server3 -retry-join=server1 -retry-join=server2 -client=0.0.0.0 -ui -bind=0.0.0.0 -datacenter=dc1 -encrypt=JBvV1gYpE2ykEtx/qbtp7jRc2ybwBK+dFDHq/R/QpPo= -data-dir=/consul/data -config-dir=/consul/config
+    volumes:
+      - ./data/server3:/consul/data
+      - ./config/consul-server.json:/consul/config/tls.json
+      - /opt/appmesh/ssl:/opt/appmesh/ssl
+
+  # Agent Networks:
+  #    Each agent (agent1 and agent2) is running in a separate network (agent1-network and agent2-network). This simulates the agents being on different physical machines.
+  # Communication:
+  #    The agents use the -retry-join option to connect to the Consul servers via their static IP addresses on the consul-cluster network (172.20.0.x).
+  # The extra_hosts section maps the server IPs to hostnames (server1, server2, server3). Now the agents can resolve the server addresses as server1, server2, and server3 even though they are on different networks.
+
+  #################
+  ## agent1
+  #################
+  consul-agent1:
+    image: hashicorp/consul:latest
+    command: agent -node=agent1 -retry-join=server1 -retry-join=server2 -retry-join=server3 -client=0.0.0.0 -encrypt=JBvV1gYpE2ykEtx/qbtp7jRc2ybwBK+dFDHq/R/QpPo= -data-dir=/consul/data -config-dir=/consul/config
+    volumes:
+      - ./data/agent1:/consul/data
+      - ./config/consul-agent.json:/consul/config/tls.json
+      - /opt/appmesh/ssl:/opt/appmesh/ssl
+    network_mode: "service:appmesh1" # make sure in same network with appmesh
+
+  appmesh1:
+    image: laoshanxi/appmesh:latest
+    environment:
+      - APPMESH_Consul_Url=http://localhost:8500
+      - APPMESH_REST_PrometheusExporterListenPort=6061
+      - APPMESH_REST_DockerProxyListenAddr=http://127.0.0.1:6058
+      - APPMESH_CONSUL_ENABLE=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/appmesh/work # mount this to enable configuration persist
+    privileged: true
+    user: root
+    # used for debug
+    ports:
+      - 8501:8501
+
+  #################
+  ## agent2
+  #################
+  consul-agent2:
+    image: hashicorp/consul:latest
+    command: agent -node=agent2 -retry-join=server1 -retry-join=server2 -retry-join=server3 -client=0.0.0.0 -encrypt=JBvV1gYpE2ykEtx/qbtp7jRc2ybwBK+dFDHq/R/QpPo= -data-dir=/consul/data -config-dir=/consul/config
+    volumes:
+      - ./data/agent2:/consul/data
+      - ./config/consul-agent.json:/consul/config/tls.json
+      - /opt/appmesh/ssl:/opt/appmesh/ssl
+    network_mode: "service:appmesh2" # make sure in same network with appmesh
+
+  appmesh2:
+    image: laoshanxi/appmesh:latest
+    environment:
+      - APPMESH_Consul_Url=http://localhost:8500
+      - APPMESH_REST_PrometheusExporterListenPort=6061
+      - APPMESH_REST_DockerProxyListenAddr=http://127.0.0.1:6058
+      - APPMESH_CONSUL_ENABLE=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/appmesh/work # mount this to enable configuration persist
+    privileged: true
+    user: root

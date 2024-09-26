@@ -69,5 +69,13 @@ func getConfigFilePath() string {
 }
 
 func GetAppMeshHomeDir() string {
-	return utils.GetParentDir(utils.GetCurrentAbPath())
+	if IsAgentProdEnv() {
+		return utils.GetParentDir(utils.GetCurrentAbPath())
+	}
+	return "/opt/appmesh"
+}
+
+func IsAgentProdEnv() bool {
+	exePath, _ := os.Executable()
+	return filepath.Base(exePath) == "agent"
 }

@@ -1,4 +1,4 @@
-package http
+package agent
 
 import (
 	"crypto/tls"
@@ -99,6 +99,7 @@ func ListenRest() {
 		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
 		os.Exit(-1)
 	}
+	log.Printf("Establish REST connection to TCP server <%s>", connectAddr)
 
 	// http router
 	router := fasthttprouter.New()

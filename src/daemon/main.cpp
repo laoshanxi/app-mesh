@@ -109,6 +109,14 @@ int main(int argc, char *argv[])
 		Configuration::instance()->dump();
 		Configuration::instance()->saveConfigToDisk();
 
+		// copy consul config to config dir
+		const auto consulConfigSource = (fs::path(Utility::getParentDir()) / APPMESH_CONSUL_API_CONFIG_FILE).string();
+		const auto consulConfigTarget = (fs::path(config->getWorkDir()) / APPMESH_WORK_CONFIG_DIR / APPMESH_CONSUL_API_CONFIG_FILE).string();
+		if (Utility::isFileExist(consulConfigSource) && !Utility::isFileExist(consulConfigTarget))
+		{
+			std::ofstream(consulConfigTarget) << Utility::readFileCpp(consulConfigSource);
+		}
+
 		// Register QUIT_HANDLER to receive SIGINT commands.
 		TIMER_MANAGER::instance()->reactor()->register_handler(SIGINT, QUIT_HANDLER::instance());
 		TIMER_MANAGER::instance()->reactor()->register_handler(SIGTERM, QUIT_HANDLER::instance());

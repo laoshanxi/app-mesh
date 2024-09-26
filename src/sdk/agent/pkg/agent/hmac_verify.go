@@ -1,4 +1,4 @@
-package http
+package agent
 
 import (
 	"crypto/hmac"
@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	hmacHttpHeader  = "X-Request-HMAC"
 	pskLength       = 32
 	pskSHMEnv       = "SHM_NAME"
 	pskFlagOffset   = pskLength + 1

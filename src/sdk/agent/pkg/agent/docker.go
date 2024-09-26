@@ -1,4 +1,4 @@
-package http
+package agent
 
 // Reference
 // https://github.com/open-cluster-management/rbac-query-proxy/blob/release-2.3/cmd/main.go

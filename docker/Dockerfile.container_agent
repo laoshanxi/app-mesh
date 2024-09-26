@@ -8,15 +8,14 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /appmesh
 
 # Install system dependencies
-RUN apt-get update \
-    && apt-get install -y wget \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y wget && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir appmesh \
-    && wget --no-check-certificate https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/cli/appmesh_arm.py -P /appmesh/
-
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir appmesh && \
+    wget --no-check-certificate https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/cli/appmesh_arm.py -P /appmesh/
 
 FROM python:3.12-slim
 

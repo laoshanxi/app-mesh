@@ -28,5 +28,5 @@ public:
 
 private:
 	std::unique_ptr<HttpRequestWithAppRef> m_httpRequest;
-	std::atomic_flag m_httpRequestReplyFlag;
+	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
 };

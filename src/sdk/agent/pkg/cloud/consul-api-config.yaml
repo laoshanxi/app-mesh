@@ -1,0 +1,13 @@
+---
+consul:
+  enable: false
+  address: 127.0.0.1:8501
+  datacenter: dc1
+  scheme: https
+  token: YOUR-CONSUL-ACL-TOKEN
+  tls:
+    enable: true
+    insecure_skip_verify: true
+    ca_file: /opt/appmesh/ssl/ca.pem
+    cert_file: /opt/appmesh/ssl/client.pem
+    key_file: /opt/appmesh/ssl/client-key.pem

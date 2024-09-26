@@ -1,0 +1,15 @@
+{
+    "verify_incoming": false,
+    "verify_incoming_rpc": false,
+    "verify_outgoing": false,
+    "verify_server_hostname": false,
+    "ca_file": "/opt/appmesh/ssl/ca.pem",
+    "cert_file": "/opt/appmesh/ssl/server.pem",
+    "key_file": "/opt/appmesh/ssl/server-key.pem",
+    "ports": {
+        "https": 8501
+    },
+    "performance": {
+        "raft_multiplier": 1
+    }
+}

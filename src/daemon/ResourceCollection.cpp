@@ -146,7 +146,7 @@ nlohmann::json ResourceCollection::AsJson()
 	const static char fname[] = "ResourceCollection::AsJson() ";
 	LOG_DBG << fname << "Entered";
 
-	this->getHostResource();
+	const auto &res = this->getHostResource();
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	nlohmann::json result = nlohmann::json::object();
@@ -154,7 +154,7 @@ nlohmann::json ResourceCollection::AsJson()
 	result[("os_user")] = std::string((Utility::getOsUserName()));
 	result[("host_description")] = std::string(Configuration::instance()->getDescription());
 	auto arr = nlohmann::json::array();
-	std::for_each(m_resources.m_ipaddress.begin(), m_resources.m_ipaddress.end(), [&arr](const HostNetInterface &pair)
+	std::for_each(res.m_ipaddress.begin(), res.m_ipaddress.end(), [&arr](const HostNetInterface &pair)
 				  {
 					  nlohmann::json net_detail = nlohmann::json::object();
 					  net_detail["name"] = std::string(pair.name);
@@ -162,13 +162,13 @@ nlohmann::json ResourceCollection::AsJson()
 					  net_detail["address"] = std::string(pair.address);
 					  arr.push_back(net_detail); });
 	result[("net")] = std::move(arr);
-	result[("cpu_cores")] = (m_resources.m_cores);
-	result[("cpu_sockets")] = (m_resources.m_sockets);
-	result[("cpu_processors")] = (m_resources.m_processors);
-	result[("mem_total_bytes")] = (m_resources.m_total_bytes);
-	result[("mem_free_bytes")] = (m_resources.m_free_bytes);
-	result[("mem_totalSwap_bytes")] = (m_resources.m_totalSwap_bytes);
-	result[("mem_freeSwap_bytes")] = (m_resources.m_freeSwap_bytes);
+	result[("cpu_cores")] = (res.m_cores);
+	result[("cpu_sockets")] = (res.m_sockets);
+	result[("cpu_processors")] = (res.m_processors);
+	result[("mem_total_bytes")] = (res.m_total_bytes);
+	result[("mem_free_bytes")] = (res.m_free_bytes);
+	result[("mem_totalSwap_bytes")] = (res.m_totalSwap_bytes);
+	result[("mem_freeSwap_bytes")] = (res.m_freeSwap_bytes);
 	auto allAppMem = os::pstree();
 	if (nullptr != allAppMem)
 	{
@@ -207,20 +207,5 @@ nlohmann::json ResourceCollection::AsJson()
 	result[("pid")] = (getPid());
 	result[("fd")] = (os::pstree()->totalFileDescriptors());
 	LOG_DBG << fname << "Exit";
-	return result;
-}
-
-nlohmann::json ResourceCollection::getConsulJson()
-{
-	static auto cpus = os::cpus();
-	auto mem = os::memory();
-
-	nlohmann::json result = nlohmann::json::object();
-	result[("cpu_cores")] = (cpus.size());
-	result[("mem_total_bytes")] = (mem->total_bytes);
-	// result[("mem_free_bytes")] = (mem->free_bytes);
-	// result[("mem_totalSwap_bytes")] = (mem->totalSwap_bytes);
-	// result[("mem_freeSwap_bytes")] = (mem->freeSwap_bytes);
-
 	return result;
 }

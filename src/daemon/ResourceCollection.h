@@ -55,7 +55,6 @@ public:
 	void dump();
 
 	nlohmann::json AsJson();
-	nlohmann::json getConsulJson();
 
 private:
 	HostResource m_resources;

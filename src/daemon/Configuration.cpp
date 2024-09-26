@@ -457,6 +457,10 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 	std::shared_ptr<Application> oldApp = getApp(app->getName(), false);
 	if (oldApp)
 	{
+		if (app->getName() == SEPARATE_AGENT_APP_NAME)
+		{
+			throw std::invalid_argument("not permited");
+		}
 		oldApp->disable();
 		oldApp.reset();
 	}

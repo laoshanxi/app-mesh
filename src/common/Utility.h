@@ -103,6 +103,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_CONFIG_YAML_FILE "config.yaml"
 #define APPMESH_SECURITY_YAML_FILE "security.yaml"
 #define APPMESH_SECURITY_LDAP_YAML_FILE "ldap.yaml"
+#define APPMESH_CONSUL_API_CONFIG_FILE "consul-api-config.yaml"
 #define APPMESH_APPMG_INIT_FLAG_FILE ".appmginit"
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"

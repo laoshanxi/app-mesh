@@ -20,7 +20,7 @@ import (
 
 // AppMeshClient interacts with the REST server using REST API requests.
 type AppMeshClient struct {
-	proxy          ClientRequester
+	Proxy          ClientRequester
 	forwardingHost string // The target host to which all requests will be forwarded;
 	jwtToken       string // JWT authentication token for API requests
 
@@ -62,7 +62,7 @@ func NewHttpClient(options Option) *AppMeshClient {
 	}
 
 	c := &AppMeshClient{
-		proxy: httpRequester,
+		Proxy: httpRequester,
 
 		sslClientCert:    clientCertFile,
 		sslClientCertKey: clientCertKeyFile,
@@ -188,6 +188,12 @@ func (r *AppMeshClient) GetTags() (Labels, error) {
 		err = json.Unmarshal(raw, &label)
 	}
 	return label, err
+}
+
+// GetResource gets resources
+func (r *AppMeshClient) GetResource() ([]byte, error) {
+	_, raw, _, err := r.get("appmesh/resources", nil, nil)
+	return raw, err
 }
 
 // Get all applications

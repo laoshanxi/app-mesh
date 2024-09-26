@@ -5,6 +5,7 @@
 #include <ace/Null_Mutex.h>
 #include <ace/Singleton.h>
 
+#define HMAC_HTTP_HEADER "X-Request-HMAC"
 #define PSK_LENGTH 32
 #define PSK_SHM_ENV "SHM_NAME"
 #define PSK_FLAG_OFFSET (PSK_LENGTH + 1)

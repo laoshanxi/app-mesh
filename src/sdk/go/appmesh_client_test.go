@@ -17,6 +17,8 @@ func TestAppmeshLogin(t *testing.T) {
 	client := NewHttpClient(Option{SslTrustedCA: &emptyStr})
 
 	_, token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
+	res, _ := client.GetResource()
+	t.Log(res)
 	ret, err := client.Authentication(token, "")
 	require.Equal(t, ret, true)
 	require.Nil(t, err)

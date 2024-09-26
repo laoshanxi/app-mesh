@@ -6,7 +6,7 @@
 #include "MonitoredProcess.h"
 
 MonitoredProcess::MonitoredProcess(void *owner)
-	: AppProcess(owner), m_httpRequestReplyFlag(ATOMIC_FLAG_INIT)
+	: AppProcess(owner)
 {
 }
 

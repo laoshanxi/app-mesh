@@ -20,6 +20,7 @@
 #include "../process/DockerProcess.h"
 #include "../process/MonitoredProcess.h"
 #include "../rest/RestHandler.h"
+#include "../security/HMACVerifier.h"
 #include "../security/Security.h"
 #include "../security/User.h"
 #include "AppTimer.h"
@@ -968,7 +969,7 @@ void Application::terminate(std::shared_ptr<AppProcess> &process)
 void Application::handleError()
 {
 	const static char fname[] = "Application::handleError() ";
-
+	bool psk = false;
 	switch (this->exitAction(m_return.load()))
 	{
 	case AppBehavior::Action::STANDBY:
@@ -976,9 +977,15 @@ void Application::handleError()
 		// LOG_DBG << fname << "next action for <" << m_name << "> is STANDBY";
 		break;
 	case AppBehavior::Action::RESTART:
+		if (m_name == SEPARATE_AGENT_APP_NAME)
+			psk = HMACVerifierSingleton::instance()->writePSKToSHM();
+
 		// do restart
 		this->scheduleNext();
 		LOG_DBG << fname << "next action for <" << m_name << "> is RESTART";
+
+		if (psk)
+			HMACVerifierSingleton::instance()->waitPSKRead();
 		break;
 	case AppBehavior::Action::KEEPALIVE:
 		// keep alive always, used for period run

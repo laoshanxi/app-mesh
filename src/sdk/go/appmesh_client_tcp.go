@@ -22,13 +22,13 @@ const TCP_CHUNK_READ_BLOCK_SIZE = 8192
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
 type AppMeshClientTCP struct {
 	*AppMeshClient
-	tcpExecutor *ClientRequesterTcp
+	TcpExecutor *ClientRequesterTcp // used for file operate functions
 }
 
 // NewTcpClient creates a new AppMeshClientTCP instance for interacting with a TCP server.
 func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
 	tcpRequester := &ClientRequesterTcp{
-		baseURL: func() string {
+		BaseURL: func() string {
 			if options.AppMeshUri != "" {
 				return options.AppMeshUri
 			}
@@ -36,9 +36,9 @@ func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
 		}(),
 	}
 
-	client := &AppMeshClientTCP{AppMeshClient: NewHttpClient(options), tcpExecutor: tcpRequester}
+	client := &AppMeshClientTCP{AppMeshClient: NewHttpClient(options), TcpExecutor: tcpRequester}
 
-	client.AppMeshClient.proxy = tcpRequester
+	client.AppMeshClient.Proxy = tcpRequester
 
 	return client, tcpRequester.connectSocket(
 		client.sslClientCert,
@@ -49,9 +49,9 @@ func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
 
 // CloseConnection closes the TCP connection
 func (client *AppMeshClientTCP) CloseConnection() {
-	if client.tcpExecutor != nil && client.tcpExecutor.socketConn != nil {
-		client.tcpExecutor.socketConn.Close()
-		client.tcpExecutor.socketConn = nil
+	if client.TcpExecutor != nil && client.TcpExecutor.SocketConn != nil {
+		client.TcpExecutor.SocketConn.Close()
+		client.TcpExecutor.SocketConn = nil
 	}
 }
 
@@ -83,7 +83,7 @@ func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header) er
 	defer file.Close()
 
 	for {
-		chunkSizeBuf, err := r.tcpExecutor.readTcpData(PROTOBUF_HEADER_LENGTH)
+		chunkSizeBuf, err := r.TcpExecutor.readTcpData(PROTOBUF_HEADER_LENGTH)
 		if err != nil {
 			return err
 		}
@@ -93,7 +93,7 @@ func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header) er
 			break
 		}
 
-		chunkData, err := r.tcpExecutor.readTcpData((chunkSize))
+		chunkData, err := r.TcpExecutor.readTcpData((chunkSize))
 		if err != nil {
 			return err
 		}
@@ -153,25 +153,25 @@ func (client *AppMeshClientTCP) uploadFileChunks(file *os.File) error {
 			break
 		}
 
-		if err := client.tcpExecutor.sendData(buffer[:n]); err != nil {
+		if err := client.TcpExecutor.SendData(buffer[:n]); err != nil {
 			return err
 		}
 	}
 
 	// Send end-of-file marker
-	return client.tcpExecutor.sendEOFMarker()
+	return client.TcpExecutor.sendEOFMarker()
 }
 
 // TCP Request executor
 type ClientRequesterTcp struct {
-	baseURL    string
-	socketConn net.Conn
+	BaseURL    string
+	SocketConn net.Conn
 	mutex      sync.Mutex
 }
 
 // doRequest performs a REST-like request over TCP
 func (r *ClientRequesterTcp) doRequest(method, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
-	u, _ := ParseURL(r.baseURL)
+	u, _ := ParseURL(r.BaseURL)
 	u.Path = path.Join(u.Path, apiPath)
 	if queries != nil {
 		u.RawQuery = queries.Encode()
@@ -213,7 +213,7 @@ func (r *ClientRequesterTcp) doRequest(method, apiPath string, queries url.Value
 
 // connectSocket establishes a secure TCP connection
 func (r *ClientRequesterTcp) connectSocket(sslClientCert string, sslClientCertKey string, sslCAFile string) error {
-	u, err := ParseURL(r.baseURL)
+	u, err := ParseURL(r.BaseURL)
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (r *ClientRequesterTcp) connectSocket(sslClientCert string, sslClientCertKe
 		SSLCaPath:                   sslCAFile,
 	}
 
-	r.socketConn, err = ConnectAppMeshServer(address, ssl.VerifyServer, ssl)
+	r.SocketConn, err = ConnectAppMeshServer(address, ssl.VerifyServer, ssl)
 	return err
 }
 
@@ -238,7 +238,7 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 	data.Uuid = xid.New().String()
 	data.HttpMethod = req.Method
 	data.RequestUri = req.URL.Path
-	data.ClientAddress = r.socketConn.LocalAddr().String()
+	data.ClientAddress = r.SocketConn.LocalAddr().String()
 	data.Headers = make(map[string]string)
 	for key, values := range req.Header {
 		for _, value := range values {
@@ -270,12 +270,12 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 	}
 
 	// Send the data over TCP
-	if err := r.sendData(buf); err != nil {
+	if err := r.SendData(buf); err != nil {
 		return nil, err
 	}
 
 	// Receive the response
-	respData, err := r.recvData()
+	respData, err := r.RecvData()
 	if err != nil {
 		return nil, err
 	}
@@ -288,8 +288,8 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 	return respMsg, nil
 }
 
-// sendData sends the message length and the actual message data over TCP
-func (r *ClientRequesterTcp) sendData(data []byte) error {
+// SendData sends the message length and the actual message data over TCP
+func (r *ClientRequesterTcp) SendData(data []byte) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -315,7 +315,7 @@ func (r *ClientRequesterTcp) sendTcpData(buf []byte) error {
 	for totalSentSize < len(buf) {
 		byteSent := 0
 
-		if byteSent, err = r.socketConn.Write(buf[totalSentSize:]); err != nil {
+		if byteSent, err = r.SocketConn.Write(buf[totalSentSize:]); err != nil {
 			return err
 		}
 		totalSentSize += byteSent
@@ -329,8 +329,8 @@ func (r *ClientRequesterTcp) sendEOFMarker() error {
 	return r.sendLength(0)
 }
 
-// recvData receives a length-prefixed message from the TCP connection
-func (r *ClientRequesterTcp) recvData() ([]byte, error) {
+// RecvData receives a length-prefixed message from the TCP connection
+func (r *ClientRequesterTcp) RecvData() ([]byte, error) {
 	lenBuf, err := r.readTcpData(PROTOBUF_HEADER_LENGTH)
 	if err != nil {
 		return nil, err
@@ -357,7 +357,7 @@ func (r *ClientRequesterTcp) readTcpData(msgLength uint32) ([]byte, error) {
 			oneTimeRead = chunkSize
 		}
 		data := make([]byte, oneTimeRead) //TODO: use global buffer avoid garbage
-		n, err := r.socketConn.Read(data)
+		n, err := r.SocketConn.Read(data)
 		if n > 0 {
 			bodyBuf = append(bodyBuf, data[:n]...)
 			totalReadSize += uint32(n)

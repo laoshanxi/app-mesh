@@ -7,6 +7,7 @@
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "../process/AppProcess.h"
+#include "../security/HMACVerifier.h"
 #include "HttpRequest.h"
 #include "RestHandler.h"
 #include "TcpServer.h"
@@ -121,6 +122,20 @@ void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		TcpHandler::replyTcp(m_tcpHanlerId, response);
 	}
 }
+
+void HttpRequest::verifyHMAC() const
+{
+
+	if (this->m_headers.count(HMAC_HTTP_HEADER) &&
+		HMACVerifierSingleton::instance()->verifyHMAC(this->m_uuid, this->m_headers.find(HMAC_HTTP_HEADER)->second))
+	{
+	}
+	else
+	{
+		throw std::invalid_argument("Verify HMAC failed");
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequest with remove app from global map
 ////////////////////////////////////////////////////////////////////////////////
@@ -141,7 +156,7 @@ HttpRequestWithAppRef::~HttpRequestWithAppRef()
 // HttpRequest used to handle view app output
 ////////////////////////////////////////////////////////////////////////////////
 HttpRequestOutputView::HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
-	: HttpRequest(message), m_delayReplyTimerId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_app(appObj), m_httpRequestReplyFlag(ATOMIC_FLAG_INIT)
+	: HttpRequest(message), m_delayReplyTimerId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_app(appObj)
 {
 }
 HttpRequestOutputView::~HttpRequestOutputView()

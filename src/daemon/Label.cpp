@@ -5,6 +5,7 @@
 #endif
 #endif
 #include <ace/OS_NS_sys_utsname.h>
+#include <fstream>
 
 #include "../common/Utility.h"
 #include "Label.h"

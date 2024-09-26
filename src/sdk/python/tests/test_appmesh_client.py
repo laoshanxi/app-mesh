@@ -1,10 +1,11 @@
+#!/usr/bin/python3
+"""Test Python SDK"""
+import sys
+import os
 import json
-import shutil
 import unittest
 from unittest import TestCase
 from pyotp import TOTP
-import sys
-import os
 
 # For source code env:
 current_directory = os.path.dirname(os.path.abspath(__file__))

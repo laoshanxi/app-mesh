@@ -290,3 +290,4 @@ src/sdk/javascript/lib/appmesh.js
 *.class
 *.jar
 target
+script/consul/data

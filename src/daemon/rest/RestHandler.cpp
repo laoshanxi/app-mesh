@@ -37,6 +37,7 @@ constexpr auto REST_PATH_APP_ALL_VIEW = "/appmesh/applications";
 constexpr auto REST_PATH_APP_HEALTH = R"(/appmesh/app/([^/\*]+)/health)";
 
 // 3. Cloud Application
+constexpr auto REST_PATH_CLOUD_RESOURCES_VIEW = "/appmesh/cloud/resources";
 constexpr auto REST_PATH_CLOUD_APP_ALL_VIEW = "/appmesh/cloud/applications";
 constexpr auto REST_PATH_CLOUD_APP_VIEW = R"(/appmesh/cloud/app/([^/\*]+))";
 constexpr auto REST_PATH_CLOUD_APP_OUT_VIEW = R"(/appmesh/cloud/app/([^/\*]+)/output/([^/\*]+))";
@@ -105,6 +106,7 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::GET, REST_PATH_APP_HEALTH, std::bind(&RestHandler::apiHealth, this, std::placeholders::_1));
 
 	// 3. Cloud Application
+	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_RESOURCES_VIEW, std::bind(&RestHandler::apiCloudResourceView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_APP_ALL_VIEW, std::bind(&RestHandler::apiCloudAppsView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_APP_VIEW, std::bind(&RestHandler::apiCloudAppView, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, REST_PATH_CLOUD_APP_ADD, std::bind(&RestHandler::apiCloudAppAdd, this, std::placeholders::_1));
@@ -819,7 +821,7 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 	if (permissionCheck(message, permission))
 	{
 		auto result = nlohmann::json::object();
-		result["user"] = std::move(getJwtUserName(message));
+		result["user"] = getJwtUserName(message);
 		result["success"] = (true);
 		result["permission"] = std::move(permission);
 		message.reply(web::http::status_codes::OK, result);
@@ -1129,6 +1131,12 @@ void RestHandler::apiCloudHostView(const HttpRequest &message)
 void RestHandler::apiResourceView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_host_resource);
+	message.reply(web::http::status_codes::OK, ResourceCollection::instance()->AsJson());
+}
+
+void RestHandler::apiCloudResourceView(const HttpRequest &message)
+{
+	message.verifyHMAC();
 	message.reply(web::http::status_codes::OK, ResourceCollection::instance()->AsJson());
 }
 

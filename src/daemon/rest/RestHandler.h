@@ -43,6 +43,7 @@ protected:
 	void apiRunAsync(const HttpRequest &message);
 	void apiRunSync(const HttpRequest &message);
 
+	void apiCloudResourceView(const HttpRequest &message);
 	void apiCloudAppsView(const HttpRequest &message);
 	void apiCloudAppView(const HttpRequest &message);
 	void apiCloudAppOutputView(const HttpRequest &message);

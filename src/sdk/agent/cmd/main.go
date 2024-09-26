@@ -7,8 +7,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/agent"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/http"
 )
 
 func monitorParentExit(parentProPid int) {
@@ -35,14 +36,14 @@ func main() {
 
 	// parse arguments
 	dockerAddr := flag.String("docker_agent_url", dockerAgentAddr, "The host URL used to listen docker proxy")
-	socket := flag.String("docker_socket_file", http.DockerSocketFilePath, "Docker unix domain socket file path used to forward docker proxy")
+	socket := flag.String("docker_socket_file", agent.DockerSocketFilePath, "Docker unix domain socket file path used to forward docker proxy")
 	flag.Parse()
 
 	log.Println("REST Agent enter")
 
 	// read arguments
 	if socket != nil {
-		http.DockerSocketFilePath = *socket
+		agent.DockerSocketFilePath = *socket
 	}
 	if dockerAddr != nil {
 		dockerAgentAddr = *dockerAddr
@@ -50,7 +51,7 @@ func main() {
 
 	// init PSK HMAC
 	var err error
-	if http.HMAC, err = http.NewHMACVerify(); err != nil {
+	if agent.HMAC, err = agent.NewHMACVerify(); err != nil {
 		log.Printf("HMAC Verifier initialization failed: %v", err)
 	}
 
@@ -59,22 +60,25 @@ func main() {
 
 	// start listen docker proxy
 	if len(dockerAgentAddr) > 0 {
-		go http.ListenDocker(dockerAgentAddr)
-		log.Println("<Docker Agent> listening at:", dockerAgentAddr, " forward to:", http.DockerSocketFilePath)
+		go agent.ListenDocker(dockerAgentAddr)
+		log.Println("<Docker Agent> listening at:", dockerAgentAddr, " forward to:", agent.DockerSocketFilePath)
 
 	}
 
 	// start listen REST proxy
 	if config.ConfigData.REST.RestEnabled {
-		go http.ListenRest()
+		go agent.ListenRest()
 	}
 
 	// start prometheus exporter (without SSL)
 	prometheusPort := config.ConfigData.REST.PrometheusExporterListenPort
 	if (prometheusPort) > 1024 {
-		go http.ListenPrometheus(prometheusPort)
+		go agent.ListenPrometheus(prometheusPort)
 		log.Println("<Prometheus Exporter> listening at: ", prometheusPort)
 	}
+
+	// Report consul after listener setup
+	go cloud.NewCloud().ReportHostResource()
 
 	// Wait forever.
 	select {}

@@ -1,0 +1,14 @@
+{
+    "verify_incoming": false,
+    "verify_outgoing": false,
+    "ca_file": "/opt/appmesh/ssl/ca.pem",
+    "cert_file": "/opt/appmesh/ssl/client.pem",
+    "key_file": "/opt/appmesh/ssl/client-key.pem",
+    "auto_encrypt": {
+        "tls": false
+    },
+    "verify_server_hostname": false,
+    "ports": {
+        "https": 8501
+    }
+}
