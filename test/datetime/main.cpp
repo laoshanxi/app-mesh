@@ -107,6 +107,12 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
 
     // time in different zone
     REQUIRE(DateTime::parseISO8601DateTime("2020-10-07T21:19:00+07", "") == DateTime::parseISO8601DateTime("2020-10-07T22:19:00+08", ""));
+
+    // Convert 1543 milliseconds to 1 second and 543,000 microseconds
+    long milliseconds = 1543;
+    ACE_Time_Value time_in_msec(milliseconds / 1000, (milliseconds % 1000) * 1000);
+    REQUIRE(time_in_msec.sec() == 1);
+    REQUIRE(time_in_msec.usec() == 543000);
 }
 
 TEST_CASE("Boost Date Time Test", "[Boost]")

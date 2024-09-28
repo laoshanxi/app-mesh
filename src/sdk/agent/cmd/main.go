@@ -51,7 +51,7 @@ func main() {
 
 	// init PSK HMAC
 	var err error
-	if agent.HMAC, err = agent.NewHMACVerify(); err != nil {
+	if cloud.HMAC, err = cloud.NewHMACVerify(); err != nil {
 		log.Printf("HMAC Verifier initialization failed: %v", err)
 	}
 

@@ -106,7 +106,7 @@ void ConsulConnection::reportNode()
 	}
 }
 
-void ConsulConnection::refreshSession()
+bool ConsulConnection::refreshSession()
 {
 	const static char fname[] = "ConsulConnection::refreshSession() ";
 
@@ -114,7 +114,7 @@ void ConsulConnection::refreshSession()
 	{
 		// check feature enabled
 		if (!getConfig()->consulEnabled())
-			return;
+			return true;
 
 		PerfLog perf(fname);
 		// get session id
@@ -129,7 +129,7 @@ void ConsulConnection::refreshSession()
 		}
 		this->consulSessionId(sessionId);
 		reportNode();
-		return;
+		return true;
 	}
 	catch (const std::exception &ex)
 	{
@@ -140,6 +140,7 @@ void ConsulConnection::refreshSession()
 		LOG_WAR << fname << "exception";
 	}
 	this->consulSessionId("");
+	return true;
 }
 
 long long ConsulConnection::getModifyIndex(const std::string &path, bool recurse)

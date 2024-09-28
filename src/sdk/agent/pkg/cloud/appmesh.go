@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -8,16 +9,29 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/agent"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
-	sdk "github.com/laoshanxi/app-mesh/src/sdk/go"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/rs/xid"
 )
 
 type AppMesh struct {
-	*sdk.AppMeshClientTCP
+	*appmesh.AppMeshClientTCP
 	socketConn *net.Conn
 	mu         sync.Mutex
+}
+
+// Request represents the message sent over TCP
+type Request struct {
+	appmesh.Request
+}
+
+func (r *Request) SetHMACVerify() error {
+	if HMAC != nil {
+		r.Headers[hmacHttpHeader] = HMAC.GenerateHMAC(r.Uuid)
+	} else {
+		return fmt.Errorf("HMAC not initialized")
+	}
+	return nil
 }
 
 // NewTcpClient creates a new AppMeshClientTCP instance for interacting with a TCP server.
@@ -27,7 +41,7 @@ func NewAppMeshClient() *AppMesh {
 	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
 	// connect to TCP rest server
 	targetHost := strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1)
-	conn, err := sdk.ConnectAppMeshServer(targetHost, config.ConfigData.REST.SSL.VerifyServer, &config.ConfigData.REST.SSL)
+	conn, err := appmesh.ConnectAppMeshServer(targetHost, config.ConfigData.REST.SSL.VerifyServer, &config.ConfigData.REST.SSL)
 	if err != nil {
 		log.Fatalf("failed to connect to appmesh service: %v", err)
 	}
@@ -35,8 +49,8 @@ func NewAppMeshClient() *AppMesh {
 	tcpConn = &conn
 
 	client := &AppMesh{socketConn: tcpConn}
-	client.AppMeshClientTCP = &sdk.AppMeshClientTCP{AppMeshClient: sdk.NewHttpClient(sdk.Option{})}
-	client.AppMeshClientTCP.TcpExecutor = &sdk.ClientRequesterTcp{BaseURL: sdk.DEFAULT_HTTP_URI, SocketConn: *tcpConn}
+	client.AppMeshClientTCP = &appmesh.AppMeshClientTCP{AppMeshClient: appmesh.NewHttpClient(appmesh.Option{})}
+	client.AppMeshClientTCP.TcpExecutor = &appmesh.ClientRequesterTcp{BaseURL: appmesh.DEFAULT_HTTP_URI, SocketConn: *tcpConn}
 	client.AppMeshClientTCP.AppMeshClient.Proxy = client.AppMeshClientTCP.TcpExecutor
 	return client
 }
@@ -49,7 +63,7 @@ func (r *AppMesh) GetCloudResource() (string, error) {
 
 	resp, err := r.request(data)
 	if resp != nil && resp.HttpStatus == http.StatusOK {
-		body, jsonErr := sdk.PrettyJSON(resp.Body)
+		body, jsonErr := appmesh.PrettyJSON(resp.Body)
 		if jsonErr != nil {
 			log.Printf("PrettyJSON failed with error: %v", jsonErr)
 		}
@@ -58,8 +72,8 @@ func (r *AppMesh) GetCloudResource() (string, error) {
 	return "", err
 }
 
-func (r *AppMesh) generateRequest() *agent.Request {
-	data := new(agent.Request)
+func (r *AppMesh) generateRequest() *Request {
+	data := new(Request)
 	data.Uuid = xid.New().String()
 	data.Headers = make(map[string]string)
 	data.Queries = make(map[string]string)
@@ -67,7 +81,7 @@ func (r *AppMesh) generateRequest() *agent.Request {
 }
 
 // request sends a request over TCP
-func (r *AppMesh) request(data *agent.Request) (*sdk.Response, error) {
+func (r *AppMesh) request(data *Request) (*appmesh.Response, error) {
 
 	if err := data.SetHMACVerify(); err != nil {
 		return nil, err
@@ -92,7 +106,7 @@ func (r *AppMesh) request(data *agent.Request) (*sdk.Response, error) {
 	}
 
 	// Deserialize the response
-	respMsg := &sdk.Response{}
+	respMsg := &appmesh.Response{}
 	if err := respMsg.Deserialize(respData); err != nil {
 		return nil, err
 	}

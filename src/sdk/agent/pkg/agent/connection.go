@@ -47,7 +47,7 @@ func NewConnection(targetHost string, verifyServer bool, allowError bool) (*Conn
 	return sConn, nil
 }
 
-func (r *Connection) sendRequestData(request *Request) error {
+func (r *Connection) sendRequestData(request *appmesh.Request) error {
 	bodyData, err := request.Serialize()
 	if err != nil {
 		log.Fatalf("Failed to serialize request: %v", err)

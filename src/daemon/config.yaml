@@ -1,18 +1,19 @@
 ---
 BaseConfig:
+  # A brief description for this host
   Description: MYHOST
-  # default app execution OS user name
+  # Default app execution OS user name
   DefaultExecUser: ""
-  # disable specify app execution OS user
-  # all apps will follow appmesh systemd user (by installation env: APPMESH_DAEMON_EXEC_USER/APPMESH_DAEMON_EXEC_USER_GROUP)
+  # When true, all apps use the appmesh systemd user instead of individual execution users
+  # Apps will follow appmesh systemd user (set by installation env: APPMESH_DAEMON_EXEC_USER/APPMESH_DAEMON_EXEC_USER_GROUP)
   DisableExecUser: false
-  # schedule interval for period applications
+  # Schedule interval (in seconds) for application error handling
   ScheduleIntervalSeconds: 1
-  # working directory for appmesh
+  # Working directory for appmesh
   WorkingDirectory: ""
-  # log level (DEBUG/INFO/NOTICE/WARN/ERROR)
+  # Log level (options: DEBUG, INFO, NOTICE, WARN, ERROR)
   LogLevel: INFO
-  # specify a timezone for appmesh output time format, default is server's timezone
+  # Timezone for appmesh output (default: server's timezone)
   PosixTimezone: "+08"
 
 REST:
@@ -23,9 +24,9 @@ REST:
 
   PrometheusExporterListenPort: 0
   DockerProxyListenAddr: ""
-  HttpThreadPoolSize: 3
+  HttpThreadPoolSize: 2
   JWT:
-    JWTSalt: HelloWorld
+    JWTSalt: HelloAppMesh
     Issuer: ""
     SecurityInterface: local
 

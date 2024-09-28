@@ -78,14 +78,20 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
 #define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? (jsonObj.at(key).is_string() ? jsonObj.at(key).get<std::string>() : std::to_string(jsonObj.at(key).get<int64_t>())) : std::string(""))
 
-#define CLOSE_ACE_HANDLER(handler)         \
-	do                                     \
-	{                                      \
-		if (handler != ACE_INVALID_HANDLE) \
-		{                                  \
-			ACE_OS::close(handler);        \
-			handler = ACE_INVALID_HANDLE;  \
-		}                                  \
+#define CLOSE_ACE_HANDLER(handler)                                \
+	do                                                            \
+	{                                                             \
+		ACE_HANDLE target = handler.exchange(ACE_INVALID_HANDLE); \
+		if (target != ACE_INVALID_HANDLE)                         \
+		{                                                         \
+			ACE_OS::close(target);                                \
+		}                                                         \
+	} while (false)
+
+#define CLEAR_TIMER_ID(timerId)     \
+	do                              \
+	{                               \
+		timerId = INVALID_TIMER_ID; \
 	} while (false)
 
 #define CLOSE_STREAM(streamPtr)                           \
@@ -114,6 +120,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_SCHEDULE_INTERVAL 2
 #define DEFAULT_HTTP_THREAD_POOL_SIZE 6
 #define REST_REQUEST_TIMEOUT_SECONDS 60
+#define STDOUT_FILE_SIZE_CHECK_INTERVAL 30
 
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
@@ -228,7 +235,6 @@ public:
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
-#define SEPARATE_REST_APP_NAME "apprest"
 #define SEPARATE_AGENT_APP_NAME "agent"
 #define SEPARATE_PYTHON_EXEC_APP_NAME "pyrun"
 #define REST_ROOT_TEXT_MESSAGE "<html>\n<head><title>App Mesh</title></head>\n<body>App Mesh</body>\n</html>\n"

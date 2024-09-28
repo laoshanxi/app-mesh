@@ -7,7 +7,6 @@ export PROG_HOME=/opt/appmesh
 export PROGC=bin/appc
 export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
 
-
 # disable script exit on error
 set +e
 
@@ -21,12 +20,13 @@ if [ -f "${PROG_HOME}/${PROGC}" ]; then
 		cp -rf $APP_DIR $TMP_DIR
 	fi
 
-	${PROG_HOME}/${PROGC} ls -l | awk '{if (NR>1){cmd="${PROG_HOME}/bin/appc disable -n "$2;print(cmd);system(cmd)}}'
+	# ${PROG_HOME}/${PROGC} ls -l | awk '{if (NR>1){cmd="${PROG_HOME}/bin/appc disable -n "$2;print(cmd);system(cmd)}}'
+	${PROG_HOME}/${PROGC} disable --all
 
 	if [ -d "$TMP_DIR" ] && [ "$(ls -A $TMP_DIR)" ]; then
 		rm -f ${APP_DIR}/*
 		mv -f ${TMP_DIR}/* ${APP_DIR}/
 		rm -rf $TMP_DIR
 	fi
-	
+
 fi

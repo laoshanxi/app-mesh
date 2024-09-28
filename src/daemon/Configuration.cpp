@@ -238,9 +238,9 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	std::copy_if(allApp.begin(), allApp.end(), std::back_inserter(apps),
 				 [this, &user, returnUnPersistApp](std::shared_ptr<Application> app)
 				 {
-					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) &&			 // access permission check
-							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) &&					 // status filter
-							 (app->getName() != SEPARATE_REST_APP_NAME) && (app->getName() != SEPARATE_AGENT_APP_NAME)); // not expose rest process
+					 return (checkOwnerPermission(user, app->getOwner(), app->getOwnerPermission(), false) && // access permission check
+							 ((returnUnPersistApp) || (!returnUnPersistApp && app->isPersistAble())) &&		  // status filter
+							 (app->getName() != SEPARATE_AGENT_APP_NAME));									  // not expose rest process
 				 });
 
 	auto result = nlohmann::json::array();
@@ -461,7 +461,7 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 		{
 			throw std::invalid_argument("not permited");
 		}
-		oldApp->disable();
+		oldApp->destroy();
 		oldApp.reset();
 	}
 	m_apps.rebind(app->getName(), app, oldApp);
@@ -491,8 +491,14 @@ void Configuration::removeApp(const std::string &appName)
 	const static char fname[] = "Configuration::removeApp() ";
 
 	LOG_DBG << fname << appName;
-	std::shared_ptr<Application> app;
-	m_apps.unbind(appName, app);
+	std::shared_ptr<Application> app, empty;
+	{
+		// TODO: workaround to release memory immediately in case of
+		// ACE_Map_Manager manage shared_ptr (might be ACE_HAS_LAZY_MAP_MANAGER)
+		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(m_apps.mutex());
+		m_apps.rebind(appName, empty, app);
+		m_apps.unbind(appName);
+	}
 	if (app)
 	{
 		// Write to disk

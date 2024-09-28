@@ -138,10 +138,12 @@ public:
 	HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
 	virtual ~HttpRequestOutputView();
 	void init();
+
 	void response();
+	bool timerResponse();
 
 private:
-	long m_delayReplyTimerId;
+	std::atomic_long m_timerResponseId;
 	pid_t m_pid;
 	std::shared_ptr<Application> m_app;
 	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;

@@ -22,13 +22,17 @@ extern APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
 constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
 AppProcess::AppProcess(void *owner)
-	: m_owner(owner), m_delayKillTimerId(INVALID_TIMER_ID), m_stdOutSizeTimerId(INVALID_TIMER_ID),
+	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID()),
 	  m_pid(ACE_INVALID_PID), m_returnValue(-1)
 {
 	const static char fname[] = "AppProcess::AppProcess() ";
 	LOG_DBG << fname << "Entered, ID: " << m_uuid;
+
+	const static auto inputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdin");
+	const auto fileName = Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str());
+	m_stdinFileName = (inputDir / fileName).string();
 }
 
 AppProcess::~AppProcess()
@@ -41,16 +45,7 @@ AppProcess::~AppProcess()
 		terminate();
 	}
 
-	CLOSE_ACE_HANDLER(m_stdoutHandler);
-	CLOSE_ACE_HANDLER(m_stdinHandler);
-
-	Utility::removeFile(m_stdinFileName);
-	this->cancelTimer(m_stdOutSizeTimerId);
-
-	if (m_stdoutFileName.length())
-	{
-		Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
-	}
+	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 }
 
 void AppProcess::attach(int pid, const std::string &stdoutFile)
@@ -82,12 +77,21 @@ int AppProcess::returnValue(void) const
 void AppProcess::onExit(int exitCode)
 {
 	const static char fname[] = "AppProcess::onExit() ";
+
+	// update PID
 	m_pid = ACE_INVALID_PID;
+
+	// save return code
 	m_returnValue = exitCode;
-	this->registerTimer(0, 0, std::bind(&AppProcess::handleAppExit, this), fname);
+
+	// clean OS resource
+	cleanResource();
+
+	// notify App exit event
+	this->registerTimer(0, 0, std::bind(&AppProcess::timerHandleAppExit, this), fname);
 }
 
-void AppProcess::handleAppExit()
+bool AppProcess::timerHandleAppExit()
 {
 	if (m_owner)
 	{
@@ -98,6 +102,7 @@ void AppProcess::handleAppExit()
 			app->onExitUpdate(m_returnValue);
 		}
 	}
+	return false;
 }
 
 bool AppProcess::running() const
@@ -145,58 +150,69 @@ pid_t AppProcess::wait(ACE_exitcode *status)
 	return Process_Manager::instance()->wait(m_pid, status);
 }
 
+bool AppProcess::timerTerminate()
+{
+	CLEAR_TIMER_ID(m_timerTerminateId);
+	terminate();
+	return false;
+}
+
+void AppProcess::cleanResource()
+{
+	CLOSE_ACE_HANDLER(m_stdoutHandler);
+	CLOSE_ACE_HANDLER(m_stdinHandler);
+	Utility::removeFile(m_stdinFileName);
+	this->cancelTimer(m_timerCheckStdoutId);
+	this->cancelTimer(m_timerTerminateId);
+}
+
 void AppProcess::terminate()
 {
 	const static char fname[] = "AppProcess::terminate() ";
 
-	pid_t pid = m_pid;
 	bool terminated = false;
+	pid_t pid = m_pid.exchange(ACE_INVALID_PID);
+	if (this->running(pid))
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-		if (this->running(pid))
-		{
-			terminated = true;
-			LOG_INF << fname << "kill process <" << pid << ">.";
+		std::lock_guard<std::recursive_mutex> lock(m_processMutex);
+		terminated = true;
+		LOG_INF << fname << "kill process <" << pid << ">.";
 
-			ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
-			if (ACE_OS::kill(-pid, SIGKILL) == 0)
+		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
+		if (ACE_OS::kill(-pid, SIGKILL) == 0)
+		{
+			// kill group success
+			if (Process_Manager::instance()->remove(pid) == 0)
 			{
-				// kill group success
-				if (Process_Manager::instance()->remove(pid) == 0)
-				{
-					// removed from Process_Manager, wait outside Process_Manager
-					AttachProcess(pid).wait();
-				}
+				// removed from Process_Manager, wait outside Process_Manager
+				AttachProcess(pid).wait();
+			}
+		}
+		else
+		{
+			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << std::strerror(errno);
+			// use Process_Manager terminate and wait
+			if (Process_Manager::instance()->terminate(pid) == 0)
+			{
+				Process_Manager::instance()->wait(pid);
 			}
 			else
 			{
-				LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << std::strerror(errno);
-				// use Process_Manager terminate and wait
-				if (Process_Manager::instance()->terminate(pid) == 0)
+				// both terminate failed
+				if (Process_Manager::instance()->remove(pid) == 0)
 				{
-					Process_Manager::instance()->wait(pid);
-				}
-				else
-				{
-					// both terminate failed
-					if (Process_Manager::instance()->remove(pid) == 0)
-					{
-						// removed from Process_Manager, wait outside Process_Manager
-						ACE::terminate_process(pid);
-						AttachProcess(pid).wait();
-					}
+					// removed from Process_Manager, wait outside Process_Manager
+					ACE::terminate_process(pid);
+					AttachProcess(pid).wait();
 				}
 			}
-			LOG_DBG << fname << "process <" << pid << "> killed";
 		}
-
-		CLOSE_ACE_HANDLER(m_stdoutHandler);
-		CLOSE_ACE_HANDLER(m_stdinHandler);
+		LOG_DBG << fname << "process <" << pid << "> killed";
 	}
+
+	cleanResource();
 	if (terminated)
 		ProcessExitHandler::terminate(pid);
-	this->cancelTimer(m_stdOutSizeTimerId);
-	this->cancelTimer(m_delayKillTimerId);
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
@@ -218,14 +234,13 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 {
 	const static char fname[] = "AppProcess::delayKill() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-	if (INVALID_TIMER_ID == m_delayKillTimerId)
+	if (!IS_VALID_TIMER_ID(m_timerTerminateId))
 	{
-		m_delayKillTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::terminate, this), from);
+		m_timerTerminateId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::timerTerminate, this), from);
 	}
 	else
 	{
-		LOG_ERR << fname << "already pending for kill with timer id: " << m_delayKillTimerId;
+		LOG_ERR << fname << "already pending for kill by timer ID: " << m_timerTerminateId;
 	}
 }
 
@@ -233,21 +248,20 @@ void AppProcess::registerCheckStdoutTimer()
 {
 	const static char fname[] = "AppProcess::registerCheckStdoutTimer() ";
 
-	if (INVALID_TIMER_ID == m_stdOutSizeTimerId)
+	if (!IS_VALID_TIMER_ID(m_timerCheckStdoutId))
 	{
-		static const int timeoutSec = 20;
-		m_stdOutSizeTimerId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::handleCheckStdout, this), fname);
-		LOG_INF << fname << "register stdout check timer id: " << m_stdOutSizeTimerId;
+		static const int timeoutSec = STDOUT_FILE_SIZE_CHECK_INTERVAL;
+		m_timerCheckStdoutId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::timerCheckStdout, this), fname);
 	}
 	else
 	{
-		LOG_ERR << fname << "already registered stdout check timer id: " << m_delayKillTimerId;
+		LOG_ERR << fname << "already registered stdout check timer ID: " << m_timerTerminateId;
 	}
 }
 
-void AppProcess::handleCheckStdout()
+bool AppProcess::timerCheckStdout()
 {
-	const static char fname[] = "AppProcess::handleCheckStdout() ";
+	const static char fname[] = "AppProcess::timerCheckStdout() ";
 
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
@@ -284,17 +298,15 @@ void AppProcess::handleCheckStdout()
 			}
 		}
 	}
-	// automatic release timer reference when not running
-	if (!this->running())
-	{
-		this->cancelTimer(m_stdOutSizeTimerId);
-	}
+
+	return IS_VALID_TIMER_ID(m_timerCheckStdoutId);
 }
 
 int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize, bool sudoSwitchUser)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
 	// check command file existence & permission
 	auto argv = Utility::str2argv(cmd);
 	auto &cmdRoot = argv.size() > 0 ? argv[0] : cmd;
@@ -352,7 +364,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
 				  {
 					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-					  LOG_DBG << fname << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str(); });
+					  // LOG_DBG << fname << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str();
+				  });
 	option.release_handles();
 	// clean if necessary
 	CLOSE_ACE_HANDLER(m_stdoutHandler);
@@ -371,7 +384,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			755 rwxr-xr-x
 			777 rwxrwxrwx
 		*/
-		m_stdoutHandler = m_stdinHandler = ACE_INVALID_HANDLE;
 		if (m_stdoutFileName.length())
 		{
 			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 0666);
@@ -383,7 +395,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		}
 		if (stdinFileContent != EMPTY_STR_JSON && stdinFileContent != CLOUD_STR_JSON)
 		{
-			m_stdinFileName = Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str());
 			std::ofstream inputFile(m_stdinFileName, std::ios::trunc);
 			if (stdinFileContent.is_string())
 				inputFile << stdinFileContent.get<std::string>();
@@ -543,7 +554,7 @@ void ProcessExitHandler::terminate(pid_t pid)
 	}
 }
 
-void ProcessExitHandler::handleClean()
+bool ProcessExitHandler::handleClean()
 {
 	const static char fname[] = "ProcessExitHandler::handleClean() ";
 
@@ -554,8 +565,14 @@ void ProcessExitHandler::handleClean()
 		LOG_ERR << fname << "cast ProcessExitHandler to AppProcess failed";
 
 	// response standby request
-	ACE_Unbounded_Set<std::shared_ptr<HttpRequestOutputView>> requests;
-	APP_OUT_VIEW_MAP.unbind(m_exitPid, requests);
+	ACE_Unbounded_Set<std::shared_ptr<HttpRequestOutputView>> requests, empty;
+	{
+		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(APP_OUT_VIEW_MAP.mutex());
+		APP_OUT_VIEW_MAP.rebind(m_exitPid, empty, requests);
+		APP_OUT_VIEW_MAP.unbind(m_exitPid);
+	}
 	for (auto &req : requests)
 		req->response();
+
+	return false;
 }

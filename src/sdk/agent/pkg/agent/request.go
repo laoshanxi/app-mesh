@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"fmt"
 	"html"
 
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -9,19 +8,12 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var HMAC *HMACVerify
-
-// Request represents the message sent over TCP
-type Request struct {
-	appmesh.Request
-}
-
-func NewRequest(ctx *fasthttp.RequestCtx) *Request {
+func NewRequest(ctx *fasthttp.RequestCtx) *appmesh.Request {
 	req := &ctx.Request
 	// do not proxy "Connection" header.
 	req.Header.Del("Connection")
 
-	data := new(Request)
+	data := new(appmesh.Request)
 	data.Uuid = xid.New().String()
 	data.HttpMethod = string(req.Header.Method())
 	data.RequestUri = string(req.URI().Path())
@@ -40,13 +32,4 @@ func NewRequest(ctx *fasthttp.RequestCtx) *Request {
 		data.Body = html.UnescapeString(string(req.Body()))
 	}
 	return data
-}
-
-func (r *Request) SetHMACVerify() error {
-	if HMAC != nil {
-		r.Headers[hmacHttpHeader] = HMAC.GenerateHMAC(r.Uuid)
-	} else {
-		return fmt.Errorf("HMAC not initialized")
-	}
-	return nil
 }

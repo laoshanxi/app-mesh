@@ -163,6 +163,11 @@ func startHttpsServer(restAgentAddr string, router *fasthttprouter.Router) {
 		// Set clients to authenticate
 		ClientAuth: clientAuth,
 		ClientCAs:  clientCA,
+
+		// Optimize performance
+		SessionTicketsDisabled: false,
+		ClientSessionCache:     tls.NewLRUClientSessionCache(128),
+		//NextProtos:             []string{"h2", "http/1.1"}, // Enable HTTP/2
 	}
 
 	// start listen

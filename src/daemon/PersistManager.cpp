@@ -1,3 +1,4 @@
+#include <chrono>
 #include <fstream>
 
 #include "../common/os/linux.hpp"
@@ -29,7 +30,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 	auto apps = Configuration::instance()->getApps();
 	for (auto &app : apps)
 	{
-		if (!app->isEnabled() || app->getName() == SEPARATE_AGENT_APP_NAME || app->getName() == SEPARATE_REST_APP_NAME)
+		if (!app->isEnabled() || !app->isPersistAble() || app->getName() == SEPARATE_AGENT_APP_NAME)
 			continue;
 
 		auto pid = app->getpid();
@@ -61,6 +62,13 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 void PersistManager::persistSnapshot()
 {
 	const static char fname[] = "HealthCheckTask::persistSnapshot() ";
+
+	// only do this every minute.
+	static std::chrono::system_clock::time_point lastExecuteTime = std::chrono::system_clock::now();
+	auto now = std::chrono::system_clock::now();
+	if (std::chrono::duration_cast<std::chrono::seconds>(now - lastExecuteTime).count() < 60)
+		return;
+	lastExecuteTime = now;
 
 	try
 	{

@@ -101,7 +101,7 @@ std::shared_ptr<Ldap::Server> LdapImpl::connect()
     return nullptr;
 }
 
-void LdapImpl::syncGroupUsers()
+bool LdapImpl::syncGroupUsers()
 {
     const static char fname[] = "LdapImpl::syncGroupUsers() ";
     LOG_DBG << fname;
@@ -139,10 +139,11 @@ void LdapImpl::syncGroupUsers()
         LOG_WAR << fname << ex.what();
     }
 
-    if (m_syncTimerId == INVALID_TIMER_ID && m_ldap->m_syncSeconds > 0)
+    if (!IS_VALID_TIMER_ID(m_syncTimerId) && m_ldap->m_syncSeconds > 0)
     {
         m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, std::bind(&LdapImpl::syncGroupUsers, this), fname);
     }
+    return true;
 }
 
 bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &userKey)

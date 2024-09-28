@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -33,7 +34,7 @@ public:
     static std::shared_ptr<LdapImpl> FromJson(const nlohmann::json &obj) noexcept(false);
 
     static void init(const std::string &interface);
-    void syncGroupUsers();
+    bool syncGroupUsers();
 
 public:
     virtual bool verifyUserKey(const std::string &userName, const std::string &userKey) override;
@@ -58,5 +59,5 @@ private:
 
 private:
     std::shared_ptr<JsonLdap> m_ldap;
-    long m_syncTimerId;
+    std::atomic_long m_syncTimerId;
 };

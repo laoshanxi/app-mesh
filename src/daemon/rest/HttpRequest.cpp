@@ -156,7 +156,7 @@ HttpRequestWithAppRef::~HttpRequestWithAppRef()
 // HttpRequest used to handle view app output
 ////////////////////////////////////////////////////////////////////////////////
 HttpRequestOutputView::HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
-	: HttpRequest(message), m_delayReplyTimerId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_app(appObj)
+	: HttpRequest(message), m_timerResponseId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_app(appObj)
 {
 }
 HttpRequestOutputView::~HttpRequestOutputView()
@@ -173,7 +173,7 @@ void HttpRequestOutputView::init()
 	if (AppProcess::running(m_pid) && timeout > 0)
 	{
 		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(TimerHandler::shared_from_this()));
-		m_delayReplyTimerId = this->registerTimer(1000L * timeout, 0, std::bind(&HttpRequestOutputView::response, this), fname);
+		m_timerResponseId = this->registerTimer(1000L * timeout, 0, std::bind(&HttpRequestOutputView::timerResponse, this), fname);
 
 		LOG_DBG << fname << "app <" << m_app->getName() << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();
 	}
@@ -185,13 +185,19 @@ void HttpRequestOutputView::init()
 
 void HttpRequestOutputView::response()
 {
-	const static char fname[] = "HttpRequestOutputView::response() ";
+	this->cancelTimer(m_timerResponseId);
+	timerResponse();
+}
+
+bool HttpRequestOutputView::timerResponse()
+{
+	const static char fname[] = "HttpRequestOutputView::timerResponse() ";
 	LOG_DBG << fname;
 	try
 	{
+		CLEAR_TIMER_ID(m_timerResponseId);
 		if (!m_httpRequestReplyFlag.test_and_set())
 		{
-			this->cancelTimer(m_delayReplyTimerId);
 			long pos = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
 			int index = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
 			long maxSize = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
@@ -238,11 +244,13 @@ void HttpRequestOutputView::response()
 				output = jsonArray.dump();
 			}
 			HttpRequest::reply(web::http::status_codes::OK, output, headers);
+			m_app.reset();
 		}
-		m_app.reset();
 	}
 	catch (const std::exception &e)
 	{
 		HttpRequest::reply(web::http::status_codes::ExpectationFailed);
+		m_app.reset();
 	}
+	return false;
 }

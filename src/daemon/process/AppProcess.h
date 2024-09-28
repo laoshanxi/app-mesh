@@ -50,7 +50,7 @@ public:
 	void terminate(pid_t pid);
 
 private:
-	void handleClean();
+	bool handleClean();
 
 private:
 	std::atomic<pid_t> m_exitPid;
@@ -87,7 +87,7 @@ public:
 	/// Set process exit code
 	/// </summary>
 	virtual void onExit(int exitCode);
-	virtual void handleAppExit();
+	bool timerHandleAppExit();
 
 	/// <summary>
 	/// Process running status
@@ -148,6 +148,16 @@ public:
 	virtual void terminate();
 
 	/// <summary>
+	/// terminate for Timer
+	/// </summary>
+	bool timerTerminate();
+
+	/// <summary>
+	/// clean OS resources
+	/// </summary>
+	void cleanResource();
+
+	/// <summary>
 	/// set resource limitation
 	/// </summary>
 	/// <param name="limit"></param>
@@ -167,7 +177,7 @@ public:
 	/// <summary>
 	/// check stdout file size
 	/// </summary>
-	void handleCheckStdout();
+	bool timerCheckStdout();
 
 	/// <summary>
 	/// Start process
@@ -210,13 +220,13 @@ protected:
 	const void *m_owner;
 
 private:
-	long m_delayKillTimerId;
-	long m_stdOutSizeTimerId;
+	std::atomic_long m_timerTerminateId;
+	std::atomic_long m_timerCheckStdoutId;
 	off_t m_stdOutMaxSize;
-	mutable std::recursive_mutex m_processMutex; // handleCheckStdout, delayKill, terminate
+	mutable std::recursive_mutex m_processMutex; // timerCheckStdout, terminate, spawnProcess
 
-	ACE_HANDLE m_stdinHandler;
-	ACE_HANDLE m_stdoutHandler;
+	std::atomic<ACE_HANDLE> m_stdinHandler;
+	std::atomic<ACE_HANDLE> m_stdoutHandler;
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;

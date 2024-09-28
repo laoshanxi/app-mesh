@@ -1,4 +1,4 @@
-package agent
+package cloud
 
 import (
 	"crypto/hmac"
@@ -23,6 +23,7 @@ const (
 var (
 	errNoSHMName      = errors.New("no SHM_NAME env found")
 	errPSKAlreadyRead = errors.New("PSK has already been read")
+	HMAC              *HMACVerify
 )
 
 // Hash-based Message Authentication Code

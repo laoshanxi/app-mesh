@@ -34,7 +34,7 @@ Application::Application()
 	  m_startTime(AppTimer::EPOCH_ZERO_TIME), m_endTime(std::chrono::system_clock::time_point::max()),
 	  m_startInterval(0), m_bufferTime(0), m_startIntervalValueIsCronExpr(false),
 	  m_nextStartTimerId(INVALID_TIMER_ID), m_regTime(std::chrono::system_clock::now()), m_appId(Utility::createUUID()),
-	  m_version(0), m_suicideTimerId(INVALID_TIMER_ID),
+	  m_version(0), m_timerRemoveId(INVALID_TIMER_ID),
 	  m_pid(ACE_INVALID_PID), m_return(INVALID_RETURN_CODE), m_health(true), m_status(STATUS::ENABLED), m_starts(std::make_shared<prometheus::Counter>())
 {
 	const static char fname[] = "Application::Application() ";
@@ -184,9 +184,9 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 	// TODO: consider i18n and  legal file name
-	const auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout").string();
-	Utility::createDirectory(outputDir);
-	app->m_stdoutFile = Utility::stringFormat("%s/appmesh.%s.out", outputDir.c_str(), app->m_name.c_str());
+	const static auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout");
+	const auto fileName = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
+	app->m_stdoutFile = (outputDir / fileName).string();
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_cache_num);
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 	app->m_stdoutCacheSize = app->m_stdoutFileQueue->size();
@@ -409,9 +409,17 @@ void Application::execute(void *ptree)
 	}
 }
 
-void Application::spawn()
+bool Application::timerSpawn()
 {
-	const static char fname[] = "Application::spawn() ";
+	const static char fname[] = "Application::timerSpawn() ";
+
+	auto timerId = m_nextStartTimerId.exchange(INVALID_TIMER_ID);
+	if (!IS_VALID_TIMER_ID(timerId))
+	{
+		LOG_WAR << fname << "application <" << m_name << "> not avialable any more, skip spawn.";
+		return false;
+	}
+
 	std::shared_ptr<AppProcess> checkProcStdoutFile;
 	if (this->isEnabled())
 	{
@@ -460,6 +468,8 @@ void Application::spawn()
 	// 5. registerCheckStdoutTimer() outside of m_appMutex
 	if (checkProcStdoutFile)
 		checkProcStdoutFile->registerCheckStdoutTimer();
+
+	return false;
 }
 
 void Application::disable()
@@ -467,9 +477,7 @@ void Application::disable()
 	const static char fname[] = "Application::disable() ";
 
 	// clean old timer
-	long timerId = INVALID_TIMER_ID;
-	timerId = m_nextStartTimerId.exchange(timerId);
-	this->cancelTimer(timerId);
+	this->cancelTimer(m_nextStartTimerId);
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	auto enabled = STATUS::ENABLED;
@@ -545,7 +553,7 @@ std::string Application::runApp(int timeoutSeconds)
 	{
 		m_health = true;
 		if (timeoutSeconds > 0)
-			m_process->delayKill(timeoutSeconds, __FUNCTION__);
+			m_process->delayKill(timeoutSeconds, fname);
 	}
 	else
 	{
@@ -915,19 +923,17 @@ void Application::destroy()
 {
 	const static char fname[] = "Application::destroy() ";
 
-	LOG_DBG << fname << "suicideTimerId: " << m_suicideTimerId.load() << " nextStartTimerId: " << m_nextStartTimerId.load();
+	LOG_DBG << fname << "suicide timer ID: " << m_timerRemoveId.load() << " nextStartTimerId: " << m_nextStartTimerId.load();
 	this->disable();
 	this->m_status.store(STATUS::NOTAVIALABLE);
-	auto timerId = INVALID_TIMER_ID;
-	timerId = m_suicideTimerId.exchange(timerId);
-	this->cancelTimer(timerId);
-	timerId = m_nextStartTimerId.exchange(timerId);
-	this->cancelTimer(timerId);
+	this->cancelTimer(m_timerRemoveId);
+	this->cancelTimer(m_nextStartTimerId);
 }
 
-void Application::handleRemove()
+bool Application::timerRemove()
 {
-	const static char fname[] = "Application::handleRemove() ";
+	const static char fname[] = "Application::timerRemove() ";
+	CLEAR_TIMER_ID(m_timerRemoveId);
 	try
 	{
 		Configuration::instance()->removeApp(m_name);
@@ -936,6 +942,7 @@ void Application::handleRemove()
 	{
 		LOG_ERR << fname;
 	}
+	return false;
 }
 
 void Application::onExitUpdate(int code)
@@ -949,6 +956,7 @@ void Application::onExitUpdate(int code)
 	if (code != 0 && m_process)
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, m_process->startError().c_str()));
 	// this->registerTimer(0, 0, std::bind(&Application::handleError, this), fname);
+	this->cancelTimer(m_timerRemoveId);
 }
 
 void Application::terminate(std::shared_ptr<AppProcess> &process)
@@ -990,7 +998,7 @@ void Application::handleError()
 	case AppBehavior::Action::KEEPALIVE:
 		// keep alive always, used for period run
 		m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-		this->registerTimer(0, 0, std::bind(&Application::spawn, this), fname);
+		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::timerSpawn, this), fname);
 		LOG_DBG << fname << "next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -1006,35 +1014,26 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 {
 	const static char fname[] = "Application::scheduleNext() ";
 
-	long timerId = INVALID_TIMER_ID;
 	auto next = m_timer->nextTime(now);
-
-	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
 	if (next != AppTimer::EPOCH_ZERO_TIME)
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(next);
-		LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(next);
-	}
-
-	// 2. register timer
-	if (next != AppTimer::EPOCH_ZERO_TIME)
-	{
+		// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
+		{
+			std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+			m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(next);
+			LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(next);
+		}
+		// 2. register timer
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
-		timerId = this->registerTimer(delay, 0, std::bind(&Application::spawn, this), fname);
-	}
-
-	// 3. update timer id
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (timerId > INVALID_TIMER_ID)
-	{
-		m_nextStartTimerId = timerId;
-		LOG_DBG << fname << "next start timer id <" << m_nextStartTimerId << ">";
+		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::timerSpawn, this), fname);
+		LOG_DBG << fname << "next start timer ID <" << m_nextStartTimerId << ">";
 	}
 	else
 	{
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		m_nextLaunchTime.reset();
 	}
+
 	return m_nextLaunchTime;
 }
 
@@ -1042,11 +1041,9 @@ void Application::regSuicideTimer(int timeoutSeconds)
 {
 	const static char fname[] = "Application::regSuicideTimer() ";
 
-	long timerId = INVALID_TIMER_ID;
-	timerId = m_suicideTimerId.exchange(timerId);
-	this->cancelTimer(timerId);
-	LOG_DBG << fname << "application " << getName() << "will be removed after <" << timeoutSeconds << "> seconds";
-	m_suicideTimerId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::handleRemove, this), fname);
+	this->cancelTimer(m_timerRemoveId);
+	LOG_DBG << fname << "application <" << getName() << "> will be removed after <" << timeoutSeconds << "> seconds";
+	m_timerRemoveId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::timerRemove, this), fname);
 }
 
 void Application::setLastError(const std::string &error)

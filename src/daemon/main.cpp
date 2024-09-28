@@ -10,6 +10,7 @@
 #include <ace/Reactor.h>
 #include <ace/SSL/SSL_Context.h>
 #include <ace/SSL/SSL_SOCK_Acceptor.h>
+#include <ace/TP_Reactor.h>
 #include <boost/filesystem.hpp>
 
 #include "../common/TimerHandler.h"
@@ -36,19 +37,22 @@
 typedef ACE_Acceptor<TcpHandler, ACE_SSL_SOCK_Acceptor> TcpAcceptor; // Specialize a Tcp Acceptor.
 static std::vector<std::unique_ptr<std::thread>> m_threadPool;
 
+void runReactorEvent(ACE_Reactor *reactor);
+int endReactorEvent(ACE_Reactor *reactor);
+
 int main(int argc, char *argv[])
 {
 	const static char fname[] = "main() ";
 	PRINT_VERSION();
 #ifndef NDEBUG
-	// enable valgrind in debug mode
-	VALGRIND_ENTRYPOINT_ONE_TIME(argv);
+	VALGRIND_ENTRYPOINT_ONE_TIME(argv); // enable valgrind in debug mode
 #endif
 
 	try
 	{
 		ACE::init();
 		// ACE::set_handle_limit(); // TODO: this will cause timer issue.
+
 		// create pid file: /var/run/appmesh.pid
 		Utility::createPidFile();
 
@@ -59,14 +63,15 @@ int main(int argc, char *argv[])
 		// ACE_OS::umask(0000);
 
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
-		TIMER_MANAGER::instance()->reactor()->open(ACE::max_handles());
-		if (!ACE_Reactor::instance()->initialized() || !TIMER_MANAGER::instance()->reactor()->initialized())
+		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
+		ACE_Reactor::instance()->open(ACE::max_handles());
+		if (!ACE_Reactor::instance()->initialized())
 		{
 			std::cerr << "Init reactor failed with error " << std::strerror(errno);
 			return -1;
 		}
 
-		// init log, before this, do not use logger
+		// Initialize logging. IMPORTANT: Do not use logger before this point
 		Utility::initLogging("server");
 		LOG_INF << fname << "Build: " << __MICRO_VAR__(BUILD_TAG);
 		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
@@ -97,11 +102,20 @@ int main(int argc, char *argv[])
 		// working dir
 		Utility::createDirectory(config->getWorkDir());
 		fs::current_path(config->getWorkDir());
-		auto tmpDir = (fs::path(config->getWorkDir()) / "tmp").string();
+		const auto tmpDir = (fs::path(config->getWorkDir()) / "tmp").string();
+		const auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout").string();
+		const auto inputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdin").string();
+		const auto shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 		Utility::createDirectory(tmpDir);
+		Utility::createDirectory(outputDir);
+		Utility::createDirectory(inputDir);
+		Utility::createDirectory(shellDir);
 		if (!Configuration::instance()->getDefaultExecUser().empty())
 		{
 			os::chown(tmpDir, Configuration::instance()->getDefaultExecUser(), false);
+			os::chown(outputDir, Configuration::instance()->getDefaultExecUser(), false);
+			os::chown(inputDir, Configuration::instance()->getDefaultExecUser(), false);
+			os::chown(shellDir, Configuration::instance()->getDefaultExecUser(), false);
 		}
 
 		// set log level
@@ -117,13 +131,14 @@ int main(int argc, char *argv[])
 			std::ofstream(consulConfigTarget) << Utility::readFileCpp(consulConfigSource);
 		}
 
-		// Register QUIT_HANDLER to receive SIGINT commands.
-		TIMER_MANAGER::instance()->reactor()->register_handler(SIGINT, QUIT_HANDLER::instance());
-		TIMER_MANAGER::instance()->reactor()->register_handler(SIGTERM, QUIT_HANDLER::instance());
-		// process manager share timer threads and reactor, do open before start threads
-		Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, TIMER_MANAGER::instance()->reactor());
-		// threads for timer (application & process event & healthcheck & consul report event)
-		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, TIMER_MANAGER::instance()->reactor())));
+		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
+		ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
+		Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, ACE_Reactor::instance());
+		// start <1> thread for pooled reactor to handle <Process_Manager> & <ACE_Acceptor>
+		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&runReactorEvent, ACE_Reactor::instance())));
+
+		// start <1> thread for timer event
+		TIMER_MANAGER::instance()->activate();
 
 		// init REST
 		TcpClient client;
@@ -132,9 +147,9 @@ int main(int argc, char *argv[])
 		if (config->getRestEnabled())
 		{
 			TcpHandler::initTcpSSL(ACE_SSL_Context::instance());
-			// thread for TCP reactor
-			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&TimerManager::runReactorEvent, ACE_Reactor::instance())));
-			// threads for REST service pool
+			// start <1> thread for pooled reactor to handle <Process_Manager> & <ACE_Acceptor>
+			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&runReactorEvent, ACE_Reactor::instance())));
+			// start <2> threads for TCP REST service pool
 			for (size_t i = 0; i < Configuration::instance()->getThreadPoolSize(); i++)
 			{
 				m_threadPool.push_back(std::make_unique<std::thread>(TcpHandler::handleTcpRest));
@@ -158,7 +173,7 @@ int main(int argc, char *argv[])
 			config->registerPrometheus();
 		}
 
-		// HA attach process to App
+		// High Availability: Attach existing processes to Applications
 		auto snap = std::make_shared<Snapshot>();
 		auto apps = config->getApps();
 		auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
@@ -192,7 +207,7 @@ int main(int argc, char *argv[])
 			ConsulConnection::instance()->init(consulSsnIdFromRecover);
 		}
 
-		// monitor applications
+		// Main application monitoring loop
 		int tcpErrorCounter = 0;
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
@@ -227,6 +242,8 @@ int main(int argc, char *argv[])
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
+				if (!app->isPersistAble())
+					continue;
 				try
 				{
 					app->execute((void *)(&ptree));
@@ -251,9 +268,7 @@ int main(int argc, char *argv[])
 		LOG_ERR << fname << "unknown exception";
 	}
 
-	TIMER_MANAGER::instance()->reactor()->end_reactor_event_loop();
-	TIMER_MANAGER::instance()->reactor()->close();
-	ACE_Reactor::instance()->end_reactor_event_loop();
+	endReactorEvent(ACE_Reactor::instance());
 	TcpHandler::closeMsgQueue();
 	for (const auto &t : m_threadPool)
 		t->join();
@@ -261,4 +276,32 @@ int main(int argc, char *argv[])
 	// Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
 	return 0;
+}
+
+/**
+ * @brief Use ACE_Reactor for timer event, block function, should be used in a thread.
+ */
+void runReactorEvent(ACE_Reactor *reactor)
+{
+	const static char fname[] = "runReactorEvent() ";
+	LOG_DBG << fname << "Entered";
+
+	reactor->owner(ACE_OS::thr_self());
+	while (QUIT_HANDLER::instance()->is_set() == 0 && !reactor->reactor_event_loop_done())
+	{
+		reactor->run_reactor_event_loop();
+		LOG_WAR << fname << "reactor_event_loop";
+	}
+	LOG_WAR << fname << "Exit";
+}
+
+/**
+ * @brief End ACE_Reactor event loop.
+ */
+int endReactorEvent(ACE_Reactor *reactor)
+{
+	const static char fname[] = "endReactorEvent() ";
+	LOG_DBG << fname << "Entered";
+
+	return reactor->end_reactor_event_loop();
 }
