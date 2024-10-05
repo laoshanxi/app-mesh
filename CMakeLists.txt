@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.5)
 string(TIMESTAMP APPMESH_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ")
 
 ##########################################################################
@@ -155,7 +155,7 @@ if(NOT APPMESH_NO_TESTS)
     # Python test
     #add_test(
     #    NAME python_tests
-    #    COMMAND python3 -m unittest ${CMAKE_SOURCE_DIR}/src/sdk/python/tests/test_appmesh_client.py 
+    #    COMMAND python3 -m unittest ${CMAKE_SOURCE_DIR}/src/sdk/python/test/test_appmesh_client.py 
     #)
     # Golang test
     #add_test(
@@ -164,7 +164,7 @@ if(NOT APPMESH_NO_TESTS)
     #)
     add_custom_target(python_tests
         COMMAND python3 -m unittest
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/sdk/python/tests/
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/sdk/python/test/
         COMMENT "Running Python tests..."
         VERBATIM
     )

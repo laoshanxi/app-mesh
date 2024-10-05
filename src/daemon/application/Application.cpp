@@ -142,6 +142,24 @@ void Application::setUnPersistable()
 	m_persistAble = false;
 }
 
+void Application::nextLaunchTime(const std::chrono::system_clock::time_point &time)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	if (time == AppTimer::EPOCH_ZERO_TIME)
+		m_nextLaunchTime.reset();
+	else
+		m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(time);
+}
+
+const boost::shared_ptr<std::chrono::system_clock::time_point> Application::nextLaunchTime()
+{
+	// boost::shared_ptr is not thread-safe, so return copy here
+	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	if (!m_nextLaunchTime)
+		return nullptr; // Return null if m_nextLaunchTime is not set
+	return boost::make_shared<std::chrono::system_clock::time_point>(*m_nextLaunchTime);
+}
+
 bool Application::available(const std::chrono::system_clock::time_point &now)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
@@ -350,7 +368,7 @@ bool Application::attach(int pid)
 		{
 			// recover m_nextLaunchTime to avoid restart
 			m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(stat->get_starttime());
-			m_nextLaunchTime = m_procStartTime;
+			nextLaunchTime(stat->get_starttime());
 		}
 		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name << ", last start on: " << DateTime::formatLocalTime(*m_procStartTime);
 		if (m_process->running())
@@ -377,9 +395,9 @@ void Application::execute(void *ptree)
 			LOG_INF << fname << DateTime::formatLocalTime(now) << " Application <" << m_name << "> was not in start time, startTime:" << DateTime::formatLocalTime(m_startTime) << " endTime:" << DateTime::formatLocalTime(m_endTime);
 			terminate(m_process);
 			setInvalidError();
-			m_nextLaunchTime.reset();
+			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
-		scheduleNextRun = (m_nextLaunchTime == nullptr);
+		scheduleNextRun = (nextLaunchTime() == nullptr);
 	}
 	else if (getStatus() != STATUS::NOTAVIALABLE)
 	{
@@ -390,7 +408,7 @@ void Application::execute(void *ptree)
 			LOG_INF << fname << "Application <" << m_name << "> was not available";
 			terminate(m_process);
 			setInvalidError();
-			m_nextLaunchTime.reset();
+			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
 	}
 
@@ -409,9 +427,9 @@ void Application::execute(void *ptree)
 	}
 }
 
-bool Application::timerSpawn()
+bool Application::onTimerSpawn()
 {
-	const static char fname[] = "Application::timerSpawn() ";
+	const static char fname[] = "Application::onTimerSpawn() ";
 
 	auto timerId = m_nextStartTimerId.exchange(INVALID_TIMER_ID);
 	if (!IS_VALID_TIMER_ID(timerId))
@@ -487,7 +505,7 @@ void Application::disable()
 	}
 	// kill process
 	terminate(m_process);
-	m_nextLaunchTime.reset();
+	nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 	setInvalidError();
 
 	save();
@@ -930,9 +948,9 @@ void Application::destroy()
 	this->cancelTimer(m_nextStartTimerId);
 }
 
-bool Application::timerRemove()
+bool Application::onTimerAppRemove()
 {
-	const static char fname[] = "Application::timerRemove() ";
+	const static char fname[] = "Application::onTimerAppRemove() ";
 	CLEAR_TIMER_ID(m_timerRemoveId);
 	try
 	{
@@ -956,7 +974,6 @@ void Application::onExitUpdate(int code)
 	if (code != 0 && m_process)
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, m_process->startError().c_str()));
 	// this->registerTimer(0, 0, std::bind(&Application::handleError, this), fname);
-	this->cancelTimer(m_timerRemoveId);
 }
 
 void Application::terminate(std::shared_ptr<AppProcess> &process)
@@ -997,8 +1014,8 @@ void Application::handleError()
 		break;
 	case AppBehavior::Action::KEEPALIVE:
 		// keep alive always, used for period run
-		m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::timerSpawn, this), fname);
+		nextLaunchTime(std::chrono::system_clock::now());
+		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::onTimerSpawn, this), fname);
 		LOG_DBG << fname << "next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -1015,26 +1032,19 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 	const static char fname[] = "Application::scheduleNext() ";
 
 	auto next = m_timer->nextTime(now);
+
+	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
+	nextLaunchTime(next);
+
 	if (next != AppTimer::EPOCH_ZERO_TIME)
 	{
-		// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
-		{
-			std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-			m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(next);
-			LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(next);
-		}
 		// 2. register timer
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
-		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::timerSpawn, this), fname);
-		LOG_DBG << fname << "next start timer ID <" << m_nextStartTimerId << ">";
-	}
-	else
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		m_nextLaunchTime.reset();
+		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::onTimerSpawn, this), fname);
+		LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(next) << "start timer ID <" << m_nextStartTimerId << ">";
 	}
 
-	return m_nextLaunchTime;
+	return nextLaunchTime();
 }
 
 void Application::regSuicideTimer(int timeoutSeconds)
@@ -1043,7 +1053,7 @@ void Application::regSuicideTimer(int timeoutSeconds)
 
 	this->cancelTimer(m_timerRemoveId);
 	LOG_DBG << fname << "application <" << getName() << "> will be removed after <" << timeoutSeconds << "> seconds";
-	m_timerRemoveId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::timerRemove, this), fname);
+	m_timerRemoveId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onTimerAppRemove, this), fname);
 }
 
 void Application::setLastError(const std::string &error)

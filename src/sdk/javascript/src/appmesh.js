@@ -680,7 +680,7 @@ class AppMeshClient {
    */
   @validate_params({ tagName: [["isValidName", "Tag name must be a non-empty string"]] })
   async tag_add(tagName, tagValue) {
-    const response = await this._request("put", `/appmesh/label/${tagName}`, null, { params: { value: tagValue }, headers: headers });
+    const response = await this._request("put", `/appmesh/label/${tagName}`, null, { params: { value: tagValue } });
     return response.status === 200;
   }
 

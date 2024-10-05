@@ -140,7 +140,7 @@ public:
 	void init();
 
 	void response();
-	bool timerResponse();
+	bool onTimerResponse();
 
 private:
 	std::atomic_long m_timerResponseId;

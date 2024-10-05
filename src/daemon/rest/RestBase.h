@@ -66,7 +66,7 @@ protected:
 
 #define REST_INFO_PRINT                       \
     LOG_DBG                                   \
-        << " fname: " << __FUNCTION__         \
+        << "Function: " << __FUNCTION__         \
         << " Method: " << message.m_method    \
         << " URI: " << message.m_relative_uri \
         << " Remote: " << message.m_remote_address;

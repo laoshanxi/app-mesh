@@ -58,7 +58,7 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
-            cd /work/src/sdk/python/tests/
+            cd /work/src/sdk/python/test/
             python3 -m unittest
 
       - name: test ubuntu:22
@@ -90,7 +90,7 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
-            cd /work/src/sdk/python/tests/
+            cd /work/src/sdk/python/test/
             python3 -m unittest
 
       - name: test ubuntu:24
@@ -122,7 +122,7 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --break-system-packages --upgrade appmesh pyotp
-            cd /work/src/sdk/python/tests/
+            cd /work/src/sdk/python/test/
             python3 -m unittest
 
       - name: test centos:7
@@ -158,5 +158,5 @@ jobs:
             # test appmesh python sdk
             yum install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
-            cd /work/src/sdk/python/tests/
+            cd /work/src/sdk/python/test/
             python3 -m unittest

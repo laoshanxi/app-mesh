@@ -1076,6 +1076,16 @@ void ArgumentParser::unregSignal()
 pid_t get_bash_pid()
 {
 	pid_t pid = getpid();
+
+	// VSCode uses an integrated terminal that spawns its own Bash shell process.
+	// This shell process remains persistent across terminal sessions,
+	// meaning that the same Bash process is reused for all the commands executed in that terminal
+	// until you explicitly close the terminal or VSCode.
+	if (getenv("VSCODE_PID"))
+	{
+		return pid;
+	}
+
 	pid_t ppid = getppid();
 
 	while (ppid != 1) // 1 is the init process

@@ -5,6 +5,9 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFileAttributeView;
@@ -28,21 +31,19 @@ import javax.net.ssl.X509TrustManager;
 
 import org.threeten.extra.PeriodDuration;
 
-public class AppMeshUtils {
-    private static final Logger LOGGER = Logger.getLogger(AppMeshUtils.class.getName());
+public class Utils {
+    private static final Logger LOGGER = Logger.getLogger(Utils.class.getName());
 
     public static void disableSSLVerification() throws Exception {
-        TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
+        TrustManager[] trustAllCerts = new TrustManager[] {new X509TrustManager() {
             public X509Certificate[] getAcceptedIssuers() {
                 return null;
             }
 
-            public void checkClientTrusted(X509Certificate[] certs, String authType) {
-            }
+            public void checkClientTrusted(X509Certificate[] certs, String authType) {}
 
-            public void checkServerTrusted(X509Certificate[] certs, String authType) {
-            }
-        } };
+            public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+        }};
 
         SSLContext sc = SSLContext.getInstance("TLS");
         sc.init(null, trustAllCerts, new java.security.SecureRandom());
@@ -86,38 +87,47 @@ public class AppMeshUtils {
         throw new IllegalArgumentException("Invalid input type. Expected number or ISO 8601 duration string.");
     }
 
+    public static URL toUrl(String url) throws IOException {
+        try {
+            URI uri = new URI(url);
+            return uri.toURL();
+        } catch (URISyntaxException e) {
+            throw new IOException("Invalid URL syntax", e);
+        }
+    }
+
     public static int getFilePermissions(File file) throws IOException {
         Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(file.toPath());
         int mode = 0;
         for (PosixFilePermission permission : permissions) {
             switch (permission) {
-            case OWNER_READ:
-                mode |= 0400;
-                break;
-            case OWNER_WRITE:
-                mode |= 0200;
-                break;
-            case OWNER_EXECUTE:
-                mode |= 0100;
-                break;
-            case GROUP_READ:
-                mode |= 040;
-                break;
-            case GROUP_WRITE:
-                mode |= 020;
-                break;
-            case GROUP_EXECUTE:
-                mode |= 010;
-                break;
-            case OTHERS_READ:
-                mode |= 04;
-                break;
-            case OTHERS_WRITE:
-                mode |= 02;
-                break;
-            case OTHERS_EXECUTE:
-                mode |= 01;
-                break;
+                case OWNER_READ:
+                    mode |= 0400;
+                    break;
+                case OWNER_WRITE:
+                    mode |= 0200;
+                    break;
+                case OWNER_EXECUTE:
+                    mode |= 0100;
+                    break;
+                case GROUP_READ:
+                    mode |= 040;
+                    break;
+                case GROUP_WRITE:
+                    mode |= 020;
+                    break;
+                case GROUP_EXECUTE:
+                    mode |= 010;
+                    break;
+                case OTHERS_READ:
+                    mode |= 04;
+                    break;
+                case OTHERS_WRITE:
+                    mode |= 02;
+                    break;
+                case OTHERS_EXECUTE:
+                    mode |= 01;
+                    break;
             }
         }
         return mode;

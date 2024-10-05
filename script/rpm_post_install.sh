@@ -17,8 +17,12 @@ fi
 # systemd environment file: ${PROG_HOME}/script/appmesh.environment
 cat /dev/null >${PROG_HOME}/script/appmesh.environment
 echo "LD_LIBRARY_PATH=/opt/appmesh/lib64:$LD_LIBRARY_PATH" >>${PROG_HOME}/script/appmesh.environment
-echo "LANG=en_US.UTF-8" >>${PROG_HOME}/script/appmesh.environment
-echo "LC_ALL=en_US.UTF-8" >>${PROG_HOME}/script/appmesh.environment
+if locale -a | grep -qi "en_US.utf8\|en_US.UTF-8"; then
+	echo "LANG=en_US.UTF-8" >>${PROG_HOME}/script/appmesh.environment
+	echo "LC_ALL=en_US.UTF-8" >>${PROG_HOME}/script/appmesh.environment
+else
+	echo "Failed to set default locale [en_US.UTF-8], not available"
+fi
 for e in $(env); do
 	key=$(echo $e | awk -F"=" '{print $1}')
 	val=$(echo $e | awk -F"=" '{print $2}')
@@ -115,4 +119,3 @@ if [ "$APPMESH_SECURE_INSTALLATION" = "Y" ]; then
 	/usr/bin/appc appmginit
 fi
 echo "Install App Mesh complete"
-

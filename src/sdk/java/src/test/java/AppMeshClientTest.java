@@ -70,7 +70,7 @@ public class AppMeshClientTest {
     public void testApp() throws Exception {
         client.login(USERNAME, PASSWORD, null, "P1W");
 
-        AppMeshClient.AppOutput out = client.appOutput("ping", 0, 0, 0, "", 0); // System.out.println(out.httpBody);
+        client.appOutput("ping", 0, 0, 0, "", 0); // System.out.println(out.httpBody);
 
         boolean appDisable = client.appDisable("ping");
         assertTrue(appDisable, "appDisable");
@@ -119,11 +119,19 @@ public class AppMeshClientTest {
     }
 
     @Test
+    public void testUser() throws IOException {
+        client.login(USERNAME, PASSWORD, null, "P1W");
+        System.out.println(client.permissionsForUser().toString());
+        System.out.println(client.userSelf().toString());
+        System.out.println(client.rolesView().toString());
+    }
+
+    @Test
     public void testAppAddAndView() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W");
 
-        JSONObject newAppConfig = new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'").put("description",
-                "Test application");
+        JSONObject newAppConfig =
+                new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'").put("description", "Test application");
 
         JSONObject addedApp = client.appAdd("testApp", newAppConfig);
         assertNotNull(addedApp, "appAdd should return a non-null JSONObject");
@@ -132,5 +140,25 @@ public class AppMeshClientTest {
         JSONObject viewedApp = client.appView("testApp");
         assertNotNull(viewedApp, "appView for 'testApp' should return a non-null JSONObject");
         assertEquals("testApp", viewedApp.getString("name"), "Viewed app should have the correct name");
+    }
+
+    @Test
+    public void testHostResources() throws IOException {
+        client.login(USERNAME, PASSWORD, null, "P1W");
+        System.out.println(client.hostResources().toString());
+        System.out.println(client.configView().toString());
+        assertEquals("DEBUG", client.logLevel("DEBUG").toString());
+    }
+
+    @Test
+    public void testTag() throws IOException {
+        client.login(USERNAME, PASSWORD, null, "P1W");
+        System.out.println(client.tagView().toString());
+        System.out.println(client.tagAdd("ABC", "DEF"));
+        assertTrue(client.tagView().containsKey("ABC"));
+        assertTrue(client.tagDelete("ABC"));
+        assertTrue(!client.tagView().containsKey("ABC"));
+
+        System.out.println(client.mertic());
     }
 }
