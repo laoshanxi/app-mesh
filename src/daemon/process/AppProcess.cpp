@@ -88,10 +88,10 @@ void AppProcess::onExit(int exitCode)
 	cleanResource();
 
 	// notify App exit event
-	this->registerTimer(0, 0, std::bind(&AppProcess::timerHandleAppExit, this), fname);
+	this->registerTimer(0, 0, std::bind(&AppProcess::onTimerAppExit, this), fname);
 }
 
-bool AppProcess::timerHandleAppExit()
+bool AppProcess::onTimerAppExit()
 {
 	if (m_owner)
 	{
@@ -150,7 +150,7 @@ pid_t AppProcess::wait(ACE_exitcode *status)
 	return Process_Manager::instance()->wait(m_pid, status);
 }
 
-bool AppProcess::timerTerminate()
+bool AppProcess::onTimerTerminate()
 {
 	CLEAR_TIMER_ID(m_timerTerminateId);
 	terminate();
@@ -236,7 +236,7 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 
 	if (!IS_VALID_TIMER_ID(m_timerTerminateId))
 	{
-		m_timerTerminateId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::timerTerminate, this), from);
+		m_timerTerminateId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::onTimerTerminate, this), from);
 	}
 	else
 	{
@@ -251,7 +251,7 @@ void AppProcess::registerCheckStdoutTimer()
 	if (!IS_VALID_TIMER_ID(m_timerCheckStdoutId))
 	{
 		static const int timeoutSec = STDOUT_FILE_SIZE_CHECK_INTERVAL;
-		m_timerCheckStdoutId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::timerCheckStdout, this), fname);
+		m_timerCheckStdoutId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::onTimerCheckStdout, this), fname);
 	}
 	else
 	{
@@ -259,9 +259,9 @@ void AppProcess::registerCheckStdoutTimer()
 	}
 }
 
-bool AppProcess::timerCheckStdout()
+bool AppProcess::onTimerCheckStdout()
 {
-	const static char fname[] = "AppProcess::timerCheckStdout() ";
+	const static char fname[] = "AppProcess::onTimerCheckStdout() ";
 
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
@@ -537,7 +537,7 @@ int ProcessExitHandler::handle_exit(ACE_Process *process)
 
 	m_exitPid = process->getpid();
 	m_exitCode = process->return_value();
-	this->registerTimer(0, 0, std::bind(&ProcessExitHandler::handleClean, this), fname);
+	this->registerTimer(0, 0, std::bind(&ProcessExitHandler::onProcessExit, this), fname);
 	return 0;
 }
 
@@ -550,13 +550,13 @@ void ProcessExitHandler::terminate(pid_t pid)
 	{
 		m_exitPid = pid;
 		m_exitCode = 9;
-		handleClean();
+		onProcessExit();
 	}
 }
 
-bool ProcessExitHandler::handleClean()
+bool ProcessExitHandler::onProcessExit()
 {
-	const static char fname[] = "ProcessExitHandler::handleClean() ";
+	const static char fname[] = "ProcessExitHandler::onProcessExit() ";
 
 	// update exit code
 	if (auto appProcess = dynamic_cast<AppProcess *>(this))
@@ -571,8 +571,12 @@ bool ProcessExitHandler::handleClean()
 		APP_OUT_VIEW_MAP.rebind(m_exitPid, empty, requests);
 		APP_OUT_VIEW_MAP.unbind(m_exitPid);
 	}
-	for (auto &req : requests)
-		req->response();
+	if (requests.size() > 0)
+	{
+		LOG_DBG << fname << "pid <" << m_exitPid << "> exit and response output to clients: " << requests.size();
+		for (auto &req : requests)
+			req->response();
+	}
 
 	return false;
 }

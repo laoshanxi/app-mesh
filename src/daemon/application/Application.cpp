@@ -409,9 +409,9 @@ void Application::execute(void *ptree)
 	}
 }
 
-bool Application::timerSpawn()
+bool Application::onTimerSpawn()
 {
-	const static char fname[] = "Application::timerSpawn() ";
+	const static char fname[] = "Application::onTimerSpawn() ";
 
 	auto timerId = m_nextStartTimerId.exchange(INVALID_TIMER_ID);
 	if (!IS_VALID_TIMER_ID(timerId))
@@ -930,9 +930,9 @@ void Application::destroy()
 	this->cancelTimer(m_nextStartTimerId);
 }
 
-bool Application::timerRemove()
+bool Application::onTimerAppRemove()
 {
-	const static char fname[] = "Application::timerRemove() ";
+	const static char fname[] = "Application::onTimerAppRemove() ";
 	CLEAR_TIMER_ID(m_timerRemoveId);
 	try
 	{
@@ -956,7 +956,6 @@ void Application::onExitUpdate(int code)
 	if (code != 0 && m_process)
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, m_process->startError().c_str()));
 	// this->registerTimer(0, 0, std::bind(&Application::handleError, this), fname);
-	this->cancelTimer(m_timerRemoveId);
 }
 
 void Application::terminate(std::shared_ptr<AppProcess> &process)
@@ -998,7 +997,7 @@ void Application::handleError()
 	case AppBehavior::Action::KEEPALIVE:
 		// keep alive always, used for period run
 		m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::timerSpawn, this), fname);
+		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::onTimerSpawn, this), fname);
 		LOG_DBG << fname << "next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -1025,7 +1024,7 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 		}
 		// 2. register timer
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
-		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::timerSpawn, this), fname);
+		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::onTimerSpawn, this), fname);
 		LOG_DBG << fname << "next start timer ID <" << m_nextStartTimerId << ">";
 	}
 	else
@@ -1043,7 +1042,7 @@ void Application::regSuicideTimer(int timeoutSeconds)
 
 	this->cancelTimer(m_timerRemoveId);
 	LOG_DBG << fname << "application <" << getName() << "> will be removed after <" << timeoutSeconds << "> seconds";
-	m_timerRemoveId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::timerRemove, this), fname);
+	m_timerRemoveId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onTimerAppRemove, this), fname);
 }
 
 void Application::setLastError(const std::string &error)

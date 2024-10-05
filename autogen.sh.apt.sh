@@ -61,12 +61,17 @@ curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -
 
 # Golang
 # apt install -y golang
-GO_ARCH=$architecture
-GO_VER=1.23.1
-$WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
-rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
-go version
+# go env -w GOPROXY=https://goproxy.io,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
+if command -v go >/dev/null 2>&1; then
+	echo "Go is installed: $(go version)"
+else
+	GO_ARCH=$architecture
+	GO_VER=1.23.1
+	$WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
+	rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+	rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
+	go version
+fi
 # Golang third party library
 export GO111MODULE=on
 #export GOPROXY=https://goproxy.io,direct
@@ -98,7 +103,7 @@ cp -rf wildcards/single_include/ /usr/local/include/wildcards
 git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
 cp -rf prometheus-cpp/core/src /usr/local/src/prometheus
 cp -rf prometheus-cpp/core/include/prometheus /usr/local/include/
-cat << EOF > /usr/local/include/prometheus/detail/core_export.h
+cat <<EOF >/usr/local/include/prometheus/detail/core_export.h
 #ifndef PROMETHEUS_CPP_CORE_EXPORT
 #define PROMETHEUS_CPP_CORE_EXPORT
 #endif

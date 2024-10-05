@@ -270,8 +270,8 @@ public class AppMeshClient {
         return new JSONObject(responseContent);
     }
 
-    public AppOutput appOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize, String processUuid,
-            int timeout) throws IOException {
+    public AppOutput appOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize, String processUuid, int timeout)
+            throws IOException {
 
         Map<String, String> querys = new HashMap<>();
         querys.put("stdout_position", String.valueOf(stdoutPosition));
@@ -438,7 +438,7 @@ public class AppMeshClient {
             headers.put("Content-Type", "multipart/form-data; boundary=" + boundary);
 
             StringBuilder urlBuilder = new StringBuilder(baseURL).append("/appmesh/file/upload");
-            URL url = new URL(urlBuilder.toString());
+            URL url = AppMeshUtils.toUrl(urlBuilder.toString());
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setDoOutput(true);
             connection.setRequestMethod("POST");
@@ -466,6 +466,36 @@ public class AppMeshClient {
         }
     }
 
+    public JSONObject hostResources() throws IOException {
+        HttpURLConnection conn = request("GET", "/appmesh/resources", null, null, null);
+        String responseContent = AppMeshUtils.readResponse(conn);
+        return new JSONObject(responseContent);
+    }
+
+    public JSONObject configView() throws IOException {
+        HttpURLConnection conn = request("GET", "/appmesh/config", null, null, null);
+        String responseContent = AppMeshUtils.readResponse(conn);
+        return new JSONObject(responseContent);
+    }
+
+    public JSONObject configSet(JSONObject configJson) throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/config", configJson, null, null);
+        String responseContent = AppMeshUtils.readResponse(conn);
+        return new JSONObject(responseContent);
+    }
+
+    public String logLevel(String level) throws IOException {
+        JSONObject baseConfig = new JSONObject();
+        baseConfig.put("LogLevel", level);
+        JSONObject configJson = new JSONObject();
+        configJson.put("BaseConfig", baseConfig);
+
+        HttpURLConnection conn = request("POST", "/appmesh/config", configJson, null, null);
+        String responseContent = AppMeshUtils.readResponse(conn);
+        configJson = new JSONObject(responseContent);
+        return configJson.getJSONObject("BaseConfig").getString("LogLevel");
+    }
+
     private Map<String, String> commonHeaders() {
         Map<String, String> headers = new HashMap<>();
         headers.put(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT);
@@ -476,10 +506,10 @@ public class AppMeshClient {
             String host = this.forwardingHost;
             if (!host.contains(":")) {
                 try {
-                    URL url = new URL(this.baseURL);
+                    URL url = AppMeshUtils.toUrl(this.baseURL);
                     int port = url.getPort();
                     host = this.forwardingHost + ":" + port;
-                } catch (IOException e) {
+                } catch (Exception e) {
                     LOGGER.log(Level.SEVERE, "Failed to parse baseURL", e);
                     throw new RuntimeException("Failed to set forward host", e);
                 }
@@ -505,7 +535,7 @@ public class AppMeshClient {
             urlBuilder.setLength(urlBuilder.length() - 1); // Remove the trailing '&'
         }
 
-        URL url = new URL(urlBuilder.toString());
+        URL url = AppMeshUtils.toUrl(urlBuilder.toString());
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod(method.toUpperCase());
 

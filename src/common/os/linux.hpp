@@ -307,7 +307,7 @@ namespace os
 		// Check for any read/parse errors.
 		if (data.fail() && !data.eof())
 		{
-			LOG_WAR << fname << "Failed to read/parse:" << path;
+			LOG_DBG << fname << "Failed to read/parse:" << path;
 			return nullptr;
 		}
 		if (comm.length() > MAX_COMMAND_LINE_LENGTH)

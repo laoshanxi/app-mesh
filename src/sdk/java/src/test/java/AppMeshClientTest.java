@@ -122,8 +122,8 @@ public class AppMeshClientTest {
     public void testAppAddAndView() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W");
 
-        JSONObject newAppConfig = new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'").put("description",
-                "Test application");
+        JSONObject newAppConfig =
+                new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'").put("description", "Test application");
 
         JSONObject addedApp = client.appAdd("testApp", newAppConfig);
         assertNotNull(addedApp, "appAdd should return a non-null JSONObject");
@@ -132,5 +132,13 @@ public class AppMeshClientTest {
         JSONObject viewedApp = client.appView("testApp");
         assertNotNull(viewedApp, "appView for 'testApp' should return a non-null JSONObject");
         assertEquals("testApp", viewedApp.getString("name"), "Viewed app should have the correct name");
+    }
+
+    @Test
+    public void testHostResources() throws IOException {
+        client.login(USERNAME, PASSWORD, null, "P1W");
+        System.out.println(client.hostResources().toString());
+        System.out.println(client.configView().toString());
+        assertEquals("DEBUG", client.logLevel("DEBUG").toString());
     }
 }

@@ -178,7 +178,7 @@ void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std
 
 long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max)
 {
-	const static char fname[] = "RestHandler::getHttpQueryValue() ";
+	// const static char fname[] = "RestHandler::getHttpQueryValue() ";
 
 	auto querymap = message.m_querys;
 	long rt = defaultValue;
@@ -193,7 +193,7 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 		}
 		// if rt less than zero, do not update here.
 	}
-	LOG_DBG << fname << key << "=" << rt;
+	// LOG_DBG << fname << key << "=" << rt;
 	return rt;
 }
 

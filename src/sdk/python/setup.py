@@ -27,7 +27,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    packages=setuptools.find_packages(exclude=["tests*"]),
+    packages=setuptools.find_packages(exclude=["test*"]),
     # requests for REST call
     # msgpack for TCP serialization
     # requests_toolbelt for MultipartEncoder
