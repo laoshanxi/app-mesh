@@ -50,7 +50,7 @@ public:
 	void terminate(pid_t pid);
 
 private:
-	bool handleClean();
+	bool onProcessExit();
 
 private:
 	std::atomic<pid_t> m_exitPid;
@@ -87,7 +87,7 @@ public:
 	/// Set process exit code
 	/// </summary>
 	virtual void onExit(int exitCode);
-	bool timerHandleAppExit();
+	bool onTimerAppExit();
 
 	/// <summary>
 	/// Process running status
@@ -150,7 +150,7 @@ public:
 	/// <summary>
 	/// terminate for Timer
 	/// </summary>
-	bool timerTerminate();
+	bool onTimerTerminate();
 
 	/// <summary>
 	/// clean OS resources
@@ -177,7 +177,7 @@ public:
 	/// <summary>
 	/// check stdout file size
 	/// </summary>
-	bool timerCheckStdout();
+	bool onTimerCheckStdout();
 
 	/// <summary>
 	/// Start process
@@ -223,7 +223,7 @@ private:
 	std::atomic_long m_timerTerminateId;
 	std::atomic_long m_timerCheckStdoutId;
 	off_t m_stdOutMaxSize;
-	mutable std::recursive_mutex m_processMutex; // timerCheckStdout, terminate, spawnProcess
+	mutable std::recursive_mutex m_processMutex; // onTimerCheckStdout, terminate, spawnProcess
 
 	std::atomic<ACE_HANDLE> m_stdinHandler;
 	std::atomic<ACE_HANDLE> m_stdoutHandler;

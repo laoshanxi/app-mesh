@@ -70,7 +70,7 @@ public:
 	// behavior
 	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
-	bool timerRemove();
+	bool onTimerAppRemove();
 	void handleError();
 	void onExitUpdate(int code);
 	void terminate(std::shared_ptr<AppProcess> &process);
@@ -91,7 +91,7 @@ protected:
 
 	// process
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
-	bool timerSpawn();
+	bool onTimerSpawn();
 	void refresh(void *ptree = nullptr);
 	void healthCheck();
 
