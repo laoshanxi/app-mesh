@@ -2,7 +2,7 @@ FROM laoshanxi/appmesh:build_ubuntu22 AS COMPILE_STAGE
 RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
 	cd app-mesh && mkdir build && cd build && cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && make -j4 && make pack && ls
 
-FROM python:3.12-slim
+FROM python:3.13-slim
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
