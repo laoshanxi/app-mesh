@@ -1,8 +1,9 @@
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.InputStream;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -14,6 +15,12 @@ import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.Security;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
@@ -21,27 +28,40 @@ import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
-
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.openssl.PEMDecryptorProvider;
+import org.bouncycastle.openssl.PEMEncryptedKeyPair;
+import org.bouncycastle.openssl.PEMKeyPair;
+import org.bouncycastle.openssl.PEMParser;
+import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
+import org.bouncycastle.openssl.jcajce.JcePEMDecryptorProviderBuilder;
 import org.threeten.extra.PeriodDuration;
+
 
 public class Utils {
     private static final Logger LOGGER = Logger.getLogger(Utils.class.getName());
 
     public static void disableSSLVerification() throws Exception {
+        LOGGER.log(Level.WARNING, "SSL verification is disabled. This is insecure and should only be used in development environments.");
         TrustManager[] trustAllCerts = new TrustManager[] {new X509TrustManager() {
+            @Override
             public X509Certificate[] getAcceptedIssuers() {
                 return null;
             }
 
+            @Override
             public void checkClientTrusted(X509Certificate[] certs, String authType) {}
 
+            @Override
             public void checkServerTrusted(X509Certificate[] certs, String authType) {}
         }};
 
@@ -53,23 +73,122 @@ public class Utils {
         HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
     }
 
-    public static void useCustomCertificate(String certFilePath) throws Exception {
-        CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        X509Certificate caCert;
-        try (InputStream caInput = new FileInputStream(certFilePath)) {
-            caCert = (X509Certificate) cf.generateCertificate(caInput);
+    public static void configureSSLCertificates(String caCertFilePath, String clientCertFilePath, String clientCertKeyFilePath)
+            throws Exception {
+
+        // Add BouncyCastle as a provider
+        if (Security.getProvider("BC") == null) {
+            Security.addProvider(new BouncyCastleProvider());
+            LOGGER.log(Level.INFO, "BouncyCastle provider added.");
+        } else {
+            LOGGER.log(Level.INFO, "BouncyCastle provider already exists.");
         }
 
+        // Initialize an empty KeyStore
         KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
         keyStore.load(null, null);
-        keyStore.setCertificateEntry("caCert", caCert);
 
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(keyStore);
+        TrustManager[] trustManagers = createTrustManagers(keyStore, caCertFilePath);
+        KeyManager[] keyManagers = createKeyManagers(keyStore, clientCertFilePath, clientCertKeyFilePath);
 
+        // Initialize SSLContext with the KeyManagers (if any) and TrustManagers
         SSLContext sc = SSLContext.getInstance("TLS");
-        sc.init(null, tmf.getTrustManagers(), new java.security.SecureRandom());
-        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+        sc.init(keyManagers, trustManagers, null);
+
+        // Set the SSLContext for HttpsURLConnection
+        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory()); // Same as SSLContext.setDefault(sc);
+    }
+
+    private static TrustManager[] createTrustManagers(KeyStore keyStore, String caCertFilePath)
+            throws KeyStoreException, NoSuchAlgorithmException, CertificateException, IOException {
+        // Load the CA certificate (trusted root certificate), if provided
+        boolean customCAProvided = isFileExists(caCertFilePath);
+        if (customCAProvided) {
+            X509Certificate caCert = loadCertificate(caCertFilePath);
+            keyStore.setCertificateEntry("caCert", caCert);
+        } else if (caCertFilePath != null) {
+            LOGGER.log(Level.INFO, "CA certificate not provided. Using system default CA trust store.");
+        }
+
+        // Create a TrustManagerFactory to use system's default CA if no custom CA provided
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+
+        TrustManager[] trustManagers;
+        if (customCAProvided) {
+            tmf.init(keyStore);
+            trustManagers = tmf.getTrustManagers();
+        } else {
+            // Initialize with system's default trusted CA certificates
+            tmf.init((KeyStore) null);
+            trustManagers = tmf.getTrustManagers();
+        }
+        return trustManagers;
+    }
+
+    private static KeyManager[] createKeyManagers(KeyStore keyStore, String clientCertFilePath, String clientCertKeyFilePath)
+            throws Exception {
+        Certificate clientCert = null;
+        PrivateKey clientCertKey = null;
+
+        // Attempt to load client certificate and key if the paths are provided and exist
+        if (isFileExists(clientCertFilePath) && isFileExists(clientCertKeyFilePath)) {
+            // Load client certificate
+            clientCert = loadCertificate(clientCertFilePath);
+
+            // Load client private key
+            clientCertKey = loadPrivateKey(clientCertKeyFilePath);
+
+            // Add client certificate and private key to KeyStore
+            keyStore.setKeyEntry("clientCert", clientCertKey, new char[0], new Certificate[] {clientCert});
+        } else if (clientCertFilePath != null) {
+            LOGGER.log(Level.INFO, "Client certificate or key file does not exist. Proceeding without client certificate.");
+        }
+
+        // Optionally create a KeyManager if client cert and key were loaded
+        KeyManager[] keyManagers = null;
+        if (clientCert != null && clientCertKey != null) {
+            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(keyStore, new char[0]);
+            keyManagers = kmf.getKeyManagers();
+        }
+
+        return keyManagers;
+    }
+
+    private static X509Certificate loadCertificate(String certPath) throws IOException, CertificateException {
+        LOGGER.log(Level.CONFIG, "Loading certificate from: {}", certPath);
+        try (FileInputStream fis = new FileInputStream(certPath)) {
+            return (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(fis);
+        }
+    }
+
+    private static PrivateKey loadPrivateKey(String keyFilePath) throws Exception {
+        LOGGER.log(Level.CONFIG, "Loading private key  from: {}", keyFilePath);
+        try (PEMParser pemParser = new PEMParser(new FileReader(keyFilePath))) {
+            Object object = pemParser.readObject();
+            JcaPEMKeyConverter converter = new JcaPEMKeyConverter().setProvider("BC");
+
+            if (object instanceof PEMEncryptedKeyPair) {
+                // Handle encrypted key (you need the password to decrypt)
+                PEMDecryptorProvider decryptorProvider = new JcePEMDecryptorProviderBuilder().build("your_password".toCharArray());
+                PEMKeyPair decryptedKeyPair = ((PEMEncryptedKeyPair) object).decryptKeyPair(decryptorProvider);
+                return converter.getPrivateKey(decryptedKeyPair.getPrivateKeyInfo());
+            } else if (object instanceof PEMKeyPair) {
+                return converter.getPrivateKey(((PEMKeyPair) object).getPrivateKeyInfo());
+            } else if (object instanceof PrivateKeyInfo) {
+                return converter.getPrivateKey((PrivateKeyInfo) object);
+            } else {
+                throw new IllegalArgumentException("Unsupported private key format in file: " + keyFilePath);
+            }
+        }
+    }
+
+    private static boolean isFileExists(String filePath) {
+        if (filePath != null && !filePath.isEmpty()) {
+            File file = new File(filePath);
+            return file.exists() && file.isFile();
+        }
+        return false;
     }
 
     public static long toSeconds(Object input) {

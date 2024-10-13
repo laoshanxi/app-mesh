@@ -49,14 +49,14 @@ public class AppMeshClient {
     private AppMeshClient(Builder builder) {
         this.baseURL = Objects.requireNonNull(builder.baseURL, "Base URL cannot be null");
         this.jwtToken = builder.jwtToken;
-        if (builder.certFilePath != null) {
+        if (builder.caCertFilePath != null || builder.clientCertFilePath != null) {
             try {
-                Utils.useCustomCertificate(builder.certFilePath);
+                Utils.configureSSLCertificates(builder.caCertFilePath, builder.clientCertFilePath, builder.clientCertKeyFilePath);
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Failed to use custom certificate", e);
                 throw new RuntimeException("Failed to initialize AppMeshClient", e);
             }
-        } else {
+        } else if (builder.disableSSLVerification) {
             try {
                 Utils.disableSSLVerification();
             } catch (Exception e) {
@@ -68,16 +68,30 @@ public class AppMeshClient {
 
     public static class Builder {
         private String baseURL = "https://localhost:6060";
-        private String certFilePath;
+        private String caCertFilePath;
+        private String clientCertFilePath;
+        private String clientCertKeyFilePath;
         private String jwtToken;
+        private boolean disableSSLVerification = false;
 
         public Builder baseURL(String baseURL) {
             this.baseURL = baseURL;
             return this;
         }
 
-        public Builder certFilePath(String certFilePath) {
-            this.certFilePath = certFilePath;
+        public Builder caCert(String caCertFilePath) {
+            this.caCertFilePath = caCertFilePath;
+            return this;
+        }
+
+        public Builder clientCert(String clientCertFilePath, String clientCertKeyFilePath) {
+            this.clientCertFilePath = clientCertFilePath;
+            this.clientCertKeyFilePath = clientCertKeyFilePath;
+            return this;
+        }
+
+        public Builder disableSSLVerify() {
+            this.disableSSLVerification = true;
             return this;
         }
 

@@ -1,21 +1,23 @@
-import org.apache.commons.lang3.tuple.Pair;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import org.junit.jupiter.api.AfterEach;
-
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.util.logging.Logger;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.apache.commons.lang3.tuple.Pair;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class AppMeshClientTest {
     private static final Logger LOGGER = Logger.getLogger(AppMeshClientTest.class.getName());
     private static final String BASE_URL = "https://127.0.0.1:6060"; // Consider using a config file or env var
     private static final String CA_FILE = "/opt/appmesh/ssl/ca.pem";
+    private static final String CLIENT_CERT_FILE = "/opt/appmesh/ssl/client.pem";
+    private static final String CLIENT_CERT_KET_FILE = "/opt/appmesh/ssl/client-key.pem";
     private static final String USERNAME = "admin";
     private static final String PASSWORD = "admin123";
 
@@ -24,7 +26,7 @@ public class AppMeshClientTest {
     @BeforeEach
     public void setup() {
         LOGGER.info("setup");
-        client = new AppMeshClient.Builder().baseURL(BASE_URL).certFilePath(CA_FILE).build();
+        client = new AppMeshClient.Builder().baseURL(BASE_URL).caCert(CA_FILE).clientCert(CLIENT_CERT_FILE, CLIENT_CERT_KET_FILE).build();
         assertNotNull(client, "AppMeshClient should be initialized");
     }
 
@@ -102,6 +104,7 @@ public class AppMeshClientTest {
         }
         client.fileDownload("/opt/appmesh/bin/appsvc", "appsvc");
         client.fileUpload("appsvc", "/tmp/app");
+        java.nio.file.Files.delete(java.nio.file.Paths.get("appsvc"));
     }
 
     @Test
