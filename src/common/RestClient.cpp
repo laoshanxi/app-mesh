@@ -210,6 +210,7 @@ void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 
 void RestClient::setSslConfig(curlpp::Easy &request)
 {
+	// request.setOpt(new curlpp::Options::HttpVersion(CURL_HTTP_VERSION_2TLS));
 	request.setOpt(new curlpp::Options::Verbose(log4cpp::Category::getRoot().getPriority() == log4cpp::Priority::DEBUG));
 	request.setOpt(new curlpp::Options::SslVerifyPeer(m_sslConfig.m_verify_client || m_sslConfig.m_verify_server));
 	request.setOpt(new curlpp::Options::SslVerifyHost(m_sslConfig.m_verify_server));

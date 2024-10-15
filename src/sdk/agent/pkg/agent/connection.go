@@ -55,7 +55,7 @@ func (r *Connection) sendRequestData(request *appmesh.Request) error {
 	}
 
 	// header buffer
-	headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
+	headerData := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
 	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
 	log.Printf("Requesting: %s with msg length: %d", request.Uuid, len(bodyData))
 
@@ -77,12 +77,12 @@ func (r *Connection) sendUploadFileData(localFile string) error {
 		defer file.Close()
 		// Create a buffered reader for the file
 		reader := bufio.NewReader(file)
-		chunkSize := 1024 * 8 // 8 KB chunks
+		chunkSize := TCP_CHUNK_BLOCK_SIZE
 		// Create a buffer to store chunks
 		bodyData := make([]byte, chunkSize)
 
 		// header buffer
-		headerData := make([]byte, PROTOBUF_HEADER_LENGTH)
+		headerData := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
 
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -134,7 +134,7 @@ func deleteConnection(targetHost string) {
 
 func readTcpData(conn net.Conn, msgLength uint32) ([]byte, error) {
 	// read body buffer
-	var chunkSize uint32 = TCP_CHUNK_READ_BLOCK_SIZE
+	var chunkSize uint32 = TCP_CHUNK_BLOCK_SIZE
 	if msgLength < chunkSize {
 		chunkSize = msgLength
 	}

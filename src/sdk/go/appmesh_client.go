@@ -371,8 +371,8 @@ func (r *AppMeshClient) RunAsync(app Application, maxTimeoutSeconds int) (int, e
 }
 
 // FileUpload uploads a file to the server
-func (r *AppMeshClient) FileUpload(filePath string, remotePath string) error {
-	file, err := os.Open(filePath)
+func (r *AppMeshClient) FileUpload(localFile, remoteFile string, applyFileAttributes bool) error {
+	file, err := os.Open(localFile)
 	if err != nil {
 		return err
 	}
@@ -381,7 +381,7 @@ func (r *AppMeshClient) FileUpload(filePath string, remotePath string) error {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	part, err := writer.CreateFormFile("file", filepath.Base(localFile))
 	if err != nil {
 		return err
 	}
@@ -397,14 +397,16 @@ func (r *AppMeshClient) FileUpload(filePath string, remotePath string) error {
 
 	headers := map[string]string{
 		"Content-Type": writer.FormDataContentType(),
-		"File-Path":    remotePath,
+		"File-Path":    remoteFile,
 	}
 
 	// Get the file attributes
-	attrs, err := GetFileAttributes(filePath)
-	MergeStringMaps(headers, attrs)
-	if err != nil {
-		return err
+	if applyFileAttributes {
+		attrs, err := GetFileAttributes(localFile)
+		MergeStringMaps(headers, attrs)
+		if err != nil {
+			return err
+		}
 	}
 
 	code, raw, _, err := r.post("/appmesh/file/upload", nil, headers, body.Bytes())
@@ -420,23 +422,25 @@ func (r *AppMeshClient) FileUpload(filePath string, remotePath string) error {
 }
 
 // FileDownload downloads a file from the server
-func (r *AppMeshClient) FileDownload(remotePath string, localPath string) error {
+func (r *AppMeshClient) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
 
-	headers := map[string]string{"File-Path": remotePath}
+	headers := map[string]string{"File-Path": remoteFile}
 	code, raw, respHeaders, _ := r.get("/appmesh/file/download", nil, headers)
 
 	if code != http.StatusOK {
 		return fmt.Errorf("download failed with status: %s", raw)
 	}
 
-	out, err := os.Create(localPath)
+	out, err := os.Create(localFile)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 	_, err = out.Write(raw)
 
-	SetFileAttributes(localPath, respHeaders)
+	if applyFileAttributes {
+		SetFileAttributes(localFile, respHeaders)
+	}
 
 	return err
 }

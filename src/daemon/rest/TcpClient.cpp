@@ -11,7 +11,7 @@
 // Default constructor.
 TcpClient::TcpClient(void) : m_sslStream(nullptr)
 {
-	m_buffer = make_shared_array<char>(PROTOBUF_HEADER_LENGTH);
+	m_buffer = make_shared_array<char>(TCP_MESSAGE_HEADER_LENGTH);
 }
 
 TcpClient::~TcpClient()
@@ -47,7 +47,7 @@ bool TcpClient::testConnection(int timeoutSeconds)
 
 	m_timeout.sec(timeoutSeconds);
 	errno = 0;
-	auto recvReturn = m_sslStream->recv_n(m_buffer.get(), PROTOBUF_HEADER_LENGTH, &m_timeout);
+	auto recvReturn = m_sslStream->recv_n(m_buffer.get(), TCP_MESSAGE_HEADER_LENGTH, &m_timeout);
 	if (recvReturn == -1 && errno == ETIME)
 	{
 		// LOG_DBG << fname << "Read from TCP server: " << std::strerror(errno);

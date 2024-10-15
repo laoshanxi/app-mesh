@@ -75,12 +75,12 @@ class TestAppMeshClient(TestCase):
 
     def test_file(self):
         """test file"""
-        client = appmesh_client.AppMeshClient()
+        client = appmesh_client.AppMeshClientTCP()
         client.login("admin", "admin123")
-        client.forwarding_host = "127.0.0.1:6059"
+        # client.forwarding_host = "127.0.0.1:6059" # only for REST client, not for TCP client
         if os.path.exists("1.log"):
             os.remove("1.log")
-        self.assertTrue(client.file_download("/opt/appmesh/work/server.log", "1.log"))
+        self.assertIsNone(client.file_download("/opt/appmesh/work/server.log", "1.log"))
         self.assertTrue(os.path.exists("1.log"))
 
         self.assertEqual(
@@ -94,9 +94,10 @@ class TestAppMeshClient(TestCase):
                 )
             )[0],
         )
-        self.assertTrue(client.file_upload(local_file="1.log", file_path="/tmp/2.log"))
-        self.assertTrue(client.file_download(file_path="/tmp/2.log", local_file="/tmp/3.log"))
+        self.assertIsNone(client.file_upload(local_file="1.log", file_path="/tmp/2.log"))
+        self.assertIsNone(client.file_download(file_path="/tmp/2.log", local_file="/tmp/3.log"))
         self.assertTrue(os.path.exists("/tmp/3.log"))
+        os.remove("1.log")
 
         self.assertEqual(
             0,
@@ -109,10 +110,10 @@ class TestAppMeshClient(TestCase):
                 )
             )[0],
         )
-        self.assertTrue(client.file_download("/tmp/os-release", "os-release"))
+        self.assertIsNone(client.file_download("/tmp/os-release", "os-release"))
         if os.path.exists("/tmp/os-release-1"):
             os.remove("/tmp/os-release-1")
-        self.assertTrue(client.file_download("/tmp/os-release", "/tmp/os-release-1"))
+        self.assertIsNone(client.file_download("/tmp/os-release", "/tmp/os-release-1"))
         with open("/tmp/os-release-1", "r", encoding="utf-8") as etc:
             with open("os-release", "r", encoding="utf-8") as local:
                 self.assertEqual(etc.read(), local.read())

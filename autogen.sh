@@ -118,7 +118,7 @@ export GO111MODULE=on
 # build static libcurl
 $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
 tar zxvf curl-8.5.0.tar.gz >/dev/null; cd curl-8.5.0
-mkdir build; cd build; 
+mkdir build; cd build; # http2: -DHTTP_ONLY=OFF -DCURL_USE_NGHTTP2=ON
 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl || cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DCURL_USE_OPENSSL=ON
 make -j 3 >/dev/null
 make install

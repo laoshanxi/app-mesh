@@ -8,7 +8,8 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 
 def get_version():
-    return "1.3.2"
+    """PyPI package version"""
+    return "1.3.4"
 
 
 setuptools.setup(

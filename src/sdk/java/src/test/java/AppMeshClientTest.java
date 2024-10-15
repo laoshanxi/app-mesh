@@ -35,7 +35,7 @@ public class AppMeshClientTest {
         LOGGER.info("tearDown");
         if (client != null) {
             try {
-                client.logout();
+                client.logoff();
             } catch (IOException e) {
                 // Log the exception or handle it as appropriate for your testing environment
                 System.err.println("Error during logout in tearDown: " + e.getMessage());
@@ -64,7 +64,7 @@ public class AppMeshClientTest {
         boolean authenticated = client.authentication(token, "app-view");
         assertTrue(authenticated, "User should be authenticated with the token");
 
-        boolean loggedOut = client.logout();
+        boolean loggedOut = client.logoff();
         assertTrue(loggedOut, "User should be successfully logged out");
     }
 
@@ -102,8 +102,8 @@ public class AppMeshClientTest {
         if (file.exists()) {
             file.delete();
         }
-        client.fileDownload("/opt/appmesh/bin/appsvc", "appsvc");
-        client.fileUpload("appsvc", "/tmp/app");
+        client.fileDownload("/opt/appmesh/bin/appsvc", "appsvc", true);
+        client.fileUpload("appsvc", "/tmp/app", true);
         java.nio.file.Files.delete(java.nio.file.Paths.get("appsvc"));
     }
 

@@ -48,8 +48,8 @@ func TestAppmeshFile(t *testing.T) {
 	os.Remove("appsvc")
 	os.Remove("/tmp/appsvc")
 
-	require.Nil(t, client.FileDownload("/opt/appmesh/bin/appsvc", "appsvc"))
-	require.Nil(t, client.FileUpload("appsvc", "/tmp/appsvc"))
+	require.Nil(t, client.FileDownload("/opt/appmesh/bin/appsvc", "appsvc", true))
+	require.Nil(t, client.FileUpload("appsvc", "/tmp/appsvc", true))
 	os.Remove("appsvc")
 }
 

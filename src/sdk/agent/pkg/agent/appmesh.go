@@ -30,8 +30,8 @@ const (
 	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 
-	TCP_CHUNK_READ_BLOCK_SIZE          = 8192
-	PROTOBUF_HEADER_LENGTH             = 4
+	TCP_CHUNK_BLOCK_SIZE               = 16*1024 - 256 // target to 16KB
+	TCP_MESSAGE_HEADER_LENGTH          = 4
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
@@ -147,13 +147,12 @@ func startHttpsServer(restAgentAddr string, router *fasthttprouter.Router) {
 		MinVersion:               tls.VersionTLS12,
 		InsecureSkipVerify:       !(config.ConfigData.REST.SSL.VerifyServer), // whether a client verifies the server's certificate chain
 		Certificates:             []tls.Certificate{serverCA},
-		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		CurvePreferences:         []tls.CurveID{tls.CurveP256, tls.CurveP384}, // Remove P521 for performance
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
 			// TLS 1.2
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 			// TLS 1.3 streamlined set of cipher suites
 			tls.TLS_AES_128_GCM_SHA256,
 			tls.TLS_AES_256_GCM_SHA384,
@@ -167,13 +166,19 @@ func startHttpsServer(restAgentAddr string, router *fasthttprouter.Router) {
 		// Optimize performance
 		SessionTicketsDisabled: false,
 		ClientSessionCache:     tls.NewLRUClientSessionCache(128),
-		//NextProtos:             []string{"h2", "http/1.1"}, // Enable HTTP/2
+
+		// Enable HTTP/2
+		// NextProtos: []string{"h2", "http/1.1"},
 	}
 
 	// start listen
 	server := &fasthttp.Server{
 		Handler:            router.Handler,
 		MaxRequestBodySize: fasthttp.DefaultMaxRequestBodySize * 1024, // 4G
+		ReadBufferSize:     16 * 1024,                                 // Increase if necessary
+		WriteBufferSize:    16 * 1024,                                 // Increase if necessary
+		// MaxConnsPerIP:   100,                                       // Example limit on connections per IP
+		// Concurrency:     256 * 1024,                                // Adjust based on server resources
 	}
 
 	listenFunc := func(network string) {

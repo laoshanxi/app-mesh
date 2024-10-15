@@ -23,14 +23,18 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-
 import org.apache.commons.lang3.tuple.Pair;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+
+/**
+ * App Mesh client object used to access App Mesh REST Service.
+ */
 public class AppMeshClient {
     private static final Logger LOGGER = Logger.getLogger(AppMeshClient.class.getName());
     private static final String AUTHORIZATION_HEADER = "Authorization";
@@ -43,12 +47,13 @@ public class AppMeshClient {
     private static final String JSON_CONTENT_TYPE = "application/json; utf-8";
 
     private final String baseURL;
-    private String jwtToken;
+    private AtomicReference<String> jwtToken = new AtomicReference<String>(null);
     private String forwardingHost;
 
+    // Construct an App Mesh client object.
     private AppMeshClient(Builder builder) {
         this.baseURL = Objects.requireNonNull(builder.baseURL, "Base URL cannot be null");
-        this.jwtToken = builder.jwtToken;
+        this.jwtToken.set(builder.jwtToken);
         if (builder.caCertFilePath != null || builder.clientCertFilePath != null) {
             try {
                 Utils.configureSSLCertificates(builder.caCertFilePath, builder.clientCertFilePath, builder.clientCertKeyFilePath);
@@ -66,6 +71,9 @@ public class AppMeshClient {
         }
     }
 
+    /**
+     * Used to build AppMeshClient constructor parameters.
+     */
     public static class Builder {
         private String baseURL = "https://localhost:6060";
         private String caCertFilePath;
@@ -74,27 +82,32 @@ public class AppMeshClient {
         private String jwtToken;
         private boolean disableSSLVerification = false;
 
+        // AppMesh service URI string.
         public Builder baseURL(String baseURL) {
             this.baseURL = baseURL;
             return this;
         }
 
+        // SSL CA certification, a path to a CA bundle
         public Builder caCert(String caCertFilePath) {
             this.caCertFilePath = caCertFilePath;
             return this;
         }
 
+        // SSL client certificate and key pair.
         public Builder clientCert(String clientCertFilePath, String clientCertKeyFilePath) {
             this.clientCertFilePath = clientCertFilePath;
             this.clientCertKeyFilePath = clientCertKeyFilePath;
             return this;
         }
 
+        // Disable SSL verification for none-production use
         public Builder disableSSLVerify() {
             this.disableSSLVerification = true;
             return this;
         }
 
+        // Initial with a correct token, same with login() & authenticate()
         public Builder jwtToken(String jwtToken) {
             this.jwtToken = jwtToken;
             return this;
@@ -105,6 +118,10 @@ public class AppMeshClient {
         }
     }
 
+
+    /**
+     * Application output object for appOutput() method.
+     */
     public static class AppOutput {
         public boolean httpSuccess;
         public String httpBody;
@@ -112,6 +129,9 @@ public class AppMeshClient {
         public Integer exitCode;
     }
 
+    /**
+     * Application run object indicate to a remote run from runAsync().
+     */
     public class AppRun {
         private String appName;
         private String procUid;
@@ -169,6 +189,7 @@ public class AppMeshClient {
         this.forwardingHost = host;
     }
 
+    // Login with user name and password.
     public String login(String username, String password, String totpCode, Object expireSeconds) throws IOException {
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BASIC_PREFIX + Base64.getEncoder().encodeToString((username + ":" + password).getBytes()));
@@ -182,12 +203,20 @@ public class AppMeshClient {
         HttpURLConnection conn = request("POST", "/appmesh/login", null, headers, null);
         String responseContent = Utils.readResponse(conn);
         JSONObject jsonResponse = new JSONObject(responseContent);
-        this.jwtToken = jsonResponse.getString("Access-Token");
-        return this.jwtToken;
+        this.jwtToken.set(jsonResponse.getString("Access-Token"));
+        return this.jwtToken.get();
     }
 
+    // Logoff current session from server
+    public boolean logoff() throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
+        this.jwtToken.set(null);
+        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+    }
+
+    // Login with token and verify permission when specified, verified token will be stored in client object when success
     public boolean authentication(String token, String permission) throws IOException {
-        this.jwtToken = token;
+        this.jwtToken.set(token);
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         if (permission != null) {
@@ -198,40 +227,9 @@ public class AppMeshClient {
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    public String totpSecret() throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/totp/secret", null, null, null);
-        String responseContent = Utils.readResponse(conn);
-        JSONObject jsonResponse = new JSONObject(responseContent);
-        String mfaUri = jsonResponse.getString("Mfa-Uri");
-        return new String(Base64.getDecoder().decode(mfaUri));
-    }
-
-    public boolean totpSetup(String totpCode) throws IOException, IllegalArgumentException {
-        if (totpCode == null || !totpCode.matches("\\d{6}")) {
-            throw new IllegalArgumentException("TOTP code must be a 6-digit number");
-        }
-
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Totp", totpCode);
-
-        HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
-        return conn.getResponseCode() == 200;
-    }
-
-    public boolean totpDisable() throws IOException {
-        return totpDisable("self");
-    }
-
-    public boolean totpDisable(String user) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/totp/" + user + "/disable", null, null, null);
-        return conn.getResponseCode() == 200;
-    }
-
-    public boolean logout() throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
-        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
-    }
-
+    // Renew current token
+    // expireSeconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W'),
+    // default is 7 days.
     public String renew(Object expireSeconds) throws IOException {
         Map<String, String> headers = new HashMap<>();
         if (expireSeconds != null) {
@@ -241,10 +239,44 @@ public class AppMeshClient {
         HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
         String responseContent = Utils.readResponse(conn);
         JSONObject jsonResponse = new JSONObject(responseContent);
-        this.jwtToken = jsonResponse.getString("Access-Token");
-        return this.jwtToken;
+        this.jwtToken.set(jsonResponse.getString("Access-Token"));
+        return this.jwtToken.get();
     }
 
+    // Generate TOTP secret for current login user and return MFA URI with JSON body
+    public String totpSecret() throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/totp/secret", null, null, null);
+        String responseContent = Utils.readResponse(conn);
+        JSONObject jsonResponse = new JSONObject(responseContent);
+        String mfaUri = jsonResponse.getString("Mfa-Uri");
+        return new String(Base64.getDecoder().decode(mfaUri));
+    }
+
+    // Setup 2FA for current login user
+    public boolean totpSetup(String totpCode) throws IOException, IllegalArgumentException {
+        if (totpCode == null || !totpCode.matches("\\d{6}")) {
+            throw new IllegalArgumentException("TOTP code must be a 6-digit number");
+        }
+
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Totp", totpCode);
+
+        HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
+        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+    }
+
+    // Disable 2FA for current user
+    public boolean totpDisable() throws IOException {
+        return totpDisable("self");
+    }
+
+    // Disable 2FA for specific user
+    public boolean totpDisable(String user) throws IOException {
+        HttpURLConnection conn = request("POST", "/appmesh/totp/" + user + "/disable", null, null, null);
+        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+    }
+
+    // Get the server labels
     public Map<String, String> tagView() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/labels", null, null, null);
         String responseContent = Utils.readResponse(conn);
@@ -258,6 +290,7 @@ public class AppMeshClient {
 
     }
 
+    // Add a new label
     public boolean tagAdd(String key, String value) throws IOException {
         Map<String, String> params = new HashMap<>();
         params.put("value", value);
@@ -265,50 +298,59 @@ public class AppMeshClient {
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    // Delete a label
     public boolean tagDelete(String key) throws IOException {
         HttpURLConnection conn = request("DELETE", "/appmesh/label/" + key, null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    // Get all applications
     public JSONArray appView() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/applications", null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONArray(responseContent);
     }
 
+    // Get one application information
     public JSONObject appView(String appName) throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/app/" + appName, null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
     }
 
+    // Get application health status
     public boolean appHealth(String appName) throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/app/" + appName + "/health", null, null, null);
         String responseContent = Utils.readResponse(conn);
         return "0".equals(responseContent);
     }
 
+    // Enable an application
     public boolean appEnable(String appName) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/app/" + appName + "/enable", null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    // Stop and disable an application
     public boolean appDisable(String appName) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/app/" + appName + "/disable", null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    // Remove an application.
     public boolean appDelete(String appName) throws IOException {
         HttpURLConnection conn = request("DELETE", "/appmesh/app/" + appName, null, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
+    // Register an application
     public JSONObject appAdd(String appName, JSONObject appJson) throws IOException {
         HttpURLConnection conn = request("PUT", "/appmesh/app/" + appName, appJson, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
     }
 
+    // Get application stdout/stderr
     public AppOutput appOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize, String processUuid, int timeout)
             throws IOException {
 
@@ -347,6 +389,8 @@ public class AppMeshClient {
         return response;
     }
 
+    // Block run a command remotely, 'name' attribute in appJson dict used to run an existing application
+    // The synchronized run will block the process until the remote run is finished then return the result from HTTP response
     public Pair<Integer, String> runSync(JSONObject appJson, int maxTimeoutSeconds) throws Exception {
         Integer exitCode = null;
         Map<String, String> query = new HashMap<>();
@@ -362,6 +406,8 @@ public class AppMeshClient {
         return Pair.of(exitCode, Utils.readResponse(conn));
     }
 
+    // Asyncrized run a command remotely, 'name' attribute in appJson dict used to run an existing application
+    // Asyncrized run will not block process
     public AppRun runAsync(JSONObject appJson, Object maxTimeSeconds, Object lifeCycleSeconds) throws Exception {
         Map<String, String> query = new HashMap<>();
         query.put("timeout", String.valueOf(Utils.toSeconds(maxTimeSeconds)));
@@ -378,6 +424,7 @@ public class AppMeshClient {
         return new AppRun(this, jsonResponse.getString("name"), jsonResponse.getString("process_uuid"));
     }
 
+    // Wait for an async run to be finished
     public Integer runAsyncWait(AppRun run, boolean stdoutPrint, int timeout) throws Exception {
         if (run != null) {
             long lastOutputPosition = 0;
@@ -412,7 +459,8 @@ public class AppMeshClient {
         return null;
     }
 
-    public boolean fileDownload(String filePath, String localFile) throws IOException {
+    // Copy a remote file to local, the local file will have the same permission as the remote file
+    public boolean fileDownload(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put("File-Path", filePath);
 
@@ -430,29 +478,32 @@ public class AppMeshClient {
             }
         }
 
-        String fileMode = conn.getHeaderField("File-Mode");
-        if (fileMode != null) {
-            Files.setPosixFilePermissions(Paths.get(localFile),
-                    PosixFilePermissions.fromString(Utils.toPermissionString(Integer.parseInt(fileMode))));
-        }
+        if (applyFileAttributes) {
+            String fileMode = conn.getHeaderField("File-Mode");
+            if (fileMode != null) {
+                Files.setPosixFilePermissions(Paths.get(localFile),
+                        PosixFilePermissions.fromString(Utils.toPermissionString(Integer.parseInt(fileMode))));
+            }
 
-        String fileUser = conn.getHeaderField("File-User");
-        String fileGroup = conn.getHeaderField("File-Group");
-        if (fileUser != null && fileGroup != null) {
-            try {
-                Files.setOwner(Paths.get(localFile),
-                        FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByName(fileUser));
-                Files.getFileAttributeView(Paths.get(localFile), PosixFileAttributeView.class)
-                        .setGroup(FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByGroupName(fileGroup));
-            } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Failed to set file owner or group: {0}", e.toString());
+            String fileUser = conn.getHeaderField("File-User");
+            String fileGroup = conn.getHeaderField("File-Group");
+            if (fileUser != null && fileGroup != null) {
+                try {
+                    Files.setOwner(Paths.get(localFile),
+                            FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByName(fileUser));
+                    Files.getFileAttributeView(Paths.get(localFile), PosixFileAttributeView.class)
+                            .setGroup(FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByGroupName(fileGroup));
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to set file owner or group: {0}", e.toString());
+                }
             }
         }
 
         return true;
     }
 
-    public boolean fileUpload(Object localFile, String filePath) {
+    // Upload a local file to the remote server, the remote file will have the same permission as the local file
+    public boolean fileUpload(Object localFile, String filePath, boolean applyFileAttributes) {
         try {
             Map<String, String> headers = commonHeaders();
             headers.put("File-Path", filePath);
@@ -467,11 +518,13 @@ public class AppMeshClient {
             }
 
             // Get file permissions and attributes
-            int fileMode = Utils.getFilePermissions(file);
-            headers.put("File-Mode", String.valueOf(fileMode));
+            if (applyFileAttributes) {
+                int fileMode = Utils.getFilePermissions(file);
+                headers.put("File-Mode", String.valueOf(fileMode));
 
-            Map<String, String> fileAttributes = Utils.getFileAttributes(file);
-            headers.putAll(fileAttributes);
+                Map<String, String> fileAttributes = Utils.getFileAttributes(file);
+                headers.putAll(fileAttributes);
+            }
 
             String boundary = Utils.generateBoundary();
             headers.put("Content-Type", "multipart/form-data; boundary=" + boundary);
@@ -505,24 +558,28 @@ public class AppMeshClient {
         }
     }
 
+    // Get App Mesh host resource report include CPU, memory and disk
     public JSONObject hostResources() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/resources", null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
     }
 
+    // Get App Mesh configuration JSON
     public JSONObject configView() throws IOException {
         HttpURLConnection conn = request("GET", "/appmesh/config", null, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
     }
 
+    // Update configuration, the format follow 'config.yaml', support partial update
     public JSONObject configSet(JSONObject configJson) throws IOException {
         HttpURLConnection conn = request("POST", "/appmesh/config", configJson, null, null);
         String responseContent = Utils.readResponse(conn);
         return new JSONObject(responseContent);
     }
 
+    // Update App Mesh log level(DEBUG/INFO/NOTICE/WARN/ERROR)
     public String logLevel(String level) throws IOException {
         JSONObject config = new JSONObject().put("BaseConfig", new JSONObject().put("LogLevel", level));
 

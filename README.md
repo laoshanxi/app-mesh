@@ -6,11 +6,9 @@
 </a>
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh/badge)](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh)
 
-# App Mesh
+# App Mesh: Advanced Application Management Platform
 
-App Mesh is a `Multi-Tenant`, `Cloud Native`, `Micro Service` application management platform designed to manage, schedule, and monitor applications. Each app can be a specific microservice for service discovery or a standard app with replication. App Mesh ensures all defined applications run on time with the specified behavior and resource requests. The platform supports both standalone and cluster modes and provides REST APIs, a command-line interface, and a web UI.
-
-App Mesh is similar to Kubernetes but is much more lightweight, supporting both containerized and native applications.
+App Mesh is an open-source, multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
 
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
@@ -68,7 +66,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 | Non-container app | √        |
 | Service expose    | √        | √          |
 | Scheduler         | √        | √          |
-| Definition file   | JSON     | YAML       |
+| Definition file   | YAML     | YAML       |
 | GUI               | √        | √          |
 | Virtual Network   |          | √          |
 | Monitor tools     | √        | √          |

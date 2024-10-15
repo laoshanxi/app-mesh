@@ -16,8 +16,8 @@ import (
 	"github.com/rs/xid"
 )
 
-const PROTOBUF_HEADER_LENGTH = 4
-const TCP_CHUNK_READ_BLOCK_SIZE = 8192
+const TCP_MESSAGE_HEADER_LENGTH = 4
+const TCP_CHUNK_BLOCK_SIZE = 16*1024 - 256 // target to 16KB
 
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
 type AppMeshClientTCP struct {
@@ -56,9 +56,9 @@ func (client *AppMeshClientTCP) CloseConnection() {
 }
 
 // FileDownload downloads a file from the server to the local file system
-func (r *AppMeshClientTCP) FileDownload(filePath, localFile string) error {
+func (r *AppMeshClientTCP) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
 	headers := map[string]string{
-		"File-Path":                        filePath,
+		"File-Path":                        remoteFile,
 		HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: "true",
 	}
 
@@ -71,11 +71,11 @@ func (r *AppMeshClientTCP) FileDownload(filePath, localFile string) error {
 		return errors.New("HTTP_HEADER_KEY_X_RECV_FILE_SOCKET header missing")
 	}
 
-	return r.receiveFile(localFile, responseHeaders)
+	return r.receiveFile(localFile, responseHeaders, applyFileAttributes)
 }
 
 // Helper function to receive file data
-func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header) error {
+func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header, applyFileAttributes bool) error {
 	file, err := os.Create(localFile)
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header) er
 	defer file.Close()
 
 	for {
-		chunkSizeBuf, err := r.TcpExecutor.readTcpData(PROTOBUF_HEADER_LENGTH)
+		chunkSizeBuf, err := r.TcpExecutor.readTcpData(TCP_MESSAGE_HEADER_LENGTH)
 		if err != nil {
 			return err
 		}
@@ -103,12 +103,14 @@ func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header) er
 		}
 	}
 
-	SetFileAttributes(localFile, headers)
+	if applyFileAttributes {
+		SetFileAttributes(localFile, headers)
+	}
 	return nil
 }
 
 // FileUpload uploads a local file to the server
-func (client *AppMeshClientTCP) FileUpload(localFile, filePath string) error {
+func (client *AppMeshClientTCP) FileUpload(localFile, remoteFile string, applyFileAttributes bool) error {
 	file, err := os.Open(localFile)
 	if err != nil {
 		return err
@@ -116,16 +118,18 @@ func (client *AppMeshClientTCP) FileUpload(localFile, filePath string) error {
 	defer file.Close()
 
 	headers := map[string]string{
-		"File-Path":                        filePath,
+		"File-Path":                        remoteFile,
 		"Content-Type":                     "text/plain",
 		HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: "true",
 	}
 
 	// Get the file attributes
-	attrs, err := GetFileAttributes(localFile)
-	MergeStringMaps(headers, attrs)
-	if err != nil {
-		return err
+	if applyFileAttributes {
+		attrs, err := GetFileAttributes(localFile)
+		MergeStringMaps(headers, attrs)
+		if err != nil {
+			return err
+		}
 	}
 
 	status, _, responseHeaders, err := client.post("/appmesh/file/upload", nil, headers, nil)
@@ -141,7 +145,7 @@ func (client *AppMeshClientTCP) FileUpload(localFile, filePath string) error {
 
 // Helper function to upload file in chunks
 func (client *AppMeshClientTCP) uploadFileChunks(file *os.File) error {
-	chunkSize := 8 * 1024
+	chunkSize := TCP_CHUNK_BLOCK_SIZE
 	buffer := make([]byte, chunkSize)
 
 	for {
@@ -304,7 +308,7 @@ func (r *ClientRequesterTcp) SendData(data []byte) error {
 
 // sendLength sends the length of the data as a 4-byte header
 func (r *ClientRequesterTcp) sendLength(length int) error {
-	lenBuf := make([]byte, PROTOBUF_HEADER_LENGTH)
+	lenBuf := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
 	binary.BigEndian.PutUint32(lenBuf, uint32(length))
 	return r.sendTcpData(lenBuf)
 }
@@ -331,7 +335,7 @@ func (r *ClientRequesterTcp) sendEOFMarker() error {
 
 // RecvData receives a length-prefixed message from the TCP connection
 func (r *ClientRequesterTcp) RecvData() ([]byte, error) {
-	lenBuf, err := r.readTcpData(PROTOBUF_HEADER_LENGTH)
+	lenBuf, err := r.readTcpData(TCP_MESSAGE_HEADER_LENGTH)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +347,7 @@ func (r *ClientRequesterTcp) RecvData() ([]byte, error) {
 // readTcpData reads a specific number of bytes from the TCP connection
 func (r *ClientRequesterTcp) readTcpData(msgLength uint32) ([]byte, error) {
 	// read body buffer
-	var chunkSize uint32 = TCP_CHUNK_READ_BLOCK_SIZE
+	var chunkSize uint32 = TCP_CHUNK_BLOCK_SIZE
 	if msgLength < chunkSize {
 		chunkSize = msgLength
 	}

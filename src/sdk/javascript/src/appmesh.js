@@ -496,12 +496,15 @@ class AppMeshClient {
   }
 
   /**
-   * Copy a remote file to local, the local file will have the same permission as the remote file
+   * Copy a remote file to local. Optionally apply the same permissions as the remote file.
    * @param {string} filePath - The remote file path.
    * @param {string} localFile - The local file path to be downloaded.
+   * @param {boolean} [applyFileAttributes=true] - Whether to apply the file permissions (mode, owner, group) 
+   *                                               from the remote file to the local file. Default is true.
    * @returns {Promise<boolean>} Success or failure.
+   * @throws {Error} If there's a network error or other issues during execution.
    */
-  async file_download(filePath, localFile) {
+  async file_download(filePath, localFile, applyFileAttributes = true) {
     try {
       const headers = { "File-Path": filePath };
       const response = await this._request("get", "/appmesh/file/download", null, {
@@ -520,17 +523,19 @@ class AppMeshClient {
         const fs = require("fs").promises;
         await fs.writeFile(localFile, Buffer.from(response.data));
 
-        if (response.headers["file-mode"]) {
-          await fs.chmod(localFile, parseInt(response.headers["file-mode"]));
-        }
+        if (applyFileAttributes) {
+          if (response.headers["file-mode"]) {
+            await fs.chmod(localFile, parseInt(response.headers["file-mode"]));
+          }
 
-        if (response.headers["file-user"] && response.headers["file-group"]) {
-          const fileUid = parseInt(response.headers["file-user"]);
-          const fileGid = parseInt(response.headers["file-group"]);
-          try {
-            await fs.chown(localFile, fileUid, fileGid);
-          } catch (ex) {
-            console.log("Failed to change file ownership:", ex);
+          if (response.headers["file-user"] && response.headers["file-group"]) {
+            const fileUid = parseInt(response.headers["file-user"]);
+            const fileGid = parseInt(response.headers["file-group"]);
+            try {
+              await fs.chown(localFile, fileUid, fileGid);
+            } catch (ex) {
+              console.log("Failed to change file ownership:", ex);
+            }
           }
         }
       } else {
@@ -552,13 +557,18 @@ class AppMeshClient {
       return false;
     }
   }
+
   /**
-   * Upload a local file to the remote server, the remote file will have the same permission as the local file
+   * Upload a local file to the remote server. Optionally apply the same permissions as the local file.
+   * 
    * @param {string|File} localFile - The local file path or File object.
    * @param {string} filePath - The target remote file to be uploaded.
+   * @param {boolean} [applyFileAttributes=true] - Whether to apply the file permissions (mode, owner, group) 
+   *                                               from the local file to the remote file. Default is true.
    * @returns {Promise<boolean>} Success or failure.
+   * @throws {Error} If there's a network error or other issues during execution.
    */
-  async file_upload(localFile, filePath) {
+  async file_upload(localFile, filePath, applyFileAttributes = true) {
     try {
       const headers = this._commonHeaders();
       headers["File-Path"] = filePath;
@@ -584,9 +594,11 @@ class AppMeshClient {
           formData.append("file", fs.createReadStream(localFile));
         }
 
-        headers["File-Mode"] = stat.mode.toString();
-        headers["File-User"] = stat.uid.toString();
-        headers["File-Group"] = stat.gid.toString();
+        if (applyFileAttributes) {
+          headers["File-Mode"] = stat.mode.toString();
+          headers["File-User"] = stat.uid.toString();
+          headers["File-Group"] = stat.gid.toString();
+        }
 
         // When using form-data, we need to set the content type manually for Axios
         headers["Content-Type"] = `multipart/form-data; boundary=${formData.getBoundary()}`;

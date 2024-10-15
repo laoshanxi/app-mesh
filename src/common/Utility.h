@@ -129,8 +129,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 // The first 4 bytes of the protocol buffer data contains the size of the following body data.
-constexpr size_t PROTOBUF_HEADER_LENGTH = 4;
-constexpr size_t BLOCK_CHUNK_SIZE = 1024 * 4;
+constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 4;
+constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256; // target to 16KB
 constexpr size_t MAX_TCP_BLOCK_SIZE = 10 * 1024 * 1024 * 8;
 constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 

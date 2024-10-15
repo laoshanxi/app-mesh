@@ -100,7 +100,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 {
 	const static char fname[] = "ProtobufHelper::readMsgHeader() ";
 	// read header socket data (4 bytes)
-	auto result = readBytes(socket, PROTOBUF_HEADER_LENGTH, recvReturn);
+	auto result = readBytes(socket, TCP_MESSAGE_HEADER_LENGTH, recvReturn);
 	auto data = std::get<0>(result);
 	if (recvReturn <= 0)
 	{

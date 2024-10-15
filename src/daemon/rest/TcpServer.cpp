@@ -299,7 +299,7 @@ bool TcpHandler::reply(const Response &resp)
 			auto path = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
 			LOG_INF << fname << "download socket file : " << path;
 			// send file via TCP with chunks
-			auto pBuffer = make_shared_array<char>(BLOCK_CHUNK_SIZE);
+			auto pBuffer = make_shared_array<char>(TCP_CHUNK_BLOCK_SIZE);
 			std::ifstream file(path, std::ios::binary | std::ios::in);
 			if (file)
 			{
@@ -311,7 +311,7 @@ bool TcpHandler::reply(const Response &resp)
 				while (currentPos < fileEnd && file.good())
 				{
 					// continue read data chunk
-					file.readsome(pBuffer.get(), BLOCK_CHUNK_SIZE);
+					file.readsome(pBuffer.get(), TCP_CHUNK_BLOCK_SIZE);
 					auto readChunkSize = file.tellg() - currentPos;
 					currentPos = file.tellg();
 
@@ -410,10 +410,10 @@ bool TcpHandler::sendBytes(size_t intValue)
 	const static char fname[] = "TcpHandler::sendBytes() ";
 	LOG_DBG << fname << "sending <" << intValue << "> data to " << m_clientHostName;
 
-	char headerBuff[PROTOBUF_HEADER_LENGTH];
+	char headerBuff[TCP_MESSAGE_HEADER_LENGTH];
 	// write data size to header
 	*((uint32_t *)headerBuff) = htonl(intValue); // host to network byte order
-	return sendBytes(headerBuff, PROTOBUF_HEADER_LENGTH);
+	return sendBytes(headerBuff, TCP_MESSAGE_HEADER_LENGTH);
 }
 
 bool TcpHandler::replyTcp(int tcpHandlerId, const Response &resp)

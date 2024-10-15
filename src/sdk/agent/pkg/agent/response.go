@@ -26,7 +26,7 @@ type ResponseMessage struct {
 
 func ReadNewResponse(conn net.Conn) (*Response, error) {
 	// read header 4 bytes (int)
-	headerBuf, err := readTcpData(conn, PROTOBUF_HEADER_LENGTH)
+	headerBuf, err := readTcpData(conn, TCP_MESSAGE_HEADER_LENGTH)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (r *Response) readDownloadFileData(conn net.Conn, targetFilePath string) er
 	}
 	defer f.Close()
 	for {
-		headerBuf, err := readTcpData(conn, PROTOBUF_HEADER_LENGTH)
+		headerBuf, err := readTcpData(conn, TCP_MESSAGE_HEADER_LENGTH)
 		if err == nil {
 			chunkSize := binary.BigEndian.Uint32(headerBuf)
 			if chunkSize > 0 {

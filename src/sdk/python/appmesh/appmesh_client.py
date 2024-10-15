@@ -24,58 +24,50 @@ import requests
 DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"  # default 7 day(s)
 DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"  # 2 days
 DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"  # 2.5 days
+
+DEFAULT_SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
+DEFAULT_SSL_CLIENT_PEM_FILE = "/opt/appmesh/ssl/client.pem"
+DEFAULT_SSL_CLIENT_PEM_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
+
+# TLS-optimized chunk size (slightly less than maximum TLS record size)
+# leaves some room for TLS overhead (like headers) within the 16 KB limit.
+TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256  # target to 16KB
+TCP_MESSAGE_HEADER_LENGTH = 4
 REST_TEXT_MESSAGE_JSON_KEY = "message"
 MESSAGE_ENCODING_UTF8 = "utf-8"
-TCP_MESSAGE_HEADER_LENGTH = 4
-_SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
-_SSL_CLIENT_PEM_FILE = "/opt/appmesh/ssl/client.pem"
-_SSL_CLIENT_PEM_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
-HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
+
 HTTP_USER_AGENT = "appmesh/python"
 HTTP_USER_AGENT_TCP = "appmesh/python/tcp"
+HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
 HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
 HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
 HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
-
-
-def _get_str_item(data: dict, key):
-    return data[key] if (data and key in data and data[key] and isinstance(data[key], str)) else None
-
-
-def _get_int_item(data: dict, key):
-    return int(data[key]) if (data and key in data and data[key] and isinstance(data[key], int)) else None
-
-
-def _get_bool_item(data: dict, key):
-    return bool(data[key]) if (data and key in data and data[key]) else None
-
-
-def _get_native_item(data: dict, key):
-    return copy.deepcopy(data[key]) if (data and key in data and data[key]) else None
-
-
-class AppOutput(object):
-    """App output object for app_output() method"""
-
-    def __init__(self, status_code: HTTPStatus, output: str, out_position: Optional[int], exit_code: Optional[int]) -> None:
-
-        self.status_code = status_code
-        """HTTP status code"""
-
-        self.output = output
-        """HTTP response text"""
-
-        self.out_position = out_position
-        """Current read position (int or None)"""
-
-        self.exit_code = exit_code
-        """Process exit code (int or None)"""
 
 
 class App(object):
     """
     App object present an application in App Mesh
     """
+
+    @staticmethod
+    def _get_str_item(data: dict, key) -> Optional[str]:
+        """Retrieve a string value from a dictionary by key, if it exists and is a valid string."""
+        return data[key] if (data and key in data and data[key] and isinstance(data[key], str)) else None
+
+    @staticmethod
+    def _get_int_item(data: dict, key) -> Optional[int]:
+        """Retrieve an integer value from a dictionary by key, if it exists and is a valid integer."""
+        return int(data[key]) if (data and key in data and data[key] and isinstance(data[key], int)) else None
+
+    @staticmethod
+    def _get_bool_item(data: dict, key) -> Optional[bool]:
+        """Retrieve a boolean value from a dictionary by key, if it exists."""
+        return bool(data[key]) if (data and key in data and data[key]) else None
+
+    @staticmethod
+    def _get_native_item(data: dict, key) -> Optional[object]:
+        """Retrieve a deep copy of a value from a dictionary by key, if it exists."""
+        return copy.deepcopy(data[key]) if (data and key in data and data[key]) else None
 
     @unique
     class Permission(Enum):
@@ -103,10 +95,10 @@ class App(object):
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
 
-            self.exit = _get_str_item(data, "exit")
+            self.exit = App._get_str_item(data, "exit")
             """default exit behavior [restart,standby,keepalive,remove]"""
 
-            self.control = _get_native_item(data, "control") if _get_native_item(data, "control") else dict()
+            self.control = App._get_native_item(data, "control") if App._get_native_item(data, "control") else dict()
             """exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior"""
 
         def set_exit_behavior(self, a: Action) -> None:
@@ -126,10 +118,10 @@ class App(object):
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
 
-            self.daily_start = _get_int_item(data, "daily_start")
+            self.daily_start = App._get_int_item(data, "daily_start")
             """daily start time (e.g., '09:00:00+08')"""
 
-            self.daily_end = _get_int_item(data, "daily_end")
+            self.daily_end = App._get_int_item(data, "daily_end")
             """daily end time (e.g., '20:00:00+08')"""
 
         def set_daily_range(self, start: datetime, end: datetime) -> None:
@@ -146,13 +138,13 @@ class App(object):
             if isinstance(data, (str, bytes, bytearray)):
                 data = json.loads(data)
 
-            self.cpu_shares = _get_int_item(data, "cpu_shares")
+            self.cpu_shares = App._get_int_item(data, "cpu_shares")
             """CPU shares (relative weight)"""
 
-            self.memory_mb = _get_int_item(data, "memory_mb")
+            self.memory_mb = App._get_int_item(data, "memory_mb")
             """physical memory limit in MByte"""
 
-            self.memory_virt_mb = _get_int_item(data, "memory_virt_mb")
+            self.memory_virt_mb = App._get_int_item(data, "memory_virt_mb")
             """virtual memory limit in MByte"""
 
     def __init__(self, data=None):
@@ -165,59 +157,59 @@ class App(object):
         if isinstance(data, (str, bytes, bytearray)):
             data = json.loads(data)
 
-        self.name = _get_str_item(data, "name")
+        self.name = App._get_str_item(data, "name")
         """application name (unique)"""
 
-        self.command = _get_str_item(data, "command")
+        self.command = App._get_str_item(data, "command")
         """full command line with arguments"""
 
-        self.shell = _get_bool_item(data, "shell")
+        self.shell = App._get_bool_item(data, "shell")
         """use shell mode, cmd can be more shell commands with string format"""
 
-        self.session_login = _get_bool_item(data, "session_login")
+        self.session_login = App._get_bool_item(data, "session_login")
         """app run in session login mode"""
 
-        self.description = _get_str_item(data, "description")
+        self.description = App._get_str_item(data, "description")
         """application description string"""
 
-        self.metadata = _get_native_item(data, "metadata")
+        self.metadata = App._get_native_item(data, "metadata")
         """metadata string/JSON (input for application, pass to process stdin)"""
 
-        self.working_dir = _get_str_item(data, "working_dir")
+        self.working_dir = App._get_str_item(data, "working_dir")
         """working directory"""
 
-        self.status = _get_int_item(data, "status")
+        self.status = App._get_int_item(data, "status")
         """initial application status (true is enable, false is disabled)"""
 
-        self.docker_image = _get_str_item(data, "docker_image")
+        self.docker_image = App._get_str_item(data, "docker_image")
         """docker image which used to run command line (for docker container application)"""
 
-        self.stdout_cache_num = _get_int_item(data, "stdout_cache_num")
+        self.stdout_cache_num = App._get_int_item(data, "stdout_cache_num")
         """stdout file cache number"""
 
-        self.start_time = _get_int_item(data, "start_time")
+        self.start_time = App._get_int_item(data, "start_time")
         """start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')"""
 
-        self.end_time = _get_int_item(data, "end_time")
+        self.end_time = App._get_int_item(data, "end_time")
         """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
 
-        self.interval = _get_int_item(data, "interval")
+        self.interval = App._get_int_item(data, "interval")
         """start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')"""
 
-        self.cron = _get_bool_item(data, "cron")
+        self.cron = App._get_bool_item(data, "cron")
         """indicate interval parameter use cron expression or not"""
 
-        self.daily_limitation = App.DailyLimitation(_get_native_item(data, "daily_limitation"))
+        self.daily_limitation = App.DailyLimitation(App._get_native_item(data, "daily_limitation"))
 
-        self.retention = _get_str_item(data, "retention")
+        self.retention = App._get_str_item(data, "retention")
         """extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')."""
 
-        self.health_check_cmd = _get_str_item(data, "health_check_cmd")
+        self.health_check_cmd = App._get_str_item(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
 
-        self.permission = _get_int_item(data, "permission")
+        self.permission = App._get_int_item(data, "permission")
         """application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3."""
-        self.behavior = App.Behavior(_get_native_item(data, "behavior"))
+        self.behavior = App.Behavior(App._get_native_item(data, "behavior"))
 
         self.env = dict()
         """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
@@ -231,32 +223,32 @@ class App(object):
             for k, v in data["sec_env"].items():
                 self.sec_env[k] = v
 
-        self.pid = _get_int_item(data, "pid")
+        self.pid = App._get_int_item(data, "pid")
         """process id used to attach to the running process"""
-        self.resource_limit = App.ResourceLimitation(_get_native_item(data, "resource_limit"))
+        self.resource_limit = App.ResourceLimitation(App._get_native_item(data, "resource_limit"))
 
         # readonly attributes
-        self.owner = _get_str_item(data, "owner")
+        self.owner = App._get_str_item(data, "owner")
         """owner name"""
-        self.pstree = _get_str_item(data, "pstree")
+        self.pstree = App._get_str_item(data, "pstree")
         """process tree"""
-        self.container_id = _get_str_item(data, "container_id")
+        self.container_id = App._get_str_item(data, "container_id")
         """container id"""
-        self.memory = _get_int_item(data, "memory")
+        self.memory = App._get_int_item(data, "memory")
         """memory usage"""
-        self.cpu = _get_int_item(data, "cpu")
+        self.cpu = App._get_int_item(data, "cpu")
         """cpu usage"""
-        self.fd = _get_int_item(data, "fd")
+        self.fd = App._get_int_item(data, "fd")
         """file descriptor usage"""
-        self.last_start_time = _get_int_item(data, "last_start_time")
+        self.last_start_time = App._get_int_item(data, "last_start_time")
         """last start time"""
-        self.last_exit_time = _get_int_item(data, "last_exit_time")
+        self.last_exit_time = App._get_int_item(data, "last_exit_time")
         """last exit time"""
-        self.health = _get_int_item(data, "health")
+        self.health = App._get_int_item(data, "health")
         """health status"""
-        self.version = _get_int_item(data, "version")
+        self.version = App._get_int_item(data, "version")
         """version number"""
-        self.return_code = _get_int_item(data, "return_code")
+        self.return_code = App._get_int_item(data, "return_code")
         """last exit code"""
 
     def set_valid_time(self, start: datetime, end: datetime) -> None:
@@ -300,6 +292,24 @@ class App(object):
         return output
 
 
+class AppOutput(object):
+    """App output information"""
+
+    def __init__(self, status_code: HTTPStatus, output: str, out_position: Optional[int], exit_code: Optional[int]) -> None:
+
+        self.status_code = status_code
+        """HTTP status code"""
+
+        self.output = output
+        """HTTP response text"""
+
+        self.out_position = out_position
+        """Current read position (int or None)"""
+
+        self.exit_code = exit_code
+        """Process exit code (int or None)"""
+
+
 class AppRun(object):
     """
     Application run object indicate to a remote run from run_async()
@@ -340,10 +350,81 @@ class AppRun(object):
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
-    """App Mesh client object used to access App Mesh REST Service
+    """
+    Client SDK for interacting with the App Mesh service via REST API.
 
-    - install pip package: python3 -m pip install --upgrade appmesh
-    - import module: from appmesh import appmesh_client
+    The `AppMeshClient` class provides a comprehensive interface for managing and monitoring distributed applications
+    within the App Mesh ecosystem. It enables communication with the App Mesh REST API for operations such as
+    application lifecycle management, monitoring, and configuration.
+
+    This client is designed for direct usage in applications that require access to App Mesh services over HTTP-based REST.
+
+    Usage:
+        - Install the App Mesh Python package:
+            python3 -m pip install --upgrade appmesh
+        - Import the client module:
+            from appmesh import appmesh_client
+
+    Example:
+        client = appmesh_client.AppMeshClient()
+        client.login("your-name", "your-password")
+        response = client.app_view(app_name='ping')
+
+    Attributes:
+        - TLS (Transport Layer Security): Supports secure connections between the client and App Mesh service,
+          ensuring encrypted communication.
+        - JWT (JSON Web Token) and RBAC (Role-Based Access Control): Provides secure API access with
+          token-based authentication and authorization to enforce fine-grained permissions.
+
+    Methods:
+        - login()
+        - logoff()
+        - authentication()
+        - renew()
+        - totp_disable()
+        - totp_secret()
+        - totp_setup()
+
+        - app_add()
+        - app_delete()
+        - app_disable()
+        - app_enable()
+        - app_health()
+        - app_output()
+        - app_view()
+        - app_view_all()
+
+        - run_async()
+        - run_async_wait()
+        - run_sync()
+
+        - config_set()
+        - config_view()
+        - log_level_set()
+        - host_resource()
+        - forwarding_host
+        - metrics()
+
+        - tag_add()
+        - tag_delete()
+        - tag_view()
+
+        - file_download()
+        - file_upload()
+
+        - user_add()
+        - user_delete()
+        - user_lock()
+        - user_passwd_update()
+        - user_self()
+        - user_unlock()
+        - users_view()
+        - permissions_for_user()
+        - permissions_view()
+        - role_delete()
+        - role_update()
+        - roles_view()
+        - groups_view()
     """
 
     @unique
@@ -359,8 +440,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def __init__(
         self,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify=_SSL_CA_PEM_FILE if os.path.exists(_SSL_CA_PEM_FILE) else False,
-        rest_ssl_client_cert=(_SSL_CLIENT_PEM_FILE, _SSL_CLIENT_PEM_KEY_FILE) if os.path.exists(_SSL_CLIENT_PEM_FILE) else None,
+        rest_ssl_verify=DEFAULT_SSL_CA_PEM_FILE if os.path.exists(DEFAULT_SSL_CA_PEM_FILE) else False,
+        rest_ssl_client_cert=(DEFAULT_SSL_CLIENT_PEM_FILE, DEFAULT_SSL_CLIENT_PEM_KEY_FILE) if os.path.exists(DEFAULT_SSL_CLIENT_PEM_FILE) else None,
         rest_timeout=(60, 300),
         jwt_token=None,
     ):
@@ -475,6 +556,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/self/logoff")
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
+        self.jwt_token = None
         return resp.status_code == HTTPStatus.OK
 
     def authentication(self, token: str, permission=None) -> bool:
@@ -662,7 +744,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return AppOutput(status_code=resp.status_code, output=resp.text, out_position=out_position, exit_code=exit_code)
 
     def app_health(self, app_name: str) -> bool:
-        """Get application health status, 0 is health.
+        """Get application health status
 
         Args:
             app_name (str): the application name.
@@ -1142,37 +1224,37 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # File management
     ########################################
-    def file_download(self, file_path: str, local_file: str) -> bool:
-        """Copy a remote file to local, the local file will have the same permission as the remote file
+    def file_download(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
+        """Copy a remote file to local. Optionally, the local file will have the same permission as the remote file.
 
         Args:
-            file_path (str): the remote file path.
+            remote_file (str): the remote file path.
             local_file (str): the local file path to be downloaded.
-
-        Returns:
-            bool: success or failure.
+            apply_file_attributes (bool): whether to apply file attributes (permissions, owner, group) to the local file.
         """
-        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": file_path})
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": remote_file})
+        resp.raise_for_status()
 
+        # Write the file content locally
         with open(local_file, "wb") as fp:
-            for chunk in resp.iter_content(chunk_size=512):
+            for chunk in resp.iter_content(chunk_size=8 * 1024):  # 8 KB
                 if chunk:
                     fp.write(chunk)
-        if "File-Mode" in resp.headers:
-            os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
-        if "File-User" in resp.headers and "File-Group" in resp.headers:
-            file_uid = int(resp.headers["File-User"])
-            file_gid = int(resp.headers["File-Group"])
-            try:
-                os.chown(path=local_file, uid=file_uid, gid=file_gid)
-            except Exception as ex:
-                print(ex)
-        return resp.status_code == HTTPStatus.OK
 
-    def file_upload(self, local_file: str, file_path: str) -> bool:
-        """Upload a local file to the remote server, the remote file will have the same permission as the local file
+        # Apply file attributes (permissions, owner, group) if requested
+        if apply_file_attributes:
+            if "File-Mode" in resp.headers:
+                os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
+            if "File-User" in resp.headers and "File-Group" in resp.headers:
+                file_uid = int(resp.headers["File-User"])
+                file_gid = int(resp.headers["File-Group"])
+                try:
+                    os.chown(path=local_file, uid=file_uid, gid=file_gid)
+                except PermissionError:
+                    print(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
+
+    def file_upload(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
+        """Upload a local file to the remote server. Optionally, the remote file will have the same permission as the local file.
 
         Dependency:
             sudo apt install python3-pip
@@ -1180,22 +1262,26 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         Args:
             local_file (str): the local file path.
-            file_path (str): the target remote file to be uploaded.
-
-        Returns:
-            bool: success or failure.
+            remote_file (str): the target remote file to be uploaded.
+            apply_file_attributes (bool): whether to upload file attributes (permissions, owner, group) along with the file.
         """
+        if not os.path.exists(local_file):
+            raise FileNotFoundError(f"Local file not found: {local_file}")
+
         from requests_toolbelt import MultipartEncoder
 
         with open(file=local_file, mode="rb") as fp:
-            encoder = MultipartEncoder(fields={"filename": os.path.basename(file_path), "file": ("filename", fp, "application/octet-stream")})
-            file_stat = os.stat(local_file)
-            header = {}
-            header["File-Path"] = file_path
-            header["File-Mode"] = str(file_stat.st_mode)
-            header["File-User"] = str(file_stat.st_uid)
-            header["File-Group"] = str(file_stat.st_gid)
-            header["Content-Type"] = encoder.content_type
+            encoder = MultipartEncoder(fields={"filename": os.path.basename(remote_file), "file": ("filename", fp, "application/octet-stream")})
+            header = {"File-Path": remote_file, "Content-Type": encoder.content_type}
+
+            # Include file attributes (permissions, owner, group) if requested
+            if apply_file_attributes:
+                file_stat = os.stat(local_file)
+                header["File-Mode"] = str(file_stat.st_mode)
+                header["File-User"] = str(file_stat.st_uid)
+                header["File-Group"] = str(file_stat.st_gid)
+
+            # Upload file with or without attributes
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self._request_http(
                 AppMeshClient.Method.POST_STREAM,
@@ -1203,9 +1289,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 header=header,
                 body=encoder,
             )
-            if resp.status_code != HTTPStatus.OK:
-                raise Exception(resp.text)
-        return True
+            resp.raise_for_status()
 
     ########################################
     # Application run
@@ -1340,7 +1424,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host
             else:
                 header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host + ":" + str(parse.urlsplit(self.server_url).port)
-        header[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT
+        header[HTTP_HEADER_KEY_USER_AGENT] = HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
@@ -1359,15 +1443,42 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
 
 class AppMeshClientTCP(AppMeshClient):
-    """Client object used to access App Mesh REST Service over TCP (better performance than AppMeshClient)
+    """
+    Client SDK for interacting with the App Mesh service over TCP, with enhanced support for large file transfers.
+
+    The `AppMeshClientTCP` class extends the functionality of `AppMeshClient` by offering a TCP-based communication layer
+    for the App Mesh REST API. It overrides the file download and upload methods to support large file transfers with
+    improved performance, leveraging TCP for lower latency and higher throughput compared to HTTP.
+
+    This client is suitable for applications requiring efficient data transfers and high-throughput operations within the
+    App Mesh ecosystem, while maintaining compatibility with all other attributes and methods from `AppMeshClient`.
 
     Dependency:
-        pip3 install msgpack
+        - Install the required package for message serialization:
+            pip3 install msgpack
+
+    Usage:
+        - Import the client module:
+            from appmesh import appmesh_client
+
+    Example:
+        client = appmesh_client.AppMeshClientTCP()
+        client.login("your-name", "your-password")
+        client.file_download("/tmp/os-release", "os-release")
+
+    Attributes:
+        - Inherits all attributes from `AppMeshClient`, including TLS secure connections and JWT-based authentication.
+        - Optimized for TCP-based communication to provide better performance for large file transfers.
+
+    Methods:
+        - file_download()
+        - file_upload()
+        - Inherits all other methods from `AppMeshClient`, providing a consistent interface for managing applications within App Mesh.
     """
 
     def __init__(
         self,
-        rest_ssl_verify=_SSL_CA_PEM_FILE if os.path.exists(_SSL_CA_PEM_FILE) else False,
+        rest_ssl_verify=DEFAULT_SSL_CA_PEM_FILE if os.path.exists(DEFAULT_SSL_CA_PEM_FILE) else False,
         rest_ssl_client_cert=None,
         jwt_token=None,
         tcp_address=("localhost", 6059),
@@ -1505,7 +1616,7 @@ class AppMeshClientTCP(AppMeshClient):
             appmesh_requst.headers["Authorization"] = "Bearer " + super().jwt_token
         if super().forwarding_host and len(super().forwarding_host) > 0:
             raise Exception("Not support forward request in TCP mode")
-        appmesh_requst.headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_TCP
+        appmesh_requst.headers[HTTP_HEADER_KEY_USER_AGENT] = HTTP_USER_AGENT_TCP
         appmesh_requst.uuid = str(uuid.uuid1())
         appmesh_requst.http_method = method.value
         appmesh_requst.request_uri = path
@@ -1549,31 +1660,34 @@ class AppMeshClientTCP(AppMeshClient):
     ########################################
     # File management
     ########################################
-    def file_download(self, file_path: str, local_file: str) -> bool:
+    def file_download(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
         """Copy a remote file to local, the local file will have the same permission as the remote file
 
         Args:
-            file_path (str): the remote file path.
+            remote_file (str): the remote file path.
             local_file (str): the local file path to be downloaded.
-
-        Returns:
-            bool: success or failure.
+            apply_file_attributes (bool): whether to apply file attributes (permissions, owner, group) to the local file.
         """
-        header = {}
-        header["File-Path"] = file_path
+        header = {"File-Path": remote_file}
         header[HTTP_HEADER_KEY_X_RECV_FILE_SOCKET] = "true"
         resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header=header)
-        if resp.status_code == HTTPStatus.OK and HTTP_HEADER_KEY_X_RECV_FILE_SOCKET in resp.headers:
-            with open(local_file, "wb") as fp:
-                chunk_data = bytes()
+
+        resp.raise_for_status()
+        if HTTP_HEADER_KEY_X_RECV_FILE_SOCKET not in resp.headers:
+            raise ValueError(f"Server did not respond with socket transfer option: {HTTP_HEADER_KEY_X_RECV_FILE_SOCKET}")
+
+        with open(local_file, "wb") as fp:
+            chunk_data = bytes()
+            chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False)
+            while chunk_size > 0:
+                chunk_data = self.__recvall(chunk_size)
+                if chunk_data is None or len(chunk_data) == 0:
+                    self.__close_socket()
+                    raise Exception("socket connection broken")
+                fp.write(chunk_data)
                 chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False)
-                while chunk_size > 0:
-                    chunk_data = self.__recvall(chunk_size)
-                    if chunk_data is None or len(chunk_data) == 0:
-                        self.__close_socket()
-                        raise Exception("socket connection broken")
-                    fp.write(chunk_data)
-                    chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False)
+
+        if apply_file_attributes:
             if "File-Mode" in resp.headers:
                 os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
             if "File-User" in resp.headers and "File-Group" in resp.headers:
@@ -1581,12 +1695,10 @@ class AppMeshClientTCP(AppMeshClient):
                 file_gid = int(resp.headers["File-Group"])
                 try:
                     os.chown(path=local_file, uid=file_uid, gid=file_gid)
-                except Exception as ex:
-                    print(ex)
-            return True
-        return False
+                except PermissionError:
+                    print(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
 
-    def file_upload(self, local_file: str, file_path: str):
+    def file_upload(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
         """Upload a local file to the remote server, the remote file will have the same permission as the local file
 
         Dependency:
@@ -1595,30 +1707,34 @@ class AppMeshClientTCP(AppMeshClient):
 
         Args:
             local_file (str): the local file path.
-            file_path (str): the target remote file to be uploaded.
-
-        Returns:
-            bool: success or failure.
-            str: text message.
+            remote_file (str): the target remote file to be uploaded.
+            apply_file_attributes (bool): whether to upload file attributes (permissions, owner, group) along with the file.
         """
+        if not os.path.exists(local_file):
+            raise FileNotFoundError(f"Local file not found: {local_file}")
+
         with open(file=local_file, mode="rb") as fp:
-            file_stat = os.stat(local_file)
-            header = {}
-            header["File-Path"] = file_path
-            header["File-Mode"] = str(file_stat.st_mode)
-            header["File-User"] = str(file_stat.st_uid)
-            header["File-Group"] = str(file_stat.st_gid)
-            header["Content-Type"] = "text/plain"
+            header = {"File-Path": remote_file, "Content-Type": "text/plain"}
             header[HTTP_HEADER_KEY_X_SEND_FILE_SOCKET] = "true"
+
+            if apply_file_attributes:
+                file_stat = os.stat(local_file)
+                header["File-Mode"] = str(file_stat.st_mode)
+                header["File-User"] = str(file_stat.st_uid)
+                header["File-Group"] = str(file_stat.st_gid)
+
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
-            if resp.status_code == HTTPStatus.OK and HTTP_HEADER_KEY_X_SEND_FILE_SOCKET in resp.headers:
-                chunk_size = 8 * 1024  # (8 KB in bytes), 131072 bytes (128 KB) is default max ssl buffer size
+
+            resp.raise_for_status()
+            if HTTP_HEADER_KEY_X_SEND_FILE_SOCKET not in resp.headers:
+                raise ValueError(f"Server did not respond with socket transfer option: {HTTP_HEADER_KEY_X_SEND_FILE_SOCKET}")
+
+            chunk_size = TCP_CHUNK_BLOCK_SIZE
+            while True:
                 chunk_data = fp.read(chunk_size)
-                while chunk_data:
-                    self.__socket_client.sendall(len(chunk_data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
-                    self.__socket_client.sendall(chunk_data)
-                    chunk_data = fp.read(chunk_size)
-                self.__socket_client.sendall(int(0).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
-                return True, ""
-            return False, resp.json()[REST_TEXT_MESSAGE_JSON_KEY]
+                if not chunk_data:
+                    self.__socket_client.sendall((0).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
+                    break
+                self.__socket_client.sendall(len(chunk_data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
+                self.__socket_client.sendall(chunk_data)
