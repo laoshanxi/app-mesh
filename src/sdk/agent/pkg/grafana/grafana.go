@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/buaazp/fasthttprouter"
+	"github.com/gorilla/mux"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/valyala/fasthttp"
 )
@@ -128,7 +128,7 @@ func (AppmeshGrafanaJson) GrafanaAdhocFilterTagValues(ctx context.Context, key s
 	}, nil
 }
 
-func RegGrafanaRestHandler(router *fasthttprouter.Router) {
+func RegGrafanaRestHandler(router *mux.Router) {
 	// TODO: WithQuerier(AppmeshGrafanaJson{}) WithSearcher(AppmeshGrafanaJson{}) WithAnnotator(AppmeshGrafanaJson{})
 	simJson := New(WithTableQuerier(AppmeshGrafanaJson{}))
 	simJson.handleRestRouter(router)

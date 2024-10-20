@@ -753,7 +753,8 @@ namespace os
 		struct stat fileStat;
 		if (::stat(path.c_str(), &fileStat) >= 0)
 		{
-			return std::make_tuple(fileStat.st_mode, fileStat.st_uid, fileStat.st_gid);
+			// Extract permission bits using bitwise AND: int permissionBits = fileStat.st_mode & 0777;
+			return std::make_tuple(fileStat.st_mode & 0777, fileStat.st_uid, fileStat.st_gid);
 		}
 		else
 		{

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path"
 
@@ -97,22 +98,33 @@ func (r *Response) readDownloadFileData(conn net.Conn, targetFilePath string) er
 	return nil
 }
 
-func (r *Response) applyResponse(ctx *fasthttp.RequestCtx) {
-	// headers
+func (r *Response) applyResponse(w http.ResponseWriter, req *http.Request) {
+	// Set headers
 	for k, v := range r.Headers {
-		ctx.Response.Header.Set(k, v)
+		w.Header().Set(k, v)
 	}
-	// user agent
-	ctx.Response.Header.Set(HTTP_USER_AGENT_HEADER_NAME, USER_AGENT_APPMESH_SDK)
-	// status code
-	ctx.Response.SetStatusCode(int(r.HttpStatus))
-	// body
-	if (REST_PATH_DOWNLOAD == string(ctx.Request.URI().Path()) || REST_PATH_UPLOAD == string(ctx.Request.URI().Path())) &&
-		handleRestFile(ctx, r) {
-		ctx.Logger().Printf("File REST call Finished %s", r.Uuid)
+
+	// Set user agent
+	w.Header().Set(HTTP_USER_AGENT_HEADER_NAME, USER_AGENT_APPMESH_SDK)
+
+	// Set content type for non-file responses
+	if r.RequestUri != REST_PATH_DOWNLOAD && r.RequestUri != REST_PATH_UPLOAD {
+		w.Header().Set("Content-Type", r.BodyMsgType)
+	}
+
+	// Set status code
+	w.WriteHeader(r.HttpStatus)
+
+	// Handle the response body based on the path
+	if r.RequestUri == REST_PATH_DOWNLOAD || r.RequestUri == REST_PATH_UPLOAD {
+		if err := handleRestFile(w, req, r); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		log.Printf("File REST call Finished %s", r.Uuid)
 	} else {
-		ctx.Response.SetBodyRaw([]byte(r.Body))
-		ctx.SetContentType(r.BodyMsgType)
-		ctx.Logger().Printf("REST call Finished  %s", r.Uuid)
+		if _, err := w.Write([]byte(r.Body)); err != nil {
+			log.Printf("Error writing response body for %s: %v", r.Uuid, err)
+		}
+		log.Printf("REST call Finished %s", r.Uuid)
 	}
 }

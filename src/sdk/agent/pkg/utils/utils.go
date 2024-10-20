@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -107,4 +108,19 @@ func IsValidFileName(fileName string) bool {
 	}
 
 	return true
+}
+
+func SaveStreamToFile(src io.Reader, filePath string) error {
+	dst, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer dst.Close()
+
+	_, err = io.Copy(dst, src)
+	if err != nil {
+		return fmt.Errorf("error copying data to file: %w", err)
+	}
+
+	return nil
 }

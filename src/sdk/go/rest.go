@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 )
 
 func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile string) *http.Client {
@@ -25,12 +26,14 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 		log.Println(err)
 	}
 
-	return &http.Client{Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs:            caCert,
-			InsecureSkipVerify: (caCert == nil),
-			Certificates:       []tls.Certificate{clientCert},
-		}}}
+	return &http.Client{
+		Timeout: 2 * time.Minute,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:            caCert,
+				InsecureSkipVerify: (caCert == nil),
+				Certificates:       []tls.Certificate{clientCert},
+			}}}
 }
 
 // REST GET

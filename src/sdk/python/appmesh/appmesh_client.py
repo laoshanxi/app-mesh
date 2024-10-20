@@ -453,7 +453,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 the server's TLS certificate, or a string, in which case it must be a path to a CA bundle to use. Defaults to ``True``.
             rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair. If String, path to ssl client cert file (.pem). If Tuple, ('cert', 'key') pair.
             rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
-            jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
+            jwt_token (str, optional): JWT token, provide correct token is same with login() & authentication().
         """
 
         self.server_url = rest_url
@@ -1277,7 +1277,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             # Include file attributes (permissions, owner, group) if requested
             if apply_file_attributes:
                 file_stat = os.stat(local_file)
-                header["File-Mode"] = str(file_stat.st_mode)
+                header["File-Mode"] = str(file_stat.st_mode & 0o777)  # Mask to keep only permission bits
                 header["File-User"] = str(file_stat.st_uid)
                 header["File-Group"] = str(file_stat.st_gid)
 
@@ -1489,7 +1489,7 @@ class AppMeshClientTCP(AppMeshClient):
             rest_ssl_verify (str, optional): (optional) SSL CA certification. Either a boolean, in which case it controls whether we verify
                 the server's TLS certificate, or a string, in which case it must be a path to a CA bundle to use. Defaults to ``True``.
             rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair . If String, path to ssl client cert file (.pem). If Tuple, ('cert', 'key') pair.
-            jwt_token (str, optional): JWT token, provide correct token is same with login() & authenticate().
+            jwt_token (str, optional): JWT token, provide correct token is same with login() & authentication().
 
             tcp_address (tuple, optional): TCP connect address.
         """
@@ -1719,7 +1719,7 @@ class AppMeshClientTCP(AppMeshClient):
 
             if apply_file_attributes:
                 file_stat = os.stat(local_file)
-                header["File-Mode"] = str(file_stat.st_mode)
+                header["File-Mode"] = str(file_stat.st_mode & 0o777)  # Mask to keep only permission bits
                 header["File-User"] = str(file_stat.st_uid)
                 header["File-Group"] = str(file_stat.st_gid)
 

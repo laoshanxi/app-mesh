@@ -18,32 +18,23 @@ type Connection struct {
 	mu   sync.Mutex
 }
 
-type tcpConnections struct {
-	mu          sync.Mutex
-	connections map[string]*Connection
-}
-
 func NewConnection(targetHost string, verifyServer bool, allowError bool) (*Connection, error) {
-	remoteConnections.mu.Lock()
-	defer remoteConnections.mu.Unlock()
+	// Acquire a lock to prevent race conditions when checking/creating connections
+	remoteConnectionsMutex.Lock()
+	defer remoteConnectionsMutex.Unlock()
 
-	// Check for existing connection
-	if conn, ok := remoteConnections.connections[targetHost]; ok {
-		return conn, nil
+	if conn, ok := remoteConnections.Load(targetHost); ok {
+		return conn.(*Connection), nil
 	}
 
-	// No available connection, create a new one
 	conn, err := appmesh.ConnectAppMeshServer(targetHost, verifyServer, &config.ConfigData.REST.SSL)
 	if err != nil {
 		return nil, err
 	}
-	// Store the new connection
+
 	sConn := &Connection{conn: conn}
-	remoteConnections.connections[targetHost] = sConn
-
-	// start thread to monitor response
+	remoteConnections.Store(targetHost, sConn)
 	go monitorResponse(sConn, targetHost, allowError)
-
 	return sConn, nil
 }
 
@@ -69,66 +60,54 @@ func (r *Connection) sendRequestData(request *appmesh.Request) error {
 }
 
 func (r *Connection) sendUploadFileData(localFile string) error {
-	var err error
-	var file *os.File
-	if file, err = os.Open(localFile); err == nil {
-		log.Printf("sending file: %s", localFile)
-		defer os.Remove(localFile)
-		defer file.Close()
-		// Create a buffered reader for the file
-		reader := bufio.NewReader(file)
-		chunkSize := TCP_CHUNK_BLOCK_SIZE
-		// Create a buffer to store chunks
-		bodyData := make([]byte, chunkSize)
+	file, err := os.Open(localFile)
+	if err != nil {
+		log.Printf("Error opening file: %v", err)
+		return err
+	}
+	defer os.Remove(localFile)
+	defer file.Close()
 
-		// header buffer
-		headerData := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
+	reader := bufio.NewReader(file)
+	buf := make([]byte, TCP_CHUNK_BLOCK_SIZE)
+	headerData := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
 
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		// Read the file in chunks and send each chunk over the TCP connection
-		for {
-			// Read a chunk from the file
-			n, err := reader.Read(bodyData)
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-			if err != nil && err != io.EOF {
-				log.Printf("Error reading file: %v", err)
-				break
-			}
-
+	for {
+		// Read a chunk from the file
+		n, err := reader.Read(buf)
+		if err != nil && err != io.EOF {
+			log.Printf("Error reading file: %v", err)
+			return err
+		}
+		if n == 0 {
 			// If we've reached the end of the file, break out of the loop
-			if n == 0 {
-				break
-			}
-
-			binary.BigEndian.PutUint32(headerData, uint32(n))
-			if err = r.sendTcpData(headerData); err == nil {
-				err = r.sendTcpData(bodyData[:n])
-			}
-
-			if err != nil {
-				break
-			}
+			break
 		}
 
-		binary.BigEndian.PutUint32(headerData, uint32(0))
-		err = r.sendTcpData(headerData)
+		binary.BigEndian.PutUint32(headerData, uint32(n))
+		if err = r.sendTcpData(headerData); err == nil {
+			err = r.sendTcpData(buf[:n])
+		}
 
-		log.Printf("upload socket file %s finished", localFile)
-	} else {
-		log.Printf("Error opening file: %v", err)
+		if err != nil {
+			return err
+		}
 	}
-	return err
+
+	binary.BigEndian.PutUint32(headerData, uint32(0)) // End of file indicator
+	return r.sendTcpData(headerData)
 }
 
 func deleteConnection(targetHost string) {
-	remoteConnections.mu.Lock()
-	defer remoteConnections.mu.Unlock()
-
-	if conn, ok := remoteConnections.connections[targetHost]; ok {
-		conn.conn.Close()                                 // Close the connection
-		delete(remoteConnections.connections, targetHost) // Remove it from the map
-		log.Printf("remove connection: %s", targetHost)
+	// Atomically load and delete the connection
+	if value, ok := remoteConnections.LoadAndDelete(targetHost); ok {
+		if conn, ok := value.(*Connection); ok {
+			conn.conn.Close() // Close the connection
+			log.Printf("Removed connection: %s", targetHost)
+		}
 	}
 }
 

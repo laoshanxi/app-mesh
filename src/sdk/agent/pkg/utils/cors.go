@@ -2,12 +2,25 @@ package utils
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
-
-	"github.com/valyala/fasthttp"
 )
 
-// Define the allowed headers
+/*
+To use this middleware, you can do something like this:
+	http.HandleFunc("/api", Cors(DefaultCORSConfig)(yourHandlerFunc))
+
+Or with custom config:
+	customConfig := CORSConfig{
+		AllowedOrigins: []string{"https://example.com", "https://api.example.com"},
+		AllowedMethods: []string{"GET", "POST"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
+		MaxAge:         3600,
+	}
+	http.HandleFunc("/api", Cors(customConfig)(yourHandlerFunc))
+*/
+
+// allowedHeaders defines the list of allowed headers for CORS
 var allowedHeaders = []string{
 	"Accept",
 	"Content-Type",
@@ -24,22 +37,56 @@ var allowedHeaders = []string{
 	"X-Target-Host",
 }
 
-// cross-origin
-func Cors(handle fasthttp.RequestHandler) fasthttp.RequestHandler {
-	return func(ctx *fasthttp.RequestCtx) {
-		ctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
-		ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
-		ctx.Response.Header.Set("Access-Control-Allow-Headers", strings.Join(allowedHeaders, ", "))
+// CORSConfig holds the configuration for CORS
+type CORSConfig struct {
+	AllowedOrigins []string
+	AllowedMethods []string
+	AllowedHeaders []string
+	MaxAge         int
+}
 
-		//contentSecurityPolicy := "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-		//ctx.Response.Header.Set("Content-Security-Policy", contentSecurityPolicy)
-		//ctx.Response.Header.Set("X-Frame-Options", "SAMEORIGIN")
+// DefaultCORSConfig provides a default configuration for CORS
+var DefaultCORSConfig = CORSConfig{
+	AllowedOrigins: []string{"*"},
+	AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
+	AllowedHeaders: allowedHeaders,
+	MaxAge:         86400, // 24 hours
+}
 
-		if string(ctx.Method()) == http.MethodOptions {
-			ctx.Response.SetBodyRaw([]byte("Allow: POST,OPTIONS"))
-			return
+// Cors is a middleware that handles CORS for HTTP requests
+func Cors(config CORSConfig) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			// Set CORS headers
+			origin := r.Header.Get("Origin")
+			if origin != "" && contains(config.AllowedOrigins, origin) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			} else if contains(config.AllowedOrigins, "*") {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+
+			w.Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowedMethods, ", "))
+			w.Header().Set("Access-Control-Allow-Headers", strings.Join(config.AllowedHeaders, ", "))
+			w.Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+
+			// Handle preflight requests
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			// Call the next handler
+			next.ServeHTTP(w, r)
 		}
-
-		handle(ctx)
 	}
+}
+
+// contains checks if a string is present in a slice
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

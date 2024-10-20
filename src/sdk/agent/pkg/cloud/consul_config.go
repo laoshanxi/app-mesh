@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -33,6 +32,7 @@ type Config struct {
 var (
 	consulClient *consulapi.Client
 	consulMutex  sync.Mutex // Mutex to protect the consul client
+	viperWatch   = viper.New()
 )
 
 func init() {
@@ -40,26 +40,22 @@ func init() {
 }
 
 func initConfig() {
-	viper.SetConfigName("consul-api-config") // Name of the config file (without extension)
-	viper.SetConfigType("yaml")              // Config file type
+	viperWatch.SetConfigName("consul-api-config") // Name of the config file (without extension)
+	viperWatch.SetConfigType("yaml")              // Config file type
 
-	viper.AutomaticEnv()                                   // Config ENV setting
-	viper.SetEnvPrefix("APPMESH")                          // Config ENV pre-fix
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_")) // Config ENV use _ instead of .
-
-	if config.IsAgentProdEnv() {
-		viper.AddConfigPath(filepath.Join(config.GetAppMeshHomeDir(), "work/config/")) // Path to look for the config file in
-	} else {
-		viper.AddConfigPath(".") // Path to look for the config file in, for debug test
+	if !config.IsAgentProdEnv() {
+		viperWatch.AddConfigPath(".") // Path to look for the config file in, for debug test
 	}
+	viperWatch.AddConfigPath(filepath.Join(config.GetAppMeshHomeDir(), "work/config/")) // Path to look for the config file in
+	viperWatch.AddConfigPath(config.GetAppMeshHomeDir())                                // Path to look for the config file in
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := viperWatch.ReadInConfig(); err != nil {
 		log.Printf("failed to read consul-api-config.yaml: %v", err)
 	} else {
 		// Watch for changes to the config file
-		viper.WatchConfig()
+		viperWatch.WatchConfig()
 		// Define what happens when the config changes
-		viper.OnConfigChange(func(e fsnotify.Event) {
+		viperWatch.OnConfigChange(func(e fsnotify.Event) {
 			log.Printf("Config file changed: %s", e.Name)
 			// Here you can handle what to do with the new configuration
 			if err := newConsulClient(); err != nil {
@@ -104,7 +100,7 @@ func setConsul(client *consulapi.Client) {
 func readConsulConfig() (*consulapi.Config, error) {
 	var consulConfig Config
 	// Unmarshal YAML and ENV into consulConfig struct
-	if err := viper.Unmarshal(&consulConfig); err != nil {
+	if err := viperWatch.Unmarshal(&consulConfig); err != nil {
 		return nil, fmt.Errorf("unable to decode into config struct: %v", err)
 	}
 

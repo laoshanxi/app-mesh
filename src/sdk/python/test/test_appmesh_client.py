@@ -14,7 +14,7 @@ sys.path.append(os.path.join(parent_dir, "appmesh"))
 import appmesh_client
 
 # For wheel package
-# python3 -m pip install --upgrade appmesh
+# python3 -m pip install --upgrade appmesh pyotp
 # from appmesh import appmesh_client
 
 # python3 -m unittest test_appmesh_client.TestAppMeshClient.test_user
@@ -94,8 +94,8 @@ class TestAppMeshClient(TestCase):
                 )
             )[0],
         )
-        self.assertIsNone(client.file_upload(local_file="1.log", file_path="/tmp/2.log"))
-        self.assertIsNone(client.file_download(file_path="/tmp/2.log", local_file="/tmp/3.log"))
+        self.assertIsNone(client.file_upload(local_file="1.log", remote_file="/tmp/2.log"))
+        self.assertIsNone(client.file_download(remote_file="/tmp/2.log", local_file="/tmp/3.log"))
         self.assertTrue(os.path.exists("/tmp/3.log"))
         os.remove("1.log")
 

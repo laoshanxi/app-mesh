@@ -24,17 +24,15 @@ ClientSSLConfig::ClientSSLConfig()
 	const static unsigned long openssl_version = SSLeay();
 	// Determine appropriate CURLOPT_SSLVERSION based on OpenSSL version
 	if (openssl_version >= 0x10101000L)
-		// OpenSSL version supports TLS v1.3
-		m_ssl_version = CURL_SSLVERSION_TLSv1_3;
+		m_ssl_version = CURL_SSLVERSION_TLSv1_3; // TLSv1.3 supported
 	else if (openssl_version >= 0x10100000L)
-		// OpenSSL version supports TLS v1.2
-		m_ssl_version = CURL_SSLVERSION_TLSv1_2;
+		m_ssl_version = CURL_SSLVERSION_TLSv1_2; // TLSv1.2 supported
 	else
-		LOG_WAR << fname << "not support un-secure SSL version";
+		LOG_WAR << fname << "OpenSSL version too old, consider upgrading.";
 }
 
 std::shared_ptr<CurlResponse>
-RestClient::request(const std::string host, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
+RestClient::request(const std::string &host, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
 	// only initialize once
 	static std::once_flag executeOnceFlag;
@@ -46,17 +44,17 @@ RestClient::request(const std::string host, const web::http::method &mtd, const 
 	curlpp::Easy request;
 	auto response = std::make_shared<CurlResponse>();
 
-	// timeout
+	// Set timeouts
 	request.setOpt(new curlpp::Options::ConnectTimeout(10));
 	request.setOpt(new curlpp::Options::Timeout(60));
 	setSslConfig(request);
 
-	// Save response body to a stringstream
+	// Set response stream
 	std::ostringstream responseStream;
 	curlpp::options::WriteStream ws(&responseStream);
 	request.setOpt(ws);
 
-	// input headers
+	// Prepare headers
 	std::list<std::string> headers;
 	for (const auto &h : header)
 		headers.push_back(std::string(h.first) + ": " + h.second);
@@ -81,20 +79,20 @@ RestClient::request(const std::string host, const web::http::method &mtd, const 
 			return incomingSize;
 		}));
 
-	// querys
-	int queryIndex = 0;
-	for (const auto &q : query)
+	// Append query parameters to URL
+	if (!query.empty())
 	{
-		if (queryIndex == 0)
-			url += "?";
-		else
-			url += "&";
-		url += (std::string(q.first) + "=" + q.second);
-		queryIndex++;
+		url += "?";
+		for (auto it = query.begin(); it != query.end(); ++it)
+		{
+			if (it != query.begin())
+				url += "&";
+			url += it->first + "=" + it->second;
+		}
 	}
 	request.setOpt(new curlpp::Options::Url(url));
 
-	// HTTP method
+	// Set HTTP method and body if needed
 	request.setOpt(new curlpp::options::CustomRequest(mtd));
 
 	if (body)
@@ -118,7 +116,7 @@ RestClient::request(const std::string host, const web::http::method &mtd, const 
 	request.setOpt(new curlpp::Options::HttpHeader(headers));
 	request.perform();
 
-	// Get the HTTP response code
+	// Fill response object
 	response->status_code = curlpp::infos::ResponseCode::get(request);
 	response->text = responseStream.str();
 	response->header = std::move(outputHeaders);
@@ -127,7 +125,7 @@ RestClient::request(const std::string host, const web::http::method &mtd, const 
 }
 
 std::shared_ptr<CurlResponse>
-RestClient::upload(const std::string host, const std::string &path, const std::string file, std::map<std::string, std::string> header)
+RestClient::upload(const std::string &host, const std::string &path, const std::string file, std::map<std::string, std::string> header)
 {
 	const auto url = (fs::path(host) / path).string();
 
@@ -140,17 +138,18 @@ RestClient::upload(const std::string host, const std::string &path, const std::s
 
 	request.setOpt(new curlpp::Options::Url(url));
 
-	// Redirect response body to a stringstream
+	// Set response stream
 	std::ostringstream responseStream;
 	curlpp::options::WriteStream ws(&responseStream);
 	request.setOpt(ws);
 
-	// input headers
+	// Prepare headers
 	std::list<std::string> headers;
 	for (const auto &h : header)
 		headers.push_back(std::string(h.first) + ": " + h.second);
 	request.setOpt(new curlpp::Options::HttpHeader(headers));
 
+	// File upload setup
 	curlpp::Forms form;
 	std::ifstream fileStream(file, std::ios::in | std::ios::binary);
 	if (!fileStream)
@@ -161,7 +160,7 @@ RestClient::upload(const std::string host, const std::string &path, const std::s
 
 	request.perform();
 
-	// Get the HTTP response code
+	// Fill response object
 	response->status_code = curlpp::infos::ResponseCode::get(request);
 	response->text = responseStream.str();
 
@@ -169,7 +168,7 @@ RestClient::upload(const std::string host, const std::string &path, const std::s
 }
 
 std::shared_ptr<CurlResponse>
-RestClient::download(const std::string host, const std::string &path, const std::string remoteFile, const std::string localFile, std::map<std::string, std::string> header)
+RestClient::download(const std::string &host, const std::string &path, const std::string remoteFile, const std::string localFile, std::map<std::string, std::string> header)
 {
 	const auto url = (fs::path(host) / path).string();
 
@@ -182,13 +181,32 @@ RestClient::download(const std::string host, const std::string &path, const std:
 
 	request.setOpt(new curlpp::Options::Url(url));
 
-	// input headers
+	// Prepare headers
 	std::list<std::string> headers;
 	for (const auto &h : header)
 		headers.push_back(std::string(h.first) + ": " + h.second);
 	request.setOpt(new curlpp::Options::HttpHeader(headers));
 
-	// Create a file stream to write the downloaded content
+	// output headers
+	std::map<std::string, std::string> outputHeaders;
+	request.setOpt(curlpp::Options::HeaderFunction(
+		[&outputHeaders](char *ptr, size_t size, size_t nitems)
+		{
+			std::string oneHeader;
+			const auto incomingSize = size * nitems;
+			oneHeader.append(ptr, incomingSize);
+			if (incomingSize > 3)
+			{
+				auto kvPair = Utility::splitString(oneHeader, ":");
+				if (kvPair.size() == 2)
+					outputHeaders[Utility::stdStringTrim(kvPair[0])] = Utility::stdStringTrim(kvPair[1]);
+				else
+					LOG_DBG << "failed to parse response header: " << oneHeader;
+			}
+			return incomingSize;
+		}));
+
+	// Create output file stream for download
 	std::ofstream outputFile(localFile, std::ios::out | std::ios::binary | std::ios::trunc);
 	if (!outputFile.is_open())
 		throw std::invalid_argument("failed to write file to local");
@@ -197,8 +215,9 @@ RestClient::download(const std::string host, const std::string &path, const std:
 
 	request.perform();
 
-	// Get the HTTP response code
+	// Fill response object
 	response->status_code = curlpp::infos::ResponseCode::get(request);
+	response->header = std::move(outputHeaders);
 
 	return response;
 }
@@ -210,6 +229,7 @@ void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 
 void RestClient::setSslConfig(curlpp::Easy &request)
 {
+	// For HTTPS connections, omitting the version will prefer HTTP/2 but fall back to HTTP/1.1 if needed.
 	// request.setOpt(new curlpp::Options::HttpVersion(CURL_HTTP_VERSION_2TLS));
 	request.setOpt(new curlpp::Options::Verbose(log4cpp::Category::getRoot().getPriority() == log4cpp::Priority::DEBUG));
 	request.setOpt(new curlpp::Options::SslVerifyPeer(m_sslConfig.m_verify_client || m_sslConfig.m_verify_server));
