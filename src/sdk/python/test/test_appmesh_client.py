@@ -94,8 +94,8 @@ class TestAppMeshClient(TestCase):
                 )
             )[0],
         )
-        self.assertIsNone(client.file_upload(local_file="1.log", file_path="/tmp/2.log"))
-        self.assertIsNone(client.file_download(file_path="/tmp/2.log", local_file="/tmp/3.log"))
+        self.assertIsNone(client.file_upload(local_file="1.log", remote_file="/tmp/2.log"))
+        self.assertIsNone(client.file_download(remote_file="/tmp/2.log", local_file="/tmp/3.log"))
         self.assertTrue(os.path.exists("/tmp/3.log"))
         os.remove("1.log")
 

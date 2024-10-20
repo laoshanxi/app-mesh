@@ -188,6 +188,25 @@ RestClient::download(const std::string host, const std::string &path, const std:
 		headers.push_back(std::string(h.first) + ": " + h.second);
 	request.setOpt(new curlpp::Options::HttpHeader(headers));
 
+	// output headers
+	std::map<std::string, std::string> outputHeaders;
+	request.setOpt(curlpp::Options::HeaderFunction(
+		[&outputHeaders](char *ptr, size_t size, size_t nitems)
+		{
+			std::string oneHeader;
+			const auto incomingSize = size * nitems;
+			oneHeader.append(ptr, incomingSize);
+			if (incomingSize > 3)
+			{
+				auto kvPair = Utility::splitString(oneHeader, ":");
+				if (kvPair.size() == 2)
+					outputHeaders[Utility::stdStringTrim(kvPair[0])] = Utility::stdStringTrim(kvPair[1]);
+				else
+					LOG_DBG << "failed to parse response header: " << oneHeader;
+			}
+			return incomingSize;
+		}));
+
 	// Create a file stream to write the downloaded content
 	std::ofstream outputFile(localFile, std::ios::out | std::ios::binary | std::ios::trunc);
 	if (!outputFile.is_open())
@@ -199,6 +218,7 @@ RestClient::download(const std::string host, const std::string &path, const std:
 
 	// Get the HTTP response code
 	response->status_code = curlpp::infos::ResponseCode::get(request);
+	response->header = std::move(outputHeaders);
 
 	return response;
 }
@@ -210,6 +230,7 @@ void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
 
 void RestClient::setSslConfig(curlpp::Easy &request)
 {
+	// For HTTPS connections, omitting the version will prefer HTTP/2 but fall back to HTTP/1.1 if needed.
 	// request.setOpt(new curlpp::Options::HttpVersion(CURL_HTTP_VERSION_2TLS));
 	request.setOpt(new curlpp::Options::Verbose(log4cpp::Category::getRoot().getPriority() == log4cpp::Priority::DEBUG));
 	request.setOpt(new curlpp::Options::SslVerifyPeer(m_sslConfig.m_verify_client || m_sslConfig.m_verify_server));

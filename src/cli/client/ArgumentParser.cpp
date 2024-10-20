@@ -1260,6 +1260,7 @@ void ArgumentParser::processFileDownload()
 		COMMON_OPTIONS
 		("remote,r", po::value<std::string>(), "Remote file path to download.")
 		("local,l", po::value<std::string>(), "Local file path to save.")
+		("attributes,a", "Copy file attributes.")
 		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -1280,7 +1281,8 @@ void ArgumentParser::processFileDownload()
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	auto response = RestClient::download(m_currentUrl, restPath, file, local, header);
 
-	Utility::applyFilePermission(file, response->header);
+	if (m_commandLineVariables.count("attributes"))
+		Utility::applyFilePermission(file, response->header);
 	if (response->status_code == web::http::status_codes::OK)
 		std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
 	else
@@ -1294,6 +1296,7 @@ void ArgumentParser::processFileUpload()
 		COMMON_OPTIONS
 		("remote,r", po::value<std::string>(), "Remote file path to save.")
 		("local,l", po::value<std::string>(), "Local file to upload.")
+		("attributes,a", "Copy file attributes.")
 		("help,h", "Display command usage and exit.");
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -1314,14 +1317,19 @@ void ArgumentParser::processFileUpload()
 	}
 	local = boost::filesystem::canonical(local).string();
 	std::string restPath = REST_PATH_UPLOAD;
-	auto fileInfo = os::fileStat(local);
+
 	// header
 	std::map<std::string, std::string> header;
 	header.insert({HTTP_HEADER_KEY_file_path, file});
-	header.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
-	header.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
-	header.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
+	if (m_commandLineVariables.count("attributes"))
+	{
+		auto fileInfo = os::fileStat(local);
+		header.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
+		header.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
+		header.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
+	}
+
 	auto response = RestClient::upload(m_currentUrl, restPath, local, header);
 	if (response->status_code == web::http::status_codes::OK)
 		std::cout << "Uploaded file <" << local << ">" << std::endl;

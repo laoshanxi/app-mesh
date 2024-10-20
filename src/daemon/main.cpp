@@ -242,7 +242,7 @@ int main(int argc, char *argv[])
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
-				if (!app->isPersistAble())
+				if (!app->isPersistAble() && app->getName() != SEPARATE_AGENT_APP_NAME)
 					continue;
 				try
 				{

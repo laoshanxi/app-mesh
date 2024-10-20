@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"sort"
 	"time"
 
-	"github.com/buaazp/fasthttprouter"
+	"github.com/gorilla/mux"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
-	"github.com/valyala/fasthttp"
 )
 
 // GrafanaHandler Is an opaque type that supports the required HTTP handlers for the
@@ -38,14 +38,16 @@ func New(opts ...Opt) *GrafanaHandler {
 	return Handler
 }
 
-func (h *GrafanaHandler) handleRestRouter(router *fasthttprouter.Router) {
-	router.GET("/appmesh_grafana", utils.Cors(h.HandleRoot))
-	router.POST("/appmesh_grafana/query", utils.Cors(h.HandleQuery))
-	router.POST("/appmesh_grafana/annotations", utils.Cors(h.HandleAnnotations))
-	router.POST("/appmesh_grafana/search", utils.Cors(h.HandleSearch))
-	router.POST("/appmesh_grafana/tag-keys", utils.Cors(h.HandleTagKeys))
-	router.POST("/appmesh_grafana/tag-values", utils.Cors(h.HandleTagValues))
-	// router.OPTIONS("/appmesh_grafana/annotations", utils.Cors(h.HandleAnnotations))
+func (h *GrafanaHandler) handleRestRouter(router *mux.Router) {
+	router.HandleFunc("/appmesh_grafana", utils.Cors(utils.DefaultCORSConfig)(h.HandleRoot)).Methods(http.MethodGet)
+	router.HandleFunc("/appmesh_grafana/query", utils.Cors(utils.DefaultCORSConfig)(h.HandleQuery)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/annotations", utils.Cors(utils.DefaultCORSConfig)(h.HandleAnnotations)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/search", utils.Cors(utils.DefaultCORSConfig)(h.HandleSearch)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/tag-keys", utils.Cors(utils.DefaultCORSConfig)(h.HandleTagKeys)).Methods(http.MethodPost)
+	router.HandleFunc("/appmesh_grafana/tag-values", utils.Cors(utils.DefaultCORSConfig)(h.HandleTagValues)).Methods(http.MethodPost)
+
+	// You can also add CORS for OPTIONS requests if needed:
+	//router.HandleFunc("/appmesh_grafana", utils.Cors(utils.DefaultCORSConfig)(h.HandleOptions)).Methods(http.MethodOptions)
 }
 
 // WithSource will attempt to use the datasource provided as
@@ -258,9 +260,19 @@ type Annotation struct {
 }
 
 // HandleRoot serves a plain 200 OK for /, required by Grafana
-func (h *GrafanaHandler) HandleRoot(ctx *fasthttp.RequestCtx) {
-	ctx.Logger().Printf("Requesting")
-	ctx.Response.SetBodyRaw([]byte("{\"App Mesh Grafana SimpleJson data source\"}"))
+func (h *GrafanaHandler) HandleRoot(w http.ResponseWriter, r *http.Request) {
+	// Log the request
+	log.Println("Requesting root for Grafana")
+
+	// Set response headers
+	w.Header().Set("Content-Type", "application/json") // Set content type to JSON
+	w.WriteHeader(http.StatusOK)                       // Set status code to 200 OK
+
+	// Write the response body
+	responseBody := []byte("{\"message\": \"App Mesh Grafana SimpleJson data source\"}")
+	if _, err := w.Write(responseBody); err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
 }
 
 // simpleJSONTime is a wrapper for time.Time that reformats for
@@ -554,19 +566,20 @@ func (h *GrafanaHandler) jsonQuery(ctx context.Context, req simpleJSONQuery, tar
 
 // HandleQuery hands the /query endpoint, calling the appropriate timeserie
 // or table handler.
-func (h *GrafanaHandler) HandleQuery(ctx *fasthttp.RequestCtx) {
-	ctx.Logger().Printf("Requesting")
+func (h *GrafanaHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Requesting")
 
 	if h.query == nil && h.tableQuery == nil {
-		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
-	// ctx.Logger().Printf("Header is %q\n", ctx.Request.Header.Header())
-	// ctx.Logger().Printf("Body is \n%q\n", ctx.Request.Body())
+
+	ctx := r.Context()
 
 	req := simpleJSONQuery{}
-	if err := json.Unmarshal(ctx.Request.Body(), &req); err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -577,22 +590,22 @@ func (h *GrafanaHandler) HandleQuery(ctx *fasthttp.RequestCtx) {
 		switch target.Type {
 		case "", "timeserie":
 			if h.query == nil {
-				ctx.Error("timeserie query not implemented", http.StatusBadRequest)
+				http.Error(w, "timeserie query not implemented", http.StatusBadRequest)
 				return
 			}
 			res, err = h.jsonQuery(ctx, req, target)
 		case "table":
 			if h.tableQuery == nil {
-				ctx.Error("table query not implemented", http.StatusBadRequest)
+				http.Error(w, "table query not implemented", http.StatusBadRequest)
 				return
 			}
 			res, err = h.jsonTableQuery(ctx, req, target)
 		default:
-			ctx.Error("unknown query type, timeserie or table", http.StatusBadRequest)
+			http.Error(w, "unknown query type, timeserie or table", http.StatusBadRequest)
 			return
 		}
 		if err != nil {
-			ctx.Error(err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		out = append(out, res)
@@ -600,12 +613,12 @@ func (h *GrafanaHandler) HandleQuery(ctx *fasthttp.RequestCtx) {
 
 	bs, err := json.Marshal(out)
 	if err != nil {
-		ctx.Error(err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	ctx.Response.Header.Set("Content-Type", "application/json")
-	ctx.Write(bs)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(bs)
 }
 
 /*
@@ -651,22 +664,25 @@ type simpleJSONAnnotationsQuery struct {
 }
 
 // HandleAnnotations responds to the /annotation requests.
-func (h *GrafanaHandler) HandleAnnotations(ctx *fasthttp.RequestCtx) {
-	ctx.Logger().Printf("Requesting")
+func (h *GrafanaHandler) HandleAnnotations(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Requesting")
 
 	if h.annotations == nil {
-		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusBadRequest)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusBadRequest)
 		return
 	}
 
-	if string(ctx.Method()) == http.MethodOptions {
-		ctx.Response.SetBodyRaw([]byte("Allow: POST,OPTIONS"))
+	ctx := r.Context()
+
+	if r.Method == http.MethodOptions {
+		w.Write([]byte("Allow: POST,OPTIONS"))
 		return
 	}
 
 	req := simpleJSONAnnotationsQuery{}
-	if err := json.Unmarshal(ctx.Request.Body(), &req); err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -681,7 +697,7 @@ func (h *GrafanaHandler) HandleAnnotations(ctx *fasthttp.RequestCtx) {
 			},
 		})
 	if err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -715,11 +731,11 @@ func (h *GrafanaHandler) HandleAnnotations(ctx *fasthttp.RequestCtx) {
 
 	bs, err := json.Marshal(resp)
 	if err != nil {
-		ctx.Error(err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	ctx.Response.Header.Set("Content-Type", "application/json")
-	ctx.Response.SetBodyRaw(bs)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(bs)
 }
 
 type simpleJSONSearchQuery struct {
@@ -727,33 +743,36 @@ type simpleJSONSearchQuery struct {
 }
 
 // HandleSearch implements the /search endpoint.
-func (h *GrafanaHandler) HandleSearch(ctx *fasthttp.RequestCtx) {
-	ctx.Logger().Printf("Requesting")
+func (h *GrafanaHandler) HandleSearch(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Requesting")
 
 	if h.search == nil {
-		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusBadRequest)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusBadRequest)
 		return
 	}
 
+	ctx := r.Context()
+
 	req := simpleJSONSearchQuery{}
-	if err := json.Unmarshal(ctx.Request.Body(), &req); err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	resp, err := h.search.GrafanaSearch(ctx, req.Target)
 	if err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	bs, err := json.Marshal(resp)
 	if err != nil {
-		ctx.Error(err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	ctx.Response.Header.Set("Content-Type", "application/json")
-	ctx.Write(bs)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(bs)
 }
 
 type simpleJSONQueryAdhocKey struct {
@@ -762,17 +781,19 @@ type simpleJSONQueryAdhocKey struct {
 }
 
 // HandleTagKeys implements the /tag-keys endpoint.
-func (h *GrafanaHandler) HandleTagKeys(ctx *fasthttp.RequestCtx) {
-	ctx.Logger().Printf("Requesting")
+func (h *GrafanaHandler) HandleTagKeys(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Requesting")
 
 	if h.tags == nil {
-		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 
+	ctx := r.Context()
+
 	tags, err := h.tags.GrafanaAdhocFilterTags(ctx)
 	if err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	var allTags []simpleJSONQueryAdhocKey
@@ -785,11 +806,11 @@ func (h *GrafanaHandler) HandleTagKeys(ctx *fasthttp.RequestCtx) {
 
 	bs, err := json.Marshal(allTags)
 	if err != nil {
-		ctx.Error(err.Error(), 500)
+		http.Error(w, err.Error(), 500)
 		return
 	}
-	ctx.Response.Header.Set("Content-Type", "application/json")
-	ctx.Write(bs)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(bs)
 }
 
 type simpleJSONTagValuesQuery struct {
@@ -797,23 +818,26 @@ type simpleJSONTagValuesQuery struct {
 }
 
 // HandleTagValues implements the /tag-values endpoint.
-func (h *GrafanaHandler) HandleTagValues(ctx *fasthttp.RequestCtx) {
-	ctx.Logger().Printf("Requesting")
+func (h *GrafanaHandler) HandleTagValues(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Requesting")
 
 	if h.tags == nil {
-		ctx.Error(http.StatusText(http.StatusNotFound), http.StatusBadRequest)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusBadRequest)
 		return
 	}
 
+	ctx := r.Context()
+
 	req := simpleJSONTagValuesQuery{}
-	if err := json.Unmarshal(ctx.Request.Body(), &req); err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	vals, err := h.tags.GrafanaAdhocFilterTagValues(ctx, req.Key)
 	if err != nil {
-		ctx.Error(err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -824,9 +848,9 @@ func (h *GrafanaHandler) HandleTagValues(ctx *fasthttp.RequestCtx) {
 
 	bs, err := json.Marshal(allVals)
 	if err != nil {
-		ctx.Error(err.Error(), 500)
+		http.Error(w, err.Error(), 500)
 		return
 	}
-	ctx.Response.Header.Set("Content-Type", "application/json")
-	ctx.Write(bs)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(bs)
 }
