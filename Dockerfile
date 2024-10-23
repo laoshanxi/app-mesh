@@ -6,7 +6,7 @@ FROM python:3.13-slim
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
-ENV APPMESH_DisableExecUser=true
+ENV APPMESH_BaseConfig_DisableExecUser=true
 # not only listen 127.0.0.1
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
 COPY --from=COMPILE_STAGE /opt/app-mesh/build/appmesh*.deb .

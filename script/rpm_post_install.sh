@@ -36,9 +36,12 @@ chmod +x ${PROG_HOME}/script/*.sh
 chmod +x ${PROG_HOME}/script/appmesh.environment
 
 # set default execute user to current user
-# https://cloud.tencent.com/developer/ask/sof/878838
-if [ 0"$APPMESH_DefaultExecUser" = "0" ]; then
-	echo "APPMESH_DefaultExecUser=$LOGNAME" >>${PROG_HOME}/script/appmesh.environment
+#if [ -z "$APPMESH_BaseConfig_DefaultExecUser" ]; then
+#	APPMESH_BaseConfig_DefaultExecUser="${SUDO_USER:-$LOGNAME}"
+#fi
+if [ -n "$APPMESH_BaseConfig_DefaultExecUser" ] && [ "$APPMESH_BaseConfig_DefaultExecUser" != "root" ]; then
+	echo "APPMESH_BaseConfig_DefaultExecUser=${APPMESH_BaseConfig_DefaultExecUser}" >>"${PROG_HOME}/script/appmesh.environment"
+	echo "DefaultExecUser set to: $APPMESH_BaseConfig_DefaultExecUser"
 fi
 cat ${PROG_HOME}/script/appmesh.environment
 

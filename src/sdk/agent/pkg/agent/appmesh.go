@@ -95,7 +95,7 @@ func monitorResponse(conn *Connection, targetHost string, allowError bool) {
 	}
 }
 
-func ListenRest() {
+func ListenRest() error {
 	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
 	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
 	// connect to TCP rest server
@@ -127,16 +127,16 @@ func ListenRest() {
 		w.WriteHeader(http.StatusOK) // Options handler
 	})).Methods("OPTIONS", "HEAD")
 
-	startHttpsServer(listenAddr, router)
+	return startHttpsServer(listenAddr, router)
 }
 
-func startHttpsServer(restAgentAddr string, router *mux.Router) {
+func startHttpsServer(restAgentAddr string, router *mux.Router) error {
 	// Load server certificate and key
 	serverCA, err := appmesh.LoadCertificatePair(
 		config.ConfigData.REST.SSL.SSLCertificateFile,
 		config.ConfigData.REST.SSL.SSLCertificateKeyFile)
 	if err != nil {
-		log.Fatalln("Failed to load server certificate and key:", err)
+		return fmt.Errorf("failed to load server certificate and key: %w", err)
 	}
 
 	// Client authentication
@@ -146,7 +146,7 @@ func startHttpsServer(restAgentAddr string, router *mux.Router) {
 		clientAuth = tls.RequireAndVerifyClientCert
 		clientCA, err = appmesh.LoadCA(config.ConfigData.REST.SSL.SSLCaPath)
 		if err != nil {
-			log.Fatalln("Failed to load client CA:", err)
+			return fmt.Errorf("failed to load client CA: %w", err)
 		}
 	}
 
@@ -193,20 +193,21 @@ func startHttpsServer(restAgentAddr string, router *mux.Router) {
 	}
 
 	// Start HTTPS server
-	listenAndServeTLS(restAgentAddr, server)
+	return listenAndServeTLS(restAgentAddr, server)
 }
 
-func listenAndServeTLS(address string, server *http.Server) {
+func listenAndServeTLS(address string, server *http.Server) error {
 	ln, err := net.Listen("tcp", address)
 	if err != nil {
-		log.Fatalf("Failed to listen on %s: %v", address, err)
+		return fmt.Errorf("failed to listen on %s: %w", address, err)
 	}
 
 	log.Printf("<App Mesh Agent> Listening on %s", address)
 	tlsListener := tls.NewListener(ln, server.TLSConfig)
 	if err := server.Serve(tlsListener); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("Server error: %v", err)
+		return fmt.Errorf("server error: %w", err)
 	}
+	return nil
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -261,7 +262,6 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(htmlContent))
 }
 
-// https://github.com/valyala/fasthttp/blob/master/examples/helloworldserver/helloworldserver.go
 func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 	var targetConnection = localConnection
 
@@ -289,7 +289,7 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// body buffer, read from fasthttp
+	// body buffer
 	request := NewRequest(r)
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
 	if targetConnection != localConnection {

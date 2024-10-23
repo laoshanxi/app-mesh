@@ -36,6 +36,9 @@ func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
 		}(),
 	}
 
+	value := true
+	options.tcpOnly = &value
+
 	client := &AppMeshClientTCP{AppMeshClient: NewHttpClient(options), TcpExecutor: tcpRequester}
 
 	client.AppMeshClient.Proxy = tcpRequester

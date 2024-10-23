@@ -63,9 +63,10 @@ func (s *PrometheusServer) ListenAndServe() error {
 }
 
 // ListenPrometheus creates and starts a PrometheusServer
-func ListenPrometheus(port int) {
+func ListenPrometheus(port int) error {
 	server := NewPrometheusServer(port)
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("Error in Prometheus exporter server: %s", err)
+		return fmt.Errorf("http server error: %w", err)
 	}
+	return nil
 }

@@ -28,7 +28,12 @@ func (r *Cloud) getLeader() (string, error) {
 		return "", fmt.Errorf("consul not initialized")
 	}
 
-	return consulClient.Status().Leader()
+	leader, err := consulClient.Status().Leader()
+	if err != nil {
+		return "", fmt.Errorf("failed to get Consul leader: %v", err)
+	}
+
+	return leader, nil
 }
 
 func (r *Cloud) registerHttpService() error {
@@ -38,12 +43,16 @@ func (r *Cloud) registerHttpService() error {
 	}
 
 	// Define the service details
-	serviceName := "APPMESH-HTTP"                        // Service name
-	serviceAddress, _ := os.Hostname()                   // Service address
+	serviceName := "APPMESH-HTTP"
+	serviceAddress, err := os.Hostname() // Service address
+	if err != nil {
+		return fmt.Errorf("failed to get hostname: %v", err)
+	}
 	servicePort := config.ConfigData.REST.RestListenPort // Service port for HTTPS
 	serviceID := serviceName + "-" + serviceAddress      // Unique service ID
+
 	// Construct the URL using the net/url package
-	uri := url.URL{Scheme: "https", Host: fmt.Sprintf("%s:%d", "serviceAddress", servicePort)}
+	uri := url.URL{Scheme: "https", Host: fmt.Sprintf("%s:%d", serviceAddress, servicePort)}
 
 	reg := &api.AgentServiceRegistration{
 		ID:      serviceID,
@@ -59,12 +68,19 @@ func (r *Cloud) registerHttpService() error {
 		},
 	}
 
-	return consul.Agent().ServiceRegister(reg)
+	if err := consul.Agent().ServiceRegister(reg); err != nil {
+		return fmt.Errorf("failed to register service: %v", err)
+	}
+	return nil
 }
 
-func (r *Cloud) ReportHostResource() {
+func (r *Cloud) HostMetricsReportPeriod() error {
+	hostname, err := os.Hostname()
+	if err != nil {
+		logManager.Log(fmt.Sprintf("failed to get hostname: %v", err))
+		return err
+	}
 
-	hostname, _ := os.Hostname()
 	kvPath := fmt.Sprintf("appmesh/nodes/%s/resources", hostname)
 
 	ticker := time.NewTicker(30 * time.Second)
@@ -74,35 +90,38 @@ func (r *Cloud) ReportHostResource() {
 	for range ticker.C {
 		r.doReport(kvPath)
 	}
-
+	return nil
 }
 
 func (r *Cloud) doReport(kvPath string) {
 	consul := getConsul()
 	if consul == nil {
 		logManager.Log("consul not initialized")
+		return
+	}
+
+	// Register HTTP service
+	if err := r.registerHttpService(); err != nil {
+		logManager.Log(fmt.Sprintf("Failed to register HTTP service: %v", err))
+		return
+	}
+
+	// Fetch resources and report to Consul
+	resources, err := r.appmesh.GetCloudResource()
+	if err != nil {
+		logManager.Log(fmt.Sprintf("Failed to get cloud resources: %v", err))
+		return
+	}
+
+	if len(resources) == 0 {
+		logManager.Log("No resources to report")
+		return
+	}
+
+	kvPair := &api.KVPair{Key: kvPath, Value: []byte(resources)}
+	if _, err := consul.KV().Put(kvPair, nil); err != nil {
+		logManager.Log(fmt.Sprintf("Failed to report resources: %v", err))
 	} else {
-		// Register HTTP service
-		if err := r.registerHttpService(); err != nil {
-			logManager.Log(fmt.Sprintf("Failed to register http service: %v", err))
-		}
-		// Fetch resources and report to Consul
-		resources, err := r.appmesh.GetCloudResource()
-		if err != nil {
-			logManager.Log(fmt.Sprintf("Failed to get cloud resources: %v", err))
-			return
-		}
-
-		if len(resources) == 0 {
-			logManager.Log("No resources to report")
-			return
-		}
-
-		kvPair := &api.KVPair{Key: kvPath, Value: []byte(resources)}
-		if _, err := consul.KV().Put(kvPair, nil); err != nil {
-			logManager.Log(fmt.Sprintf("Failed to report resources: %v", err))
-		} else {
-			logManager.Log("Successfully reported resources")
-		}
+		logManager.Log("Successfully reported resources")
 	}
 }

@@ -54,7 +54,7 @@ Note:
 1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
 2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host) and use `sudo -E` to pass environment variable to sudo
 3. Use env `export APPMESH_SECURE_INSTALLATION=Y` to generate initial secure password for user `admin` and force enable password encrypt
-4. Use env `export APPMESH_DisableExecUser=true` to disable customized process user
+4. Use env `export APPMESH_BaseConfig_DisableExecUser=true` to disable customized process user
 5. Set env `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user
 6. Set env `APPMESH_PosixTimezone` with posix timezone (E.g. export APPMESH_PosixTimezone="+08") for CLI and Server
 7. The installation will create `appmesh` Linux user for default app running

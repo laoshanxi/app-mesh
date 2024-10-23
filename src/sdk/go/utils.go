@@ -273,7 +273,7 @@ func ConnectAppMeshServer(tcpAddr string, verifyServer bool, sslCfg *SSLConfig) 
 
 	// Load client certificate if client verification is enabled
 	if sslCfg.VerifyClient {
-		clientCert, err := LoadCertificatePair(sslCfg.SSLCertificateFile, sslCfg.SSLCertificateKeyFile)
+		clientCert, err := LoadCertificatePair(sslCfg.SSLClientCertificateFile, sslCfg.SSLClientCertificateKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load client certificate: %w", err)
 		}

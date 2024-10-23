@@ -38,7 +38,9 @@ type Option struct {
 	SslClientCertificateFile    string  // Path to the client SSL certificate file; leave empty to disable client SSL authentication
 	SslClientCertificateKeyFile string  // Path to the client SSL certificate key file; leave empty to disable client SSL authentication
 	SslTrustedCA                *string // Path to the trusted CA file/dir for server verification; set to nil to disable server SSL verification
-	HttpTimeoutMinutes          *time.Duration
+
+	HttpTimeoutMinutes *time.Duration // Timeout for http.Client requests in minutes.
+	tcpOnly            *bool          // Indicates if the client is for TCP connections only, skip create http.Client.
 }
 
 // NewHttpClient creates a new AppMeshClient instance for interacting with a REST server.
@@ -58,7 +60,13 @@ func NewHttpClient(options Option) *AppMeshClient {
 			}
 			return DEFAULT_HTTP_URI
 		}(),
-		httpClient: newHttpClient(clientCertFile, clientCertKeyFile, caFile),
+		httpClient: func() *http.Client {
+			// Conditional httpClient creation based on options.tcpOnly
+			if options.tcpOnly == nil || !*options.tcpOnly {
+				return newHttpClient(clientCertFile, clientCertKeyFile, caFile)
+			}
+			return nil
+		}(),
 	}
 
 	c := &AppMeshClient{

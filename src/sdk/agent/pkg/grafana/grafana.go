@@ -2,11 +2,11 @@ package grafana
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/gorilla/mux"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
-	"github.com/valyala/fasthttp"
 )
 
 // https://grafana.com/grafana/plugins/grafana-simple-json-datasource/
@@ -19,11 +19,10 @@ func (AppmeshGrafanaJson) GrafanaQuery(ctx context.Context, target string, args 
 
 func (AppmeshGrafanaJson) GrafanaQueryTable(ctx context.Context, target string, args TableQueryArguments) ([]TableColumn, error) {
 	var authKey string
-	ctx.(*fasthttp.RequestCtx).Request.Header.VisitAll(func(key, value []byte) {
-		if string(key) == "Authorization" {
-			authKey = string(value)
-		}
-	})
+	// Access headers from context
+	if header, ok := ctx.Value(requestHeadersKey).(http.Header); ok {
+		authKey = header.Get("Authorization")
+	}
 	client := appmesh.NewHttpClient(appmesh.Option{Token: authKey})
 	apps, err := client.GetApps()
 

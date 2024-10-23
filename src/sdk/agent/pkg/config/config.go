@@ -87,8 +87,11 @@ func ApplyEnvConfig(config interface{}) error {
 			// Split and remove the prefix from the environment key
 			keys := strings.Split(envKey[len(ENV_PREFIX):], "_")
 
-			// Traverse and apply the environment variable
-			if traverseStruct(v, keys, envValue) {
+			// Check if the path exists in YAML
+			exists, result := traverseStruct(v, keys, envValue)
+			if !exists {
+				log.Printf("Configuration: %s path not found in YAML configuration", envKey)
+			} else if result {
 				log.Printf("Configuration: %s applied environment value: %s", envKey, envValue)
 			} else {
 				log.Printf("Configuration: %s failed to apply environment value: %s", envKey, envValue)
@@ -99,9 +102,12 @@ func ApplyEnvConfig(config interface{}) error {
 }
 
 // Traverse struct to find and apply environment values
-func traverseStruct(v reflect.Value, keys []string, envValue string) bool {
+// Returns (exists, applied) where:
+// - exists: indicates if the path exists in the YAML
+// - applied: indicates if the value was successfully applied
+func traverseStruct(v reflect.Value, keys []string, envValue string) (bool, bool) {
 	if len(keys) == 0 {
-		return false
+		return false, false
 	}
 
 	for i := 0; i < v.NumField(); i++ {
@@ -112,14 +118,17 @@ func traverseStruct(v reflect.Value, keys []string, envValue string) bool {
 		if strings.EqualFold(fieldType.Name, keys[0]) {
 			if len(keys) == 1 {
 				// If this is the last key, apply the environment value
-				return applyEnv(field, envValue)
+				return true, applyEnv(field, envValue)
 			} else if field.Kind() == reflect.Struct {
 				// Traverse deeper into the nested struct
 				return traverseStruct(field, keys[1:], envValue)
 			}
+			// Path exists but not complete
+			return true, false
 		}
 	}
-	return false
+	// Path doesn't exist in YAML
+	return false, false
 }
 
 // Apply environment value to field based on its type

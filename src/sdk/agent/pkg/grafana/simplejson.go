@@ -23,6 +23,10 @@ type GrafanaHandler struct {
 	tags        TagSearcher
 }
 
+type contextKey string
+
+const requestHeadersKey contextKey = "requestHeaders"
+
 // New creates a new http.Handler that will answer to the required endpoint for
 // a SimpleJSON source. You should use WithQuerier, WithTableQuerier,
 // WithAnnotator and WithSearch to set handlers for each of the endpionts.
@@ -574,7 +578,7 @@ func (h *GrafanaHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	ctx := context.WithValue(r.Context(), requestHeadersKey, r.Header)
 
 	req := simpleJSONQuery{}
 	dec := json.NewDecoder(r.Body)
