@@ -236,4 +236,7 @@ class TestAppMeshClient(TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestAppMeshClient)
+
+    runner = unittest.TextTestRunner()
+    runner.run(suite)

@@ -29,38 +29,6 @@ jobs:
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
-      - name: test ubuntu:18
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ubuntu:18.04
-          options: -v ${{ github.workspace }}:/work
-          shell: bash
-          run: |
-            apt update
-            apt install -y wget iputils-ping
-            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_7_glibc_2.27_x86_64.deb
-            apt install -y ./appmesh_*.deb
-
-            # start appmesh
-            /opt/appmesh/script/appmesh-entrypoint.sh &
-            sleep 5
-            appc ls
-
-            # test appmesh golang sdk
-            apt install -y wget
-            GO_ARCH=amd64
-            GO_VER=1.23.1
-            wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
-            tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
-            cd /work/src/sdk/go
-            /usr/local/go/bin/go test -v
-
-            # test appmesh python sdk
-            apt install -y python3 python3-pip
-            python3 -m pip install --upgrade appmesh pyotp
-            cd /work/src/sdk/python/test/
-            python3 test_appmesh_client.py
-
       - name: test ubuntu:22
         uses: addnab/docker-run-action@v3
         with:
@@ -91,6 +59,7 @@ jobs:
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
             cd /work/src/sdk/python/test/
+            # python3 -m unittest will face multiple case run issue, so use below to run one by one
             python3 test_appmesh_client.py
 
       - name: test ubuntu:24
@@ -122,6 +91,38 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --break-system-packages --upgrade appmesh pyotp
+            cd /work/src/sdk/python/test/
+            python3 test_appmesh_client.py
+
+      - name: test ubuntu:18
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ubuntu:18.04
+          options: -v ${{ github.workspace }}:/work
+          shell: bash
+          run: |
+            apt update
+            apt install -y wget iputils-ping
+            wget --quiet --no-check-certificate https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_7_glibc_2.27_x86_64.deb
+            apt install -y ./appmesh_*.deb
+
+            # start appmesh
+            /opt/appmesh/script/appmesh-entrypoint.sh &
+            sleep 5
+            appc ls
+
+            # test appmesh golang sdk
+            apt install -y wget
+            GO_ARCH=amd64
+            GO_VER=1.23.1
+            wget https://golang.org/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz >/dev/null 2>&1
+            tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
+            cd /work/src/sdk/go
+            /usr/local/go/bin/go test -v
+
+            # test appmesh python sdk
+            apt install -y python3 python3-pip
+            python3 -m pip install --upgrade appmesh pyotp
             cd /work/src/sdk/python/test/
             python3 test_appmesh_client.py
 

@@ -70,12 +70,14 @@ func initConfig() {
 }
 
 func newConsulClient() error {
-	config, err := readConsulConfig()
+	cfg, err := readConsulConfig()
 	if err != nil {
 		return fmt.Errorf("failed to read Consul config: %v", err)
 	}
 
-	client, err := consulapi.NewClient(config)
+	config.ApplyEnvConfig(cfg)
+
+	client, err := consulapi.NewClient(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create Consul client: %v", err)
 	}

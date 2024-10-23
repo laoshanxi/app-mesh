@@ -35,6 +35,7 @@ func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
 			return DEFAULT_TCP_URI
 		}(),
 	}
+	options.tcpOnly = new(bool)
 
 	client := &AppMeshClientTCP{AppMeshClient: NewHttpClient(options), TcpExecutor: tcpRequester}
 
