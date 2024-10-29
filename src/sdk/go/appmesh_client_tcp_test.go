@@ -1,7 +1,7 @@
 package appmesh
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"testing"
 
@@ -11,7 +11,7 @@ import (
 func TestAppmeshTCPFile(t *testing.T) {
 
 	client, err := NewTcpClient(Option{})
-	log.Print(err)
+	fmt.Println(err)
 	require.Nil(t, err)
 
 	success, _, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)

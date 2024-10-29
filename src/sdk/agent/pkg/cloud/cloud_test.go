@@ -1,7 +1,6 @@
 package cloud
 
 import (
-	"log"
 	"os"
 	"testing"
 
@@ -11,12 +10,12 @@ import (
 
 func TestLeader(t *testing.T) {
 	consul := NewCloud()
-	log.Println(consul.getLeader())
+	logger.Info(consul.getLeader())
 }
 
 func TestRegisterSelf(t *testing.T) {
 	consul := NewCloud()
-	log.Println(consul.registerHttpService())
+	logger.Info(consul.registerHttpService())
 }
 
 func TestReportResource(t *testing.T) {

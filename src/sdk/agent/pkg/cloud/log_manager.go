@@ -1,7 +1,6 @@
 package cloud
 
 import (
-	"log"
 	"sync"
 	"time"
 )
@@ -18,7 +17,7 @@ type LogManager struct {
 }
 
 func NewLogManager(printInterval time.Duration) *LogManager {
-	log.Printf("will refresh log after %f hours", printInterval.Hours())
+	logger.Info("will refresh duplicate log after %f hours", printInterval.Hours())
 	return &LogManager{printInterval: printInterval}
 }
 
@@ -29,7 +28,7 @@ func (lm *LogManager) Log(message string) {
 	now := time.Now()
 
 	if message != lm.lastEntry.message || now.Sub(lm.lastEntry.timestamp) >= lm.printInterval {
-		log.Println(message)
+		logger.Info(message)
 		lm.lastEntry = LogEntry{message: message, timestamp: now}
 	}
 }

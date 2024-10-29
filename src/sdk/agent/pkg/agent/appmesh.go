@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,6 +20,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/grafana"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"go.uber.org/zap"
 )
 
 const (
@@ -38,7 +38,8 @@ const (
 )
 
 var (
-	httpRequestMap sync.Map // request map cache for asyncrized response
+	logger         *zap.SugaredLogger = utils.GetLogger()
+	httpRequestMap sync.Map           // request map cache for asyncrized response
 
 	localConnection        *Connection // tcp connection to the local server
 	remoteConnections      sync.Map    // tcp connections to remote servers
@@ -76,9 +77,9 @@ func monitorResponse(conn *Connection, targetHost string, allowError bool) {
 		response, err := ReadNewResponse(conn.conn)
 		if err != nil {
 			if !allowError {
-				log.Fatalf("Failed read response from host %s: %v", targetHost, err)
+				logger.Fatalf("Failed read response from host %s: %v", targetHost, err)
 			} else {
-				log.Printf("Failed read response from host %s: %v", targetHost, err)
+				logger.Errorf("Failed read response from host %s: %v", targetHost, err)
 				deleteConnection(targetHost)
 				return
 			}
@@ -86,7 +87,7 @@ func monitorResponse(conn *Connection, targetHost string, allowError bool) {
 
 		// forward to channel and release map
 		if t, ok := httpRequestMap.LoadAndDelete(response.Uuid); !ok {
-			log.Fatalf("Not found request ID <%s> for Response", response.Uuid)
+			logger.Fatalf("Not found request ID <%s> for Response", response.Uuid)
 		} else {
 			// notify
 			ch, _ := t.(chan *Response)
@@ -104,10 +105,9 @@ func ListenRest() error {
 	var err error
 	localConnection, err = NewConnection(targetHost, config.ConfigData.REST.SSL.VerifyServer, false)
 	if err != nil {
-		log.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
-		os.Exit(-1)
+		logger.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
 	}
-	log.Printf("Establish REST connection to TCP server <%s>", connectAddr)
+	logger.Infof("Establish REST connection to TCP server <%s>", connectAddr)
 
 	// HTTP router using gorilla/mux
 	router := mux.NewRouter()
@@ -117,6 +117,9 @@ func ListenRest() error {
 
 	// Grafana
 	grafana.RegGrafanaRestHandler(router)
+
+	// docker.sock proxy
+	RegisterDockerRoutes(router)
 
 	// AppMesh endpoints
 	router.HandleFunc("/appmesh/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(handleAppmeshResquest)).Methods("GET", "PUT", "POST", "DELETE")
@@ -202,7 +205,7 @@ func listenAndServeTLS(address string, server *http.Server) error {
 		return fmt.Errorf("failed to listen on %s: %w", address, err)
 	}
 
-	log.Printf("<App Mesh Agent> Listening on %s", address)
+	logger.Infof("<App Mesh Agent> Listening on %s", address)
 	tlsListener := tls.NewListener(ln, server.TLSConfig)
 	if err := server.Serve(tlsListener); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server error: %w", err)
@@ -269,7 +272,7 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 	// in order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
 	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
 	if forwardingHost != "" {
-		log.Printf("Forward request to %s", forwardingHost)
+		logger.Debugf("Forward request to %s", forwardingHost)
 
 		parsedURL, _ := appmesh.ParseURL(forwardingHost)
 		if parsedURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
@@ -282,7 +285,7 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 			var err error
 			targetConnection, err = NewConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
-				log.Printf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
+				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -320,7 +323,7 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if sendErr != nil {
-		log.Printf("Failed to send request to server with error: %v", sendErr)
+		logger.Errorf("Failed to send request to server with error: %v", sendErr)
 		defer deleteConnection(forwardingHost)
 	}
 }
@@ -330,17 +333,17 @@ func forwardAppmeshRest(w http.ResponseWriter, r *http.Request, forwardingHost s
 	// Parse the forwarding host URL
 	parsedURL, err := appmesh.ParseURL(forwardingHost)
 	if err != nil {
-		log.Printf("Failed to parse forward URL: %v", err)
+		logger.Warnf("Failed to parse forward URL: %v", err)
 		http.Error(w, "Failed to parse forward URL: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Create a new request to be sent to the target server
 	targetURL := fmt.Sprintf("%s://%s%s?%s", parsedURL.Scheme, parsedURL.Host, r.URL.Path, r.URL.RawQuery)
-	log.Printf("Forwarding request: %s %s", r.Method, targetURL)
+	logger.Debugf("Forwarding request: %s %s", r.Method, targetURL)
 	req, err := http.NewRequest(r.Method, targetURL, r.Body)
 	if err != nil {
-		log.Printf("Failed to create forward request: %v", err)
+		logger.Errorf("Failed to create forward request: %v", err)
 		http.Error(w, "Failed to create forward request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -351,7 +354,7 @@ func forwardAppmeshRest(w http.ResponseWriter, r *http.Request, forwardingHost s
 	defer delegatePool.Put(delegateClient)
 	resp, err := delegateClient.Do(req)
 	if err != nil {
-		log.Printf("Forward request failed with error: %v", err)
+		logger.Errorf("Forward request failed with error: %v", err)
 		http.Error(w, "Failed to forward request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -375,7 +378,7 @@ func forwardAppmeshRest(w http.ResponseWriter, r *http.Request, forwardingHost s
 }
 
 func handleRestFile(w http.ResponseWriter, r *http.Request, data *Response) error {
-	log.Printf("Requesting path: %s", r.URL.Path)
+	logger.Debugf("Requesting path: %s", r.URL.Path)
 
 	filePath := r.Header.Get("File-Path")
 
@@ -402,9 +405,9 @@ func handleDownload(w http.ResponseWriter, r *http.Request, data *Response, file
 	_, fileName := filepath.Split(filePath)
 	setDownloadHeaders(w, fileName)
 
-	log.Printf("Serving file: %s", fileName)
+	logger.Debugf("Serving file: %s", fileName)
 	http.ServeFile(w, r, filePath)
-	log.Printf("Download file %s finished", filePath)
+	logger.Infof("Download file %s finished", filePath)
 	return nil
 }
 
@@ -412,7 +415,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePa
 	if data.TempUploadFilePath != "" {
 		filePath = data.TempUploadFilePath
 	}
-	log.Printf("Uploading file: %s", filePath)
+	logger.Debugf("Uploading file: %s", filePath)
 
 	if !utils.IsValidFileName(filePath) {
 		return fmt.Errorf("invalid file name")
@@ -423,7 +426,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePa
 	}
 
 	if data.TempUploadFilePath == "" {
-		log.Printf("File saved: %s", filePath)
+		logger.Infof("File saved: %s", filePath)
 		appmesh.SetFileAttributes(filePath, r.Header)
 	}
 
@@ -443,7 +446,7 @@ func setDownloadHeaders(w http.ResponseWriter, fileName string) {
 // https://freshman.tech/file-upload-golang/
 // saveHttpFile saves an uploaded file to the specified file path.
 func saveHttpFile(w http.ResponseWriter, r *http.Request, filePath string) error {
-	log.Printf("Saving file: %s", filePath)
+	logger.Debugf("Saving file: %s", filePath)
 
 	// Limit the size of the incoming request body to prevent DoS attacks.
 	maxFileSize := int64(2) * 1024 * 1024 * 1024 // MaxFileSize is the maximum allowed file size (2GB)
@@ -461,11 +464,11 @@ func saveHttpFile(w http.ResponseWriter, r *http.Request, filePath string) error
 		}
 		defer file.Close()
 
-		log.Printf("SaveMultipartFile: %s", filePath)
+		logger.Debugf("SaveMultipartFile: %s", filePath)
 		return utils.SaveStreamToFile(file, filePath)
 	}
 
 	// Handle non-multipart uploads (plain file uploads)
-	log.Printf("SaveFile: %s", filePath)
+	logger.Debugf("SaveFile: %s", filePath)
 	return utils.SaveStreamToFile(r.Body, filePath)
 }

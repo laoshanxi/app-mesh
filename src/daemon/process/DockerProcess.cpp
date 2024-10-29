@@ -247,10 +247,10 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 
 pid_t DockerProcess::getpid(void) const
 {
-	if (ACE_Process::getpid() == 1)
+	if (AppProcess::getpid() == 1)
 		return ACE_INVALID_PID;
 	else
-		return ACE_Process::getpid();
+		return AppProcess::getpid();
 }
 
 std::string DockerProcess::containerId() const

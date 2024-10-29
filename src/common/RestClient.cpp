@@ -98,6 +98,7 @@ RestClient::request(const std::string &host, const web::http::method &mtd, const
 	if (body)
 	{
 		std::istringstream strStream(body->dump());
+		headers.push_back(std::string(web::http::header_names::content_type) + ": " + web::http::mime_types::application_json);
 		if (mtd == web::http::methods::PUT || mtd == web::http::methods::POST)
 		{
 			// Set the data
@@ -107,7 +108,6 @@ RestClient::request(const std::string &host, const web::http::method &mtd, const
 		}
 		else
 		{
-			headers.push_back(std::string(web::http::header_names::content_type) + ": " + web::http::mime_types::application_json);
 			headers.push_back(std::string(web::http::header_names::content_length) + ": " + std::to_string(strStream.str().size()));
 			request.setOpt(new curlpp::Options::ReadStream(&strStream));
 		}

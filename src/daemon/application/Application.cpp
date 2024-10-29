@@ -914,7 +914,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	// alloc process object
 	if (dockerImage.length())
 	{
-		if (Configuration::instance()->getDockerProxyAddress().length() && m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
+		if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
 		{
 			process.reset(new DockerApiProcess(appName, dockerImage));
 		}

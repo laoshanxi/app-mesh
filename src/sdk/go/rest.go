@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -18,12 +17,12 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 	// Load client certificate and key
 	clientCert, err := LoadCertificatePair(clientCertFile, clientCertKeyFile)
 	if err != nil {
-		log.Println(err)
+		fmt.Println(err)
 	}
 	// load server CA
 	caCert, err := LoadCA(caFile)
 	if err != nil {
-		log.Println(err)
+		fmt.Println(err)
 	}
 
 	return &http.Client{

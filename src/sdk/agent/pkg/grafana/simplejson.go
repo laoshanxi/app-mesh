@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"sort"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
+	"go.uber.org/zap"
 )
 
 // GrafanaHandler Is an opaque type that supports the required HTTP handlers for the
@@ -26,6 +26,8 @@ type GrafanaHandler struct {
 type contextKey string
 
 const requestHeadersKey contextKey = "requestHeaders"
+
+var logger *zap.SugaredLogger = utils.GetLogger()
 
 // New creates a new http.Handler that will answer to the required endpoint for
 // a SimpleJSON source. You should use WithQuerier, WithTableQuerier,
@@ -266,7 +268,7 @@ type Annotation struct {
 // HandleRoot serves a plain 200 OK for /, required by Grafana
 func (h *GrafanaHandler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	// Log the request
-	log.Println("Requesting root for Grafana")
+	logger.Debug("Requesting root for Grafana")
 
 	// Set response headers
 	w.Header().Set("Content-Type", "application/json") // Set content type to JSON
@@ -275,7 +277,7 @@ func (h *GrafanaHandler) HandleRoot(w http.ResponseWriter, r *http.Request) {
 	// Write the response body
 	responseBody := []byte("{\"message\": \"App Mesh Grafana SimpleJson data source\"}")
 	if _, err := w.Write(responseBody); err != nil {
-		log.Printf("Error writing response: %v", err)
+		logger.Errorf("Error writing response: %v", err)
 	}
 }
 
@@ -571,7 +573,7 @@ func (h *GrafanaHandler) jsonQuery(ctx context.Context, req simpleJSONQuery, tar
 // HandleQuery hands the /query endpoint, calling the appropriate timeserie
 // or table handler.
 func (h *GrafanaHandler) HandleQuery(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Requesting")
+	logger.Debug("Requesting")
 
 	if h.query == nil && h.tableQuery == nil {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -669,7 +671,7 @@ type simpleJSONAnnotationsQuery struct {
 
 // HandleAnnotations responds to the /annotation requests.
 func (h *GrafanaHandler) HandleAnnotations(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Requesting")
+	logger.Debug("Requesting")
 
 	if h.annotations == nil {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusBadRequest)
@@ -748,7 +750,7 @@ type simpleJSONSearchQuery struct {
 
 // HandleSearch implements the /search endpoint.
 func (h *GrafanaHandler) HandleSearch(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Requesting")
+	logger.Debug("Requesting")
 
 	if h.search == nil {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusBadRequest)
@@ -786,7 +788,7 @@ type simpleJSONQueryAdhocKey struct {
 
 // HandleTagKeys implements the /tag-keys endpoint.
 func (h *GrafanaHandler) HandleTagKeys(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Requesting")
+	logger.Debug("Requesting")
 
 	if h.tags == nil {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -823,7 +825,7 @@ type simpleJSONTagValuesQuery struct {
 
 // HandleTagValues implements the /tag-values endpoint.
 func (h *GrafanaHandler) HandleTagValues(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Requesting")
+	logger.Debug("Requesting")
 
 	if h.tags == nil {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusBadRequest)

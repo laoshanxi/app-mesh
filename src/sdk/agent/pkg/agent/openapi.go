@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,11 +23,11 @@ func loadOpenAPIContent() {
 		openapiFileLocation := filepath.Join(config.GetAppMeshHomeDir(), "script/openapi.yaml")
 		yamlFile, err := os.ReadFile(openapiFileLocation)
 		if err != nil {
-			log.Printf("Error reading OpenAPI file: %v", err)
+			logger.Errorf("Error reading OpenAPI file: %v", err)
 			return
 		}
 		openAPIContent = yamlFile
-		log.Printf("OpenAPI yaml file loaded: %s", openapiFileLocation)
+		logger.Infof("OpenAPI yaml file loaded: %s", openapiFileLocation)
 	})
 }
 
@@ -51,7 +50,7 @@ func handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write(openAPIContent)
 	if err != nil {
-		log.Printf("Error writing OpenAPI content: %v", err)
+		logger.Warnf("Error writing OpenAPI content: %v", err)
 	}
 }
 

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 )
 
@@ -58,7 +57,7 @@ func (s *PrometheusServer) ListenAndServe() error {
 	mux.HandleFunc(prometheusMetricPath, s.metricsHandler)
 
 	addr := fmt.Sprintf(":%d", s.port)
-	log.Printf("Starting Prometheus exporter server on %s", addr)
+	logger.Infof("Starting Prometheus exporter server on %s", addr)
 	return http.ListenAndServe(addr, mux)
 }
 

@@ -219,12 +219,6 @@ std::string Configuration::getRestJwtIssuer()
 	return m_rest->m_jwt->m_jwtIssuer;
 }
 
-std::string Configuration::getDockerProxyAddress() const
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_dockerProxyListenAddr;
-}
-
 int Configuration::getRestTcpPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -591,8 +585,6 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_restListenPort, newConfig->m_rest->m_restListenPort);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestTcpPort))
 				SET_COMPARE(this->m_rest->m_restTcpPort, newConfig->m_rest->m_restTcpPort);
-			if (HAS_JSON_FIELD(rest, JSON_KEY_DockerProxyListenAddr))
-				SET_COMPARE(this->m_rest->m_dockerProxyListenAddr, newConfig->m_rest->m_dockerProxyListenAddr);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenAddress))
 				SET_COMPARE(this->m_rest->m_restListenAddress, newConfig->m_rest->m_restListenAddress);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_HttpThreadPoolSize))
@@ -822,16 +814,6 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 
 	auto cmd = (fs::path(Utility::getSelfDir()) / "agent").string();
 
-	if (Configuration::instance()->getDockerProxyAddress().length() &&
-		Utility::isFileExist("/var/run/docker.pid") &&
-		os::pstree(1)->contains(std::stoi(Utility::readFile("/var/run/docker.pid"))))
-	{
-		cmd += std::string(" -docker_agent_url ") + this->getDockerProxyAddress();
-	}
-	else
-	{
-		LOG_WAR << fname << "docker agent not enabled";
-	}
 	LOG_INF << fname << " agent start command <" << cmd << ">";
 
 	nlohmann::json restApp;
@@ -861,8 +843,6 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	rest->m_restTcpPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestTcpPort);
-	rest->m_dockerProxyListenAddr = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_DockerProxyListenAddr);
-	rest->m_dockerProxyListenAddr = Utility::stringReplace(rest->m_dockerProxyListenAddr, "https", "http");
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	auto threadpool = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_HttpThreadPoolSize);
@@ -878,7 +858,6 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	if (!Utility::isFileExist("/var/run/docker.sock"))
 	{
 		LOG_INF << fname << "Docker not installed or started, will not start docker agent.";
-		rest->m_dockerProxyListenAddr.clear();
 	}
 	// SSL
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_SSL))
@@ -946,7 +925,6 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_PrometheusExporterListenPort] = (m_promListenPort);
 	result[JSON_KEY_RestListenAddress] = std::string(m_restListenAddress);
 	result[JSON_KEY_RestTcpPort] = (m_restTcpPort);
-	result[JSON_KEY_DockerProxyListenAddr] = std::string(m_dockerProxyListenAddr);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
 

@@ -1,58 +1,40 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
-	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
-// Test: curl --cert /opt/appmesh/ssl/client.pem --key /opt/appmesh/ssl/client-key.pem --cacert /opt/appmesh/ssl/ca.pem  https://localhost:6058/containers/json | python3 -m json.tool
-// TODO: re-use 6060 listen port, enable JWT authentication
-
 var (
 	DockerSocketFilePath = "/var/run/docker.sock"
-	DockerListenAddress  = ""
 )
 
 const (
+	DockerPathPrefix         = "/appmesh/docker"
+	DOCKER_REQUEST_ID_HEADER = "X-Request-ID"
+
 	ReadTimeout     = 30 * time.Second
 	WriteTimeout    = 30 * time.Second
-	IdleConnTimeout = 10 * time.Second
+	IdleConnTimeout = 30 * time.Second
 	MaxIdleConns    = 100
 )
 
-// DockerProxy handles the HTTPS reverse proxy for Docker requests.
+// DockerProxy handles the reverse proxy for Docker requests.
 type DockerProxy struct {
 	transport *http.Transport
 }
 
-// NewDockerProxy initializes a DockerProxy with HTTPS configuration.
-func NewDockerProxy(certFile, certKeyFile, caFile string) (*DockerProxy, error) {
-	clientCert, err := appmesh.LoadCertificatePair(certFile, certKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load client certificate and key: %w", err)
-	}
-
-	caCert, err := appmesh.LoadCA(caFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load CA certificate: %w", err)
-	}
-
-	tlsConfig := &tls.Config{
-		RootCAs:            caCert,
-		Certificates:       []tls.Certificate{clientCert},
-		InsecureSkipVerify: caCert == nil,
-	}
-
+// NewDockerProxy initializes a DockerProxy.
+func NewDockerProxy() *DockerProxy {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return net.Dial("unix", DockerSocketFilePath)
@@ -60,15 +42,33 @@ func NewDockerProxy(certFile, certKeyFile, caFile string) (*DockerProxy, error) 
 		ResponseHeaderTimeout: ReadTimeout,
 		IdleConnTimeout:       IdleConnTimeout,
 		MaxIdleConns:          MaxIdleConns,
-		TLSClientConfig:       tlsConfig,
 	}
 
-	return &DockerProxy{transport: transport}, nil
+	return &DockerProxy{transport: transport}
 }
 
-// ServeHTTP handles incoming HTTPS requests, forwarding them to Docker.
+// ServeHTTP handles incoming requests, forwarding them to Docker.
 func (dp *DockerProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	logRequest(r)
+	logger.Debugf("Received request: %s %s %s", r.RemoteAddr, r.Method, r.URL)
+
+	// Remove the /appmesh/docker prefix from the path
+	r.URL.Path = strings.TrimPrefix(r.URL.Path, DockerPathPrefix)
+	if r.URL.Path == "" {
+		r.URL.Path = "/"
+	}
+
+	// PSK verify
+	pskMsg := r.Header.Get(DOCKER_REQUEST_ID_HEADER)
+	pskMsgHmac := r.Header.Get(cloud.HTTP_HEADER_MHAC)
+	if cloud.HMAC == nil || !cloud.HMAC.VerifyHMAC(pskMsg, pskMsgHmac) {
+		http.Error(w, "PSK authentication failed", http.StatusProxyAuthRequired)
+		return
+	}
+	r.Header.Del(DOCKER_REQUEST_ID_HEADER)
+	r.Header.Del(cloud.HTTP_HEADER_MHAC)
+	logger.Debug("PSK authentication success")
+
+	// Do proxy
 	proxy := dp.createReverseProxy()
 	proxy.ServeHTTP(w, r)
 }
@@ -84,72 +84,27 @@ func (dp *DockerProxy) createReverseProxy() *httputil.ReverseProxy {
 		},
 		Transport: dp.transport,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			log.Printf("Proxy error: %v", err)
+			logger.Errorf("Proxy error: %v", err)
 			http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("Connection")
-			logResponse(resp)
+			logger.Debugf("Response: %s %s %s %d", resp.Request.Method, resp.Request.RemoteAddr, resp.Request.RequestURI, resp.StatusCode)
 			return nil
 		},
 	}
 }
 
-// startHTTPSDockerAgentServer initializes and starts an HTTPS server for DockerProxy.
-func (dp *DockerProxy) startHTTPSDockerAgentServer(addr, certFile, keyFile string) error {
-	server := &http.Server{
-		Addr:         addr,
-		Handler:      dp,
-		ReadTimeout:  ReadTimeout,
-		WriteTimeout: WriteTimeout,
-	}
-
-	log.Printf("Starting HTTPS server on %s", addr)
-	return server.ListenAndServeTLS(certFile, keyFile)
-}
-
-// ListenDocker initializes and starts the DockerProxy if Docker socket exists.
-func ListenDocker(certFile, keyFile, caFile string) error {
+// RegisterDockerRoutes registers Docker routes with the provided router.
+func RegisterDockerRoutes(router *mux.Router) error {
 	if !appmesh.IsFileExist(DockerSocketFilePath) {
 		return fmt.Errorf("docker socket file not found: %s", DockerSocketFilePath)
 	}
 
-	addr, err := parseDockerAgentAddress(DockerListenAddress)
-	if err != nil {
-		return err
-	}
+	dp := NewDockerProxy()
 
-	dp, err := NewDockerProxy(certFile, keyFile, caFile)
-	if err != nil {
-		return fmt.Errorf("failed to create DockerProxy: %w", err)
-	}
+	// Register all Docker API paths
+	router.PathPrefix(DockerPathPrefix).Handler(http.HandlerFunc(dp.ServeHTTP))
 
-	return dp.startHTTPSDockerAgentServer(addr, certFile, keyFile)
-}
-
-// parseDockerAgentAddress parses and validates the Docker agent address.
-func parseDockerAgentAddress(dockerAgentAddr string) (string, error) {
-	addr, err := appmesh.ParseURL(dockerAgentAddr)
-	if err != nil {
-		return "", fmt.Errorf("invalid docker agent address: %w", err)
-	}
-	return net.JoinHostPort(addr.Hostname(), addr.Port()), nil
-}
-
-// logRequest logs details of incoming requests.
-func logRequest(r *http.Request) {
-	if log.Default().Flags()&log.Lshortfile != 0 {
-		log.Printf("Received request: %s %s", r.Method, r.URL)
-	}
-}
-
-// logResponse logs details of outgoing responses.
-func logResponse(resp *http.Response) {
-	if log.Default().Flags()&log.Lshortfile != 0 {
-		body, err := io.ReadAll(resp.Body)
-		if err == nil {
-			log.Printf("Response: %s", string(body))
-			resp.Body = io.NopCloser(bytes.NewReader(body)) // Rewrap for further handling
-		}
-	}
+	return nil
 }

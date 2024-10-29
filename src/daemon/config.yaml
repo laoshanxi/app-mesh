@@ -23,7 +23,6 @@ REST:
   RestTcpPort: 6059
 
   PrometheusExporterListenPort: 0
-  DockerProxyListenAddr: ""
   HttpThreadPoolSize: 2
   JWT:
     JWTSalt: HelloAppMesh

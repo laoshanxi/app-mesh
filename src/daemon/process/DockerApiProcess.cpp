@@ -8,6 +8,7 @@
 #include "../../common/os/pstree.hpp"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
+#include "../security/HMACVerifier.h"
 #include "DockerApiProcess.h"
 #include "LinuxCgroup.h"
 
@@ -39,8 +40,9 @@ void DockerApiProcess::terminate()
 	{
 		try
 		{
+			// TODO: ACE_Process::terminate();
 			// DELETE /containers/{id}?force=true
-			auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "true"}}, {}, nullptr);
+			auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}, {"v", "true"}}, {}, nullptr);
 			if (resp->status_code >= web::http::status_codes::BadRequest)
 			{
 				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp->text << ">";
@@ -67,39 +69,16 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
 	}
 
-	// GET /containers/json
-	// curl -g http://127.0.0.1:6058/containers/json'?filters={%22status%22:[%22exited%22]}'
-	// https://stackoverflow.com/questions/39976683/docker-api-can-t-apply-json-filters
-	/*
-	auto filters = nlohmann::json();
-	auto nameArray = nlohmann::json::array(1);
-	nameArray[0] = std::string(m_containerName);
-	filters["name"] = nameArray;
-	auto resp = this->requestDocker(web::http::methods::GET, "/containers/json", {{"filters", filters.dump()}}, {}, nullptr);
-	if (resp.status_code() == web::http::status_codes::OK)
-	{
-		auto result = resp.extract_json().get();
-		LOG_DBG << fname << "Get Container with filters <" << filters.dump() << "> return " << result.as_array().size();
-		for (const auto &container : result.as_array())
-		{
-			this->containerId(container.at("Id").get<std::string>());
-			terminate();
-		}
-	}
-	else
-	{
-		LOG_WAR << fname << "Get containers failed <" << resp.extract_utf8string().get() << ">";
-	}
-	*/
+	// TODO: ACE_Process::terminate();
 	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerDelete
 	// DELETE /containers/{id}?force=true
-	auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}}, {}, nullptr);
+	auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}, {"v", "true"}}, {}, nullptr);
 	if (resp->status_code >= web::http::status_codes::BadRequest)
 	{
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp->text << ">";
 	}
 
-	if (!stdinFileContent.is_object())
+	if (!stdinFileContent.is_null() && !stdinFileContent.is_object())
 	{
 		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.dump();
 		LOG_WAR << fname << msg;
@@ -132,6 +111,19 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 
 	if (m_dockerImage.length())
 		createBody["Image"] = std::string(m_dockerImage);
+	if (workDir.length())
+		createBody["WorkingDir"] = workDir;
+	if (envMap.size())
+	{
+		auto array = nlohmann::json::array();
+		for (const auto &env : envMap)
+			array.push_back(env.first + "=" + env.second);
+		createBody["Env"] = array;
+	}
+
+	createBody["HostConfig"]["AutoRemove"] = true;
+	createBody["HostConfig"]["RestartPolicy"]["Name"] = "no";
+
 	// POST /containers/create
 	LOG_DBG << fname << "Create Container: " << createBody.dump();
 	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
@@ -150,6 +142,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 				auto pid = nlohmann::json::parse(resp->text)["State"]["Pid"].get<int>();
 				// Success
 				this->attach(pid);
+				ACE_Process::child_id_ = pid;
 				LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerName;
 				return this->getpid();
 			}
@@ -237,12 +230,17 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
-	auto restURL = Configuration::instance()->getDockerProxyAddress();
+	auto restURL = std::string("https://") + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
+	auto wrapperPath = std::string("/appmesh/docker") + path;
+	auto uuid = Utility::createUUID();
+	header[DOCKER_REQUEST_ID_HEADER] = uuid;
+	header[HMAC_HTTP_HEADER] = HMACVerifierSingleton::instance()->generateHMAC(uuid);
+
 	std::string errorMsg = std::string("exception caught: ").append(path);
 	auto response = std::make_shared<CurlResponse>();
 	try
 	{
-		return RestClient::request(restURL, mtd, path, body, header, query);
+		return RestClient::request(restURL, mtd, wrapperPath, body, header, query);
 	}
 	catch (const std::exception &ex)
 	{

@@ -3,7 +3,6 @@ package agent
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -47,12 +46,12 @@ func ReadNewResponse(conn net.Conn) (*Response, error) {
 
 		bytes, err := base64.StdEncoding.DecodeString(value)
 		if err != nil {
-			log.Printf("Failed to decode base64 string for download: %v", err)
+			logger.Warnf("Failed to decode base64 string for download: %v", err)
 			return nil, err
 		}
 
 		file := string(bytes)
-		log.Printf("Downloading remote file <%s> to local file <%s>", file, r.TempDownloadFilePath)
+		logger.Infof("Downloading remote file <%s> to local file <%s>", file, r.TempDownloadFilePath)
 
 		if err := r.readDownloadFileData(conn, r.TempDownloadFilePath); err != nil {
 			return nil, err
@@ -65,12 +64,12 @@ func ReadNewResponse(conn net.Conn) (*Response, error) {
 
 		bytes, err := base64.StdEncoding.DecodeString(value)
 		if err != nil {
-			log.Printf("Failed to decode base64 string for upload: %v", err)
+			logger.Warnf("Failed to decode base64 string for upload: %v", err)
 			return nil, err
 		}
 
 		file := string(bytes)
-		log.Printf("Preparing to upload local file <%s> to remote file <%s>", r.TempUploadFilePath, file)
+		logger.Debugf("Preparing to upload local file <%s> to remote file <%s>", r.TempUploadFilePath, file)
 	}
 
 	return r, err
@@ -79,7 +78,7 @@ func ReadNewResponse(conn net.Conn) (*Response, error) {
 func (r *Response) readDownloadFileData(conn net.Conn, targetFilePath string) error {
 	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		log.Printf("Failed to create file: %v", err)
+		logger.Warnf("Failed to create file: %v", err)
 		return err
 	}
 	defer f.Close()
@@ -87,24 +86,24 @@ func (r *Response) readDownloadFileData(conn net.Conn, targetFilePath string) er
 	for {
 		headerBuf, err := readTcpData(conn, TCP_MESSAGE_HEADER_LENGTH)
 		if err != nil {
-			log.Printf("Error reading TCP file header: %v", err)
+			logger.Warnf("Error reading TCP file header: %v", err)
 			return err
 		}
 
 		chunkSize := binary.BigEndian.Uint32(headerBuf)
 		if chunkSize == 0 {
-			log.Printf("Completed reading TCP file to: <%s>", targetFilePath)
+			logger.Debugf("Completed reading TCP file to: <%s>", targetFilePath)
 			break
 		}
 
 		buf, err := readTcpData(conn, chunkSize)
 		if err != nil {
-			log.Printf("Error reading TCP file: %v", err)
+			logger.Warnf("Error reading TCP file: %v", err)
 			return err
 		}
 
 		if _, err = f.Write(buf); err != nil {
-			log.Printf("Failed to write to file: %v", err)
+			logger.Warnf("Failed to write to file: %v", err)
 			return err
 		}
 	}
@@ -124,7 +123,7 @@ func (r *Response) applyResponse(w http.ResponseWriter, req *http.Request) {
 		if err := handleRestFile(w, req, r); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		log.Printf("File REST call Finished %s", r.Uuid)
+		logger.Debugf("File REST call Finished %s", r.Uuid)
 	} else {
 		// Set content type
 		if len(r.BodyMsgType) > 0 {
@@ -136,9 +135,9 @@ func (r *Response) applyResponse(w http.ResponseWriter, req *http.Request) {
 
 		if len(r.Body) > 0 {
 			if _, err := w.Write([]byte(r.Body)); err != nil {
-				log.Printf("Error writing response body for %s: %v", r.Uuid, err)
+				logger.Warnf("Error writing response body for %s: %v", r.Uuid, err)
 			}
 		}
-		log.Printf("REST call Finished %s", r.Uuid)
+		logger.Debugf("REST call Finished %s", r.Uuid)
 	}
 }

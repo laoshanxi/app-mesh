@@ -6,6 +6,8 @@
 
 #include "DockerProcess.h"
 
+#define DOCKER_REQUEST_ID_HEADER "X-Request-ID"
+
 struct CurlResponse;
 
 /// <summary>

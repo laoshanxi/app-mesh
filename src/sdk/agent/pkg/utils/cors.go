@@ -68,6 +68,7 @@ func Cors(config CORSConfig) func(http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowedMethods, ", "))
 			w.Header().Set("Access-Control-Allow-Headers", strings.Join(config.AllowedHeaders, ", "))
 			w.Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+			// w.Header().Set("Access-Control-Allow-Credentials", "true")
 
 			// Handle preflight requests
 			if r.Method == http.MethodOptions {

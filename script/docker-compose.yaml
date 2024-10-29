@@ -27,7 +27,6 @@ services:
       - APPMESH_REST_JWT_Issuer=MY_CLUSTER_ISSUER
       - APPMESH_REST_JWT_JWTSalt=MY_CLUSTER_SALT
       - APPMESH_REST_PrometheusExporterListenPort=6061
-      - APPMESH_REST_DockerProxyListenAddr=http://127.0.0.1:6058
       - APPMESH_Consul_IsMainNode=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

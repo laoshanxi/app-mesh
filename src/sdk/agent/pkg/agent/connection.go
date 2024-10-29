@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"io"
-	"log"
 	"net"
 	"os"
 	"sync"
@@ -27,6 +26,7 @@ func NewConnection(targetHost string, verifyServer bool, allowError bool) (*Conn
 		return conn.(*Connection), nil
 	}
 
+	logger.Infof("Connecting to: %s", targetHost)
 	conn, err := appmesh.ConnectAppMeshServer(targetHost, verifyServer, &config.ConfigData.REST.SSL)
 	if err != nil {
 		return nil, err
@@ -35,20 +35,21 @@ func NewConnection(targetHost string, verifyServer bool, allowError bool) (*Conn
 	sConn := &Connection{conn: conn}
 	remoteConnections.Store(targetHost, sConn)
 	go monitorResponse(sConn, targetHost, allowError)
+	logger.Infof("Monitoring response from: %s", targetHost)
 	return sConn, nil
 }
 
 func (r *Connection) sendRequestData(request *appmesh.Request) error {
 	bodyData, err := request.Serialize()
 	if err != nil {
-		log.Fatalf("Failed to serialize request: %v", err)
+		logger.Fatalf("Failed to serialize request: %v", err)
 		return err
 	}
 
 	// header buffer
 	headerData := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
 	binary.BigEndian.PutUint32(headerData, uint32(len(bodyData)))
-	log.Printf("Requesting: %s with msg length: %d", request.Uuid, len(bodyData))
+	logger.Debugf("Received request: %s %s %s %s", request.ClientAddress, request.HttpMethod, request.RequestUri, request.Uuid)
 
 	// send header and body to app mesh server
 	r.mu.Lock()
@@ -62,7 +63,7 @@ func (r *Connection) sendRequestData(request *appmesh.Request) error {
 func (r *Connection) sendUploadFileData(localFile string) error {
 	file, err := os.Open(localFile)
 	if err != nil {
-		log.Printf("Error opening file: %v", err)
+		logger.Errorf("Error opening file: %v", err)
 		return err
 	}
 	defer os.Remove(localFile)
@@ -79,7 +80,7 @@ func (r *Connection) sendUploadFileData(localFile string) error {
 		// Read a chunk from the file
 		n, err := reader.Read(buf)
 		if err != nil && err != io.EOF {
-			log.Printf("Error reading file: %v", err)
+			logger.Errorf("Error reading file: %v", err)
 			return err
 		}
 		if n == 0 {
@@ -106,7 +107,7 @@ func deleteConnection(targetHost string) {
 	if value, ok := remoteConnections.LoadAndDelete(targetHost); ok {
 		if conn, ok := value.(*Connection); ok {
 			conn.conn.Close() // Close the connection
-			log.Printf("Removed connection: %s", targetHost)
+			logger.Infof("Removed connection: %s", targetHost)
 		}
 	}
 }
@@ -131,7 +132,7 @@ func readTcpData(conn net.Conn, msgLength uint32) ([]byte, error) {
 		if n > 0 {
 			bodyBuf = append(bodyBuf, data[:n]...)
 			totalReadSize += uint32(n)
-			//log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, msgLength-totalReadSize)
+			//logger.Infof("expect: %d, read: %d, left: %d", oneTimeRead, n, msgLength-totalReadSize)
 			continue
 		} else if err != nil {
 			return nil, err
@@ -151,7 +152,7 @@ func (r *Connection) sendTcpData(buf []byte) error {
 			return err
 		}
 		totalSentSize += byteSent
-		//log.Printf("total send size %d bytes", totalSentSize)
+		//logger.Infof("total send size %d bytes", totalSentSize)
 	}
 	return err
 }

@@ -2,15 +2,16 @@ package cloud
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/rs/xid"
+	"go.uber.org/zap"
 )
 
 // AppMesh wraps AppMeshClientTCP with a mutex for thread safety
@@ -24,12 +25,14 @@ type Request struct {
 	appmesh.Request
 }
 
+var logger *zap.SugaredLogger = utils.GetLogger()
+
 // SetHMACVerify sets the HMAC header for the request if HMAC is initialized
 func (r *Request) SetHMACVerify() error {
 	if HMAC == nil {
 		return fmt.Errorf("HMAC not initialized")
 	}
-	r.Headers[hmacHttpHeader] = HMAC.GenerateHMAC(r.Uuid)
+	r.Headers[HTTP_HEADER_MHAC] = HMAC.GenerateHMAC(r.Uuid)
 	return nil
 }
 
@@ -51,7 +54,7 @@ func NewAppMeshClient() *AppMesh {
 		SslClientCertificateKeyFile: config.ConfigData.REST.SSL.SSLClientCertificateKeyFile,
 	})
 	if err != nil {
-		log.Fatalf("Failed to establish TCP connection for cloud operator: %v", err)
+		logger.Fatalf("Failed to establish TCP connection for cloud operator: %v", err)
 	}
 	return client
 }
@@ -73,7 +76,7 @@ func (r *AppMesh) GetCloudResource() (string, error) {
 	// Pretty-print the JSON response body
 	body, jsonErr := appmesh.PrettyJSON(resp.Body)
 	if jsonErr != nil {
-		log.Printf("PrettyJSON failed with error: %v", jsonErr)
+		logger.Warnf("PrettyJSON failed with error: %v", jsonErr)
 		return "", jsonErr
 	}
 	return body, nil

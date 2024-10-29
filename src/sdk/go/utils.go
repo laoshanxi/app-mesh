@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -115,13 +114,13 @@ func LoadCACertificates(certDir string) (*x509.CertPool, error) {
 		certPEM, err := os.ReadFile(certPath)
 		if err != nil {
 			// Log an error and continue on failure to read a certificate.
-			log.Printf("failed to read file %s: %v", certPath, err)
+			fmt.Printf("failed to read file %s: %v", certPath, err)
 			continue
 		}
 
 		// Try to append the certificate to the pool. Log a warning if it fails.
 		if ok := caCertPool.AppendCertsFromPEM(certPEM); !ok {
-			log.Printf("failed to append certificate from %s", certPath)
+			fmt.Printf("failed to append certificate from %s", certPath)
 		}
 	}
 
@@ -252,7 +251,6 @@ func SetFileAttributes(filePath string, headers http.Header) error {
 
 // ConnectAppMeshServer establishes a secure TLS TCP connection to an App Mesh server.
 func ConnectAppMeshServer(tcpAddr string, verifyServer bool, sslCfg *SSLConfig) (net.Conn, error) {
-	log.Printf("Connecting to: %s", tcpAddr)
 
 	var err error
 
@@ -291,7 +289,7 @@ func ConnectAppMeshServer(tcpAddr string, verifyServer bool, sslCfg *SSLConfig) 
 
 	// Set TCP_NODELAY for low-latency communication
 	if err := SetTcpNoDelay(conn); err != nil {
-		log.Printf("warning: failed to set TCP_NODELAY: %v", err)
+		fmt.Printf("warning: failed to set TCP_NODELAY: %v", err)
 	}
 
 	return conn, nil

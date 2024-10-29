@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -62,7 +61,7 @@ func getTmpDir() string {
 func getCurrentAbPathByExecutable() string {
 	exePath, err := os.Executable()
 	if err != nil {
-		log.Fatal(err)
+		GetLogger().Fatal(err)
 	}
 	res, _ := filepath.EvalSymlinks(filepath.Dir(exePath))
 	return res

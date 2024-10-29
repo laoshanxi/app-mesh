@@ -74,7 +74,6 @@ public:
 		int m_promListenPort;
 		std::string m_restListenAddress;
 		int m_restTcpPort;
-		std::string m_dockerProxyListenAddr;
 		std::shared_ptr<JsonSsl> m_ssl;
 		std::shared_ptr<JsonJwt> m_jwt;
 	};
@@ -131,7 +130,6 @@ public:
 	int getPromListenPort() const;
 	std::string getRestListenAddress();
 	std::string getRestJwtIssuer();
-	std::string getDockerProxyAddress() const;
 	int getRestTcpPort();
 	nlohmann::json serializeApplication(bool returnRuntimeInfo, const std::string &user, bool returnUnPersistApp) const;
 	std::shared_ptr<Application> getApp(const std::string &appName, bool throwOnNotFound = true) const noexcept(false);

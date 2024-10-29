@@ -1,20 +1,47 @@
+# AppMesh Agent REST API
 
-## Golang REST agent
+The agent provides access to Docker daemon through two methods:
 
-### Docker proxy
+## AppMesh agent Docker REST API
 
-`dockeragent.go` implement a proxy to pass 127.0.0.1:6058 to unix:///var/run/docker.sock
+### Docker API Proxy (/appmesh/docker/\*)
+
+The agent proxies Docker daemon REST API requests under the `/appmesh/docker` prefix.
+
+| Endpoint                       | Method   | Description                |
+| ------------------------------ | -------- | -------------------------- |
+| `/appmesh/docker/containers/*` | GET/POST | Container operations       |
+| `/appmesh/docker/images/*`     | GET/POST | Image operations           |
+| `/appmesh/docker/volumes/*`    | GET/POST | Volume operations          |
+| `/appmesh/docker/networks/*`   | GET/POST | Network operations         |
+| `/appmesh/docker/system/*`     | GET      | System operations          |
+| `/appmesh/docker/version`      | GET      | Docker version info        |
+| `/appmesh/docker/_ping`        | GET      | Docker daemon health check |
+
+Examples:
+
+```bash
+# List all Docker containers
+curl -k https://127.0.0.1:6060/appmesh/docker/containers/json
+
+# List all Docker images
+curl -k https://127.0.0.1:6060/appmesh/docker/images/json
+
+# Get Docker version
+curl -k https://127.0.0.1:6060/appmesh/docker/version
+```
+
+Implementation Details:
+
+- The agent proxies requests to Docker daemon socket at /var/run/docker.sock
+- TLS encryption is handled by the agent's main HTTPS server
+- All Docker API operations are available through the /appmesh/docker prefix
+- Request/response formats follow the Docker Engine API specification
+
+Reference:
+
+[Docker Engine API Documentation](https://docs.docker.com/reference/api/engine/)
+
+### Nginx Proxy Implementation
+
 `docker_nginx` implement a docker proxy demo with Nginx
-
-### AppMesh REST entrypoint
-
-`restagent.go` impelment REST server pass request to backend C++ TCP server tcp:127.0.0.1:6059
-
-```
-$ /opt/appmesh/bin/agent -h
-Usage of /opt/appmesh/bin/agent:
-  -docker_agent_url string
-        The host URL used to listen docker proxy (default "https://127.0.0.1:6058")
-  -docker_socket_file string
-        Docker unix domain socket file path used to forward docker proxy (default "/var/run/docker.sock")
-```

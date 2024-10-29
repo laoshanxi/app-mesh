@@ -6,18 +6,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"syscall"
 	"unsafe"
 )
 
 const (
-	hmacHttpHeader  = "X-Request-HMAC"
-	pskLength       = 32
-	pskSHMEnv       = "SHM_NAME"
-	pskFlagOffset   = pskLength + 1
-	pskSHMTotalSize = pskLength + 2
+	HTTP_HEADER_MHAC = "X-Request-HMAC"
+	pskLength        = 32
+	pskSHMEnv        = "SHM_NAME"
+	pskFlagOffset    = pskLength + 1
+	pskSHMTotalSize  = pskLength + 2
 )
 
 var (
@@ -60,7 +59,7 @@ func readPSKFromSHM() ([]byte, error) {
 		return nil, errNoSHMName
 	}
 	os.Unsetenv(pskSHMEnv)
-	log.Printf("Reading SHM_NAME: %s", shmName)
+	logger.Infof("Reading SHM_NAME: %s", shmName)
 
 	fd, err := syscall.Open("/dev/shm"+shmName, syscall.O_RDWR, 0666)
 	if err != nil {
@@ -83,6 +82,6 @@ func readPSKFromSHM() ([]byte, error) {
 	}
 	*flag = 1
 
-	log.Println("Read PSK and set flag success")
+	logger.Infof("Read PSK and set flag success")
 	return psk, nil
 }

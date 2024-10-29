@@ -2,7 +2,6 @@ package cloud
 
 import (
 	"fmt"
-	"log"
 	"path/filepath"
 	"sync"
 
@@ -50,21 +49,21 @@ func initConfig() {
 	viperWatch.AddConfigPath(config.GetAppMeshHomeDir())                                // Path to look for the config file in
 
 	if err := viperWatch.ReadInConfig(); err != nil {
-		log.Printf("failed to read consul-api-config.yaml: %v", err)
+		logger.Warnf("failed to read consul-api-config.yaml: %v", err)
 	} else {
 		// Watch for changes to the config file
 		viperWatch.WatchConfig()
 		// Define what happens when the config changes
 		viperWatch.OnConfigChange(func(e fsnotify.Event) {
-			log.Printf("Config file changed: %s", e.Name)
+			logger.Infof("Config file changed: %s", e.Name)
 			// Here you can handle what to do with the new configuration
 			if err := newConsulClient(); err != nil {
-				log.Printf("failed to reload Consul client after config change: %v", err)
+				logger.Warnf("failed to reload Consul client after config change: %v", err)
 				setConsul(nil)
 			}
 		})
 		if err := newConsulClient(); err != nil {
-			log.Printf("failed to create Consul client: %v", err)
+			logger.Warnf("failed to create Consul client: %v", err)
 		}
 	}
 }
@@ -83,7 +82,7 @@ func newConsulClient() error {
 	}
 
 	setConsul(client)
-	log.Println("Consul client initialized successfully")
+	logger.Infof("Consul client initialized successfully")
 	return nil
 }
 

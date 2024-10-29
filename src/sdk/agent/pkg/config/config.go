@@ -1,7 +1,6 @@
 package config
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,6 +28,8 @@ type (
 		REST RESTConfig `yaml:"REST"`
 	}
 )
+
+var logger *zap.SugaredLogger = utils.GetLogger()
 
 // default configuration
 var ConfigData = Configuration{
@@ -53,7 +55,7 @@ var ConfigData = Configuration{
 
 func init() {
 	if err := readConfig(); err != nil {
-		log.Fatalf("Failed to initialize config: %v", err)
+		logger.Fatalf("Failed to initialize config: %v", err)
 	}
 }
 
@@ -90,11 +92,11 @@ func ApplyEnvConfig(config interface{}) error {
 			// Check if the path exists in YAML
 			exists, result := traverseStruct(v, keys, envValue)
 			if !exists {
-				log.Printf("Configuration: %s path not found in YAML configuration", envKey)
+				logger.Warnf("Env configuration <%s>: path not found in YAML configuration", envKey)
 			} else if result {
-				log.Printf("Configuration: %s applied environment value: %s", envKey, envValue)
+				logger.Infof("Env configuration <%s>: applied environment value", envKey)
 			} else {
-				log.Printf("Configuration: %s failed to apply environment value: %s", envKey, envValue)
+				logger.Errorf("Env configuration <%s>: failed to apply environment value", envKey)
 			}
 		}
 	}

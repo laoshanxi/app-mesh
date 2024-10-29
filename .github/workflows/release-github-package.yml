@@ -134,13 +134,16 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. Object design for Python SDK" >> CHANGELOG.txt
-          echo "2. CentOS7 compatible" >> CHANGELOG.txt
-          echo "3. SSL for all connections" >> CHANGELOG.txt
-          echo "4. GPG sign packages (rpm/dpkg --import gpg_public.key)" >> CHANGELOG.txt
-          echo "5. Generate SBOM file" >> CHANGELOG.txt
-          echo "6. YAML file format for application" >> CHANGELOG.txt
-          echo "7. Forward requests to cluster host" >> CHANGELOG.txt
+          echo "1. Enhanced object design in Python SDK" >> CHANGELOG.txt
+          echo "2. CentOS 7 compatibility" >> CHANGELOG.txt
+          echo "3. SSL enabled for all connections" >> CHANGELOG.txt
+          echo "4. GPG signing for RPM and DPKG packages (use 'rpm/dpkg --import gpg_public.key')" >> CHANGELOG.txt
+          echo "5. Generated SBOM (Software Bill of Materials) file" >> CHANGELOG.txt
+          echo "6. YAML format support for application configuration" >> CHANGELOG.txt
+          echo "7. Cluster host request forwarding" >> CHANGELOG.txt
+          echo "8. JWT authentication for client requests" >> CHANGELOG.txt
+          echo "9. PSK authentication for requests from App Mesh agent to engine" >> CHANGELOG.txt
+          echo "10. PSK authentication for Docker requests from App Mesh engine to agent" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
