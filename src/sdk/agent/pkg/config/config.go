@@ -55,7 +55,7 @@ var ConfigData = Configuration{
 
 func init() {
 	if err := readConfig(); err != nil {
-		logger.Fatalf("Failed to initialize config: %v", err)
+		logger.Errorf("Failed to initialize config: %v", err)
 	}
 }
 

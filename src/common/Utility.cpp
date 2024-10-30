@@ -300,15 +300,15 @@ void Utility::initLogging(const std::string &name)
 {
 	using namespace log4cpp;
 
+	// Configure console logging with custom date format
 	auto consoleLayout = new PatternLayout();
-	consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
+	consoleLayout->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%t] %p %c: %m%n");
 	auto consoleAppender = new OstreamAppender("console", &std::cout);
 	consoleAppender->setLayout(consoleLayout);
 
 	Category &root = Category::getRoot();
-	// RollingFileAppender(const std::string&name, const std::string&fileName,
-	//	std::size_tmaxFileSize = 10 * 1024 * 1024, unsigned intmaxBackupIndex = 1,
-	//	boolappend = true, mode_t mode = 00644);
+
+	// Configure rolling file logging if name is provided
 	if (!name.empty())
 	{
 		auto logPath = (fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / name).string() + ".log";
@@ -320,8 +320,9 @@ void Utility::initLogging(const std::string &name)
 			true,
 			00664);
 
+		// Apply the same date format to the file layout
 		auto pLayout = new PatternLayout();
-		pLayout->setConversionPattern("%d [%t] %p %c: %m%n");
+		pLayout->setConversionPattern("%d{%Y-%m-%d %H:%M:%S.%l} [%t] %p %c: %m%n");
 		rollingFileAppender->setLayout(pLayout);
 		root.addAppender(rollingFileAppender);
 	}

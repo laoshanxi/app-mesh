@@ -1493,9 +1493,9 @@ class AppMeshClientTCP(AppMeshClient):
 
             tcp_address (tuple, optional): TCP connect address.
         """
-        super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, jwt_token=jwt_token)
         self.tcp_address = tcp_address
         self.__socket_client = None
+        super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, jwt_token=jwt_token)
 
     def __del__(self) -> None:
         """De-construction"""
@@ -1504,15 +1504,31 @@ class AppMeshClientTCP(AppMeshClient):
     def __connect_socket(self) -> None:
         """Establish tcp connection"""
         context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        # Set minimum TLS version
         if hasattr(context, "minimum_version"):
             context.minimum_version = ssl.TLSVersion.TLSv1_2
         else:
             context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-        if self.ssl_verify:
-            context.verify_mode = ssl.CERT_REQUIRED
-        if isinstance(self.ssl_verify, str):
-            # Load server-side certificate authority (CA) certificates
-            context.load_verify_locations(self.ssl_verify)
+        # Configure SSL verification
+        if not self.ssl_verify:
+            context.verify_mode = ssl.CERT_NONE
+        else:
+            context.verify_mode = ssl.CERT_REQUIRED  # Require certificate verification
+            context.load_default_certs()  # Load system's default CA certificates
+            if isinstance(self.ssl_verify, str):
+                if os.path.isfile(self.ssl_verify):
+                    # Add custom CA certificate file
+                    try:
+                        context.load_verify_locations(cafile=self.ssl_verify)
+                    except ssl.SSLError:
+                        # If loading fails, try using just the default CAs
+                        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+                elif os.path.isdir(self.ssl_verify):
+                    # Load CA certificates from directory
+                    context.load_verify_locations(capath=self.ssl_verify)
+                else:
+                    raise ValueError(f"ssl_verify path '{self.ssl_verify}' is neither a file nor a directory")
+
         if self.ssl_client_cert is not None:
             # Load client-side certificate and private key
             context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])

@@ -17,7 +17,7 @@ type LogManager struct {
 }
 
 func NewLogManager(printInterval time.Duration) *LogManager {
-	logger.Info("will refresh duplicate log after %f hours", printInterval.Hours())
+	logger.Infof("will refresh duplicate log after %d hours", int(printInterval.Hours()))
 	return &LogManager{printInterval: printInterval}
 }
 

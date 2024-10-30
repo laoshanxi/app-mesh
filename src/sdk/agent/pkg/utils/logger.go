@@ -1,38 +1,59 @@
-// logger/logger.go
 package utils
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var (
-	logger *zap.SugaredLogger
-	once   sync.Once
+// Constants
+const (
+	defaultLevel       = "debug"
+	defaultEncoding    = "console"
+	defaultTimeFormat  = "2006-01-02 15:04:05.000"
+	goroutineIDLength  = 64
+	goroutineIDPadding = 3
 )
 
+// Global variables
+var (
+	logger     atomic.Pointer[zap.SugaredLogger]
+	bufferPool = sync.Pool{
+		New: func() interface{} {
+			return new(bytes.Buffer)
+		},
+	}
+	once sync.Once
+)
+
+// Config represents logger configuration
 type Config struct {
-	Level        string
-	Development  bool
-	Encoding     string
-	OutputPaths  []string
-	TimeFormat   string
-	EnableCaller bool
+	Level        string   `json:"level"`
+	Development  bool     `json:"development"`
+	Encoding     string   `json:"encoding"`
+	OutputPaths  []string `json:"outputPaths"`
+	TimeFormat   string   `json:"timeFormat"`
+	EnableCaller bool     `json:"enableCaller"`
 }
+
+// Public functions
 
 // DefaultConfig returns the default logger configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Level:        "debug",
+		Level:        defaultLevel,
 		Development:  false,
-		Encoding:     "console",
+		Encoding:     defaultEncoding,
 		OutputPaths:  []string{"stdout"},
-		TimeFormat:   "2006-01-02 15:04:05.000",
+		TimeFormat:   defaultTimeFormat,
 		EnableCaller: true,
 	}
 }
@@ -46,6 +67,55 @@ func InitLogger(cfg *Config) error {
 	return err
 }
 
+// GetLogger returns the initialized logger instance
+func GetLogger() *zap.SugaredLogger {
+	if l := logger.Load(); l != nil {
+		return l
+	}
+
+	// Initialize with default configuration if not already initialized
+	if err := InitLogger(DefaultConfig()); err != nil {
+		l, _ := zap.NewProduction()
+		logger.Store(l.Sugar())
+	}
+	return logger.Load()
+}
+
+// SetLogLevel changes the logging level at runtime
+func SetLogLevel(level string) error {
+	l := GetLogger()
+	if l == nil {
+		return fmt.Errorf("logger not initialized")
+	}
+
+	parsedLevel, err := zapcore.ParseLevel(level)
+	if err != nil {
+		return fmt.Errorf("invalid log level %q: %w", level, err)
+	}
+
+	l.Desugar().Core().Enabled(parsedLevel)
+	return nil
+}
+
+// Sync flushes any buffered log entries
+func Sync() error {
+	if l := logger.Load(); l != nil {
+		err := l.Sync()
+		if err != nil && err != os.ErrInvalid {
+			return fmt.Errorf("failed to sync logger: %w", err)
+		}
+	}
+	return nil
+}
+
+// Shutdown performs cleanup and ensures all logs are written
+func Shutdown() error {
+	return Sync()
+}
+
+// Private functions
+
+// initLogger initializes the logger with the provided configuration
 func initLogger(cfg *Config) error {
 	if cfg == nil {
 		cfg = DefaultConfig()
@@ -53,7 +123,7 @@ func initLogger(cfg *Config) error {
 
 	level, err := zapcore.ParseLevel(cfg.Level)
 	if err != nil {
-		return fmt.Errorf("parse log level error: %w", err)
+		return fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
 	}
 
 	encoderConfig := zapcore.EncoderConfig{
@@ -65,8 +135,8 @@ func initLogger(cfg *Config) error {
 		MessageKey:     "msg",
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.CapitalLevelEncoder,
-		EncodeTime:     makeTimeEncoder(cfg.TimeFormat),
+		EncodeLevel:    zapcore.CapitalColorLevelEncoder,
+		EncodeTime:     makeTimeAndGoroutineEncoder(cfg.TimeFormat),
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder,
 	}
@@ -85,18 +155,34 @@ func initLogger(cfg *Config) error {
 		return fmt.Errorf("build logger error: %w", err)
 	}
 
-	logger = l.Sugar()
+	logger.Store(l.Sugar())
 	return nil
 }
 
-func makeTimeEncoder(timeFormat string) zapcore.TimeEncoder {
+// getGoroutineID extracts and formats the current goroutine ID
+func getGoroutineID() string {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
+	stack := make([]byte, goroutineIDLength)
+	n := runtime.Stack(stack, false)
+	idField := bytes.Fields(stack[:n])[1]
+	id, _ := strconv.Atoi(string(idField))
+	return fmt.Sprintf("[%0*d]", goroutineIDPadding, id)
+}
+
+// makeTimeAndGoroutineEncoder creates a custom time encoder that includes goroutine ID
+func makeTimeAndGoroutineEncoder(timeFormat string) zapcore.TimeEncoder {
 	return func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-		enc.AppendString(t.Format(timeFormat))
+		goroutineID := getGoroutineID()
+		enc.AppendString(fmt.Sprintf("%s %s", t.Format(timeFormat), goroutineID))
 	}
 }
 
+// getZapOptions returns zap options based on the configuration
 func getZapOptions(cfg *Config) []zap.Option {
-	var options []zap.Option
+	options := make([]zap.Option, 0, 3)
 
 	if cfg.EnableCaller {
 		options = append(options, zap.AddCaller())
@@ -106,36 +192,6 @@ func getZapOptions(cfg *Config) []zap.Option {
 		options = append(options, zap.Development())
 	}
 
+	options = append(options, zap.AddStacktrace(zapcore.ErrorLevel))
 	return options
-}
-
-// GetLogger returns the initialized logger instance
-func GetLogger() *zap.SugaredLogger {
-	if logger == nil {
-		// Initialize with default configuration if not already initialized
-		err := InitLogger(DefaultConfig())
-		if err != nil {
-			// Fallback to basic logger in case of initialization failure
-			l, _ := zap.NewProduction()
-			logger = l.Sugar()
-		}
-	}
-	return logger
-}
-
-// Sync flushes any buffered log entries
-func Sync() error {
-	if logger != nil {
-		return logger.Sync()
-	}
-	return nil
-}
-
-// Example shutdown function
-func Shutdown() error {
-	err := Sync()
-	if err != nil && err != os.ErrInvalid {
-		return fmt.Errorf("failed to sync logger: %w", err)
-	}
-	return nil
 }
