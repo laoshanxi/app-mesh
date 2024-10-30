@@ -1,9 +1,11 @@
-// logger/logger.go
 package utils
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
@@ -66,7 +68,7 @@ func initLogger(cfg *Config) error {
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.CapitalLevelEncoder,
-		EncodeTime:     makeTimeEncoder(cfg.TimeFormat),
+		EncodeTime:     makeTimeAndGoroutineEncoder(cfg.TimeFormat),
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder,
 	}
@@ -89,9 +91,21 @@ func initLogger(cfg *Config) error {
 	return nil
 }
 
-func makeTimeEncoder(timeFormat string) zapcore.TimeEncoder {
+// getGoroutineID extracts the current goroutine ID from the runtime stack trace and formats it as a zero-padded string.
+func getGoroutineID() string {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	idField := bytes.Fields(buf[:n])[1]
+	id, _ := strconv.Atoi(string(idField))
+	return fmt.Sprintf("[%03d]", id) // Format with leading zeros, e.g., [001]
+}
+
+// makeTimeAndGoroutineEncoder formats the timestamp and goroutine ID together
+func makeTimeAndGoroutineEncoder(timeFormat string) zapcore.TimeEncoder {
 	return func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-		enc.AppendString(t.Format(timeFormat))
+		// Format time and goroutine ID like: 2024-10-30 17:45:27.548 [134919059670720]
+		goroutineID := getGoroutineID()
+		enc.AppendString(fmt.Sprintf("%s %s", t.Format(timeFormat), goroutineID))
 	}
 }
 
