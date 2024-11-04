@@ -52,7 +52,7 @@ apt install -y libace-dev libace-ssl-dev
 apt install -y libyaml-cpp-dev
 
 # json
-wget https://github.com/nlohmann/json/releases/download/v3.11.2/include.zip
+$WGET_A https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
 unzip -o include.zip
 mv include/nlohmann /usr/local/include/
 

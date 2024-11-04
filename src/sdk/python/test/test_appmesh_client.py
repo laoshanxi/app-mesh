@@ -9,13 +9,11 @@ from pyotp import TOTP
 
 # For source code env:
 current_directory = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_directory)
-sys.path.append(os.path.join(parent_dir, "appmesh"))
-import appmesh_client
+sys.path.append(os.path.dirname(current_directory))
 
 # For wheel package
 # python3 -m pip install --upgrade appmesh pyotp
-# from appmesh import appmesh_client
+from appmesh import appmesh_client, AppMeshClientTCP
 
 # python3 -m unittest test_appmesh_client.TestAppMeshClient.test_user
 
@@ -75,7 +73,7 @@ class TestAppMeshClient(TestCase):
 
     def test_file(self):
         """test file"""
-        client = appmesh_client.AppMeshClientTCP()
+        client = AppMeshClientTCP()
         client.login("admin", "admin123")
         # client.forwarding_host = "127.0.0.1:6059" # only for REST client, not for TCP client
         if os.path.exists("1.log"):
@@ -121,7 +119,7 @@ class TestAppMeshClient(TestCase):
 
     def test_config(self):
         """test config"""
-        client = appmesh_client.AppMeshClientTCP()
+        client = AppMeshClientTCP()
         client.login("admin", "admin123")
         self.assertIn("cpu_cores", client.host_resource())
         self.assertIn("appmesh_prom_scrape_count", client.metrics())

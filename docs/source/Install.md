@@ -1,150 +1,119 @@
-# Deployment
+# App Mesh Deployment Guide
 
 <div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/deploy.png"/></div>
 
-App Mesh can deploy with multiple ways, generally, App Mesh run on a host as a daemon service managed by native systemd or docker container.
+App Mesh can be deployed in various environments, either as a native systemd-managed service or within a Docker container. This guide provides detailed instructions for setting up App Mesh in several configurations, including standalone deployment, Docker-based deployment, and Docker Compose for multi-component setups.
 
-### Quick install by docker container
+## Installation Options
 
-Start App Mesh daemon docker container with 4g memory limited:
+### Quick Installation via Docker Container
 
-```
+Deploy the App Mesh daemon as a Docker container with a memory limit:
+
+```shell
 docker run -d --memory=8g --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
 ```
 
-The startup support use environment variable override default configuration with format `APPMESH_${BASE-JSON-KEY}_${SUB-JSON-KEY}=NEW_VALUE`, E.g. `-e APPMESH_REST_HttpThreadPoolSize=10`, `-e APPMESH_REST_SSL_VerifyPeer=true`, `-e APPMESH_SECURE_INSTALLATION=Y`.
+You can override default configurations using environment variables in the format `APPMESH_${BASE_JSON_KEY}_${SUB_JSON_KEY}=NEW_VALUE`. For example:
 
-The directory `/opt/appmesh/work` will store all data, allowing it to be mounted from a host directory to ensure data persistence for the container.
+- `-e APPMESH_REST_HttpThreadPoolSize=10`
+- `-e APPMESH_REST_SSL_VerifyPeer=true`
+- `-e APPMESH_SECURE_INSTALLATION=Y`
+- `-e APPMESH_REST_RestListenAddress=0.0.0.0`
 
-### Native installation
+The `/opt/appmesh/work` directory stores all data. To ensure data persistence, you can mount this directory from the host.
 
-Install App Mesh as standalone mode on local node without GUI service by release packages.
+### Native Installation on Linux
 
-```text
-# import gpg public key in case of signature verification
+App Mesh can be installed as a standalone service on Linux systems. The following steps outline installation on CentOS, Ubuntu, and SUSE systems.
+
+1. Import the GPG Key (if needed for signature verification)
+
+```shell
 sudo rpm --import gpg_public.key
 sudo dpkg --import gpg_public.key
+```
+
+2. Install App Mesh:
+
+```shell
 # centos
 sudo yum install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
-# ubuntu
-sudo apt install appmesh_2.1.1_gcc_7_glibc_2.27_x86_64.deb
+# ubuntu (use sudo -E to pass environment variables)
+sudo -E apt install appmesh_2.1.1_gcc_7_glibc_2.27_x86_64.deb
 # SUSE
 sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 ```
 
-Start service:
+3. Start and Enable the Service:
 
-```
-$ systemctl enable appmesh
-$ systemctl start appmesh
-$ systemctl status appmesh
+```shell
+sudo systemctl enable appmesh
+sudo systemctl start appmesh
+sudo systemctl status appmesh
 ● appmesh.service - App Mesh daemon service
    Loaded: loaded (/etc/systemd/system/appmesh.service; enabled; vendor preset: disabled)
 ```
 
-Deploy Web UI (access <https://host-name>)
+4. Web UI Deployment: Access the Web UI at https://<hostname>:
 
-```
+```shell
 appc logon -u admin -x admin123
 appc add -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -d laoshanxi/appmesh-ui:2.1.2 -f
 ```
 
-Note:
+### Docker Compose Installation with UI and Consul Service
 
-1. On windows WSL ubuntu, use `service appmesh start` to force service start, WSL VM does not have full init.d and systemd
-2. Use env `export APPMESH_FRESH_INSTALL=Y` to enable fresh installation (otherwise, SSL and configuration file will reuse previous files on this host) and use `sudo -E` to pass environment variable to sudo
-3. Use env `export APPMESH_SECURE_INSTALLATION=Y` to generate initial secure password for user `admin` and force enable password encrypt
-4. Use env `export APPMESH_BaseConfig_DisableExecUser=true` to disable customized process user
-5. Set env `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user
-6. Set env `APPMESH_PosixTimezone` with posix timezone (E.g. export APPMESH_PosixTimezone="+08") for CLI and Server
-7. The installation will create `appmesh` Linux user for default app running
-8. For centos 8, install dependency: `sudo yum install libnsl`
-9. The installation media structure is like this:
+For a full-featured deployment, including App Mesh, App Mesh UI, and Consul, you can use Docker Compose.
 
-```
-    $ tree -L 1 /opt/appmesh/
-	  ├── apps                         ====> application json files dir
-    ├── config.yaml                  ====> configuration fileGUI)
-    ├── security.yaml                ====> local security configuration file
-    ├── bin                          ====> execution binaries dir
-    ├── lib64
-    ├── log                          ====> app mesh engine log dir
-    ├── script
-    ├── ssl                          ====> SSL certification files
-    └── work                         ====> child app work dir (app log files will write in this dir)
-```
+1. Install Docker Compose:
 
-### Docker compose installation with GUI and Consul Service
-
-A simple way deploy appmesh, appmesh-ui and consul by docker-compose.
-
-Install docker-compose:
-
-```
+```bash
 sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-Get integrated docker compose file [docker-compose.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml) and configure correct Consul bind IP address and network device name.
+2. Download and Configure Docker Compose File:
 
-```
-$ mkdir appmesh
-$ cd appmesh
-$ wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml
+- Obtain the [docker-compose.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml).
+- Configure the correct Consul bind IP address and network device name in the file.
 
-$ docker-compose -f docker-compose.yaml up -d
-Creating apppmesh_appmesh_1    ... done
-Creating apppmesh_consul_1     ... done
-Creating apppmesh_appmesh-ui_1 ... done
+3. Start Services:
 
-$ docker-compose -f docker-compose.yaml ps
-        Name                       Command               State   Ports
-----------------------------------------------------------------------
-apppmesh_appmesh-ui_1   nginx -g daemon off;             Up
-apppmesh_appmesh_1      /opt/appmesh/script/appmes ...   Up
-apppmesh_consul_1       docker-entrypoint.sh consu ...   Up
+```bash
+mkdir appmesh
+cd appmesh
+wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml
+docker-compose -f docker-compose.yaml up -d
 ```
 
-By default, App Mesh will connect to local Consul URL with "<https://127.0.0.1:443>", this address is configured with `Nginx` reverse proxy route to "<http://127.0.0.1:8500>".
+4. Verify Running Services:
 
-App Mesh UI is listen at `443` port with SSL protocol, open `https://appmesh_node` to access with `admin` user and admin123 for initial password.
-
-For production environment, Consul is better to be a cluster with 3+ server agent, one Consul agent is used for test scenario.
-
-### Join a App Mesh node to a Consul cluster
-
-#### Option 1: Update configuration
-
-When installed a new App Mesh node and want to connect to existing cluster, just need configure Consul URL parameter in `/opt/appmesh/config.yaml`:
-
-```
-  "Consul": {
-    "Url": "https://192.168.3.1",
-  }
+```bash
+docker-compose -f docker-compose.yaml ps
 ```
 
-If App Mesh is running in Docker container, need mount `/opt/appmesh/config.yaml` out of container to persist the configuration. After configuration change, just restart App Mesh container.
+By default, App Mesh will connect to Consul via `https://127.0.0.1:443`. App Mesh UI is accessible at `https://<hostname>`, with admin as the username and admin123 as the default password.
 
-#### Option 2: Update from UI
+### Environment Variables and Additional Notes
 
-All configuration update from UI support hot-update, no need restart App Mesh process to take effect. Click `Configuration` -> `Consul` and set `Consul URL`, Click `Submit` to take effect.
+- WSL Support: Use service appmesh start on Windows WSL Ubuntu environments.
+- Fresh Installation: Set export APPMESH_FRESH_INSTALL=Y to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
+- Secure Installation: Set export APPMESH_SECURE_INSTALLATION=Y to generate an initial secure password for the admin user and enable password encryption.
+- Disable Custom Process User: Set export APPMESH_BaseConfig_DisableExecUser=true to disable custom process users.
+- Daemon User and Group: Use APPMESH_DAEMON_EXEC_USER and APPMESH_DAEMON_EXEC_USER_GROUP to specify daemon process user and group.
+- Timezone Configuration: Use APPMESH_PosixTimezone (e.g., export APPMESH_PosixTimezone="+08") for timezone setting.
+- Default User: The installation creates an appmesh Linux user for app execution.
+- CentOS Dependencies: On CentOS 8, install libnsl with`sudo yum install libnsl`
 
-#### Option 3: Update from CLI
+## Common Use Cases
 
-Command line support join current node to a Consul cluster with specify the Consul URL.
+App Mesh can be utilized in various scenarios, including but not limited to:
 
-```
-appc join -c http://127.0.0.1:8500 -l 30 -m -w
-```
-
----
-
-### Usage scenarios
-
-1. Integrate with rpm installation script and register rpm startup behavior to appmesh
-2. Remote sync/async shell execute (web ssh)
-3. Host/app resource monitor
-4. Run as a standalone JWT server
-5. File server
-6. Micro service management
-7. Cluster application deployment
+- Integrating RPM installation and managing startup behavior.
+- Executing remote synchronous/asynchronous shell commands (e.g., via web SSH).
+- Monitoring host and application resources.
+- Running as a standalone JWT server.
+- Functioning as a file server.
+- Managing microservices.
+- Deploying applications across clusters.

@@ -1,352 +1,26 @@
-#!/usr/bin/python3
 """App Mesh Python SDK"""
+
+# pylint: disable=broad-exception-raised,line-too-long,broad-exception-caught,too-many-lines, import-outside-toplevel, protected-access
+
+# Standard library imports
 import abc
 import base64
-from contextlib import contextmanager
-import copy
 import json
 import os
-import socket
-import ssl
-import uuid
-
-from enum import Enum, unique
 from datetime import datetime
+from enum import Enum, unique
 from http import HTTPStatus
-from typing import Optional, Tuple
+from typing import Tuple, Union
 from urllib import parse
 
+# Third-party imports
 import aniso8601
 import requests
 
-# pylint: disable=broad-exception-raised,line-too-long,broad-exception-caught,too-many-lines, import-outside-toplevel
-
-DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"  # default 7 day(s)
-DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"  # 2 days
-DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"  # 2.5 days
-
-DEFAULT_SSL_CA_PEM_FILE = "/opt/appmesh/ssl/ca.pem"
-DEFAULT_SSL_CLIENT_PEM_FILE = "/opt/appmesh/ssl/client.pem"
-DEFAULT_SSL_CLIENT_PEM_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
-
-# TLS-optimized chunk size (slightly less than maximum TLS record size)
-# leaves some room for TLS overhead (like headers) within the 16 KB limit.
-TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256  # target to 16KB
-TCP_MESSAGE_HEADER_LENGTH = 4
-REST_TEXT_MESSAGE_JSON_KEY = "message"
-MESSAGE_ENCODING_UTF8 = "utf-8"
-
-HTTP_USER_AGENT = "appmesh/python"
-HTTP_USER_AGENT_TCP = "appmesh/python/tcp"
-HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
-HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
-HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
-HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
-
-
-class App(object):
-    """
-    App object present an application in App Mesh
-    """
-
-    @staticmethod
-    def _get_str_item(data: dict, key) -> Optional[str]:
-        """Retrieve a string value from a dictionary by key, if it exists and is a valid string."""
-        return data[key] if (data and key in data and data[key] and isinstance(data[key], str)) else None
-
-    @staticmethod
-    def _get_int_item(data: dict, key) -> Optional[int]:
-        """Retrieve an integer value from a dictionary by key, if it exists and is a valid integer."""
-        return int(data[key]) if (data and key in data and data[key] and isinstance(data[key], int)) else None
-
-    @staticmethod
-    def _get_bool_item(data: dict, key) -> Optional[bool]:
-        """Retrieve a boolean value from a dictionary by key, if it exists."""
-        return bool(data[key]) if (data and key in data and data[key]) else None
-
-    @staticmethod
-    def _get_native_item(data: dict, key) -> Optional[object]:
-        """Retrieve a deep copy of a value from a dictionary by key, if it exists."""
-        return copy.deepcopy(data[key]) if (data and key in data and data[key]) else None
-
-    @unique
-    class Permission(Enum):
-        """Application permission definition"""
-
-        DENY = "1"
-        READ = "2"
-        WRITE = "3"
-
-    class Behavior(object):
-        """
-        Application error handling behavior definition object
-        """
-
-        @unique
-        class Action(Enum):
-            """Application exit behavior definition"""
-
-            RESTART = "restart"
-            STANDBY = "standby"
-            KEEPALIVE = "keepalive"
-            REMOVE = "remove"
-
-        def __init__(self, data=None) -> None:
-            if isinstance(data, (str, bytes, bytearray)):
-                data = json.loads(data)
-
-            self.exit = App._get_str_item(data, "exit")
-            """default exit behavior [restart,standby,keepalive,remove]"""
-
-            self.control = App._get_native_item(data, "control") if App._get_native_item(data, "control") else dict()
-            """exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior"""
-
-        def set_exit_behavior(self, a: Action) -> None:
-            """Set error handling behavior while application exit"""
-            self.exit = a.value
-
-        def set_control_behavior(self, control_code: int, a: Action) -> None:
-            """Set error handling behavior while application exit with specific return code"""
-            self.control[str(control_code)] = a.value
-
-    class DailyLimitation(object):
-        """
-        Application avialable day time definition object
-        """
-
-        def __init__(self, data=None) -> None:
-            if isinstance(data, (str, bytes, bytearray)):
-                data = json.loads(data)
-
-            self.daily_start = App._get_int_item(data, "daily_start")
-            """daily start time (e.g., '09:00:00+08')"""
-
-            self.daily_end = App._get_int_item(data, "daily_end")
-            """daily end time (e.g., '20:00:00+08')"""
-
-        def set_daily_range(self, start: datetime, end: datetime) -> None:
-            """Set valid day hour range"""
-            self.daily_start = int(start.timestamp())
-            self.daily_end = int(end.timestamp())
-
-    class ResourceLimitation(object):
-        """
-        Application cgroup limitation definition object
-        """
-
-        def __init__(self, data=None) -> None:
-            if isinstance(data, (str, bytes, bytearray)):
-                data = json.loads(data)
-
-            self.cpu_shares = App._get_int_item(data, "cpu_shares")
-            """CPU shares (relative weight)"""
-
-            self.memory_mb = App._get_int_item(data, "memory_mb")
-            """physical memory limit in MByte"""
-
-            self.memory_virt_mb = App._get_int_item(data, "memory_virt_mb")
-            """virtual memory limit in MByte"""
-
-    def __init__(self, data=None):
-        """Construct an App Mesh Application object
-
-        Args:
-            data (str | dict | json, optional): application definition data
-        """
-
-        if isinstance(data, (str, bytes, bytearray)):
-            data = json.loads(data)
-
-        self.name = App._get_str_item(data, "name")
-        """application name (unique)"""
-
-        self.command = App._get_str_item(data, "command")
-        """full command line with arguments"""
-
-        self.shell = App._get_bool_item(data, "shell")
-        """use shell mode, cmd can be more shell commands with string format"""
-
-        self.session_login = App._get_bool_item(data, "session_login")
-        """app run in session login mode"""
-
-        self.description = App._get_str_item(data, "description")
-        """application description string"""
-
-        self.metadata = App._get_native_item(data, "metadata")
-        """metadata string/JSON (input for application, pass to process stdin)"""
-
-        self.working_dir = App._get_str_item(data, "working_dir")
-        """working directory"""
-
-        self.status = App._get_int_item(data, "status")
-        """initial application status (true is enable, false is disabled)"""
-
-        self.docker_image = App._get_str_item(data, "docker_image")
-        """docker image which used to run command line (for docker container application)"""
-
-        self.stdout_cache_num = App._get_int_item(data, "stdout_cache_num")
-        """stdout file cache number"""
-
-        self.start_time = App._get_int_item(data, "start_time")
-        """start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05')"""
-
-        self.end_time = App._get_int_item(data, "end_time")
-        """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
-
-        self.interval = App._get_int_item(data, "interval")
-        """start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *')"""
-
-        self.cron = App._get_bool_item(data, "cron")
-        """indicate interval parameter use cron expression or not"""
-
-        self.daily_limitation = App.DailyLimitation(App._get_native_item(data, "daily_limitation"))
-
-        self.retention = App._get_str_item(data, "retention")
-        """extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W')."""
-
-        self.health_check_cmd = App._get_str_item(data, "health_check_cmd")
-        """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
-
-        self.permission = App._get_int_item(data, "permission")
-        """application user permission, value is 2 bit integer: [group & other], each bit can be deny:1, read:2, write: 3."""
-        self.behavior = App.Behavior(App._get_native_item(data, "behavior"))
-
-        self.env = dict()
-        """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
-        if data and "env" in data:
-            for k, v in data["env"].items():
-                self.env[k] = v
-
-        self.sec_env = dict()
-        """security environment variables, encrypt in server side with application owner's cipher"""
-        if data and "sec_env" in data:
-            for k, v in data["sec_env"].items():
-                self.sec_env[k] = v
-
-        self.pid = App._get_int_item(data, "pid")
-        """process id used to attach to the running process"""
-        self.resource_limit = App.ResourceLimitation(App._get_native_item(data, "resource_limit"))
-
-        # readonly attributes
-        self.owner = App._get_str_item(data, "owner")
-        """owner name"""
-        self.pstree = App._get_str_item(data, "pstree")
-        """process tree"""
-        self.container_id = App._get_str_item(data, "container_id")
-        """container id"""
-        self.memory = App._get_int_item(data, "memory")
-        """memory usage"""
-        self.cpu = App._get_int_item(data, "cpu")
-        """cpu usage"""
-        self.fd = App._get_int_item(data, "fd")
-        """file descriptor usage"""
-        self.last_start_time = App._get_int_item(data, "last_start_time")
-        """last start time"""
-        self.last_exit_time = App._get_int_item(data, "last_exit_time")
-        """last exit time"""
-        self.health = App._get_int_item(data, "health")
-        """health status"""
-        self.version = App._get_int_item(data, "version")
-        """version number"""
-        self.return_code = App._get_int_item(data, "return_code")
-        """last exit code"""
-
-    def set_valid_time(self, start: datetime, end: datetime) -> None:
-        """Set avialable time window"""
-        self.start_time = int(start.timestamp()) if start else None
-        self.end_time = int(end.timestamp()) if end else None
-
-    def set_env(self, k: str, v: str, secure: bool = False) -> None:
-        """Set environment variable"""
-        if secure:
-            self.sec_env[k] = v
-        else:
-            self.env[k] = v
-
-    def set_permission(self, group_user: Permission, others_user: Permission) -> None:
-        """Set application permission"""
-        self.permission = int(group_user.value + others_user.value)
-
-    def __str__(self) -> str:
-        return json.dumps(self.json())
-
-    def json(self):
-        """serialize with JSON format"""
-        output = copy.deepcopy(self.__dict__)
-        output["behavior"] = copy.deepcopy(self.behavior.__dict__)
-        output["daily_limitation"] = copy.deepcopy(self.daily_limitation.__dict__)
-        output["resource_limit"] = copy.deepcopy(self.resource_limit.__dict__)
-
-        def clean_empty_item(data, key) -> None:
-            value = data[key]
-            if not value:
-                del data[key]
-            elif isinstance(value, dict) and key != "metadata":
-                for k in list(value):
-                    clean_empty_item(value, k)
-
-        for k in list(output):
-            clean_empty_item(output, k)
-        for k in list(output):
-            clean_empty_item(output, k)
-        return output
-
-
-class AppOutput(object):
-    """App output information"""
-
-    def __init__(self, status_code: HTTPStatus, output: str, out_position: Optional[int], exit_code: Optional[int]) -> None:
-
-        self.status_code = status_code
-        """HTTP status code"""
-
-        self.output = output
-        """HTTP response text"""
-
-        self.out_position = out_position
-        """Current read position (int or None)"""
-
-        self.exit_code = exit_code
-        """Process exit code (int or None)"""
-
-
-class AppRun(object):
-    """
-    Application run object indicate to a remote run from run_async()
-    """
-
-    def __init__(self, client, app_name: str, process_id: str):
-        self.app_name = app_name
-        """application name"""
-        self.proc_uid = process_id
-        """process_uuid from run_async()"""
-        self._client = client
-        """AppMeshClient object"""
-        self._forwarding_host = client.forwarding_host
-        """forward host indicates the target server for this app run"""
-
-    @contextmanager
-    def forwarding_host(self):
-        """context manager for forward host override to self._client"""
-        original_value = self._client.forwarding_host
-        self._client.forwarding_host = self._forwarding_host
-        try:
-            yield
-        finally:
-            self._client.forwarding_host = original_value
-
-    def wait(self, stdout_print: bool = True, timeout: int = 0) -> int:
-        """Wait for an async run to be finished
-
-        Args:
-            stdout_print (bool, optional): print remote stdout to local or not.
-            timeout (int, optional): wait max timeout seconds and return if not finished, 0 means wait until finished
-
-        Returns:
-            int: return exit code if process finished, return None for timeout or exception.
-        """
-        with self.forwarding_host():
-            return self._client.run_async_wait(self, stdout_print, timeout)
+# Local application-specific imports
+from .app import App
+from .app_run import AppRun
+from .app_output import AppOutput
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -377,6 +51,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
           token-based authentication and authorization to enforce fine-grained permissions.
 
     Methods:
+        # Authentication Management
         - login()
         - logoff()
         - authentication()
@@ -385,6 +60,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - totp_secret()
         - totp_setup()
 
+        # Application Management
         - app_add()
         - app_delete()
         - app_disable()
@@ -394,24 +70,27 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - app_view()
         - app_view_all()
 
+        # Run Application Operations
         - run_async()
         - run_async_wait()
         - run_sync()
 
+        # System Management
+        - forwarding_host
         - config_set()
         - config_view()
         - log_level_set()
         - host_resource()
-        - forwarding_host
         - metrics()
-
         - tag_add()
         - tag_delete()
         - tag_view()
 
+        # File Management
         - file_download()
         - file_upload()
 
+        # User and Role Management
         - user_add()
         - user_delete()
         - user_lock()
@@ -427,6 +106,19 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - groups_view()
     """
 
+    DURATION_ONE_WEEK_ISO = "P1W"
+    DURATION_TWO_DAYS_ISO = "P2D"
+    DURATION_TWO_DAYS_HALF_ISO = "P2DT12H"
+
+    DEFAULT_SSL_CA_CERT_PATH = "/opt/appmesh/ssl/ca.pem"
+    DEFAULT_SSL_CLIENT_CERT_PATH = "/opt/appmesh/ssl/client.pem"
+    DEFAULT_SSL_CLIENT_KEY_PATH = "/opt/appmesh/ssl/client-key.pem"
+
+    JSON_KEY_MESSAGE = "message"
+    HTTP_USER_AGENT = "appmesh/python"
+    HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
+    HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
+
     @unique
     class Method(Enum):
         """REST methods"""
@@ -440,8 +132,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     def __init__(
         self,
         rest_url: str = "https://127.0.0.1:6060",
-        rest_ssl_verify=DEFAULT_SSL_CA_PEM_FILE if os.path.exists(DEFAULT_SSL_CA_PEM_FILE) else False,
-        rest_ssl_client_cert=(DEFAULT_SSL_CLIENT_PEM_FILE, DEFAULT_SSL_CLIENT_PEM_KEY_FILE) if os.path.exists(DEFAULT_SSL_CLIENT_PEM_FILE) else None,
+        rest_ssl_verify=DEFAULT_SSL_CA_CERT_PATH if os.path.exists(DEFAULT_SSL_CA_CERT_PATH) else False,
+        rest_ssl_client_cert=(DEFAULT_SSL_CLIENT_CERT_PATH, DEFAULT_SSL_CLIENT_KEY_PATH) if os.path.exists(DEFAULT_SSL_CLIENT_CERT_PATH) else None,
         rest_timeout=(60, 300),
         jwt_token=None,
     ):
@@ -476,44 +168,97 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     @property
     def jwt_token(self) -> str:
-        """property for jwt_token
+        """Get the current JWT (JSON Web Token) used for authentication.
+
+        This property manages the authentication token used for securing API requests.
+        The token is used to authenticate and authorize requests to the service.
 
         Returns:
-            str: _description_
+            str: The current JWT token string.
+                Returns empty string if no token is set.
+
+        Notes:
+            - The token typically includes claims for identity and permissions
+            - Token format: "header.payload.signature"
+            - Tokens are time-sensitive and may expire
         """
         return self._jwt_token
 
     @jwt_token.setter
     def jwt_token(self, token: str) -> None:
-        """setter for jwt_token
+        """Set the JWT token for authentication.
+
+        Configure the JWT token used for authenticating requests. The token should be
+        a valid JWT issued by a trusted authority.
 
         Args:
-            token (str): _description_
+            token (str): JWT token string in standard JWT format
+                (e.g., "eyJhbGci...payload...signature")
+                Pass empty string to clear the token.
+
+        Example:
+            >>> client.jwt_token = "eyJhbGci..."  # Set new token
+            >>> client.jwt_token = ""             # Clear token
+
+        Notes:
+            Security best practices:
+            - Store tokens securely
+            - Never log or expose complete tokens
+            - Refresh tokens before expiration
+            - Validate token format before setting
         """
         self._jwt_token = token
 
     @property
     def forwarding_host(self) -> str:
-        """property for forwarding_host
+        """Get the target host address for request forwarding in a cluster setup.
+
+        This property manages the destination host where requests will be forwarded to
+        within a cluster configuration. The host can be specified in two formats:
+        1. hostname/IP only: will use the current service's port
+        2. hostname/IP with port: will use the specified port
 
         Returns:
-            str: forward request to target host (host:port)
+            str: The target host address in either format:
+                - "hostname" or "IP" (using current service port)
+                - "hostname:port" or "IP:port" (using specified port)
+                Returns empty string if no forwarding host is set.
+
+        Notes:
+            For proper JWT token sharing across the cluster:
+            - All nodes must share the same JWT salt configuration
+            - All nodes must use identical JWT issuer settings
+            - When port is omitted, current service port will be used
         """
         return self._forwarding_host
 
     @forwarding_host.setter
     def forwarding_host(self, host: str) -> None:
-        """setter for forwarding_host
+        """Set the target host address for request forwarding.
+
+        Configure the destination host where requests should be forwarded to. This is
+        used in cluster setups for request routing and load distribution.
 
         Args:
-            host (str): forward request to target host (host:port)
+            host (str): Target host address in one of two formats:
+                1. "hostname" or "IP" - will use current service port
+                (e.g., "backend-node" or "192.168.1.100")
+                2. "hostname:port" or "IP:port" - will use specified port
+                (e.g., "backend-node:6060" or "192.168.1.100:6060")
+                Pass empty string to disable forwarding.
+
+        Examples:
+            >>> client.forwarding_host = "backend-node:6060"  # Use specific port
+            >>> client.forwarding_host = "backend-node"       # Use current service port
+            >>> client.forwarding_host = None                 # Disable forwarding
         """
+
         self._forwarding_host = host
 
     ########################################
     # Security
     ########################################
-    def login(self, user_name: str, user_pwd: str, totp_code="", timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+    def login(self, user_name: str, user_pwd: str, totp_code="", timeout_seconds=DURATION_ONE_WEEK_ISO) -> str:
         """Login with user name and password
 
         Args:
@@ -595,7 +340,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def renew(self, timeout_seconds=DEFAULT_TOKEN_EXPIRE_SECONDS) -> str:
+    def renew(self, timeout_seconds=DURATION_ONE_WEEK_ISO) -> str:
         """Renew current token
 
         Args:
@@ -1315,31 +1060,44 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def run_async(
         self,
-        app: App,
-        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        life_cycle_seconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
-    ):
-        """Asyncrized run a command remotely, 'name' attribute in app_json dict used to run an existing application
-        Asyncrized run will not block process
+        app: Union[App, str],
+        max_time_seconds: Union[int, str] = DURATION_TWO_DAYS_ISO,
+        life_cycle_seconds: Union[int, str] = DURATION_TWO_DAYS_HALF_ISO,
+    ) -> AppRun:
+        """Run an application asynchronously on a remote system without blocking the API.
 
         Args:
-            app (App): application object.
-            max_time_seconds (int | str, optional): max run time for the remote process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
-            life_cycle_seconds (int | str, optional): max lifecycle time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
+            app (Union[App, str]): An `App` instance or a shell command string.
+                - If `app` is a string, it is treated as a shell command for the remote run,
+                and an `App` instance is created as:
+                `App({"command": "<command_string>", "shell": True})`.
+                - If `app` is an `App` object, providing only the `name` attribute (without
+                a command) will run an existing application; otherwise, it is treated as a new application.
+            max_time_seconds (Union[int, str], optional): Maximum runtime for the remote process.
+                Accepts ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to `P2D`.
+            life_cycle_seconds (Union[int, str], optional): Maximum lifecycle time for the remote process.
+                Accepts ISO 8601 duration format. Defaults to `P2DT12H`.
 
         Returns:
-            str: app_name, new application name for this run
-            str: process_uuid, process UUID for this run
+            AppRun: An application run object that can be used to monitor and retrieve the result of the run.
         """
+        if isinstance(app, str):
+            app = App({"command": app, "shell": True})
+
         path = "/appmesh/app/run"
         resp = self._request_http(
             AppMeshClient.Method.POST,
             body=app.json(),
             path=path,
-            query={"timeout": self._parse_duration(max_time_seconds), "lifecycle": self._parse_duration(life_cycle_seconds)},
+            query={
+                "timeout": self._parse_duration(max_time_seconds),
+                "lifecycle": self._parse_duration(life_cycle_seconds),
+            },
         )
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
+
+        # Return an AppRun object with the application name and process UUID
         return AppRun(self, resp.json()["name"], resp.json()["process_uuid"])
 
     def run_async_wait(self, run: AppRun, stdout_print: bool = True, timeout: int = 0) -> int:
@@ -1377,30 +1135,41 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def run_sync(
         self,
-        app: App,
+        app: Union[App, str],
         stdout_print: bool = True,
-        max_time_seconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-        life_cycle_seconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS,
-    ) -> Tuple[int, str]:
-        """Block run a command remotely, 'name' attribute in app_json dict used to run an existing application
-        The synchronized run will block the process until the remote run is finished then return the result from HTTP response
+        max_time_seconds: Union[int, str] = DURATION_TWO_DAYS_ISO,
+        life_cycle_seconds: Union[int, str] = DURATION_TWO_DAYS_HALF_ISO,
+    ) -> Tuple[Union[int, None], str]:
+        """Synchronously run an application remotely, blocking until completion, and return the result.
+
+        If 'app' is a string, it is treated as a shell command and converted to an App instance.
+        If 'app' is App object, the name attribute is used to run an existing application if specified.
 
         Args:
-            app (App): application object.
-            stdout_print (bool, optional): whether print remote stdout to local or not. Defaults to True.
-            max_time_seconds (int | str, optional): max run time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
-            life_cycle_seconds (int | str, optional): max lifecycle time for the remote process. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
+            app (Union[App, str]): An App instance or a shell command string.
+                If a string, an App instance is created as:
+                `appmesh_client.App({"command": "<command_string>", "shell": True})`
+            stdout_print (bool, optional): If True, prints the remote stdout locally. Defaults to True.
+            max_time_seconds (Union[int, str], optional): Maximum runtime for the remote process.
+                Supports ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to DEFAULT_RUN_APP_TIMEOUT_SECONDS.
+            life_cycle_seconds (Union[int, str], optional): Maximum lifecycle time for the remote process.
+                Supports ISO 8601 duration format. Defaults to DEFAULT_RUN_APP_LIFECYCLE_SECONDS.
 
         Returns:
-            int: process exit code, return None if no exit code.
-            str: stdout text
+            Tuple[Union[int, None], str]: Exit code of the process (None if unavailable) and the stdout text.
         """
+        if isinstance(app, str):
+            app = App({"command": app, "shell": True})
+
         path = "/appmesh/app/syncrun"
         resp = self._request_http(
             AppMeshClient.Method.POST,
             body=app.json(),
             path=path,
-            query={"timeout": self._parse_duration(max_time_seconds), "lifecycle": self._parse_duration(life_cycle_seconds)},
+            query={
+                "timeout": self._parse_duration(max_time_seconds),
+                "lifecycle": self._parse_duration(life_cycle_seconds),
+            },
         )
         exit_code = None
         if resp.status_code == HTTPStatus.OK:
@@ -1410,6 +1179,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 exit_code = int(resp.headers.get("Exit-Code"))
         elif stdout_print:
             print(resp.text)
+
         return exit_code, resp.text
 
     def _request_http(self, method: Method, path: str, query: dict = None, header: dict = None, body=None) -> requests.Response:
@@ -1432,10 +1202,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header["Authorization"] = "Bearer " + self.jwt_token
         if self.forwarding_host and len(self.forwarding_host) > 0:
             if ":" in self.forwarding_host:
-                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host
+                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host
             else:
-                header[HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host + ":" + str(parse.urlsplit(self.server_url).port)
-        header[HTTP_HEADER_KEY_USER_AGENT] = HTTP_USER_AGENT
+                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host + ":" + str(parse.urlsplit(self.server_url).port)
+        header[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
             return requests.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
@@ -1451,325 +1221,3 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             return requests.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         else:
             raise Exception("Invalid http method", method)
-
-
-class AppMeshClientTCP(AppMeshClient):
-    """
-    Client SDK for interacting with the App Mesh service over TCP, with enhanced support for large file transfers.
-
-    The `AppMeshClientTCP` class extends the functionality of `AppMeshClient` by offering a TCP-based communication layer
-    for the App Mesh REST API. It overrides the file download and upload methods to support large file transfers with
-    improved performance, leveraging TCP for lower latency and higher throughput compared to HTTP.
-
-    This client is suitable for applications requiring efficient data transfers and high-throughput operations within the
-    App Mesh ecosystem, while maintaining compatibility with all other attributes and methods from `AppMeshClient`.
-
-    Dependency:
-        - Install the required package for message serialization:
-            pip3 install msgpack
-
-    Usage:
-        - Import the client module:
-            from appmesh import appmesh_client
-
-    Example:
-        client = appmesh_client.AppMeshClientTCP()
-        client.login("your-name", "your-password")
-        client.file_download("/tmp/os-release", "os-release")
-
-    Attributes:
-        - Inherits all attributes from `AppMeshClient`, including TLS secure connections and JWT-based authentication.
-        - Optimized for TCP-based communication to provide better performance for large file transfers.
-
-    Methods:
-        - file_download()
-        - file_upload()
-        - Inherits all other methods from `AppMeshClient`, providing a consistent interface for managing applications within App Mesh.
-    """
-
-    def __init__(
-        self,
-        rest_ssl_verify=DEFAULT_SSL_CA_PEM_FILE if os.path.exists(DEFAULT_SSL_CA_PEM_FILE) else False,
-        rest_ssl_client_cert=None,
-        jwt_token=None,
-        tcp_address=("localhost", 6059),
-    ):
-        """Construct an App Mesh client TCP object to communicate securely with an App Mesh server over TLS.
-
-        Args:
-            rest_ssl_verify (Union[bool, str], optional): Specifies SSL certificate verification behavior. Can be:
-                - `True`: Uses the system’s default CA certificates to verify the server’s identity.
-                - `False`: Disables SSL certificate verification (insecure, intended for development).
-                - `str`: Specifies a custom CA bundle or directory for server certificate verification. If a string is provided,
-                it should either be a file path to a custom CA certificate (CA bundle) or a directory path containing multiple
-                certificates (CA directory).
-
-                **Note**: Unlike HTTP requests, TCP connections cannot automatically retrieve intermediate or public CA certificates.
-                When `rest_ssl_verify` is a path, it explicitly identifies a CA issuer to ensure certificate validation.
-
-            rest_ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. If a `str`,
-                it should be the path to a PEM file containing both the client certificate and private key. If a `tuple`, it should
-                be a pair of paths: (`cert`, `key`), where `cert` is the client certificate file and `key` is the private key file.
-
-            jwt_token (str, optional): JWT token for authentication. Used in methods requiring login and user authorization.
-
-            tcp_address (Tuple[str, int], optional): Address and port for establishing a TCP connection to the server.
-                Defaults to `("localhost", 6059)`.
-        """
-        self.tcp_address = tcp_address
-        self.__socket_client = None
-        super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, jwt_token=jwt_token)
-
-    def __del__(self) -> None:
-        """De-construction"""
-        self.__close_socket()
-
-    def __connect_socket(self) -> None:
-        """Establish tcp connection"""
-        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        # Set minimum TLS version
-        if hasattr(context, "minimum_version"):
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-        else:
-            context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-        # Configure SSL verification
-        if not self.ssl_verify:
-            context.verify_mode = ssl.CERT_NONE
-        else:
-            context.verify_mode = ssl.CERT_REQUIRED  # Require certificate verification
-            context.load_default_certs()  # Load system's default CA certificates
-            if isinstance(self.ssl_verify, str):
-                if os.path.isfile(self.ssl_verify):
-                    # Load custom CA certificate file
-                    context.load_verify_locations(cafile=self.ssl_verify)
-                elif os.path.isdir(self.ssl_verify):
-                    # Load CA certificates from directory
-                    context.load_verify_locations(capath=self.ssl_verify)
-                else:
-                    raise ValueError(f"ssl_verify path '{self.ssl_verify}' is neither a file nor a directory")
-
-        if self.ssl_client_cert is not None:
-            # Load client-side certificate and private key
-            context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])
-
-        # Create a TCP socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(True)
-        # Wrap the socket with SSL/TLS
-        self.__socket_client = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
-        # Connect to the server
-        self.__socket_client.connect(self.tcp_address)
-        # Disable Nagle's algorithm
-        self.__socket_client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-
-    def __close_socket(self) -> None:
-        """Close socket connection"""
-        if self.__socket_client:
-            try:
-                self.__socket_client.close()
-                self.__socket_client = None
-            except Exception as ex:
-                print(ex)
-
-    def __recvall(self, length: int) -> bytes:
-        """socket recv data with fixed length
-           https://stackoverflow.com/questions/64466530/using-a-custom-socket-recvall-function-works-only-if-thread-is-put-to-sleep
-        Args:
-            length (bytes): data length to be recieved
-
-        Raises:
-            EOFError: _description_
-
-        Returns:
-            bytes: socket data
-        """
-        fragments = []
-        while length:
-            chunk = self.__socket_client.recv(length)
-            if not chunk:
-                raise EOFError("socket closed")
-            length -= len(chunk)
-            fragments.append(chunk)
-        return b"".join(fragments)
-
-    def _request_http(self, method: AppMeshClient.Method, path: str, query: dict = None, header: dict = None, body=None) -> requests.Response:
-        """TCP API
-
-        Args:
-            method (Method): AppMeshClient.Method.
-            path (str): URI patch str.
-            query (dict, optional): HTTP query parameters.
-            header (dict, optional): HTTP headers.
-            body (_type_, optional): object to send in the body of the :class:`Request`.
-
-        Returns:
-            requests.Response: HTTP response
-        """
-        import msgpack
-
-        class RequestMsg:
-            """HTTP request message"""
-
-            uuid: str = ""
-            request_uri: str = ""
-            http_method: str = ""
-            client_addr: str = ""
-            body: bytes = b""
-            headers: dict = {}
-            querys: dict = {}
-
-            def serialize(self) -> bytes:
-                """Serialize request message to bytes"""
-                # http://www.cnitblog.com/luckydmz/archive/2019/11/20/91959.html
-                self_dict = vars(self)
-                self_dict["headers"] = self.headers
-                self_dict["querys"] = self.querys
-                return msgpack.dumps(self_dict)
-
-        class ResponseMsg:
-            """HTTP response message"""
-
-            uuid: str = ""
-            request_uri: str = ""
-            http_status: int = 0
-            body_msg_type: str = ""
-            body: str = ""
-            headers: dict = {}
-
-            def desirialize(self, buf: bytes):
-                """Deserialize response message"""
-                dic = msgpack.unpackb(buf)
-                for k, v in dic.items():
-                    setattr(self, k, v)
-                return self
-
-        if self.__socket_client is None:
-            self.__connect_socket()
-
-        appmesh_requst = RequestMsg()
-        if super().jwt_token:
-            appmesh_requst.headers["Authorization"] = "Bearer " + super().jwt_token
-        if super().forwarding_host and len(super().forwarding_host) > 0:
-            raise Exception("Not support forward request in TCP mode")
-        appmesh_requst.headers[HTTP_HEADER_KEY_USER_AGENT] = HTTP_USER_AGENT_TCP
-        appmesh_requst.uuid = str(uuid.uuid1())
-        appmesh_requst.http_method = method.value
-        appmesh_requst.request_uri = path
-        appmesh_requst.client_addr = socket.gethostname()
-        if body:
-            if isinstance(body, dict) or isinstance(body, list):
-                appmesh_requst.body = bytes(json.dumps(body, indent=2), MESSAGE_ENCODING_UTF8)
-            elif isinstance(body, str):
-                appmesh_requst.body = bytes(body, MESSAGE_ENCODING_UTF8)
-            elif isinstance(body, bytes):
-                appmesh_requst.body = body
-            else:
-                raise Exception(f"UnSupported body type: {type(body)}")
-        if header:
-            for k, v in header.items():
-                appmesh_requst.headers[k] = v
-        if query:
-            for k, v in query.items():
-                appmesh_requst.querys[k] = v
-        data = appmesh_requst.serialize()
-        self.__socket_client.sendall(len(data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
-        self.__socket_client.sendall(data)
-
-        # https://developers.google.com/protocol-buffers/docs/pythontutorial
-        # https://stackoverflow.com/questions/33913308/socket-module-how-to-send-integer
-        resp_data = bytes()
-        resp_data = self.__recvall(int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False))
-        if resp_data is None or len(resp_data) == 0:
-            self.__close_socket()
-            raise Exception("socket connection broken")
-        appmesh_resp = ResponseMsg().desirialize(resp_data)
-        http_resp = requests.Response()
-        http_resp.status_code = appmesh_resp.http_status
-        http_resp._content = appmesh_resp.body.encode("utf8")
-        http_resp.headers = appmesh_resp.headers
-        http_resp.encoding = MESSAGE_ENCODING_UTF8
-        if appmesh_resp.body_msg_type:
-            http_resp.headers["Content-Type"] = appmesh_resp.body_msg_type
-        return http_resp
-
-    ########################################
-    # File management
-    ########################################
-    def file_download(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
-        """Copy a remote file to local, the local file will have the same permission as the remote file
-
-        Args:
-            remote_file (str): the remote file path.
-            local_file (str): the local file path to be downloaded.
-            apply_file_attributes (bool): whether to apply file attributes (permissions, owner, group) to the local file.
-        """
-        header = {"File-Path": remote_file}
-        header[HTTP_HEADER_KEY_X_RECV_FILE_SOCKET] = "true"
-        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header=header)
-
-        resp.raise_for_status()
-        if HTTP_HEADER_KEY_X_RECV_FILE_SOCKET not in resp.headers:
-            raise ValueError(f"Server did not respond with socket transfer option: {HTTP_HEADER_KEY_X_RECV_FILE_SOCKET}")
-
-        with open(local_file, "wb") as fp:
-            chunk_data = bytes()
-            chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False)
-            while chunk_size > 0:
-                chunk_data = self.__recvall(chunk_size)
-                if chunk_data is None or len(chunk_data) == 0:
-                    self.__close_socket()
-                    raise Exception("socket connection broken")
-                fp.write(chunk_data)
-                chunk_size = int.from_bytes(self.__recvall(TCP_MESSAGE_HEADER_LENGTH), byteorder="big", signed=False)
-
-        if apply_file_attributes:
-            if "File-Mode" in resp.headers:
-                os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
-            if "File-User" in resp.headers and "File-Group" in resp.headers:
-                file_uid = int(resp.headers["File-User"])
-                file_gid = int(resp.headers["File-Group"])
-                try:
-                    os.chown(path=local_file, uid=file_uid, gid=file_gid)
-                except PermissionError:
-                    print(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
-
-    def file_upload(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
-        """Upload a local file to the remote server, the remote file will have the same permission as the local file
-
-        Dependency:
-            sudo apt install python3-pip
-            pip3 install requests_toolbelt
-
-        Args:
-            local_file (str): the local file path.
-            remote_file (str): the target remote file to be uploaded.
-            apply_file_attributes (bool): whether to upload file attributes (permissions, owner, group) along with the file.
-        """
-        if not os.path.exists(local_file):
-            raise FileNotFoundError(f"Local file not found: {local_file}")
-
-        with open(file=local_file, mode="rb") as fp:
-            header = {"File-Path": remote_file, "Content-Type": "text/plain"}
-            header[HTTP_HEADER_KEY_X_SEND_FILE_SOCKET] = "true"
-
-            if apply_file_attributes:
-                file_stat = os.stat(local_file)
-                header["File-Mode"] = str(file_stat.st_mode & 0o777)  # Mask to keep only permission bits
-                header["File-User"] = str(file_stat.st_uid)
-                header["File-Group"] = str(file_stat.st_gid)
-
-            # https://stackoverflow.com/questions/22567306/python-requests-file-upload
-            resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
-
-            resp.raise_for_status()
-            if HTTP_HEADER_KEY_X_SEND_FILE_SOCKET not in resp.headers:
-                raise ValueError(f"Server did not respond with socket transfer option: {HTTP_HEADER_KEY_X_SEND_FILE_SOCKET}")
-
-            chunk_size = TCP_CHUNK_BLOCK_SIZE
-            while True:
-                chunk_data = fp.read(chunk_size)
-                if not chunk_data:
-                    self.__socket_client.sendall((0).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
-                    break
-                self.__socket_client.sendall(len(chunk_data).to_bytes(TCP_MESSAGE_HEADER_LENGTH, byteorder="big", signed=False))
-                self.__socket_client.sendall(chunk_data)

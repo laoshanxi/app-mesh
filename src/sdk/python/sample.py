@@ -1,16 +1,48 @@
+"""Example for App Mesh Client."""
+
 #!/usr/bin/python3
+# Ensure you have the App Mesh client library installed:
 # python3 -m pip install --upgrade appmesh
+
+from time import sleep
 from appmesh import appmesh_client
 
 
-def main():
-    # Create a App Mesh Client object
+def main() -> None:
+    """Demonstrate basic usage of the App Mesh Client SDK."""
+
+    # Initialize the App Mesh Client
     client = appmesh_client.AppMeshClient()
-    # Authenticate
-    token = client.login("admin", "admin123")
-    if token:
-        # call SDK to view application 'ping'
-        print(client.app_view("ping"))
+
+    # Authenticate with App Mesh using username and password
+    if client.login("admin", "admin123"):
+        # Define a new application with name, status, and command to execute
+        myapp = appmesh_client.App()
+        myapp.name = "myapp"
+        myapp.status = 0  # Indicates the app is initially disabled
+        myapp.command = "ping github.com"
+
+        # Add the application to App Mesh
+        response = client.app_add(myapp)
+        print("Application added:", response)
+
+        # View details of the added application
+        app_details = client.app_view(myapp.name)
+        print("Application details:", app_details)
+
+        # Enable the application to start running
+        client.app_enable(myapp.name)
+        sleep(3)  # Wait briefly to allow the app to start
+
+        # Retrieve and print the application output with a 3-second timeout
+        output_response = client.app_output(myapp.name, timeout=3)
+        print("Application output:\n", output_response.output)
+
+        # Delete the application after viewing the output
+        delete_response = client.app_delete(myapp.name)
+        print("Application deleted:", delete_response)
+    else:
+        print("Login failed. Check credentials.")
 
 
 if __name__ == "__main__":

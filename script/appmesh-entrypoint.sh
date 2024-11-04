@@ -1,62 +1,85 @@
 #!/bin/bash
 ################################################################################
-## This script is used for init.d service startup appsvc process
-## and also can be used for docker image entrypoint
-## https://stackoverflow.com/questions/20162678/linux-script-to-check-if-process-is-running-and-act-on-the-result
+# App Mesh Entrypoint Script
+# Initializes the App Mesh service (appsvc) for init.d or as a Docker entrypoint.
 ################################################################################
 
-export PROG_HOME=/opt/appmesh
-export PROGRAM=${PROG_HOME}/bin/appsvc
-export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
+# Environment Variables
+export PROG_HOME="/opt/appmesh"
+export PROGRAM="${PROG_HOME}/bin/appsvc"
+export LD_LIBRARY_PATH="${PROG_HOME}/lib64:${LD_LIBRARY_PATH}"
 
+# Function: Logging Utility
 log() {
+	local level="$1"
+	local message="$2"
 	local timestamp
 	timestamp=$(date --rfc-3339=seconds)
-	logger "$timestamp: $@"
-	echo "$timestamp: $@"
+	echo "$timestamp [$level]: $message"
+	logger "$timestamp [$level]: $message"
 }
 
-cd "${PROG_HOME}" || {
-	log "Failed to change directory to ${PROG_HOME}"
-	exit 1
+# Function: Change to Program Directory
+initialize_directory() {
+	cd "${PROG_HOME}" || {
+		log "ERROR" "Failed to change directory to ${PROG_HOME}"
+		exit 1
+	}
 }
 
-pre_start_app() {
-	if [[ $# -gt 0 ]]; then
+# Function: Prepare and register the initial app
+prepare_app_start() {
+	if [ $# -gt 0 ]; then
+		# Check if the first argument is "appc"
 		if [ "$1" = "appc" ]; then
-			# If arguments start with appc, then just run this native command and ignore appc
 			shift
-			log "Running native command: $*"
-			/bin/sh -c 'echo "$*"'
+			log "INFO" "Executing native command: $*"
+			"$@"
 		else
-			escaped_command=$(echo "$*" | sed 's/\\/\\\\/g; s/"/\\"/g')
-			# If arguments start with command, then register as a long-running application
-			cat <<EOF >/opt/appmesh/apps/start_app.json
-{
-    "name": "start_app",
-    "command": "$escaped_command"
-}
+			# Register as long-running app with escaped command
+			local command="$*"
+			local yaml_file="${PROG_HOME}/work/apps/start_app.yaml"
+			# Write YAML configuration for the long-running app
+			cat <<EOF >"$yaml_file"
+name: start_app
+command: |
+  $command
 EOF
+			log "INFO" "Registered long-running application command: $escaped_command"
 		fi
 	fi
+}
 
-	echo "APPMESH_SECURE_INSTALLATION=$APPMESH_SECURE_INSTALLATION"
-	if [ "$APPMESH_SECURE_INSTALLATION" = "Y" ]; then
-		FLAG_FILE="$PROG_HOME/work/.appmginit"
-		if [ ! -f "$FLAG_FILE" ]; then
-			touch "$FLAG_FILE"
-			# gernerate password for secure installation
+# Function: Secure Installation Check
+secure_installation_check() {
+	if [ "${APPMESH_SECURE_INSTALLATION}" = "Y" ]; then
+		local flag_file="${PROG_HOME}/work/.appmginit"
+		if [ ! -f "$flag_file" ]; then
+			touch "$flag_file"
+			log "INFO" "Initializing secure installation"
 			/usr/bin/appc appmginit
 		fi
 	fi
 }
 
-pre_start_app "$@"
+# Function: Start App Mesh Service in Loop
+start_service_loop() {
+	trap 'log "INFO" "Received SIGTERM, stopping service"; exit 0' 15
 
-while true; do
-	log "Starting App Mesh service: $PROGRAM"
-	$PROGRAM >/dev/null 2>&1
-	EXIT_STATUS=$?
-	log "App Mesh exit status: $EXIT_STATUS"
-	sleep 1
-done
+	while true; do
+		log "INFO" "Starting App Mesh service: $PROGRAM"
+		"$PROGRAM"
+		local exit_status=$?
+		log "INFO" "App Mesh service exited with status: $exit_status"
+		sleep 2
+	done
+}
+
+################################################################################
+# Main Script Execution
+################################################################################
+
+initialize_directory
+prepare_app_start "$@"
+secure_installation_check
+start_service_loop

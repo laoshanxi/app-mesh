@@ -23,14 +23,14 @@
 #include "ArgumentParser.h"
 
 #define OPTION_URL \
-	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "Server URL.") \
-	("forward,z", po::value<std::string>()->default_value(""), "Target host name (or with port) for request forwarding.")
+	("url,b", po::value<std::string>()->default_value(m_defaultUrl), "Server URL") \
+	("forward,z", po::value<std::string>()->default_value(""), "Target host (or with port) for request forwarding")
 
 #define COMMON_OPTIONS                                                                                              \
 	OPTION_URL                                                                                                      \
-	("user,u", po::value<std::string>(), "User name for App Mesh connection.") \
-	("password,x", po::value<std::string>(), "User password for App Mesh connection.") \
-	("verbose,V", "Enable verbose output.")
+	("user,u", po::value<std::string>(), "User name") \
+	("password,x", po::value<std::string>(), "User password") \
+	("verbose,V", "Enable verbose output")
 
 #define GET_USER_NAME_PASS                                                                \
 	if (m_commandLineVariables.count("password") && m_commandLineVariables.count("user")) \
@@ -236,50 +236,51 @@ int ArgumentParser::parse()
 
 void ArgumentParser::printMainHelp()
 {
-	std::cout << "Commands:" << std::endl;
-	std::cout << "  logon       Log in to App Mesh for a specified duration." << std::endl;
-	std::cout << "  logoff      Clear current user session." << std::endl;
-	std::cout << "  loginfo     Display current logged-in user." << std::endl;
-	std::cout << std::endl;
+	std::cout << "App Mesh CLI - Command Line Interface" << std::endl;
+	std::cout << "Usage: appc [COMMAND] [ARG...] [flags]" << std::endl
+			  << std::endl;
 
-	std::cout << "  view        View applications." << std::endl;
-	std::cout << "  add         Add a new application." << std::endl;
-	std::cout << "  rm          Remove an application." << std::endl;
-	std::cout << "  enable      Enable an application." << std::endl;
-	std::cout << "  disable     Disable an application." << std::endl;
-	std::cout << "  restart     Restart an application." << std::endl;
-	std::cout << std::endl;
+	std::cout << "Authentication Commands:" << std::endl;
+	std::cout << "  logon         Log in to App Mesh for a specified duration" << std::endl;
+	std::cout << "  logoff        Clear current user session" << std::endl;
+	std::cout << "  loginfo       Display current logged-in user" << std::endl;
+	std::cout << "  passwd        Change user password" << std::endl;
+	std::cout << "  lock          Lock or unlock a user" << std::endl;
+	std::cout << "  user          View user information" << std::endl;
+	std::cout << "  mfa           Manage two-factor authentication" << std::endl
+			  << std::endl;
 
-	std::cout << "  join        Join a Consul cluster." << std::endl;
-	std::cout << "  cloud       List cloud applications." << std::endl;
-	std::cout << "  nodes       List cloud nodes." << std::endl;
-	std::cout << std::endl;
+	std::cout << "Application Management:" << std::endl;
+	std::cout << "  view          List all applications" << std::endl;
+	std::cout << "  add           Add a new application" << std::endl;
+	std::cout << "  rm            Remove an application" << std::endl;
+	std::cout << "  enable        Enable an application" << std::endl;
+	std::cout << "  disable       Disable an application" << std::endl;
+	std::cout << "  restart       Restart an application" << std::endl
+			  << std::endl;
 
-	std::cout << "  run         Execute commands or applications and retrieve output." << std::endl;
-	std::cout << "  shell       Execute commands in App Mesh, emulating the current shell context." << std::endl;
-	std::cout << std::endl;
+	std::cout << "Execution Commands:" << std::endl;
+	std::cout << "  run           Execute commands or applications and retrieve output" << std::endl;
+	std::cout << "  shell         Execute commands with shell context emulation" << std::endl
+			  << std::endl;
 
-	std::cout << "  resource    Show host resources." << std::endl;
-	std::cout << "  label       Manage host labels." << std::endl;
-	std::cout << "  config      Manage configurations." << std::endl;
-	std::cout << "  log         Set log level." << std::endl;
-	std::cout << std::endl;
+	std::cout << "System Management:" << std::endl;
+	std::cout << "  resource      Show host resources" << std::endl;
+	std::cout << "  label         Manage host labels" << std::endl;
+	std::cout << "  config        Manage configurations" << std::endl;
+	std::cout << "  log           Set log level" << std::endl
+			  << std::endl;
 
-	std::cout << "  get         Download a remote file." << std::endl;
-	std::cout << "  put         Upload a local file to the App Mesh server." << std::endl;
-	std::cout << std::endl;
+	std::cout << "File Operations:" << std::endl;
+	std::cout << "  get           Download a remote file" << std::endl;
+	std::cout << "  put           Upload a local file to server" << std::endl
+			  << std::endl;
 
-	std::cout << "  passwd      Change user password." << std::endl;
-	std::cout << "  lock        Lock or unlock a user." << std::endl;
-	std::cout << "  user        View user information." << std::endl;
-	std::cout << "  mfa         Manage two-factor authentication." << std::endl;
-	std::cout << std::endl;
-
-	std::cout << "Run 'appc COMMAND --help' for more information on a command." << std::endl;
-	std::cout << "Use '-b $server_url' to connect remotely, e.g., https://127.0.0.1:6060." << std::endl;
-
-	std::cout << std::endl;
-	std::cout << "Usage: appc [COMMAND] [ARG...] [flags]" << std::endl;
+	std::cout << "Additional Information:" << std::endl;
+	std::cout << "  - Run 'appc COMMAND --help' for detailed command usage" << std::endl;
+	std::cout << "  - Remote connection: Use '-b $server_url' (e.g., https://127.0.0.1:6060)" << std::endl;
+	std::cout << "  - All commands support --help flag for detailed options" << std::endl
+			  << std::endl;
 }
 
 void ArgumentParser::processLogon()
@@ -390,36 +391,36 @@ void ArgumentParser::processAppAdd()
 	po::options_description desc("Register a new application", BOOST_DESC_WIDTH);
 	desc.add_options()
 		COMMON_OPTIONS
-		("name,n", po::value<std::string>(), "Application name.")
-		("desc,a", po::value<std::string>(), "Application description.")
-		("metadata,g", po::value<std::string>(), "Metadata string/JSON (input for application, pass to process stdin), '@' allowed to read from file.")
-		("perm", po::value<int>(), "Application user permission, value is a 2-bit integer: [group & other], each bit can be deny:1, read:2, write: 3.")
-		("cmd,c", po::value<std::string>(), "Full command line with arguments.")
-		("shell,S", "Use shell mode, cmd can be more shell commands with string format.")
-		("session_login", "Run with session login.")
-		("health_check,l", po::value<std::string>(), "Health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)")
-		("docker_image,d", po::value<std::string>(), "Docker image used to run command line (for docker container application).")
-		("workdir,w", po::value<std::string>(), "Working directory.")
-		("status,s", po::value<bool>()->default_value(true), "Initial application status (true is enable, false is disabled).")
-		("start_time,t", po::value<std::string>(), "Start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05').")
-		("end_time,E", po::value<std::string>(), "End date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05').")
-		("daily_start,j", po::value<std::string>(), "Daily start time (e.g., '09:00:00+08').")
-		("daily_end,y", po::value<std::string>(), "Daily end time (e.g., '20:00:00+08').")
-		("memory,m", po::value<int>(), "Memory limit in MByte.")
-		("virtual_memory,v", po::value<int>(), "Virtual memory limit in MByte.")
-		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight).")
-		("pid,p", po::value<int>(), "Process id used to attach.")
-		("stdout_cache_num,O", po::value<int>()->default_value(3), "Stdout file cache number.")
-		("env,e", po::value<std::vector<std::string>>(), "Environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters).")
-		("sec_env", po::value<std::vector<std::string>>(), "Security environment variables, encrypt in server side with application owner's cipher")
-		("interval,i", po::value<std::string>(), "Start interval seconds for short running app, support ISO 8601 durations and cron expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *').")
-		("cron", "Indicate interval parameter use cron expression.")
-		("retention,q", po::value<std::string>(), "Extra timeout seconds for stopping current process, support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Default exit behavior [restart,standby,keepalive,remove].")
-		("control", po::value<std::vector<std::string>>(), "Exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior.")
-		("force,f", "Force without confirm.")
-		("stdin", po::value<std::string>(), "Accept yaml from stdin (provide 'std' string) or local yaml file path.")
-		("help,h", "Display command usage and exit.");
+		("name,n", po::value<std::string>(), "Application name (required)")
+		("desc,a", po::value<std::string>(), "Application description")
+		("metadata,g", po::value<std::string>(), "Metadata string/JSON (stdin input, '@' for file input)")
+		("perm", po::value<int>(), "Permission bits [group & other] (1=deny, 2=read, 3=write)")
+		("cmd,c", po::value<std::string>(), "Command line with arguments (required)")
+		("shell,S", "Enable shell mode for multiple commands")
+		("session_login", "Execute with session login context")
+		("health_check,l", po::value<std::string>(), "Health check command (returns 0 for healthy)")
+		("docker_image,d", po::value<std::string>(), "Docker image for containerized execution")
+		("workdir,w", po::value<std::string>(), "Working directory path")
+		("status,s", po::value<bool>()->default_value(true), "Initial status (true=enabled, false=disabled)")
+		("start_time,t", po::value<std::string>(), "Start time (ISO8601: '2020-10-11T09:22:05')")
+		("end_time,E", po::value<std::string>(), "End time (ISO8601: '2020-10-11T10:22:05')")
+		("daily_start,j", po::value<std::string>(), "Daily start time ('09:00:00+08')")
+		("daily_end,y", po::value<std::string>(), "Daily end time ('20:00:00+08')")
+		("memory,m", po::value<int>(), "Memory limit (MB)")
+		("virtual_memory,v", po::value<int>(), "Virtual memory limit (MB)")
+		("cpu_shares,r", po::value<int>(), "CPU shares (relative weight)")
+		("pid,p", po::value<int>(), "Attach to existing process ID")
+		("stdout_cache_num,O", po::value<int>()->default_value(3), "Number of stdout cache files")
+		("env,e", po::value<std::vector<std::string>>(), "Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to input docker run parameters)")
+		("sec_env", po::value<std::vector<std::string>>(), "Encrypted environment variables in server side with application owner's cipher")
+		("interval,i", po::value<std::string>(), "Start interval (ISO8601 duration or cron: 'P1Y2M3DT4H5M6S', '* */5 * * * *')")
+		("cron", "Use cron expression for interval")
+		("retention,q", po::value<std::string>(), "Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')")
+		("exit", po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Exit behavior [restart|standby|keepalive|remove]")
+		("control", po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default exit)")
+		("force,f", "Skip confirmation prompts")
+		("stdin", po::value<std::string>(), "Read YAML from stdin ('std') or file")
+		("help,h", "Display command usage and exit");
 
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;

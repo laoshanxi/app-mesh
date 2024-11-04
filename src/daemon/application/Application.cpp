@@ -799,7 +799,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_version)
 		result[JSON_KEY_APP_version] = (m_version);
 
-	if (m_startTime.time_since_epoch().count())
+	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
 		result[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_startTime.time_since_epoch()).count());
 	if (m_endTime.time_since_epoch().count() && m_endTime != std::chrono::system_clock::time_point::max())
 		result[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(m_endTime.time_since_epoch()).count());

@@ -272,9 +272,10 @@ int main(int argc, char *argv[])
 	TcpHandler::closeMsgQueue();
 	for (const auto &t : m_threadPool)
 		t->join();
-	ACE::fini();
 	// Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
+	ACE_OS::_exit(0); // TODO: TimerManager de-constructor will hand.
+	ACE::fini();
 	return 0;
 }
 
