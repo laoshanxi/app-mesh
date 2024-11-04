@@ -266,11 +266,7 @@ bool Utility::removeDir(const std::string &path)
 			return true;
 		}
 	}
-	else
-	{
-		LOG_WAR << fname << "remove <" << path << "> failed with error: " << ec.message();
-		return true;
-	}
+	return true;
 }
 
 void Utility::removeFile(const std::string &path)

@@ -445,15 +445,26 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_timeout=(60, 300),
         jwt_token=None,
     ):
-        """Construct an App Mesh client object
+        """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
 
         Args:
-            rest_url (str, optional): server URI string.
-            rest_ssl_verify (str, optional): (optional) SSL CA certification. Either a boolean, in which case it controls whether we verify
-                the server's TLS certificate, or a string, in which case it must be a path to a CA bundle to use. Defaults to ``True``.
-            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair. If String, path to ssl client cert file (.pem). If Tuple, ('cert', 'key') pair.
-            rest_timeout (tuple, optional): HTTP timeout, Defaults to 60 seconds for connect timeout and 300 seconds for read timeout
-            jwt_token (str, optional): JWT token, provide correct token is same with login() & authentication().
+            rest_url (str, optional): The server's base URI, including protocol, hostname, and port. Defaults to `"https://127.0.0.1:6060"`.
+
+            rest_ssl_verify (Union[bool, str], optional): Configures SSL certificate verification for HTTPS requests:
+                - `True`: Uses system CA certificates to verify the server's identity.
+                - `False`: Disables SSL verification (insecure, use cautiously for development).
+                - `str`: Path to a custom CA certificate or directory for verification. This option allows custom CA configuration,
+                which may be necessary in environments requiring specific CA chains that differ from the default system CAs.
+
+            rest_ssl_client_cert (Union[tuple, str], optional): Specifies a client certificate for mutual TLS authentication:
+                - If a `str`, provides the path to a PEM file with both client certificate and private key.
+                - If a `tuple`, contains two paths as (`cert`, `key`), where `cert` is the certificate file and `key` is the private key file.
+
+            rest_timeout (tuple, optional): HTTP connection timeouts for API requests, as `(connect_timeout, read_timeout)`.
+                The default is `(60, 300)`, where `60` seconds is the maximum time to establish a connection and `300` seconds for the maximum read duration.
+
+            jwt_token (str, optional): JWT token for API authentication, used in headers to authorize requests where required.
+
         """
 
         self.server_url = rest_url
@@ -1483,15 +1494,27 @@ class AppMeshClientTCP(AppMeshClient):
         jwt_token=None,
         tcp_address=("localhost", 6059),
     ):
-        """Construct an App Mesh client TCP object
+        """Construct an App Mesh client TCP object to communicate securely with an App Mesh server over TLS.
 
         Args:
-            rest_ssl_verify (str, optional): (optional) SSL CA certification. Either a boolean, in which case it controls whether we verify
-                the server's TLS certificate, or a string, in which case it must be a path to a CA bundle to use. Defaults to ``True``.
-            rest_ssl_client_cert (tuple, optional): SSL client certificate and key pair . If String, path to ssl client cert file (.pem). If Tuple, ('cert', 'key') pair.
-            jwt_token (str, optional): JWT token, provide correct token is same with login() & authentication().
+            rest_ssl_verify (Union[bool, str], optional): Specifies SSL certificate verification behavior. Can be:
+                - `True`: Uses the system’s default CA certificates to verify the server’s identity.
+                - `False`: Disables SSL certificate verification (insecure, intended for development).
+                - `str`: Specifies a custom CA bundle or directory for server certificate verification. If a string is provided,
+                it should either be a file path to a custom CA certificate (CA bundle) or a directory path containing multiple
+                certificates (CA directory).
 
-            tcp_address (tuple, optional): TCP connect address.
+                **Note**: Unlike HTTP requests, TCP connections cannot automatically retrieve intermediate or public CA certificates.
+                When `rest_ssl_verify` is a path, it explicitly identifies a CA issuer to ensure certificate validation.
+
+            rest_ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. If a `str`,
+                it should be the path to a PEM file containing both the client certificate and private key. If a `tuple`, it should
+                be a pair of paths: (`cert`, `key`), where `cert` is the client certificate file and `key` is the private key file.
+
+            jwt_token (str, optional): JWT token for authentication. Used in methods requiring login and user authorization.
+
+            tcp_address (Tuple[str, int], optional): Address and port for establishing a TCP connection to the server.
+                Defaults to `("localhost", 6059)`.
         """
         self.tcp_address = tcp_address
         self.__socket_client = None
@@ -1517,12 +1540,8 @@ class AppMeshClientTCP(AppMeshClient):
             context.load_default_certs()  # Load system's default CA certificates
             if isinstance(self.ssl_verify, str):
                 if os.path.isfile(self.ssl_verify):
-                    # Add custom CA certificate file
-                    try:
-                        context.load_verify_locations(cafile=self.ssl_verify)
-                    except ssl.SSLError:
-                        # If loading fails, try using just the default CAs
-                        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+                    # Load custom CA certificate file
+                    context.load_verify_locations(cafile=self.ssl_verify)
                 elif os.path.isdir(self.ssl_verify):
                     # Load CA certificates from directory
                     context.load_verify_locations(capath=self.ssl_verify)

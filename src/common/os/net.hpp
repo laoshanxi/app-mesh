@@ -1,13 +1,12 @@
 #pragma once
 
-#include <ifaddrs.h>
-#include <netdb.h>
-#include <sys/param.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <list>
-#include <string>
+#include <ifaddrs.h>	// for getifaddrs
+#include <list>			// for std::list
+#include <memory>		// for unique_ptr
+#include <netinet/in.h> // for internet operations
+#include <string>		// for string operations
+#include <sys/socket.h> // for socket operations
+#include <sys/types.h>	// for system types
 
 #include <ace/OS.h>
 #include <boost/filesystem/operations.hpp>
@@ -141,25 +140,34 @@ namespace net
 		return std::string(buffer);
 	}
 
+	// Returns the names of all virtual network devices
 	inline std::set<std::string> virtLinks()
 	{
 		const static char fname[] = "net::virtLinks() ";
-
 		std::set<std::string> result;
+
 		const fs::path virtNetDir("/sys/devices/virtual/net/");
-		const boost::filesystem::directory_iterator itEnd;
-		if (fs::exists(virtNetDir) && ACE_OS::access(virtNetDir.c_str(), R_OK) == 0)
+
+		try
 		{
-			for (boost::filesystem::directory_iterator it(virtNetDir); it != itEnd; it++)
+			if (fs::exists(virtNetDir) && ACE_OS::access(virtNetDir.c_str(), R_OK) == 0)
 			{
-				if (fs::is_directory(*it))
+				for (const auto &entry : fs::directory_iterator(virtNetDir))
 				{
-					auto deviceName = it->path().filename().c_str();
-					result.insert(deviceName);
-					LOG_DBG << fname << "virtual network device :" << deviceName;
+					if (boost::filesystem::is_directory(entry))
+					{
+						std::string deviceName = entry.path().filename().string();
+						result.insert(deviceName);
+						LOG_DBG << fname << "virtual network device: " << deviceName;
+					}
 				}
 			}
 		}
+		catch (const fs::filesystem_error &ex)
+		{
+			LOG_ERR << fname << "filesystem error: " << ex.what();
+		}
+
 		return result;
 	}
 
@@ -167,29 +175,40 @@ namespace net
 	inline std::list<NetInterface> links()
 	{
 		const static char fname[] = "net::links() ";
+		std::list<NetInterface> names;
 
 		struct ifaddrs *ifaddr = nullptr;
 		if (getifaddrs(&ifaddr) == -1)
 		{
-			LOG_ERR << fname << "getifaddrs failed, error :" << std::strerror(errno);
-			return std::list<NetInterface>();
+			LOG_ERR << fname << "getifaddrs failed, error: " << std::strerror(errno);
+			return names;
 		}
 
+		// Use RAII to ensure proper cleanup
+		std::unique_ptr<struct ifaddrs, decltype(&freeifaddrs)> ifaddr_guard(ifaddr, freeifaddrs);
+
 		auto virtDevices = virtLinks();
-		std::list<NetInterface> names;
+
 		for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
 		{
-			if (ifa->ifa_name != nullptr && (ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) && virtDevices.count(ifa->ifa_name) == 0)
+			// Check for null pointers before dereferencing
+			if (ifa->ifa_name == nullptr || ifa->ifa_addr == nullptr)
+			{
+				continue;
+			}
+
+			// Check address family and virtual device
+			if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) && virtDevices.count(ifa->ifa_name) == 0)
 			{
 				NetInterface mi;
-				mi.name = ifa->ifa_name;
+				// Use string constructor to ensure proper string creation
+				mi.name = std::string(ifa->ifa_name);
 				mi.ipv4 = (AF_INET == ifa->ifa_addr->sa_family);
 				mi.address = getAddressStr(ifa->ifa_addr);
-				names.push_back(mi);
+				names.push_back(std::move(mi));
 			}
 		}
 
-		freeifaddrs(ifaddr);
 		return names;
 	}
 

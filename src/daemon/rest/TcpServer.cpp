@@ -340,39 +340,72 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 {
 	const static char fname[] = "TcpHandler::initTcpSSL() ";
 
+	// Retrieve SSL configuration settings from the configuration instance
 	bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	auto cert = Configuration::instance()->getSSLCertificateFile();
-	auto key = Configuration::instance()->getSSLCertificateKeyFile();
-	auto ca = Configuration::instance()->getSSLCaPath();
+	auto cert = Configuration::instance()->getSSLCertificateFile();	  // Server certificate (should include intermediate certs)
+	auto key = Configuration::instance()->getSSLCertificateKeyFile(); // Private key file path
+	auto ca = Configuration::instance()->getSSLCaPath();			  // CA path or file for client verification
+	LOG_INF << fname << "Init SSL with CA <" << ca << "> server cert <" << cert << "> server private key <" << key << ">";
 
+	// Set SSL/TLS mode with support for TLS, explicitly excluding SSL versions for security
 	context->set_mode(ACE_SSL_Context::SSLv23_server);
-	context->set_verify_peer(verifyClient, 1, 0);
-	context->certificate(cert.c_str(), SSL_FILETYPE_PEM);
-	context->private_key(key.c_str(), SSL_FILETYPE_PEM);
-	context->filter_versions(TCP_SSL_VERSION_LIST);
+	context->filter_versions(TCP_SSL_VERSION_LIST); // Applies version filtering to allow only secure TLS versions
 
-	// Enable ECDH cipher
+	// Load server certificate and private key; log error if loading fails
+	if (context->certificate(cert.c_str(), SSL_FILETYPE_PEM) != 0)
+	{
+		LOG_ERR << fname << "Failed to load certificate: " << std::strerror(errno);
+		return nullptr;
+	}
+	if (context->private_key(key.c_str(), SSL_FILETYPE_PEM) != 0)
+	{
+		LOG_ERR << fname << "Failed to load private key: " << std::strerror(errno);
+		return nullptr;
+	}
+
+	// Enable forward secrecy by using ECDH; logging error if setting fails
 	if (!SSL_CTX_set_ecdh_auto(context->context(), 1))
 	{
-		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto  failed: " << std::strerror(errno);
+		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << std::strerror(errno);
 	}
-	auto ciphers = "ALL:!RC4:!SSLv2:+HIGH:!MEDIUM:!LOW";
-	// auto ciphers = "HIGH:!aNULL:!eNULL:!kECDH:!aDH:!RC4:!3DES:!CAMELLIA:!MD5:!PSK:!SRP:!KRB5:@STRENGTH";
+
+	// Configure cipher suites to prioritize security, explicitly excluding weak ciphers
+	const char *ciphers = "HIGH:!aNULL:!MD5:!RC4"; // More secure and modern cipher suite selection
 	if (!SSL_CTX_set_cipher_list(context->context(), ciphers))
 	{
 		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
 	}
+
+	// Disable unsafe legacy renegotiation, which could be a security risk
 	SSL_CTX_clear_options(context->context(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
-	if (verifyClient && ACE_OS::access(ca.c_str(), R_OK) == 0)
+	// Set client certificate verification if required
+	if (verifyClient)
 	{
-		auto isDir = Utility::isDirExist(ca);
-		auto result = context->load_trusted_ca(isDir ? 0 : ca.c_str(), isDir ? ca.c_str() : 0, false);
-		LOG_INF << fname << "load_trusted_ca: " << ca << " with result: " << result;
-		// do this to be sure that these settings have been properly set
-		// ACE_SSL_Context does not handle this quite correctly
-		::SSL_CTX_set_verify(context->context(), context->default_verify_mode(), context->default_verify_callback());
+		context->set_verify_peer(true, 1 /* verify once */, 0 /* verification depth */);
+
+		// Load trusted CA certificates if the CA path is accessible
+		if (ACE_OS::access(ca.c_str(), R_OK) == 0)
+		{
+			bool isDir = Utility::isDirExist(ca);
+			if (context->load_trusted_ca(isDir ? 0 : ca.c_str(), isDir ? ca.c_str() : 0, false) != 0)
+			{
+				LOG_WAR << fname << "Failed to load trusted CA from: " << ca;
+			}
+
+			// Set verify mode and callback explicitly for the SSL context
+			SSL_CTX_set_verify(context->context(), context->default_verify_mode(), context->default_verify_callback());
+		}
+		else
+		{
+			LOG_WAR << fname << "CA path inaccessible or invalid: " << ca;
+		}
 	}
+
+	// Configure session caching and lifetime to improve TLS session resumption performance
+	SSL_CTX_set_session_cache_mode(context->context(), SSL_SESS_CACHE_SERVER);
+	SSL_CTX_set_timeout(context->context(), 300); // 5-minute session timeout
+
 	return context;
 }
 

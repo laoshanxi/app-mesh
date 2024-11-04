@@ -679,11 +679,11 @@ bool Configuration::readConfigFromEnv(nlohmann::json &jsonConfig)
 						if (applyEnvConfig(json->at(jsonKey), envVal))
 						{
 							applyConfig = true;
-							LOG_INF << fname << "Configuration: " << envKey << " apply environment value: " << envVal;
+							LOG_INF << fname << "Configuration: " << envKey << " apply environment value";
 						}
 						else
 						{
-							LOG_WAR << fname << "Configuration: " << envKey << " apply environment value: " << envVal << " failed";
+							LOG_WAR << fname << "Configuration: " << envKey << " apply environment value failed";
 						}
 					}
 					else
