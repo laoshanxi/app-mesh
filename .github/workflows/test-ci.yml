@@ -42,7 +42,7 @@ jobs:
             apt install -y ./appmesh_*.deb
 
             # start appmesh
-            /opt/appmesh/script/appmesh-entrypoint.sh &
+            /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
 
@@ -75,7 +75,7 @@ jobs:
             apt install -y ./appmesh_*.deb
 
             # start appmesh
-            /opt/appmesh/script/appmesh-entrypoint.sh &
+            /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
 
@@ -107,7 +107,7 @@ jobs:
             apt install -y ./appmesh_*.deb
 
             # start appmesh
-            /opt/appmesh/script/appmesh-entrypoint.sh &
+            /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
 
@@ -143,7 +143,7 @@ jobs:
             yum install -y https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_2.1.2_gcc_4.8.5_glibc_2.17_x86_64.rpm
 
             # start appmesh
-            /opt/appmesh/script/appmesh-entrypoint.sh &
+            /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
 

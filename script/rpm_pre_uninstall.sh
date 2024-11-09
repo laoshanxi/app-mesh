@@ -1,32 +1,48 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 ################################################################################
-## RPM pre uninstallation script file, will be executed before installation
+# RPM Pre-Uninstallation Script
+# Purpose: Prepare system for package removal by stopping applications and
+# preserving their configurations.
+# Usage: Automatically executed before package uninstallation.
 ################################################################################
 
-export PROG_HOME=/opt/appmesh
-export PROGC=bin/appc
-export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
+readonly INSTALL_DIR=/opt/appmesh
+readonly APPC_BIN=/opt/appmesh/bin/appc
+readonly APPS_DIR=/opt/appmesh/work/apps
+readonly BACKUP_DIR=/opt/appmesh/work/.apps_backup
 
-# disable script exit on error
+export LD_LIBRARY_PATH="/opt/appmesh/lib64:$LD_LIBRARY_PATH"
+
+# Allow script to continue on errors
 set +e
 
-# stop all running applications
-if [ -f "${PROG_HOME}/${PROGC}" ]; then
-	APP_DIR=${PROG_HOME}/work/apps
-	TMP_DIR=${PROG_HOME}/work/.apps
+# Function to log timestamped messages
+log() {
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
+}
 
-	if [ -d "$APP_DIR" ] && [ "$(ls -A $APP_DIR)" ]; then
-		rm -rf $TMP_DIR
-		cp -rf $APP_DIR $TMP_DIR
-	fi
-
-	# ${PROG_HOME}/${PROGC} ls -l | awk '{if (NR>1){cmd="${PROG_HOME}/bin/appc disable -n "$2;print(cmd);system(cmd)}}'
-	${PROG_HOME}/${PROGC} disable --all
-
-	if [ -d "$TMP_DIR" ] && [ "$(ls -A $TMP_DIR)" ]; then
-		rm -f ${APP_DIR}/*
-		mv -f ${TMP_DIR}/* ${APP_DIR}/
-		rm -rf $TMP_DIR
-	fi
-
+# Create backup of application configurations
+if [ -d "$APPS_DIR" ] && [ "$(ls -A "$APPS_DIR" 2>/dev/null)" ]; then
+	log "Creating backup of application configurations"
+	cp -rf "$APPS_DIR" "$BACKUP_DIR"
 fi
+
+# Stop all active applications
+# "$APPC_BIN" ls -l | awk '{if (NR>1){cmd="$APPC_BIN disable -n "$2;print(cmd);system(cmd)}}'
+log "Stopping all active applications"
+if [ -n "$SUDO_USER" ]; then
+	sudo -u "$SUDO_USER" "$APPC_BIN" disable --all
+else
+	"$APPC_BIN" disable --all
+fi
+
+# Restore application configurations from backup
+if [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]; then
+	log "Restoring application configurations"
+	rm -rf "${APPS_DIR}"/*
+	mv -f "${BACKUP_DIR}"/* "${APPS_DIR}/"
+	rm -rf "$BACKUP_DIR"
+fi
+
+log "Pre-uninstallation preparation completed successfully"

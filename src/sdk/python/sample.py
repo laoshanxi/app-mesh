@@ -5,19 +5,19 @@
 # python3 -m pip install --upgrade appmesh
 
 from time import sleep
-from appmesh import appmesh_client
+from appmesh import AppMeshClient, App
 
 
 def main() -> None:
     """Demonstrate basic usage of the App Mesh Client SDK."""
 
     # Initialize the App Mesh Client
-    client = appmesh_client.AppMeshClient()
+    client = AppMeshClient()
 
     # Authenticate with App Mesh using username and password
     if client.login("admin", "admin123"):
         # Define a new application with name, status, and command to execute
-        myapp = appmesh_client.App()
+        myapp = App()
         myapp.name = "myapp"
         myapp.status = 0  # Indicates the app is initially disabled
         myapp.command = "ping github.com"

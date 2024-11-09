@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ################################################################################
 ## init.d service definition file
 ## will be used when systemd is not installed on Linux
@@ -6,89 +6,161 @@
 ################################################################################
 
 ### BEGIN INIT INFO
-#
 # Provides:          appsvc
-# Required-Start:    $local_fs $remote_fs
-# Required-Stop:     $local_fs $remote_fs
+# Required-Start:    $local_fs $remote_fs $network $syslog
+# Required-Stop:     $local_fs $remote_fs $network $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: initscript
-# Description:       This file should be used to construct scripts to be placed in /etc/init.d.
-#
+# Short-Description: App Mesh Service
+# Description:       Controls the App Mesh service and its watchdog
 ### END INIT INFO
 
-export PROG_HOME=/opt/appmesh
-export PROG=${PROG_HOME}/bin/appsvc
-export PROG_WATCHDOG=${PROG_HOME}/script/appmesh-entrypoint.sh
-export PID_FILE=/var/run/appmesh.pid
-export LD_LIBRARY_PATH=${PROG_HOME}/lib64:${LD_LIBRARY_PATH}
+set -e # Exit on error
+set -u # Exit on undefined variables
 
-# Source environment variables
-. ${PROG_HOME}/script/appmesh.environment || true
+# Environment variables with fallback defaults
+export PROG_HOME=${PROG_HOME:-"/opt/appmesh"}
+export PROG=${PROG:-"${PROG_HOME}/bin/appsvc"}
+export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/appmesh-entrypoint.sh"}
+export LD_LIBRARY_PATH="${PROG_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+
+# Constants
+readonly TIMEOUT_SECONDS=10                    # Desired timeout in seconds
+readonly SLEEP_INTERVAL=0.2                    # Check interval in seconds
+readonly MAX_ATTEMPTS=$((TIMEOUT_SECONDS * 5)) # 5 attempts per second (1/0.2)
+
+# Exit codes as per LSB standards
+readonly LSB_OK=0
+readonly LSB_INVALID_ARGS=2
+readonly LSB_NOT_RUNNING=3
+readonly LSB_NOT_ROOT=4
+readonly LSB_NOT_INSTALLED=5
+readonly LSB_NOT_CONFIGURED=6
+readonly LSB_NOT_RUNNING_RELOAD=7
+
+# Source LSB functions if available
+[ -r /lib/lsb/init-functions ] && . /lib/lsb/init-functions
+
+# Source system configuration
+[ -r /etc/default/appmesh ] && . /etc/default/appmesh
 
 log() {
-	logger "[$(date)] $1"
-	echo "$1"
+	local level="$1"
+	local message="$2"
+	local timestamp
+	timestamp=$(date -Iseconds 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')
+
+	# Use logger if available, fallback to printf
+	if command -v logger >/dev/null 2>&1; then
+		logger -t "appmesh" -p "daemon.${level}" "${message}"
+	fi
+	printf '[%s] [%s] %s\n' "${timestamp}" "${level}" "${message}" >&2
+}
+
+check_installation() {
+	if [ ! -x "$PROG" ]; then
+		log "error" "App Mesh executable not found or not executable: $PROG"
+		return $LSB_NOT_INSTALLED
+	fi
+	if [ ! -x "$PROG_WATCHDOG" ]; then
+		log "error" "App Mesh watchdog not found or not executable: $PROG_WATCHDOG"
+		return $LSB_NOT_INSTALLED
+	fi
+	return $LSB_OK
+}
+
+get_pid() {
+	# Find the PID of the process matching the provided name
+	ps aux | grep -w "$1" | grep -v grep | awk '{print $2}'
+}
+
+is_running() {
+	local pid
+	pid=$(get_pid "$1")
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
 start() {
-	if [ -f "$PID_FILE" ]; then
-		PID=$(cat "$PID_FILE")
-		if [ -n "$PID" ] && pgrep -f "$PROG" >/dev/null 2>&1 && ps -p "$PID" >/dev/null 2>&1; then
-			log "Error! $PROG is already running!"
-			exit 1
-		fi
+	check_installation || return $?
+
+	if is_running "$PROG"; then
+		log "info" "App Mesh is already running"
+		return $LSB_OK
 	fi
 
-	log "Starting $PROG_WATCHDOG"
-	cd "$PROG_HOME"
-	"$PROG_WATCHDOG" &
-	# echo $! > $PID_FILE
+	log "info" "Starting App Mesh Service..."
+	cd "${PROG_HOME}" || {
+		log "error" "Failed to change to ${PROG_HOME}"
+		return $LSB_NOT_CONFIGURED
+	}
+
+	# Start the watchdog process
+	nohup "$PROG_WATCHDOG" </dev/null >/dev/null 2>&1 &
+
+	# Wait for process to be detected with timeout
+	attempt=0
+	sleep 1
+	while ! is_running "$PROG" && [ $attempt -lt $MAX_ATTEMPTS ]; do
+		sleep $SLEEP_INTERVAL
+		attempt=$((attempt + 1))
+	done
+
+	if is_running "$PROG"; then
+		local pid
+		pid=$(get_pid "$PROG")
+		log "info" "App Mesh started successfully (PID: $pid)"
+		return $LSB_OK
+	else
+		log "error" "App Mesh failed to start within $TIMEOUT_SECONDS seconds"
+		return $LSB_NOT_RUNNING
+	fi
 }
 
 stop() {
-	log "Stopping $PROG_WATCHDOG"
-	PIDS=$(pgrep -f "$PROG_WATCHDOG")
-	if [ -n "$PIDS" ]; then
-		kill -9 "$PIDS"
-		if [ $? -eq 0 ]; then
-			log "$PROG_WATCHDOG killed successfully"
-		else
-			log "Failed to kill $PROG_WATCHDOG processes"
-		fi
+	log "info" "Stopping App Mesh Service..."
+
+	local pid
+	pid=$(get_pid "$PROG")
+	if [ -z "$pid" ]; then
+		log "info" "App Mesh is not running"
+		return $LSB_OK
 	fi
 
-	PIDS=$(pgrep -f "$PROG")
-	if [ -n "$PIDS" ]; then
-		kill -9 "$PIDS"
-		if [ $? -eq 0 ]; then
-			log "$PROG killed successfully"
-		else
-			log "Failed to kill $PROG processes"
-		fi
+	# Try graceful shutdown
+	kill "$pid" || true
+	sleep $SLEEP_INTERVAL
+	#local attempt=0
+	#while is_running "$PROG" && [ $attempt -lt $MAX_ATTEMPTS ]; do
+	#	sleep $SLEEP_INTERVAL
+	#	attempt=$((attempt + 1))
+	#done
+
+	# Force kill if still running
+	if is_running "$PROG"; then
+		log "info" "Force killing App Mesh process (PID: $pid)"
+		kill -9 "$pid" || true
 	fi
-	rm -f "$PID_FILE"
+
+	log "info" "App Mesh stopped"
+	return $LSB_OK
 }
 
 status() {
-	if [ -f "$PID_FILE" ]; then
-		PID=$(cat "$PID_FILE")
-		if [ -n "$PID" ] && pgrep -f "$PROG" >/dev/null 2>&1 && ps -p "$PID" >/dev/null 2>&1; then
-			echo "App Mesh is running"
-			exit 0
-		else
-			echo "App Mesh PID is NOT running"
-		fi
+	if is_running "$PROG"; then
+		local pid
+		pid=$(get_pid "$PROG")
+		log "info" "App Mesh is running (PID: $pid)"
+		return $LSB_OK
 	else
-		echo "App Mesh is NOT running"
+		log "info" "App Mesh is not running"
+		return $LSB_NOT_RUNNING
 	fi
-	exit 1
 }
 
-# Ensure the script is run as root
+# Ensure root privileges
 if [ "$(id -u)" != "0" ]; then
-	log "This script must be run as root"
-	exit 1
+	log "error" "This script must be run as root"
+	exit $LSB_NOT_ROOT
 fi
 
 case "$1" in
@@ -98,15 +170,28 @@ start)
 stop)
 	stop
 	;;
-reload | restart | force-reload)
+restart | force-reload)
 	stop
+	sleep 1
 	start
+	;;
+reload)
+	if is_running "$PROG"; then
+		log "info" "Reloading configuration..."
+		kill -HUP "$(get_pid "$PROG")" || true
+		exit $LSB_OK
+	else
+		log "error" "Cannot reload: App Mesh is not running"
+		exit $LSB_NOT_RUNNING_RELOAD
+	fi
 	;;
 status)
 	status
 	;;
 *)
-	echo "Usage: $0 {start|stop|reload|restart|status}" 1>&2
-	exit 1
+	echo "Usage: $0 {start|stop|restart|force-reload|reload|status}"
+	exit $LSB_INVALID_ARGS
 	;;
 esac
+
+exit $?

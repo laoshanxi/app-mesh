@@ -1,7 +1,5 @@
 # App Mesh Deployment Guide
 
-<div align=center><img src="https://github.com/laoshanxi/app-mesh/raw/main/docs/source/deploy.png"/></div>
-
 App Mesh can be deployed in various environments, either as a native systemd-managed service or within a Docker container. This guide provides detailed instructions for setting up App Mesh in several configurations, including standalone deployment, Docker-based deployment, and Docker Compose for multi-component setups.
 
 ## Installation Options
@@ -14,12 +12,11 @@ Deploy the App Mesh daemon as a Docker container with a memory limit:
 docker run -d --memory=8g --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
 ```
 
-You can override default configurations using environment variables in the format `APPMESH_${BASE_JSON_KEY}_${SUB_JSON_KEY}=NEW_VALUE`. For example:
+You can override default configurations located at `/opt/appmesh/work/config/config.yaml` by using environment variables. Use the format `APPMESH_${BASE_JSON_KEY}_${SUB_JSON_KEY}_${SUB_JSON_KEY}=NEW_VALUE`. For example, to enable specific cluster configurations for request forwarding, you need set the following environment variables:
 
-- `-e APPMESH_REST_HttpThreadPoolSize=10`
-- `-e APPMESH_REST_SSL_VerifyPeer=true`
-- `-e APPMESH_SECURE_INSTALLATION=Y`
-- `-e APPMESH_REST_RestListenAddress=0.0.0.0`
+- Use `-e APPMESH_REST_JWT_JWTSalt=PRODUCTION_SALT` to specify the JWT salt at the cluster level.
+- Use `-e APPMESH_REST_JWT_Issuer=PRODUCTION_SERVICE_NAME` to specify the JWT issuer at the cluster level.
+- Use `-e APPMESH_REST_RestListenAddress=0.0.0.0` to enable listening on the LAN.
 
 The `/opt/appmesh/work` directory stores all data. To ensure data persistence, you can mount this directory from the host.
 
@@ -34,15 +31,17 @@ sudo rpm --import gpg_public.key
 sudo dpkg --import gpg_public.key
 ```
 
-2. Install App Mesh:
+2. Install native package:
 
 ```shell
 # centos
 sudo yum install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
-# ubuntu (use sudo -E to pass environment variables)
+# ubuntu
 sudo -E apt install appmesh_2.1.1_gcc_7_glibc_2.27_x86_64.deb
 # SUSE
 sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
+
+# notes: use sudo -E to pass environment variables
 ```
 
 3. Start and Enable the Service:
@@ -98,11 +97,11 @@ By default, App Mesh will connect to Consul via `https://127.0.0.1:443`. App Mes
 ### Environment Variables and Additional Notes
 
 - WSL Support: Use service appmesh start on Windows WSL Ubuntu environments.
-- Fresh Installation: Set export APPMESH_FRESH_INSTALL=Y to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
-- Secure Installation: Set export APPMESH_SECURE_INSTALLATION=Y to generate an initial secure password for the admin user and enable password encryption.
-- Disable Custom Process User: Set export APPMESH_BaseConfig_DisableExecUser=true to disable custom process users.
-- Daemon User and Group: Use APPMESH_DAEMON_EXEC_USER and APPMESH_DAEMON_EXEC_USER_GROUP to specify daemon process user and group.
-- Timezone Configuration: Use APPMESH_PosixTimezone (e.g., export APPMESH_PosixTimezone="+08") for timezone setting.
+- Fresh Installation: Set `export APPMESH_FRESH_INSTALL=Y` to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
+- Secure Installation: Set `export APPMESH_SECURE_INSTALLATION=Y` to generate an initial secure password for the admin user and enable password encryption.
+- Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users.
+- Daemon User and Group: Use `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user and group.
+- Timezone Configuration: Use `APPMESH_BaseConfig_PosixTimezone` (e.g., export APPMESH_BaseConfig_PosixTimezone="+08") for timezone setting.
 - Default User: The installation creates an appmesh Linux user for app execution.
 - CentOS Dependencies: On CentOS 8, install libnsl with`sudo yum install libnsl`
 

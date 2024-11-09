@@ -17,7 +17,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (shellFile.is_open() && shellFile.good())
 	{
-		shellFile << "#!/bin/sh" << std::endl;
+		shellFile << "#!/usr/bin/env bash" << std::endl;
 		shellFile << "# App Mesh app: <" << name << ">" << std::endl;
 		shellFile << "set -e" << std::endl;
 		if (workingDir.length())

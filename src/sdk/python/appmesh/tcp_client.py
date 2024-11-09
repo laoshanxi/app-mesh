@@ -1,20 +1,14 @@
-"""Application output information"""
-
+# TCP-based App Mesh Client
 # pylint: disable=line-too-long,broad-exception-raised,	,broad-exception-caught,import-outside-toplevel,protected-access
 
-# Standard library imports
 import json
 import os
 import socket
-import ssl
 import uuid
-
-# Third-party imports
 import requests
-import msgpack
-
-# Local application-specific imports
 from .appmesh_client import AppMeshClient
+from .tcp_transport import TCPTransport
+from .tcp_messages import RequestMessage, ResponseMessage
 
 
 class AppMeshClientTCP(AppMeshClient):
@@ -52,7 +46,6 @@ class AppMeshClientTCP(AppMeshClient):
     """
 
     TCP_BLOCK_SIZE = 16 * 1024 - 128  # TLS-optimized chunk size, leaves some room for TLS overhead (like headers) within the 16 KB limit.
-    TCP_HEADER_LENGTH = 4
     ENCODING_UTF8 = "utf-8"
     HTTP_USER_AGENT_TCP = "appmesh/python/tcp"
     HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
@@ -87,97 +80,8 @@ class AppMeshClientTCP(AppMeshClient):
             tcp_address (Tuple[str, int], optional): Address and port for establishing a TCP connection to the server.
                 Defaults to `("localhost", 6059)`.
         """
-        self.tcp_address = tcp_address
-        self.__socket_client = None
+        self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=rest_ssl_verify, ssl_client_cert=rest_ssl_client_cert)
         super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, jwt_token=jwt_token)
-
-    def __del__(self) -> None:
-        """De-construction"""
-        self.__close_socket()
-
-    def __connect_socket(self) -> ssl.SSLSocket:
-        """Establish tcp connection"""
-        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        # Set minimum TLS version
-        if hasattr(context, "minimum_version"):
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-        else:
-            context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-        # Configure SSL verification
-        if not self.ssl_verify:
-            context.verify_mode = ssl.CERT_NONE
-        else:
-            context.verify_mode = ssl.CERT_REQUIRED  # Require certificate verification
-            context.load_default_certs()  # Load system's default CA certificates
-            if isinstance(self.ssl_verify, str):
-                if os.path.isfile(self.ssl_verify):
-                    # Load custom CA certificate file
-                    context.load_verify_locations(cafile=self.ssl_verify)
-                elif os.path.isdir(self.ssl_verify):
-                    # Load CA certificates from directory
-                    context.load_verify_locations(capath=self.ssl_verify)
-                else:
-                    raise ValueError(f"ssl_verify path '{self.ssl_verify}' is neither a file nor a directory")
-
-        if self.ssl_client_cert is not None:
-            # Load client-side certificate and private key
-            context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])
-
-        # Create a TCP socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(True)
-        sock.settimeout(30)  # Connection timeout set to 30 seconds
-        # Wrap the socket with SSL/TLS
-        ssl_socket = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
-        # Connect to the server
-        ssl_socket.connect(self.tcp_address)
-        # Disable Nagle's algorithm
-        ssl_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        # After connecting, set separate timeout for recv/send
-        # ssl_socket.settimeout(20)  # 20 seconds for recv/send
-        return ssl_socket
-
-    def __close_socket(self) -> None:
-        """Close socket connection"""
-        if self.__socket_client:
-            try:
-                self.__socket_client.close()
-            except Exception as e:
-                print(f"Error closing socket: {e}")
-            finally:
-                self.__socket_client = None
-
-    def __recvall(self, length: int) -> bytearray:
-        """socket recv data with fixed length
-           https://stackoverflow.com/questions/64466530/using-a-custom-socket-recvall-function-works-only-if-thread-is-put-to-sleep
-        Args:
-            length (bytes): data length to be received
-
-        Returns:
-            bytearray: Received data
-
-        Raises:
-            EOFError: If connection closes prematurely
-            ValueError: If length is invalid
-        """
-        if length <= 0:
-            raise ValueError(f"Invalid length: {length}")
-
-        # Pre-allocate buffer of exact size needed
-        buffer = bytearray(length)
-        view = memoryview(buffer)
-        bytes_received = 0
-
-        while bytes_received < length:
-            # Use recv_into to read directly into our buffer
-            chunk_size = self.__socket_client.recv_into(view[bytes_received:], length - bytes_received)
-
-            if chunk_size == 0:
-                raise EOFError("Connection closed by peer")
-
-            bytes_received += chunk_size
-
-        return buffer
 
     def _request_http(self, method: AppMeshClient.Method, path: str, query: dict = None, header: dict = None, body=None) -> requests.Response:
         """TCP API
@@ -193,10 +97,10 @@ class AppMeshClientTCP(AppMeshClient):
             requests.Response: HTTP response
         """
 
-        if self.__socket_client is None:
-            self.__socket_client = self.__connect_socket()
+        if not self.tcp_transport.connected():
+            self.tcp_transport.connect()
 
-        appmesh_request = RequestMsg()
+        appmesh_request = RequestMessage()
         if super().jwt_token:
             appmesh_request.headers["Authorization"] = "Bearer " + super().jwt_token
         if super().forwarding_host and len(super().forwarding_host) > 0:
@@ -222,16 +126,13 @@ class AppMeshClientTCP(AppMeshClient):
             for k, v in query.items():
                 appmesh_request.querys[k] = v
         data = appmesh_request.serialize()
-        self.__socket_client.sendall(len(data).to_bytes(self.TCP_HEADER_LENGTH, byteorder="big", signed=False))
-        self.__socket_client.sendall(data)
+        self.tcp_transport.send_message(data)
 
-        # https://developers.google.com/protocol-buffers/docs/pythontutorial
-        # https://stackoverflow.com/questions/33913308/socket-module-how-to-send-integer
-        resp_data = self.__recvall(int.from_bytes(self.__recvall(self.TCP_HEADER_LENGTH), byteorder="big", signed=False))
+        resp_data = self.tcp_transport.receive_message()
         if resp_data is None or len(resp_data) == 0:
-            self.__close_socket()
+            self.tcp_transport.close()
             raise Exception("socket connection broken")
-        appmesh_resp = ResponseMsg().desirialize(resp_data)
+        appmesh_resp = ResponseMessage().desirialize(resp_data)
         response = requests.Response()
         response.status_code = appmesh_resp.http_status
         response.encoding = self.ENCODING_UTF8
@@ -261,15 +162,11 @@ class AppMeshClientTCP(AppMeshClient):
             raise ValueError(f"Server did not respond with socket transfer option: {self.HTTP_HEADER_KEY_X_RECV_FILE_SOCKET}")
 
         with open(local_file, "wb") as fp:
-            chunk_data = bytes()
-            chunk_size = int.from_bytes(self.__recvall(self.TCP_HEADER_LENGTH), byteorder="big", signed=False)
-            while chunk_size > 0:
-                chunk_data = self.__recvall(chunk_size)
-                if chunk_data is None or len(chunk_data) == 0:
-                    self.__close_socket()
-                    raise Exception("socket connection broken")
+            while True:
+                chunk_data = self.tcp_transport.receive_message()
+                if not chunk_data:
+                    break
                 fp.write(chunk_data)
-                chunk_size = int.from_bytes(self.__recvall(self.TCP_HEADER_LENGTH), byteorder="big", signed=False)
 
         if apply_file_attributes:
             if "File-Mode" in resp.headers:
@@ -307,7 +204,6 @@ class AppMeshClientTCP(AppMeshClient):
                 header["File-User"] = str(file_stat.st_uid)
                 header["File-Group"] = str(file_stat.st_gid)
 
-            # https://stackoverflow.com/questions/22567306/python-requests-file-upload
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
 
             resp.raise_for_status()
@@ -318,45 +214,6 @@ class AppMeshClientTCP(AppMeshClient):
             while True:
                 chunk_data = fp.read(chunk_size)
                 if not chunk_data:
-                    self.__socket_client.sendall((0).to_bytes(self.TCP_HEADER_LENGTH, byteorder="big", signed=False))
+                    self.tcp_transport.send_message([])
                     break
-                self.__socket_client.sendall(len(chunk_data).to_bytes(self.TCP_HEADER_LENGTH, byteorder="big", signed=False))
-                self.__socket_client.sendall(chunk_data)
-
-
-class RequestMsg:
-    """HTTP request message"""
-
-    uuid: str = ""
-    request_uri: str = ""
-    http_method: str = ""
-    client_addr: str = ""
-    body: bytes = b""
-    headers: dict = {}
-    querys: dict = {}
-
-    def serialize(self) -> bytes:
-        """Serialize request message to bytes"""
-        # http://www.cnitblog.com/luckydmz/archive/2019/11/20/91959.html
-        self_dict = vars(self)
-        self_dict["headers"] = self.headers
-        self_dict["querys"] = self.querys
-        return msgpack.dumps(self_dict)
-
-
-class ResponseMsg:
-    """HTTP response message"""
-
-    uuid: str = ""
-    request_uri: str = ""
-    http_status: int = 0
-    body_msg_type: str = ""
-    body: str = ""
-    headers: dict = {}
-
-    def desirialize(self, buf: bytes):
-        """Deserialize response message"""
-        dic = msgpack.unpackb(buf)
-        for k, v in dic.items():
-            setattr(self, k, v)
-        return self
+                self.tcp_transport.send_message(chunk_data)

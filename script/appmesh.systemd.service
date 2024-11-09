@@ -1,7 +1,11 @@
 ################################################################################
-## service definition for systemd
-## target location: /etc/systemd/system/appmesh.service
-## https://wiki.archlinux.org/index.php/systemd_(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87)
+# App Mesh systemd service definition
+# Target location: /etc/systemd/system/appmesh.service
+# systemd document:
+# https://wiki.archlinux.org/index.php/systemd_(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87) 
+#
+# To customize environment variables, use the Environment directive as follows:
+# Environment="VAR1=value1" "VAR2=value2"
 ################################################################################
 
 [Unit]
@@ -12,16 +16,16 @@ Wants=network.target
 
 [Service]
 Type=simple
-PIDFile=/var/run/appmesh.pid
+PIDFile=/run/appmesh/appmesh.pid
 Environment=
-EnvironmentFile=/opt/appmesh/script/appmesh.environment
+EnvironmentFile=/etc/default/appmesh
 WorkingDirectory=/opt/appmesh/
 ExecStart=/opt/appmesh/bin/appsvc
 ExecStop=/bin/kill -TERM $MAINPID
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
-RestartSec=10
-StartLimitInterval=0
+RestartSec=2
+StartLimitIntervalSec=0
 StartLimitBurst=0
 KillMode=process
 # inherit/null/tty/journal/syslog/kmsg

@@ -49,11 +49,4 @@ Welcome to AppMesh's documentation!
    :maxdepth: 3
    :caption: Python SDK:
 
-   api/appmesh_client
-   api/sample
-
-.. automodule:: appmesh_client
-    :members:
-    :undoc-members:
-    :show-inheritance:
-    :noindex:
+   api/appmesh

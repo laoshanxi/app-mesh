@@ -1,70 +1,161 @@
-#!/bin/sh
+#!/usr/bin/env bash
 ################################################################################
-## This Script file is used to build openssl for CentOS and Ubuntu to location:
-##  /usr/local/ssl/lib
-##  /usr/local/ssl/include
+# OpenSSL Installation & Upgrade Script
+# Supported distributions: SUSE, CentOS, Ubuntu, RHEL
+# Purpose: Production-grade OpenSSL deployment with security considerations
 ################################################################################
-set -x
-set -e
 
-SSL_VERSION="3.0.13" # 3.0 series is a Long Term Support (LTS) version and is supported until 7th September 2026
+set -euo pipefail
+IFS=$'\n\t'
 
-if (command -v openssl &>/dev/null); then
-  echo "OpenSSL already installed on this system."
-  CURRENT_SSL_VERSION=$(openssl version | cut -d' ' -f2)
-  if [ "$(printf '%s\n' "$CURRENT_SSL_VERSION" "$SSL_VERSION" | sort -V | head -n1)" = "$CURRENT_SSL_VERSION" ]; then
-    echo "OpenSSL version <$CURRENT_SSL_VERSION> is greater than or equal to target <$SSL_VERSION>"
-    exit 0
+# Configuration
+OPENSSL_VERSION="3.0.15"
+OPENSSL_INSTALL_DIR="/usr/local/ssl"
+OPENSSL_SOURCE="https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz"
+OPENSSL_SHA256="23c666d0edf20f14249b3d8f0368acaee9ab585b09e1de82107c66e1f3ec9533"
+
+# Logging setup
+log() {
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
+}
+
+error() {
+  log "ERROR: $*" >&2
+  exit 1
+}
+
+check_prerequisites() {
+  local missing_deps=()
+  for cmd in wget tar make gcc; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing_deps+=("$cmd")
+    fi
+  done
+
+  if ((${#missing_deps[@]} > 0)); then
+    log "Missing required tools: ${missing_deps[*]}"
+    install_dependencies
   fi
-fi
+}
 
-export ROOTDIR=$(pwd)/openssl.tmp
-mkdir -p ${ROOTDIR}
-cd ${ROOTDIR}
-
-if [ -f "/usr/bin/yum" ]; then
-  RHEL_VER=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
-	if [[ $RHEL_VER = "7" ]]; then
-		cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
-		rm -f /etc/yum.repos.d/*.repo
-		curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
-		yum clean all
-		yum makecache
-	fi
-  if [[ $RHEL_VER = "8" ]]; then
-    sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
-    sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*
+install_dependencies() {
+  if command -v zypper >/dev/null 2>&1; then
+    # SUSE
+    log "Installing dependencies using zypper..."
+    zypper --non-interactive install gcc make wget tar zlib-devel perl-core
+  elif command -v yum >/dev/null 2>&1; then
+    # CentOS/RHEL
+    rhel_version=$(cat /etc/redhat-release | sed -r 's/.* ([0-9]+)\..*/\1/')
+    if [[ $rhel_version = "7" ]]; then
+      cp -a /etc/yum.repos.d /etc/yum.repos.d.backup
+      rm -f /etc/yum.repos.d/*.repo
+      curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+      yum clean all
+      yum makecache
+    fi
+    if [[ $rhel_version = "8" ]]; then
+      sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
+      sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g" /etc/yum.repos.d/CentOS-*
+    fi
+    log "Installing dependencies using yum..."
+    yum install -y gcc make wget tar zlib-devel perl-core
+  elif command -v apt-get >/dev/null 2>&1; then
+    # Ubuntu/Debian
+    log "Installing dependencies using apt..."
+    apt-get update
+    apt-get install -y gcc make wget tar zlib1g-dev perl
+  else
+    error "Unsupported package manager. Please install dependencies manually."
   fi
-  yum install -y gcc-c++ wget make perl-core zlib-devel
-elif [ -f "/usr/bin/apt" ]; then
-  apt update
-  apt -y install g++ wget make perl zlib1g-dev
-fi
+}
 
-OPEN_SSL_VERSION=openssl-${SSL_VERSION}
-wget --quiet --no-check-certificate https://www.openssl.org/source/${OPEN_SSL_VERSION}.tar.gz
-tar zxvf ${OPEN_SSL_VERSION}.tar.gz >/dev/null
-cd ${OPEN_SSL_VERSION}
+verify_current_version() {
+  if command -v openssl >/dev/null 2>&1; then
+    local current_version
+    current_version=$(openssl version | cut -d' ' -f2)
+    log "Current OpenSSL version: $current_version"
+    log "Target OpenSSL version: $OPENSSL_VERSION"
+  fi
+}
 
-# https://www.openssl.org/news/cl31.txt
-# https://blog.csdn.net/weixin_42645653/article/details/121416399
-./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl --libdir=lib shared
-make -j 3 >/dev/null
-make install_sw
+backup_existing() {
+  if [ -f "/usr/bin/openssl" ]; then
+    log "Backing up existing OpenSSL binary..."
+    mv "/usr/bin/openssl" "/usr/bin/openssl.bak.$(date +%Y%m%d)"
+  fi
+}
 
-# https://blog.csdn.net/liuxin638507/article/details/132450367
-rm -f /usr/bin/openssl && ln -s /usr/local/ssl/bin/openssl /usr/bin/openssl
+download_and_verify() {
+  local tempdir
+  tempdir=$(mktemp -d)
+  cd "$tempdir"
 
-echo "/usr/local/ssl/lib" >/etc/ld.so.conf.d/openssl.conf
-ldconfig
-ldd /usr/bin/openssl
-export LD_LIBRARY_PATH=/usr/local/ssl/lib:$LD_LIBRARY_PATH
-ldd /usr/bin/openssl
-/usr/bin/openssl version -a
+  log "Downloading OpenSSL ${OPENSSL_VERSION}..."
+  wget --quiet --backups=1 --tries=5 --no-check-certificate "$OPENSSL_SOURCE" || error "Failed to download OpenSSL"
 
-cd ..
-rm -rf ${ROOTDIR}
+  log "Verifying download integrity..."
+  echo "$OPENSSL_SHA256 openssl-${OPENSSL_VERSION}.tar.gz" | sha256sum -c || error "SHA256 verification failed"
 
-find / -name ssl.h | xargs ls -al
-find / -name libssl.so | xargs ls -al
-find / -name libcrypto.so | xargs ls -al
+  tar xzf "openssl-${OPENSSL_VERSION}.tar.gz" >/dev/null
+  cd "openssl-${OPENSSL_VERSION}"
+}
+
+compile_and_install() {
+  log "Configuring OpenSSL..."
+  ./config --prefix="$OPENSSL_INSTALL_DIR" \
+    --openssldir="$OPENSSL_INSTALL_DIR" \
+    --libdir=lib \
+    shared \
+    zlib \
+    enable-fips \
+    -Wl,-rpath,"$OPENSSL_INSTALL_DIR/lib" ||
+    error "Configuration failed"
+
+  log "Compiling OpenSSL..."
+  make -j"$(nproc)" >/dev/null || error "Compilation failed"
+
+  # log "Running tests..."
+  # make test || error "Tests failed"
+
+  log "Installing OpenSSL..."
+  make install_sw >/dev/null || error "Installation failed"
+}
+
+setup_system_links() {
+  log "Setting up system links and configurations..."
+
+  # Create symbolic links
+  ln -sf "$OPENSSL_INSTALL_DIR/bin/openssl" "/usr/bin/openssl"
+
+  # Setup library paths
+  echo "$OPENSSL_INSTALL_DIR/lib" >"/etc/ld.so.conf.d/openssl.conf"
+  ldconfig
+
+  # Verify installation
+  log "Verifying installation..."
+  "$OPENSSL_INSTALL_DIR/bin/openssl" version -a || error "Installation verification failed"
+}
+
+cleanup() {
+  if [ -n "${tempdir:-}" ]; then
+    log "Cleaning up temporary files..."
+    rm -rf "$tempdir"
+  fi
+}
+
+main() {
+  log "Starting OpenSSL installation process..."
+
+  check_prerequisites
+  verify_current_version
+  backup_existing
+  download_and_verify
+  compile_and_install
+  setup_system_links
+  cleanup
+
+  log "OpenSSL $OPENSSL_VERSION installation completed successfully"
+}
+
+trap cleanup EXIT
+main "$@"

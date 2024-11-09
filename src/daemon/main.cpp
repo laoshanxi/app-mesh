@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 		ACE::init();
 		// ACE::set_handle_limit(); // TODO: this will cause timer issue.
 
-		// create pid file: /var/run/appmesh.pid
+		// create pid file: /run/appmesh/appmesh.pid
 		Utility::createPidFile();
 
 		// https://www.cnblogs.com/shelmean/p/9436425.html
@@ -274,7 +274,7 @@ int main(int argc, char *argv[])
 		t->join();
 	// Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
-	ACE_OS::_exit(0); // TODO: TimerManager de-constructor will hand.
+	// ACE_OS::_exit(0); // to avoid something hang while exiting, direct exit here.
 	ACE::fini();
 	return 0;
 }

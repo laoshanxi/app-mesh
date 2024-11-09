@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ################################################################################
 ## This script is used to install all 3rd-party dependency libraries
 ################################################################################
@@ -120,7 +120,7 @@ $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
 tar zxvf curl-8.5.0.tar.gz >/dev/null; cd curl-8.5.0
 mkdir build; cd build; # http2: -DHTTP_ONLY=OFF -DCURL_USE_NGHTTP2=ON
 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl || cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DCURL_USE_OPENSSL=ON
-make -j 3 >/dev/null
+make -j"$(nproc)" >/dev/null
 make install
 ldconfig
 cd $ROOTDIR
@@ -205,7 +205,7 @@ cd cryptopp/
 $WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_9_0/cryptopp890.zip
 unzip -o cryptopp890.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
-make -j 3
+make -j"$(nproc)"
 make install
 
 cd $ROOTDIR
@@ -263,8 +263,12 @@ make; make install
 ldconfig
 
 cd $ROOTDIR
-git clone --depth=1 https://github.com/jbeder/yaml-cpp.git
-cd yaml-cpp/; mkdir build; cd build; cmake -DBUILD_SHARED_LIBS=ON ..; make && make install
+git clone https://github.com/jbeder/yaml-cpp.git
+cd yaml-cpp/ && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON ..
+if [[ -f "/usr/bin/yum" ]] && [[ $RHEL_VER = "7" ]]; then
+	while ! make; do make clean && git reset --hard HEAD^ && cmake -DBUILD_SHARED_LIBS=ON ..; sleep 0.5; done
+fi
+make && make install
 
 cd $ROOTDIR
 git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git

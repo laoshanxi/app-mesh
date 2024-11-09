@@ -68,6 +68,8 @@ TimerManager::~TimerManager()
 {
 	const static char fname[] = "TimerManager::~TimerManager() ";
 	LOG_DBG << fname;
+	m_timerQueue.deactivate();
+	m_timerQueue.wait();
 }
 
 long TimerManager::registerTimer(long int delayMilliseconds, std::size_t intervalSeconds, const std::string &from, const std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)

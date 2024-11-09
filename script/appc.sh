@@ -1,11 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ################################################################################
 # Wrapper Script for appc CLI
 # Executes the appc binary with necessary environment setup.
 ################################################################################
 
 export PROG_HOME="/opt/appmesh"
-export LD_LIBRARY_PATH="${PROG_HOME}/lib64:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${PROG_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 
 # Modify IFS temporarily to handle arguments with spaces
 ORIGINAL_IFS="$IFS"

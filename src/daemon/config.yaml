@@ -1,54 +1,109 @@
----
 BaseConfig:
-  # A brief description for this host
+  # A short, descriptive name for this host, such as ENV-ROLE-NUMBER (e.g., PROD-WEB-001).
   Description: MYHOST
-  # Default app execution OS user name
+
+  # The default operating system user for app execution. This user will be used when no specific execution user is provided.
   DefaultExecUser: ""
-  # When true, all apps use the appmesh systemd user instead of individual execution users
-  # Apps will follow appmesh systemd user (set by installation env: APPMESH_DAEMON_EXEC_USER/APPMESH_DAEMON_EXEC_USER_GROUP)
+
+  # When true, all applications will run under the AppMesh systemd user instead of individual users.
+  # Applications will follow the appmesh systemd user set during installation (APPMESH_DAEMON_EXEC_USER/APPMESH_DAEMON_EXEC_USER_GROUP).
   DisableExecUser: false
-  # Schedule interval (in seconds) for application error handling
+
+  # Interval (in seconds) for application health checks.
+  # Increase this value if frequent checks are unnecessary.
   ScheduleIntervalSeconds: 1
-  # Working directory for appmesh
+
+  # Working directory for AppMesh, with a default of /opt/appmesh/work.
   WorkingDirectory: ""
-  # Log level (options: DEBUG, INFO, NOTICE, WARN, ERROR)
+
+  # Log level for the system (available options: DEBUG, INFO, NOTICE, WARN, ERROR).
   LogLevel: INFO
-  # Timezone for appmesh output (default: server's timezone)
+
+  # Time zone setting for AppMesh logs, in POSIX format.
   PosixTimezone: "+08"
 
 REST:
+  # Enables or disables the REST API interface.
   RestEnabled: true
+
+  # Address for REST API access.
+  # Use "localhost" for local access only, or "0.0.0.0" to allow external access.
   RestListenAddress: localhost
+
+  # HTTP port for the REST API.
   RestListenPort: 6060
+
+  # TCP port for the TCP API.
   RestTcpPort: 6059
 
+  # Port for Prometheus metrics export.
+  # To enable metrics collection, set to a specific port (e.g., 9091).
   PrometheusExporterListenPort: 0
+
+  # Number of threads to handle HTTP requests.
+  # Increase this number based on expected concurrent load.
   HttpThreadPoolSize: 2
+
+  # JWT Authentication Configuration
   JWT:
+    # Salt for JWT token generation. IMPORTANT: Change this in production.
     JWTSalt: HelloAppMesh
+
+    # Name of the JWT token issuer, typically set to your organization or service name.
+    # Defaults to the hostname if left empty.
     Issuer: ""
+
+    # Authentication type to use [local/ldap].
     SecurityInterface: local
 
   SSL:
+    # Path to the Certificate Authority (CA) certificate.
     SSLCaPath: /opt/appmesh/ssl/ca.pem
+
+    # Server certificate and private key file paths.
     SSLCertificateFile: /opt/appmesh/ssl/server.pem
     SSLCertificateKeyFile: /opt/appmesh/ssl/server-key.pem
+
+    # Client certificate and private key file paths.
     SSLClientCertificateFile: /opt/appmesh/ssl/client.pem
     SSLClientCertificateKeyFile: /opt/appmesh/ssl/client-key.pem
+
+    # Enables or disables verification of client certificates.
     VerifyClient: false
+
+    # Enables or disables verification of server certificates.
     VerifyServer: true
+
+    # Enables or disables delegated server verification.
     VerifyServerDelegate: false
 
 Consul:
+  # Proxy URL for accessing Consul, if needed.
   AppmeshProxyUrl: ""
+
+  # Enables or disables Consul's security features.
   EnableConsulSecurity: false
+
+  # Node role configuration.
+  # In production, consider assigning separate roles for main and worker nodes.
   IsMainNode: true
   IsWorkerNode: true
+
+  # Consul authentication password.
+  # Required if EnableConsulSecurity is true.
   Pass: ""
+
+  # Session time-to-live (TTL) for Consul in seconds.
   SessionTTL: 30
+
+  # URL of the Consul server, required for service registration and discovery.
   Url: ""
+
+  # Consul authentication username.
+  # Required if EnableConsulSecurity is true.
   User: ""
 
+# Node labels with 2 default samples provided.
 Labels:
   arch: x86_64
   os_version: centos7.6

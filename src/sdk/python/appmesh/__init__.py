@@ -12,7 +12,7 @@ Example:
 """
 
 from .app import App
-from .appmesh_client import AppMeshClient
-from .appmesh_client_tcp import AppMeshClientTCP
+from .http_client import AppMeshClient
+from .tcp_client import AppMeshClientTCP
 
 __all__ = ["App", "AppMeshClient", "AppMeshClientTCP"]

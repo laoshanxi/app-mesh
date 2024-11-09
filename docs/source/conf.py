@@ -5,7 +5,7 @@ from recommonmark.parser import CommonMarkParser
 
 # -- Path setup --------------------------------------------------------------
 current_dir = os.path.dirname(os.path.realpath(__file__))
-sdk_python_path = os.path.abspath(os.path.join(current_dir, "../../src/sdk/python"))
+sdk_python_path = os.path.abspath(os.path.join(current_dir, "../../src/sdk/python/appmesh"))
 sys.path.insert(0, sdk_python_path)
 
 # -- Project information -----------------------------------------------------
@@ -50,13 +50,4 @@ source_suffix = [".rst", ".md"]
 # -- Copy necessary files ----------------------------------------------------
 readme_src = os.path.join(current_dir, "../../README.md")
 readme_dest = os.path.join(current_dir, "README.md")
-appmesh_client_src = os.path.join(current_dir, "../../src/sdk/python/appmesh/appmesh_client.py")
-appmesh_client_dest = os.path.join(current_dir, "../../src/sdk/python/appmesh_client.py")
-
 copyfile(readme_src, readme_dest)
-copyfile(appmesh_client_src, appmesh_client_dest)
-
-# -- Exclude specific Python files -------------------------------------------
-exclude_py_files = [os.path.join(sdk_python_path, "py_exec.py"), os.path.join(sdk_python_path, "setup.py")]
-for f in exclude_py_files:
-    os.path.exists(f) and os.remove(f)

@@ -29,7 +29,7 @@ license: MIT
 # Contents to add to the package
 contents:
   - src: ${PACKAGE_HOME}/
-    dst: /opt/appmesh
+    dst: ${INSTALL_LOCATION}
     type: tree
 # Scripts to run at specific stages. (overridable)
 scripts:
@@ -41,11 +41,13 @@ scripts:
 overrides:
   deb:
     depends:
+      - openssl
       - procps
       - libreadline-dev
       - libldap-dev
   rpm:
     depends:
+      - openssl
       - procps
       - readline-devel
       # openldap-devel

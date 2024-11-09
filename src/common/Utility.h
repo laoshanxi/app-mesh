@@ -220,7 +220,7 @@ public:
 	static const std::string readStdin2End();
 };
 
-#define PID_FILE_PATH "/var/run/appmesh.pid"
+#define PID_FILE_PATH "/run/appmesh/appmesh.pid"
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 #define ENV_APPMESH_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
