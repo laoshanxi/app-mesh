@@ -61,6 +61,7 @@ type Application struct {
 
 	// runtime attributes
 	Pid            *int    `json:"pid"`
+	User           *string `json:"pid_user"`
 	ReturnCode     *int    `json:"return_code"`
 	Health         *int    `json:"health"`
 	FileDescritors *int    `json:"fd"`

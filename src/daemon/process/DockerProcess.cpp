@@ -6,8 +6,12 @@
 #include "../ResourceLimitation.h"
 #include "LinuxCgroup.h"
 
+static const char *const CONTAINER_DOCKER = "docker";
+static const char *const CONTAINER_PODMAN = "podman";
+
+// TODO: podman no need use root to start
 DockerProcess::DockerProcess(const std::string &containerName, const std::string &dockerImage)
-	: AppProcess(nullptr), m_containerName(containerName), m_dockerImage(dockerImage)
+	: AppProcess(nullptr), m_containerName(containerName), m_dockerImage(dockerImage), m_containerEngine(CONTAINER_DOCKER)
 {
 	const static char fname[] = "DockerProcess::DockerProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -32,7 +36,7 @@ void DockerProcess::terminate()
 	// clean docker container
 	if (!containerId.empty())
 	{
-		auto cmd = Utility::stringFormat("docker rm -f %s", containerId.c_str());
+		auto cmd = Utility::stringFormat("%s rm -f %s", m_containerEngine.c_str(), containerId.c_str());
 		auto proc = std::make_shared<AppProcess>(nullptr);
 		proc->spawnProcess(cmd, "root", "", {}, nullptr);
 		if (proc->wait(ACE_Time_Value(3)) <= 0)
@@ -61,7 +65,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	std::string containerName = m_containerName;
 
 	// 0. clean old docker container (docker container will left when host restart)
-	std::string dockerCommand = Utility::stringFormat("docker rm -f %s", containerName.c_str());
+	std::string dockerCommand = Utility::stringFormat("%s rm -f %s", m_containerEngine.c_str(), containerName.c_str());
 	{
 		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
 		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile);
@@ -69,7 +73,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	}
 
 	// 1. check docker image
-	dockerCommand = Utility::stringFormat("docker inspect -f '{{.Size}}' %s", m_dockerImage.c_str());
+	dockerCommand = Utility::stringFormat("%s inspect -f '{{.Size}}' %s", m_containerEngine.c_str(), m_dockerImage.c_str());
 	{
 		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
@@ -90,7 +94,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	}
 
 	// 2. build docker start command line
-	dockerCommand = Utility::stringFormat("docker run -d --name %s ", containerName.c_str());
+	dockerCommand = Utility::stringFormat("%s run -d --name %s ", m_containerEngine.c_str(), containerName.c_str());
 	for (auto &env : envMap)
 	{
 		if (env.first == ENV_APPMESH_DOCKER_PARAMS)
@@ -178,7 +182,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 	// 4. get docker root pid
 	if (startSuccess)
 	{
-		dockerCommand = Utility::stringFormat("docker inspect -f '{{.State.Pid}}' %s", containerId.c_str());
+		dockerCommand = Utility::stringFormat("%s inspect -f '{{.State.Pid}}' %s", m_containerEngine.c_str(), containerId.c_str());
 		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
 		pid = dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 		dockerProcess->delayKill(dockerCliTimeoutSec, fname);
@@ -239,7 +243,7 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 		LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
 	}
 	m_imagePullProc = std::make_shared<AppProcess>(nullptr);
-	m_imagePullProc->spawnProcess("docker pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
+	m_imagePullProc->spawnProcess(m_containerEngine + " pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
 	m_imagePullProc->delayKill(pullTimeout, fname);
 	this->attach(m_imagePullProc->getpid());
 	return this->getpid();
@@ -270,7 +274,7 @@ int DockerProcess::returnValue(void) const
 	const static char fname[] = "DockerProcess::returnValue() ";
 
 	const auto containerId = this->containerId();
-	auto dockerCommand = Utility::stringFormat("docker inspect %s --format='{{.State.ExitCode}}'", containerId.c_str());
+	auto dockerCommand = Utility::stringFormat("%s inspect %s --format='{{.State.ExitCode}}'", m_containerEngine.c_str(), containerId.c_str());
 	auto dockerProcess = std::make_shared<AppProcess>(nullptr);
 	dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, containerId);
 	dockerProcess->wait();
@@ -293,10 +297,12 @@ int DockerProcess::returnValue(void) const
 	return -200;
 }
 
-int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize, bool sudoSwitchUser)
+int DockerProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "DockerProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";
+	if (CONTAINER_PODMAN == GET_JSON_STR_VALUE(stdinFileContent, "engine"))
+		m_containerEngine = CONTAINER_PODMAN;
 	return syncSpawnProcess(cmd, execUser, workDir, envMap, limit, stdoutFile);
 }
 
@@ -309,7 +315,7 @@ const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool 
 		auto secondsUTC = 0L;
 		if (position)
 			secondsUTC = *position;
-		auto dockerCommand = Utility::stringFormat("docker logs --since %llu %s", secondsUTC, m_containerId.c_str());
+		auto dockerCommand = Utility::stringFormat("%s logs --since %llu %s", m_containerEngine.c_str(), secondsUTC, m_containerId.c_str());
 		auto dockerProcess = std::make_shared<AppProcess>(nullptr);
 		dockerProcess->spawnProcess(dockerCommand, "root", "", {}, nullptr, m_containerId);
 		dockerProcess->wait();

@@ -166,6 +166,18 @@ namespace os
 			return result;
 		}
 
+		pid_t findLeafPid() const
+		{
+			// recurse into children
+			for (const auto &child : this->children)
+			{
+				return child.findLeafPid();
+			}
+
+			// no child
+			return this->process.pid;
+		}
+
 		// Checks if the specified pid is contained in this process tree.
 		bool contains(pid_t pid) const
 		{
@@ -254,6 +266,53 @@ namespace os
 		stream << std::endl
 			   << "]";
 		return stream;
+	}
+
+	inline uid_t getProcessUid(pid_t pid)
+	{
+		const static char fname[] = "os::getProcessUid() ";
+
+		if (pid <= 0)
+		{
+			LOG_WAR << fname << "Invalid PID: " << pid;
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		// Check if /proc exists
+		if (!fs::exists("/proc"))
+		{
+			LOG_WAR << fname << "Proc filesystem is not mounted";
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		fs::path procPath = fs::path("/proc") / std::to_string(pid);
+		struct stat statBuf;
+
+		// Get the stat information for the /proc/[pid] directory
+		// Using lstat to handle symbolic links
+		if (lstat(procPath.c_str(), &statBuf) != 0)
+		{
+			// More specific error reporting
+			if (errno == ENOENT)
+			{
+				LOG_WAR << fname << "Process " << pid << " does not exist";
+			}
+			else
+			{
+				LOG_WAR << fname << "Failed to stat " << procPath << ": " << std::strerror(errno);
+			}
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		// Check if it's a symbolic link
+		if (S_ISLNK(statBuf.st_mode))
+		{
+			LOG_WAR << fname << "Path is a symbolic link: " << procPath;
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		LOG_DBG << fname << "UID for process " << pid << " is " << statBuf.st_uid;
+		return statBuf.st_uid;
 	}
 
 } // namespace os

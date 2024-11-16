@@ -127,7 +127,7 @@ void ResourceCollection::dump()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	LOG_DBG << fname << "host_name:" << getHostName();
-	LOG_DBG << fname << "os_user:" << Utility::getOsUserName();
+	LOG_DBG << fname << "os_user:" << Utility::getUsernameByUid();
 	for (auto &pair : m_resources.m_ipaddress)
 	{
 		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv4 << "," << pair.address;
@@ -151,7 +151,8 @@ nlohmann::json ResourceCollection::AsJson()
 
 	nlohmann::json result = nlohmann::json::object();
 	result[("host_name")] = std::string((getHostName()));
-	result[("os_user")] = std::string((Utility::getOsUserName()));
+	static const auto osUser = Utility::getUsernameByUid();
+	result[("os_user")] = osUser;
 	result[("host_description")] = std::string(Configuration::instance()->getDescription());
 	auto arr = nlohmann::json::array();
 	std::for_each(res.m_ipaddress.begin(), res.m_ipaddress.end(), [&arr](const HostNetInterface &pair)

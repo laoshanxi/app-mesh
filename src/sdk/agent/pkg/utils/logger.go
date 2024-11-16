@@ -135,7 +135,7 @@ func initLogger(cfg *Config) error {
 		MessageKey:     "msg",
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.CapitalColorLevelEncoder,
+		EncodeLevel:    zapcore.CapitalLevelEncoder,
 		EncodeTime:     makeTimeAndGoroutineEncoder(cfg.TimeFormat),
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder,

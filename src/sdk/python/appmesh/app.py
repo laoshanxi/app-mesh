@@ -166,6 +166,8 @@ class App(object):
         # Read-only attributes
         self.owner = App._get_str_item(data, "owner")
         """owner name"""
+        self.user = App._get_str_item(data, "pid_user")
+        """process user name"""
         self.pstree = App._get_str_item(data, "pstree")
         """process tree"""
         self.container_id = App._get_str_item(data, "container_id")

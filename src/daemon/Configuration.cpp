@@ -267,20 +267,22 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 		// parse YAML format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			if (Utility::endWith(jsonFile.path().filename().string(), ".yml") || Utility::endWith(jsonFile.path().filename().string(), ".yaml"))
+			auto path = jsonFile.path().string();
+			if (Utility::isFileExist(path) && (Utility::endWith(path, ".yml") || Utility::endWith(path, ".yaml")))
 			{
-				LOG_INF << fname << "loading <" << jsonFile.path().filename() << ">.";
-				auto app = this->parseApp(Utility::yamlToJson(YAML::LoadFile(jsonFile.path().string())));
+				LOG_INF << fname << "loading <" << path << ">.";
+				auto app = this->parseApp(Utility::yamlToJson(YAML::LoadFile(path)));
 				this->addApp2Map(app);
 			}
 		}
 		// parse JSON format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			if (Utility::endWith(jsonFile.path().filename().string(), ".json"))
+			auto path = jsonFile.path().filename().string();
+			if (Utility::isFileExist(path) && Utility::endWith(path, ".json"))
 			{
-				LOG_INF << fname << "loading <" << jsonFile.path().filename() << ">.";
-				auto app = this->parseApp(nlohmann::json::parse(std::ifstream(jsonFile.path().string())));
+				LOG_INF << fname << "loading <" << path << ">.";
+				auto app = this->parseApp(nlohmann::json::parse(std::ifstream(path)));
 				this->addApp2Map(app);
 			}
 		}

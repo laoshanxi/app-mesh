@@ -68,13 +68,11 @@ RestClient::request(const std::string &host, const web::http::method &mtd, const
 			std::string oneHeader;
 			const auto incomingSize = size * nitems;
 			oneHeader.append(ptr, incomingSize);
-			if (incomingSize > 3)
+			if (incomingSize > 3 && oneHeader.find(':') != std::string::npos)
 			{
 				auto kvPair = Utility::splitString(oneHeader, ":");
 				if (kvPair.size() == 2)
 					outputHeaders[Utility::stdStringTrim(kvPair[0])] = Utility::stdStringTrim(kvPair[1]);
-				else
-					LOG_DBG << "failed to parse response header: " << oneHeader;
 			}
 			return incomingSize;
 		}));
@@ -90,6 +88,7 @@ RestClient::request(const std::string &host, const web::http::method &mtd, const
 			url += it->first + "=" + it->second;
 		}
 	}
+	LOG_DBG << "Url: " << url;
 	request.setOpt(new curlpp::Options::Url(url));
 
 	// Set HTTP method and body if needed

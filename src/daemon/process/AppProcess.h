@@ -127,8 +127,9 @@ public:
 	/// - float: cpu usage
 	/// - uint64_t: total file descriptors
 	/// - std::string: pstree string
+	/// - pid_t: leaf process id
 	/// </returns>
-	std::tuple<bool, uint64_t, float, uint64_t, std::string> getProcessDetails(void *ptree = nullptr);
+	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> getProcessDetails(void *ptree = nullptr);
 
 	/// <summary>
 	/// Attach a existing pid to AppProcess to manage
@@ -194,7 +195,7 @@ public:
 	virtual int spawnProcess(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
-							 const int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE, bool sudoSwitchUser = false);
+							 const int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
 
 	// overwrite ACE_Process spawn method
 	virtual pid_t spawn(ACE_Process_Options &options);

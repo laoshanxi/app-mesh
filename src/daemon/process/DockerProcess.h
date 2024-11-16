@@ -37,7 +37,7 @@ public:
 	/// <param name="stdinFileContent"></param>
 	/// <param name="maxStdoutSize"></param>
 	/// <returns></returns>
-	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON, const int maxStdoutSize = 0, bool sudoSwitchUser = false) override;
+	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON, const int maxStdoutSize = 0) override;
 
 	/// <summary>
 	/// override with docker cli behavior
@@ -103,6 +103,7 @@ protected:
 	const std::string m_containerName;
 	const std::string m_dockerImage;
 	std::string m_containerId;
+	std::string m_containerEngine; // docker or podman
 
 	std::shared_ptr<AppProcess> m_imagePullProc;
 	mutable std::recursive_mutex m_processMutex;

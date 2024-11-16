@@ -1,104 +1,118 @@
-## Command lines
+# App Mesh CLI Documentation
 
-App Mesh command lines provide the same functionality with Web GUI for *stand-alone* mode, *Consul-cluster* mode related feature require Web GUI.
+The App Mesh Command Line Interface (CLI) provides equivalent functionality to the Web GUI and SDK for managing applications, system resources.
+
+## Basic Usage
 
 ```text
 $ appc
-Commands:
-  logon       Log in to App Mesh for a specified duration.
-  logoff      Clear current user session.
-  loginfo     Display current logged-in user.
-
-  view        View applications.
-  add         Add a new application.
-  rm          Remove an application.
-  enable      Enable an application.
-  disable     Disable an application.
-  restart     Restart an application.
-
-  join        Join a Consul cluster.
-  cloud       List cloud applications.
-  nodes       List cloud nodes.
-
-  run         Execute commands or applications and retrieve output.
-  shell       Execute commands in App Mesh, emulating the current shell context.
-
-  resource    Show host resources.
-  label       Manage host labels.
-  config      Manage configurations.
-  log         Set log level.
-
-  get         Download a remote file.
-  put         Upload a local file to the App Mesh server.
-
-  passwd      Change user password.
-  lock        Lock or unlock a user.
-  user        View user information.
-  mfa         Manage two-factor authentication.
-
-Run 'appc COMMAND --help' for more information on a command.
-Use '-b $server_url' to connect remotely, e.g., https://127.0.0.1:6060.
-
+App Mesh CLI - Command Line Interface
 Usage: appc [COMMAND] [ARG...] [flags]
+
+Authentication Commands:
+  logon         Log in to App Mesh for a specified duration
+  logoff        Clear current user session
+  loginfo       Display current logged-in user
+  passwd        Change user password
+  lock          Lock or unlock a user
+  user          View user information
+  mfa           Manage two-factor authentication
+
+Application Management:
+  view          List all applications
+  add           Add a new application
+  rm            Remove an application
+  enable        Enable an application
+  disable       Disable an application
+  restart       Restart an application
+
+Execution Commands:
+  run           Execute commands or applications and retrieve output
+  shell         Execute commands with shell context emulation
+
+System Management:
+  resource      Show host resources
+  label         Manage host labels
+  config        Manage configurations
+  log           Set log level
+
+File Operations:
+  get           Download a remote file
+  put           Upload a local file to server
+
+Additional Information:
+  - Run 'appc COMMAND --help' for detailed command usage
+  - Remote connection: Use '-b $server_url' (e.g., https://127.0.0.1:6060)
+  - All commands support --help flag for detailed options
 ```
 
 ---
 
-### App management
+## App management
 
 - List applications
 
 ```text
 $ appc ls
-ID NAME        OWNER STATUS   HEALTH PID     MEMORY   %CPU RETURN LAST_START_TIME         COMMAND
-1  qqmail      admin enabled  0      -       -        -    0      2021-03-26 10:54:26+08  sh /opt/qqmail/launch.sh
-2  ssd         admin enabled  1      -       -        -    -      -                       /usr/sbin/fstrim -a -v
-3  loki        admin enabled  0      4789    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping www.sina.com
-4  ping        admin enabled  0      4790    3.1 Mi   0    2      2021-03-26 08:03:37+08  ping github.com
-5  docker            enabled  0      2866    2.5 Mi   0    -      2021-03-26 08:03:28+08  ping www.sina.com
+ID  NAME           OWNER STATUS   HEALTH PID     USER  MEMORY   %CPU RETURN AGE    DURATION STARTS COMMAND
+1   ping           mesh  enabled  -      -       -     -        -    2      6d     -        1      "ping github.com -w 300"
+2   backup         admin disabled -      -       -     -        -    -      6d     -        0      "mkdir -p /opt/appmesh/work/backup\ncd /*"
+4   start_app      -     enabled  OK     -       -     -        -    0      2m1s   -        1      "ls"
+5   pyrun          mesh  disabled -      -       -     -        -    -      2m1s   -        0      "python3 /opt/appmesh/bin/py_exec.py"
 ```
 
-- View application output
+- Register a New Application and View Output
 
 ```text
 $ appc add -n ping -c 'ping github.com'
-{
- "command": "ping github.com",
- "name": "ping",
- "owner": "admin",
- "register_time": "2020-10-24 07:31:40+08",
- "status": 1
-}
+  behavior:
+    exit: standby
+  command: ping github.com
+  name: ping
+  owner: admin
+  register_time: 1731748952
+  register_time_TEXT: 2024-11-16T17:22:32+08
+  status: 1
+  stdout_cache_num: 3
 
 $ appc ls -n ping
-{
-  "command": "ping github.com",
-  "cpu": 0,
-  "fd": 5,
-  "health": 0,
-  "last_start_time": "2021-03-26 08:03:37+08",
-  "memory": 3203072,
-  "name": "ping",
-  "owner": "admin",
-  "pid": 4790,
-  "register_time": "2020-10-24 07:31:40+08",
-  "return_code": 2,
-  "status": 1,
-  "stdout_cache_num": 2
-}
+  behavior:
+    control:
+      0: standby
+    exit: standby
+  command: ping github.com -w 300
+  description: appmesh ping test
+  health: 1
+  last_error: |
+    2024-11-16T17:19:25+08 exited with return code: 2, msg:
+  last_exit_time: 1731748765
+  last_exit_time_TEXT: 2024-11-16T17:19:25+08
+  last_start_time: 1731748765
+  last_start_time_TEXT: 2024-11-16T17:19:25+08
+  name: ping
+  next_start_time: 1731748765
+  next_start_time_TEXT: 2024-11-16T17:19:25+08
+  owner: mesh
+  permission: 33
+  register_time: 1731202597
+  register_time_TEXT: 2024-11-10T09:36:37+08
+  return_code: 2
+  starts: 1
+  status: 1
+  stdout_cache_size: 1
 
 
 $ appc ls -n ping -o
-PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=1 ttl=54 time=35.5 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=2 ttl=54 time=35.5 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=3 ttl=54 time=37.4 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=4 ttl=54 time=35.7 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=5 ttl=54 time=36.5 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=6 ttl=54 time=42.6 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=7 ttl=54 time=40.6 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=8 ttl=54 time=39.7 ms
-64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=9 ttl=54 time=36.8 ms
+  PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=1 ttl=54 time=35.5 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=2 ttl=54 time=35.5 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=3 ttl=54 time=37.4 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=4 ttl=54 time=35.7 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=5 ttl=54 time=36.5 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=6 ttl=54 time=42.6 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=7 ttl=54 time=40.6 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=8 ttl=54 time=39.7 ms
+  64 bytes from 14.215.177.38 (14.215.177.38): icmp_seq=9 ttl=54 time=36.8 ms
 ```
 
 - Register a new application
@@ -106,81 +120,79 @@ PING www.a.shifen.com (14.215.177.38) 56(84) bytes of data.
 ```text
 $ appc add
 Register a new application:
-  -b [ --url ] arg (=https://localhost:6060) Server URL.
-  -z [ --forward ] arg                       Target host name (or with port) for request forwarding.
-  -u [ --user ] arg                          User name for App Mesh connection.
-  -x [ --password ] arg                      User password for App Mesh connection.
-  -V [ --verbose ]                           Enable verbose output.
-  -n [ --name ] arg                          Application name.
-  -a [ --desc ] arg                          Application description.
-  -g [ --metadata ] arg                      Metadata string/JSON (input for application, pass to process stdin), '@' allowed to 
-                                             read from file.
-  --perm arg                                 Application user permission, value is a 2-bit integer: [group & other], each bit can
-                                             be deny:1, read:2, write: 3.
-  -c [ --cmd ] arg                           Full command line with arguments.
-  -S [ --shell ]                             Use shell mode, cmd can be more shell commands with string format.
-  --session_login                            Run with session login.
-  -l [ --health_check ] arg                  Health check script command (e.g., sh -x 'curl host:port/health', return 0 is 
-                                             health)
-  -d [ --docker_image ] arg                  Docker image used to run command line (for docker container application).
-  -w [ --workdir ] arg                       Working directory.
-  -s [ --status ] arg (=1)                   Initial application status (true is enable, false is disabled).
-  -t [ --start_time ] arg                    Start date time for app (ISO8601 time format, e.g., '2020-10-11T09:22:05').
-  -E [ --end_time ] arg                      End date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05').
-  -j [ --daily_start ] arg                   Daily start time (e.g., '09:00:00+08').
-  -y [ --daily_end ] arg                     Daily end time (e.g., '20:00:00+08').
-  -m [ --memory ] arg                        Memory limit in MByte.
-  -v [ --virtual_memory ] arg                Virtual memory limit in MByte.
-  -r [ --cpu_shares ] arg                    CPU shares (relative weight).
-  -p [ --pid ] arg                           Process id used to attach.
-  -O [ --stdout_cache_num ] arg (=3)         Stdout file cache number.
-  -e [ --env ] arg                           Environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used 
-                                             to input docker run parameters).
-  --sec_env arg                              Security environment variables, encrypt in server side with application owner's 
-                                             cipher
-  -i [ --interval ] arg                      Start interval seconds for short running app, support ISO 8601 durations and cron 
-                                             expression (e.g., 'P1Y2M3DT4H5M6S' 'P5W' '* */5 * * * *').
-  --cron                                     Indicate interval parameter use cron expression.
-  -q [ --retention ] arg                     Extra timeout seconds for stopping current process, support ISO 8601 durations 
-                                             (e.g., 'P1Y2M3DT4H5M6S' 'P5W').
-  --exit arg (=standby)                      Default exit behavior [restart,standby,keepalive,remove].
-  --control arg                              Exit code behavior (e.g, --control 0:restart --control 1:standby), higher priority 
-                                             than default exit behavior.
-  -f [ --force ]                             Force without confirm.
-  --stdin arg                                Accept yaml from stdin (provide 'std' string) or local yaml file path.
-  -h [ --help ]                              Display command usage and exit.
+  -b [ --url ] arg (=https://localhost:6060) Server URL
+  -z [ --forward ] arg                       Target host (or with port) for request forwarding
+  -u [ --user ] arg                          User name
+  -x [ --password ] arg                      User password
+  -V [ --verbose ]                           Enable verbose output
+  -n [ --name ] arg                          Application name (required)
+  -a [ --desc ] arg                          Application description
+  -g [ --metadata ] arg                      Metadata string/JSON (stdin input, '@' for file input)
+  --perm arg                                 Permission bits [group & other] (1=deny, 2=read, 3=write)
+  -c [ --cmd ] arg                           Command line with arguments (required)
+  -S [ --shell ]                             Enable shell mode for multiple commands
+  --session_login                            Execute with session login context
+  -l [ --health_check ] arg                  Health check command (returns 0 for healthy)
+  -d [ --docker_image ] arg                  Docker image for containerized execution
+  -w [ --workdir ] arg                       Working directory path
+  -s [ --status ] arg (=1)                   Initial status (true=enabled, false=disabled)
+  -t [ --start_time ] arg                    Start time (ISO8601: '2020-10-11T09:22:05')
+  -E [ --end_time ] arg                      End time (ISO8601: '2020-10-11T10:22:05')
+  -j [ --daily_start ] arg                   Daily start time ('09:00:00+08')
+  -y [ --daily_end ] arg                     Daily end time ('20:00:00+08')
+  -m [ --memory ] arg                        Memory limit (MB)
+  -v [ --virtual_memory ] arg                Virtual memory limit (MB)
+  -r [ --cpu_shares ] arg                    CPU shares (relative weight)
+  -p [ --pid ] arg                           Attach to existing process ID
+  -O [ --stdout_cache_num ] arg (=3)         Number of stdout cache files
+  -e [ --env ] arg                           Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to
+                                             input docker run parameters)
+  --sec_env arg                              Encrypted environment variables in server side with application owner's cipher
+  -i [ --interval ] arg                      Start interval (ISO8601 duration or cron: 'P1Y2M3DT4H5M6S', '* */5 * * * *')
+  --cron                                     Use cron expression for interval
+  -q [ --retention ] arg                     Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')
+  --exit arg (=standby)                      Exit behavior [restart|standby|keepalive|remove]
+  --control arg                              Exit code behaviors (--control CODE:ACTION, overrides default exit)
+  -f [ --force ]                             Skip confirmation prompts
+  --stdin arg                                Read YAML from stdin ('std') or file
+  -h [ --help ]                              Display command usage and exit
 
 
 # register a app with a native command
 $ appc add -n ping -u kfc -c 'ping www.google.com' -w /opt
-Application already exist, are you sure you want to update the application (y/n)?
-y
-{
-   "status" : 1,
-   "command" : "ping www.google.com",
-   "name" : "ping",
-   "pid" : -1,
-   "return_code" : 0,
-   "working_dir" : "/opt"
-}
+  Application already exist, are you sure you want to update the application (y/n)?
+  [y/n]:y
+  behavior:
+    exit: standby
+  command: ping www.google.com
+  name: ping
+  owner: admin
+  register_time: 1731749063
+  register_time_TEXT: 2024-11-16T17:24:23+08
+  status: 1
+  stdout_cache_num: 3
+  working_dir: /opt
 
 # register a docker container app
 $ appc add -n mydocker -c 'sleep 30' -d ubuntu
-{
-        "command" : "sleep 30",
-        "docker_image" : "ubuntu",
-        "name" : "mydocker",
-        "status" : 1
-}
+  behavior:
+    exit: standby
+  command: sleep 30
+  docker_image: ubuntu
+  name: mydocker
+  owner: admin
+  register_time: 1731749126
+  register_time_TEXT: 2024-11-16T17:25:26+08
+  status: 1
 
 $ appc ls
-id name        user  status   return pid    memory  start_time          command_line
-1  sleep       root  enabled  0      4206   356 K   2019-09-20 09:36:08 /bin/sleep 60
-2  mydocker    root  enabled  0      4346   388 K   2019-09-20 09:36:33 sleep 30
+ID  NAME           OWNER STATUS   HEALTH PID     USER  MEMORY   %CPU RETURN AGE    DURATION STARTS COMMAND
+1   mydocker       admin enabled  OK     4593    root  24 Mi    0    -      6s     5s       1      "sleep 30"
+2   ping           admin enabled  OK     4296    lv    2.8 Mi   0    -      1m9s   1m8s     1      "ping www.google.com"
 
 $ docker ps
-CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
-965fcec657b9        ubuntu              "sleep 30"          5 seconds ago       Up 3 seconds                            app-mgr-2-ubuntu
+CONTAINER ID   IMAGE     COMMAND      CREATED         STATUS         PORTS     NAMES
+b1277a31333f   ubuntu    "sleep 30"   9 seconds ago   Up 7 seconds             mydocker
 ```
 
 - Remove an application
@@ -202,9 +214,9 @@ appc restart -n ping
 
 ---
 
-### Cloud management
+## Cloud management
 
-- Join to Consul cluster
+- Join Consul Cluster
 
 ```text
 # appc join
@@ -236,7 +248,7 @@ App Mesh will join cluster with parameter:
 
 ```
 
-- View cloud applications
+- Cloud Applications
 
 ```text
 $ appc cloud
@@ -266,7 +278,7 @@ $ appc cloud
 
 ---
 
-### Resource management
+## Resource management
 
 - Display host resource usage
 
@@ -328,10 +340,10 @@ $ appc resource
 
 </details>
 
-- View application resource (application process tree memory usage)
+- View application resource (application process tree memory usage) with json or yaml format
 
 ```text
-$ appc ls -n ping
+$ appc ls -n ping --json
 {
         "command" : "/bin/sleep 60",
         "last_start_time" : 1568893521,
@@ -345,7 +357,7 @@ $ appc ls -n ping
 
 ---
 
-### Remote command and application output (with session login)
+## Remote run command and view output
 
 - Run remote application and get stdout
 
@@ -371,7 +383,7 @@ id name        user  status   health pid    memory  return last_start_time     c
 
 ---
 
-### File management
+## File management
 
 - Download a file from server
 
@@ -389,7 +401,7 @@ Success
 
 ---
 
-### Label management
+## Label management
 
 - Manage labels
 

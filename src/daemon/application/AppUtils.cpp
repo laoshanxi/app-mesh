@@ -26,13 +26,14 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		shellFile.close();
 		// only read permission
 		os::chmod(fileName, 500);
-		if (execUser.length() > 0 && Utility::getOsUserName() != execUser)
+		static const auto osUser = Utility::getUsernameByUid();
+		if (execUser.length() > 0 && osUser != execUser)
 		{
 			os::chown(fileName, execUser);
 		}
 		m_fileName = fileName;
 
-		if (execUser.length() && execUser != Utility::getOsUserName())
+		if (execUser.length() && execUser != osUser)
 		{
 			// need switch user
 			if (getuid() == 0 && sessionLogin)

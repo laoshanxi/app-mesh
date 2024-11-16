@@ -288,8 +288,11 @@ void Utility::removeFile(const std::string &path)
 
 bool Utility::runningInContainer()
 {
-	static bool result = (Utility::readFile("/proc/self/cgroup").find("/docker/") != std::string::npos);
-	return result;
+	static const bool isInContainer =
+		std::ifstream("/run/.dockerenv").good() ||	// docker specific
+		std::ifstream("/run/.containerenv").good(); // podman specific
+
+	return isInContainer;
 }
 
 void Utility::initLogging(const std::string &name)
@@ -806,23 +809,42 @@ bool Utility::getUid(std::string userName, unsigned int &uid, unsigned int &grou
 	return rt;
 }
 
-std::string Utility::getOsUserName()
+std::string Utility::getUsernameByUid(uid_t uid)
 {
-	static std::string userName;
-	static std::atomic_flag lock = ATOMIC_FLAG_INIT;
-	if (!lock.test_and_set())
+	const static char fname[] = "Utility::getUsernameByUid() ";
+
+	if (uid == std::numeric_limits<uid_t>::max())
 	{
-		struct passwd *pw_ptr;
-		if ((pw_ptr = getpwuid(getuid())) != NULL)
-		{
-			userName = pw_ptr->pw_name;
-		}
-		else
-		{
-			throw std::runtime_error("Failed to get current user name");
-		}
+		LOG_WAR << fname << "Invalid UID provided";
+		return "";
 	}
-	return userName;
+
+	long bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (bufsize == -1)
+		bufsize = 16384;
+
+	std::vector<char> buffer(bufsize);
+	struct passwd pwd;
+	struct passwd *result = nullptr;
+
+	int ret = getpwuid_r(uid, &pwd, buffer.data(), buffer.size(), &result);
+
+	if (ret == 0 && result != nullptr)
+	{
+		LOG_DBG << fname << "User name for " << uid << " is " << pwd.pw_name;
+		return std::string(pwd.pw_name);
+	}
+
+	if (ret == 0)
+	{
+		LOG_WAR << fname << "User not found for UID: " << uid;
+	}
+	else
+	{
+		LOG_WAR << fname << "Failed to get username for UID: " << uid << " with error: " << std::strerror(ret);
+	}
+
+	return "";
 }
 
 void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs)

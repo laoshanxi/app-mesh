@@ -359,7 +359,7 @@ const std::string User::getExecUserOverride() const
 		}
 	}
 	if (executeUser.empty())
-		executeUser = Utility::getOsUserName();
+		executeUser = Utility::getUsernameByUid();
 	return executeUser;
 }
 

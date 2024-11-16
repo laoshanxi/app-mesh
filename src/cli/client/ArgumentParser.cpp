@@ -1135,7 +1135,7 @@ int ArgumentParser::processShell()
 	// Get appmesh user
 	auto appmeshUser = getAuthenUser();
 	// Get current user name
-	auto osUser = Utility::getOsUserName();
+	auto osUser = Utility::getUsernameByUid();
 	// Unique session id as appname
 	APPC_EXEC_APP_NAME = appmeshUser + "_" + osUser + "_" + std::to_string(bashId);
 
@@ -1968,12 +1968,13 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 	// Title:
 	std::cout << std::left;
 	std::cout
-		<< std::setw(5) << Utility::strToupper("id")
+		<< std::setw(4) << Utility::strToupper("id")
 		<< std::setw(NAME_COL_WIDTH) << Utility::strToupper(JSON_KEY_APP_name)
 		<< std::setw(6) << Utility::strToupper(JSON_KEY_APP_owner)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_status)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_health)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
+		<< std::setw(6) << Utility::strToupper("user")	// JSON_KEY_APP_pid_user
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_memory)
 		<< std::setw(5) << std::string("%").append(Utility::strToupper(JSON_KEY_APP_cpu))
 		<< std::setw(7) << Utility::strToupper("return") // JSON_KEY_APP_return
@@ -1994,15 +1995,26 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 			name = reduceFunc(name, NAME_COL_WIDTH);
 		else if (name.length() >= NAME_COL_WIDTH)
 			name += " ";
-		std::cout << std::setw(5) << std::to_string(index++) + ' ';
+		std::cout << std::setw(4) << std::to_string(index++) + ' ';
 		std::cout << std::setw(NAME_COL_WIDTH) << name;
-		std::cout << std::setw(6) << reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
+		std::cout << std::setw(6);
+		{
+			const auto owner = reduceFunc(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner), 6);
+			std::cout << (owner.empty() ? slash : owner.c_str());
+		}
 		std::cout << std::setw(9) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
-		std::cout << std::setw(7) << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health);
+		std::cout << std::setw(7) << ((0 == GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health)) ? "OK" : slash);
 		std::cout << std::setw(8);
 		{
 			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
 				std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);
+			else
+				std::cout << slash;
+		}
+		std::cout << std::setw(6);
+		{
+			if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid_user))
+				std::cout << GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_pid_user);
 			else
 				std::cout << slash;
 		}

@@ -85,7 +85,7 @@ func (dp *DockerProxy) createReverseProxy() *httputil.ReverseProxy {
 		Transport: dp.transport,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Errorf("Proxy error: %v", err)
-			http.Error(w, "Bad Gateway", http.StatusBadGateway)
+			http.Error(w, "Bad Gateway: " + err.Error(), http.StatusBadGateway)
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("Connection")

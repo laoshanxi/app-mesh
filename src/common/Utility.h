@@ -197,7 +197,7 @@ public:
 	// OS related
 	static unsigned long long getThreadId();
 	static bool getUid(std::string userName, unsigned int &uid, unsigned int &groupid);
-	static std::string getOsUserName();
+	static std::string getUsernameByUid(uid_t uid = getuid());
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 	static void applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers);
 
@@ -328,6 +328,7 @@ public:
 
 // runtime attr
 #define JSON_KEY_APP_pid "pid"
+#define JSON_KEY_APP_pid_user "pid_user"
 #define JSON_KEY_APP_return "return_code"
 #define JSON_KEY_APP_id "id"
 #define JSON_KEY_APP_memory "memory"

@@ -323,7 +323,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 
 void Application::refresh(void *ptree)
 {
-
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		if (m_bufferProcess && !m_bufferProcess->running())
@@ -460,13 +459,12 @@ bool Application::onTimerSpawn()
 		}
 
 		// 2. start new process
-		const auto execUser = getExecUser();
+		const auto execUser = (m_shellAppFile == nullptr) ? getExecUser() : std::string(""); // shell app will switch user in script
 		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
 		m_process.reset();
 		m_process = allocProcess(false, m_dockerImage, m_name);
 		m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-		bool sudoSwitchUser = (m_shellAppFile != nullptr && Utility::startWith(m_shellAppFile->getShellStartCmd(), "/usr/bin/sudo"));
-		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE, sudoSwitchUser);
+		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 		if (m_pid.load() > 0)
 			checkProcStdoutFile = m_process;
 
@@ -506,7 +504,6 @@ void Application::disable()
 	// kill process
 	terminate(m_process);
 	nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
-	setInvalidError();
 
 	save();
 }
@@ -560,8 +557,7 @@ std::string Application::runApp(int timeoutSeconds)
 	const auto execUser = getExecUser();
 	LOG_INF << fname << "Running application <" << m_name << "> with timeout <" << timeoutSeconds << "> seconds";
 	m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-	bool sudoSwitchUser = (m_shellAppFile != nullptr && Utility::startWith(m_shellAppFile->getShellStartCmd(), "/usr/bin/sudo"));
-	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE, sudoSwitchUser);
+	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 	// TODO: run app does not call registerCheckStdoutTimer() for now
 	setLastError(m_process->startError());
 	if (m_metricStartCount)
@@ -584,6 +580,11 @@ std::string Application::runApp(int timeoutSeconds)
 const std::string Application::getExecUser() const
 {
 	std::string executeUser;
+
+	// keep agent app follow engine user
+	if (m_name == SEPARATE_AGENT_APP_NAME)
+		return "";
+
 	if (m_owner)
 	{
 		// get correct execute user when Application has user info
@@ -595,7 +596,10 @@ const std::string Application::getExecUser() const
 		executeUser = Configuration::instance()->getDefaultExecUser();
 	}
 	if (executeUser.empty())
-		executeUser = Utility::getOsUserName();
+	{
+		static const auto osUser = Utility::getUsernameByUid();
+		executeUser = osUser;
+	}
 	return executeUser;
 }
 
@@ -747,6 +751,8 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		if (m_process && m_process->running())
 		{
 			result[JSON_KEY_APP_pid] = m_pid.load();
+			result[JSON_KEY_APP_pid_user] = Utility::getUsernameByUid(os::getProcessUid(m_pid.load()));
+
 			auto usage = m_process->getProcessDetails(ptree);
 			if (std::get<0>(usage))
 			{
@@ -754,6 +760,12 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 				result[JSON_KEY_APP_cpu] = (std::get<2>(usage));
 				result[JSON_KEY_APP_open_fd] = (std::get<3>(usage));
 				result[JSON_KEY_APP_pstree] = std::string(std::get<4>(usage));
+				if (m_shellAppFile)
+				{
+					auto leafProcessUser = Utility::getUsernameByUid(os::getProcessUid(std::get<5>(usage)));
+					if (!leafProcessUser.empty())
+						result[JSON_KEY_APP_pid_user] = leafProcessUser;
+				}
 			}
 		}
 		if (m_procStartTime && std::chrono::time_point_cast<std::chrono::hours>(*m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
@@ -1060,23 +1072,25 @@ void Application::setLastError(const std::string &error)
 {
 	const static char fname[] = "Application::setLastError() ";
 
-	if (error != m_lastError.get())
+	auto lockedStr = m_lastError.synchronize();
+	if (error != *lockedStr)
 	{
 		if (error.length())
 		{
-			m_lastError = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
+			*lockedStr = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
 			LOG_DBG << fname << "last error for <" << getName() << ">: " << error;
 		}
 		else
 		{
-			m_lastError = "";
+			*lockedStr = "";
 		}
 	}
 }
 
 const std::string Application::getLastError() const
 {
-	return m_lastError.get();
+	auto lockedStr = m_lastError.synchronize();
+	return *lockedStr;
 }
 
 void Application::setInvalidError()

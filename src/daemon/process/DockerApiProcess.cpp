@@ -27,6 +27,7 @@ DockerApiProcess::~DockerApiProcess()
 	DockerApiProcess::terminate();
 }
 
+// TODO: follow CLI "docker rm -f" to implement stop by REST
 void DockerApiProcess::terminate()
 {
 	const static char fname[] = "DockerApiProcess::terminate() ";
@@ -40,9 +41,15 @@ void DockerApiProcess::terminate()
 	{
 		try
 		{
-			// TODO: ACE_Process::terminate();
+			// POST /containers/{id}/kill
+			auto resp = this->requestDocker(web::http::methods::POST, Utility::stringFormat("/containers/%s/kill", containerId.c_str()), {{"signal", "SIGKILL"}}, {}, nullptr);
+			if (resp->status_code >= web::http::status_codes::BadRequest)
+			{
+				LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
+				ACE_Process::terminate();
+			}
 			// DELETE /containers/{id}?force=true
-			auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}, {"v", "true"}}, {}, nullptr);
+			resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "1"}}, {}, nullptr);
 			if (resp->status_code >= web::http::status_codes::BadRequest)
 			{
 				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp->text << ">";
@@ -57,13 +64,21 @@ void DockerApiProcess::terminate()
 	this->detach();
 }
 
-int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize, bool sudoSwitchUser)
+// TODO: if need pull image, the first process will be docker pull command, the next start container process need to handle
+int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "DockerApiProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";
 
 	// GET /images/{name}/json
-	if (this->requestDocker(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr)->status_code != web::http::status_codes::OK)
+	auto resp = this->requestDocker(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr);
+	// Check REST avialability
+	if (resp->status_code == web::http::status_codes::BadGateway)
+	{
+		LOG_WAR << fname << "request docker wit code:" << resp->status_code << ", message: " << resp->text;
+		return ACE_INVALID_PID;
+	}
+	if (resp->status_code != web::http::status_codes::OK)
 	{
 		// pull docker image
 		return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
@@ -72,7 +87,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	// TODO: ACE_Process::terminate();
 	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerDelete
 	// DELETE /containers/{id}?force=true
-	auto resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}, {"v", "true"}}, {}, nullptr);
+	resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}, {"v", "true"}}, {}, nullptr);
 	if (resp->status_code >= web::http::status_codes::BadRequest)
 	{
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp->text << ">";
@@ -100,15 +115,6 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		createBody["Cmd"] = std::move(array);
 	}
 
-	if (limit != nullptr)
-	{
-		auto hostConfig = nlohmann::json();
-		hostConfig["Memory"] = (limit->m_memoryMb);
-		hostConfig["MemorySwap"] = (limit->m_memoryVirtMb);
-		hostConfig["CpuShares"] = (limit->m_cpuShares);
-		createBody["HostConfig"] = hostConfig;
-	}
-
 	if (m_dockerImage.length())
 		createBody["Image"] = std::string(m_dockerImage);
 	if (workDir.length())
@@ -121,11 +127,20 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		createBody["Env"] = array;
 	}
 
-	createBody["HostConfig"]["AutoRemove"] = true;
-	createBody["HostConfig"]["RestartPolicy"]["Name"] = "no";
+	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig") ? createBody["HostConfig"] : nlohmann::json();
+	if (limit != nullptr)
+	{
+		hostConfig["Memory"] = (limit->m_memoryMb);
+		hostConfig["MemorySwap"] = (limit->m_memoryVirtMb);
+		hostConfig["CpuShares"] = (limit->m_cpuShares);
+	}
+	hostConfig["AutoRemove"] = true;
+	hostConfig["RestartPolicy"]["Name"] = "no";
+
+	createBody["HostConfig"] = hostConfig;
 
 	// POST /containers/create
-	LOG_DBG << fname << "Create Container: " << createBody.dump();
+	LOG_DBG << fname << "Creating Container: " << createBody.dump();
 	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
 	if (resp->status_code == web::http::status_codes::Created)
 	{
@@ -236,11 +251,18 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	header[DOCKER_REQUEST_ID_HEADER] = uuid;
 	header[HMAC_HTTP_HEADER] = HMACVerifierSingleton::instance()->generateHMAC(uuid);
 
+	if (body)
+		LOG_DBG << fname << path << "\n"
+				<< Utility::prettyJson(body->dump());
+
 	std::string errorMsg = std::string("exception caught: ").append(path);
 	auto response = std::make_shared<CurlResponse>();
 	try
 	{
-		return RestClient::request(restURL, mtd, wrapperPath, body, header, query);
+		auto resp = RestClient::request(restURL, mtd, wrapperPath, body, header, query);
+		if (resp->status_code != web::http::status_codes::OK)
+			this->startError(resp->text);
+		return resp;
 	}
 	catch (const std::exception &ex)
 	{

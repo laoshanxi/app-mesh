@@ -302,7 +302,7 @@ bool AppProcess::onTimerCheckStdout()
 	return IS_VALID_TIMER_ID(m_timerCheckStdoutId);
 }
 
-int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize, bool sudoSwitchUser)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
@@ -336,7 +336,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	// option.avoid_zombies(1);
-	if (!user.empty() && user != "root" && !sudoSwitchUser)
+	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
 		if (Utility::getUid(user, uid, gid))
@@ -465,18 +465,21 @@ const std::string AppProcess::startError() const
 	return m_startError;
 }
 
-std::tuple<bool, uint64_t, float, uint64_t, std::string> AppProcess::getProcessDetails(void *ptree)
+std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)
 {
 	auto tree = os::pstree(this->getpid(), ptree);
 
 	auto totalMemory = tree ? tree->totalRssMemBytes() : 0;
 	auto totalFileDescriptors = tree ? tree->totalFileDescriptors() : 0;
 	std::string pstreeStr;
+	pid_t leafPid = ACE_INVALID_PID;
 	if (tree)
 	{
 		std::stringstream ss;
 		ss << *tree;
 		pstreeStr = ss.str();
+
+		leafPid = tree->findLeafPid();
 	}
 
 	// https://stackoverflow.com/questions/1420426/how-to-calculate-the-cpu-usage-of-a-process-by-pid-in-linux-from-c/1424556
@@ -493,7 +496,7 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string> AppProcess::getProcessD
 	}
 	m_lastProcCpuTime = curProcCpuTime;
 	m_lastSysCpuTime = curSysCpuTime;
-	return std::make_tuple(true, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr);
+	return std::make_tuple(true, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr, leafPid);
 }
 
 AttachProcess::AttachProcess(pid_t pid)
