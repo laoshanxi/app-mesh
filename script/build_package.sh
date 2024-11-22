@@ -41,7 +41,7 @@ cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{app*.sh,*.service,prom*.yml,docker*.yam
 cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 cp "${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py" "${PACKAGE_HOME}/bin/"
 cp "${CMAKE_CURRENT_SOURCE_DIR}/script/ssl_cert_generate.sh" /usr/local/bin/{cfssl,cfssljson} "${PACKAGE_HOME}/ssl/"
-cp -r "${CMAKE_CURRENT_SOURCE_DIR}/script/apps" "${PACKAGE_HOME}/script/"
+cp -r "${CMAKE_CURRENT_SOURCE_DIR}/script/apps" "${PACKAGE_HOME}/"
 
 chmod +x "${PACKAGE_HOME}/script/"*.sh
 

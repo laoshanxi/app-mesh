@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cerrno>		// for errno
+#include <cstring>		// for strerror
 #include <ifaddrs.h>	// for getifaddrs
 #include <list>			// for std::list
-#include <memory>		// for unique_ptr
+#include <memory>		// for unique_ptr, shared_ptr
 #include <netinet/in.h> // for internet operations
+#include <set>			// for std::set
 #include <string>		// for string operations
 #include <sys/socket.h> // for socket operations
 #include <sys/types.h>	// for system types
@@ -16,200 +19,292 @@
 
 namespace net
 {
-
-	struct NetInterface
+	/**
+	 * @struct NetworkInterfaceInfo
+	 * @brief Represents a network interface with its properties
+	 */
+	struct NetworkInterfaceInfo
 	{
-		std::string name;
-		bool ipv4;
-		std::string address;
+		std::string name;	 ///< Name of the network interface
+		bool ipv4;			 ///< True if IPv4, false if IPv6
+		std::string address; ///< IP address as string
 	};
 
-	inline struct addrinfo createAddrInfo(int socktype, int family, int flags)
+	/**
+	 * @class AddressInfoDeleter
+	 * @brief RAII wrapper for managing addrinfo structures
+	 */
+	class AddressInfoDeleter
 	{
-		struct addrinfo addr;
-		memset(&addr, 0, sizeof(addr));
-		addr.ai_socktype = socktype;
-		addr.ai_family = family;
-		addr.ai_flags |= flags;
+	public:
+		explicit AddressInfoDeleter(addrinfo *res) : info(res) {}
+		~AddressInfoDeleter()
+		{
+			if (info)
+			{
+				freeaddrinfo(info);
+			}
+		}
 
-		return addr;
+	private:
+		addrinfo *info; ///< Pointer to the managed addrinfo structure
+	};
+
+	/**
+	 * @brief Creates and initializes an addrinfo structure with specified parameters
+	 *
+	 * @param socktype The socket type (e.g., SOCK_STREAM, SOCK_DGRAM)
+	 * @param family Address family (e.g., AF_INET, AF_INET6, AF_UNSPEC)
+	 * @param flags Additional flags for addrinfo (e.g., AI_PASSIVE)
+	 * @return An initialized addrinfo structure
+	 */
+	inline addrinfo createAddressHints(int socktype, int family, int flags)
+	{
+		addrinfo hints = {};
+		hints.ai_flags = flags;
+		hints.ai_family = family;
+		hints.ai_socktype = socktype;
+		hints.ai_protocol = 0;
+		hints.ai_addrlen = 0;
+		hints.ai_addr = nullptr;
+		hints.ai_canonname = nullptr;
+		hints.ai_next = nullptr;
+		return hints;
 	}
 
-	// Returns a Try of the IP for the provided hostname or an error if no IP is
-	// obtained.
-	inline std::shared_ptr<sockaddr> getIP(const std::string &hostname, int family = AF_UNSPEC)
+	/**
+	 * @brief Resolves a hostname to its IP address
+	 *
+	 * @param hostname The hostname to resolve
+	 * @param family Address family (AF_INET, AF_INET6, or AF_UNSPEC)
+	 * @return std::shared_ptr to sockaddr containing the IP address, nullptr on failure
+	 */
+	inline std::shared_ptr<sockaddr> resolveHostAddress(const std::string &hostname, int family = AF_UNSPEC)
 	{
-		const static char fname[] = "net::getIP() ";
+		static const char fname[] = "net::resolveHostAddress() ";
 
-		struct addrinfo hints = createAddrInfo(SOCK_STREAM, family, 0);
-		struct addrinfo *result = nullptr;
+		if (hostname.empty())
+		{
+			LOG_ERR << fname << "Empty hostname provided";
+			return nullptr;
+		}
+
+		if (family != AF_UNSPEC && family != AF_INET && family != AF_INET6)
+		{
+			LOG_ERR << fname << "Invalid address family: " << family;
+			return nullptr;
+		}
+
+		addrinfo hints = createAddressHints(SOCK_STREAM, family, 0);
+		addrinfo *result = nullptr;
 
 		int error = getaddrinfo(hostname.c_str(), nullptr, &hints, &result);
-
 		if (error != 0)
 		{
-			LOG_ERR << fname << "getaddrinfo failed with error :" << std::strerror(errno);
+			LOG_ERR << fname << "Failed to resolve '" << hostname << "': " << gai_strerror(error);
 			return nullptr;
 		}
 
-		if (result->ai_addr == nullptr)
+		AddressInfoDeleter guard(result);
+
+		if (!result || !result->ai_addr)
 		{
-			freeaddrinfo(result);
-			LOG_WAR << fname << "No addresses found";
+			LOG_WAR << fname << "No addresses found for '" << hostname << "'";
 			return nullptr;
 		}
 
-		auto ip = std::make_shared<sockaddr>(*result->ai_addr);
-
-		freeaddrinfo(result);
+		std::shared_ptr<sockaddr> ip(new sockaddr(*result->ai_addr));
 		return ip;
 	}
 
 	/**
-	 * Get hostname with FQDN
-	 * https://stackoverflow.com/questions/504810/how-do-i-find-the-current-machines-full-hostname-in-c-hostname-and-domain-info
-	 * @return {std::string}  :
+	 * @brief Gets the Fully Qualified Domain Name (FQDN) of the host
+	 * @return Host's FQDN, or short hostname if FQDN lookup fails
 	 */
 	inline std::string hostname()
 	{
-		const static char fname[] = "net::hostname() ";
-		char host[512];
-		std::string hostname;
+		static const char fname[] = "net::hostname() ";
+		static const size_t HOST_BUFFER_SIZE = 512;
 
-		if (gethostname(host, sizeof(host)) < 0)
+		std::unique_ptr<char[]> host(new char[HOST_BUFFER_SIZE]());
+		if (gethostname(host.get(), HOST_BUFFER_SIZE) != 0)
 		{
-			LOG_WAR << fname << "Failed to call gethostname()";
+			LOG_ERR << fname << "gethostname failed: " << std::strerror(errno);
+			return std::string();
 		}
 
-		struct addrinfo hints = createAddrInfo(SOCK_STREAM, AF_UNSPEC, AI_CANONNAME);
-		struct addrinfo *result = nullptr;
+		addrinfo hints = createAddressHints(SOCK_STREAM, AF_UNSPEC, AI_CANONNAME);
+		addrinfo *result = nullptr;
 
-		int error = getaddrinfo(host, nullptr, &hints, &result);
+		int error = getaddrinfo(host.get(), nullptr, &hints, &result);
 		if (error != 0)
 		{
-			LOG_ERR << fname << Utility::stringFormat("getaddrinfo() failed with error: %s", gai_strerror(error));
-			hostname = host;
-		}
-		else
-		{
-			hostname = result->ai_canonname;
-		}
-		if (result)
-		{
-			freeaddrinfo(result);
+			LOG_WAR << fname << "getaddrinfo failed: " << gai_strerror(error) << ", falling back to short hostname";
+			return std::string(host.get());
 		}
 
-		return hostname;
+		AddressInfoDeleter guard(result);
+
+		if (!result || !result->ai_canonname)
+		{
+			LOG_WAR << fname << "No canonical name found, falling back to short hostname";
+			return std::string(host.get());
+		}
+
+		return std::string(result->ai_canonname);
 	}
 
-	inline std::string getAddressStr(const struct sockaddr *storage)
+	/**
+	 * @brief Converts a sockaddr structure to a string representation of the address
+	 *
+	 * @param storage Pointer to sockaddr structure containing the address
+	 * @return String representation of the address, empty string on error
+	 */
+	inline std::string sockaddrToString(const struct sockaddr *storage)
 	{
-		const static char fname[] = "net::getAddressStr() ";
+		static const char fname[] = "net::sockaddrToString() ";
 
-		char buffer[NI_MAXHOST] = {0};
+		if (!storage)
+		{
+			LOG_ERR << fname << "Null address storage provided";
+			return std::string();
+		}
+
 		socklen_t length;
-
-		if (storage->sa_family == AF_INET)
+		switch (storage->sa_family)
 		{
+		case AF_INET:
 			length = sizeof(struct sockaddr_in);
-		}
-		else if (storage->sa_family == AF_INET6)
-		{
+			break;
+		case AF_INET6:
 			length = sizeof(struct sockaddr_in6);
-		}
-		else
-		{
-			LOG_WAR << fname << "Unsupported family :" << storage->sa_family;
-			return "";
+			break;
+		default:
+			LOG_WAR << fname << "Unsupported address family: " << storage->sa_family;
+			return std::string();
 		}
 
-		int error = getnameinfo(storage, length, buffer, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+		std::unique_ptr<char[]> buffer(new char[NI_MAXHOST]());
+		int error = getnameinfo(storage, length, buffer.get(), NI_MAXHOST, nullptr, 0, NI_NUMERICHOST);
 
 		if (error != 0)
 		{
-			LOG_ERR << fname << "getnameinfo failed, error :" << std::strerror(errno);
-			return "";
+			LOG_ERR << fname << "getnameinfo failed: " << (error == EAI_SYSTEM ? std::strerror(errno) : gai_strerror(error));
+			return std::string();
 		}
 
-		// remove % from ipv6 address (fe80::bacd:a28c:186c:a9cd%enp0s3)
-		if (storage->sa_family == AF_INET6 && strchr(buffer, '%') > (char *)NULL)
+		std::string result(buffer.get());
+		if (storage->sa_family == AF_INET6)
 		{
-			*(strchr(buffer, '%')) = '\0';
-		}
-
-		return std::string(buffer);
-	}
-
-	// Returns the names of all virtual network devices
-	inline std::set<std::string> virtLinks()
-	{
-		const static char fname[] = "net::virtLinks() ";
-		std::set<std::string> result;
-
-		const fs::path virtNetDir("/sys/devices/virtual/net/");
-
-		try
-		{
-			if (fs::exists(virtNetDir) && ACE_OS::access(virtNetDir.c_str(), R_OK) == 0)
+			size_t percent_pos = result.find('%');
+			if (percent_pos != std::string::npos)
 			{
-				for (const auto &entry : fs::directory_iterator(virtNetDir))
-				{
-					if (boost::filesystem::is_directory(entry))
-					{
-						std::string deviceName = entry.path().filename().string();
-						result.insert(deviceName);
-						LOG_DBG << fname << "virtual network device: " << deviceName;
-					}
-				}
+				result.erase(percent_pos);
 			}
-		}
-		catch (const fs::filesystem_error &ex)
-		{
-			LOG_ERR << fname << "filesystem error: " << ex.what();
 		}
 
 		return result;
 	}
 
-	// Returns the names of all the link devices in the system.
-	inline std::list<NetInterface> links()
+	/**
+	 * @brief Returns the names of all virtual network devices
+	 * @return Set of virtual network device names
+	 */
+	inline std::set<std::string> getVirtualNetworkDevices()
 	{
-		const static char fname[] = "net::links() ";
-		std::list<NetInterface> names;
+		static const char fname[] = "net::getVirtualNetworkDevices() ";
+
+		static const char virtNetPath[] = "/sys/devices/virtual/net/";
+		std::set<std::string> result;
+
+		if (!fs::exists(virtNetPath))
+		{
+			LOG_WAR << fname << "Virtual network directory does not exist: " << virtNetPath;
+			return result;
+		}
+
+		if (ACE_OS::access(virtNetPath, R_OK) != 0)
+		{
+			LOG_ERR << fname << "No read permission for directory: " << virtNetPath << " (errno=" << errno << ": " << std::strerror(errno) << ")";
+			return result;
+		}
+
+		try
+		{
+			for (const auto &entry : fs::directory_iterator(virtNetPath))
+			{
+				if (!fs::is_directory(entry))
+				{
+					continue;
+				}
+
+				std::string deviceName = entry.path().filename().string();
+				result.insert(deviceName);
+				LOG_DBG << fname << "Found virtual network device: " << deviceName;
+			}
+
+			if (result.empty())
+			{
+				LOG_DBG << fname << "No virtual network devices found";
+			}
+			else
+			{
+				LOG_DBG << fname << "Found " << result.size() << " virtual network device(s)";
+			}
+		}
+		catch (const fs::filesystem_error &ex)
+		{
+			LOG_ERR << fname << "Filesystem error while reading " << virtNetPath << ": " << ex.what();
+		}
+		catch (const std::exception &ex)
+		{
+			LOG_ERR << fname << "Unexpected error: " << ex.what();
+		}
+
+		return result;
+	}
+
+	/**
+	 * @brief Retrieves the network link devices (excluding virtual ones) in the system
+	 * @return A list of NetworkInterfaceInfo  objects representing the system's network devices
+	 */
+	inline std::list<NetworkInterfaceInfo> getNetworkLinks()
+	{
+		static const char fname[] = "net::getNetworkLinks() ";
+		std::list<NetworkInterfaceInfo> interfaces;
 
 		struct ifaddrs *ifaddr = nullptr;
 		if (getifaddrs(&ifaddr) == -1)
 		{
 			LOG_ERR << fname << "getifaddrs failed, error: " << std::strerror(errno);
-			return names;
+			return interfaces;
 		}
 
-		// Use RAII to ensure proper cleanup
 		std::unique_ptr<struct ifaddrs, decltype(&freeifaddrs)> ifaddr_guard(ifaddr, freeifaddrs);
 
-		auto virtDevices = virtLinks();
+		std::set<std::string> virtDevices = getVirtualNetworkDevices();
 
 		for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
 		{
-			// Check for null pointers before dereferencing
-			if (ifa->ifa_name == nullptr || ifa->ifa_addr == nullptr)
+			if (!ifa->ifa_name || !ifa->ifa_addr)
 			{
 				continue;
 			}
 
-			// Check address family and virtual device
-			if ((ifa->ifa_addr->sa_family == AF_INET || ifa->ifa_addr->sa_family == AF_INET6) && virtDevices.count(ifa->ifa_name) == 0)
+			if ((ifa->ifa_addr->sa_family == AF_INET ||
+				 ifa->ifa_addr->sa_family == AF_INET6) &&
+				virtDevices.count(ifa->ifa_name) == 0)
 			{
-				NetInterface mi;
-				// Use string constructor to ensure proper string creation
-				mi.name = std::string(ifa->ifa_name);
-				mi.ipv4 = (AF_INET == ifa->ifa_addr->sa_family);
-				mi.address = getAddressStr(ifa->ifa_addr);
-				names.push_back(std::move(mi));
+
+				NetworkInterfaceInfo interface;
+				interface.name = ifa->ifa_name;
+				interface.ipv4 = (AF_INET == ifa->ifa_addr->sa_family);
+				interface.address = sockaddrToString(ifa->ifa_addr);
+				interfaces.push_back(std::move(interface));
 			}
 		}
 
-		return names;
+		return interfaces;
 	}
 
 } // namespace net

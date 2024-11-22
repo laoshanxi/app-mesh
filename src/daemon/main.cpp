@@ -112,10 +112,10 @@ int main(int argc, char *argv[])
 		Utility::createDirectory(shellDir);
 		if (!Configuration::instance()->getDefaultExecUser().empty())
 		{
-			os::chown(tmpDir, Configuration::instance()->getDefaultExecUser(), false);
-			os::chown(outputDir, Configuration::instance()->getDefaultExecUser(), false);
-			os::chown(inputDir, Configuration::instance()->getDefaultExecUser(), false);
-			os::chown(shellDir, Configuration::instance()->getDefaultExecUser(), false);
+			os::chown(tmpDir, Configuration::instance()->getDefaultExecUser());
+			os::chown(outputDir, Configuration::instance()->getDefaultExecUser());
+			os::chown(inputDir, Configuration::instance()->getDefaultExecUser());
+			os::chown(shellDir, Configuration::instance()->getDefaultExecUser());
 		}
 
 		// set log level

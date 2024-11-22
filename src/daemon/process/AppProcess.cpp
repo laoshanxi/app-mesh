@@ -535,7 +535,9 @@ ProcessExitHandler::~ProcessExitHandler()
 int ProcessExitHandler::handle_exit(ACE_Process *process)
 {
 	const static char fname[] = "ProcessExitHandler::handle_exit() ";
-	LOG_INF << fname << "Process <" << process->getpid() << "> exit with code <" << process->return_value() << "> APP_OUT_VIEW_MAP size: " << APP_OUT_VIEW_MAP.current_size();
+	LOG_INF << fname << "Process <" << process->getpid() << "> exited with code <" << process->return_value() << ">"
+			<< (APP_OUT_VIEW_MAP.current_size() > 0 ? " APP_OUT_VIEW_MAP size: " + std::to_string(APP_OUT_VIEW_MAP.current_size()) : "");
+
 	// NOTE: here hold the lock: Process_Manager::instance(), avoid access app lock
 
 	m_exitPid = process->getpid();

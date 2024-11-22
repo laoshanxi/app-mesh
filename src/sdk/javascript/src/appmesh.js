@@ -1,9 +1,4 @@
 // appmesh.js
-const axios = require("axios");
-const https = require("https");
-const base64 = require("base-64");
-const { parse, toSeconds } = require("iso8601-duration");
-const validate_params = require("./validate_params");
 
 const HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
 const HTTP_USER_AGENT = "appmesh/javascript";
@@ -11,14 +6,111 @@ const DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"; // default 7 day(s)
 const DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"; // 2 days
 const DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"; // 2.5 days
 
+// Import dependencies conditionally based on environment
+let axios, https, base64;
+let isNode = typeof window === 'undefined';
+
+if (isNode) {
+  // Node.js environment
+  isNode = true;
+  axios = require('axios');
+  https = require('https');
+  base64 = require('base-64');
+} else {
+  // Browser environment
+  axios = window.axios; // Assuming axios is loaded globally in browser
+  // Create browser-compatible base64 utility
+  base64 = {
+    encode: (str) => btoa(str),
+    decode: (str) => atob(str)
+  };
+}
+
 // Default output handler if none is provided
 const defaultOutputHandler = (output) => {
-  if (typeof process !== "undefined" && process.stdout) {
-    process.stdout.write(output);
+  if (isNode) {
+    process.stdout.write(String(output));
   } else {
     console.log(output);
   }
 };
+
+/**
+ * Parse ISO8601 duration to seconds, supports: P[n]Y[n]M[n]DT[n]H[n]M[n]S or P[n]W
+ * @param {string} {string|number} duration - ISO8601 duration string or number of seconds (e.g., "P1Y2M3DT4H5M6S").
+ * @returns {number} The total duration in seconds.
+ * @throws {RangeError} If the duration string is invalid.
+ */
+function parseDuration(duration) {
+  // If duration is already a number, return it
+  if (typeof duration === "number") {
+    return duration;
+  }
+
+  if (typeof duration !== 'string') {
+    throw new Error("Invalid input type. Expected number or ISO 8601 duration string.");
+  }
+
+  // Handle empty string
+  if (!duration.trim()) {
+    throw new Error('Duration string cannot be empty');
+  }
+
+  // Check if string starts with P (mandatory for ISO8601)
+  if (!duration.startsWith('P')) {
+    throw new Error('Invalid ISO8601 duration: must start with P');
+  }
+
+  // Define the regular expression pattern for matching ISO8601 duration format.
+  const numbers = "\\d+";
+  const fractionalNumbers = `${numbers}(?:[\\.,]${numbers})?`;
+  const datePattern = `(${numbers}Y)?(${numbers}M)?(${numbers}W)?(${numbers}D)?`;
+  const timePattern = `T(${fractionalNumbers}H)?(${fractionalNumbers}M)?(${fractionalNumbers}S)?`;
+  const iso8601 = `P(?:${datePattern}(?:${timePattern})?)`;
+  const objMap = [
+    "years", "months", "weeks", "days", "hours", "minutes", "seconds",
+  ];
+
+  // Parse the duration string using the regex pattern.
+  const matches = duration.replace(/,/g, ".").match(new RegExp(iso8601));
+  if (!matches) {
+    throw new RangeError("invalid duration: " + duration);
+  }
+
+  // Slice away the first match (the full matched string).
+  const slicedMatches = matches.slice(1);
+
+  // If there are no valid matches, throw an error.
+  if (slicedMatches.filter(v => v != null).length === 0) {
+    throw new RangeError("invalid duration: " + duration);
+  }
+
+  // Check if only one fractional unit is used (for example, no fractional seconds allowed alongside minutes).
+  if (slicedMatches.filter(v => /\./.test(v || "")).length > 1) {
+    throw new RangeError("only the smallest unit can be fractional");
+  }
+
+  // Reduce the parsed duration into an object of units.
+  const durationObject = slicedMatches.reduce((prev, next, idx) => {
+    prev[objMap[idx]] = parseFloat(next || "0") || 0;
+    return prev;
+  }, {});
+
+  // Convert the parsed duration object into total seconds.
+  let seconds = 0;
+
+  // Convert years, months, weeks, and days into seconds.
+  seconds += durationObject.years * 31536000; // 365 days * 24 hours * 60 minutes * 60 seconds
+  seconds += durationObject.months * 2592000; // 30 days * 24 hours * 60 minutes * 60 seconds (approximate)
+  seconds += durationObject.weeks * 604800; // 7 days * 24 hours * 60 minutes * 60 seconds
+  // Convert hours, minutes, and seconds into seconds.
+  seconds += durationObject.days * 86400;  // 24 hours * 60 minutes * 60 seconds
+  seconds += durationObject.hours * 3600; // 60 minutes * 60 seconds
+  seconds += durationObject.minutes * 60;
+  seconds += durationObject.seconds;
+
+  return seconds;
+}
 
 class AppMeshClient {
   /**
@@ -48,14 +140,18 @@ class AppMeshClient {
      * @property {string|null} forwardingHost - The host to forward requests to, if any. Initially null.
      */
     this.forwardingHost = null;
+
+    const axiosConfig = {
+      baseURL,
+      httpsAgent: sslConfig ?
+        (isNode ? new https.Agent(sslConfig) : null) :
+        (isNode ? new https.Agent({ rejectUnauthorized: false }) : null)
+    };
     /**
      * @property {AxiosInstance} _client - Axios instance for making HTTP requests.
      * Configured with the base URL and custom HTTPS agent for SSL verification.
      */
-    this._client = axios.create({
-      baseURL,
-      httpsAgent: sslConfig ? new https.Agent(sslConfig) : new https.Agent({ rejectUnauthorized: false }),
-    });
+    this._client = axios.create(axiosConfig);
   }
 
   /**
@@ -70,31 +166,16 @@ class AppMeshClient {
    * @returns {Promise<string>} A promise that resolves to the JWT token if login is successful.
    * @throws {Error} If the login fails or if there's a network error.
    */
-  @validate_params({
-    username: [["isValidName", "User name must be a non-empty string"]],
-    password: [["isValidString", "User password must be a non-empty string"]],
-    totpCode: [
-      ["isTOTP", "TOTP code must be a 6-digit string or number"],
-      ["isOptional", "TOTP is optional"],
-    ],
-    expireSeconds: [["isTimeoutValue", "expireSeconds must be a positive number or a valid ISO 8601 duration string"]],
-  })
   async login(username, password, totpCode = null, expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const auth = base64.encode(`${username}:${password}`);
     const headers = { Authorization: `Basic ${auth}` };
-    if (totpCode) {
-      headers["Totp"] = totpCode;
-    }
-    if (expireSeconds) {
-      headers["Expire-Seconds"] = this._toSeconds(expireSeconds);
-    }
+    if (totpCode) headers["Totp"] = totpCode;
+    if (expireSeconds) headers["Expire-Seconds"] = parseDuration(expireSeconds);
 
     try {
       this._jwtToken = null;
-      const response = await this._request("post", "/appmesh/login", null, { headers: headers });
-      if (response.status !== 200) {
-        throw new Error(response.data);
-      }
+      const response = await this._request("post", "/appmesh/login", null, { headers });
+      if (response.status !== 200) throw new Error(response.data);
       this._jwtToken = response.data["Access-Token"];
       return this._jwtToken;
     } catch (error) {
@@ -111,20 +192,13 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if authentication is successful, false otherwise.
    * @throws {Error} If there's a network error or other issues during authentication.
    */
-  @validate_params({
-    token: [["isValidName", "Token must be a non-empty string"]],
-    permission: [
-      ["permission", "Permission must be a non-empty string"],
-      ["isOptional", "Permission is optional"],
-    ],
-  })
   async authentication(token, permission = null) {
     const headers = {};
     if (permission) {
       headers["Auth-Permission"] = permission;
     }
     this._jwtToken = token;
-    const response = await this._request("post", "/appmesh/auth", null, { headers: headers });
+    const response = await this._request("post", "/appmesh/auth", null, { headers });
     return response.status === 200;
   }
 
@@ -149,13 +223,12 @@ class AppMeshClient {
    * @returns {Promise<string>} A promise that resolves to the new JWT token if renewal is successful.
    * @throws {Error} If token renewal fails or if there's a network error.
    */
-  @validate_params({ expireSeconds: [["isTimeoutValue", "expireSeconds must be a positive number or a valid ISO 8601 duration string"]] })
   async renew(expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS) {
-    const headers = { "New-Password": base64.encode(newPassword) };
+    const headers = {};
     if (expireSeconds) {
-      headers["Expire-Seconds"] = this._toSeconds(expireSeconds);
+      headers["Expire-Seconds"] = parseDuration(expireSeconds);
     }
-    const response = await this._request("post", "/appmesh/token/renew", null, { headers: headers });
+    const response = await this._request("post", "/appmesh/token/renew", null, { headers });
     this._jwtToken = response.data["Access-Token"];
     return this._jwtToken;
   }
@@ -180,10 +253,9 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if setup is successful.
    * @throws {Error} If setup fails or if there's a network error.
    */
-  @validate_params({ totpCode: [["isTOTP", "TOTP code must be a 6-digit string or number"]] })
   async totp_setup(totpCode) {
     const headers = { Totp: totpCode };
-    const response = await this._request("post", "/appmesh/totp/setup", null, { headers: headers });
+    const response = await this._request("post", "/appmesh/totp/setup", null, { headers });
     return response.status === 200;
   }
 
@@ -195,7 +267,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if TOTP is successfully disabled.
    * @throws {Error} If disabling fails or if there's a network error.
    */
-  @validate_params({ user: [["isValidName", "User name must be a non-empty string"]] })
   async totp_disable(user = "self") {
     const response = await this._request("post", `/appmesh/totp/${user}/disable`);
     return response.status === 200;
@@ -221,7 +292,6 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to an object containing information about the specified application.
    * @throws {Error} If there's a network error or other issues during retrieval.
    */
-  @validate_params({ name: [["isValidName", "Application name must be a non-empty string"]] })
   async app_view(name) {
     const response = await this._request("get", `/appmesh/app/${name}`);
     return response.data;
@@ -235,7 +305,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the application is healthy, false otherwise.
    * @throws {Error} If there's a network error or other issues during the health check.
    */
-  @validate_params({ name: [["isValidName", "Application name must be a non-empty string"]] })
   async app_health(name) {
     const response = await this._request("get", `/appmesh/app/${name}/health`);
     return response.data === "0";
@@ -286,10 +355,6 @@ class AppMeshClient {
    * @returns {Promise<Object>} The resigtered application json object.
    * @throws {Error} If there's a network error or other issues during the operation.
    */
-  @validate_params({
-    name: [["isValidName", "Application name must be a non-empty string"]],
-    appJson: [["isObject", "Application definition must be an object"]],
-  })
   async app_add(name, appJson) {
     const response = await this._request("put", `/appmesh/app/${name}`, appJson);
     return response.data;
@@ -303,7 +368,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the deletion is successful.
    * @throws {Error} If there's a network error or other issues during the deletion.
    */
-  @validate_params({ name: [["isValidName", "Application name must be a non-empty string"]] })
   async app_delete(name) {
     const response = await this._request("delete", `/appmesh/app/${name}`);
     return response.status === 200;
@@ -317,7 +381,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the application is successfully enabled.
    * @throws {Error} If there's a network error or other issues during the operation.
    */
-  @validate_params({ name: [["isValidName", "Application name must be a non-empty string"]] })
   async app_enable(name) {
     const response = await this._request("post", `/appmesh/app/${name}/enable`);
     return response.status === 200;
@@ -331,7 +394,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the application is successfully disabled, false if not found.
    * @throws {Error} If there's a network error or other issues during the operation.
    */
-  @validate_params({ name: [["isValidName", "Application name must be a non-empty string"]] })
   async app_disable(name) {
     const response = await this._request("post", `/appmesh/app/${name}/disable`);
     return response.status === 200;
@@ -350,24 +412,17 @@ class AppMeshClient {
    * @returns {Promise<AppOutput>} A promise that resolves to an AppOutput object containing the application's output.
    * @throws {Error} If there's a network error or other issues during retrieval.
    */
-  @validate_params({
-    name: [["isValidName", "Application name must be a non-empty string"]],
-    stdout_position: [["isNumber", "stdout_position must be a positive number"]],
-    stdout_index: [["isNumber", "stdout_index must be a positive number"]],
-    stdout_maxsize: [["isNumber", "stdout_maxsize must be a positive number"]],
-    process_uuid: [["isString", "process_uuid must be a non-empty string"]],
-    timeout: [["isTimeoutValue", "timeout must be a positive number or a valid ISO 8601 duration string"]],
-  })
   async app_output(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240, process_uuid = "", timeout = 0) {
     try {
-      const params = {};
-      params.stdout_position = stdout_position.toString();
-      params.stdout_index = stdout_index.toString();
-      params.stdout_maxsize = stdout_maxsize.toString();
-      params.process_uuid = process_uuid;
-      params.timeout = this._toSeconds(timeout);
+      const params = {
+        stdout_position: stdout_position.toString(),
+        stdout_index: stdout_index.toString(),
+        stdout_maxsize: stdout_maxsize.toString(),
+        process_uuid: process_uuid,
+        timeout: parseDuration(timeout)
+      };
 
-      const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params: params });
+      const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
       const outPosition = response.headers["output-position"] ? parseInt(response.headers["output-position"]) : null;
       const exitCode = response.headers["exit-code"] ? parseInt(response.headers["exit-code"]) : null;
       return new AppOutput(response.status, response.data, outPosition, exitCode);
@@ -387,22 +442,16 @@ class AppMeshClient {
    * @returns {Promise<number|null>} A promise that resolves to the exit code of the application, or null if not available.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  @validate_params({
-    app: [["isObject", "Application definition must be an object"]],
-    outputHandler: [["isFunction", "outputHandler must be a function used to accept output string"]],
-    maxTimeSeconds: [["isTimeoutValue", "maxTimeSeconds must be a positive number or a valid ISO 8601 duration string"]],
-    lifeCycleSeconds: [["isTimeoutValue", "lifeCycleSeconds must be a positive number or a valid ISO 8601 duration string"]],
-  })
-  async run_sync(
-    app,
-    outputHandler = defaultOutputHandler,
-    maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-    lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS
-  ) {
-    const params = { timeout: this._toSeconds(maxTimeSeconds), lifecycle: this._toSeconds(lifeCycleSeconds) };
+  async run_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+    const params = {
+      timeout: parseDuration(maxTimeSeconds),
+      lifecycle: parseDuration(lifeCycleSeconds)
+    };
+
     try {
-      const response = await this._request("post", "/appmesh/app/syncrun", app, { params: params });
+      const response = await this._request("post", "/appmesh/app/syncrun", app, { params });
       let exitCode = null;
+
       if (response.status === 200) {
         if (outputHandler) {
           outputHandler(response.data);
@@ -413,6 +462,7 @@ class AppMeshClient {
       } else if (outputHandler) {
         outputHandler(response.data);
       }
+
       return exitCode;
     } catch (error) {
       console.error(error);
@@ -430,15 +480,13 @@ class AppMeshClient {
    * @returns {Promise<AppRun>} A promise that resolves to an AppRun object representing the running application.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  @validate_params({
-    app: [["isObject", "Application definition must be an object"]],
-    maxTimeSeconds: [["isTimeoutValue", "maxTimeSeconds must be a positive number or a valid ISO 8601 duration string"]],
-    lifeCycleSeconds: [["isTimeoutValue", "lifeCycleSeconds must be a positive number or a valid ISO 8601 duration string"]],
-  })
   async run_async(app, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
-    const params = { timeout: this._toSeconds(maxTimeSeconds), lifecycle: this._toSeconds(lifeCycleSeconds) };
+    const params = {
+      timeout: parseDuration(maxTimeSeconds),
+      lifecycle: parseDuration(lifeCycleSeconds)
+    };
 
-    const response = await this._request("post", "/appmesh/app/run", app, { params: params });
+    const response = await this._request("post", "/appmesh/app/run", app, { params });
     return new AppRun(this, response.data.name, response.data.process_uuid);
   }
 
@@ -508,9 +556,9 @@ class AppMeshClient {
     try {
       const headers = { "File-Path": filePath };
       const response = await this._request("get", "/appmesh/file/download", null, {
-        headers: headers,
+        headers,
         config: {
-          responseType: "arraybuffer", // This is crucial for binary files
+          responseType: "arraybuffer",
         },
       });
 
@@ -518,8 +566,7 @@ class AppMeshClient {
         throw new Error(new TextDecoder().decode(response.data));
       }
 
-      if (typeof window === "undefined") {
-        // Node.js environment
+      if (isNode) {
         const fs = require("fs").promises;
         await fs.writeFile(localFile, Buffer.from(response.data));
 
@@ -529,23 +576,24 @@ class AppMeshClient {
           }
 
           if (response.headers["file-user"] && response.headers["file-group"]) {
-            const fileUid = parseInt(response.headers["file-user"]);
-            const fileGid = parseInt(response.headers["file-group"]);
             try {
-              await fs.chown(localFile, fileUid, fileGid);
+              await fs.chown(
+                localFile,
+                parseInt(response.headers["file-user"]),
+                parseInt(response.headers["file-group"])
+              );
             } catch (ex) {
               console.log("Failed to change file ownership:", ex);
             }
           }
         }
       } else {
-        // Web browser environment
-        const blob = new Blob([response.data]); // response.data is already an ArrayBuffer
+        const blob = new Blob([response.data]);
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.style.display = "none";
         a.href = url;
-        a.download = localFile.split("/").pop(); // Use just the filename
+        a.download = localFile.split("/").pop();
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -574,8 +622,7 @@ class AppMeshClient {
       headers["File-Path"] = filePath;
       let formData;
 
-      if (typeof window === "undefined") {
-        // Node.js environment
+      if (isNode) {
         const fs = require("fs");
         const path = require("path");
         const FormData = require("form-data");
@@ -603,18 +650,15 @@ class AppMeshClient {
         // When using form-data, we need to set the content type manually for Axios
         headers["Content-Type"] = `multipart/form-data; boundary=${formData.getBoundary()}`;
       } else {
-        // Web browser environment
         formData = new FormData();
         formData.append("filename", filePath.split("/").pop());
         formData.append("file", localFile instanceof File ? localFile : new File([localFile], filePath.split("/").pop()));
-
-        // In browser, Axios will set the correct Content-Type header automatically
       }
 
       const response = await this._request("post", "/appmesh/file/upload", formData, {
-        headers: headers,
+        headers,
         config: {
-          maxBodyLength: Infinity, // Allow for large file uploads
+          maxBodyLength: Infinity,
           maxContentLength: Infinity,
         },
       });
@@ -662,7 +706,6 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to the updated configuration JSON.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ configJsonSection: [["isObject", "Configuration definition must be an object"]] })
   async config_set(configJsonSection) {
     const response = await this._request("post", "/appmesh/config", configJsonSection);
     return response.data;
@@ -690,7 +733,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the label was added successfully, false otherwise.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ tagName: [["isValidName", "Tag name must be a non-empty string"]] })
   async tag_add(tagName, tagValue) {
     const response = await this._request("put", `/appmesh/label/${tagName}`, null, { params: { value: tagValue } });
     return response.status === 200;
@@ -704,7 +746,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the label was deleted successfully, false otherwise.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ tagName: [["isValidName", "Tag name must be a non-empty string"]] })
   async tag_delete(tagName) {
     const response = await this._request("delete", `/appmesh/label/${tagName}`);
     return response.status === 200;
@@ -731,10 +772,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the password was updated successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({
-    newPassword: [["isValidString", "New password must be a non-empty string"]],
-    userName: [["isValidName", "User name must be a non-empty string"]],
-  })
   async user_passwd_update(newPassword, userName = "self") {
     const headers = { "New-Password": base64.encode(newPassword) };
     const response = await this._request("post", `/appmesh/user/${userName}/passwd`, null, { headers });
@@ -750,7 +787,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was added successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ userName: [["isValidName", "User name must be a non-empty string"]] })
   async user_add(userName, userJson) {
     const response = await this._request("put", `/appmesh/user/${userName}`, userJson);
     return response.status === 200;
@@ -764,7 +800,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was deleted successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ userName: [["isValidName", "User name must be a non-empty string"]] })
   async user_delete(userName) {
     const response = await this._request("delete", `/appmesh/user/${userName}`);
     return response.status === 200;
@@ -778,7 +813,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was locked successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ userName: [["isValidName", "User name must be a non-empty string"]] })
   async user_lock(userName) {
     const response = await this._request("post", `/appmesh/user/${userName}/lock`);
     return response.status === 200;
@@ -792,7 +826,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was unlocked successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ userName: [["isValidName", "User name must be a non-empty string"]] })
   async user_unlock(userName) {
     const response = await this._request("post", `/appmesh/user/${userName}/unlock`);
     return response.status === 200;
@@ -879,7 +912,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the role was updated successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ roleName: [["isValidName", "Role name must be a non-empty string"]] })
   async role_update(roleName, rolePermissionJson) {
     const response = await this._request("post", `/appmesh/role/${roleName}`, rolePermissionJson);
     return response.status === 200;
@@ -893,7 +925,6 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the role was deleted successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  @validate_params({ roleName: [["isValidName", "Role name must be a non-empty string"]] })
   async role_delete(roleName) {
     const response = await this._request("delete", `/appmesh/role/${roleName}`);
     return response.status === 200;
@@ -910,14 +941,12 @@ class AppMeshClient {
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
   async metrics() {
-    // TODO: metric no need auth key
     const response = await this._request("get", "/appmesh/metrics", { responseType: "text" });
     return response.data;
   }
 
-  // Common function to create headers
   _commonHeaders() {
-    const headers = { HTTP_USER_AGENT_HEADER_NAME: HTTP_USER_AGENT };
+    const headers = { [HTTP_USER_AGENT_HEADER_NAME]: HTTP_USER_AGENT };
     if (this._jwtToken) {
       headers["Authorization"] = `Bearer ${this._jwtToken}`;
     }
@@ -930,21 +959,6 @@ class AppMeshClient {
       }
     }
     return headers;
-  }
-
-  _toSeconds(input) {
-    if (typeof input === "number") {
-      return input;
-    }
-
-    if (typeof input === "string") {
-      try {
-        return toSeconds(parse(input));
-      } catch (error) {
-        throw new Error("Invalid ISO 8601 duration string");
-      }
-    }
-    throw new Error("Invalid input type. Expected number or ISO 8601 duration string.");
   }
 
   /**
@@ -965,13 +979,13 @@ class AppMeshClient {
     const { headers = {}, params = {}, config = {} } = options;
 
     try {
-      let response;
       const mergedConfig = {
         ...config,
         headers: { ...this._commonHeaders(), ...headers },
         params: { ...params },
       };
 
+      let response;
       switch (method.toLowerCase()) {
         case "get":
         case "delete":
@@ -992,7 +1006,6 @@ class AppMeshClient {
     }
   }
 
-  // Error handling
   _handleError(error) {
     if (error.response) {
       const { status, data } = error.response;
@@ -1080,8 +1093,17 @@ class AppRun {
    * @returns {Promise<number|null>} Return exit code if process finished, return null for timeout or exception
    */
   async wait(outputHandler = defaultOutputHandler, timeout = 0) {
-    return this.withForwardingHost(() => this._client.run_async_wait(this, outputHandler, timeout));
+    return this.withForwardingHost(() =>
+      this._client.run_async_wait(this, outputHandler, timeout)
+    );
   }
 }
 
-module.exports = { AppMeshClient, AppOutput, AppRun };
+// Export based on environment
+if (isNode) {
+  module.exports = { AppMeshClient, AppOutput, AppRun };
+} else {
+  window.AppMeshClient = AppMeshClient;
+  window.AppOutput = AppOutput;
+  window.AppRun = AppRun;
+}

@@ -40,7 +40,8 @@ async function userTest() {
 
     appmesh.run_sync({
       name: "pyrun",
-      metadata: "import os; [os.remove('/tmp/2.log') if os.path.exists('/tmp/2.log') else None]",
+      metadata:
+        "import os; [os.remove('/tmp/2.log') if os.path.exists('/tmp/2.log') else None]",
     });
     const fs = require("fs").promises;
     try {

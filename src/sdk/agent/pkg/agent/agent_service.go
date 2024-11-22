@@ -20,6 +20,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/grafana"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -421,7 +422,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePa
 		return fmt.Errorf("invalid file name")
 	}
 
-	if err := saveHttpFile(w, r, filePath); err != nil {
+	if err := saveUploadedFile(w, r, filePath); err != nil {
 		return fmt.Errorf("save file failed with error: %w", err)
 	}
 
@@ -443,32 +444,65 @@ func setDownloadHeaders(w http.ResponseWriter, fileName string) {
 	w.Header().Set("Pragma", "public")
 }
 
-// https://freshman.tech/file-upload-golang/
-// saveHttpFile saves an uploaded file to the specified file path.
-func saveHttpFile(w http.ResponseWriter, r *http.Request, filePath string) error {
-	logger.Debugf("Saving file: %s", filePath)
-
-	// Limit the size of the incoming request body to prevent DoS attacks.
-	maxFileSize := int64(2) * 1024 * 1024 * 1024 // MaxFileSize is the maximum allowed file size (2GB)
-	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
-
-	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
-		// Handle Multipart upload
-		if err := r.ParseMultipartForm(10 << 20); err != nil {
-			return fmt.Errorf("error parsing multipart form: %w", err)
-		}
-
-		file, _, err := r.FormFile("file")
-		if err != nil {
-			return fmt.Errorf("error retrieving file from form: %w", err)
-		}
-		defer file.Close()
-
-		logger.Debugf("SaveMultipartFile: %s", filePath)
-		return utils.SaveStreamToFile(file, filePath)
+// saveUploadedFile saves an uploaded file directly to the specified path without creating temp files.
+// It supports both multipart/form-data and direct body uploads.
+func saveUploadedFile(w http.ResponseWriter, r *http.Request, filePath string) error {
+	if filePath == "" {
+		return errors.New("file path cannot be empty")
 	}
 
-	// Handle non-multipart uploads (plain file uploads)
-	logger.Debugf("SaveFile: %s", filePath)
-	return utils.SaveStreamToFile(r.Body, filePath)
+	maxFileSize := int64(2) << 30 // 2GB in bytes
+	bufferSize := 32 * 1024       // 32KB chunks for buffered copying
+
+	// Create the destination file with proper permissions
+	dst, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer dst.Close()
+
+	// Limit the size of the incoming request body
+	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
+
+	var src io.ReadCloser
+
+	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+		// Handle multipart upload without creating a temp file
+		mr, err := r.MultipartReader()
+		if err != nil {
+			return fmt.Errorf("failed to create multipart reader: %w", err)
+		}
+
+		// Find the file part
+		for {
+			part, err := mr.NextPart()
+			if err == io.EOF {
+				return errors.New("file part not found in multipart form")
+			}
+			if err != nil {
+				return fmt.Errorf("failed to read multipart form: %w", err)
+			}
+
+			if part.FormName() == "file" {
+				src = part
+				break
+			}
+			part.Close()
+		}
+	} else {
+		// Handle direct body upload
+		src = r.Body
+	}
+	defer src.Close()
+
+	// Use io.CopyBuffer for efficient streaming with a fixed-size buffer
+	buf := make([]byte, bufferSize)
+	if _, err := io.CopyBuffer(dst, src, buf); err != nil {
+		// In case of error, attempt to remove the partially written file
+		dst.Close()
+		os.Remove(filePath)
+		return fmt.Errorf("failed to copy file data: %w", err)
+	}
+
+	return nil
 }

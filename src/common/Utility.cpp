@@ -32,13 +32,7 @@
 
 const char *GET_STATUS_STR(unsigned int status)
 {
-	static const char *STATUS_STR[] =
-		{
-			"disabled",
-			"enabled",
-			"N/A",
-			"init",
-			"fini"};
+	static const char *STATUS_STR[] = {"disabled", "enabled", "N/A"};
 	assert(status < ARRAY_LEN(STATUS_STR));
 	return STATUS_STR[status];
 };
@@ -786,8 +780,16 @@ std::string Utility::humanReadableDuration(const std::chrono::system_clock::time
 	return result;
 }
 
-bool Utility::getUid(std::string userName, unsigned int &uid, unsigned int &groupid)
+bool Utility::getUid(const std::string &userName, unsigned int &uid, unsigned int &groupid)
 {
+	const static char fname[] = "Utility::getUid() ";
+
+	if (userName.empty())
+	{
+		LOG_ERR << fname << "Empty username provided";
+		return false;
+	}
+
 	bool rt = false;
 	struct passwd pwd;
 	struct passwd *result = NULL;
@@ -876,9 +878,9 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 		if (headers.count(HTTP_HEADER_KEY_file_mode))
 			os::fileChmod(file, std::stoi(headers.find(HTTP_HEADER_KEY_file_mode)->second));
 		if (headers.count(HTTP_HEADER_KEY_file_user) && headers.count(HTTP_HEADER_KEY_file_group))
-			os::chown(std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
-					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second),
-					  file, false);
+			os::chown(file,
+					  std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
+					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second));
 	}
 }
 

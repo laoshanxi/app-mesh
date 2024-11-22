@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "src/sdk/javascript/**"
-      - .github/workflows/release-npm-package.yml
+      - ".github/workflows/release-npm-package.yml"
 
 permissions:
   contents: read
@@ -33,10 +33,6 @@ jobs:
       - name: Install dependencies
         working-directory: "src/sdk/javascript/"
         run: npm install
-
-      - name: Build project
-        working-directory: "src/sdk/javascript/"
-        run: npm run build
 
       - name: Publish to npm
         env:
