@@ -459,7 +459,7 @@ bool Application::onTimerSpawn()
 		}
 
 		// 2. start new process
-		const auto execUser = (m_shellAppFile == nullptr) ? getExecUser() : std::string(""); // shell app will switch user in script
+		const auto execUser = (m_shellAppFile) ? std::string("") : getExecUser(); // shell app will switch user in script
 		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
 		m_process.reset();
 		m_process = allocProcess(false, m_dockerImage, m_name);
@@ -605,7 +605,7 @@ const std::string Application::getExecUser() const
 
 const std::string &Application::getCmdLine() const
 {
-	if (m_shellAppFile != nullptr)
+	if (m_shellAppFile)
 		return m_shellAppFile->getShellStartCmd();
 	return m_commandLine;
 }
@@ -763,7 +763,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 				if (m_shellAppFile)
 				{
 					auto leafProcessUser = Utility::getUsernameByUid(os::getProcessUid(std::get<5>(usage)));
-					if (!leafProcessUser.empty())
+					if (leafProcessUser.length())
 						result[JSON_KEY_APP_pid_user] = leafProcessUser;
 				}
 			}

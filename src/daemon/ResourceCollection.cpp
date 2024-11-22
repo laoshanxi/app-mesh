@@ -37,8 +37,7 @@ const std::string ResourceCollection::getHostName(bool refresh)
 
 const HostResource &ResourceCollection::getHostResource()
 {
-
-	auto nets = net::links();
+	auto nets = net::getNetworkLinks();
 	bool isDocker = Utility::runningInContainer();
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);

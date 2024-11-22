@@ -196,7 +196,7 @@ public:
 
 	// OS related
 	static unsigned long long getThreadId();
-	static bool getUid(std::string userName, unsigned int &uid, unsigned int &groupid);
+	static bool getUid(const std::string &userName, unsigned int &uid, unsigned int &groupid);
 	static std::string getUsernameByUid(uid_t uid = getuid());
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 	static void applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers);
