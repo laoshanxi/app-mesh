@@ -1,7 +1,9 @@
-#ifdef __GNUC__
+#if defined(__linux__)
+#if defined(__GNUC__)
 #include <features.h>
 #if __GNUC_PREREQ(5, 4)
 #include <wildcards/wildcards.hpp>
+#endif
 #endif
 #endif
 #include <ace/OS_NS_sys_utsname.h>
@@ -104,9 +106,14 @@ bool Label::match(const std::shared_ptr<Label> &condition) const
 	{
 		const auto &key = la.first;
 		const auto &val = la.second;
+
+#if defined(__linux__)
 #if __GNUC_PREREQ(5, 4)
 		// support wildcards for gcc version upper than 5.4
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val || wildcards::make_matcher(val).matches(m_labels.find(key)->second))))
+#else
+		if (!(m_labels.count(key) && (m_labels.find(key)->second == val)))
+#endif
 #else
 		if (!(m_labels.count(key) && (m_labels.find(key)->second == val)))
 #endif

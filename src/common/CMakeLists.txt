@@ -10,7 +10,7 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 ##########################################################################
 target_link_libraries(common
   PRIVATE
-    curlpp ${CURL_LIB} z # nghttp2
+    ${CURL_LIB} z # nghttp2
     ACE
     ACE_SSL
     log4cpp

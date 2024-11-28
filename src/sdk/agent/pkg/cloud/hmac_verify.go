@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -59,9 +61,16 @@ func readPSKFromSHM() ([]byte, error) {
 		return nil, errNoSHMName
 	}
 	os.Unsetenv(pskSHMEnv)
-	logger.Infof("Reading SHM_NAME: %s", shmName)
 
-	fd, err := syscall.Open("/dev/shm"+shmName, syscall.O_RDWR, 0666)
+	if runtime.GOOS == "darwin" {
+		shmName = path.Join("/private/tmp", shmName)
+	} else {
+		shmName = path.Join("/dev/shm", shmName)
+	}
+
+	logger.Infof("Reading SHM_NAME: %s on %s", shmName, runtime.GOOS)
+
+	fd, err := syscall.Open(shmName, syscall.O_RDWR, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open shared memory: %w", err)
 	}

@@ -22,7 +22,6 @@ set -u # Exit on undefined variables
 export PROG_HOME=${PROG_HOME:-"/opt/appmesh"}
 export PROG=${PROG:-"${PROG_HOME}/bin/appsvc"}
 export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/appmesh-entrypoint.sh"}
-export LD_LIBRARY_PATH="${PROG_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 
 # Constants
 readonly TIMEOUT_SECONDS=10                    # Desired timeout in seconds

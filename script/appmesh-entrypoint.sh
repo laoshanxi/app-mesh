@@ -129,10 +129,8 @@ start_service_loop() {
 		"$PROGRAM"
 		local exit_status=$?
 
-		if [ $exit_status -ne 0 ]; then
-			log "WARNING" "App Mesh service exited with status: $exit_status"
-			sleep 2
-		fi
+		log "WARNING" "App Mesh service exited with status: $exit_status"
+		sleep 3
 	done
 }
 

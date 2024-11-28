@@ -11,7 +11,7 @@ The general way build all dependencies on local Linux host, this will build all 
 ```shell
 $ git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
 $ sudo bash app-mesh/script/openssl_update.sh
-$ sudo bash app-mesh/autogen.sh
+$ sudo bash app-mesh/script/setup-build-env/autogen.sh
 # clean
 $ rm -rf app-mesh dep
 ```

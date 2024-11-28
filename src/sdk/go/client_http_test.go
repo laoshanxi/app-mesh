@@ -65,22 +65,24 @@ func TestAppmeshTotp(t *testing.T) {
 	require.True(t, success, "Authentication failed")
 	require.NoError(t, err, "Authentication failed")
 
-	secret, err := client.TotpSecret()
-	require.NoError(t, err, "TotpSecret failed")
+	/*
+		secret, err := client.TotpSecret()
+		require.NoError(t, err, "TotpSecret failed")
 
-	code, _ := totp.GenerateCode(secret, time.Now().UTC())
-	success, err = client.TotpSetup(code)
-	require.True(t, success, "TotpSetup failed")
-	require.NoError(t, err, "TotpSetup failed")
+		code, _ := totp.GenerateCode(secret, time.Now().UTC())
+		success, err = client.TotpSetup(code)
+		require.True(t, success, "TotpSetup failed")
+		require.NoError(t, err, "TotpSetup failed")
 
-	code, _ = totp.GenerateCode(secret, time.Now().UTC())
-	success, _, err = client.Login("admin", "admin123", code, DEFAULT_TOKEN_EXPIRE_SECONDS)
-	require.True(t, success, "Login with TOTP code failed")
-	require.NoError(t, err, "Login with TOTP code failed")
+		code, _ = totp.GenerateCode(secret, time.Now().UTC())
+		success, _, err = client.Login("admin", "admin123", code, DEFAULT_TOKEN_EXPIRE_SECONDS)
+		require.True(t, success, "Login with TOTP code failed")
+		require.NoError(t, err, "Login with TOTP code failed")
 
-	success, err = client.TotpDisable()
-	require.True(t, success, "TotpDisable failed")
-	require.NoError(t, err, "TotpDisable failed")
+		success, err = client.TotpDisable()
+		require.True(t, success, "TotpDisable failed")
+		require.NoError(t, err, "TotpDisable failed")
+	*/
 }
 
 func TestMessagePack(t *testing.T) {

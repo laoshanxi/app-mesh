@@ -1,0 +1,47 @@
+name: Build on macOS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-macos.yaml"
+      - "script/setup-build-env/autogen.sh.mac.sh"
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Github code
+        uses: actions/checkout@v4
+
+      - name: Setup Homebrew and Install Dependencies
+        run: |
+          echo "Updating Homebrew..."
+          brew update
+
+          echo "Installing required packages..."
+          brew install wget cmake go openssl@3 boost log4cpp openldap cryptopp oath-toolkit yaml-cpp nlohmann-json msgpack-cxx
+
+          echo "Verifying installed packages..."
+          brew list
+
+      # Step 3: Configure build env
+      - name: Configure Build Environment
+        run: |
+          sh script/setup-build-env/autogen.sh.mac.sh
+
+      # Step 4: Build
+      - name: Build project
+        if: always()
+        run: |
+          echo "Creating build directory..."
+          mkdir -p build && cd build
+
+          echo "Running CMake configuration..."
+          cmake ..
+
+          echo "Building the project..."
+          make
+          make pack

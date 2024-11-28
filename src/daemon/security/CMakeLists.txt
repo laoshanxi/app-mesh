@@ -13,10 +13,20 @@ add_library(${PROJECT_NAME}::security ALIAS security)
 ##########################################################################
 # Link
 ##########################################################################
-target_link_libraries(security
-  PRIVATE
-    cryptopp
-    rt
-    ldapplugin
-    oath
+
+if(APPLE)
+  target_link_libraries(security
+    PRIVATE
+      cryptopp
+      ldapplugin
+      oath
 )
+else()
+  target_link_libraries(security
+    PRIVATE
+      cryptopp
+      rt
+      ldapplugin
+      oath
+  )
+endif()

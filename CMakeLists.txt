@@ -86,11 +86,33 @@ find_package(msgpack-cxx REQUIRED)
 ##########################################################################
 # libcurl
 ##########################################################################
-find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
-if (NOT CURL_LIB)
-    find_package(CURL REQUIRED)
-    message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
-    set(CURL_LIB ${CURL_LIBRARIES})
+if (APPLE)
+    # Explicitly set paths for Homebrew curl
+    set(CURL_ROOT "/opt/homebrew/opt/curl")
+    set(CURL_INCLUDE_DIR "${CURL_ROOT}/include")
+    set(CURL_LIB "${CURL_ROOT}/lib/libcurl.dylib")
+
+    # Verify paths manually
+    find_path(CURL_INCLUDE_DIR curl/curl.h PATHS ${CURL_INCLUDE_DIR})
+    find_library(CURL_LIB NAMES curl PATHS ${CURL_ROOT}/lib)
+
+    if(NOT CURL_INCLUDE_DIR OR NOT CURL_LIB)
+        message(FATAL_ERROR "Could not find CURL. Ensure CURL is installed via Homebrew.")
+    endif()
+
+    message(STATUS "CURL include dir: ${CURL_INCLUDE_DIR}")
+    message(STATUS "CURL library dir: ${CURL_LIB}")
+
+    # Include directories and link libraries
+    include_directories(${CURL_INCLUDE_DIR})
+    link_directories(${CURL_LIBRARY})
+else()
+    find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
+    if (NOT CURL_LIB)
+        find_package(CURL REQUIRED)
+        message(STATUS "Found system libcurl: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
+        set(CURL_LIB ${CURL_LIBRARIES})
+    endif()
 endif()
 message("Found CURL_LIB: ${CURL_LIB}")
 
@@ -121,12 +143,50 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 ##########################################################################
-# library dir
+# Include dir
 ##########################################################################
-link_directories(
-    /usr/local/lib64
-    /usr/local/lib
-)
+if(EXISTS /usr/local/include)
+    include_directories(/usr/local/include)
+endif()
+
+##########################################################################
+# Library dir
+##########################################################################
+if(EXISTS /usr/local/lib64)
+    link_directories(/usr/local/lib64)
+endif()
+if(EXISTS /usr/local/lib)
+    link_directories(/usr/local/lib)
+endif()
+
+if(APPLE)
+    # Detect Apple Silicon vs Intel
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        set(HOMEBREW_PREFIX "/opt/homebrew")
+        set(CMAKE_INSTALL_RPATH "/opt/homebrew/lib;/opt/appmesh/lib64")
+    else()
+        set(HOMEBREW_PREFIX "/usr/local")
+        set(CMAKE_INSTALL_RPATH "/usr/local/lib;/opt/appmesh/lib64")
+    endif()
+
+    # Enable C++17 (used for ACE 8.0)
+    # set(CMAKE_CXX_STANDARD 17)
+    # set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    # set(CMAKE_CXX_EXTENSIONS OFF)
+
+    # Add Homebrew include and library paths
+    include_directories(${HOMEBREW_PREFIX}/include)
+    link_directories(${HOMEBREW_PREFIX}/lib)
+
+    # Add Homebrew path to CMAKE_PREFIX_PATH
+    list(APPEND CMAKE_PREFIX_PATH ${HOMEBREW_PREFIX})
+
+    # Ignore warning: 'vsprintf' is deprecated
+    add_compile_options(-Wno-deprecated-declarations)
+
+    # Optional: Add pkg-config path if needed
+    set(ENV{PKG_CONFIG_PATH} "${HOMEBREW_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+endif()
 
 ##########################################################################
 # sub dir

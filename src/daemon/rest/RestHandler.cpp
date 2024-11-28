@@ -1,7 +1,6 @@
 #include <chrono>
 
 #include <boost/algorithm/string_regex.hpp>
-#include <curlpp/cURLpp.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
 #include "../../common/DurationParse.h"

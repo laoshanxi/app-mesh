@@ -45,7 +45,11 @@ bool HMACVerifier::writePSKToSHM()
 {
     const static char fname[] = "HMACVerifier::writePSKToSHM() ";
 
-    int fd = shm_open(m_shmName.c_str(), O_CREAT | O_RDWR, 0666);
+#if defined(__APPLE__)
+    int fd = open((std::string("/private/tmp") + m_shmName).c_str(), O_CREAT | O_RDWR, 0600);
+#else
+    int fd = shm_open(m_shmName.c_str(), O_CREAT | O_RDWR, 0600);
+#endif
     if (fd == -1)
     {
         LOG_ERR << fname << "Failed to create shared memory: " << strerror(errno);
@@ -65,13 +69,14 @@ bool HMACVerifier::writePSKToSHM()
         return false;
     }
 
+    // TODO: agent start with same user as C++, no need change permission
     // modify permission, allow other user access
-    if (fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) == -1)
-    {
-        LOG_ERR << fname << "Failed to change shared memory permissions: " << strerror(errno);
-        cleanup();
-        return false;
-    }
+    // if (fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) == -1)
+    //{
+    //    LOG_ERR << fname << "Failed to change shared memory permissions: " << strerror(errno);
+    //    cleanup();
+    //    return false;
+    //}
 
     void *shmPtr = mmap(NULL, PSK_SHM_TOTAL_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (shmPtr == MAP_FAILED)
@@ -128,8 +133,14 @@ bool HMACVerifier::cleanupSharedMemory()
 
     if (m_shmPtr && munmap(m_shmPtr, PSK_SHM_TOTAL_SIZE) == 0)
     {
-        shm_unlink(m_shmName.c_str());
-        LOG_INF << fname << "Cleaned shared memory address: " << m_shmPtr;
+        auto shmPath = m_shmName;
+#if defined(__APPLE__)
+        shmPath = (std::string("/private/tmp") + m_shmName);
+        unlink(shmPath.c_str());
+#else
+        shm_unlink(shmPath.c_str());
+#endif
+        LOG_INF << fname << "Cleaned shared memory: " << shmPath;
         m_shmPtr = nullptr;
         return true;
     }

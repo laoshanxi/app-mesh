@@ -10,7 +10,7 @@ on:
     paths:
       - ".github/workflows/build-ubuntu-latest.yml"
       - "docker/Dockerfile.build_ubuntu"
-      - "autogen.sh*"
+      - "script/setup-build-env/autogen.sh*"
 
 env:
   # Use docker.io for Docker Hub if empty

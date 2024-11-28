@@ -45,6 +45,7 @@ jobs:
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
+            appc resource
 
             # test appmesh golang sdk
             apt install -y wget
@@ -78,6 +79,7 @@ jobs:
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
+            appc resource
 
             # test appmesh golang sdk
             apt install -y wget
@@ -110,6 +112,7 @@ jobs:
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
+            appc resource
 
             # test appmesh golang sdk
             apt install -y wget
@@ -146,6 +149,7 @@ jobs:
             /opt/appmesh/script/appmesh.initd.sh start
             sleep 5
             appc ls
+            appc resource
 
             # test appmesh golang sdk
             yum install -y wget

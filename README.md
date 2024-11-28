@@ -100,7 +100,6 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [MessagePack](https://msgpack.org/)
 - [boostorg/boost](https://github.com/boostorg/boost)
 - [ACE_TAO/ACE](https://github.com/DOCGroup/ACE_TAO)
-- [curlpp](https://github.com/jpbarrette/curlpp)
 - [Thalhammer/jwt-cpp](https://github.com/Thalhammer/jwt-cpp)
 - [nlohmann/json](https://json.nlohmann.me)
 - [yaml-cpp](https://github.com/jbeder/yaml-cpp)

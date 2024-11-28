@@ -50,7 +50,7 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			{
 				snap->m_apps.insert(std::pair<std::string, AppSnap>(
 					app->getName(),
-					AppSnap(pid, (int64_t)stat->starttime)));
+					AppSnap(pid, std::chrono::system_clock::to_time_t(stat->get_starttime()))));
 			}
 		}
 	}

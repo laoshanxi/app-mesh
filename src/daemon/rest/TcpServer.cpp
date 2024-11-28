@@ -262,76 +262,90 @@ bool TcpHandler::reply(const Response &resp)
 {
 	const static char fname[] = "TcpHandler::reply() ";
 
-	const auto data = resp.serialize();
-	const auto buffer = data->data();
-	const auto length = data->size();
-
-	LOG_DBG << fname << "send response length: " << length;
-	std::lock_guard<std::mutex> guard(m_socketLock);
-	if (this->peer().get_handle() != ACE_INVALID_HANDLE)
+	// Early validation
 	{
-		if (length == 0)
+		std::lock_guard<std::mutex> guard(m_socketLock);
+		if (this->peer().get_handle() == ACE_INVALID_HANDLE)
 		{
-			this->peer().close();
+			LOG_WAR << fname << "Socket not available, ignoring message: " << resp.uuid;
 			return false;
 		}
+	}
 
-		// set upload flag before send to client
-		if (resp.http_status == web::http::status_codes::OK &&
-			resp.request_uri == REST_PATH_UPLOAD && resp.body.size() &&
-			resp.headers.count(HTTP_HEADER_KEY_X_Send_File_Socket))
-		{
-			auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second);
-			m_pendingUploadFile.push(std::make_shared<FileUploadInfo>(fileName, resp.file_upload_request_headers));
-			LOG_INF << fname << "upload from socket to : " << fileName;
-		}
+	// Serialize response data once
+	const auto data = resp.serialize();
+	if (!data || data->size() == 0)
+	{
+		this->peer().close();
+		return false;
+	}
 
+	const auto buffer = data->data();
+	const auto length = data->size();
+	LOG_DBG << fname << "send response length: " << length;
+
+	// Handle file upload preparation
+	if (resp.http_status == web::http::status_codes::OK &&
+		resp.request_uri == REST_PATH_UPLOAD && !resp.body.empty() &&
+		resp.headers.count(HTTP_HEADER_KEY_X_Send_File_Socket))
+	{
+		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second);
+		m_pendingUploadFile.push(std::make_shared<FileUploadInfo>(fileName, resp.file_upload_request_headers));
+		LOG_INF << fname << "upload from socket to : " << fileName;
+	}
+
+	// Send response data
+	{
+		std::lock_guard<std::mutex> guard(m_socketLock);
 		if (!sendBytes(length) || !sendBytes(buffer, length))
 		{
 			LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
 			return false;
 		}
+	}
 
-		if (resp.http_status == web::http::status_codes::OK &&
-			resp.request_uri == REST_PATH_DOWNLOAD && resp.body.size() &&
-			resp.headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket))
+	// Handle file download
+	if (resp.http_status == web::http::status_codes::OK &&
+		resp.request_uri == REST_PATH_DOWNLOAD && !resp.body.empty() &&
+		resp.headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket))
+	{
+		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
+		LOG_INF << fname << "download socket file : " << fileName;
+
+		std::ifstream file(fileName, std::ios::binary | std::ios::ate);
+		if (file)
 		{
-			auto path = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
-			LOG_INF << fname << "download socket file : " << path;
-			// send file via TCP with chunks
-			auto pBuffer = make_shared_array<char>(TCP_CHUNK_BLOCK_SIZE);
-			std::ifstream file(path, std::ios::binary | std::ios::in);
-			if (file)
-			{
-				// get length of file:
-				file.seekg(0, file.end);
-				auto fileEnd = file.tellg();
-				file.seekg(0, file.beg);
-				auto currentPos = file.tellg();
-				while (currentPos < fileEnd && file.good())
-				{
-					// continue read data chunk
-					file.readsome(pBuffer.get(), TCP_CHUNK_BLOCK_SIZE);
-					auto readChunkSize = file.tellg() - currentPos;
-					currentPos = file.tellg();
+			const auto fileSize = file.tellg();
+			std::streampos sentSize = 0;
+			file.seekg(0, std::ios::beg);
+			auto buffer = make_shared_array<char>(TCP_CHUNK_BLOCK_SIZE);
+			std::lock_guard<std::mutex> guard(m_socketLock);
 
-					// send chunk size to client
-					if (!sendBytes(readChunkSize) || !sendBytes(pBuffer.get(), readChunkSize))
-					{
-						LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
-						return false;
-					}
+			while (file.good() && sentSize < fileSize)
+			{
+				file.read(buffer.get(), TCP_CHUNK_BLOCK_SIZE);
+				const auto readSize = file.gcount();
+				if (readSize <= 0)
+				{
+					break;
+				}
+				sentSize += readSize;
+				if (!sendBytes(readSize) || !sendBytes(buffer.get(), readSize))
+				{
+					LOG_ERR << fname << "send chunk failed with error: " << std::strerror(errno);
+					return false;
 				}
 			}
-			// send last 0 for delimiter
-			sendBytes(0);
 		}
+		else
+		{
+			LOG_ERR << fname << "Failed to open file: " << fileName;
+		}
+
+		// Send final delimiter
+		return sendBytes(0);
 	}
-	else
-	{
-		LOG_WAR << fname << "Socket not available, ignore message: " << resp.uuid;
-		return false;
-	}
+
 	LOG_DBG << fname << "successfully";
 	return true;
 }
@@ -409,32 +423,57 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 	return context;
 }
 
-bool TcpHandler::sendBytes(const char *data, size_t length)
+bool TcpHandler::sendBytes(const char *data, size_t length, int timeoutSeconds)
 {
 	const static char fname[] = "TcpHandler::sendBytes() ";
 
-	size_t totalSent = 0;
+	size_t totalSent = 0;					// Track total bytes sent
+	ACE_Time_Value timeout(timeoutSeconds); // Timeout for the send operation
+
 	while (totalSent < length)
 	{
-		size_t sendSize = 0;
-		size_t sendReturn = 0;
-		errno = 0;
-		sendReturn = (size_t)this->peer().send_n((void *)(data + totalSent), (length - totalSent), 0, &sendSize);
-		// LOG_DBG << fname << m_clientHostName << " total length: " << (length - totalSent) << " sent length:" << sendSize << " with result: " << std::strerror(errno);
-		if (sendReturn == 0)
+		size_t sendSize = 0;	// Bytes sent in the current iteration
+		ssize_t sendReturn = 0; // Result of send_n call
+		errno = 0;				// Reset errno before the call
+
+		// Attempt to send the remaining bytes
+		sendReturn = this->peer().send_n(
+			(void *)(data + totalSent),				   // Pointer to unsent data
+			length - totalSent,						   // Remaining length to send
+			(timeoutSeconds > 0) ? &timeout : nullptr, // Optional timeout
+			&sendSize								   // Capture bytes sent in this call
+		);
+
+		// LOG_DBG << fname << m_clientHostName
+		//		<< " Total length remaining: " << (length - totalSent)
+		//		<< ", Sent length: " << sendSize
+		//		<< ", Send result: " << sendReturn
+		//		<< ", Error: " << (errno ? std::strerror(errno) : "None");
+
+		// Handle send_n result
+		if (sendReturn <= 0) // `0` or negative indicates failure
 		{
-			if (EINTR == errno)
+			if (errno == EINTR) // Interrupted by a signal
 			{
-				LOG_WAR << fname << m_clientHostName << " send response failed with warning: " << std::strerror(errno);
+				LOG_WAR << fname << m_clientHostName << " Send interrupted, retrying. Error: " << std::strerror(errno);
+				continue; // Retry sending
 			}
-			else
+			else if (errno == EWOULDBLOCK || errno == ETIMEDOUT) // Timeout occurred
 			{
-				LOG_ERR << fname << m_clientHostName << " send response failed with error: " << std::strerror(errno);
+				LOG_ERR << fname << m_clientHostName << " Send operation timed out. Error: " << std::strerror(errno);
+				return false; // Timeout is a failure condition
+			}
+			else // Other errors
+			{
+				LOG_ERR << fname << m_clientHostName << " Send failed. Error: " << std::strerror(errno);
 				return false;
 			}
 		}
+
+		// Accumulate the bytes successfully sent
 		totalSent += sendSize;
 	}
+
 	return true;
 }
 
@@ -443,10 +482,11 @@ bool TcpHandler::sendBytes(size_t intValue)
 	const static char fname[] = "TcpHandler::sendBytes() ";
 	LOG_DBG << fname << "sending <" << intValue << "> data to " << m_clientHostName;
 
+	const static int headerSendTimeout = 10;
 	char headerBuff[TCP_MESSAGE_HEADER_LENGTH];
 	// write data size to header
 	*((uint32_t *)headerBuff) = htonl(intValue); // host to network byte order
-	return sendBytes(headerBuff, TCP_MESSAGE_HEADER_LENGTH);
+	return sendBytes(headerBuff, TCP_MESSAGE_HEADER_LENGTH, headerSendTimeout);
 }
 
 bool TcpHandler::replyTcp(int tcpHandlerId, const Response &resp)

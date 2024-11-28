@@ -7,7 +7,7 @@ on:
     paths:
       - ".github/workflows/docker_build/build-ubuntu-18.yml"
       - "docker/Dockerfile.build_ubuntu18"
-      - "autogen.sh*"
+      - "script/setup-build-env/autogen.sh*"
       - "script/openssl_update.sh"
 
 env:

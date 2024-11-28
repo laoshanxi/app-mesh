@@ -5,6 +5,10 @@
 #include <string>
 #include <sys/file.h>
 #include <thread>
+#if defined(__APPLE__)
+#include <crt_externs.h> // For getprogname
+#include <mach-o/dyld.h> // For _NSGetExecutablePath
+#endif
 
 #include <ace/OS.h>
 #include <boost/algorithm/string.hpp>
@@ -137,30 +141,57 @@ const std::string Utility::getSelfFullPath()
 	const static char fname[] = "Utility::getSelfFullPath() ";
 #if defined(WIN32)
 	char buf[MAX_PATH] = {0};
-	::GetModuleFileNameA(NULL, buf, MAX_PATH);
-	// Remove ".exe"
+	if (::GetModuleFileNameA(NULL, buf, MAX_PATH) == 0)
+	{
+		LOG_ERR << fname << "Failed to retrieve executable path: " << ::GetLastError();
+		return "";
+	}
+
+	// Remove ".exe" extension if present
 	std::size_t idx = 0;
 	while (buf[idx] != '\0')
 	{
 		if (buf[idx] == '.' && buf[idx + 1] == 'e' && buf[idx + 2] == 'x' && buf[idx + 3] == 'e')
 		{
 			buf[idx] = '\0';
+			break;
 		}
 	}
-#else
+	return buf;
+
+#elif defined(__linux__)
 	char buf[PATH_MAX] = {0};
 	auto count = ACE_OS::readlink("/proc/self/exe", buf, PATH_MAX);
 	if (count < 0 || count >= PATH_MAX)
 	{
-		LOG_ERR << fname << "unknown exception";
-		buf[0] = '\0';
+		LOG_ERR << fname << "Failed to read /proc/self/exe: " << strerror(errno);
+		return "";
 	}
-	else
-	{
-		buf[count] = '\0';
-	}
-#endif
+	buf[count] = '\0';
 	return buf;
+
+#elif defined(__APPLE__)
+	std::vector<char> buf(PATH_MAX);
+	uint32_t size = buf.size();
+	if (_NSGetExecutablePath(buf.data(), &size) != 0)
+	{
+		LOG_ERR << fname << "Failed to retrieve executable path";
+		return "";
+	}
+
+	// Resolve symlinks to get the real path
+	char realPath[PATH_MAX] = {0};
+	if (realpath(buf.data(), realPath) == nullptr)
+	{
+		LOG_ERR << fname << "Failed to resolve real path: " << strerror(errno);
+		return "";
+	}
+	return realPath;
+
+#else
+	LOG_ERR << fname << "Platform not supported";
+	return "";
+#endif
 }
 
 const std::string &Utility::getSelfDir()
@@ -187,10 +218,14 @@ std::string Utility::getConfigFilePath(const std::string &configFile, bool write
 }
 
 // program_name from errno.h
-extern char *program_invocation_short_name;
 const std::string Utility::getBinaryName()
 {
-	return program_invocation_short_name;
+#if defined(__APPLE__)
+	return getprogname(); // macOS-specific function
+#else
+	extern char *program_invocation_short_name;
+	return program_invocation_short_name; // Linux-specific variable
+#endif
 }
 
 bool Utility::isDirExist(const std::string &path)
@@ -212,7 +247,7 @@ bool Utility::createDirectory(const std::string &path, fs::perms perms)
 	if (!isDirExist(path))
 	{
 		const fs::path directoryPath = fs::path(path);
-		if (!fs::create_directory(directoryPath))
+		if (!fs::create_directories(directoryPath))
 		{
 			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << std::strerror(errno);
 			return false;
@@ -457,113 +492,168 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 
 	if (!Utility::isFileExist(path))
 	{
-		LOG_WAR << fname << "File not exist :" << path;
+		LOG_WAR << fname << "File does not exist: " << path;
 		return std::string();
 	}
 
-	std::ifstream stdoutReadStream(path, ios::in);
-	if (stdoutReadStream.is_open() && stdoutReadStream.good())
+	std::ifstream fileStream(path, std::ios::in | std::ios::binary);
+	if (!fileStream.is_open())
 	{
-		if (position && stdoutReadStream.seekg(0, std::ios_base::end) && *position > stdoutReadStream.tellg())
+		LOG_ERR << fname << "Failed to open file: " << path;
+		return std::string();
+	}
+
+	// Get file size
+	fileStream.seekg(0, std::ios::end);
+	const std::streampos fileSize = fileStream.tellg();
+	if (fileSize == std::streampos(-1))
+	{
+		LOG_ERR << fname << "Failed to get file size";
+		return std::string();
+	}
+
+	// Validate position
+	if (position && *position > fileSize)
+	{
+		throw std::invalid_argument(Utility::stringFormat("Invalid position <%ld>, file size: <%ld>", *position, static_cast<long>(fileSize)));
+	}
+
+	fileStream.clear();
+
+	// Set read position
+	if (position && *position >= 0)
+		fileStream.seekg(*position);
+	else
+		fileStream.seekg(0, std::ios::beg);
+	if (!fileStream.good())
+	{
+		LOG_ERR << fname << ("Failed to seek to specified position");
+		return std::string();
+	}
+
+	std::string result;
+
+	if (maxSize >= 0)
+	{
+		// Forward reading
+		size_t readSize = (maxSize == 0) ? static_cast<size_t>(fileSize) : std::min(static_cast<size_t>(maxSize), static_cast<size_t>(fileSize));
+
+		if (readLine)
 		{
-			throw std::invalid_argument(Utility::stringFormat("Input invalid output position <%ld>", *position));
-		}
-		const std::ifstream::pos_type positionBegin = stdoutReadStream.tellg();
-		// adjust read position
-		std::stringstream buffer;
-		if (position)
-		{
-			stdoutReadStream.seekg(*position);
+			std::string line;
+			if (std::getline(fileStream, line))
+			{
+				result = line.substr(0, readSize);
+			}
 		}
 		else
 		{
-			stdoutReadStream.seekg(0, std::ios_base::beg);
+			result.resize(readSize);
+			fileStream.read(&result[0], readSize);
+			result.resize(fileStream.gcount()); // Adjust to actual bytes read
 		}
-		// read to buffer
-		if (maxSize > 0)
-		{
-			auto temp = make_shared_array<char>(maxSize);
-			memset(temp.get(), '\0', maxSize);
-			if (readLine)
-			{
-				stdoutReadStream.getline(temp.get(), maxSize);
-			}
-			else
-			{
-				stdoutReadStream.readsome(temp.get(), maxSize);
-			}
-			buffer << temp.get();
-		}
-		else if (maxSize == 0)
-		{
-			if (readLine)
-			{
-				std::string tmp;
-				std::getline(stdoutReadStream, tmp);
-				buffer << tmp;
-			}
-			else
-			{
-				buffer << stdoutReadStream.rdbuf();
-			}
-		}
-		else // maxSize < 0
-		{
-			maxSize = -maxSize;
-			// change to end for reverse read if the position is beginning
-			if (position && *position == 0)
-			{
-				stdoutReadStream.seekg(0, std::ios_base::end);
-			}
-
-			auto temp = make_shared_array<char>(maxSize);
-			memset(temp.get(), '\0', maxSize);
-
-			if (readLine)
-			{
-				std::string strLine;
-				long readSize = 0;
-				while (stdoutReadStream.tellg() != positionBegin && ++readSize < maxSize)
-				{
-					char oneChar[1];
-					stdoutReadStream.seekg(-1, ios::cur);
-					stdoutReadStream.read(oneChar, 1);
-					stdoutReadStream.seekg(-1, ios::cur);
-					if (oneChar[0] == '\n')
-					{
-						break;
-					}
-					strLine.append(oneChar);
-				}
-				std::reverse(strLine.begin(), strLine.end());
-				std::copy(strLine.begin(), strLine.end(), temp.get());
-			}
-			else
-			{
-				if (stdoutReadStream.tellg() > maxSize)
-				{
-					stdoutReadStream.seekg(-maxSize, ios::cur);
-					stdoutReadStream.readsome(temp.get(), maxSize);
-				}
-				else
-				{
-					maxSize = stdoutReadStream.tellg();
-					stdoutReadStream.seekg(0, std::ios_base::beg);
-					stdoutReadStream.readsome(temp.get(), maxSize);
-				}
-			}
-			buffer << temp.get();
-		}
-
-		if (position)
-		{
-			// read current position
-			*position = stdoutReadStream.tellg();
-		}
-		stdoutReadStream.close();
-		return buffer.str();
 	}
-	return std::string();
+	else
+	{
+		// Reverse reading
+		size_t readSize = std::min(static_cast<size_t>(-maxSize), static_cast<size_t>(fileSize));
+
+		// Adjust position for reverse reading
+		if (position && *position == 0)
+		{
+			if (!fileStream.seekg(0, std::ios::end))
+			{
+				LOG_ERR << fname << ("Failed to seek to end for reverse reading");
+				return std::string();
+			}
+		}
+
+		const std::streampos endPos = fileStream.tellg();
+		if (endPos == std::streampos(-1))
+		{
+			LOG_ERR << fname << ("Failed to get current position");
+			return std::string();
+		}
+
+		if (readLine)
+		{
+			// Reverse line reading
+			result.reserve(readSize);
+			size_t bytesRead = 0;
+			while (fileStream.tellg() > 0 && bytesRead < readSize)
+			{
+				if (!fileStream.seekg(-1, std::ios::cur))
+				{
+					break;
+				}
+
+				int c = fileStream.get();
+				if (c == EOF || c == '\n')
+				{
+					break;
+				}
+
+				result.push_back(static_cast<char>(c));
+				if (!fileStream.seekg(-1, std::ios::cur))
+				{
+					break;
+				}
+
+				++bytesRead;
+			}
+			std::reverse(result.begin(), result.end());
+		}
+		else
+		{
+			// Reverse block reading
+			if (endPos > readSize)
+			{
+				if (!fileStream.seekg(-static_cast<std::streamoff>(readSize), std::ios::end))
+				{
+					LOG_ERR << fname << ("Failed to seek for reverse reading");
+					return std::string();
+				}
+			}
+			else
+			{
+				if (!fileStream.seekg(0, std::ios::beg))
+				{
+					LOG_ERR << fname << ("Failed to seek to beginning");
+					return std::string();
+				}
+				readSize = static_cast<size_t>(endPos);
+			}
+
+			result.resize(readSize);
+			if (!fileStream.read(&result[0], readSize))
+			{
+				LOG_ERR << fname << ("Failed to read file content");
+				return std::string();
+			}
+			result.resize(fileStream.gcount());
+		}
+	}
+
+	// Update position
+	if (position)
+	{
+		const std::streampos currentPos = fileStream.tellg();
+		if (currentPos == std::streampos(-1))
+		{
+			// If we can't get the position, estimate it
+			*position = *position + static_cast<long>(result.size());
+		}
+		else
+		{
+			if (currentPos > std::numeric_limits<long>::max())
+			{
+				LOG_ERR << fname << ("File position exceeds long capacity");
+			}
+			*position = static_cast<long>(currentPos);
+		}
+	}
+
+	return result;
 }
 
 std::string Utility::createUUID()

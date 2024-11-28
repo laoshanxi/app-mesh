@@ -213,9 +213,10 @@ namespace net
 	inline std::set<std::string> getVirtualNetworkDevices()
 	{
 		static const char fname[] = "net::getVirtualNetworkDevices() ";
-
-		static const char virtNetPath[] = "/sys/devices/virtual/net/";
 		std::set<std::string> result;
+
+#ifdef __linux__
+		static const char virtNetPath[] = "/sys/devices/virtual/net/";
 
 		if (!fs::exists(virtNetPath))
 		{
@@ -242,23 +243,67 @@ namespace net
 				result.insert(deviceName);
 				LOG_DBG << fname << "Found virtual network device: " << deviceName;
 			}
-
-			if (result.empty())
-			{
-				LOG_DBG << fname << "No virtual network devices found";
-			}
-			else
-			{
-				LOG_DBG << fname << "Found " << result.size() << " virtual network device(s)";
-			}
 		}
 		catch (const fs::filesystem_error &ex)
 		{
 			LOG_ERR << fname << "Filesystem error while reading " << virtNetPath << ": " << ex.what();
+			return result;
+		}
+#elif defined(__APPLE__)
+		try
+		{
+			struct ifaddrs *ifaddr, *ifa;
+
+			if (getifaddrs(&ifaddr) == -1)
+			{
+				LOG_ERR << fname << "Failed to get interface addresses (errno="
+						<< errno << ": " << std::strerror(errno) << ")";
+				return result;
+			}
+
+			// Ensure cleanup of ifaddr
+			std::unique_ptr<struct ifaddrs, decltype(&freeifaddrs)>
+				ifaddr_guard(ifaddr, freeifaddrs);
+
+			// Iterate through all interfaces
+			for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
+			{
+				if (ifa->ifa_name == nullptr)
+					continue;
+
+				std::string interface(ifa->ifa_name);
+
+				// Check if it's a virtual interface
+				if (Utility::startWith(interface, "lo") ||
+					Utility::startWith(interface, "bridge") ||
+					Utility::startWith(interface, "tun") ||
+					Utility::startWith(interface, "tap") ||
+					Utility::startWith(interface, "utun") ||
+					Utility::startWith(interface, "gif") ||
+					Utility::startWith(interface, "stf") ||
+					Utility::startWith(interface, "vlan"))
+				{
+					result.insert(interface);
+					LOG_DBG << fname << "Found virtual network device: " << interface;
+				}
+			}
 		}
 		catch (const std::exception &ex)
 		{
 			LOG_ERR << fname << "Unexpected error: " << ex.what();
+			return result;
+		}
+#else
+#error "Unsupported platform"
+#endif
+
+		if (result.empty())
+		{
+			LOG_DBG << fname << "No virtual network devices found";
+		}
+		else
+		{
+			LOG_DBG << fname << "Found " << result.size() << " virtual network device(s)";
 		}
 
 		return result;
