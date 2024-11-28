@@ -8,10 +8,20 @@
 #include <ace/OS.h>
 #include <ace/Process_Manager.h>
 #include <ace/Reactor.h>
-#include <ace/SSL/SSL_Context.h>
-#include <ace/SSL/SSL_SOCK_Acceptor.h>
 #include <ace/TP_Reactor.h>
 #include <boost/filesystem.hpp>
+#ifdef __has_include
+#if __has_include(<ace/SSL/SSL_Context.h>)
+#include <ace/SSL/SSL_Context.h>
+#include <ace/SSL/SSL_SOCK_Acceptor.h>
+#else
+#include <ace/SSL_Context.h>
+#include <ace/SSL_SOCK_Acceptor.h>
+#endif
+#else
+#include <ace/SSL/SSL_Context.h>
+#include <ace/SSL/SSL_SOCK_Acceptor.h>
+#endif
 
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
@@ -195,7 +205,7 @@ int main(int argc, char *argv[])
 						  {
 							  auto &appSnapshot = snap->m_apps.find(p->getName())->second;
 							  auto stat = os::status(appSnapshot.m_pid);
-							  if (stat && appSnapshot.m_startTime == (int64_t)stat->starttime)
+							  if (stat && appSnapshot.m_startTime == std::chrono::system_clock::to_time_t(stat->get_starttime()))
 								  p->attach(appSnapshot.m_pid);
 						  }
 					  });
@@ -270,11 +280,8 @@ int main(int argc, char *argv[])
 
 	endReactorEvent(ACE_Reactor::instance());
 	TcpHandler::closeMsgQueue();
-	for (const auto &t : m_threadPool)
-		t->join();
-	// Configuration::instance()->instance(nullptr); // this help free Application obj which trigger process clean
 	LOG_INF << fname << "exited";
-	// ACE_OS::_exit(0); // to avoid something hang while exiting, direct exit here.
+	ACE_OS::_exit(0); // to avoid something hang while exiting, direct exit here.
 	ACE::fini();
 	return 0;
 }

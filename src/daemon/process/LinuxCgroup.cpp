@@ -1,5 +1,7 @@
 #include <cstring>
+#if defined(__linux__)
 #include <mntent.h>
+#endif
 
 #include "../../common/Utility.h"
 #include "LinuxCgroup.h"
@@ -25,8 +27,9 @@ LinuxCgroup::LinuxCgroup(long long memLimitBytes, long long memSwapBytes, long l
 		m_memLimitMb = m_memSwapMb;
 		LOG_WAR << fname << "m_memLimitMb is setting to m_memSwapMb";
 	}
+#if defined(__linux__)
 	m_cgroupEnabled = (m_memLimitMb > 0 || m_memSwapMb > 0 || m_cpuShares > 0);
-
+#endif
 	// Only need retrieve once for all
 	static bool retrieved = false;
 	if (m_cgroupEnabled && !retrieved)
@@ -165,7 +168,7 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 		LOG_ERR << fname << "Get file stream failed with error : " << std::strerror(errno);
 		return;
 	}
-
+#if defined(__linux__)
 	struct mntent *entPtr = nullptr;
 	struct mntent entObj;
 	char buffer[4094] = {0};
@@ -208,6 +211,7 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 	}
 	if (fp)
 		fclose(fp);
+#endif
 }
 
 void LinuxCgroup::setPhysicalMemory(const std::string &cgroupPath, long long memLimitBytes)

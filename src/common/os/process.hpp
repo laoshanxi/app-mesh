@@ -10,6 +10,11 @@
 #include <string>
 #include <sys/types.h> // For pid_t.
 
+// macOS-specific headers
+#if defined(__APPLE__)
+#include <libproc.h>
+#endif
+
 #include <ace/OS.h>
 #include <boost/filesystem.hpp> // directory_iterator
 
@@ -23,8 +28,53 @@ namespace os
 	inline size_t fileDescriptors(pid_t pid = ::getpid())
 	{
 		const static char fname[] = "os::fileDescriptors() ";
-
 		size_t result = 0;
+
+		// Check if the pid is valid.
+		if (pid <= 0)
+		{
+			LOG_WAR << fname << "Invalid PID provided: " << pid << ". PID must be greater than zero.";
+			return result;
+		}
+
+#if defined(__APPLE__)
+		// Get file descriptors count
+		proc_fdinfo fdinfo[PROC_PIDLISTFD_SIZE];
+		int num_fds = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo, PROC_PIDLISTFD_SIZE);
+
+		if (num_fds <= 0)
+		{
+			LOG_WAR << fname << "Failed to get file descriptors info for pid " << pid
+					<< ", error: " << strerror(errno);
+		}
+		else
+		{
+			result += num_fds / PROC_PIDLISTFD_SIZE;
+			LOG_DBG << fname << "Found " << result << " file descriptors";
+		}
+
+		// Get memory mapped files count
+		char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
+		if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) <= 0)
+		{
+			LOG_WAR << fname << "Failed to get process path for pid " << pid
+					<< ", error: " << strerror(errno);
+		}
+
+		proc_taskallinfo task_info;
+		if (proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &task_info, sizeof(task_info)) <= 0)
+		{
+			LOG_WAR << fname << "Failed to get task info for pid " << pid
+					<< ", error: " << strerror(errno);
+		}
+		else
+		{
+			// Add number of memory mapped files
+			result += task_info.pbsd.pbi_nfiles;
+			LOG_DBG << fname << "Total count including memory mapped files: " << result;
+		}
+
+#else
 		// 1. /proc/pid/fd/
 		const auto procFdPath = fs::path("/proc") / std::to_string(pid) / "fd";
 		if (fs::exists(procFdPath.string()) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
@@ -49,6 +99,8 @@ namespace os
 		{
 			LOG_WAR << fname << "failed to open: " << procMapsPath;
 		}
+#endif
+
 		return result;
 	};
 
@@ -147,12 +199,21 @@ namespace os
 		// get total CPU time
 		uint64_t totalCpuTime() const
 		{
+			// On Linux, the formula to calculate the total CPU time for a process is (not include child process):
+			//     total_cpu_time = process.utime + process.stime + process.cutime + process.cstime
+			// On macOS, the total CPU time for a process including all threads and child processes as:
+			//     total_cpu_time = task_info.pti_total_user + task_info.pti_total_system
+#if defined(__APPLE__)
+			return this->process.cutime + this->process.cstime;
+#else
+
 			uint64_t result = std::accumulate(
 				children.begin(), children.end(),
 				process.utime + process.stime + process.cutime + process.cstime,
 				[](const size_t &files, const ProcessTree &process)
 				{ return files + process.totalCpuTime(); });
 			return result;
+#endif
 		}
 
 		std::list<os::Process> getProcesses() const

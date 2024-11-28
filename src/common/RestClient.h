@@ -5,15 +5,11 @@
 #include <mutex>
 
 #include "Utility.h"
-
-namespace curlpp
-{
-	class Easy;
-};
+#include <curl/curl.h>
 
 struct CurlResponse
 {
-	long status_code;
+	long status_code = 0;
 	std::string text;
 	std::map<std::string, std::string> header;
 };
@@ -33,15 +29,38 @@ struct ClientSSLConfig
 class RestClient
 {
 public:
-	static std::shared_ptr<CurlResponse> request(const std::string &host, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query);
-	static std::shared_ptr<CurlResponse> upload(const std::string &host, const std::string &path, const std::string file, std::map<std::string, std::string> header);
-	static std::shared_ptr<CurlResponse> download(const std::string &host, const std::string &path, const std::string remoteFile, const std::string localFile, std::map<std::string, std::string> header);
+	static std::shared_ptr<CurlResponse> request(
+		const std::string &host,
+		const web::http::method &mtd,
+		const std::string &path,
+		nlohmann::json *body,
+		std::map<std::string, std::string> header,
+		std::map<std::string, std::string> query);
+
+	static std::shared_ptr<CurlResponse> upload(
+		const std::string &host,
+		const std::string &path,
+		const std::string &file,
+		std::map<std::string, std::string> header);
+
+	static std::shared_ptr<CurlResponse> download(
+		const std::string &host,
+		const std::string &path,
+		const std::string &remoteFile,
+		const std::string &localFile,
+		std::map<std::string, std::string> header);
 
 	static void defaultSslConfiguration(const ClientSSLConfig &sslConfig);
 
 private:
-	static void setSslConfig(curlpp::Easy &request);
+	static void setSslConfig(CURL *curl);
 
 private:
 	static ClientSSLConfig m_sslConfig;
 };
+
+namespace curlpp
+{
+	std::string unescape(const std::string &url);
+
+}

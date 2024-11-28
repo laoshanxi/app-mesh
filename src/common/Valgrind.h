@@ -8,15 +8,18 @@
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <crt_externs.h> // For getprogname
+#endif
 
 /*
-* How to enable valgrind test :
-*   - touch /opt/appmesh/bin/appsvc.valgrind
-* How to finish test :
-*   - touch /opt/appmesh/bin/appsvc.valgrind.stop
-* Check valgrind report :
-*   - /opt/appmesh/bin/appsvc.valgrind.$pid.log
-*/
+ * How to enable valgrind test :
+ *   - touch /opt/appmesh/bin/appsvc.valgrind
+ * How to finish test :
+ *   - touch /opt/appmesh/bin/appsvc.valgrind.stop
+ * Check valgrind report :
+ *   - /opt/appmesh/bin/appsvc.valgrind.$pid.log
+ */
 
 static char **CMD_ARGV = 0;
 constexpr auto VALGRIND_CMD = "/usr/bin/valgrind";
@@ -37,15 +40,18 @@ static bool RUN_ONE_TIME = false;
     RUN_ONE_TIME = true;                   \
     VALGRIND_ENTRYPOINT(argv);
 
-// program_name from errno.h
-extern char *program_invocation_short_name;
 /// <summary>
 /// program_name from errno.h
 /// </summary>
 /// <returns></returns>
 std::string binaryName()
 {
-    return program_invocation_short_name;
+#if defined(__APPLE__)
+    return getprogname(); // macOS-specific function
+#else
+    extern char *program_invocation_short_name;
+    return program_invocation_short_name; // Linux-specific variable
+#endif
 }
 
 /// <summary>
@@ -60,7 +66,7 @@ std::string getSelfFullPath()
     int rslt = readlink("/proc/self/exe", buf, len - 1);
     if (rslt < 0 || (rslt >= len - 1))
     {
-        //return NULL;
+        // return NULL;
     }
     else
     {

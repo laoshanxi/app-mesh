@@ -2,7 +2,15 @@
 #include <memory>
 #include <thread>
 
+#ifdef __has_include
+#if __has_include(<ace/SSL/SSL_SOCK_Connector.h>)
 #include <ace/SSL/SSL_SOCK_Connector.h>
+#else
+#include <ace/SSL_SOCK_Connector.h>
+#endif
+#else
+#include <ace/SSL/SSL_SOCK_Connector.h>
+#endif
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
@@ -46,15 +54,21 @@ bool TcpClient::testConnection(int timeoutSeconds)
 	}
 
 	m_timeout.sec(timeoutSeconds);
-	errno = 0;
-	auto recvReturn = m_sslStream->recv_n(m_buffer.get(), TCP_MESSAGE_HEADER_LENGTH, &m_timeout);
+	// Retry loop for EINTR
+	ssize_t recvReturn;
+	do
+	{
+		// Retry loop for EINTR
+		errno = 0;
+		recvReturn = m_sslStream->recv_n(m_buffer.get(), TCP_MESSAGE_HEADER_LENGTH, &m_timeout);
+	} while (recvReturn == -1 && errno == EINTR);
 	if (recvReturn == -1 && errno == ETIME)
 	{
-		// LOG_DBG << fname << "Read from TCP server: " << std::strerror(errno);
-		return true;
+		return true; // Connection is still considered alive
 	}
+
 	m_sslStream->close();
-	LOG_ERR << fname << "Read from TCP server failed with error: " << std::strerror(errno);
+	LOG_ERR << fname << "Test read failed with return " << recvReturn << " error: " << errno;
 	return false;
 }
 

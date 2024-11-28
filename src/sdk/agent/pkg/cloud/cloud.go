@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -74,7 +75,7 @@ func (r *Cloud) registerHttpService() error {
 	return nil
 }
 
-func (r *Cloud) HostMetricsReportPeriod() error {
+func (r *Cloud) HostMetricsReportPeriod(ctx context.Context) error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		logManager.Log(fmt.Sprintf("failed to get hostname: %v", err))
@@ -83,14 +84,21 @@ func (r *Cloud) HostMetricsReportPeriod() error {
 
 	kvPath := fmt.Sprintf("appmesh/nodes/%s/resources", hostname)
 
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
+	// Initial report
 	r.doReport(kvPath)
-	for range ticker.C {
-		r.doReport(kvPath)
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop() // Ensure ticker is cleaned up when the function exits
+
+	for {
+		select {
+		case <-ctx.Done():
+			logManager.Log(fmt.Sprintf("context canceled: %v", ctx.Err()))
+			return ctx.Err()
+		case <-ticker.C:
+			r.doReport(kvPath)
+		}
 	}
-	return nil
 }
 
 func (r *Cloud) doReport(kvPath string) {

@@ -91,3 +91,4 @@ jobs:
             /appmesh-entrypoint.sh &
             sleep 5
             appc ls
+            appc resource

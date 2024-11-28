@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -18,30 +20,37 @@ const (
 
 var logger = utils.GetLogger()
 
-func monitorParentExit(parentPID int) {
-	if err := setPDeathSignal(); err != nil {
-		logger.Errorf("Failed to set parent death signal: %v", err)
+// monitorParentExit monitors the parent process and exits if it is no longer alive or the context is canceled.
+func monitorParentExit(ctx context.Context) {
+	parentPID := os.Getppid()
+	if parentPID <= 1 {
+		return // No valid parent to monitor
 	}
+
+	proc, err := os.FindProcess(parentPID)
+	if err != nil {
+		logger.Errorf("Failed to find parent process: %v", err)
+		return
+	}
+
+	ticker := time.NewTicker(parentCheckInterval)
+	defer ticker.Stop() // Ensure ticker is cleaned up
 
 	for {
-		if os.Getppid() != parentPID {
-			logger.Fatal("Parent process exited, shutting down")
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Check if the parent process is alive
+			if err := proc.Signal(syscall.Signal(0)); err != nil {
+				logger.Fatal("Parent process exited, shutting down")
+			}
 		}
-		time.Sleep(parentCheckInterval)
 	}
 }
 
-func setPDeathSignal() error {
-	_, _, errno := syscall.RawSyscall(uintptr(syscall.SYS_PRCTL), uintptr(syscall.PR_SET_PDEATHSIG), uintptr(syscall.SIGKILL), 0)
-	if errno != 0 {
-		return errno
-	}
-	return nil
-}
-
-func startServices() {
-
-	// Start REST proxy if enabled
+func startServices(ctx context.Context) {
+	// REST proxy
 	logger.Infof("RestEnabled: %t", config.ConfigData.REST.RestEnabled)
 	if config.ConfigData.REST.RestEnabled {
 		go func() {
@@ -51,7 +60,7 @@ func startServices() {
 		}()
 	}
 
-	// Start Prometheus exporter if port is valid
+	// Prometheus exporter
 	logger.Infof("PrometheusExporterListenPort: %d", config.ConfigData.REST.PrometheusExporterListenPort)
 	if port := config.ConfigData.REST.PrometheusExporterListenPort; port > minPort {
 		go func() {
@@ -62,27 +71,46 @@ func startServices() {
 		logger.Infof("<Prometheus Exporter> listening at: %d", port)
 	}
 
-	// Start cloud resource reporting
+	// Cloud resource reporting
 	go func() {
 		c := cloud.NewCloud()
-		if err := c.HostMetricsReportPeriod(); err != nil {
+		if err := c.HostMetricsReportPeriod(ctx); err != nil {
 			logger.Errorf("Host resource reporting failed: %v", err)
 		}
 	}()
 }
 
-func main() {
+// handleGracefulShutdown sets up signal handling for SIGINT and SIGTERM and cancels the context on signal reception.
+func handleGracefulShutdown(cancel context.CancelFunc) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	// Initialize HMAC verifier
-	var err error
-	if cloud.HMAC, err = cloud.NewHMACVerify(); err != nil {
+	go func() {
+		<-sigs
+		logger.Info("Shutting down gracefully...")
+		cancel() // Trigger context cancellation
+	}()
+}
+
+func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle graceful shutdown
+	handleGracefulShutdown(cancel)
+
+	// HMAC initialization
+	if hmac, err := cloud.NewHMACVerify(); err != nil {
 		logger.Errorf("HMAC Verifier initialization failed: %v", err)
+	} else {
+		cloud.HMAC = hmac
 	}
 
 	// Start all services
-	startServices()
+	startServices(ctx)
+	go monitorParentExit(ctx)
 
-	// Start parent process monitoring
-	parentPID := os.Getppid()
-	monitorParentExit(parentPID)
+	// Wait for shutdown signal
+	<-ctx.Done()
+	logger.Info("Shutdown complete.")
 }

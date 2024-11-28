@@ -75,7 +75,7 @@ jobs:
           docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu24 /bin/bash --login -c "set -e; mkdir ubuntu24_$BUILD_DIR; cd ubuntu24_$BUILD_DIR; cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
           # Test ARM64
           if [ "${{ matrix.arch }}" == "arm64" ]; then
-            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace ubuntu:24.04 /bin/bash -c "set -e; cd ubuntu24_$BUILD_DIR; apt update; apt install -y ./appmesh_*.deb; /opt/appmesh/script/appmesh.initd.sh start; sleep 3; appc ls"
+            docker run --platform ${{ matrix.arch }} --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace ubuntu:24.04 /bin/bash -c "set -e; cd ubuntu24_$BUILD_DIR; apt update; apt install -y ./appmesh_*.deb; /opt/appmesh/script/appmesh.initd.sh start; sleep 3; appc ls; appc resource"
           fi
 
       - name: build on ubuntu22
@@ -187,7 +187,7 @@ jobs:
           dpkg-sig --verify */*.deb
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v1.4.4
+        uses: actions/attest-build-provenance@v2.0.0
         with:
           subject-path: "*/*.rpm"
 

@@ -5,6 +5,10 @@
 #include <string>
 #include <sys/file.h>
 #include <thread>
+#if defined(__APPLE__)
+#include <crt_externs.h> // For getprogname
+#include <mach-o/dyld.h> // For _NSGetExecutablePath
+#endif
 
 #include <ace/OS.h>
 #include <boost/algorithm/string.hpp>
@@ -137,30 +141,57 @@ const std::string Utility::getSelfFullPath()
 	const static char fname[] = "Utility::getSelfFullPath() ";
 #if defined(WIN32)
 	char buf[MAX_PATH] = {0};
-	::GetModuleFileNameA(NULL, buf, MAX_PATH);
-	// Remove ".exe"
+	if (::GetModuleFileNameA(NULL, buf, MAX_PATH) == 0)
+	{
+		LOG_ERR << fname << "Failed to retrieve executable path: " << ::GetLastError();
+		return "";
+	}
+
+	// Remove ".exe" extension if present
 	std::size_t idx = 0;
 	while (buf[idx] != '\0')
 	{
 		if (buf[idx] == '.' && buf[idx + 1] == 'e' && buf[idx + 2] == 'x' && buf[idx + 3] == 'e')
 		{
 			buf[idx] = '\0';
+			break;
 		}
 	}
-#else
+	return buf;
+
+#elif defined(__linux__)
 	char buf[PATH_MAX] = {0};
 	auto count = ACE_OS::readlink("/proc/self/exe", buf, PATH_MAX);
 	if (count < 0 || count >= PATH_MAX)
 	{
-		LOG_ERR << fname << "unknown exception";
-		buf[0] = '\0';
+		LOG_ERR << fname << "Failed to read /proc/self/exe: " << strerror(errno);
+		return "";
 	}
-	else
-	{
-		buf[count] = '\0';
-	}
-#endif
+	buf[count] = '\0';
 	return buf;
+
+#elif defined(__APPLE__)
+	std::vector<char> buf(PATH_MAX);
+	uint32_t size = buf.size();
+	if (_NSGetExecutablePath(buf.data(), &size) != 0)
+	{
+		LOG_ERR << fname << "Failed to retrieve executable path";
+		return "";
+	}
+
+	// Resolve symlinks to get the real path
+	char realPath[PATH_MAX] = {0};
+	if (realpath(buf.data(), realPath) == nullptr)
+	{
+		LOG_ERR << fname << "Failed to resolve real path: " << strerror(errno);
+		return "";
+	}
+	return realPath;
+
+#else
+	LOG_ERR << fname << "Platform not supported";
+	return "";
+#endif
 }
 
 const std::string &Utility::getSelfDir()
@@ -187,10 +218,14 @@ std::string Utility::getConfigFilePath(const std::string &configFile, bool write
 }
 
 // program_name from errno.h
-extern char *program_invocation_short_name;
 const std::string Utility::getBinaryName()
 {
-	return program_invocation_short_name;
+#if defined(__APPLE__)
+	return getprogname(); // macOS-specific function
+#else
+	extern char *program_invocation_short_name;
+	return program_invocation_short_name; // Linux-specific variable
+#endif
 }
 
 bool Utility::isDirExist(const std::string &path)
@@ -212,7 +247,7 @@ bool Utility::createDirectory(const std::string &path, fs::perms perms)
 	if (!isDirExist(path))
 	{
 		const fs::path directoryPath = fs::path(path);
-		if (!fs::create_directory(directoryPath))
+		if (!fs::create_directories(directoryPath))
 		{
 			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << std::strerror(errno);
 			return false;

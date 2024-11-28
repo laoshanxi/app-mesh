@@ -42,9 +42,6 @@ apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
 apt install -y libreadline-dev patchelf
 
-# curlcpp
-apt install -y libcurlpp-dev
-
 # build ACE
 apt install -y libace-dev libace-ssl-dev
 

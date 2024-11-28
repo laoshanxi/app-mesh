@@ -1,8 +1,17 @@
 #pragma once
 #include <tuple>
 
-#include <ace/SSL/SSL_SOCK_Stream.h>
 #include <msgpack.hpp>
+
+#ifdef __has_include
+#if __has_include(<ace/SSL/SSL_SOCK_Stream.h>)
+#include <ace/SSL/SSL_SOCK_Stream.h>
+#else
+#include <ace/SSL_SOCK_Stream.h>
+#endif
+#else
+#include <ace/SSL/SSL_SOCK_Stream.h>
+#endif
 
 class Response
 {
