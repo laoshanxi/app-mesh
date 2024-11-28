@@ -121,12 +121,45 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 ##########################################################################
-# library dir
+# Include dir
 ##########################################################################
-link_directories(
-    /usr/local/lib64
-    /usr/local/lib
-)
+if(EXISTS /usr/local/include)
+    include_directories(/usr/local/include)
+endif()
+
+##########################################################################
+# Library dir
+##########################################################################
+if(EXISTS /usr/local/lib64)
+    link_directories(/usr/local/lib64)
+endif()
+if(EXISTS /usr/local/lib)
+    link_directories(/usr/local/lib)
+endif()
+
+if(APPLE)
+    # Detect Apple Silicon vs Intel
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+        set(HOMEBREW_PREFIX "/opt/homebrew")
+        set(CMAKE_INSTALL_RPATH "/opt/homebrew/lib;/opt/appmesh/lib64")
+    else()
+        set(HOMEBREW_PREFIX "/usr/local")
+        set(CMAKE_INSTALL_RPATH "/usr/local/lib;/opt/appmesh/lib64")
+    endif()
+
+    # Add Homebrew include and library paths
+    include_directories(${HOMEBREW_PREFIX}/include)
+    link_directories(${HOMEBREW_PREFIX}/lib)
+
+    # Add Homebrew path to CMAKE_PREFIX_PATH
+    list(APPEND CMAKE_PREFIX_PATH ${HOMEBREW_PREFIX})
+
+    # Ignore warning: 'vsprintf' is deprecated
+    add_compile_options(-Wno-deprecated-declarations)
+
+    # Optional: Add pkg-config path if needed
+    set(ENV{PKG_CONFIG_PATH} "${HOMEBREW_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+endif()
 
 ##########################################################################
 # sub dir

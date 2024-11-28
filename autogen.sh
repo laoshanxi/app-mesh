@@ -133,7 +133,7 @@ if [ true ]; then
 	tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
 	cd ./boost_1_${BOOST_VER}_0
 	./bootstrap.sh --without-libraries=atomic,context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
-	./b2 -j4
+	./b2 -j"$(nproc)"
 	./b2 install >/dev/null
 	ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
 fi
@@ -190,10 +190,10 @@ if [ true ]; then
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
 	cd ${ACE_ROOT}/ace
-	make ssl=1 -j6
+	make ssl=1 -j"$(nproc)"
 	make install ssl=1 INSTALL_PREFIX=/usr/local
 	# cd ${ACE_ROOT}/protocols/ace
-	# make ssl=1 -j6
+	# make ssl=1 -j"$(nproc)"
 	# make install ssl=1 INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
 fi

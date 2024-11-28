@@ -1,4 +1,4 @@
-#include <math.h>
+#include <algorithm> // For std::max
 
 #include <boost/algorithm/string_regex.hpp>
 

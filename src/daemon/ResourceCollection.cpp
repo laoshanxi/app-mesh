@@ -185,7 +185,7 @@ nlohmann::json ResourceCollection::AsJson()
 		result[("load")] = std::move(sysLoad);
 	}
 	// FS
-	auto mountPoints = os::getMoundPoints();
+	auto mountPoints = os::getMountPoints();
 	auto fsArr = nlohmann::json::array();
 	std::for_each(mountPoints.begin(), mountPoints.end(), [&fsArr](const std::pair<std::string, std::string> &pair)
 				  {
@@ -193,9 +193,9 @@ nlohmann::json ResourceCollection::AsJson()
 					  if (usage != nullptr)
 					  {
 						  nlohmann::json fs = nlohmann::json::object();
-						  fs["size"] = (usage->size);
-						  fs["used"] = (usage->used);
-						  fs["usage"] = (usage->usage);
+						  fs["size"] = (usage->totalSize);
+						  fs["used"] = (usage->usedSize);
+						  fs["usage"] = (usage->usagePercentage);
 						  fs["device"] = std::string(pair.second);
 						  fs["mount_point"] = std::string(pair.first);
 						  fsArr.push_back(fs);

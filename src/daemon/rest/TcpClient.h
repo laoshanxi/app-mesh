@@ -1,7 +1,15 @@
 #pragma once
 #include <memory>
 
+#ifdef __has_include
+#if __has_include(<ace/SSL/SSL_SOCK_Connector.h>)
 #include <ace/SSL/SSL_SOCK_Connector.h>
+#else
+#include <ace/SSL_SOCK_Connector.h>
+#endif
+#else
+#include <ace/SSL/SSL_SOCK_Connector.h>
+#endif
 
 class TcpClient
 {

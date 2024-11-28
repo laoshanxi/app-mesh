@@ -83,12 +83,21 @@ EOF
 get_hosts_list() {
     local ip_addresses hostname_long hostname_short
 
-    # Get IP addresses, removing trailing spaces and empty entries
-    # https://stackoverflow.com/questions/13322485/how-to-get-the-primary-ip-address-of-the-local-machine-on-linux-and-os-x
-    ip_addresses=$(hostname -I | tr ' ' ',' | sed 's/,$//' | grep -oP '(\d+\.\d+\.\d+\.\d+)')
+    # Get IP addresses
+    if [[ "$OSTYPE" == "linux"* ]]; then
+        # Linux: Use `hostname -I`
+        ip_addresses=$(hostname -I | tr ' ' ',' | sed 's/,$//' | grep -oP '(\d+\.\d+\.\d+\.\d+)')
+    else
+        # macOS: Use `ifconfig` to get IP addresses
+        ip_addresses=$(ifconfig | grep -E 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | tr '\n' ',' | sed 's/,$//')
+    fi
 
     # Get hostnames
-    hostname_long=$(hostname --fqdn)
+    if [[ "$OSTYPE" == "linux"* ]]; then
+        hostname_long=$(hostname --fqdn 2>/dev/null || hostname)
+    else
+        hostname_long=$(hostname)
+    fi
     hostname_short=$(hostname)
 
     # Combine all hosts with localhost entries

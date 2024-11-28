@@ -5,9 +5,17 @@
 
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
-#include <ace/SSL/SSL_SOCK_Stream.h>
 #include <ace/Svc_Handler.h>
 #include <boost/lockfree/spsc_queue.hpp>
+#ifdef __has_include
+#if __has_include(<ace/SSL/SSL_SOCK_Stream.h>)
+#include <ace/SSL/SSL_SOCK_Stream.h>
+#else
+#include <ace/SSL_SOCK_Stream.h>
+#endif
+#else
+#include <ace/SSL/SSL_SOCK_Stream.h>
+#endif
 
 #include "../../common/MessageQueue.h"
 #include "protoc/ProtobufHelper.h"
@@ -58,7 +66,7 @@ protected:
 	/// </summary>
 	/// <param name="Response"></param>
 	bool reply(const Response &resp);
-	bool sendBytes(const char *data, size_t length);
+	bool sendBytes(const char *data, size_t length, int timeoutSeconds = 0);
 	bool sendBytes(size_t intValue);
 
 	int testStream();
