@@ -82,7 +82,7 @@ rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 go version
 
-# check libssl in case of openssl_update.sh not executed
+# check libssl in case of update_openssl.sh not executed
 if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
 	echo 'openssl was alreay installed'
 	# set for appmesh cmake
@@ -273,9 +273,7 @@ git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 
 # clean
-go clean -cache
-go clean -fuzzcache
-go clean --modcache
+go clean -cache -fuzzcache -modcache
 pip3 cache purge
 if [ -f "/usr/bin/yum" ]; then
 	yum clean all

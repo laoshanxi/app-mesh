@@ -19,7 +19,7 @@ set -e # Exit on error
 set -u # Exit on undefined variables
 
 # Environment variables with fallback defaults
-export PROG_HOME=${PROG_HOME:-"/opt/appmesh"}
+export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
 export PROG=${PROG:-"${PROG_HOME}/bin/appsvc"}
 export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/appmesh-entrypoint.sh"}
 
@@ -27,6 +27,7 @@ export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/appmesh-entrypoint.sh
 readonly TIMEOUT_SECONDS=10                    # Desired timeout in seconds
 readonly SLEEP_INTERVAL=0.2                    # Check interval in seconds
 readonly MAX_ATTEMPTS=$((TIMEOUT_SECONDS * 5)) # 5 attempts per second (1/0.2)
+readonly ENV_FILE="$PROG_HOME/appmesh.default"
 
 # Exit codes as per LSB standards
 readonly LSB_OK=0
@@ -41,7 +42,7 @@ readonly LSB_NOT_RUNNING_RELOAD=7
 [ -r /lib/lsb/init-functions ] && . /lib/lsb/init-functions
 
 # Source system configuration
-[ -r /etc/default/appmesh ] && . /etc/default/appmesh
+[ -r ENV_FILE ] && . ENV_FILE
 
 log() {
 	local level="$1"

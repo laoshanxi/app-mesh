@@ -665,12 +665,13 @@ bool Utility::createPidFile()
 {
 	const static char fname[] = "Utility::createPidFile() ";
 
+	const auto pidFile = (fs::path(Utility::getParentDir()) / PID_FILE).string();
 	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
 	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
-	auto fd = open(PID_FILE_PATH, O_CREAT | O_RDWR | O_TRUNC, 0666);
+	auto fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
-		std::cout << fname << "Failed to create PID file:" << PID_FILE_PATH << " with error: " << std::strerror(errno) << std::endl;
+		std::cout << fname << "Failed to create PID file:" << pidFile << " with error: " << std::strerror(errno) << std::endl;
 		return false;
 	}
 	if (flock(fd, LOCK_EX | LOCK_NB) == 0)

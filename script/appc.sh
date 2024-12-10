@@ -4,7 +4,7 @@
 # Executes the appc binary with necessary environment setup.
 ################################################################################
 
-export PROG_HOME="/opt/appmesh"
+export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
 export LD_LIBRARY_PATH="${PROG_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 
 # Modify IFS temporarily to handle arguments with spaces

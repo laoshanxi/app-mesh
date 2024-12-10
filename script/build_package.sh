@@ -40,10 +40,10 @@ fi
 cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/"{config.yaml,security/security.yaml,security/ldapplugin/ldap.yaml} "${PACKAGE_HOME}/"
 cp "${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/pkg/cloud/consul-api-config.yaml" "${PACKAGE_HOME}/"
 cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml" "${PACKAGE_HOME}/script/"
-cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{app*.sh,*.service,prom*.yml,docker*.yaml,*.html} "${PACKAGE_HOME}/script/"
+cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{setup.sh,app*.sh,*.service,prom*.yml,docker*.yaml,*.html} "${PACKAGE_HOME}/script/"
 cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 cp "${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py" "${PACKAGE_HOME}/bin/"
-cp "${CMAKE_CURRENT_SOURCE_DIR}/script/ssl_cert_generate.sh" /usr/local/bin/{cfssl,cfssljson} "${PACKAGE_HOME}/ssl/"
+cp "${CMAKE_CURRENT_SOURCE_DIR}/script/generate_ssl_cert.sh" /usr/local/bin/{cfssl,cfssljson} "${PACKAGE_HOME}/ssl/"
 cp -r "${CMAKE_CURRENT_SOURCE_DIR}/script/apps" "${PACKAGE_HOME}/"
 
 chmod +x "${PACKAGE_HOME}/script/"*.sh

@@ -62,8 +62,9 @@ int main(int argc, char *argv[])
 	{
 		ACE::init();
 		// ACE::set_handle_limit(); // TODO: this will cause timer issue.
+		fs::current_path(Utility::getParentDir());
 
-		// create pid file: /run/appmesh/appmesh.pid
+		// create pid file: /appmesh.pid
 		Utility::createPidFile();
 
 		// https://www.cnblogs.com/shelmean/p/9436425.html
@@ -111,7 +112,6 @@ int main(int argc, char *argv[])
 
 		// working dir
 		Utility::createDirectory(config->getWorkDir());
-		fs::current_path(config->getWorkDir());
 		const auto tmpDir = (fs::path(config->getWorkDir()) / "tmp").string();
 		const auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout").string();
 		const auto inputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdin").string();
@@ -218,6 +218,7 @@ int main(int argc, char *argv[])
 		}
 
 		// Main application monitoring loop
+		fs::current_path(config->getWorkDir());
 		int tcpErrorCounter = 0;
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{

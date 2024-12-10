@@ -18,8 +18,8 @@ RUN ls && apt-get update && \
 	rm -rf /opt/appmesh/apps/ping.yaml && rm -rf /opt/appmesh/apps/backup.yaml && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
 	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
-	touch /run/appmesh/appmesh.pid && \
-	chown -R appmesh:appmesh /opt/appmesh/ /run/appmesh/appmesh.pid && \
+	touch /opt/appmesh/appmesh.pid && \
+	chown -R appmesh:appmesh /opt/appmesh/ && \
 	. /usr/bin/appc -v && /opt/appmesh/bin/appsvc -v
 EXPOSE 6060
 USER appmesh

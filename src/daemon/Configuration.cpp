@@ -833,6 +833,7 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 	nlohmann::json objEnvs = nlohmann::json::object();
 	objEnvs[PSK_SHM_ENV] = shmName;
 	restApp[JSON_KEY_APP_env] = std::move(objEnvs);
+	restApp[JSON_KEY_APP_working_dir] = Utility::getParentDir();
 
 	return restApp;
 }

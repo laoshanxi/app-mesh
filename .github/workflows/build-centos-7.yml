@@ -7,8 +7,8 @@ on:
     paths:
       - ".github/workflows/docker_build/build-centos-7.yml"
       - "docker/Dockerfile.build_centos7"
-      - "script/setup-build-env/autogen.sh"
-      - "script/openssl_update.sh"
+      - "script/setup_build_env.sh/autogen.sh"
+      - "script/update_openssl.sh"
 
 env:
   # Use docker.io for Docker Hub if empty

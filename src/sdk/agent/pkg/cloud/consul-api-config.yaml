@@ -8,6 +8,6 @@ consul:
   tls:
     enable: true
     insecure_skip_verify: true
-    ca_file: /opt/appmesh/ssl/ca.pem
-    cert_file: /opt/appmesh/ssl/client.pem
-    key_file: /opt/appmesh/ssl/client-key.pem
+    ca_file: ssl/ca.pem
+    cert_file: ssl/client.pem
+    key_file: ssl/client-key.pem
