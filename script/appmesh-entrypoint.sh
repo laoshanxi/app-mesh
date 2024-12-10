@@ -8,7 +8,7 @@ set -e # Exit on error
 set -u # Exit on undefined variables
 
 # Environment Variables
-export PROG_HOME="/opt/appmesh"
+export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
 export PROGRAM="${PROG_HOME}/bin/appsvc"
 export LD_LIBRARY_PATH="${PROG_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 

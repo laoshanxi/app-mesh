@@ -14,6 +14,7 @@ BUILD_THREADS=$(sysctl -n hw.ncpu || echo 4)
 cleanup() {
 	echo "Cleaning up temporary directory..."
 	rm -rf "${TMP_DIR}"
+	go clean -cache -fuzzcache -modcache
 }
 
 # Set up trap for cleanup
@@ -50,7 +51,7 @@ fi
 # Install curl and ace from custom formulas
 for formula in curl ace; do
 	wget "https://github.com/laoshanxi/homebrew-core/raw/refs/heads/master/Formula/${formula:0:1}/${formula}.rb"
-	brew reinstall --build-from-source --verbose "./${formula}.rb"
+	HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew reinstall --build-from-source --verbose "./${formula}.rb"
 done
 
 # Install Go tools

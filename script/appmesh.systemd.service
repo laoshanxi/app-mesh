@@ -16,9 +16,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-PIDFile=/run/appmesh/appmesh.pid
+PIDFile=/opt/appmesh/appmesh.pid
 Environment=
-EnvironmentFile=/etc/default/appmesh
+EnvironmentFile=/opt/appmesh/appmesh.default
 WorkingDirectory=/opt/appmesh/
 ExecStart=/opt/appmesh/bin/appsvc
 ExecStop=/bin/kill -TERM $MAINPID

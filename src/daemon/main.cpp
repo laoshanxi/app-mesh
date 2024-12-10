@@ -63,7 +63,7 @@ int main(int argc, char *argv[])
 		ACE::init();
 		// ACE::set_handle_limit(); // TODO: this will cause timer issue.
 
-		// create pid file: /run/appmesh/appmesh.pid
+		// create pid file: /appmesh.pid
 		Utility::createPidFile();
 
 		// https://www.cnblogs.com/shelmean/p/9436425.html

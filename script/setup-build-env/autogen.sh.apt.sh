@@ -119,9 +119,7 @@ git clone --depth=1 -b v2.x https://github.com/catchorg/Catch2.git
 cp Catch2/single_include/catch2/catch.hpp /usr/local/include/
 
 # clean
-go clean -cache
-go clean -fuzzcache
-go clean --modcache
+go clean -cache -fuzzcache -modcache
 pip3 cache purge
 if [ -f "/usr/bin/yum" ]; then
 	yum clean all

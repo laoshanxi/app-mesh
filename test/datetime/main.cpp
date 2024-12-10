@@ -80,6 +80,9 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
     LOG_DBG << testStr2 << " formatLocalTime: " << DateTime::formatLocalTime(testTimeP2);
     REQUIRE(DateTime::formatLocalTime(testTimeP1) == DateTime::formatLocalTime(testTimeP2));
 
+    REQUIRE(DateTime::parseISO8601DateTime("2021-12-08T17:05+09") == DateTime::parseISO8601DateTime("2021-12-08T16:05+08"));
+    REQUIRE(DateTime::parseISO8601DateTime("2021-12-08T09:05+01:00") == DateTime::parseISO8601DateTime("2021-12-08T16:05+08"));
+
     // parseISO8601DateTime
     try
     {
