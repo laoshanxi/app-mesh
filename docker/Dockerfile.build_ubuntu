@@ -6,4 +6,4 @@ COPY . /workspace/
 
 USER root
 
-RUN bash script/setup-build-env/autogen.sh.apt.sh && rm -rf /workspace/*
+RUN bash script/setup_build_env/autogen.sh.apt.sh && rm -rf /workspace/*

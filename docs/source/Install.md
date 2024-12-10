@@ -99,6 +99,7 @@ By default, App Mesh will connect to Consul via `https://127.0.0.1:443`. App Mes
 - WSL Support: Use service appmesh start on Windows WSL Ubuntu environments.
 - Fresh Installation: Set `export APPMESH_FRESH_INSTALL=Y` to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
 - Secure Installation: Set `export APPMESH_SECURE_INSTALLATION=Y` to generate an initial secure password for the admin user and enable password encryption.
+- Custom Installation Path: Set `PROMPT_INSTALL_PATH=1` to specify a custom installation directory interactively during installation. Alternatively, set `PROMPT_INSTALL_PATH=/opt` to specify the installation directory directly without a prompt. After moving the home directory to a new location, you can re-run the script `script/setup.sh` to complete the setup.
 - Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users.
 - Daemon User and Group: Use `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user and group.
 - Timezone Configuration: Use `APPMESH_BaseConfig_PosixTimezone` (e.g., export APPMESH_BaseConfig_PosixTimezone="+08") for timezone setting.

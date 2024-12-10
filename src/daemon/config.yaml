@@ -58,15 +58,15 @@ REST:
 
   SSL:
     # Path to the Certificate Authority (CA) certificate.
-    SSLCaPath: /opt/appmesh/ssl/ca.pem
+    SSLCaPath: ssl/ca.pem
 
     # Server certificate and private key file paths.
-    SSLCertificateFile: /opt/appmesh/ssl/server.pem
-    SSLCertificateKeyFile: /opt/appmesh/ssl/server-key.pem
+    SSLCertificateFile: ssl/server.pem
+    SSLCertificateKeyFile: ssl/server-key.pem
 
     # Client certificate and private key file paths.
-    SSLClientCertificateFile: /opt/appmesh/ssl/client.pem
-    SSLClientCertificateKeyFile: /opt/appmesh/ssl/client-key.pem
+    SSLClientCertificateFile: ssl/client.pem
+    SSLClientCertificateKeyFile: ssl/client-key.pem
 
     # Enables or disables verification of client certificates.
     VerifyClient: false

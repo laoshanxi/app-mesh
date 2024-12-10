@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 
 ################################################################################
-## RPM/DEB post installation script file, executed during installation
+## Register and set up system files for initialization after installation
 ################################################################################
 
-readonly INSTALL_DIR=/opt/appmesh
-readonly SOFTLINK=/usr/bin/appc
+# HOME path
+export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
+
+# Soft links
 readonly BASH_COMPLETION_DIR=/usr/share/bash-completion/completions
-readonly BASH_COMPLETION_FILE="$BASH_COMPLETION_DIR/appc"
+readonly BASH_COMPLETION_SOFTLINK="$BASH_COMPLETION_DIR/appc"
+readonly APPC_SOFTLINK=/usr/bin/appc
+readonly INITD_SOFTLINK=/etc/init.d/appmesh
+
+# Target files
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
-readonly INITD_FILE=/etc/init.d/appmesh
-readonly ENV_FILE=/etc/default/appmesh
-readonly PID_DIR=/run/appmesh
+readonly ENV_FILE="$PROG_HOME/appmesh.default"
 
 log() {
     printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -33,9 +37,9 @@ get_os_type() {
 }
 
 setup_environment_file() {
+
     log "Setting up environment file at $ENV_FILE."
-    mkdir -p "$(dirname "$ENV_FILE")"
-    : >"$ENV_FILE"
+    : >$ENV_FILE
 
     # Set locale with better compatibility
     if locale -a 2>/dev/null | grep -iE "^(en_US\.(utf8|UTF-8))$" >/dev/null; then
@@ -49,7 +53,7 @@ setup_environment_file() {
     fi
 
     # Set LD_LIBRARY_PATH with path validation
-    local lib_path="${INSTALL_DIR}/lib64"
+    local lib_path="${PROG_HOME}/lib64"
     if [ -d "$lib_path" ]; then
         if [ -n "$LD_LIBRARY_PATH" ]; then
             echo "LD_LIBRARY_PATH=${lib_path}:${LD_LIBRARY_PATH}" >>"$ENV_FILE"
@@ -102,15 +106,14 @@ setup_service() {
 
 install_systemd_service() {
     log "Installing systemd service at $SYSTEMD_FILE."
-    local service_template="${INSTALL_DIR}/script/appmesh.systemd.service"
+    local service_template="${PROG_HOME}/script/appmesh.systemd.service"
 
     if [ ! -f "$service_template" ]; then
         log "Service template not found: $service_template"
         return 1
     fi
 
-    cp -f "$service_template" "$SYSTEMD_FILE"
-    chmod 644 "$SYSTEMD_FILE"
+    rm -f "$SYSTEMD_FILE" && ln -sf "$service_template" "$SYSTEMD_FILE"
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER}" ]; then
         sed -i.bak "s/^User=.*/User=${APPMESH_DAEMON_EXEC_USER}/" "$SYSTEMD_FILE"
@@ -128,15 +131,14 @@ install_systemd_service() {
 
 install_initd_service() {
     log "Installing init.d service"
-    local initd_template="${INSTALL_DIR}/script/appmesh.initd.sh"
+    local initd_template="${PROG_HOME}/script/appmesh.initd.sh"
 
     if [ ! -f "$initd_template" ]; then
         log "Service template not found: $initd_template"
         return 1
     fi
 
-    cp -f "$initd_template" "$INITD_FILE"
-    chmod 755 "$INITD_FILE"
+    rm -f "$INITD_SOFTLINK" && ln -sf "$initd_template" "$INITD_SOFTLINK"
 
     local os_type
     os_type=$(get_os_type)
@@ -149,22 +151,21 @@ install_initd_service() {
 
 setup_permissions() {
     log "Setting up permissions."
-    chmod 644 "${INSTALL_DIR}"/config.yaml "${INSTALL_DIR}"/security.yaml
-    find "${INSTALL_DIR}/script" -name "*.sh" -exec chmod +x {} \;
+    chmod 644 "${PROG_HOME}"/config.yaml "${PROG_HOME}"/security.yaml
+    find "${PROG_HOME}/script" -name "*.sh" -exec chmod +x {} \;
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER}" ]; then
         local owner="${APPMESH_DAEMON_EXEC_USER}"
         [ -n "${APPMESH_DAEMON_EXEC_USER_GROUP}" ] && owner="${owner}:${APPMESH_DAEMON_EXEC_USER_GROUP}"
-        chown -R "$owner" "${INSTALL_DIR}" "${PID_DIR}"
     fi
 }
 
 setup_ssl() {
-    local ssl_dir="${INSTALL_DIR}/ssl"
+    local ssl_dir="${PROG_HOME}/ssl"
     if [ "$APPMESH_FRESH_INSTALL" = "Y" ] || [ ! -f "${ssl_dir}/server.pem" ]; then
         log "Generating SSL certificates"
-        if [ -f "${ssl_dir}/ssl_cert_generate.sh" ]; then
-            (cd "$ssl_dir" && sh ssl_cert_generate.sh)
+        if [ -f "${ssl_dir}/generate_ssl_cert.sh" ]; then
+            (cd "$ssl_dir" && sh generate_ssl_cert.sh)
             find "$ssl_dir" -name "*.pem" -exec chmod 644 {} \;
         else
             log "SSL certificate generation script not found"
@@ -195,11 +196,10 @@ main() {
         exit 1
     fi
 
-    mkdir -p "${INSTALL_DIR}/work"
-    mkdir -p "$PID_DIR"
+    mkdir -p "${PROG_HOME}/work"
 
     # Stop existing service
-    if [ -f "$SYSTEMD_FILE" ] || [ -f "$INITD_FILE" ]; then
+    if [ -f "$SYSTEMD_FILE" ] || [ -f "$INITD_SOFTLINK" ]; then
         log "Stopping existing service"
         systemctl stop appmesh 2>/dev/null || service appmesh stop 2>/dev/null || true
         sleep 2
@@ -207,7 +207,7 @@ main() {
 
     # Clean work directory for fresh install
     if [ "$APPMESH_FRESH_INSTALL" = "Y" ]; then
-        rm -rf "${INSTALL_DIR}/work/"* "${INSTALL_DIR}/work/".* 2>/dev/null || true
+        rm -rf "${PROG_HOME}/work/"* "${PROG_HOME}/work/".* 2>/dev/null || true
         log "Work directory cleaned for fresh installation."
     fi
 
@@ -219,24 +219,23 @@ main() {
 
     # Install bash completion
     if [ -d "$BASH_COMPLETION_DIR" ]; then
-        cp -f "${INSTALL_DIR}/script/bash_completion.sh" "$BASH_COMPLETION_FILE"
-        chmod 644 "$BASH_COMPLETION_FILE"
-        log "Bash completion script successfully installed at $BASH_COMPLETION_FILE."
+        rm -f "$BASH_COMPLETION_SOFTLINK" && ln -sf "${PROG_HOME}/script/bash_completion.sh" "$BASH_COMPLETION_SOFTLINK"
+        log "Bash completion script successfully installed at $BASH_COMPLETION_SOFTLINK."
     else
         log "Warning: $BASH_COMPLETION_DIR directory not found. Skipping bash completion script installation."
     fi
 
     # Create appc symlink
-    ln -sf "${INSTALL_DIR}/script/appc.sh" "$SOFTLINK"
-    log "Symlink for appc created at $SOFTLINK."
+    rm -f "$APPC_SOFTLINK" && ln -sf "${PROG_HOME}/script/appc.sh" "$APPC_SOFTLINK"
+    log "Symlink for appc created at $APPC_SOFTLINK."
 
     # Initialize secure installation if needed
     if [ "$APPMESH_SECURE_INSTALLATION" = "Y" ]; then
         log "Performing secure installation initialization."
-        "$SOFTLINK" appmginit
+        "$APPC_SOFTLINK" appmginit
     fi
 
-    log "App Mesh installation completed successfully. Installed to: $INSTALL_DIR."
+    log "App Mesh installation completed successfully. Installed to: $PROG_HOME."
     print_startup_instructions
 }
 

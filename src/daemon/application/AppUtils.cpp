@@ -17,7 +17,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
 	if (shellFile.is_open() && shellFile.good())
 	{
-		shellFile << "#!/usr/bin/env bash" << std::endl;
+		shellFile << "#!/bin/bash" << std::endl;
 		shellFile << "# App Mesh app: <" << name << ">" << std::endl;
 		shellFile << "set -e" << std::endl;
 		if (workingDir.length())
@@ -44,7 +44,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 		else
 		{
 			// keep current user
-			m_shellCmd = Utility::stringFormat("/bin/sh '%s'", m_fileName.c_str());
+			m_shellCmd = Utility::stringFormat("/bin/bash '%s'", m_fileName.c_str());
 		}
 
 		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> run in shell mode";

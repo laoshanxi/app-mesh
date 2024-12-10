@@ -205,6 +205,7 @@ nlohmann::json ResourceCollection::AsJson()
 	result[("systime")] = std::string(DateTime::formatLocalTime(std::chrono::system_clock::now()));
 	result[("appmesh_start_time")] = std::string(DateTime::formatLocalTime(m_appmeshStartTime));
 	result[("pid")] = (getPid());
+	result[("home")] = (Utility::getParentDir());
 	result[("fd")] = (os::pstree()->totalFileDescriptors());
 	LOG_DBG << fname << "Exit";
 	return result;

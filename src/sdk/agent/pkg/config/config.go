@@ -41,11 +41,11 @@ var ConfigData = Configuration{
 		PrometheusExporterListenPort: 0,
 
 		SSL: appmesh.SSLConfig{
-			SSLCaPath:                   "/opt/appmesh/ssl/ca.pem",
-			SSLCertificateFile:          "/opt/appmesh/ssl/server.pem",
-			SSLCertificateKeyFile:       "/opt/appmesh/ssl/server-key.pem",
-			SSLClientCertificateFile:    "/opt/appmesh/ssl/client.pem",
-			SSLClientCertificateKeyFile: "/opt/appmesh/ssl/client-key.pem",
+			SSLCaPath:                   "ssl/ca.pem",
+			SSLCertificateFile:          "ssl/server.pem",
+			SSLCertificateKeyFile:       "ssl/server-key.pem",
+			SSLClientCertificateFile:    "ssl/client.pem",
+			SSLClientCertificateKeyFile: "ssl/client-key.pem",
 			VerifyClient:                false,
 			VerifyServer:                true,
 			VerifyServerDelegate:        true,

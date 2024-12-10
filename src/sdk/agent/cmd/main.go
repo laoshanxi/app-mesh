@@ -93,6 +93,9 @@ func handleGracefulShutdown(cancel context.CancelFunc) {
 }
 
 func main() {
+	cwd, _ := os.Getwd()
+	logger.Info("Current working directory:", cwd)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

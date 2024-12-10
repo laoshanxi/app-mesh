@@ -16,13 +16,13 @@ Wants=network.target
 
 [Service]
 Type=simple
-PIDFile=/run/appmesh/appmesh.pid
+PIDFile=/opt/appmesh/appmesh.pid
 Environment=
-EnvironmentFile=/etc/default/appmesh
+EnvironmentFile=/opt/appmesh/appmesh.default
 WorkingDirectory=/opt/appmesh/
 ExecStart=/opt/appmesh/bin/appsvc
-ExecStop=/bin/kill -TERM $MAINPID
-ExecReload=/bin/kill -HUP $MAINPID
+ExecStop=/bin/sh -c 'kill -TERM $(cat /opt/appmesh/appmesh.pid)'
+ExecReload=/bin/sh -c 'kill -HUP $(cat /opt/appmesh/appmesh.pid)'
 Restart=always
 RestartSec=2
 StartLimitIntervalSec=0

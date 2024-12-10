@@ -223,7 +223,7 @@ bool HttpRequestOutputView::onTimerResponse()
 			{
 				// https://github.com/yesoreyeram/grafana-infinity-datasource/blob/main/testdata/users.html
 				// https://sriramajeyam.com/grafana-infinity-datasource/wiki/html
-				static const auto html = Utility::readFileCpp("/opt/appmesh/script/grafana_infinity.html");
+				static const auto html = Utility::readFileCpp("script/grafana_infinity.html");
 				auto lines = Utility::splitString(output, "\n");
 				std::stringstream ss;
 				for (const auto &line : lines)

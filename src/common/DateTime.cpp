@@ -53,72 +53,81 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 {
 	const static char fname[] = "DateTime::parseISO8601DateTime() ";
 
-	if (strTime.length() == 0)
+	// Check if the input time string is empty and return epoch time if so.
+	if (strTime.empty())
 	{
-		LOG_WAR << fname << "Empty date time string input, return with zero time";
+		LOG_WAR << fname << "Empty date-time string input, returning epoch time.";
 		return std::chrono::system_clock::from_time_t(0);
 	}
 
+	// Copy the input string for processing
 	std::string iso8601TimeStr = strTime;
+
+	// Extract the timezone part from the input string if present
 	std::string zoneStr = DateTime::getISO8601TimeZone(iso8601TimeStr);
-	if (zoneStr.length() > 0)
+
+	if (zoneStr.empty())
 	{
-		// have build-in posix zone
-	}
-	else if (posixTimeZone.length() > 0)
-	{
-		// provide posix zone by parameter
-		zoneStr = posixTimeZone;
-		iso8601TimeStr.append(zoneStr);
-	}
-	else
-	{
-		// use host zone
-		zoneStr = DateTime::getLocalZoneUTCOffset();
-		iso8601TimeStr.append(zoneStr);
+		if (!posixTimeZone.empty())
+		{
+			// Use the provided POSIX timezone if no timezone is found in the string
+			zoneStr = posixTimeZone;
+		}
+		else
+		{
+			// Default to the local timezone offset if none is provided or found
+			zoneStr = DateTime::getLocalZoneUTCOffset();
+		}
+		iso8601TimeStr += zoneStr; // Append the timezone to the date-time string
 	}
 
 	try
 	{
+		// Replace 'T' with a space to match the expected input format
 		iso8601TimeStr = Utility::stringReplace(iso8601TimeStr, "T", " ");
-		// https://stackoverflow.com/questions/10484232/how-to-get-boostposix-timeptime-from-formatted-string
-		// https://www.boost.org/doc/libs/1_69_0/doc/html/date_time/date_time_io.html#date_time.io_tutorial
-		// https://stackoverflow.com/questions/28193719/boostlocal-time-does-not-read-correct-iso-extended-format/28194968#28194968
-		// "2005-10-15 13:12:11-07:00"
-		// local_time_facet *output_facet = new local_time_facet(format);
-		boost::local_time::local_date_time localDateTime(boost::date_time::special_values::not_a_date_time);
-		std::istringstream iss(iso8601TimeStr);
-		iss.exceptions(std::ios_base::failbit);
-		// iss.imbue(std::locale(std::locale::classic(), output_facet));
 
-		// determine format
+		// Determine the appropriate ISO8601 format (with seconds or minutes precision)
 		std::string format = ISO8601FORMAT_IN_MINUTES;
-		if (zoneStr.length() > 0 && iso8601TimeStr.length() > zoneStr.length())
+		if (!zoneStr.empty() && iso8601TimeStr.length() > zoneStr.length())
 		{
-			// remove zone part
+			// Extract the date-time portion without the timezone
 			auto dateTimeSectionStr = iso8601TimeStr.substr(0, iso8601TimeStr.length() - zoneStr.length());
-			// if contain 2 colons, use second format
+
+			// Check the number of colons to decide the format (e.g., hours:minutes vs. hours:minutes:seconds)
 			if (Utility::charCount(dateTimeSectionStr, ':') == 2)
 			{
 				format = ISO8601FORMAT_IN_SECONDS;
 			}
 		}
 
-		iss.imbue(std::locale(iss.getloc(), new boost::local_time::local_time_input_facet(format)));
+		// Setup a string stream for parsing the date-time string
+		std::istringstream iss(iso8601TimeStr);
+		iss.exceptions(std::ios_base::failbit); // Enable exception throwing on parsing errors
+
+		// Apply a custom locale with a local_time_input_facet for parsing
+		iss.imbue(std::locale(std::locale::classic(), new boost::local_time::local_time_input_facet(format)));
+
+		// Parse the string into a boost::local_date_time object
+		boost::local_time::local_date_time localDateTime(boost::date_time::special_values::not_a_date_time);
 		iss >> localDateTime;
-		LOG_DBG << fname << "<" << iso8601TimeStr << "> covert to local <" << localDateTime << ">";
+
+		LOG_DBG << fname << "<" << iso8601TimeStr << "> converted to local <" << localDateTime << ">.";
+
+		// Convert the parsed time to UTC and then to std::chrono::system_clock::time_point
 		auto ptime = localDateTime.utc_time();
 		return std::chrono::system_clock::from_time_t(boost::posix_time::to_time_t(ptime));
 	}
-	catch (std::ios_base::failure &fail)
+	catch (const std::ios_base::failure &fail)
 	{
-		LOG_WAR << fname << Utility::stringFormat("invalid ISO8601 string: %s, %s", iso8601TimeStr.c_str(), fail.what());
-		throw std::invalid_argument("invalid ISO8601 string");
+		// Log and rethrow exception for invalid ISO8601 strings
+		LOG_WAR << fname << "Invalid ISO8601 string: " << iso8601TimeStr << ", Error: " << fail.what();
+		throw std::invalid_argument("Invalid ISO8601 string");
 	}
 	catch (...)
 	{
-		LOG_WAR << fname << Utility::stringFormat("invalid ISO8601 string: %s", iso8601TimeStr.c_str());
-		throw std::invalid_argument("invalid ISO8601 string");
+		// Catch any other exceptions and log a generic error
+		LOG_WAR << fname << "Invalid ISO8601 string: " << iso8601TimeStr;
+		throw std::invalid_argument("Invalid ISO8601 string");
 	}
 }
 
@@ -265,10 +274,5 @@ std::string DateTime::formatDayTimeUtcDuration(boost::posix_time::time_duration 
 
 std::string DateTime::reducePosixZone(const std::string &strTime)
 {
-	const char *reduceStr = ":00";
-	while (Utility::endWith(strTime, reduceStr))
-	{
-		return strTime.substr(0, strTime.length() - strlen(reduceStr));
-	}
-	return strTime;
+	return Utility::stdStringTrim(strTime, ":00", false, true);
 }
