@@ -1,6 +1,5 @@
 #include <ace/OS.h>
 #include <ace/Time_Value.h>
-#include <assert.h>
 
 #include "../common/Utility.h"
 #include "TimerHandler.h"
@@ -8,8 +7,8 @@
 ////////////////////////////////////////////////////////////////
 /// TimerEvent
 ////////////////////////////////////////////////////////////////
-TimerEvent::TimerEvent(bool isOneShot, const std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
-	: m_timerObj(timerObj), m_handler(handler), m_isOneShot(isOneShot)
+TimerEvent::TimerEvent(bool isOneShot, std::shared_ptr<TimerHandler> timerObj, TimerCallback handler) noexcept
+	: m_timerObj(std::move(timerObj)), m_handler(std::move(handler)), m_isOneShot(isOneShot)
 {
 	const static char fname[] = "TimerEvent::TimerEvent() ";
 	LOG_DBG << fname << "timer <" << this << ">";
@@ -27,17 +26,9 @@ int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *a
 	}
 
 	// Execute timer callback (true to continue, false to stop)
-	bool timerContinue = m_handler();
-
-	if (m_isOneShot)
+	if (!m_handler() || m_isOneShot)
 	{
-		LOG_DBG << fname << "one-shot timer <" << this << "> removed";
-		return -1; // Stop timer - will call handle_close()
-	}
-
-	if (!timerContinue)
-	{
-		LOG_DBG << fname << "timer <" << this << "> removed due to callback return value";
+		LOG_DBG << fname << "timer <" << this << "> removed due to " << (m_isOneShot ? "one-shot" : "callback return");
 		return -1; // Stop timer - will call handle_close()
 	}
 
@@ -72,26 +63,27 @@ TimerManager::~TimerManager()
 	m_timerQueue.wait();
 }
 
-long TimerManager::registerTimer(long int delayMilliseconds, std::size_t intervalSeconds, const std::string &from, const std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
+long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, std::string from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler)
 {
 	const static char fname[] = "TimerManager::registerTimer() ";
 
-	bool isOneShot = (intervalSeconds == 0);
 	ACE_Time_Value future = (delayMilliseconds == 0) ? ACE_Time_Value::zero : ACE_OS::gettimeofday() + ACE_Time_Value(delayMilliseconds / 1000, (delayMilliseconds % 1000) * 1000);
-	ACE_Time_Value interval = (intervalSeconds == 0) ? ACE_Time_Value::zero : ACE_Time_Value(intervalSeconds);
+	ACE_Time_Value interval(intervalSeconds);
 
 	// Pass TimerEvent as both ACE_Event_Handler and 'magic cookie' act
 	// Memory will be released in TimerEvent::handle_close()
-	TimerEvent *timer = new TimerEvent(isOneShot, timerObj, handler);
-	long timerId = m_timerQueue.schedule(timer, (void *)timer, future, interval);
+	bool isOneShot = (intervalSeconds == 0);
+	auto *timer = new TimerEvent(isOneShot, std::move(timerObj), handler);
+	long timerId = m_timerQueue.schedule(timer, timer, future, interval);
 
-	LOG_DBG << fname << from << " object <" << timerObj.get() << "> registered timer ID <" << timerId << ">, delay <" << (delayMilliseconds / 1000) << ">s interval <" << intervalSeconds << ">s";
+	LOG_DBG << fname << from << " registered timer ID <" << timerId << ">, delay <" << (delayMilliseconds / 1000) << ">s interval <" << intervalSeconds << ">s";
 
 	if (timerId < 0)
 	{
 		timer->handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::TIMER_MASK); // Self-destruct
 		LOG_ERR << fname << from << " failed to register timer: " << std::strerror(errno);
 	}
+
 	return timerId;
 }
 
@@ -105,7 +97,7 @@ bool TimerManager::cancelTimer(long &timerId)
 	}
 
 	TimerEvent *timer = nullptr;
-	auto canceled = m_timerQueue.cancel(timerId, (const void **)(&timer));
+	const int canceled = m_timerQueue.cancel(timerId, (const void **)&timer);
 	LOG_DBG << fname << "timer ID <" << timerId << "> cancel result <" << canceled << ">";
 
 	if (canceled > 0 && timer)
@@ -114,29 +106,24 @@ bool TimerManager::cancelTimer(long &timerId)
 		// ACE_Thread_Timer_Queue_Adapter::cancel() does not pass proper dont_call_handle_close
 		timer->handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::TIMER_MASK);
 		CLEAR_TIMER_ID(timerId);
-	}
-	else
-	{
-		LOG_ERR << fname << "failed to cancel timer ID <" << timerId << ">";
+		return true;
 	}
 
-	return canceled;
+	LOG_ERR << fname << "failed to cancel timer ID <" << timerId << ">";
+	return false;
 }
 
 ////////////////////////////////////////////////////////////////
 /// TimerHandler
 ////////////////////////////////////////////////////////////////
-TimerHandler::~TimerHandler() {}
 
-long TimerHandler::registerTimer(long int delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, const std::string &from)
+long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, std::string from)
 {
-	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalSeconds, from, this->shared_from_this(), handler);
+	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalSeconds, from, shared_from_this(), handler);
 }
 
 bool TimerHandler::cancelTimer(std::atomic_long &timerId)
 {
 	long thisId = timerId.exchange(INVALID_TIMER_ID);
-	if (IS_VALID_TIMER_ID(thisId))
-		return TIMER_MANAGER::instance()->cancelTimer(thisId);
-	return false;
+	return IS_VALID_TIMER_ID(thisId) && TIMER_MANAGER::instance()->cancelTimer(thisId);
 }

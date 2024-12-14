@@ -38,7 +38,7 @@ get_os_type() {
 
 setup_environment_file() {
 
-    log "Setting up environment file at $ENV_FILE."
+    log "Setting up environment file at $ENV_FILE"
     : >$ENV_FILE
 
     # Set locale with better compatibility
@@ -47,9 +47,9 @@ setup_environment_file() {
             echo "LANG=en_US.UTF-8"
             echo "LC_ALL=en_US.UTF-8"
         } >>"$ENV_FILE"
-        log "Locale set to [en_US.UTF-8]."
+        log "Locale set to [en_US.UTF-8]"
     else
-        log "Warning: Failed to set default locale [en_US.UTF-8], not available."
+        log "Warning: Failed to set default locale [en_US.UTF-8], not available"
     fi
 
     # Set LD_LIBRARY_PATH with path validation
@@ -64,7 +64,7 @@ setup_environment_file() {
 
     # Export APPMESH environment variables: env | grep '^APPMESH_' | sort >> "$ENV_FILE"
     printenv | grep '^APPMESH_' | while read -r var; do
-        log "Applying environment variable: $var."
+        log "Applying environment variable: $var"
         echo "$var" >>"$ENV_FILE"
     done
 
@@ -75,7 +75,7 @@ setup_environment_file() {
     #fi
     if [ -n "$APPMESH_BaseConfig_DefaultExecUser" ] && [ "$APPMESH_BaseConfig_DefaultExecUser" != "root" ]; then
         echo "APPMESH_BaseConfig_DefaultExecUser=${APPMESH_BaseConfig_DefaultExecUser}" >>"$ENV_FILE"
-        log "DefaultExecUser set to: $APPMESH_BaseConfig_DefaultExecUser."
+        log "DefaultExecUser set to: $APPMESH_BaseConfig_DefaultExecUser"
     fi
 
     chmod 644 "$ENV_FILE"
@@ -105,7 +105,7 @@ setup_service() {
 }
 
 install_systemd_service() {
-    log "Installing systemd service at $SYSTEMD_FILE."
+    log "Installing systemd service at $SYSTEMD_FILE"
     local service_template="${PROG_HOME}/script/appmesh.systemd.service"
 
     if [ ! -f "$service_template" ]; then
@@ -117,12 +117,12 @@ install_systemd_service() {
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER}" ]; then
         sed -i.bak "s/^User=.*/User=${APPMESH_DAEMON_EXEC_USER}/" "$SYSTEMD_FILE"
-        log "Service user set to: ${APPMESH_DAEMON_EXEC_USER}."
+        log "Service user set to: ${APPMESH_DAEMON_EXEC_USER}"
     fi
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER_GROUP}" ]; then
         sed -i.bak "s/^Group=.*/Group=${APPMESH_DAEMON_EXEC_USER_GROUP}/" "$SYSTEMD_FILE"
-        log "Service group set to: ${APPMESH_DAEMON_EXEC_USER_GROUP}."
+        log "Service group set to: ${APPMESH_DAEMON_EXEC_USER_GROUP}"
     fi
 
     rm -f "${SYSTEMD_FILE}.bak"
@@ -150,7 +150,7 @@ install_initd_service() {
 }
 
 setup_permissions() {
-    log "Setting up permissions."
+    log "Setting up permissions"
     chmod 644 "${PROG_HOME}"/config.yaml "${PROG_HOME}"/security.yaml
     find "${PROG_HOME}/script" -name "*.sh" -exec chmod +x {} \;
 
@@ -208,7 +208,7 @@ main() {
     # Clean work directory for fresh install
     if [ "$APPMESH_FRESH_INSTALL" = "Y" ]; then
         rm -rf "${PROG_HOME}/work/"* "${PROG_HOME}/work/".* 2>/dev/null || true
-        log "Work directory cleaned for fresh installation."
+        log "Work directory cleaned for fresh installation"
     fi
 
     # Setup components
@@ -220,22 +220,22 @@ main() {
     # Install bash completion
     if [ -d "$BASH_COMPLETION_DIR" ]; then
         rm -f "$BASH_COMPLETION_SOFTLINK" && ln -sf "${PROG_HOME}/script/bash_completion.sh" "$BASH_COMPLETION_SOFTLINK"
-        log "Bash completion script successfully installed at $BASH_COMPLETION_SOFTLINK."
+        log "Bash completion script successfully installed at $BASH_COMPLETION_SOFTLINK"
     else
-        log "Warning: $BASH_COMPLETION_DIR directory not found. Skipping bash completion script installation."
+        log "Warning: $BASH_COMPLETION_DIR directory not found. Skipping bash completion script installation"
     fi
 
     # Create appc symlink
     rm -f "$APPC_SOFTLINK" && ln -sf "${PROG_HOME}/script/appc.sh" "$APPC_SOFTLINK"
-    log "Symlink for appc created at $APPC_SOFTLINK."
+    log "Symlink for appc created at $APPC_SOFTLINK"
 
     # Initialize secure installation if needed
     if [ "$APPMESH_SECURE_INSTALLATION" = "Y" ]; then
-        log "Performing secure installation initialization."
+        log "Performing secure installation initialization"
         "$APPC_SOFTLINK" appmginit
     fi
 
-    log "App Mesh installation completed successfully. Installed to: $PROG_HOME."
+    log "App Mesh installation completed successfully. Installed to: $PROG_HOME"
     print_startup_instructions
 }
 

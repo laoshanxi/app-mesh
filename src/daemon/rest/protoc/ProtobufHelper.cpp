@@ -89,8 +89,6 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(co
 	const auto bodySize = readMsgHeader(socket, recvReturn);
 	if (bodySize <= 0)
 	{
-		if (errno != 0)
-			LOG_ERR << fname << "parse header length with error :" << std::strerror(errno);
 		return std::make_tuple(nullptr, recvReturn);
 	}
 	return readBytes(socket, bodySize, recvReturn);
@@ -104,7 +102,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	auto data = std::get<0>(result);
 	if (recvReturn <= 0)
 	{
-		LOG_ERR << fname << "read header length failed with error :" << std::strerror(errno);
+		LOG_DBG << fname << "read header length failed with error :" << std::strerror(errno);
 		return -1;
 	}
 	// parse header data (get body length). network to host byte order
@@ -140,7 +138,7 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE
 		recvReturn = totalRecieved;
 	if (socket.get_handle() != ACE_INVALID_HANDLE && recvReturn <= 0)
 	{
-		LOG_ERR << fname << "read body socket data failed with error: " << std::strerror(errno);
+		LOG_WAR << fname << "read socket data failed with error: " << std::strerror(errno);
 		return std::make_tuple(nullptr, recvReturn);
 	}
 	LOG_DBG << fname << "read message block data with length: " << bufferSize;
