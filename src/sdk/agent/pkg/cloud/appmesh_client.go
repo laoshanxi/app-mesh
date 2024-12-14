@@ -111,12 +111,12 @@ func (r *AppMesh) request(data *Request) (*appmesh.Response, error) {
 	defer r.mu.Unlock()
 
 	// Send the data over TCP
-	if err := r.AppMeshClientTCP.TcpExecutor.SendData(buf); err != nil {
+	if err := r.AppMeshClientTCP.TcpExecutor.SendMessage(buf); err != nil {
 		return nil, fmt.Errorf("failed to send data: %v", err)
 	}
 
 	// Receive the response over TCP
-	respData, err := r.AppMeshClientTCP.TcpExecutor.RecvData()
+	respData, err := r.AppMeshClientTCP.TcpExecutor.ReadMessage()
 	if err != nil {
 		return nil, fmt.Errorf("failed to receive data: %v", err)
 	}

@@ -3,9 +3,7 @@ package appmesh
 import (
 	"os"
 	"testing"
-	"time"
 
-	"github.com/pquerna/otp/totp"
 	"github.com/rs/xid"
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"

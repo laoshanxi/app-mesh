@@ -67,7 +67,7 @@ protected:
 	/// <param name="Response"></param>
 	bool reply(const Response &resp);
 	bool sendBytes(const char *data, size_t length, int timeoutSeconds = 0);
-	bool sendBytes(size_t intValue);
+	bool sendHeader(size_t intValue);
 
 	int testStream();
 	bool recvUploadFile();

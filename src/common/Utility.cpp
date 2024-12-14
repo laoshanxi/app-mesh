@@ -100,34 +100,34 @@ std::string Utility::stdStringTrim(const std::string &str)
 	return (back <= front ? std::string() : std::string(front, back));
 }
 
-std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool trimStart, bool trimEnd)
+std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool leftTrim, bool rightTrim)
 {
 	char *line = const_cast<char *>(str.c_str());
 	// trim the line on the left and on the right
 	std::size_t len = str.length();
 	std::size_t start = 0;
-	while (trimStart && trimChar == (*line))
+	while (leftTrim && trimChar == (*line))
 	{
 		++line;
 		--len;
 		++start;
 	}
-	while (trimEnd && len > 0 && trimChar == (line[len - 1]))
+	while (rightTrim && len > 0 && trimChar == (line[len - 1]))
 	{
 		--len;
 	}
 	return len >= start ? str.substr(start, len) : str.substr(start);
 }
 
-std::string Utility::stdStringTrim(const std::string &str, const std::string &trimChars, bool trimStart, bool trimEnd)
+std::string Utility::stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim, bool rightTrim)
 {
 	std::string result = str;
-	while (trimChars.length() && trimStart && result.length() >= trimChars.length() && 0 == strncmp(result.c_str(), trimChars.c_str(), trimChars.length()))
+	while (trimChars.length() && leftTrim && result.length() >= trimChars.length() && 0 == strncmp(result.c_str(), trimChars.c_str(), trimChars.length()))
 	{
 		result = result.c_str() + trimChars.length();
 	}
 
-	while (trimChars.length() && trimEnd && result.length() >= trimChars.length() && 0 == strncmp(result.c_str() + (result.length() - trimChars.length()), trimChars.c_str(), trimChars.length()))
+	while (trimChars.length() && rightTrim && result.length() >= trimChars.length() && 0 == strncmp(result.c_str() + (result.length() - trimChars.length()), trimChars.c_str(), trimChars.length()))
 	{
 		result[result.length() - trimChars.length()] = '\0';
 		result = result.c_str();
@@ -606,7 +606,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 		else
 		{
 			// Reverse block reading
-			if (endPos > readSize)
+			if (endPos > static_cast<std::streamoff>(readSize))
 			{
 				if (!fileStream.seekg(-static_cast<std::streamoff>(readSize), std::ios::end))
 				{

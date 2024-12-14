@@ -274,5 +274,10 @@ std::string DateTime::formatDayTimeUtcDuration(boost::posix_time::time_duration 
 
 std::string DateTime::reducePosixZone(const std::string &strTime)
 {
-	return Utility::stdStringTrim(strTime, ":00", false, true);
+	// Check if the string contains either '+' or '-'
+	if (strTime.find_last_of("+-") != std::string::npos)
+	{
+		return Utility::stdStringTrim(strTime, ":00", /*leftTrim=*/false, /*rightTrim=*/true);
+	}
+	return strTime;
 }

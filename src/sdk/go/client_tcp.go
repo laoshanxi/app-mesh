@@ -1,7 +1,6 @@
 package appmesh
 
 import (
-	"encoding/binary"
 	"errors"
 	"html"
 	"io"
@@ -11,13 +10,9 @@ import (
 	"os"
 	"path"
 	"strings"
-	"sync"
 
 	"github.com/rs/xid"
 )
-
-const TCP_MESSAGE_HEADER_LENGTH = 4
-const TCP_CHUNK_BLOCK_SIZE = 16*1024 - 256 // target to 16KB
 
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
 type AppMeshClientTCP struct {
@@ -52,9 +47,9 @@ func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
 
 // CloseConnection closes the TCP connection
 func (client *AppMeshClientTCP) CloseConnection() {
-	if client.TcpExecutor != nil && client.TcpExecutor.SocketConn != nil {
-		client.TcpExecutor.SocketConn.Close()
-		client.TcpExecutor.SocketConn = nil
+	if client.TcpExecutor != nil && client.TcpExecutor.Conn != nil {
+		client.TcpExecutor.Conn.Close()
+		client.TcpExecutor.Conn = nil
 	}
 }
 
@@ -86,19 +81,13 @@ func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header, ap
 	defer file.Close()
 
 	for {
-		chunkSizeBuf, err := r.TcpExecutor.readTcpData(TCP_MESSAGE_HEADER_LENGTH)
+		chunkData, err := r.TcpExecutor.ReadMessage()
 		if err != nil {
 			return err
 		}
 
-		chunkSize := binary.BigEndian.Uint32(chunkSizeBuf)
-		if chunkSize == 0 {
+		if chunkData == nil {
 			break
-		}
-
-		chunkData, err := r.TcpExecutor.readTcpData((chunkSize))
-		if err != nil {
-			return err
 		}
 
 		if _, err := file.Write(chunkData); err != nil {
@@ -160,20 +149,19 @@ func (client *AppMeshClientTCP) uploadFileChunks(file *os.File) error {
 			break
 		}
 
-		if err := client.TcpExecutor.SendData(buffer[:n]); err != nil {
+		if err := client.TcpExecutor.SendMessage(buffer[:n]); err != nil {
 			return err
 		}
 	}
 
 	// Send end-of-file marker
-	return client.TcpExecutor.sendEOFMarker()
+	return client.TcpExecutor.SendMessage([]byte{})
 }
 
 // TCP Request executor
 type ClientRequesterTcp struct {
-	BaseURL    string
-	SocketConn net.Conn
-	mutex      sync.Mutex
+	TCPConnection
+	BaseURL string
 }
 
 // doRequest performs a REST-like request over TCP
@@ -234,7 +222,7 @@ func (r *ClientRequesterTcp) connectSocket(sslClientCert string, sslClientCertKe
 		SSLCaPath:                   sslCAFile,
 	}
 
-	r.SocketConn, err = ConnectAppMeshServer(address, ssl.VerifyServer, ssl)
+	r.Conn, err = ConnectAppMeshServer(address, ssl.VerifyServer, ssl)
 	return err
 }
 
@@ -245,7 +233,7 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 	data.Uuid = xid.New().String()
 	data.HttpMethod = req.Method
 	data.RequestUri = req.URL.Path
-	data.ClientAddress = r.SocketConn.LocalAddr().String()
+	data.ClientAddress = r.Conn.LocalAddr().String()
 	data.Headers = make(map[string]string)
 	for key, values := range req.Header {
 		for _, value := range values {
@@ -277,12 +265,12 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 	}
 
 	// Send the data over TCP
-	if err := r.SendData(buf); err != nil {
+	if err := r.SendMessage(buf); err != nil {
 		return nil, err
 	}
 
 	// Receive the response
-	respData, err := r.RecvData()
+	respData, err := r.ReadMessage()
 	if err != nil {
 		return nil, err
 	}
@@ -293,87 +281,4 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 	return respMsg, nil
-}
-
-// SendData sends the message length and the actual message data over TCP
-func (r *ClientRequesterTcp) SendData(data []byte) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	// Send length header
-	if err := r.sendLength(len(data)); err != nil {
-		return err
-	}
-
-	// Send message data
-	return r.sendTcpData(data)
-}
-
-// sendLength sends the length of the data as a 4-byte header
-func (r *ClientRequesterTcp) sendLength(length int) error {
-	lenBuf := make([]byte, TCP_MESSAGE_HEADER_LENGTH)
-	binary.BigEndian.PutUint32(lenBuf, uint32(length))
-	return r.sendTcpData(lenBuf)
-}
-
-func (r *ClientRequesterTcp) sendTcpData(buf []byte) error {
-	var totalSentSize int = 0
-	var err error = nil
-	for totalSentSize < len(buf) {
-		byteSent := 0
-
-		if byteSent, err = r.SocketConn.Write(buf[totalSentSize:]); err != nil {
-			return err
-		}
-		totalSentSize += byteSent
-		//log.Printf("total send size %d bytes", totalSentSize)
-	}
-	return err
-}
-
-// sendEOFMarker sends an end-of-file marker
-func (r *ClientRequesterTcp) sendEOFMarker() error {
-	return r.sendLength(0)
-}
-
-// RecvData receives a length-prefixed message from the TCP connection
-func (r *ClientRequesterTcp) RecvData() ([]byte, error) {
-	lenBuf, err := r.readTcpData(TCP_MESSAGE_HEADER_LENGTH)
-	if err != nil {
-		return nil, err
-	}
-
-	msgLen := binary.BigEndian.Uint32(lenBuf)
-	return r.readTcpData((msgLen))
-}
-
-// readTcpData reads a specific number of bytes from the TCP connection
-func (r *ClientRequesterTcp) readTcpData(msgLength uint32) ([]byte, error) {
-	// read body buffer
-	var chunkSize uint32 = TCP_CHUNK_BLOCK_SIZE
-	if msgLength < chunkSize {
-		chunkSize = msgLength
-	}
-	// make 0 length data bytes (since we'll be appending)
-	bodyBuf := make([]byte, 0)
-	var totalReadSize uint32 = 0
-	for totalReadSize < msgLength {
-		// https://stackoverflow.com/questions/24339660/read-whole-data-with-golang-net-conn-read
-		oneTimeRead := msgLength - totalReadSize
-		if oneTimeRead > chunkSize {
-			oneTimeRead = chunkSize
-		}
-		data := make([]byte, oneTimeRead) //TODO: use global buffer avoid garbage
-		n, err := r.SocketConn.Read(data)
-		if n > 0 {
-			bodyBuf = append(bodyBuf, data[:n]...)
-			totalReadSize += uint32(n)
-			//log.Printf("expect: %d, read: %d, left: %d", oneTimeRead, n, msgLength-totalReadSize)
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-	}
-
-	return bodyBuf, nil
 }

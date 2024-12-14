@@ -40,7 +40,7 @@ fi
 TARGET_INSTALL_PATH="$(realpath "$TARGET_INSTALL_PATH")"
 
 if is_forbidden_path "$TARGET_INSTALL_PATH"; then
-    echo "Error: Installation to $TARGET_INSTALL_PATH is not allowed. Please choose a different path."
+    echo "Error: Installation to $TARGET_INSTALL_PATH is not allowed. Please choose a different path"
     exit 1
 fi
 
@@ -55,13 +55,13 @@ fi
 
 # Ensure the parent directory of the target path exists
 mkdir -p "$TARGET_REALPATH"
-log "Installing to: $TARGET_REALPATH."
+log "Installing to: $TARGET_REALPATH"
 
 # Move source directory to target path if they differ
 if [ "$SOURCE_REALPATH" != "$TARGET_REALPATH" ]; then
     log "Moving $SOURCE_REALPATH to $TARGET_REALPATH"
     cp -rf "$SOURCE_REALPATH"/* "$TARGET_REALPATH"/ || {
-        log "Error: Failed to move $SOURCE_REALPATH to $TARGET_REALPATH."
+        log "Error: Failed to move $SOURCE_REALPATH to $TARGET_REALPATH"
         exit 1
     }
     rm -rf "$SOURCE_REALPATH"
@@ -70,5 +70,5 @@ fi
 
 # Execute setup script
 SETUP_SCRIPT="$TARGET_REALPATH/script/setup.sh"
-log "Executing setup script: $SETUP_SCRIPT."
+log "Executing setup script: $SETUP_SCRIPT"
 bash "$SETUP_SCRIPT"

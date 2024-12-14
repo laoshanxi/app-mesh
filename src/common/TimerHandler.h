@@ -23,12 +23,13 @@
  */
 using TimerCallback = std::function<bool(void)>;
 
-typedef ACE_Event_Handler_Handle_Timeout_Upcall Upcall;
-typedef ACE_Timer_Heap_T<ACE_Event_Handler *, Upcall, ACE_Recursive_Thread_Mutex> Timer_Heap;
-typedef ACE_Thread_Timer_Queue_Adapter<Timer_Heap> Thread_Timer_Queue;
+using Upcall = ACE_Event_Handler_Handle_Timeout_Upcall;
+using Timer_Heap = ACE_Timer_Heap_T<ACE_Event_Handler *, Upcall, ACE_Recursive_Thread_Mutex>;
+using Thread_Timer_Queue = ACE_Thread_Timer_Queue_Adapter<Timer_Heap>;
 
-#define INVALID_TIMER_ID -1L						   // Constant for invalid timer ID.
-#define IS_VALID_TIMER_ID(id) (id != INVALID_TIMER_ID) // Macro to check if a timer ID is valid.
+constexpr long INVALID_TIMER_ID = -1L;
+#define IS_VALID_TIMER_ID(id) ((id) != INVALID_TIMER_ID)
+#define CLEAR_TIMER_ID(id) ((id) = INVALID_TIMER_ID)
 
 /**
  * @class TimerHandler
@@ -42,7 +43,7 @@ typedef ACE_Thread_Timer_Queue_Adapter<Timer_Heap> Thread_Timer_Queue;
 class TimerHandler : public std::enable_shared_from_this<TimerHandler>
 {
 public:
-	virtual ~TimerHandler();
+	virtual ~TimerHandler() = default;
 
 	/**
 	 * @brief Registers a timer for this object.
@@ -56,7 +57,7 @@ public:
 	 * @note Timer IDs will be reused to maintain a compact range. Ensure to reset your timer ID variable
 	 *       in the TimerCallback to prevent cancellation mismatches.
 	 */
-	long registerTimer(long int delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, const std::string &from);
+	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, std::string from);
 
 	/**
 	 * @brief Cancels a timer.
@@ -67,6 +68,14 @@ public:
 	 * @warning Avoid calling this method within the timer callback (TimerCallback) to prevent unexpected behavior.
 	 */
 	bool cancelTimer(std::atomic_long &timerId);
+
+protected:
+	TimerHandler() = default;
+
+private:
+	// Prevent copying and assignment
+	TimerHandler(const TimerHandler &) = delete;
+	TimerHandler &operator=(const TimerHandler &) = delete;
 };
 
 /**
@@ -75,7 +84,7 @@ public:
  *
  * This class extends ACE_Event_Handler to handle timer events.
  */
-class TimerEvent : public ACE_Event_Handler
+class TimerEvent final : public ACE_Event_Handler
 {
 public:
 	/**
@@ -85,7 +94,7 @@ public:
 	 * @param timerObj Shared pointer to the associated TimerHandler object.
 	 * @param handler Callback function to be invoked on timer expiration.
 	 */
-	explicit TimerEvent(bool isOneShot, const std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
+	explicit TimerEvent(bool isOneShot, std::shared_ptr<TimerHandler> timerObj, TimerCallback handler) noexcept;
 
 	/**
 	 * @brief Callback function invoked when the timer expires.
@@ -94,7 +103,7 @@ public:
 	 * @param act The 'magic cookie' argument passed in when the timer was registered.
 	 * @return int 0 on success, or a negative value on failure.
 	 */
-	virtual int handle_timeout(const ACE_Time_Value &current_time, const void *act = nullptr) override final;
+	int handle_timeout(const ACE_Time_Value &current_time, const void *act = nullptr) override;
 
 	/**
 	 * @brief Called when a handle_*() method returns -1 or when remove_handler() is called on an ACE_Reactor.
@@ -103,7 +112,7 @@ public:
 	 * @param close_mask Indicates which event triggered the handle_close callback.
 	 * @return int 0 on success, or a negative value on failure.
 	 */
-	virtual int handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask) override final;
+	int handle_close(ACE_HANDLE handle, ACE_Reactor_Mask close_mask) override;
 
 private:
 	const std::shared_ptr<TimerHandler> m_timerObj; ///< Holds the target TimerHandler instance to prevent premature deallocation.
@@ -128,7 +137,7 @@ public:
 	/**
 	 * @brief Destroy the TimerManager object.
 	 */
-	virtual ~TimerManager();
+	~TimerManager() override;
 
 	/**
 	 * @brief Registers a timer to timerObj.
@@ -140,7 +149,7 @@ public:
 	 * @param handler Callback function executed when the timer expires.
 	 * @return long Unique timer ID for the registered timer.
 	 */
-	long registerTimer(long int delayMilliseconds, std::size_t intervalSeconds, const std::string &from, const std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
+	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, std::string from, std::shared_ptr<TimerHandler> timerObj, const TimerCallback &handler);
 
 	/**
 	 * @brief Cancels a timer using its unique ID.
@@ -154,5 +163,5 @@ private:
 	Thread_Timer_Queue m_timerQueue; ///< Queue for managing active timers.
 };
 
-typedef ACE_Singleton<TimerManager, ACE_Recursive_Thread_Mutex> TIMER_MANAGER;									///< Singleton instance of Timer Manager.
-typedef ACE_Singleton<ACE_Test_and_Set<ACE_Recursive_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex> QUIT_HANDLER; ///< Singleton instance of Quite Handler.
+using TIMER_MANAGER = ACE_Singleton<TimerManager, ACE_Recursive_Thread_Mutex>;
+using QUIT_HANDLER = ACE_Singleton<ACE_Test_and_Set<ACE_Recursive_Thread_Mutex, sig_atomic_t>, ACE_Null_Mutex>;

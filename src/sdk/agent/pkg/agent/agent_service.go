@@ -31,11 +31,11 @@ const (
 	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 
-	TCP_CHUNK_BLOCK_SIZE               = 16*1024 - 256 // target to 16KB
-	TCP_MESSAGE_HEADER_LENGTH          = 4
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
+
+	TCP_CHUNK_BLOCK_SIZE = appmesh.TCP_CHUNK_BLOCK_SIZE
 )
 
 var (
@@ -72,28 +72,41 @@ func init() {
 	}
 }
 
+// monitorResponse continuously reads messages from a connection and forwards responses
+// to their corresponding channels. It handles connection cleanup on errors.
 func monitorResponse(conn *Connection, targetHost string, allowError bool) {
+	defer deleteConnection(targetHost)
+
+	// Helper function to handle errors consistently
+	handleError := func(msg string, args ...interface{}) {
+		logMsg := fmt.Sprintf(msg, args...)
+		if allowError {
+			logger.Error(logMsg)
+			return
+		}
+		logger.Fatal(logMsg)
+	}
+
 	for {
-		// read response from server
-		response, err := ReadNewResponse(conn.conn)
+		response, err := ReadNewResponse(conn)
 		if err != nil {
-			if !allowError {
-				logger.Fatalf("Failed read response from host %s: %v", targetHost, err)
-			} else {
-				logger.Errorf("Failed read response from host %s: %v", targetHost, err)
-				deleteConnection(targetHost)
-				return
-			}
+			handleError("Failed to parse response from host %s: %v", targetHost, err)
+			return
 		}
 
-		// forward to channel and release map
-		if t, ok := httpRequestMap.LoadAndDelete(response.Uuid); !ok {
-			logger.Fatalf("Not found request ID <%s> for Response", response.Uuid)
-		} else {
-			// notify
-			ch, _ := t.(chan *Response)
-			ch <- response
+		ch, ok := httpRequestMap.LoadAndDelete(response.Uuid)
+		if !ok {
+			handleError("Request ID <%s> not found for response", response.Uuid)
+			return
 		}
+
+		responseChan, ok := ch.(chan *Response)
+		if !ok {
+			handleError("Invalid response message type for request ID <%s>", response.Uuid)
+			return
+		}
+
+		responseChan <- response
 	}
 }
 
@@ -124,6 +137,11 @@ func ListenRest() error {
 
 	// AppMesh endpoints
 	router.HandleFunc("/appmesh/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(handleAppmeshResquest)).Methods("GET", "PUT", "POST", "DELETE")
+	// Forward /metrics to /appmesh/metrics
+	router.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = "/appmesh/metrics" // Change the URL path to /appmesh/metrics
+		router.ServeHTTP(w, r)
+	}).Methods("GET")
 
 	// Index & OPTIONS & HEAD
 	router.HandleFunc("/", utils.Cors(utils.DefaultCORSConfig)(handleIndex)).Methods("GET")
