@@ -2,8 +2,7 @@ package agent
 
 import (
 	"encoding/base64"
-	"encoding/binary"
-	"net"
+	"errors"
 	"net/http"
 	"os"
 	"path"
@@ -23,19 +22,18 @@ type ResponseMessage struct {
 	Message string `json:"message"`
 }
 
-func ReadNewResponse(conn net.Conn) (*Response, error) {
-	headerBuf, err := readTcpData(conn, TCP_MESSAGE_HEADER_LENGTH)
+func ReadNewResponse(conn *Connection) (*Response, error) {
+	data, err := conn.ReadMessage()
 	if err != nil {
 		return nil, err
 	}
 
-	bodyBuf, err := readTcpData(conn, binary.BigEndian.Uint32(headerBuf))
-	if err != nil {
-		return nil, err
+	if data == nil {
+		return nil, errors.New("empty message recieved")
 	}
 
 	r := new(Response)
-	err = r.Deserialize(bodyBuf)
+	err = r.Deserialize(data)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +73,7 @@ func ReadNewResponse(conn net.Conn) (*Response, error) {
 	return r, err
 }
 
-func (r *Response) readDownloadFileData(conn net.Conn, targetFilePath string) error {
+func (r *Response) readDownloadFileData(conn *Connection, targetFilePath string) error {
 	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		logger.Warnf("Failed to create file: %v", err)
@@ -84,25 +82,18 @@ func (r *Response) readDownloadFileData(conn net.Conn, targetFilePath string) er
 	defer f.Close()
 
 	for {
-		headerBuf, err := readTcpData(conn, TCP_MESSAGE_HEADER_LENGTH)
+		bodyBuf, err := conn.ReadMessage()
 		if err != nil {
 			logger.Warnf("Error reading TCP file header: %v", err)
 			return err
 		}
 
-		chunkSize := binary.BigEndian.Uint32(headerBuf)
-		if chunkSize == 0 {
+		if bodyBuf == nil {
 			logger.Debugf("Completed reading TCP file to: <%s>", targetFilePath)
 			break
 		}
 
-		buf, err := readTcpData(conn, chunkSize)
-		if err != nil {
-			logger.Warnf("Error reading TCP file: %v", err)
-			return err
-		}
-
-		if _, err = f.Write(buf); err != nil {
+		if _, err = f.Write(bodyBuf); err != nil {
 			logger.Warnf("Failed to write to file: %v", err)
 			return err
 		}

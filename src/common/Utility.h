@@ -88,12 +88,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 		}                                                         \
 	} while (false)
 
-#define CLEAR_TIMER_ID(timerId)     \
-	do                              \
-	{                               \
-		timerId = INVALID_TIMER_ID; \
-	} while (false)
-
 #define CLOSE_STREAM(streamPtr)                           \
 	do                                                    \
 	{                                                     \
@@ -128,10 +122,11 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_PASSWD_MIN_LENGTH 8
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
-// The first 4 bytes of the protocol buffer data contains the size of the following body data.
-constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 4;
-constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256; // target to 16KB
-constexpr size_t MAX_TCP_BLOCK_SIZE = 10 * 1024 * 1024 * 8;
+
+constexpr size_t TCP_MESSAGE_HEADER_LENGTH = 8;			 // TCP header protocol: 4 bytes magic number + 4 bytes body length
+constexpr uint32_t TCP_MESSAGE_MAGIC = 0x07C707F8;		 // Magic number for message validation (host byte order)
+constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256; // Chunk block size 16KB (target with 256 bytes reserved for overhead)
+constexpr size_t TCP_MAX_BLOCK_SIZE = 1024 * 1024 * 100; // Maximum allowed block size: 100 MB
 constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
@@ -169,8 +164,8 @@ public:
 	static bool isNumber(const std::string &str);
 	static bool isDouble(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
-	static std::string stdStringTrim(const std::string &str, char trimChar, bool trimStart = true, bool trimEnd = true);
-	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool trimStart = true, bool trimEnd = true);
+	static std::string stdStringTrim(const std::string &str, char trimChar, bool leftTrim = true, bool rightTrim = true);
+	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim = true, bool rightTrim = true);
 	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
 	static bool startWith(const std::string &str, const std::string &head);
 	static bool endWith(const std::string &str, const std::string &end);

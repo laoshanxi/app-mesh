@@ -3,6 +3,7 @@
 import os
 import socket
 import ssl
+import struct
 from typing import Optional, Tuple, Union
 
 
@@ -12,8 +13,9 @@ class TCPTransport:
     # Number of bytes used for the message length header
     # Must match the C++ service implementation which uses uint32_t (4 bytes)
     # Format: Big-endian unsigned 32-bit integer
-    TCP_HEADER_LENGTH = 4
-    MAX_MESSAGE_SIZE = 300 * 1024 * 1024  # 300 MiB message size limit
+    TCP_MESSAGE_HEADER_LENGTH = 8
+    TCP_MESSAGE_MAGIC = 0x07C707F8  # Magic number
+    TCP_MAX_BLOCK_SIZE = 1024 * 1024 * 100  # 100 MB message size limit
 
     def __init__(self, address: Tuple[str, int], ssl_verify: Union[bool, str], ssl_client_cert: Union[str, Tuple[str, str]]):
         """Construct an TCPTransport object to send and recieve TCP data.
@@ -114,15 +116,19 @@ class TCPTransport:
     def send_message(self, data) -> None:
         """Send a message with a prefixed header indicating its length"""
         length = len(data)
-        self._socket.sendall(length.to_bytes(self.TCP_HEADER_LENGTH, byteorder="big", signed=False))
+        # Pack the header into 8 bytes using big-endian format
+        self._socket.sendall(struct.pack("!II", self.TCP_MESSAGE_MAGIC, length))
         if length > 0:
             self._socket.sendall(data)
 
     def receive_message(self) -> Optional[bytearray]:
-        """Receive a message with a prefixed header indicating its length"""
-        length = int.from_bytes(self._recvall(self.TCP_HEADER_LENGTH), byteorder="big", signed=False)
-        if length > self.MAX_MESSAGE_SIZE:
-            raise ValueError(f"Message size {length} exceeds maximum allowed {self.MAX_MESSAGE_SIZE}")
+        """Receive a message with a prefixed header indicating its length and validate it"""
+        # Unpack the data (big-endian format)
+        magic, length = struct.unpack("!II", self._recvall(self.TCP_MESSAGE_HEADER_LENGTH))
+        if magic != self.TCP_MESSAGE_MAGIC:
+            raise ValueError(f"Invalid message: incorrect magic number 0x{magic:X}.")
+        if length > self.TCP_MAX_BLOCK_SIZE:
+            raise ValueError(f"Message size {length} exceeds the maximum allowed size of {self.TCP_MAX_BLOCK_SIZE} bytes.")
         if length > 0:
             return self._recvall(length)
         return None

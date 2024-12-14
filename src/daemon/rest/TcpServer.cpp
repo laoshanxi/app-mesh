@@ -60,45 +60,57 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	const static char fname[] = "TcpHandler::handle_input() ";
 	LOG_DBG << fname << "from client=" << m_id;
 
-	std::lock_guard<std::mutex> guard(m_socketLock); // hold this lock to avoid recv TCP file stream data
+	// hold this lock to avoid recv TCP file stream data
+	std::lock_guard<std::mutex> guard(m_socketLock);
 
+	// Handle file upload if necessary
 	if (recvUploadFile())
 	{
-		int test = testStream();
-		LOG_DBG << fname << "testStream: " << test;
-		if (test <= 0)
+		int streamStatus = testStream();
+		LOG_DBG << fname << "stream test status=" << streamStatus;
+		if (streamStatus <= 0)
 		{
-			return test;
+			LOG_WAR << fname << "Stream test failed, closing connection with <" << m_clientHostName << ">";
+			return streamStatus;
 		}
 	}
 
+	// Read incoming message
 	auto result = ProtobufHelper::readMessageBlock(this->peer());
 	auto data = std::get<0>(result);
 	auto readCount = std::get<1>(result);
 
+	// Early return on null data
+	if (!data)
+	{
+		LOG_WAR << fname << "Failed to receive data from <" << m_clientHostName << ">, closing connection";
+		return -1;
+	}
+
+	// Handle successful read
 	// https://github.com/DOCGroup/ACE_TAO/blob/master/ACE/examples/Reactor/WFMO_Reactor/Network_Events.cpp#L66
 	if (readCount > 0)
 	{
-		assert(data != nullptr);
 		m_messageQueue.enqueue(new ACE_Message_Block((const char *)(new HttpRequestMsg(data, readCount, m_id))));
 		return 0;
 	}
-	else if (readCount == 0)
+
+	// Handle connection closure
+	if (readCount == 0)
 	{
-		LOG_ERR << fname << "Connection from " << m_clientHostName << " closing down";
+		LOG_WAR << fname << "Connection closed by <" << m_clientHostName << ">";
 		return -1;
 	}
-	else if (errno == EWOULDBLOCK)
+
+	// Handle errors
+	if (errno == EWOULDBLOCK)
 	{
-		LOG_ERR << fname << "socket buffer full: " << std::strerror(errno);
-		// return 0; // here does not support continue recieve to existing buffer
-		return -1;
+		LOG_WAR << fname << "Socket buffer full: " << std::strerror(errno) << ", closing connection with <" << m_clientHostName << ">";
+		return -1; // No partial reads supported
 	}
-	else
-	{
-		LOG_ERR << fname << "Problems in receiving data from " << m_clientHostName << ": " << std::strerror(errno);
-		return -1;
-	}
+
+	LOG_WAR << fname << "Receive error from <" << m_clientHostName << ">: " << std::strerror(errno) << ", closing connection";
+	return -1;
 }
 
 int TcpHandler::testStream()
@@ -174,7 +186,7 @@ int TcpHandler::open(void *)
 	}
 	else
 	{
-		this->m_clientHostName = addr.get_host_name();
+		this->m_clientHostName = Utility::stringFormat("%s:%hu", addr.get_host_name(), addr.get_port_number());
 		// TODO: one TCP connection can not leverage parallel ACE_TP_Reactor thread pool
 		if (ACE_Reactor::instance()->register_handler(this, READ_MASK) == -1)
 		{
@@ -193,7 +205,7 @@ int TcpHandler::open(void *)
 			{
 				LOG_ERR << fname << "Can't disable nonblocking with error: " << std::strerror(errno);
 			}
-			LOG_INF << fname << "client <" << m_clientHostName << ":" << addr.get_port_number() << "> connected";
+			LOG_INF << fname << "client <" << m_clientHostName << "> connected";
 		}
 		return 0;
 	}
@@ -297,7 +309,7 @@ bool TcpHandler::reply(const Response &resp)
 	// Send response data
 	{
 		std::lock_guard<std::mutex> guard(m_socketLock);
-		if (!sendBytes(length) || !sendBytes(buffer, length))
+		if (!sendHeader(length) || !sendBytes(buffer, length))
 		{
 			LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
 			return false;
@@ -330,7 +342,7 @@ bool TcpHandler::reply(const Response &resp)
 					break;
 				}
 				sentSize += readSize;
-				if (!sendBytes(readSize) || !sendBytes(buffer.get(), readSize))
+				if (!sendHeader(readSize) || !sendBytes(buffer.get(), readSize))
 				{
 					LOG_ERR << fname << "send chunk failed with error: " << std::strerror(errno);
 					return false;
@@ -343,7 +355,7 @@ bool TcpHandler::reply(const Response &resp)
 		}
 
 		// Send final delimiter
-		return sendBytes(0);
+		return sendHeader(0);
 	}
 
 	LOG_DBG << fname << "successfully";
@@ -477,15 +489,22 @@ bool TcpHandler::sendBytes(const char *data, size_t length, int timeoutSeconds)
 	return true;
 }
 
-bool TcpHandler::sendBytes(size_t intValue)
+bool TcpHandler::sendHeader(size_t intValue)
 {
-	const static char fname[] = "TcpHandler::sendBytes() ";
+	const static char fname[] = "TcpHandler::sendHeader() ";
 	LOG_DBG << fname << "sending <" << intValue << "> data to " << m_clientHostName;
 
 	const static int headerSendTimeout = 10;
+
+	// Write the TCP header (8 bytes) to the buffer in network byte order (big-endian):
+	// - First 4 bytes: Magic number (for message validation)
+	// - Next 4 bytes: Body size (data length)
 	char headerBuff[TCP_MESSAGE_HEADER_LENGTH];
-	// write data size to header
-	*((uint32_t *)headerBuff) = htonl(intValue); // host to network byte order
+	uint32_t magic = htonl(TCP_MESSAGE_MAGIC);
+	std::memcpy(headerBuff, &magic, sizeof(magic));
+	uint32_t dataSize = htonl(intValue);
+	std::memcpy(headerBuff + 4, &dataSize, sizeof(dataSize));
+
 	return sendBytes(headerBuff, TCP_MESSAGE_HEADER_LENGTH, headerSendTimeout);
 }
 

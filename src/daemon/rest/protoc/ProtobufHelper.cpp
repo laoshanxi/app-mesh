@@ -89,8 +89,6 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readMessageBlock(co
 	const auto bodySize = readMsgHeader(socket, recvReturn);
 	if (bodySize <= 0)
 	{
-		if (errno != 0)
-			LOG_ERR << fname << "parse header length with error :" << std::strerror(errno);
 		return std::make_tuple(nullptr, recvReturn);
 	}
 	return readBytes(socket, bodySize, recvReturn);
@@ -104,13 +102,26 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	auto data = std::get<0>(result);
 	if (recvReturn <= 0)
 	{
-		LOG_ERR << fname << "read header length failed with error :" << std::strerror(errno);
+		LOG_DBG << fname << "read header length failed with error :" << std::strerror(errno);
 		return -1;
 	}
-	// parse header data (get body length). network to host byte order
-	const auto bodySize = ntohl(*((int *)(data.get()))); // host to network byte order
-	LOG_DBG << fname << "read length : " << bodySize << " from header";
-	if (bodySize > MAX_TCP_BLOCK_SIZE)
+
+	// Step 1: Safely copy and parse the 4-byte magic number from the header
+	// Step 2: Safely copy and parse the 4-byte body size from the header
+	uint32_t magic = 0, bodySize = 0;
+	std::memcpy(&magic, data.get(), sizeof(magic));
+	magic = ntohl(magic); // Convert to host byte order
+	if (magic != TCP_MESSAGE_MAGIC)
+	{
+		LOG_ERR << fname << "invalid message received: magic number [0x" << std::hex << std::uppercase << std::setw(8)
+				<< std::setfill('0') << magic << "] (expected: 0x" << TCP_MESSAGE_MAGIC << ")";
+		return -1;
+	}
+	std::memcpy(&bodySize, data.get() + sizeof(magic), sizeof(bodySize));
+	bodySize = ntohl(bodySize); // Convert to host byte order
+	LOG_DBG << fname << "body length read from header: " << bodySize << " bytes";
+
+	if (bodySize > TCP_MAX_BLOCK_SIZE)
 	{
 		LOG_ERR << fname << "read data size reached limitation, aborting connection";
 		return -1;
@@ -140,7 +151,7 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE
 		recvReturn = totalRecieved;
 	if (socket.get_handle() != ACE_INVALID_HANDLE && recvReturn <= 0)
 	{
-		LOG_ERR << fname << "read body socket data failed with error: " << std::strerror(errno);
+		LOG_WAR << fname << "read socket data failed with error: " << std::strerror(errno);
 		return std::make_tuple(nullptr, recvReturn);
 	}
 	LOG_DBG << fname << "read message block data with length: " << bufferSize;

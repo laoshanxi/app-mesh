@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
 const TCP_CONNECT_TIMEOUT_SECONDS = 30
@@ -247,52 +246,6 @@ func SetFileAttributes(filePath string, headers http.Header) error {
 	}
 
 	return nil
-}
-
-// ConnectAppMeshServer establishes a secure TLS TCP connection to an App Mesh server.
-func ConnectAppMeshServer(tcpAddr string, verifyServer bool, sslCfg *SSLConfig) (net.Conn, error) {
-
-	var err error
-
-	// Load server CA if server verification is enabled
-	var serverCA *x509.CertPool
-	if verifyServer {
-		serverCA, err = LoadCA(sslCfg.SSLCaPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load server CA: %w", err)
-		}
-	}
-
-	// TLS configuration
-	conf := &tls.Config{
-		InsecureSkipVerify: !verifyServer,
-		RootCAs:            serverCA,
-	}
-
-	// Load client certificate if client verification is enabled
-	if sslCfg.VerifyClient {
-		clientCert, err := LoadCertificatePair(sslCfg.SSLClientCertificateFile, sslCfg.SSLClientCertificateKeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load client certificate: %w", err)
-		}
-		conf.Certificates = []tls.Certificate{clientCert}
-	}
-
-	// Dialer with timeout
-	dialer := net.Dialer{Timeout: TCP_CONNECT_TIMEOUT_SECONDS * time.Second}
-
-	// Establish a TLS connection
-	conn, err := tls.DialWithDialer(&dialer, "tcp", tcpAddr, conf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to establish TLS connection: %w", err)
-	}
-
-	// Set TCP_NODELAY for low-latency communication
-	if err := SetTcpNoDelay(conn); err != nil {
-		fmt.Printf("warning: failed to set TCP_NODELAY: %v", err)
-	}
-
-	return conn, nil
 }
 
 // SetTcpNoDelay disables Nagle's algorithm for the given net.Conn,
