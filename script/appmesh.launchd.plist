@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <!-- Service label used to identify the service -->
+        <key>Label</key>
+        <string>com.appmesh.appmesh</string>
+
+        <!-- Program arguments, defining the command to be executed -->
+        <key>ProgramArguments</key>
+        <array>
+            <string>/opt/appmesh/bin/appsvc</string>
+        </array>
+
+        <!-- Working directory, defining the working directory for the service -->
+        <key>WorkingDirectory</key>
+        <string>/opt/appmesh/</string>
+
+        <!-- Environment variables, you can add required environment variables here -->
+        <key>EnvironmentVariables</key>
+        <dict>
+            <!-- Add environment variables -->
+            <key>EnvironmentFile</key>
+            <string>/opt/appmesh/appmesh.default</string>
+        </dict>
+
+        <!-- Run the service at load -->
+        <key>RunAtLoad</key>
+        <true/>
+
+        <!-- Keep the service alive -->
+        <key>KeepAlive</key>
+        <true/>
+
+        <!-- Standard error output path -->
+        <key>StandardErrorPath</key>
+        <string>/var/log/appmesh.err</string>
+
+        <!-- Standard output path -->
+        <key>StandardOutPath</key>
+        <string>/var/log/appmesh.out</string>
+    </dict>
+</plist>

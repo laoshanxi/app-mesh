@@ -10,7 +10,7 @@ ENV APPMESH_BaseConfig_DisableExecUser=true
 # not only listen 127.0.0.1
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
 COPY --from=compile_stage /opt/app-mesh/build/appmesh*.deb .
-RUN ls && apt-get update && \
+RUN  bash -c "ls && apt-get update && \
 	apt-get install -y tini && \
 	apt-get install -y ./appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
@@ -20,7 +20,7 @@ RUN ls && apt-get update && \
 	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
 	touch /opt/appmesh/appmesh.pid && \
 	chown -R appmesh:appmesh /opt/appmesh/ && \
-	. /usr/bin/appc -v && /opt/appmesh/bin/appsvc -v
+	. /usr/local/bin/appc -v && /opt/appmesh/bin/appsvc -v"
 EXPOSE 6060
 USER appmesh
 WORKDIR /

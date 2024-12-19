@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -11,9 +12,11 @@ import (
 
 type Connection struct {
 	*appmesh.TCPConnection
+	mutex sync.Mutex
 }
 
-func NewConnection(targetHost string, verifyServer bool, allowError bool) (*Connection, error) {
+// GetConnection returns a connection if to the target host already exists or creates a new connection
+func GetConnection(targetHost string, verifyServer bool, allowError bool) (*Connection, error) {
 	// Acquire a lock to prevent race conditions when checking/creating connections
 	remoteConnectionsMutex.Lock()
 	defer remoteConnectionsMutex.Unlock()

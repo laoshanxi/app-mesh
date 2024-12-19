@@ -10,7 +10,7 @@
 readonly SYSTEMD_FILE="/etc/systemd/system/appmesh.service"
 readonly INITD_FILE="/etc/init.d/appmesh"
 readonly BASH_COMPLETION_FILE="/usr/share/bash-completion/completions/appc"
-readonly SOFTLINK="/usr/bin/appc"
+readonly SOFTLINK="/usr/local/bin/appc"
 
 # Allow script to continue on errors
 set +e

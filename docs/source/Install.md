@@ -40,6 +40,8 @@ sudo yum install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 sudo -E apt install appmesh_2.1.1_gcc_7_glibc_2.27_x86_64.deb
 # SUSE
 sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
+# macOS
+sudo tar zxvf appmesh_2.1.2_clang_15.0.0_macos_14.7.2_arm64.gz -C /opt/appmesh
 
 # notes: use sudo -E to pass environment variables
 ```
@@ -47,11 +49,16 @@ sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 3. Start and Enable the Service:
 
 ```shell
+# Linux
 sudo systemctl enable appmesh
 sudo systemctl start appmesh
 sudo systemctl status appmesh
 ● appmesh.service - App Mesh daemon service
    Loaded: loaded (/etc/systemd/system/appmesh.service; enabled; vendor preset: disabled)
+
+# macOS
+sudo bash /opt/appmesh/script/packaging/post_install.sh
+sudo launchctl load -w /Library/LaunchDaemons/com.appmesh.appmesh.plist
 ```
 
 4. Web UI Deployment: Access the Web UI at https://<hostname>:

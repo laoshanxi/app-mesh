@@ -10,11 +10,12 @@ export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null
 # Soft links
 readonly BASH_COMPLETION_DIR=/usr/share/bash-completion/completions
 readonly BASH_COMPLETION_SOFTLINK="$BASH_COMPLETION_DIR/appc"
-readonly APPC_SOFTLINK=/usr/bin/appc
+readonly APPC_SOFTLINK=/usr/local/bin/appc
 readonly INITD_SOFTLINK=/etc/init.d/appmesh
 
 # Target files
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
+readonly LAUNCHD_FILE=/Library/LaunchDaemons/com.appmesh.appmesh.plist
 readonly ENV_FILE="$PROG_HOME/appmesh.default"
 
 log() {
@@ -23,7 +24,9 @@ log() {
 
 # Detect OS type and version
 get_os_type() {
-    if [ -f /etc/os-release ]; then
+    if [ "$(uname)" = "Darwin" ]; then
+        echo "macos"
+    elif [ -f /etc/os-release ]; then
         # shellcheck source=/dev/null
         . /etc/os-release
         echo "$ID"
@@ -37,7 +40,6 @@ get_os_type() {
 }
 
 setup_environment_file() {
-
     log "Setting up environment file at $ENV_FILE"
     : >$ENV_FILE
 
@@ -82,8 +84,9 @@ setup_environment_file() {
 }
 
 detect_init_system() {
-    # Original detection for non-container environments
-    if command -v systemctl >/dev/null 2>&1 && systemctl list-units >/dev/null 2>&1; then
+    if [ "$(uname)" = "Darwin" ]; then
+        echo "launchd"
+    elif command -v systemctl >/dev/null 2>&1 && systemctl list-units >/dev/null 2>&1; then
         echo "systemd"
     else
         echo "init"
@@ -97,6 +100,9 @@ setup_service() {
     case "$init_system" in
     systemd)
         install_systemd_service
+        ;;
+    launchd)
+        install_launchd_service
         ;;
     *)
         install_initd_service
@@ -127,6 +133,28 @@ install_systemd_service() {
 
     rm -f "${SYSTEMD_FILE}.bak"
     systemctl daemon-reload
+}
+
+install_launchd_service() {
+    log "Installing launchd service at $LAUNCHD_FILE"
+    local service_template="${PROG_HOME}/script/appmesh.launchd.plist"
+
+    if [ ! -f "$service_template" ]; then
+        log "Service template not found: $service_template"
+        return 1
+    fi
+
+    chown root:wheel "$service_template"
+    chmod 644 "$service_template"
+    rm -f "$LAUNCHD_FILE" && ln -sf "$service_template" "$LAUNCHD_FILE"
+
+    if [ -n "${APPMESH_DAEMON_EXEC_USER}" ]; then
+        sed -i.bak "s/<key>UserName<\/key>\n\t<string>.*<\/string>/<key>UserName<\/key>\n\t<string>${APPMESH_DAEMON_EXEC_USER}<\/string>/" "$LAUNCHD_FILE"
+        log "Service user set to: ${APPMESH_DAEMON_EXEC_USER}"
+    fi
+
+    rm -f "${LAUNCHD_FILE}.bak"
+    # launchctl load -w "$LAUNCHD_FILE"
 }
 
 install_initd_service() {
@@ -184,6 +212,10 @@ print_startup_instructions() {
         log "  sudo systemctl enable appmesh"
         log "  sudo systemctl start appmesh"
         ;;
+    launchd)
+        log "  sudo bash ${PROG_HOME}/script/packaging/post_install.sh"
+        log "  sudo launchctl load -w $LAUNCHD_FILE"
+        ;;
     sysvinit | upstart)
         log "  sudo service appmesh start"
         ;;
@@ -199,9 +231,19 @@ main() {
     mkdir -p "${PROG_HOME}/work"
 
     # Stop existing service
-    if [ -f "$SYSTEMD_FILE" ] || [ -f "$INITD_SOFTLINK" ]; then
+    if [ -f "$SYSTEMD_FILE" ]; then
         log "Stopping existing service"
-        systemctl stop appmesh 2>/dev/null || service appmesh stop 2>/dev/null || true
+        systemctl stop appmesh 2>/dev/null || true
+        sleep 2
+    fi
+    if [ -f "$INITD_SOFTLINK" ]; then
+        log "Stopping existing service"
+        service appmesh stop 2>/dev/null
+        sleep 2
+    fi
+    if [ -f "$LAUNCHD_FILE" ]; then
+
+        launchctl unload -w "$LAUNCHD_FILE" 2>/dev/null || true
         sleep 2
     fi
 
