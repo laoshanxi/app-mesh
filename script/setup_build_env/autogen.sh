@@ -161,7 +161,7 @@ else
 	cd log4cpp/
 	./autogen.sh
 	./configure
-	make
+	make -j"$(nproc)"
 	make install
 	ls -al /usr/local/lib*/liblog4cpp.a
 fi

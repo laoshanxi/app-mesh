@@ -6,11 +6,21 @@ on:
       - main
     paths:
       - ".github/workflows/build-macos.yaml"
-      - "script/setup_build_env/autogen.sh.mac.sh"
+      - "src/**"
+      - "script/**"
+env:
+  APPMESH_VERSION: "2.1.2"
 
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
 
     steps:
       - name: Checkout Github code
@@ -27,12 +37,10 @@ jobs:
           echo "Verifying installed packages..."
           brew list
 
-      # Step 3: Configure build env
       - name: Configure Build Environment
         run: |
-          sh script/setup_build_env/autogen.sh.mac.sh
+          bash script/setup_build_env/autogen.sh.mac.sh
 
-      # Step 4: Build
       - name: Build project
         if: always()
         run: |
@@ -43,5 +51,25 @@ jobs:
           cmake ..
 
           echo "Building the project..."
-          make
+          make -j"$(nproc)"
           make pack
+
+          echo "Testing the project..."
+          sudo mkdir -p /opt/appmesh
+          sudo tar zxvf appmesh_*_arm64.gz -C /opt/appmesh
+          sudo bash /opt/appmesh/script/setup.sh
+          sudo bash /opt/appmesh/script/appmesh.initd.sh start
+          sleep 2
+          cat /opt/appmesh/work/server.log
+          #appc ls
+          #appc resource
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "SDK & Security enhancement"
+          tag_name: ${{ env.APPMESH_VERSION }}
+          fail_on_unmatched_files: false
+          token: ${{ secrets.PUBLISH_RELEASE }}
+          files: |
+            build/appmesh_*.gz

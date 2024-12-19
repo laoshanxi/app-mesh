@@ -101,4 +101,17 @@ else
 
     echo "macOS Version: $MACOS_VERSION"
     echo "Clang Version: $CLANG_VERSION"
+
+    cp -r "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging" "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/appmesh.launchd.plist" "${PACKAGE_HOME}/script/"
+
+    # Make script executable
+    chmod +x "${PACKAGE_HOME}/script/packaging/"*
+
+    tar czvf ${CMAKE_BINARY_DIR}/${PROJECT_NAME}_${PROJECT_VERSION}_clang_${CLANG_VERSION}_macos_${MACOS_VERSION}_${GOARCH}.gz -C ${PACKAGE_HOME} .
+
+    #pkgbuild --identifier "github.com/laoshanxi/app-mesh" --version ${PROJECT_VERSION} --root ${PACKAGE_HOME} \
+    #    --scripts ${PACKAGE_HOME}/script/packaging \
+    #    --install-location ${INSTALL_LOCATION} \
+    #    ${PROJECT_NAME}_${PROJECT_VERSION}_clang_${CLANG_VERSION}_macos_${MACOS_VERSION}_${GOARCH}.pkg
 fi

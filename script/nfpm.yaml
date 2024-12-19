@@ -1,5 +1,7 @@
-################################################################################# nfpm configuration file
-# check https://nfpm.goreleaser.com/configuration for detailed usage
+################################################################################
+# nfpm configuration file
+# Check https://nfpm.goreleaser.com/configuration for detailed usage
+################################################################################
 
 # Name. (required)
 name: ${PROJECT_NAME}
@@ -34,9 +36,9 @@ contents:
 # Scripts to run at specific stages. (overridable)
 scripts:
   preinstall:
-  postinstall: ${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/rpm_post_install_actions.sh
-  preremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/rpm_pre_uninstall_actions.sh
-  postremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/rpm_post_uninstall_actions.sh
+  postinstall: ${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_install.sh
+  preremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/pre_uninstall.sh
+  postremove: ${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_uninstall.sh
 # All fields above marked as `overridable` can be overridden for a given
 overrides:
   deb:

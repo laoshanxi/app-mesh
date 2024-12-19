@@ -117,7 +117,7 @@ func ListenRest() error {
 	targetHost := strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1)
 
 	var err error
-	localConnection, err = NewConnection(targetHost, config.ConfigData.REST.SSL.VerifyServer, false)
+	localConnection, err = GetConnection(targetHost, config.ConfigData.REST.SSL.VerifyServer, false)
 	if err != nil {
 		logger.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
 	}
@@ -302,7 +302,7 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// forward with TCP protocal
 			var err error
-			targetConnection, err = NewConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
+			targetConnection, err = GetConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -310,6 +310,10 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// make sure only one request is processed at a time
+	targetConnection.mutex.Lock()
+	defer targetConnection.mutex.Unlock()
 
 	// body buffer
 	request := NewRequest(r)

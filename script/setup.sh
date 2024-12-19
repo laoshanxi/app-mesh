@@ -10,11 +10,12 @@ export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null
 # Soft links
 readonly BASH_COMPLETION_DIR=/usr/share/bash-completion/completions
 readonly BASH_COMPLETION_SOFTLINK="$BASH_COMPLETION_DIR/appc"
-readonly APPC_SOFTLINK=/usr/bin/appc
+readonly APPC_SOFTLINK=/usr/local/bin/appc
 readonly INITD_SOFTLINK=/etc/init.d/appmesh
 
 # Target files
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
+readonly LAUNCHD_FILE=/Library/LaunchDaemons/com.appmesh.appmesh.plist
 readonly ENV_FILE="$PROG_HOME/appmesh.default"
 
 log() {
@@ -23,7 +24,9 @@ log() {
 
 # Detect OS type and version
 get_os_type() {
-    if [ -f /etc/os-release ]; then
+    if [ "$(uname)" = "Darwin" ]; then
+        echo "macos"
+    elif [ -f /etc/os-release ]; then
         # shellcheck source=/dev/null
         . /etc/os-release
         echo "$ID"
@@ -36,8 +39,51 @@ get_os_type() {
     fi
 }
 
-setup_environment_file() {
+replace_appmesh_paths() {
+    local appmesh_dir="$PROG_HOME"
+    local input_file_path="$1"
 
+    # Log and exit if the input file does not exist
+    if [ ! -f "$input_file_path" ]; then
+        log "Error: Input file '$input_file_path' does not exist."
+        return 1
+    fi
+
+    # Normalize paths for consistency
+    appmesh_dir=$(realpath -m "$appmesh_dir")
+    input_file_path=$(realpath "$input_file_path")
+
+    # Ensure appmesh_dir ends with "/appmesh"
+    if [[ ! "$appmesh_dir" =~ /appmesh$ ]]; then
+        log "Error: home dir must end with '/appmesh'. Current value: '$appmesh_dir'."
+        return 1
+    fi
+
+    # Escape special characters in the appmesh directory for use in sed
+    local escaped_appmesh_dir=$(echo "$appmesh_dir" | sed 's/\//\\\//g')
+
+    # Create a temporary file to store the updated content
+    local temp_file
+    temp_file=$(mktemp)
+
+    # Replace paths matching the pattern ending with 'appmesh/'
+    # The pattern matches directory structures leading to 'appmesh/'
+    sed -e "s|/[[:alnum:]/]*appmesh/|$escaped_appmesh_dir/|g" "$input_file_path" >"$temp_file"
+
+    # Check if the file was modified
+    if cmp -s "$input_file_path" "$temp_file"; then
+        rm "$temp_file" # No changes made; clean up temp file
+        log "No changes detected in '$input_file_path'."
+        return 0
+    fi
+
+    # Overwrite the input file with the modified content
+    mv "$temp_file" "$input_file_path"
+    log "File '$input_file_path' updated successfully with the new directory: '$appmesh_dir'."
+    return 0
+}
+
+setup_environment_file() {
     log "Setting up environment file at $ENV_FILE"
     : >$ENV_FILE
 
@@ -82,8 +128,9 @@ setup_environment_file() {
 }
 
 detect_init_system() {
-    # Original detection for non-container environments
-    if command -v systemctl >/dev/null 2>&1 && systemctl list-units >/dev/null 2>&1; then
+    if [ "$(uname)" = "Darwin" ]; then
+        echo "launchd"
+    elif command -v systemctl >/dev/null 2>&1 && systemctl list-units >/dev/null 2>&1; then
         echo "systemd"
     else
         echo "init"
@@ -97,6 +144,9 @@ setup_service() {
     case "$init_system" in
     systemd)
         install_systemd_service
+        ;;
+    launchd)
+        install_launchd_service
         ;;
     *)
         install_initd_service
@@ -113,6 +163,8 @@ install_systemd_service() {
         return 1
     fi
 
+    replace_appmesh_paths ${PROG_HOME}/script/appmesh.systemd.service
+
     rm -f "$SYSTEMD_FILE" && ln -sf "$service_template" "$SYSTEMD_FILE"
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER}" ]; then
@@ -127,6 +179,30 @@ install_systemd_service() {
 
     rm -f "${SYSTEMD_FILE}.bak"
     systemctl daemon-reload
+}
+
+install_launchd_service() {
+    log "Installing launchd service at $LAUNCHD_FILE"
+    local service_template="${PROG_HOME}/script/appmesh.launchd.plist"
+
+    if [ ! -f "$service_template" ]; then
+        log "Service template not found: $service_template"
+        return 1
+    fi
+
+    replace_appmesh_paths ${PROG_HOME}/script/appmesh.launchd.plist
+
+    chown root:wheel "$service_template"
+    chmod 644 "$service_template"
+    rm -f "$LAUNCHD_FILE" && ln -sf "$service_template" "$LAUNCHD_FILE"
+
+    if [ -n "${APPMESH_DAEMON_EXEC_USER}" ]; then
+        sed -i.bak "s/<key>UserName<\/key>\n\t<string>.*<\/string>/<key>UserName<\/key>\n\t<string>${APPMESH_DAEMON_EXEC_USER}<\/string>/" "$LAUNCHD_FILE"
+        log "Service user set to: ${APPMESH_DAEMON_EXEC_USER}"
+    fi
+
+    rm -f "${LAUNCHD_FILE}.bak"
+    # launchctl load -w "$LAUNCHD_FILE"
 }
 
 install_initd_service() {
@@ -165,7 +241,7 @@ setup_ssl() {
     if [ "$APPMESH_FRESH_INSTALL" = "Y" ] || [ ! -f "${ssl_dir}/server.pem" ]; then
         log "Generating SSL certificates"
         if [ -f "${ssl_dir}/generate_ssl_cert.sh" ]; then
-            (cd "$ssl_dir" && sh generate_ssl_cert.sh)
+            (cd "$ssl_dir" && bash generate_ssl_cert.sh)
             find "$ssl_dir" -name "*.pem" -exec chmod 644 {} \;
         else
             log "SSL certificate generation script not found"
@@ -184,6 +260,11 @@ print_startup_instructions() {
         log "  sudo systemctl enable appmesh"
         log "  sudo systemctl start appmesh"
         ;;
+    launchd)
+        log "  sudo launchctl load -w $LAUNCHD_FILE"
+        log "  or just start using:"
+        log "  sudo bash ${PROG_HOME}/script/appmesh.initd.sh start"
+        ;;
     sysvinit | upstart)
         log "  sudo service appmesh start"
         ;;
@@ -199,9 +280,19 @@ main() {
     mkdir -p "${PROG_HOME}/work"
 
     # Stop existing service
-    if [ -f "$SYSTEMD_FILE" ] || [ -f "$INITD_SOFTLINK" ]; then
+    if [ -f "$SYSTEMD_FILE" ]; then
         log "Stopping existing service"
-        systemctl stop appmesh 2>/dev/null || service appmesh stop 2>/dev/null || true
+        systemctl stop appmesh 2>/dev/null || true
+        sleep 2
+    fi
+    if [ -f "$INITD_SOFTLINK" ]; then
+        log "Stopping existing service"
+        service appmesh stop 2>/dev/null
+        sleep 2
+    fi
+    if [ -f "$LAUNCHD_FILE" ]; then
+
+        launchctl unload -w "$LAUNCHD_FILE" 2>/dev/null || true
         sleep 2
     fi
 
