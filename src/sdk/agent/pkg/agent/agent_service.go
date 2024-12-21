@@ -24,6 +24,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Constants for REST paths and headers
 const (
 	REST_PATH_UPLOAD            = "/appmesh/file/upload"
 	REST_PATH_DOWNLOAD          = "/appmesh/file/download"
@@ -40,15 +41,15 @@ const (
 
 var (
 	logger         *zap.SugaredLogger = utils.GetLogger()
-	httpRequestMap sync.Map           // request map cache for asyncrized response
+	httpRequestMap sync.Map           // Cache for asynchronous responses
 
-	localConnection        *Connection // tcp connection to the local server
-	remoteConnections      sync.Map    // tcp connections to remote servers
+	localConnection        *Connection // TCP connection to the local server
+	remoteConnections      sync.Map    // TCP connections to remote servers
 	remoteConnectionsMutex sync.Mutex
 	delegatePool           sync.Pool
 )
 
-// init function to initialize the delegate pool using net/http.Client
+// Initialize the delegate pool using net/http.Client
 func init() {
 	delegatePool = sync.Pool{
 		New: func() interface{} {
@@ -72,10 +73,10 @@ func init() {
 	}
 }
 
-// monitorResponse continuously reads messages from a connection and forwards responses
+// MonitorConnectionResponse continuously reads messages from a connection and forwards responses
 // to their corresponding channels. It handles connection cleanup on errors.
-func monitorResponse(conn *Connection, targetHost string, allowError bool) {
-	defer deleteConnection(targetHost)
+func MonitorConnectionResponse(conn *Connection, targetHost string, allowError bool) {
+	defer DeleteConnection(targetHost)
 
 	// Helper function to handle errors consistently
 	handleError := func(msg string, args ...interface{}) {
@@ -88,7 +89,7 @@ func monitorResponse(conn *Connection, targetHost string, allowError bool) {
 	}
 
 	for {
-		response, err := ReadNewResponse(conn)
+		response, err := ReadAppMeshResponse(conn)
 		if err != nil {
 			handleError("Failed to parse response from host %s: %v", targetHost, err)
 			return
@@ -110,24 +111,25 @@ func monitorResponse(conn *Connection, targetHost string, allowError bool) {
 	}
 }
 
-func ListenRest() error {
+// ListenAndServeREST starts the REST API server
+func ListenAndServeREST() error {
 	listenAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestListenPort)
 	connectAddr := config.ConfigData.REST.RestListenAddress + ":" + strconv.Itoa(config.ConfigData.REST.RestTcpPort)
-	// connect to TCP rest server
+	// Connect to TCP REST server
 	targetHost := strings.Replace(connectAddr, "0.0.0.0", "127.0.0.1", 1)
 
 	var err error
-	localConnection, err = GetConnection(targetHost, config.ConfigData.REST.SSL.VerifyServer, false)
+	localConnection, err = EstablishConnection(targetHost, config.ConfigData.REST.SSL.VerifyServer, false)
 	if err != nil {
-		logger.Fatalf("Failed to connected to TCP server <%s> with error: %v", connectAddr, err)
+		logger.Fatalf("Failed to connect to TCP server <%s> with error: %v", connectAddr, err)
 	}
-	logger.Infof("Establish REST connection to TCP server <%s>", connectAddr)
+	logger.Infof("Established REST connection to TCP server <%s>", connectAddr)
 
 	// HTTP router using gorilla/mux
 	router := mux.NewRouter()
 
 	// OpenAPI Swagger
-	RegOpenapiRestHandler(router)
+	RegisterOpenAPIRoutes(router)
 
 	// Grafana
 	grafana.RegGrafanaRestHandler(router)
@@ -136,7 +138,7 @@ func ListenRest() error {
 	RegisterDockerRoutes(router)
 
 	// AppMesh endpoints
-	router.HandleFunc("/appmesh/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(handleAppmeshResquest)).Methods("GET", "PUT", "POST", "DELETE")
+	router.HandleFunc("/appmesh/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(HandleAppMeshRequest)).Methods("GET", "PUT", "POST", "DELETE")
 	// Forward /metrics to /appmesh/metrics
 	router.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = "/appmesh/metrics" // Change the URL path to /appmesh/metrics
@@ -144,15 +146,16 @@ func ListenRest() error {
 	}).Methods("GET")
 
 	// Index & OPTIONS & HEAD
-	router.HandleFunc("/", utils.Cors(utils.DefaultCORSConfig)(handleIndex)).Methods("GET")
+	router.HandleFunc("/", utils.Cors(utils.DefaultCORSConfig)(HandleIndex)).Methods("GET")
 	router.HandleFunc("/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // Options handler
 	})).Methods("OPTIONS", "HEAD")
 
-	return startHttpsServer(listenAddr, router)
+	return StartHTTPSServer(listenAddr, router)
 }
 
-func startHttpsServer(restAgentAddr string, router *mux.Router) error {
+// StartHTTPSServer starts the HTTPS server with the provided router
+func StartHTTPSServer(restAgentAddr string, router *mux.Router) error {
 	// Load server certificate and key
 	serverCA, err := appmesh.LoadCertificatePair(
 		config.ConfigData.REST.SSL.SSLCertificateFile,
@@ -215,10 +218,11 @@ func startHttpsServer(restAgentAddr string, router *mux.Router) error {
 	}
 
 	// Start HTTPS server
-	return listenAndServeTLS(restAgentAddr, server)
+	return ListenAndServeTLS(restAgentAddr, server)
 }
 
-func listenAndServeTLS(address string, server *http.Server) error {
+// ListenAndServeTLS starts the TLS server
+func ListenAndServeTLS(address string, server *http.Server) error {
 	ln, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", address, err)
@@ -232,7 +236,8 @@ func listenAndServeTLS(address string, server *http.Server) error {
 	return nil
 }
 
-func handleIndex(w http.ResponseWriter, r *http.Request) {
+// HandleIndex serves the index page
+func HandleIndex(w http.ResponseWriter, r *http.Request) {
 	htmlContent := `
 <!DOCTYPE html>
 <html lang="en">
@@ -284,25 +289,26 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(htmlContent))
 }
 
-func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
+// HandleAppMeshRequest processes AppMesh requests
+func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	var targetConnection = localConnection
 
-	// handle forward request
-	// in order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
+	// Handle forward request
+	// In order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
 	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
 	if forwardingHost != "" {
 		logger.Debugf("Forward request to %s", forwardingHost)
 
 		parsedURL, _ := appmesh.ParseURL(forwardingHost)
 		if parsedURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
-			// forward with HTTP protocal
+			// Forward with HTTP protocol
 			r.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
-			forwardAppmeshRest(w, r, forwardingHost)
+			ForwardAppMeshRequest(w, r, forwardingHost)
 			return
 		} else {
-			// forward with TCP protocal
+			// Forward with TCP protocol
 			var err error
-			targetConnection, err = GetConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
+			targetConnection, err = EstablishConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -311,16 +317,16 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// make sure only one request is processed at a time
+	// Ensure only one request is processed at a time
 	targetConnection.mutex.Lock()
 	defer targetConnection.mutex.Unlock()
 
-	// body buffer
-	request := NewRequest(r)
+	// Body buffer
+	request := NewAppMeshRequest(r)
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
 	if targetConnection != localConnection {
 		request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_TCP
-		// file download & upload
+		// File download & upload
 		if request.RequestUri == REST_PATH_DOWNLOAD {
 			request.Headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = "true"
 		} else if request.RequestUri == REST_PATH_UPLOAD {
@@ -328,31 +334,31 @@ func handleAppmeshResquest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// create a chan for accept Response
+	// Create a channel to accept Response
 	ch := make(chan *Response)
 	httpRequestMap.Store(request.Uuid, ch)
 
-	sendErr := targetConnection.sendRequestData(request)
+	sendErr := targetConnection.SendRequestData(request)
 	if sendErr == nil {
-		// wait chan to get response
+		// Wait for channel to get response
 		resp := <-ch
-		// reply to client
-		resp.applyResponse(w, r)
+		// Reply to client
+		resp.ApplyResponse(w, r)
 
-		// handle file upload after response to client
+		// Handle file upload after response to client
 		if resp.TempUploadFilePath != "" {
-			sendErr = targetConnection.sendUploadFileData(resp.TempUploadFilePath)
+			sendErr = targetConnection.SendFileData(resp.TempUploadFilePath)
 		}
 	}
 
 	if sendErr != nil {
 		logger.Errorf("Failed to send request to server with error: %v", sendErr)
-		defer deleteConnection(forwardingHost)
+		defer DeleteConnection(forwardingHost)
 	}
 }
 
-// forwardAppmeshRest forwards the incoming request to another host and copies the response back.
-func forwardAppmeshRest(w http.ResponseWriter, r *http.Request, forwardingHost string) {
+// ForwardAppMeshRequest forwards the incoming request to another host and copies the response back.
+func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHost string) {
 	// Parse the forwarding host URL
 	parsedURL, err := appmesh.ParseURL(forwardingHost)
 	if err != nil {
@@ -400,22 +406,24 @@ func forwardAppmeshRest(w http.ResponseWriter, r *http.Request, forwardingHost s
 	}
 }
 
-func handleRestFile(w http.ResponseWriter, r *http.Request, data *Response) error {
+// HandleRESTFile processes file upload and download requests
+func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) error {
 	logger.Debugf("Requesting path: %s", r.URL.Path)
 
 	filePath := r.Header.Get("File-Path")
 
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == REST_PATH_DOWNLOAD && data.HttpStatus == http.StatusOK:
-		return handleDownload(w, r, data, filePath)
+		return HandleDownload(w, r, data, filePath)
 	case r.Method == http.MethodPost && r.URL.Path == REST_PATH_UPLOAD && data.HttpStatus == http.StatusOK:
-		return handleUpload(w, r, data, filePath)
+		return HandleUpload(w, r, data, filePath)
 	default:
 		return fmt.Errorf("incorrect file request: %s:%s", r.Method, data.Body)
 	}
 }
 
-func handleDownload(w http.ResponseWriter, r *http.Request, data *Response, filePath string) error {
+// HandleDownload processes file download requests
+func HandleDownload(w http.ResponseWriter, r *http.Request, data *Response, filePath string) error {
 	if data.TempDownloadFilePath != "" {
 		filePath = data.TempDownloadFilePath
 		defer os.Remove(data.TempDownloadFilePath)
@@ -426,7 +434,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, data *Response, file
 	}
 
 	_, fileName := filepath.Split(filePath)
-	setDownloadHeaders(w, fileName)
+	SetDownloadHeaders(w, fileName)
 
 	logger.Debugf("Serving file: %s", fileName)
 	http.ServeFile(w, r, filePath)
@@ -434,7 +442,8 @@ func handleDownload(w http.ResponseWriter, r *http.Request, data *Response, file
 	return nil
 }
 
-func handleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePath string) error {
+// HandleUpload processes file upload requests
+func HandleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePath string) error {
 	if data.TempUploadFilePath != "" {
 		filePath = data.TempUploadFilePath
 	}
@@ -444,7 +453,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePa
 		return fmt.Errorf("invalid file name")
 	}
 
-	if err := saveUploadedFile(w, r, filePath); err != nil {
+	if err := SaveUploadedFile(w, r, filePath); err != nil {
 		return fmt.Errorf("save file failed with error: %w", err)
 	}
 
@@ -456,7 +465,8 @@ func handleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePa
 	return nil
 }
 
-func setDownloadHeaders(w http.ResponseWriter, fileName string) {
+// SetDownloadHeaders sets the headers for file download responses
+func SetDownloadHeaders(w http.ResponseWriter, fileName string) {
 	w.Header().Set("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName))
 	w.Header().Set("Content-Description", "File Transfer")
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -466,9 +476,9 @@ func setDownloadHeaders(w http.ResponseWriter, fileName string) {
 	w.Header().Set("Pragma", "public")
 }
 
-// saveUploadedFile saves an uploaded file directly to the specified path without creating temp files.
+// SaveUploadedFile saves an uploaded file directly to the specified path without creating temp files.
 // It supports both multipart/form-data and direct body uploads.
-func saveUploadedFile(w http.ResponseWriter, r *http.Request, filePath string) error {
+func SaveUploadedFile(w http.ResponseWriter, r *http.Request, filePath string) error {
 	if filePath == "" {
 		return errors.New("file path cannot be empty")
 	}

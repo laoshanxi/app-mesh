@@ -30,7 +30,7 @@ homepage: https://github.com/laoshanxi/app-mesh
 license: MIT
 # Contents to add to the package
 contents:
-  - src: ${PACKAGE_HOME}/
+  - src: ${PACKAGE_HOME}
     dst: ${INSTALL_LOCATION}
     type: tree
 # Scripts to run at specific stages. (overridable)

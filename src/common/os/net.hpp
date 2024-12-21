@@ -1,19 +1,17 @@
 #pragma once
 
+#include <atomic>
 #include <cerrno>		// for errno
 #include <cstring>		// for strerror
 #include <ifaddrs.h>	// for getifaddrs
 #include <list>			// for std::list
-#include <memory>		// for unique_ptr, shared_ptr
+#include <memory>		// for unique_ptr
 #include <netinet/in.h> // for internet operations
 #include <set>			// for std::set
 #include <string>		// for string operations
-#include <sys/socket.h> // for socket operations
-#include <sys/types.h>	// for system types
 
 #include <ace/OS.h>
-#include <boost/filesystem/operations.hpp>
-#include <boost/filesystem/path.hpp>
+#include <boost/asio.hpp>
 
 #include "../../common/Utility.h"
 
@@ -31,127 +29,47 @@ namespace net
 	};
 
 	/**
-	 * @class AddressInfoDeleter
-	 * @brief RAII wrapper for managing addrinfo structures
-	 */
-	class AddressInfoDeleter
-	{
-	public:
-		explicit AddressInfoDeleter(addrinfo *res) : info(res) {}
-		~AddressInfoDeleter()
-		{
-			if (info)
-			{
-				freeaddrinfo(info);
-			}
-		}
-
-	private:
-		addrinfo *info; ///< Pointer to the managed addrinfo structure
-	};
-
-	/**
-	 * @brief Creates and initializes an addrinfo structure with specified parameters
-	 *
-	 * @param socktype The socket type (e.g., SOCK_STREAM, SOCK_DGRAM)
-	 * @param family Address family (e.g., AF_INET, AF_INET6, AF_UNSPEC)
-	 * @param flags Additional flags for addrinfo (e.g., AI_PASSIVE)
-	 * @return An initialized addrinfo structure
-	 */
-	inline addrinfo createAddressHints(int socktype, int family, int flags)
-	{
-		addrinfo hints = {};
-		hints.ai_flags = flags;
-		hints.ai_family = family;
-		hints.ai_socktype = socktype;
-		hints.ai_protocol = 0;
-		hints.ai_addrlen = 0;
-		hints.ai_addr = nullptr;
-		hints.ai_canonname = nullptr;
-		hints.ai_next = nullptr;
-		return hints;
-	}
-
-	/**
-	 * @brief Resolves a hostname to its IP address
-	 *
-	 * @param hostname The hostname to resolve
-	 * @param family Address family (AF_INET, AF_INET6, or AF_UNSPEC)
-	 * @return std::shared_ptr to sockaddr containing the IP address, nullptr on failure
-	 */
-	inline std::shared_ptr<sockaddr> resolveHostAddress(const std::string &hostname, int family = AF_UNSPEC)
-	{
-		static const char fname[] = "net::resolveHostAddress() ";
-
-		if (hostname.empty())
-		{
-			LOG_ERR << fname << "Empty hostname provided";
-			return nullptr;
-		}
-
-		if (family != AF_UNSPEC && family != AF_INET && family != AF_INET6)
-		{
-			LOG_ERR << fname << "Invalid address family: " << family;
-			return nullptr;
-		}
-
-		addrinfo hints = createAddressHints(SOCK_STREAM, family, 0);
-		addrinfo *result = nullptr;
-
-		int error = getaddrinfo(hostname.c_str(), nullptr, &hints, &result);
-		if (error != 0)
-		{
-			LOG_ERR << fname << "Failed to resolve '" << hostname << "': " << gai_strerror(error);
-			return nullptr;
-		}
-
-		AddressInfoDeleter guard(result);
-
-		if (!result || !result->ai_addr)
-		{
-			LOG_WAR << fname << "No addresses found for '" << hostname << "'";
-			return nullptr;
-		}
-
-		std::shared_ptr<sockaddr> ip(new sockaddr(*result->ai_addr));
-		return ip;
-	}
-
-	/**
 	 * @brief Gets the Fully Qualified Domain Name (FQDN) of the host
 	 * @return Host's FQDN, or short hostname if FQDN lookup fails
 	 */
 	inline std::string hostname()
 	{
-		static const char fname[] = "net::hostname() ";
-		static const size_t HOST_BUFFER_SIZE = 512;
-
-		std::unique_ptr<char[]> host(new char[HOST_BUFFER_SIZE]());
-		if (gethostname(host.get(), HOST_BUFFER_SIZE) != 0)
+		static const auto hostname = []() -> std::string
 		{
-			LOG_ERR << fname << "gethostname failed: " << std::strerror(errno);
-			return std::string();
-		}
+			const auto shortHostname = boost::asio::ip::host_name();
+			try
+			{
+				boost::asio::io_context io_context;
+				boost::asio::ip::tcp::resolver resolver(io_context);
 
-		addrinfo hints = createAddressHints(SOCK_STREAM, AF_UNSPEC, AI_CANONNAME);
-		addrinfo *result = nullptr;
+				// Try to resolve FQDN
+				try
+				{
+					auto results = resolver.resolve(shortHostname, "");
+					for (const auto &entry : results)
+					{
+						const auto &fqdn = entry.host_name();
+						if (!fqdn.empty())
+						{
+							return fqdn;
+						}
+					}
+				}
+				catch (const boost::system::system_error &e)
+				{
+					// Log and fall back to short hostname
+					LOG_WAR << "FQDN resolution failed: " << e.what();
+				}
+			}
+			catch (const std::exception &e)
+			{
+				LOG_ERR << "Failed to retrieve hostname: " << e.what();
+			}
+			// Fall back to short hostname
+			return shortHostname;
+		}();
 
-		int error = getaddrinfo(host.get(), nullptr, &hints, &result);
-		if (error != 0)
-		{
-			LOG_WAR << fname << "getaddrinfo failed: " << gai_strerror(error) << ", falling back to short hostname";
-			return std::string(host.get());
-		}
-
-		AddressInfoDeleter guard(result);
-
-		if (!result || !result->ai_canonname)
-		{
-			LOG_WAR << fname << "No canonical name found, falling back to short hostname";
-			return std::string(host.get());
-		}
-
-		return std::string(result->ai_canonname);
+		return hostname;
 	}
 
 	/**

@@ -1,65 +1,91 @@
 #!/usr/bin/env bash
 
 ################################################################################
-# RPM Post-Uninstallation Script
+# RPM/DEB Post-Uninstallation Script
 # Purpose: Remove App Mesh service files and clean up related files after
 # package uninstallation.
 # Usage: Automatically executed after package uninstallation.
 ################################################################################
 
+[[ "$(uname)" == "Darwin" ]] && readonly BASH_COMPLETION_DIR="/opt/homebrew/etc/bash_completion.d" || readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
+readonly BASH_COMPLETION_SOFTLINK="${BASH_COMPLETION_DIR}/appc"
 readonly SYSTEMD_FILE="/etc/systemd/system/appmesh.service"
 readonly INITD_FILE="/etc/init.d/appmesh"
-readonly BASH_COMPLETION_FILE="/usr/share/bash-completion/completions/appc"
-readonly SOFTLINK="/usr/local/bin/appc"
+readonly APPC_SOFTLINK="/usr/local/bin/appc"
 
-# Allow script to continue on errors
-set +e
+set +e # Allow script to continue on errors
+set -u # Exit on undefined variables
 
-# Function to log timestamped messages
-log() {
-	echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+info() { log "INFO $@"; }
+error() { log "ERROR $@"; }
+die() { error "$@" && exit 1; }
+
+cleanup_systemd_service() {
+	if [[ -f "$SYSTEMD_FILE" ]]; then
+		info "Removing systemd service"
+		if ! systemctl stop appmesh 2>/dev/null; then
+			error "Failed to stop appmesh service"
+		fi
+		if ! systemctl disable appmesh 2>/dev/null; then
+			error "Failed to disable appmesh service"
+		fi
+		rm -f "$SYSTEMD_FILE"
+		systemctl daemon-reload
+	fi
 }
 
-# Remove systemd service if it exists
-if [ -f "$SYSTEMD_FILE" ]; then
-	log "Removing systemd service"
-	if ! systemctl stop appmesh; then
-		log "Warning: Failed to stop appmesh service"
+cleanup_initd_service() {
+	if [[ -f "$INITD_FILE" ]]; then
+		info "Removing init.d service"
+		if ! service appmesh stop 2>/dev/null; then
+			error "Failed to stop appmesh service"
+		fi
+		rm -f "$INITD_FILE"
 	fi
-	if ! systemctl disable appmesh; then
-		log "Warning: Failed to disable appmesh service"
+}
+
+cleanup_bash_completion() {
+	if [[ -f "$BASH_COMPLETION_SOFTLINK" ]]; then
+		info "Removing bash completion file"
+		rm -f "$BASH_COMPLETION_SOFTLINK"
 	fi
-	rm -f "$SYSTEMD_FILE"
-	systemctl daemon-reload
-fi
+}
 
-# Remove init.d service if it exists
-if [ -f "$INITD_FILE" ]; then
-	log "Removing init.d service"
-	if ! service appmesh stop; then
-		log "Warning: Failed to stop appmesh service"
+cleanup_temp_files() {
+	info "Cleaning up temporary files"
+	local user_home
+
+	if [[ -n "${SUDO_USER:-}" ]]; then
+		user_home="/home/$SUDO_USER"
+		sudo -u "$SUDO_USER" rm -f "${user_home}"/.appmesh.*
+	else
+		user_home="$HOME"
+		rm -f "${user_home}"/.appmesh.*
 	fi
-	rm -f "$INITD_FILE"
-fi
+}
 
-# Remove bash completion file
-if [ -f "$BASH_COMPLETION_FILE" ]; then
-	log "Removing bash completion file"
-	rm -f "$BASH_COMPLETION_FILE"
-fi
+cleanup_binary() {
+	if [[ -L "$APPC_SOFTLINK" ]]; then
+		info "Removing symbolic link to binary"
+		rm -f "$APPC_SOFTLINK"
+	fi
+}
 
-# Remove any _appmesh_ temporary files from the actual user's home directory
-log "Cleaning up temporary files"
-if [ -n "$SUDO_USER" ]; then
-	sudo -u "$SUDO_USER" rm -f "/home/$SUDO_USER"/._appmesh_*
-else
-	rm -f "$HOME"/._appmesh_*
-fi
+################################################################################
+# Main Function
+################################################################################
+main() {
+	info "Starting post-uninstallation cleanup"
 
-# Remove binary file
-if [ -L "$SOFTLINK" ]; then
-	log "Removing symbolic link to binary"
-	rm -f "$SOFTLINK"
-fi
+	cleanup_systemd_service
+	cleanup_initd_service
+	cleanup_bash_completion
+	cleanup_temp_files
+	cleanup_binary
 
-log "Post-uninstallation cleanup completed successfully"
+	info "Post-uninstallation cleanup completed successfully"
+}
+
+# Execute main function
+main

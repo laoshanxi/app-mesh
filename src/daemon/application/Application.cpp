@@ -369,7 +369,7 @@ bool Application::attach(int pid)
 			m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(stat->get_starttime());
 			nextLaunchTime(stat->get_starttime());
 		}
-		LOG_INF << fname << "attached pid <" << pid << "> to application " << m_name << ", last start on: " << DateTime::formatLocalTime(*m_procStartTime);
+		LOG_INF << fname << "Attached pid <" << pid << "> to application " << m_name << ", last start on: " << DateTime::formatLocalTime(*m_procStartTime);
 		if (m_process->running())
 			checkProcStdoutFile = m_process;
 	}
@@ -391,7 +391,7 @@ void Application::execute(void *ptree)
 		if (m_process && m_process->running() && !inDailyRange)
 		{
 			// check run status and kill for invalid runs
-			LOG_INF << fname << DateTime::formatLocalTime(now) << " Application <" << m_name << "> was not in start time, startTime:" << DateTime::formatLocalTime(m_startTime) << " endTime:" << DateTime::formatLocalTime(m_endTime);
+			LOG_INF << fname << "Application <" << m_name << "> was not in start time, startTime: " << DateTime::formatLocalTime(m_startTime) << " endTime: " << DateTime::formatLocalTime(m_endTime) << " now: " << DateTime::formatLocalTime(now);
 			terminate(m_process);
 			setInvalidError();
 			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
@@ -433,7 +433,7 @@ bool Application::onTimerSpawn()
 	auto timerId = m_nextStartTimerId.exchange(INVALID_TIMER_ID);
 	if (!IS_VALID_TIMER_ID(timerId))
 	{
-		LOG_WAR << fname << "application <" << m_name << "> not avialable any more, skip spawn.";
+		LOG_WAR << fname << "Application <" << m_name << "> not available anymore, skip spawn.";
 		return false;
 	}
 
@@ -721,7 +721,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	nlohmann::json result = nlohmann::json::object();
 
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	LOG_DBG << fname << "application:" << m_name;
+	LOG_DBG << fname << "Application: " << m_name;
 	result[JSON_KEY_APP_name] = std::string(m_name);
 	if (m_owner)
 		result[JSON_KEY_APP_owner] = std::string(m_owner->getName());
@@ -856,7 +856,7 @@ void Application::save()
 		{
 			throw std::invalid_argument("failed to save application, please check your app name or folder permission");
 		}
-		LOG_INF << fname << "saved file: " << appPath;
+		LOG_INF << fname << "Saved file: " << appPath;
 	}
 }
 
@@ -970,7 +970,7 @@ bool Application::onTimerAppRemove()
 	}
 	catch (...)
 	{
-		LOG_ERR << fname;
+		LOG_ERR << fname << "Error occurred while removing application <" << m_name << ">.";
 	}
 	return false;
 }
@@ -1019,7 +1019,7 @@ void Application::handleError()
 
 		// do restart
 		this->scheduleNext();
-		LOG_DBG << fname << "next action for <" << m_name << "> is RESTART";
+		LOG_DBG << fname << "Next action for <" << m_name << "> is RESTART";
 
 		if (psk)
 			HMACVerifierSingleton::instance()->waitPSKRead();
@@ -1028,11 +1028,11 @@ void Application::handleError()
 		// keep alive always, used for period run
 		nextLaunchTime(std::chrono::system_clock::now());
 		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::onTimerSpawn, this), fname);
-		LOG_DBG << fname << "next action for <" << m_name << "> is KEEPALIVE";
+		LOG_DBG << fname << "Next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
 		this->regSuicideTimer(m_bufferTime);
-		LOG_DBG << fname << "next action for <" << m_name << "> is REMOVE";
+		LOG_DBG << fname << "Next action for <" << m_name << "> is REMOVE";
 		break;
 	default:
 		break;
@@ -1053,7 +1053,7 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 		// 2. register timer
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
 		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::onTimerSpawn, this), fname);
-		LOG_DBG << fname << "next start for <" << m_name << "> is " << DateTime::formatLocalTime(next) << "start timer ID <" << m_nextStartTimerId << ">";
+		LOG_DBG << fname << "Next start for <" << m_name << "> is " << DateTime::formatLocalTime(next) << " start timer ID <" << m_nextStartTimerId << ">";
 	}
 
 	return nextLaunchTime();
@@ -1064,7 +1064,7 @@ void Application::regSuicideTimer(int timeoutSeconds)
 	const static char fname[] = "Application::regSuicideTimer() ";
 
 	this->cancelTimer(m_timerRemoveId);
-	LOG_DBG << fname << "application <" << getName() << "> will be removed after <" << timeoutSeconds << "> seconds";
+	LOG_DBG << fname << "Application <" << getName() << "> will be removed after <" << timeoutSeconds << "> seconds";
 	m_timerRemoveId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&Application::onTimerAppRemove, this), fname);
 }
 
@@ -1078,7 +1078,7 @@ void Application::setLastError(const std::string &error)
 		if (error.length())
 		{
 			*lockedStr = Utility::stringFormat("%s %s", DateTime::formatLocalTime(std::chrono::system_clock::now()).c_str(), error.c_str());
-			LOG_DBG << fname << "last error for <" << getName() << ">: " << error;
+			LOG_DBG << fname << "Last error for <" << getName() << ">: " << error;
 		}
 		else
 		{

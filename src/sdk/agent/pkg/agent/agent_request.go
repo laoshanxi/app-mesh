@@ -11,7 +11,8 @@ import (
 
 const maxBodySize = 100 * 1024 * 1024 // 100 MB, adjust as needed
 
-func NewRequest(req *http.Request) *appmesh.Request {
+// NewAppMeshRequest creates a new AppMesh request from the HTTP request
+func NewAppMeshRequest(req *http.Request) *appmesh.Request {
 	// Remove "Connection" header to avoid proxying it
 	req.Header.Del("Connection")
 

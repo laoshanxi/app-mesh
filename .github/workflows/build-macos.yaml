@@ -54,15 +54,61 @@ jobs:
           make -j"$(nproc)"
           make pack
 
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ github.sha }}
+          path: build/appmesh_*.gz
+
+  test:
+    needs: build
+    strategy:
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ github.sha }}
+
+      - name: Run tests
+        run: |
           echo "Testing the project..."
+          # Install App Mesh
           sudo mkdir -p /opt/appmesh
           sudo tar zxvf appmesh_*_arm64.gz -C /opt/appmesh
           sudo bash /opt/appmesh/script/setup.sh
+
+          # Start App Mesh
           sudo bash /opt/appmesh/script/appmesh.initd.sh start
-          sleep 2
-          cat /opt/appmesh/work/server.log
-          #appc ls
-          #appc resource
+
+          # Check
+          appc -V || true
+          sudo otool /opt/appmesh/bin/appsvc -L
+
+          # hostname resolve need some time
+          sleep 10
+
+          # Test
+          # cat /opt/appmesh/work/server.log
+          # sudo lldb -p $(cat /opt/appmesh/appmesh.pid) -o "thread backtrace all" -o "quit" || true
+          appc ls
+          appc resource
+
+  publish:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - name: Download macos-14 packages
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-14-${{ github.sha }}
+
+      - name: Download macos-15 packages
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-15-${{ github.sha }}
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -71,5 +117,4 @@ jobs:
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}
-          files: |
-            build/appmesh_*.gz
+          files: appmesh_*.gz

@@ -171,6 +171,7 @@ func ParseURL(input string) (*url.URL, error) {
 	return parsedURL, nil
 }
 
+// MergeStringMaps merges two string maps, with values from the second map overwriting those in the first.
 func MergeStringMaps(map1, map2 map[string]string) {
 	// Copy all entries from map2 to map1
 	for key, value := range map2 {

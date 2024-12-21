@@ -69,12 +69,12 @@ func (dp *DockerProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.Debug("PSK authentication success")
 
 	// Do proxy
-	proxy := dp.createReverseProxy()
+	proxy := dp.CreateReverseProxy()
 	proxy.ServeHTTP(w, r)
 }
 
-// createReverseProxy creates a reverse proxy for Docker with custom transport and error handling.
-func (dp *DockerProxy) createReverseProxy() *httputil.ReverseProxy {
+// CreateReverseProxy creates a reverse proxy for Docker with custom transport and error handling.
+func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"

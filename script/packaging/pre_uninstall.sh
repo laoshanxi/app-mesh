@@ -1,48 +1,70 @@
 #!/usr/bin/env bash
 
 ################################################################################
-# RPM Pre-Uninstallation Script
+# RPM/DEB Pre-Uninstallation Script
 # Purpose: Prepare system for package removal by stopping applications and
 # preserving their configurations.
 # Usage: Automatically executed before package uninstallation.
 ################################################################################
 
 readonly INSTALL_DIR=/opt/appmesh
-readonly APPC_BIN=/opt/appmesh/bin/appc
+readonly APPC_BIN=/usr/local/bin/appc
 readonly APPS_DIR=/opt/appmesh/work/apps
 readonly BACKUP_DIR=/opt/appmesh/work/.apps_backup
 
-export LD_LIBRARY_PATH="/opt/appmesh/lib64:$LD_LIBRARY_PATH"
+set +e # Allow script to continue on errors
+set -u # Exit on undefined variables
 
-# Allow script to continue on errors
-set +e
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+info() { log "INFO $@"; }
+error() { log "ERROR $@"; }
+die() { error "$@" && exit 1; }
 
-# Function to log timestamped messages
-log() {
-	echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
+backup_configurations() {
+	if [ -d "$APPS_DIR" ] && [ "$(ls -A "$APPS_DIR" 2>/dev/null)" ]; then
+		info "Creating backup of application configurations"
+		cp -rf "$APPS_DIR" "$BACKUP_DIR"
+	fi
 }
 
-# Create backup of application configurations
-if [ -d "$APPS_DIR" ] && [ "$(ls -A "$APPS_DIR" 2>/dev/null)" ]; then
-	log "Creating backup of application configurations"
-	cp -rf "$APPS_DIR" "$BACKUP_DIR"
-fi
+stop_applications() {
+	info "Stopping all active applications"
 
-# Stop all active applications
-# "$APPC_BIN" ls -l | awk '{if (NR>1){cmd="$APPC_BIN disable -n "$2;print(cmd);system(cmd)}}'
-log "Stopping all active applications"
-if [ -n "$SUDO_USER" ]; then
-	sudo -u "$SUDO_USER" "$APPC_BIN" disable --all
-else
-	"$APPC_BIN" disable --all
-fi
+	if [ -e "$APPC_BIN" ]; then
+		if [ -n "${SUDO_USER:-}" ]; then
+			sudo -u "$SUDO_USER" "$APPC_BIN" disable --all
+		else
+			"$APPC_BIN" disable --all
+		fi
+	else
+		error "$APPC_BIN not found"
+	fi
+}
 
-# Restore application configurations from backup
-if [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]; then
-	log "Restoring application configurations"
-	rm -rf "${APPS_DIR}"/*
-	mv -f "${BACKUP_DIR}"/* "${APPS_DIR}/"
-	rm -rf "$BACKUP_DIR"
-fi
+restore_configurations() {
+	if [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]; then
+		info "Restoring application configurations"
+		rm -rf "${APPS_DIR:?}"/*
+		mv -f "${BACKUP_DIR}"/* "${APPS_DIR}/"
+		rm -rf "$BACKUP_DIR"
+	fi
+}
 
-log "Pre-uninstallation preparation completed successfully"
+################################################################################
+# Main Function
+################################################################################
+main() {
+	# Backup existing configurations
+	backup_configurations
+
+	# Stop all applications
+	stop_applications
+
+	# Restore configurations from backup
+	restore_configurations
+
+	info "Pre-uninstallation preparation completed"
+}
+
+# Execute main function
+main

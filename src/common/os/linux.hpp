@@ -469,7 +469,6 @@ namespace os
 		}
 
 		char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
-		char args[4096];
 
 		// Get the process path
 		if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) <= 0)
@@ -478,24 +477,10 @@ namespace os
 			return "";
 		}
 
+		std::string result = pathbuf;
+
 		// Retrieve process arguments
-		int argc = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, args, sizeof(args));
-		if (argc <= 0)
-		{
-			LOG_WAR << fname << "Failed to retrieve arguments for PID=" << pid << " with error: " << std::strerror(errno);
-			return pathbuf;
-		}
-
-		std::string result;
-		char *ptr = args;
-
-		// Combine arguments into a single string
-		while (ptr < args + argc)
-		{
-			result += ptr;
-			result += " ";
-			ptr += strlen(ptr) + 1;
-		}
+		// TODO: use open-source solution: libproc or psutil
 
 		return result;
 
@@ -1139,7 +1124,9 @@ namespace os
 	{
 		const static char fname[] = "fileStat() ";
 
-		struct stat fileStat{};
+		struct stat fileStat
+		{
+		};
 		if (::stat(path.c_str(), &fileStat) == 0)
 		{
 			// Extract permission bits using bitwise AND

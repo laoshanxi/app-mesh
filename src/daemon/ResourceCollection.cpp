@@ -27,12 +27,7 @@ std::unique_ptr<ResourceCollection> &ResourceCollection::instance()
 
 const std::string ResourceCollection::getHostName(bool refresh)
 {
-	static std::string hostname;
-	if (hostname.empty() || refresh)
-	{
-		hostname = net::hostname();
-	}
-	return hostname;
+	return net::hostname();
 }
 
 const HostResource &ResourceCollection::getHostResource()

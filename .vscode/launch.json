@@ -5,6 +5,21 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "(lldb) attach",
+      "type": "cppdbg",
+      "request": "attach",
+      "program": "/opt/appmesh/bin/appsvc",
+      "processId": "${command:pickProcess}",
+      "MIMode": "lldb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for lldb",
+          "text": "settings set target.pretty-printing true",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
       "name": "Go Launch file",
       "type": "go",
       "request": "launch",
@@ -51,7 +66,13 @@
       "type": "cppdbg",
       "request": "launch",
       "program": "/opt/appmesh/bin/appc",
-      "args": ["run", "-c", "sh -c 'exit 2'", "-t", "5"],
+      "args": [
+        "run",
+        "-c",
+        "sh -c 'exit 2'",
+        "-t",
+        "5"
+      ],
       "stopAtEntry": false,
       "cwd": "/opt/appmesh/",
       "environment": [
