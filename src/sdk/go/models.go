@@ -24,14 +24,14 @@ const (
 	DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
 )
 
-// Requester interface
+// ClientRequester defines the interface for making HTTP requests.
 type ClientRequester interface {
-	doRequest(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error)
+	DoRequest(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error)
 }
 
-// Application json
+// Application represents the application configuration and status.
 type Application struct {
-	// main definition
+	// Main definition
 	Name           string  `json:"name"`
 	Owner          *string `json:"owner"`
 	Permission     *int    `json:"permission"`
@@ -45,7 +45,7 @@ type Application struct {
 	StdoutCacheNum *int    `json:"stdout_cache_num"`
 	Metadata       *string `json:"metadata"`
 
-	// time
+	// Time
 	StartTime     *int64 `json:"start_time"`
 	EndTime       *int64 `json:"end_time"`
 	LastStartTime *int64 `json:"last_start_time"`
@@ -55,11 +55,11 @@ type Application struct {
 
 	StopRetention *string   `json:"retention"`
 	Behavior      *Behavior `json:"behavior"`
-	// short running definition
+	// Short running definition
 	StartIntervalSeconds       *string `json:"start_interval_seconds"`
 	StartIntervalSecondsIsCron *bool   `json:"cron"`
 
-	// runtime attributes
+	// Runtime attributes
 	Pid            *int    `json:"pid"`
 	User           *string `json:"pid_user"`
 	ReturnCode     *int    `json:"return_code"`
@@ -71,7 +71,7 @@ type Application struct {
 
 	CPU             *float64 `json:"cpu"`
 	Memory          *int     `json:"memory"`
-	Uuid            *string  `json:"process_uuid"` // for run application
+	Uuid            *string  `json:"process_uuid"` // For run application
 	StdoutCacheSize *int     `json:"stdout_cache_size"`
 
 	Version   *int    `json:"version"`
@@ -85,25 +85,25 @@ type Application struct {
 	SecEnv        *Environments       `json:"sec_env"`
 }
 
-// Behavior
+// Behavior represents the behavior configuration of an application.
 type Behavior struct {
 	Exit string `json:"exit"`
 }
 
-// Daily time limitation
+// DailyLimitation represents the daily time limitation for an application.
 type DailyLimitation struct {
 	DailyStart string `json:"daily_start"`
 	DailyEnd   string `json:"daily_end"`
 }
 
-// CPU & Memory limitation
+// ResourceLimitation represents the CPU and memory limitations for an application.
 type ResourceLimitation struct {
 	MemoryMb        int `json:"memory_mb"`
 	MemoryVirtualMb int `json:"memory_virt_mb"`
 	CpuShares       int `json:"cpu_shares"`
 }
 
-// JWT Response
+// JWTResponse represents the response containing JWT token information.
 type JWTResponse struct {
 	AccessToken   string `json:"Access-Token"`
 	ExpireSeconds int    `json:"expire_seconds"`
@@ -115,6 +115,7 @@ type JWTResponse struct {
 	TokenType string `json:"token_type"`
 }
 
+// AppOutput represents the output of an application.
 type AppOutput struct {
 	HttpSuccess    bool
 	HttpBody       string
@@ -123,15 +124,16 @@ type AppOutput struct {
 	Error          error
 }
 
-// Env json
+// Environments represents a map of environment variables.
 type Environments = map[string]string
 
-// Label json
+// Labels represents a map of labels.
 type Labels = map[string]string
 
-// REST Headers
+// Headers represents a map of HTTP headers.
 type Headers = map[string]string
 
+// SSLConfig represents the SSL configuration.
 type SSLConfig struct {
 	VerifyClient                bool   `yaml:"VerifyClient"`
 	VerifyServer                bool   `yaml:"VerifyServer"`
@@ -143,7 +145,7 @@ type SSLConfig struct {
 	SSLClientCertificateKeyFile string `yaml:"SSLClientCertificateKeyFile"`
 }
 
-// Request represents the message sent over TCP
+// Request represents the message sent over TCP.
 type Request struct {
 	Uuid          string            `msg:"uuid" msgpack:"uuid"`
 	RequestUri    string            `msg:"request_uri" msgpack:"request_uri"`
@@ -154,11 +156,12 @@ type Request struct {
 	Queries       map[string]string `msg:"querys" msgpack:"querys"`
 }
 
+// Serialize serializes the Request into a byte slice.
 func (r *Request) Serialize() ([]byte, error) {
 	return msgpack.Marshal(r)
 }
 
-// Response represents the message received over TCP
+// Response represents the message received over TCP.
 type Response struct {
 	Uuid        string            `msg:"uuid" msgpack:"uuid"`
 	RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
@@ -168,6 +171,7 @@ type Response struct {
 	Headers     map[string]string `msg:"headers" msgpack:"headers"`
 }
 
+// Deserialize deserializes the byte slice into a Response.
 func (r *Response) Deserialize(data []byte) error {
 	return msgpack.Unmarshal(data, r)
 }

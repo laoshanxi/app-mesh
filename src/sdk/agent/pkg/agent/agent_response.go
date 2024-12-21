@@ -22,14 +22,15 @@ type ResponseMessage struct {
 	Message string `json:"message"`
 }
 
-func ReadNewResponse(conn *Connection) (*Response, error) {
+// ReadAppMeshResponse reads and parses a new response from the connection
+func ReadAppMeshResponse(conn *Connection) (*Response, error) {
 	data, err := conn.ReadMessage()
 	if err != nil {
 		return nil, err
 	}
 
 	if data == nil {
-		return nil, errors.New("empty message recieved")
+		return nil, errors.New("empty message received")
 	}
 
 	r := new(Response)
@@ -51,7 +52,7 @@ func ReadNewResponse(conn *Connection) (*Response, error) {
 		file := string(bytes)
 		logger.Infof("Downloading remote file <%s> to local file <%s>", file, r.TempDownloadFilePath)
 
-		if err := r.readDownloadFileData(conn, r.TempDownloadFilePath); err != nil {
+		if err := r.ReadDownloadFileData(conn, r.TempDownloadFilePath); err != nil {
 			return nil, err
 		}
 	}
@@ -73,7 +74,8 @@ func ReadNewResponse(conn *Connection) (*Response, error) {
 	return r, err
 }
 
-func (r *Response) readDownloadFileData(conn *Connection, targetFilePath string) error {
+// ReadDownloadFileData reads file data from the connection and writes it to the target file path
+func (r *Response) ReadDownloadFileData(conn *Connection, targetFilePath string) error {
 	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		logger.Warnf("Failed to create file: %v", err)
@@ -102,7 +104,8 @@ func (r *Response) readDownloadFileData(conn *Connection, targetFilePath string)
 	return nil
 }
 
-func (r *Response) applyResponse(w http.ResponseWriter, req *http.Request) {
+// ApplyResponse applies the response to the HTTP response writer
+func (r *Response) ApplyResponse(w http.ResponseWriter, req *http.Request) {
 
 	// Set headers
 	for k, v := range r.Headers {
@@ -111,7 +114,7 @@ func (r *Response) applyResponse(w http.ResponseWriter, req *http.Request) {
 
 	// Handle the response body based on the path
 	if r.RequestUri == REST_PATH_DOWNLOAD || r.RequestUri == REST_PATH_UPLOAD {
-		if err := handleRestFile(w, req, r); err != nil {
+		if err := HandleRESTFile(w, req, r); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		logger.Debugf("File REST call Finished %s", r.Uuid)
