@@ -8,11 +8,9 @@
 ################################################################################
 
 readonly INSTALL_DIR=/opt/appmesh
-readonly APPC_BIN=/opt/appmesh/bin/appc
+readonly APPC_BIN=/usr/local/bin/appc
 readonly APPS_DIR=/opt/appmesh/work/apps
 readonly BACKUP_DIR=/opt/appmesh/work/.apps_backup
-
-export LD_LIBRARY_PATH="/opt/appmesh/lib64:$LD_LIBRARY_PATH"
 
 # Allow script to continue on errors
 set +e

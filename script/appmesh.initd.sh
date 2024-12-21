@@ -80,7 +80,7 @@ is_running() {
 	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
-start() {
+start_service() {
 	check_installation || return $?
 
 	if is_running "$PROG"; then
@@ -116,7 +116,7 @@ start() {
 	fi
 }
 
-stop() {
+stop_service() {
 	log "info" "Stopping App Mesh Service..."
 
 	local pid
@@ -145,7 +145,7 @@ stop() {
 	return $LSB_OK
 }
 
-status() {
+service_status() {
 	if is_running "$PROG"; then
 		local pid
 		pid=$(get_pid "$PROG")
@@ -165,15 +165,15 @@ fi
 
 case "$1" in
 start)
-	start
+	start_service
 	;;
 stop)
-	stop
+	stop_service
 	;;
 restart | force-reload)
-	stop
+	stop_service
 	sleep 1
-	start
+	start_service
 	;;
 reload)
 	if is_running "$PROG"; then
@@ -186,7 +186,7 @@ reload)
 	fi
 	;;
 status)
-	status
+	service_status
 	;;
 *)
 	echo "Usage: $0 {start|stop|restart|force-reload|reload|status}"

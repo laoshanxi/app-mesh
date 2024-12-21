@@ -39,7 +39,7 @@ get_os_type() {
     fi
 }
 
-replace_appmesh_paths() {
+update_appmesh_paths() {
     local appmesh_dir="$PROG_HOME"
     local input_file_path="$1"
 
@@ -50,7 +50,7 @@ replace_appmesh_paths() {
     fi
 
     # Normalize paths for consistency
-    appmesh_dir=$(realpath -m "$appmesh_dir")
+    appmesh_dir=$(realpath "$appmesh_dir")
     input_file_path=$(realpath "$input_file_path")
 
     # Ensure appmesh_dir ends with "/appmesh"
@@ -73,7 +73,6 @@ replace_appmesh_paths() {
     # Check if the file was modified
     if cmp -s "$input_file_path" "$temp_file"; then
         rm "$temp_file" # No changes made; clean up temp file
-        log "No changes detected in '$input_file_path'."
         return 0
     fi
 
@@ -83,7 +82,7 @@ replace_appmesh_paths() {
     return 0
 }
 
-setup_environment_file() {
+setup_env_file() {
     log "Setting up environment file at $ENV_FILE"
     : >$ENV_FILE
 
@@ -163,7 +162,7 @@ install_systemd_service() {
         return 1
     fi
 
-    replace_appmesh_paths ${PROG_HOME}/script/appmesh.systemd.service
+    update_appmesh_paths ${PROG_HOME}/script/appmesh.systemd.service
 
     rm -f "$SYSTEMD_FILE" && ln -sf "$service_template" "$SYSTEMD_FILE"
 
@@ -190,7 +189,7 @@ install_launchd_service() {
         return 1
     fi
 
-    replace_appmesh_paths ${PROG_HOME}/script/appmesh.launchd.plist
+    update_appmesh_paths ${PROG_HOME}/script/appmesh.launchd.plist
 
     chown root:wheel "$service_template"
     chmod 644 "$service_template"
@@ -203,6 +202,11 @@ install_launchd_service() {
 
     rm -f "${LAUNCHD_FILE}.bak"
     # launchctl load -w "$LAUNCHD_FILE"
+
+    # Remove the restriction on executing binary files
+    xattr -d com.apple.quarantine ${PROG_HOME}/bin/appsvc || true
+    xattr -d com.apple.quarantine ${PROG_HOME}/bin/appc || true
+    xattr -d com.apple.quarantine ${PROG_HOME}/bin/agent || true
 }
 
 install_initd_service() {
@@ -236,7 +240,7 @@ setup_permissions() {
     fi
 }
 
-setup_ssl() {
+setup_ssl_certificates() {
     local ssl_dir="${PROG_HOME}/ssl"
     if [ "$APPMESH_FRESH_INSTALL" = "Y" ] || [ ! -f "${ssl_dir}/server.pem" ]; then
         log "Generating SSL certificates"
@@ -254,19 +258,21 @@ print_startup_instructions() {
     local init_system
     init_system=$(detect_init_system)
 
-    log "To start App Mesh:"
     case "$init_system" in
     systemd)
-        log "  sudo systemctl enable appmesh"
-        log "  sudo systemctl start appmesh"
+        log "  To enable App Mesh to start on boot and start it immediately:"
+        log "    sudo systemctl enable appmesh"
+        log "    sudo systemctl start appmesh"
         ;;
     launchd)
-        log "  sudo launchctl load -w $LAUNCHD_FILE"
-        log "  or just start using:"
-        log "  sudo bash ${PROG_HOME}/script/appmesh.initd.sh start"
+        log "  To load the App Mesh service using launchd:"
+        log "    sudo launchctl load -w $LAUNCHD_FILE"
+        log "  Alternatively, to manually start the service:"
+        log "    sudo bash ${PROG_HOME}/script/appmesh.initd.sh start"
         ;;
     sysvinit | upstart)
-        log "  sudo service appmesh start"
+        log "  For older init systems like SysV or Upstart, run:"
+        log "    sudo service appmesh start"
         ;;
     esac
 }
@@ -291,7 +297,6 @@ main() {
         sleep 2
     fi
     if [ -f "$LAUNCHD_FILE" ]; then
-
         launchctl unload -w "$LAUNCHD_FILE" 2>/dev/null || true
         sleep 2
     fi
@@ -303,10 +308,10 @@ main() {
     fi
 
     # Setup components
-    setup_environment_file
+    setup_env_file
     setup_service
     setup_permissions
-    setup_ssl
+    setup_ssl_certificates
 
     # Install bash completion
     if [ -d "$BASH_COMPLETION_DIR" ]; then

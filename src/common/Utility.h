@@ -215,8 +215,14 @@ public:
 	static const std::string readStdin2End();
 };
 
-#define PID_FILE "appmesh.pid"
+#ifdef __linux__
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
+#elif defined(__APPLE__)
+#define ENV_LD_LIBRARY_PATH "DYLD_LIBRARY_PATH"
+#else
+#error "Unsupported platform"
+#endif
+#define PID_FILE "appmesh.pid"
 #define ENV_APPMESH_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
 #define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds

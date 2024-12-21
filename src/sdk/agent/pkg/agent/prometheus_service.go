@@ -20,8 +20,8 @@ func NewPrometheusServer(port int) *PrometheusServer {
 	return &PrometheusServer{port: port}
 }
 
-// rootHandler handles the root path request
-func (s *PrometheusServer) rootHandler(w http.ResponseWriter, r *http.Request) {
+// RootHandler handles the root path request
+func (s *PrometheusServer) RootHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -29,8 +29,8 @@ func (s *PrometheusServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Prometheus metrics available at %s", prometheusMetricPath)
 }
 
-// metricsHandler handles the metrics path request
-func (s *PrometheusServer) metricsHandler(w http.ResponseWriter, r *http.Request) {
+// MetricsHandler handles the metrics path request
+func (s *PrometheusServer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -46,15 +46,15 @@ func (s *PrometheusServer) metricsHandler(w http.ResponseWriter, r *http.Request
 	// Copy relevant headers from the original request
 	appmeshReq.Header = r.Header
 
-	// Call handleAppmeshResquest with the new request
-	handleAppmeshResquest(w, appmeshReq)
+	// Call HandleAppMeshRequest with the new request
+	HandleAppMeshRequest(w, appmeshReq)
 }
 
 // ListenAndServe starts the Prometheus exporter server
 func (s *PrometheusServer) ListenAndServe() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.rootHandler)
-	mux.HandleFunc(prometheusMetricPath, s.metricsHandler)
+	mux.HandleFunc("/", s.RootHandler)
+	mux.HandleFunc(prometheusMetricPath, s.MetricsHandler)
 
 	addr := fmt.Sprintf(":%d", s.port)
 	logger.Infof("Starting Prometheus exporter server on %s", addr)

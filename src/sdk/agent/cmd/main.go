@@ -20,8 +20,8 @@ const (
 
 var logger = utils.GetLogger()
 
-// monitorParentExit monitors the parent process and exits if it is no longer alive or the context is canceled.
-func monitorParentExit(ctx context.Context) {
+// monitorParentProcess monitors the parent process and exits if it is no longer alive or the context is canceled.
+func monitorParentProcess(ctx context.Context) {
 	parentPID := os.Getppid()
 	if parentPID <= 1 {
 		return // No valid parent to monitor
@@ -49,12 +49,13 @@ func monitorParentExit(ctx context.Context) {
 	}
 }
 
-func startServices(ctx context.Context) {
+// initializeServices starts all necessary services based on the configuration.
+func initializeServices(ctx context.Context) {
 	// REST proxy
 	logger.Infof("RestEnabled: %t", config.ConfigData.REST.RestEnabled)
 	if config.ConfigData.REST.RestEnabled {
 		go func() {
-			if err := agent.ListenRest(); err != nil {
+			if err := agent.ListenAndServeREST(); err != nil {
 				logger.Fatalf("REST agent failed: %v", err)
 			}
 		}()
@@ -80,8 +81,8 @@ func startServices(ctx context.Context) {
 	}()
 }
 
-// handleGracefulShutdown sets up signal handling for SIGINT and SIGTERM and cancels the context on signal reception.
-func handleGracefulShutdown(cancel context.CancelFunc) {
+// setupGracefulShutdown sets up signal handling for SIGINT and SIGTERM and cancels the context on signal reception.
+func setupGracefulShutdown(cancel context.CancelFunc) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
@@ -100,7 +101,7 @@ func main() {
 	defer cancel()
 
 	// Handle graceful shutdown
-	handleGracefulShutdown(cancel)
+	setupGracefulShutdown(cancel)
 
 	// HMAC initialization
 	if hmac, err := cloud.NewHMACVerify(); err != nil {
@@ -110,8 +111,8 @@ func main() {
 	}
 
 	// Start all services
-	startServices(ctx)
-	go monitorParentExit(ctx)
+	initializeServices(ctx)
+	go monitorParentProcess(ctx)
 
 	// Wait for shutdown signal
 	<-ctx.Done()

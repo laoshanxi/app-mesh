@@ -1,7 +1,8 @@
 ---
 name: ping
 description: appmesh ping test
-command: ping github.com -w 300
+command: ping -w 300 -c 300 github.com
+shell: true
 owner: mesh
 permission: 33
 behavior:

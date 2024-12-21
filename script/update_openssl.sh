@@ -78,14 +78,14 @@ verify_current_version() {
   fi
 }
 
-backup_existing() {
+backup_existing_openssl() {
   if [ -f "/usr/bin/openssl" ]; then
     log "Backing up existing OpenSSL binary..."
     mv "/usr/bin/openssl" "/usr/bin/openssl.bak.$(date +%Y%m%d)"
   fi
 }
 
-download_and_verify() {
+download_and_verify_openssl() {
   local tempdir
   tempdir=$(mktemp -d)
   cd "$tempdir"
@@ -100,7 +100,7 @@ download_and_verify() {
   cd "openssl-${OPENSSL_VERSION}"
 }
 
-compile_and_install() {
+compile_and_install_openssl() {
   log "Configuring OpenSSL..."
   ./config --prefix="$OPENSSL_INSTALL_DIR" \
     --openssldir="$OPENSSL_INSTALL_DIR" \
@@ -136,7 +136,7 @@ setup_system_links() {
   "$OPENSSL_INSTALL_DIR/bin/openssl" version -a || error "Installation verification failed"
 }
 
-cleanup() {
+cleanup_temp_files() {
   if [ -n "${tempdir:-}" ]; then
     log "Cleaning up temporary files..."
     rm -rf "$tempdir"
@@ -148,14 +148,14 @@ main() {
 
   check_prerequisites
   verify_current_version
-  backup_existing
-  download_and_verify
-  compile_and_install
+  backup_existing_openssl
+  download_and_verify_openssl
+  compile_and_install_openssl
   setup_system_links
-  cleanup
+  cleanup_temp_files
 
   log "OpenSSL $OPENSSL_VERSION installation completed successfully"
 }
 
-trap cleanup EXIT
+trap cleanup_temp_files EXIT
 main "$@"

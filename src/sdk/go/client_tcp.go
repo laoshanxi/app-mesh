@@ -16,41 +16,41 @@ import (
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
 type AppMeshClientTCP struct {
 	*AppMeshClient
-	TcpExecutor *ClientRequesterTcp // used for file operate functions
+	TcpExecutor *ClientRequesterTcp // Used for file operations.
 }
 
 // NewTcpClient creates a new AppMeshClientTCP instance for interacting with a TCP server.
 func NewTcpClient(options Option) (*AppMeshClientTCP, error) {
-	// Determine the connection URL, defaulting to DEFAULT_TCP_URI if not provided
+	// Determine the connection URL, defaulting to DEFAULT_TCP_URI if not provided.
 	url := options.AppMeshUri
 	if url == "" {
 		url = DEFAULT_TCP_URI
 	}
 
-	// Set up TCP requester and client
+	// Set up TCP requester and client.
 	tcpRequester := &ClientRequesterTcp{TCPConnection: NewTCPConnection(), BaseURL: url}
 
-	// Create the AppMeshClientTCP
+	// Create the AppMeshClientTCP.
 	value := true
 	options.tcpOnly = &value
 	client := &AppMeshClientTCP{AppMeshClient: NewHttpClient(options), TcpExecutor: tcpRequester}
 	client.AppMeshClient.Proxy = tcpRequester
 
-	// Attempt to connect
+	// Attempt to connect.
 	if err := tcpRequester.Connect(url, client.sslClientCert, client.sslClientCertKey, client.sslCAFile); err != nil {
 		return nil, err
 	}
 	return client, nil
 }
 
-// CloseConnection closes the TCP connection
+// CloseConnection closes the TCP connection.
 func (client *AppMeshClientTCP) CloseConnection() {
 	if client.TcpExecutor != nil {
 		client.TcpExecutor.Close()
 	}
 }
 
-// FileDownload downloads a file from the server to the local file system
+// FileDownload downloads a file from the server to the local file system.
 func (r *AppMeshClientTCP) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
 	headers := map[string]string{
 		"File-Path":                        remoteFile,
@@ -69,7 +69,7 @@ func (r *AppMeshClientTCP) FileDownload(remoteFile, localFile string, applyFileA
 	return r.receiveFile(localFile, responseHeaders, applyFileAttributes)
 }
 
-// Helper function to receive file data
+// receiveFile receives file data and writes it to the local file system.
 func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header, applyFileAttributes bool) error {
 	file, err := os.Create(localFile)
 	if err != nil {
@@ -98,7 +98,7 @@ func (r *AppMeshClientTCP) receiveFile(localFile string, headers http.Header, ap
 	return nil
 }
 
-// FileUpload uploads a local file to the server
+// FileUpload uploads a local file to the server.
 func (client *AppMeshClientTCP) FileUpload(localFile, remoteFile string, applyFileAttributes bool) error {
 	file, err := os.Open(localFile)
 	if err != nil {
@@ -112,7 +112,7 @@ func (client *AppMeshClientTCP) FileUpload(localFile, remoteFile string, applyFi
 		HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: "true",
 	}
 
-	// Get the file attributes
+	// Get the file attributes.
 	if applyFileAttributes {
 		attrs, err := GetFileAttributes(localFile)
 		MergeStringMaps(headers, attrs)
@@ -132,7 +132,7 @@ func (client *AppMeshClientTCP) FileUpload(localFile, remoteFile string, applyFi
 	return client.uploadFileChunks(file)
 }
 
-// Helper function to upload file in chunks
+// uploadFileChunks uploads a file in chunks.
 func (client *AppMeshClientTCP) uploadFileChunks(file *os.File) error {
 	chunkSize := TCP_CHUNK_BLOCK_SIZE
 	buffer := make([]byte, chunkSize)
@@ -151,18 +151,18 @@ func (client *AppMeshClientTCP) uploadFileChunks(file *os.File) error {
 		}
 	}
 
-	// Send end-of-file marker
+	// Send end-of-file marker.
 	return client.TcpExecutor.SendMessage([]byte{})
 }
 
-// TCP Request executor
+// ClientRequesterTcp handles TCP requests.
 type ClientRequesterTcp struct {
 	*TCPConnection
 	BaseURL string
 }
 
-// doRequest performs a REST-like request over TCP
-func (r *ClientRequesterTcp) doRequest(method, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
+// DoRequest performs a REST-like request over TCP.
+func (r *ClientRequesterTcp) DoRequest(method, apiPath string, queries url.Values, headers map[string]string, body io.Reader, token string, forwardingHost string) (int, []byte, http.Header, error) {
 	u, _ := ParseURL(r.BaseURL)
 	u.Path = path.Join(u.Path, apiPath)
 	if queries != nil {
@@ -173,7 +173,7 @@ func (r *ClientRequesterTcp) doRequest(method, apiPath string, queries url.Value
 		return 0, nil, nil, err
 	}
 
-	// Set headers
+	// Set headers.
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -191,10 +191,10 @@ func (r *ClientRequesterTcp) doRequest(method, apiPath string, queries url.Value
 		req.Header.Add(k, v)
 	}
 
-	// Execute the TCP request
+	// Execute the TCP request.
 	resp, err := r.request(req)
 
-	// Format the response headers
+	// Format the response headers.
 	respHeaders := make(http.Header)
 	for key, value := range resp.Headers {
 		respHeaders.Add(key, value)
@@ -203,9 +203,8 @@ func (r *ClientRequesterTcp) doRequest(method, apiPath string, queries url.Value
 	return resp.HttpStatus, []byte(resp.Body), respHeaders, err
 }
 
-// request sends a request over TCP
+// request sends a request over TCP.
 func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
-
 	data := new(Request)
 	data.Uuid = xid.New().String()
 	data.HttpMethod = req.Method
@@ -225,34 +224,34 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 		}
 	}
 
-	// do not read body for file upload
+	// Do not read body for file upload.
 	if !(data.HttpMethod != "POST" && data.RequestUri != "/appmesh/file/upload") {
 		if bodyBytes, err := io.ReadAll(req.Body); err == nil && len(bodyBytes) > 0 {
 			data.Body = html.UnescapeString(string(bodyBytes))
 		}
 	}
 
-	// Set user agent
+	// Set user agent.
 	data.Headers[HTTP_USER_AGENT_HEADER_NAME] = HTTP_USER_AGENT_TCP
 
-	// Serialize the request
+	// Serialize the request.
 	buf, err := data.Serialize()
 	if err != nil {
 		return nil, err
 	}
 
-	// Send the data over TCP
+	// Send the data over TCP.
 	if err := r.SendMessage(buf); err != nil {
 		return nil, err
 	}
 
-	// Receive the response
+	// Receive the response.
 	respData, err := r.ReadMessage()
 	if err != nil {
 		return nil, err
 	}
 
-	// Deserialize the response
+	// Deserialize the response.
 	respMsg := &Response{}
 	if err := respMsg.Deserialize(respData); err != nil {
 		return nil, err
