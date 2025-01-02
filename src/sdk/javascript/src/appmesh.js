@@ -192,7 +192,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if authentication is successful, false otherwise.
    * @throws {Error} If there's a network error or other issues during authentication.
    */
-  async authentication(token, permission = null) {
+  async authenticate(token, permission = null) {
     const headers = {};
     if (permission) {
       headers["Auth-Permission"] = permission;
@@ -209,7 +209,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if logout is successful, false otherwise.
    * @throws {Error} If there's a network error or other issues during logout.
    */
-  async logout() {
+  async logoff() {
     const response = await this._request("post", "/appmesh/self/logoff");
     return response.status === 200;
   }
@@ -223,7 +223,7 @@ class AppMeshClient {
    * @returns {Promise<string>} A promise that resolves to the new JWT token if renewal is successful.
    * @throws {Error} If token renewal fails or if there's a network error.
    */
-  async renew(expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS) {
+  async renew_token(expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {};
     if (expireSeconds) {
       headers["Expire-Seconds"] = parseDuration(expireSeconds);
@@ -240,7 +240,7 @@ class AppMeshClient {
    * @returns {Promise<string>} A promise that resolves to the TOTP secret.
    * @throws {Error} If retrieval fails or if there's a network error.
    */
-  async totp_secret() {
+  async get_totp_secret() {
     const response = await this._request("post", "/appmesh/totp/secret");
     return base64.decode(response.data["Mfa-Uri"]);
   }
@@ -253,7 +253,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if setup is successful.
    * @throws {Error} If setup fails or if there's a network error.
    */
-  async totp_setup(totpCode) {
+  async setup_totp(totpCode) {
     const headers = { Totp: totpCode };
     const response = await this._request("post", "/appmesh/totp/setup", null, { headers });
     return response.status === 200;
@@ -267,7 +267,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if TOTP is successfully disabled.
    * @throws {Error} If disabling fails or if there's a network error.
    */
-  async totp_disable(user = "self") {
+  async disable_totp(user = "self") {
     const response = await this._request("post", `/appmesh/totp/${user}/disable`);
     return response.status === 200;
   }
@@ -279,7 +279,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to an object containing information about all applications.
    * @throws {Error} If there's a network error or other issues during retrieval.
    */
-  async app_view_all() {
+  async view_all_apps() {
     const response = await this._request("get", "/appmesh/applications");
     return response.data;
   }
@@ -292,7 +292,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to an object containing information about the specified application.
    * @throws {Error} If there's a network error or other issues during retrieval.
    */
-  async app_view(name) {
+  async view_app(name) {
     const response = await this._request("get", `/appmesh/app/${name}`);
     return response.data;
   }
@@ -305,7 +305,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the application is healthy, false otherwise.
    * @throws {Error} If there's a network error or other issues during the health check.
    */
-  async app_health(name) {
+  async check_app_health(name) {
     const response = await this._request("get", `/appmesh/app/${name}/health`);
     return response.data === "0";
   }
@@ -355,7 +355,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} The resigtered application json object.
    * @throws {Error} If there's a network error or other issues during the operation.
    */
-  async app_add(name, appJson) {
+  async add_app(name, appJson) {
     const response = await this._request("put", `/appmesh/app/${name}`, appJson);
     return response.data;
   }
@@ -368,7 +368,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the deletion is successful.
    * @throws {Error} If there's a network error or other issues during the deletion.
    */
-  async app_delete(name) {
+  async delete_app(name) {
     const response = await this._request("delete", `/appmesh/app/${name}`);
     return response.status === 200;
   }
@@ -381,7 +381,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the application is successfully enabled.
    * @throws {Error} If there's a network error or other issues during the operation.
    */
-  async app_enable(name) {
+  async enable_app(name) {
     const response = await this._request("post", `/appmesh/app/${name}/enable`);
     return response.status === 200;
   }
@@ -394,7 +394,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the application is successfully disabled, false if not found.
    * @throws {Error} If there's a network error or other issues during the operation.
    */
-  async app_disable(name) {
+  async disable_app(name) {
     const response = await this._request("post", `/appmesh/app/${name}/disable`);
     return response.status === 200;
   }
@@ -412,7 +412,7 @@ class AppMeshClient {
    * @returns {Promise<AppOutput>} A promise that resolves to an AppOutput object containing the application's output.
    * @throws {Error} If there's a network error or other issues during retrieval.
    */
-  async app_output(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240, process_uuid = "", timeout = 0) {
+  async get_app_output(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240, process_uuid = "", timeout = 0) {
     try {
       const params = {
         stdout_position: stdout_position.toString(),
@@ -442,7 +442,7 @@ class AppMeshClient {
    * @returns {Promise<number|null>} A promise that resolves to the exit code of the application, or null if not available.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  async run_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async run_app_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
       timeout: parseDuration(maxTimeSeconds),
       lifecycle: parseDuration(lifeCycleSeconds)
@@ -480,7 +480,7 @@ class AppMeshClient {
    * @returns {Promise<AppRun>} A promise that resolves to an AppRun object representing the running application.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  async run_async(app, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async run_app_async(app, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
       timeout: parseDuration(maxTimeSeconds),
       lifecycle: parseDuration(lifeCycleSeconds)
@@ -500,7 +500,7 @@ class AppMeshClient {
    * @returns {Promise<number|null>} A promise that resolves to the exit code of the application, or null if not available.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  async run_async_wait(run, outputHandler = defaultOutputHandler, timeout = 0) {
+  async wait_for_async_run(run, outputHandler = defaultOutputHandler, timeout = 0) {
     if (run) {
       let lastOutputPosition = 0;
       const start = new Date();
@@ -508,7 +508,7 @@ class AppMeshClient {
 
       while (run.procUid.length > 0) {
         try {
-          const appOut = await this.app_output(run.appName, lastOutputPosition, 0, 20480, run.procUid, interval);
+          const appOut = await this.get_app_output(run.appName, lastOutputPosition, 0, 20480, run.procUid, interval);
           if (appOut.output && outputHandler) {
             outputHandler(appOut.output);
           }
@@ -519,7 +519,7 @@ class AppMeshClient {
 
           if (appOut.exitCode !== null) {
             // success
-            await this.app_delete(run.appName);
+            await this.delete_app(run.appName);
             return appOut.exitCode;
           }
 
@@ -552,7 +552,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} Success or failure.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  async file_download(filePath, localFile, applyFileAttributes = true) {
+  async download_file(filePath, localFile, applyFileAttributes = true) {
     try {
       const headers = { "File-Path": filePath };
       const response = await this._request("get", "/appmesh/file/download", null, {
@@ -616,7 +616,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} Success or failure.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  async file_upload(localFile, filePath, applyFileAttributes = true) {
+  async upload_file(localFile, filePath, applyFileAttributes = true) {
     try {
       const headers = this._commonHeaders();
       headers["File-Path"] = filePath;
@@ -681,7 +681,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to the host resource JSON.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async host_resource() {
+  async view_host_resources() {
     const response = await this._request("get", "/appmesh/resources");
     return response.data;
   }
@@ -693,7 +693,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to the configuration JSON.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async config_view() {
+  async view_config() {
     const response = await this._request("get", "/appmesh/config");
     return response.data;
   }
@@ -706,7 +706,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to the updated configuration JSON.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async config_set(configJsonSection) {
+  async set_config(configJsonSection) {
     const response = await this._request("post", "/appmesh/config", configJsonSection);
     return response.data;
   }
@@ -719,8 +719,8 @@ class AppMeshClient {
    * @returns {Promise<string>} A promise that resolves to the updated log level.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async log_level_set(level = "DEBUG") {
-    const response = await this.config_set({ BaseConfig: { LogLevel: level } });
+  async set_log_level(level = "DEBUG") {
+    const response = await this.set_config({ BaseConfig: { LogLevel: level } });
     return response.BaseConfig.LogLevel;
   }
 
@@ -733,7 +733,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the label was added successfully, false otherwise.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async tag_add(tagName, tagValue) {
+  async add_tag(tagName, tagValue) {
     const response = await this._request("put", `/appmesh/label/${tagName}`, null, { params: { value: tagValue } });
     return response.status === 200;
   }
@@ -746,7 +746,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the label was deleted successfully, false otherwise.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async tag_delete(tagName) {
+  async delete_tag(tagName) {
     const response = await this._request("delete", `/appmesh/label/${tagName}`);
     return response.status === 200;
   }
@@ -758,7 +758,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to an object containing all server labels.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async tag_view() {
+  async view_tags() {
     const response = await this._request("get", "/appmesh/labels");
     return response.data;
   }
@@ -772,7 +772,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the password was updated successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async user_passwd_update(newPassword, userName = "self") {
+  async update_user_password(newPassword, userName = "self") {
     const headers = { "New-Password": base64.encode(newPassword) };
     const response = await this._request("post", `/appmesh/user/${userName}/passwd`, null, { headers });
     return response.status === 200;
@@ -787,7 +787,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was added successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async user_add(userName, userJson) {
+  async add_user(userName, userJson) {
     const response = await this._request("put", `/appmesh/user/${userName}`, userJson);
     return response.status === 200;
   }
@@ -800,7 +800,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was deleted successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async user_delete(userName) {
+  async delete_user(userName) {
     const response = await this._request("delete", `/appmesh/user/${userName}`);
     return response.status === 200;
   }
@@ -813,7 +813,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was locked successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async user_lock(userName) {
+  async lock_user(userName) {
     const response = await this._request("post", `/appmesh/user/${userName}/lock`);
     return response.status === 200;
   }
@@ -826,7 +826,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the user was unlocked successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async user_unlock(userName) {
+  async unlock_user(userName) {
     const response = await this._request("post", `/appmesh/user/${userName}/unlock`);
     return response.status === 200;
   }
@@ -838,7 +838,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to an object containing all user definitions.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async users_view() {
+  async view_users() {
     const response = await this._request("get", "/appmesh/users");
     return response.data;
   }
@@ -850,7 +850,7 @@ class AppMeshClient {
    * @returns {Promise<Object>} A promise that resolves to an object containing the current user's definition.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async user_self() {
+  async view_self() {
     const response = await this._request("get", "/appmesh/user/self");
     return response.data;
   }
@@ -862,7 +862,7 @@ class AppMeshClient {
    * @returns {Promise<Array>} A promise that resolves to an array of user groups.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async groups_view() {
+  async view_groups() {
     const response = await this._request("get", "/appmesh/user/groups");
     return response.data;
   }
@@ -874,7 +874,7 @@ class AppMeshClient {
    * @returns {Promise<Array>} A promise that resolves to an array of all available permissions.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async permissions_view() {
+  async view_permissions() {
     const response = await this._request("get", "/appmesh/permissions");
     return response.data;
   }
@@ -886,7 +886,7 @@ class AppMeshClient {
    * @returns {Promise<Array>} A promise that resolves to an array of the current user's permissions.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async permissions_for_user() {
+  async view_user_permissions() {
     const response = await this._request("get", "/appmesh/user/permissions");
     return response.data;
   }
@@ -898,7 +898,7 @@ class AppMeshClient {
    * @returns {Promise<Array>} A promise that resolves to an array of all role definitions.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async roles_view() {
+  async view_roles() {
     const response = await this._request("get", "/appmesh/roles");
     return response.data;
   }
@@ -912,7 +912,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the role was updated successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async role_update(roleName, rolePermissionJson) {
+  async update_role(roleName, rolePermissionJson) {
     const response = await this._request("post", `/appmesh/role/${roleName}`, rolePermissionJson);
     return response.status === 200;
   }
@@ -925,7 +925,7 @@ class AppMeshClient {
    * @returns {Promise<boolean>} A promise that resolves to true if the role was deleted successfully.
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
-  async role_delete(roleName) {
+  async delete_role(roleName) {
     const response = await this._request("delete", `/appmesh/role/${roleName}`);
     return response.status === 200;
   }
@@ -1094,7 +1094,7 @@ class AppRun {
    */
   async wait(outputHandler = defaultOutputHandler, timeout = 0) {
     return this.withForwardingHost(() =>
-      this._client.run_async_wait(this, outputHandler, timeout)
+      this._client.wait_for_async_run(this, outputHandler, timeout)
     );
   }
 }

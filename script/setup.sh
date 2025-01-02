@@ -12,7 +12,7 @@ set -e # Exit on error
 # Constants and paths
 readonly PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
 [[ "$(uname)" == "Darwin" ]] && readonly BASH_COMPLETION_DIR="/opt/homebrew/etc/bash_completion.d" || readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
-readonly BASH_COMPLETION_SOFTLINK="$BASH_COMPLETION_DIR/appc"
+readonly BASH_COMPLETION_PATH="$BASH_COMPLETION_DIR/appc"
 readonly APPC_SOFTLINK=/usr/local/bin/appc
 readonly INITD_SOFTLINK=/etc/init.d/appmesh
 readonly SYSTEMD_FILE=/etc/systemd/system/appmesh.service
@@ -173,8 +173,8 @@ setup_service() {
 
     # Install bash completion
     if [ -d "$BASH_COMPLETION_DIR" ]; then
-        rm -f "$BASH_COMPLETION_SOFTLINK" && ln -sf "${PROG_HOME}/script/bash_completion.sh" "$BASH_COMPLETION_SOFTLINK"
-        info "Bash completion script installed at $BASH_COMPLETION_SOFTLINK"
+        rm -f "$BASH_COMPLETION_PATH" && cp "${PROG_HOME}/script/bash_completion.sh" "$BASH_COMPLETION_PATH"
+        info "Bash completion script installed at $BASH_COMPLETION_PATH"
     else
         error "$BASH_COMPLETION_DIR not found. Skipping bash completion installation"
     fi

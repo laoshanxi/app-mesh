@@ -103,7 +103,7 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_request = RequestMessage()
         if super().jwt_token:
             appmesh_request.headers["Authorization"] = "Bearer " + super().jwt_token
-        if super().forwarding_host and len(super().forwarding_host) > 0:
+        if super().forward_to and len(super().forward_to) > 0:
             raise Exception("Not support forward request in TCP mode")
         appmesh_request.headers[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT_TCP
         appmesh_request.uuid = str(uuid.uuid1())
@@ -145,7 +145,7 @@ class AppMeshClientTCP(AppMeshClient):
     ########################################
     # File management
     ########################################
-    def file_download(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
+    def download_file(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
         """Copy a remote file to local, the local file will have the same permission as the remote file
 
         Args:
@@ -179,7 +179,7 @@ class AppMeshClientTCP(AppMeshClient):
                 except PermissionError:
                     print(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
 
-    def file_upload(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
+    def upload_file(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
         """Upload a local file to the remote server, the remote file will have the same permission as the local file
 
         Dependency:

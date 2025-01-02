@@ -9,7 +9,7 @@ _appc() {
         COMPREPLY=($(compgen -W "logon logoff loginfo list add rm enable disable restart join cloud nodes run shell resource label config log get put passwd lock user" -- $cur))
         return
         ;;
-    -n | --name)
+    -a | --app)
         local APPS=$(appc ls -l | awk 'NR>1 {print $2}')
         COMPREPLY=($(compgen -W "$APPS" -- $cur))
         return

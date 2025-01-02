@@ -8,7 +8,7 @@
 ################################################################################
 
 [[ "$(uname)" == "Darwin" ]] && readonly BASH_COMPLETION_DIR="/opt/homebrew/etc/bash_completion.d" || readonly BASH_COMPLETION_DIR="/usr/share/bash-completion/completions"
-readonly BASH_COMPLETION_SOFTLINK="${BASH_COMPLETION_DIR}/appc"
+readonly BASH_COMPLETION_PATH="${BASH_COMPLETION_DIR}/appc"
 readonly SYSTEMD_FILE="/etc/systemd/system/appmesh.service"
 readonly INITD_FILE="/etc/init.d/appmesh"
 readonly APPC_SOFTLINK="/usr/local/bin/appc"
@@ -46,9 +46,9 @@ cleanup_initd_service() {
 }
 
 cleanup_bash_completion() {
-	if [[ -f "$BASH_COMPLETION_SOFTLINK" ]]; then
+	if [[ -f "$BASH_COMPLETION_PATH" ]]; then
 		info "Removing bash completion file"
-		rm -f "$BASH_COMPLETION_SOFTLINK"
+		rm -f "$BASH_COMPLETION_PATH"
 	fi
 }
 

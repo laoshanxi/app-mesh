@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/fsnotify/fsnotify"
 	consulapi "github.com/hashicorp/consul/api"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/spf13/viper"
@@ -51,17 +50,19 @@ func initConfig() {
 	if err := viperWatch.ReadInConfig(); err != nil {
 		logger.Warnf("failed to read consul-api-config.yaml: %v", err)
 	} else {
-		// Watch for changes to the config file
-		viperWatch.WatchConfig()
-		// Define what happens when the config changes
-		viperWatch.OnConfigChange(func(e fsnotify.Event) {
-			logger.Infof("Config file changed: %s", e.Name)
-			// Here you can handle what to do with the new configuration
-			if err := newConsulClient(); err != nil {
-				logger.Warnf("failed to reload Consul client after config change: %v", err)
-				setConsul(nil)
-			}
-		})
+		/*
+			// Watch for changes to the config file
+			viperWatch.WatchConfig()
+			// Define what happens when the config changes
+			viperWatch.OnConfigChange(func(e fsnotify.Event) {
+				logger.Infof("Config file changed: %s", e.Name)
+				// Here you can handle what to do with the new configuration
+				if err := newConsulClient(); err != nil {
+					logger.Warnf("failed to reload Consul client after config change: %v", err)
+					setConsul(nil)
+				}
+			})
+		*/
 		if err := newConsulClient(); err != nil {
 			logger.Warnf("failed to create Consul client: %v", err)
 		}

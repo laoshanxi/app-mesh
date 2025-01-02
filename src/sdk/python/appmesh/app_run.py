@@ -21,18 +21,18 @@ class AppRun(object):
         self._client = client
         """Instance of `AppMeshClient` used to manage this application run."""
 
-        self._forwarding_host = client.forwarding_host
+        self._forward_to = client.forward_to
         """Target server for the application run, used for forwarding."""
 
     @contextmanager
-    def forwarding_host(self):
-        """Context manager to override the `forwarding_host` for the duration of the run."""
-        original_value = self._client.forwarding_host
-        self._client.forwarding_host = self._forwarding_host
+    def forward_to(self):
+        """Context manager to override the `forward_to` for the duration of the run."""
+        original_value = self._client.forward_to
+        self._client.forward_to = self._forward_to
         try:
             yield
         finally:
-            self._client.forwarding_host = original_value
+            self._client.forward_to = original_value
 
     def wait(self, stdout_print: bool = True, timeout: int = 0) -> int:
         """Wait for the asynchronous run to complete.
@@ -44,5 +44,5 @@ class AppRun(object):
         Returns:
             int: Exit code if the process finishes successfully. Returns `None` on timeout or exception.
         """
-        with self.forwarding_host():
-            return self._client.run_async_wait(self, stdout_print, timeout)
+        with self.forward_to():
+            return self._client.wait_for_async_run(self, stdout_print, timeout)

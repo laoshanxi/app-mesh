@@ -3,7 +3,6 @@ module github.com/laoshanxi/app-mesh
 go 1.23.1
 
 require (
-	github.com/fsnotify/fsnotify v1.8.0
 	github.com/gorilla/mux v1.8.1
 	github.com/pkg/errors v0.9.1
 	github.com/pquerna/otp v1.4.0
@@ -17,6 +16,7 @@ require (
 require (
 	github.com/armon/go-metrics v0.5.3 // indirect
 	github.com/fatih/color v1.18.0 // indirect
+	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect

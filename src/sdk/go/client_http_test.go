@@ -15,30 +15,30 @@ func TestAppmeshLogin(t *testing.T) {
 	client := NewHttpClient(Option{SslTrustedCA: &emptyStr})
 
 	_, token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
-	res, _ := client.GetResource()
+	res, _ := client.ViewHostResources()
 	t.Log(res)
-	ret, err := client.Authentication(token, "")
+	ret, err := client.Authenticate(token, "")
 	require.Equal(t, ret, true)
 	require.Nil(t, err)
-	labels, _ := client.GetTags()
+	labels, _ := client.ViewTags()
 	t.Log(labels)
-	apps, _ := client.GetApps()
+	apps, _ := client.ViewAllApps()
 	t.Log(apps)
 
-	app, _ := client.GetApp("test")
+	app, _ := client.ViewApp("test")
 	t.Log(app)
 
 	runApp := Application{}
 	cmd := "ping github.com -w 3"
 	runApp.Command = &cmd
-	client.RunSync(runApp, 5)
-	client.RunAsync(runApp, 5)
+	client.RunAppSync(runApp, 5)
+	client.RunAppAsync(runApp, 5)
 }
 
 func TestAppmeshFile(t *testing.T) {
 
 	client := NewHttpClient(Option{})
-	client.updateForwardingHost("localhost:6059")
+	client.updateForwardTo("localhost:6059")
 
 	success, _, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
 	require.True(t, success)
@@ -46,8 +46,8 @@ func TestAppmeshFile(t *testing.T) {
 	os.Remove("appsvc")
 	os.Remove("/tmp/appsvc")
 
-	require.Nil(t, client.FileDownload("/opt/appmesh/bin/appsvc", "appsvc", true))
-	require.Nil(t, client.FileUpload("appsvc", "/tmp/appsvc", true))
+	require.Nil(t, client.DownloadFile("/opt/appmesh/bin/appsvc", "appsvc", true))
+	require.Nil(t, client.UploadFile("appsvc", "/tmp/appsvc", true))
 	os.Remove("appsvc")
 }
 
@@ -59,7 +59,7 @@ func TestAppmeshTotp(t *testing.T) {
 	require.True(t, success, "Login failed")
 	require.NoError(t, err, "Login failed")
 
-	success, err = client.Authentication(token, "")
+	success, err = client.Authenticate(token, "")
 	require.True(t, success, "Authentication failed")
 	require.NoError(t, err, "Authentication failed")
 

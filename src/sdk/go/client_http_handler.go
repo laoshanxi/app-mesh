@@ -38,23 +38,23 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 // REST GET
 
 func (r *AppMeshClient) get(path string, params url.Values, headers map[string]string) (int, []byte, http.Header, error) {
-	return r.Proxy.DoRequest("GET", path, params, headers, nil, r.getToken(), r.getForwardingHost())
+	return r.Proxy.DoRequest("GET", path, params, headers, nil, r.getToken(), r.getForwardTo())
 }
 
 // REST PUT
 func (r *AppMeshClient) put(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, error) {
-	code, raw, _, err := r.Proxy.DoRequest("PUT", path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardingHost())
+	code, raw, _, err := r.Proxy.DoRequest("PUT", path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardTo())
 	return code, raw, err
 }
 
 // REST POST
 func (r *AppMeshClient) post(path string, params url.Values, headers map[string]string, body []byte) (int, []byte, http.Header, error) {
-	return r.Proxy.DoRequest("POST", path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardingHost())
+	return r.Proxy.DoRequest("POST", path, params, headers, bytes.NewBuffer(body), r.getToken(), r.getForwardTo())
 }
 
 // REST DELETE
 func (r *AppMeshClient) delete(path string) (int, []byte, error) {
-	code, raw, _, err := r.Proxy.DoRequest("DELETE", path, nil, nil, nil, r.getToken(), r.getForwardingHost())
+	code, raw, _, err := r.Proxy.DoRequest("DELETE", path, nil, nil, nil, r.getToken(), r.getForwardTo())
 	return code, raw, err
 }
 

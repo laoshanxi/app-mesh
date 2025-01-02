@@ -20,9 +20,9 @@ import (
 
 // AppMeshClient interacts with the REST server using REST API requests.
 type AppMeshClient struct {
-	Proxy          ClientRequester
-	forwardingHost string // The target host to which all requests will be forwarded.
-	jwtToken       string // JWT authentication token for API requests.
+	Proxy     ClientRequester
+	forwardTo string // The target host to which all requests will be forwarded.
+	jwtToken  string // JWT authentication token for API requests.
 
 	sslClientCert    string // Client SSL certificate file.
 	sslClientCertKey string // Client SSL certificate key file.
@@ -35,7 +35,7 @@ type AppMeshClient struct {
 type Option struct {
 	AppMeshUri                  string  // URI of the App Mesh server; use "https://localhost:6060" for HTTP or "localhost:6059" for TCP.
 	Token                       string  // JWT authentication token for API requests.
-	ForwardingHost              string  // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests.
+	ForwardTo                   string  // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests.
 	SslClientCertificateFile    string  // Path to the client SSL certificate file; leave empty to disable client SSL authentication.
 	SslClientCertificateKeyFile string  // Path to the client SSL certificate key file; leave empty to disable client SSL authentication.
 	SslTrustedCA                *string // Path to the trusted CA file/dir for server verification; set to nil to disable server SSL verification.
@@ -81,7 +81,7 @@ func NewHttpClient(options Option) *AppMeshClient {
 	if options.HttpTimeoutMinutes != nil {
 		httpRequester.httpClient.Timeout = (*options.HttpTimeoutMinutes)
 	}
-	c.updateForwardingHost(options.ForwardingHost)
+	c.updateForwardTo(options.ForwardTo)
 	c.updateToken(options.Token)
 
 	return c
@@ -136,8 +136,8 @@ func (r *AppMeshClient) Logoff() (bool, error) {
 	return code == http.StatusOK, err
 }
 
-// Authentication authenticates the user with an existing JWT token and optional permission check.
-func (r *AppMeshClient) Authentication(jwtToken string, permission string) (bool, error) {
+// Authenticate authenticates the user with an existing JWT token and optional permission check.
+func (r *AppMeshClient) Authenticate(jwtToken string, permission string) (bool, error) {
 	headers := Headers{}
 	if permission != "" {
 		headers["Auth-Permission"] = permission
@@ -150,8 +150,8 @@ func (r *AppMeshClient) Authentication(jwtToken string, permission string) (bool
 	return false, err
 }
 
-// Renew renews the JWT token.
-func (r *AppMeshClient) Renew() (bool, error) {
+// RenewToken renews the JWT token.
+func (r *AppMeshClient) RenewToken() (bool, error) {
 	code, raw, _, err := r.post("appmesh/token/renew", nil, nil, nil)
 	if code == http.StatusOK {
 		result := JWTResponse{}
@@ -164,8 +164,8 @@ func (r *AppMeshClient) Renew() (bool, error) {
 	return false, err
 }
 
-// TotpSecret retrieves the TOTP secret for the user.
-func (r *AppMeshClient) TotpSecret() (string, error) {
+// GetTotpSecret retrieves the TOTP secret for the user.
+func (r *AppMeshClient) GetTotpSecret() (string, error) {
 	code, raw, _, err := r.post("appmesh/totp/secret", nil, nil, nil)
 	if code == http.StatusOK {
 		m := make(map[string]interface{})
@@ -181,21 +181,21 @@ func (r *AppMeshClient) TotpSecret() (string, error) {
 	return "", err
 }
 
-// TotpSetup sets up TOTP for the user.
-func (r *AppMeshClient) TotpSetup(totpCode string) (bool, error) {
+// SetupTotp sets up TOTP for the user.
+func (r *AppMeshClient) SetupTotp(totpCode string) (bool, error) {
 	headers := map[string]string{"Totp": totpCode}
 	code, _, _, err := r.post("appmesh/totp/setup", nil, headers, nil)
 	return code == http.StatusOK, err
 }
 
-// TotpDisable disables TOTP for the user.
-func (r *AppMeshClient) TotpDisable() (bool, error) {
+// DisableTotp disables TOTP for the user.
+func (r *AppMeshClient) DisableTotp() (bool, error) {
 	code, _, _, err := r.post("appmesh/totp/self/disable", nil, nil, nil)
 	return code == http.StatusOK, err
 }
 
-// GetTags retrieves all labels.
-func (r *AppMeshClient) GetTags() (Labels, error) {
+// ViewTags retrieves all labels.
+func (r *AppMeshClient) ViewTags() (Labels, error) {
 	code, raw, _, err := r.get("appmesh/labels", nil, nil)
 	label := Labels{}
 	if code == http.StatusOK {
@@ -204,14 +204,14 @@ func (r *AppMeshClient) GetTags() (Labels, error) {
 	return label, err
 }
 
-// GetResource retrieves resources.
-func (r *AppMeshClient) GetResource() ([]byte, error) {
+// ViewHostResources retrieves resources.
+func (r *AppMeshClient) ViewHostResources() ([]byte, error) {
 	_, raw, _, err := r.get("appmesh/resources", nil, nil)
 	return raw, err
 }
 
-// GetApps retrieves all applications.
-func (r *AppMeshClient) GetApps() ([]Application, error) {
+// ViewAllApps retrieves all applications.
+func (r *AppMeshClient) ViewAllApps() ([]Application, error) {
 	code, raw, _, err := r.get("appmesh/applications", nil, nil)
 	apps := []Application{}
 	if code == http.StatusOK {
@@ -220,8 +220,8 @@ func (r *AppMeshClient) GetApps() ([]Application, error) {
 	return apps, err
 }
 
-// GetApp retrieves a specific application by name.
-func (r *AppMeshClient) GetApp(appName string) (*Application, error) {
+// ViewApp retrieves a specific application by name.
+func (r *AppMeshClient) ViewApp(appName string) (*Application, error) {
 	code, raw, _, err := r.get(fmt.Sprintf("/appmesh/app/%s", appName), nil, nil)
 	if code == http.StatusOK {
 		app := Application{}
@@ -316,8 +316,8 @@ func (r *AppMeshClient) AddApp(app Application) (*Application, error) {
 	return nil, err
 }
 
-// RunSync runs an application synchronously.
-func (r *AppMeshClient) RunSync(app Application, maxTimeoutSeconds int) (*int, string, error) {
+// RunAppSync runs an application synchronously.
+func (r *AppMeshClient) RunAppSync(app Application, maxTimeoutSeconds int) (*int, string, error) {
 	appJson, err := json.Marshal(app)
 	var exitCode *int
 	var respose string
@@ -340,8 +340,8 @@ func (r *AppMeshClient) RunSync(app Application, maxTimeoutSeconds int) (*int, s
 	return exitCode, respose, err
 }
 
-// RunAsync runs an application asynchronously.
-func (r *AppMeshClient) RunAsync(app Application, maxTimeoutSeconds int) (int, error) {
+// RunAppAsync runs an application asynchronously.
+func (r *AppMeshClient) RunAppAsync(app Application, maxTimeoutSeconds int) (int, error) {
 	appJson, err := json.Marshal(app)
 	exitCode := 0
 	if err == nil {
@@ -384,8 +384,8 @@ func (r *AppMeshClient) RunAsync(app Application, maxTimeoutSeconds int) (int, e
 	return exitCode, err
 }
 
-// FileUpload uploads a file to the server.
-func (r *AppMeshClient) FileUpload(localFile, remoteFile string, applyFileAttributes bool) error {
+// UploadFile uploads a file to the server.
+func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
 	file, err := os.Open(localFile)
 	if err != nil {
 		return err
@@ -435,8 +435,8 @@ func (r *AppMeshClient) FileUpload(localFile, remoteFile string, applyFileAttrib
 	return nil
 }
 
-// FileDownload downloads a file from the server.
-func (r *AppMeshClient) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
+// DownloadFile downloads a file from the server.
+func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttributes bool) error {
 
 	headers := map[string]string{"File-Path": remoteFile}
 	code, raw, respHeaders, _ := r.get("/appmesh/file/download", nil, headers)
@@ -459,18 +459,18 @@ func (r *AppMeshClient) FileDownload(remoteFile, localFile string, applyFileAttr
 	return err
 }
 
-// getForwardingHost retrieves the forwarding host.
-func (r *AppMeshClient) getForwardingHost() string {
+// getForwardTo retrieves the forwarding host.
+func (r *AppMeshClient) getForwardTo() string {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	return r.forwardingHost
+	return r.forwardTo
 }
 
-// updateForwardingHost updates the forwarding host.
-func (r *AppMeshClient) updateForwardingHost(host string) {
+// updateForwardTo updates the forwarding host.
+func (r *AppMeshClient) updateForwardTo(host string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	r.forwardingHost = host
+	r.forwardTo = host
 }
 
 // getToken retrieves the JWT token.

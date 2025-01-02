@@ -50,18 +50,18 @@ public class AppMeshClientTest {
         String token = client.login(USERNAME, PASSWORD, null, "P1W");
         assertNotNull(token, "Login should return a non-null token");
 
-        token = client.renew("P1D");
+        token = client.renewToken("P1D");
         assertNotNull(token, "Renew should return a non-null token");
 
-        JSONArray apps = client.appView();
-        assertNotNull(apps, "appView should return a non-null JSONArray");
+        JSONArray apps = client.viewAllApps();
+        assertNotNull(apps, "viewAllApps should return a non-null JSONArray");
         System.out.println("All applications: " + apps.toString(2));
 
-        JSONObject pingApp = client.appView("ping");
-        assertNotNull(pingApp, "appView for 'ping' should return a non-null JSONObject");
+        JSONObject pingApp = client.viewApp("ping");
+        assertNotNull(pingApp, "viewApp for 'ping' should return a non-null JSONObject");
         System.out.println("Ping application: " + pingApp.toString(2));
 
-        boolean authenticated = client.authentication(token, "app-view");
+        boolean authenticated = client.authenticate(token, "app-view");
         assertTrue(authenticated, "User should be authenticated with the token");
 
         boolean loggedOut = client.logoff();
@@ -72,20 +72,20 @@ public class AppMeshClientTest {
     public void testApp() throws Exception {
         client.login(USERNAME, PASSWORD, null, "P1W");
 
-        client.appOutput("ping", 0, 0, 0, "", 0); // System.out.println(out.httpBody);
+        client.getAppOutput("ping", 0, 0, 0, "", 0); // System.out.println(out.httpBody);
 
-        boolean appDisable = client.appDisable("ping");
-        assertTrue(appDisable, "appDisable");
+        boolean appDisable = client.disableApp("ping");
+        assertTrue(appDisable, "disableApp");
 
-        boolean appEnable = client.appEnable("ping");
-        assertTrue(appEnable, "appEnable");
+        boolean appEnable = client.enableApp("ping");
+        assertTrue(appEnable, "enableApp");
 
         JSONObject appJson = new JSONObject();
         appJson.put("command", "ping www.github.com");
-        Pair<Integer, String> pair = client.runSync(appJson, 3);
+        Pair<Integer, String> pair = client.runAppSync(appJson, 3);
         System.out.println(pair.getRight());
 
-        AppMeshClient.AppRun run = client.runAsync(appJson, 10, 10);
+        AppMeshClient.AppRun run = client.runAppAsync(appJson, 10, 10);
         run.wait(true, 0);
 
     }
@@ -102,8 +102,8 @@ public class AppMeshClientTest {
         if (file.exists()) {
             file.delete();
         }
-        client.fileDownload("/opt/appmesh/bin/appsvc", "appsvc", true);
-        client.fileUpload("appsvc", "/tmp/app", true);
+        client.downloadFile("/opt/appmesh/bin/appsvc", "appsvc", true);
+        client.uploadFile("appsvc", "/tmp/app", true);
         java.nio.file.Files.delete(java.nio.file.Paths.get("appsvc"));
     }
 
@@ -117,16 +117,16 @@ public class AppMeshClientTest {
     @Test
     public void testAppHealth() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W");
-        boolean isHealthy = client.appHealth("ping");
+        boolean isHealthy = client.checkAppHealth("ping");
         assertTrue(isHealthy, "The 'ping' application should be healthy");
     }
 
     @Test
     public void testUser() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W");
-        System.out.println(client.permissionsForUser().toString());
-        System.out.println(client.userSelf().toString());
-        System.out.println(client.rolesView().toString());
+        System.out.println(client.viewUserPermissions().toString());
+        System.out.println(client.viewSelf().toString());
+        System.out.println(client.viewRoles().toString());
     }
 
     @Test
@@ -136,32 +136,32 @@ public class AppMeshClientTest {
         JSONObject newAppConfig =
                 new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'").put("description", "Test application");
 
-        JSONObject addedApp = client.appAdd("testApp", newAppConfig);
-        assertNotNull(addedApp, "appAdd should return a non-null JSONObject");
+        JSONObject addedApp = client.addApp("testApp", newAppConfig);
+        assertNotNull(addedApp, "addApp should return a non-null JSONObject");
         assertEquals("testApp", addedApp.getString("name"), "Added app should have the correct name");
 
-        JSONObject viewedApp = client.appView("testApp");
-        assertNotNull(viewedApp, "appView for 'testApp' should return a non-null JSONObject");
+        JSONObject viewedApp = client.viewApp("testApp");
+        assertNotNull(viewedApp, "viewApp for 'testApp' should return a non-null JSONObject");
         assertEquals("testApp", viewedApp.getString("name"), "Viewed app should have the correct name");
     }
 
     @Test
     public void testHostResources() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W");
-        System.out.println(client.hostResources().toString());
-        System.out.println(client.configView().toString());
-        assertEquals("DEBUG", client.logLevel("DEBUG").toString());
+        System.out.println(client.viewHostResources().toString());
+        System.out.println(client.viewConfig().toString());
+        assertEquals("DEBUG", client.setLogLevel("DEBUG").toString());
     }
 
     @Test
     public void testTag() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W");
-        System.out.println(client.tagView().toString());
-        System.out.println(client.tagAdd("ABC", "DEF"));
-        assertTrue(client.tagView().containsKey("ABC"));
-        assertTrue(client.tagDelete("ABC"));
-        assertTrue(!client.tagView().containsKey("ABC"));
+        System.out.println(client.viewTags().toString());
+        System.out.println(client.addTag("ABC", "DEF"));
+        assertTrue(client.viewTags().containsKey("ABC"));
+        assertTrue(client.deleteTag("ABC"));
+        assertTrue(!client.viewTags().containsKey("ABC"));
 
-        System.out.println(client.mertic());
+        System.out.println(client.metrics());
     }
 }

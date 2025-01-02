@@ -84,7 +84,7 @@ jobs:
           sudo bash /opt/appmesh/script/appmesh.initd.sh start
 
           # Check
-          appc -V || true
+          appc -v || true
           sudo otool /opt/appmesh/bin/appsvc -L
 
           # hostname resolve need some time

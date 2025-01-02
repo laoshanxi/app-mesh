@@ -1,6 +1,6 @@
 {
   "name": "appmesh",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "JavaScript SDK for App Mesh (https://github.com/laoshanxi/app-mesh)",
   "main": "src/appmesh.js",
   "scripts": {
@@ -24,7 +24,7 @@
     "node": ">=14.15.0"
   },
   "dependencies": {
-    "axios": "^1.7.8",
+    "axios": "^1.7.9",
     "base-64": "^1.0.0"
   },
   "devDependencies": {

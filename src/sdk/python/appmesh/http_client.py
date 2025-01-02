@@ -47,56 +47,56 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # Authentication Management
         - login()
         - logoff()
-        - authentication()
-        - renew()
-        - totp_disable()
-        - totp_secret()
-        - totp_setup()
+        - authenticate()
+        - renew_token()
+        - disable_totp()
+        - get_totp_secret()
+        - setup_totp()
 
         # Application Management
-        - app_add()
-        - app_delete()
-        - app_disable()
-        - app_enable()
-        - app_health()
-        - app_output()
-        - app_view()
-        - app_view_all()
+        - add_app()
+        - delete_app()
+        - disable_app()
+        - enable_app()
+        - check_app_health()
+        - get_app_output()
+        - view_app()
+        - view_all_apps()
 
         # Run Application Operations
-        - run_async()
-        - run_async_wait()
-        - run_sync()
+        - run_app_async()
+        - wait_for_async_run()
+        - run_app_sync()
 
         # System Management
-        - forwarding_host
-        - config_set()
-        - config_view()
-        - log_level_set()
-        - host_resource()
-        - metrics()
-        - tag_add()
-        - tag_delete()
-        - tag_view()
+        - forward_to
+        - set_config()
+        - view_config()
+        - set_log_level()
+        - view_host_resources()
+        - get_metrics()
+        - add_tag()
+        - delete_tag()
+        - view_tags()
 
         # File Management
-        - file_download()
-        - file_upload()
+        - download_file()
+        - upload_file()
 
         # User and Role Management
-        - user_add()
-        - user_delete()
-        - user_lock()
-        - user_passwd_update()
-        - user_self()
-        - user_unlock()
-        - users_view()
-        - permissions_for_user()
-        - permissions_view()
-        - role_delete()
-        - role_update()
-        - roles_view()
-        - groups_view()
+        - add_user()
+        - delete_user()
+        - lock_user()
+        - update_user_password()
+        - view_self()
+        - unlock_user()
+        - view_users()
+        - view_user_permissions()
+        - view_permissions()
+        - delete_role()
+        - update_role()
+        - view_roles()
+        - view_groups()
     """
 
     DURATION_ONE_WEEK_ISO = "P1W"
@@ -157,7 +157,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self.ssl_verify = rest_ssl_verify
         self.ssl_client_cert = rest_ssl_client_cert
         self.rest_timeout = rest_timeout
-        self._forwarding_host = None
+        self._forward_to = None
 
     @property
     def jwt_token(self) -> str:
@@ -203,7 +203,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._jwt_token = token
 
     @property
-    def forwarding_host(self) -> str:
+    def forward_to(self) -> str:
         """Get the target host address for request forwarding in a cluster setup.
 
         This property manages the destination host where requests will be forwarded to
@@ -223,10 +223,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             - All nodes must use identical JWT issuer settings
             - When port is omitted, current service port will be used
         """
-        return self._forwarding_host
+        return self._forward_to
 
-    @forwarding_host.setter
-    def forwarding_host(self, host: str) -> None:
+    @forward_to.setter
+    def forward_to(self, host: str) -> None:
         """Set the target host address for request forwarding.
 
         Configure the destination host where requests should be forwarded to. This is
@@ -241,12 +241,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 Pass empty string to disable forwarding.
 
         Examples:
-            >>> client.forwarding_host = "backend-node:6060"  # Use specific port
-            >>> client.forwarding_host = "backend-node"       # Use current service port
-            >>> client.forwarding_host = None                 # Disable forwarding
+            >>> client.forward_to = "backend-node:6060"  # Use specific port
+            >>> client.forward_to = "backend-node"       # Use current service port
+            >>> client.forward_to = None                 # Disable forwarding
         """
 
-        self._forwarding_host = host
+        self._forward_to = host
 
     ########################################
     # Security
@@ -297,7 +297,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return self.jwt_token
 
     def logoff(self) -> bool:
-        """Logoff current session from server
+        """Log out of the current session from the server.
 
         Returns:
             bool: logoff success or failure.
@@ -309,8 +309,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return resp.status_code == HTTPStatus.OK
 
     def authentication(self, token: str, permission=None) -> bool:
-        """Login with token and verify permission when specified,
-           verified token will be stored in client object when success
+        """Deprecated: Use authenticate() instead."""
+        return self.authenticate(token, permission)
+
+    def authenticate(self, token: str, permission: str = None) -> bool:
+        """Authenticate with a token and verify permission if specified.
 
         Args:
             token (str): JWT token returned from login().
@@ -333,8 +336,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def renew(self, timeout_seconds=DURATION_ONE_WEEK_ISO) -> str:
-        """Renew current token
+    def renew_token(self, timeout: Union[int, str] = DURATION_ONE_WEEK_ISO) -> str:
+        """Renew the current token.
 
         Args:
             timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
@@ -347,7 +350,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             AppMeshClient.Method.POST,
             path="/appmesh/token/renew",
             header={
-                "Expire-Seconds": self._parse_duration(timeout_seconds),
+                "Expire-Seconds": self._parse_duration(timeout),
             },
         )
         if resp.status_code == HTTPStatus.OK:
@@ -356,8 +359,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 return self.jwt_token
         raise Exception(resp.text)
 
-    def totp_secret(self) -> str:
-        """Generate TOTP secret for current login user and return MFA URI with JSON body
+    def get_totp_secret(self) -> str:
+        """Generate TOTP secret for the current user and return MFA URI.
 
         Returns:
             str: TOTP secret str
@@ -368,8 +371,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             return self._parse_totp_uri(totp_uri).get("secret")
         raise Exception(resp.text)
 
-    def totp_setup(self, totp_code: str) -> bool:
-        """Setup 2FA for current login user
+    def setup_totp(self, totp_code: str) -> bool:
+        """Set up 2FA for the current user.
 
         Args:
             totp_code (str): TOTP code
@@ -386,8 +389,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def totp_disable(self, user="self") -> bool:
-        """Disable 2FA for current user
+    def disable_totp(self, user: str = "self") -> bool:
+        """Disable 2FA for the specified user.
 
         Args:
             user (str, optional): user name for disable TOTP.
@@ -428,8 +431,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application view
     ########################################
-    def app_view(self, app_name: str) -> App:
-        """Get one application information
+    def view_app(self, app_name: str) -> App:
+        """Get information about a specific application.
 
         Args:
             app_name (str): the application name.
@@ -445,8 +448,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return App(resp.json())
 
-    def app_view_all(self):
-        """Get all applications
+    def view_all_apps(self):
+        """Get information about all applications.
 
         Returns:
             list: the application object both contain static configuration and runtime information, only return applications that the user has permissions.
@@ -462,8 +465,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             apps.append(App(app))
         return apps
 
-    def app_output(self, app_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = "", timeout: int = 0) -> AppOutput:
-        """Get application stdout/stderr
+    def get_app_output(self, app_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = "", timeout: int = 0) -> AppOutput:
+        """Get the stdout/stderr of an application.
 
         Args:
             app_name (str): the application name
@@ -492,8 +495,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         exit_code = int(resp.headers["Exit-Code"]) if "Exit-Code" in resp.headers else None
         return AppOutput(status_code=resp.status_code, output=resp.text, out_position=out_position, exit_code=exit_code)
 
-    def app_health(self, app_name: str) -> bool:
-        """Get application health status
+    def check_app_health(self, app_name: str) -> bool:
+        """Check the health status of an application.
 
         Args:
             app_name (str): the application name.
@@ -509,8 +512,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application manage
     ########################################
-    def app_add(self, app: App) -> App:
-        """Register an application
+    def add_app(self, app: App) -> App:
+        """Register a new application.
 
         Args:
             app (App): the application definition.
@@ -526,7 +529,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return App(resp.json())
 
-    def app_delete(self, app_name: str) -> bool:
+    def delete_app(self, app_name: str) -> bool:
         """Remove an application.
 
         Args:
@@ -543,8 +546,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         else:
             raise Exception(resp.text)
 
-    def app_enable(self, app_name: str) -> bool:
-        """Enable an application
+    def enable_app(self, app_name: str) -> bool:
+        """Enable an application.
 
         Args:
             app_name (str): the application name.
@@ -557,8 +560,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def app_disable(self, app_name: str) -> bool:
-        """Stop and disable an application
+    def disable_app(self, app_name: str) -> bool:
+        """Disable an application.
 
         Args:
             app_name (str): the application name.
@@ -574,8 +577,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Cloud management
     ########################################
-    def cloud_app_view_all(self) -> dict:
-        """Get all cloud applications
+    def view_all_cloud_apps(self) -> dict:
+        """Get information about all cloud applications.
 
         Returns:
             dict: cloud applications in JSON format.
@@ -585,8 +588,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def cloud_app(self, app_name: str) -> dict:
-        """Get an cloud application
+    def view_cloud_app(self, app_name: str) -> dict:
+        """Get information about a specific cloud application.
 
         Args:
             app_name (str): the application name.
@@ -599,8 +602,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def cloud_app_output(self, app_name: str, host_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = ""):
-        """Get cloud application stdout/stderr from master agent
+    def get_cloud_app_output(self, app_name: str, host_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = ""):
+        """Get the stdout/stderr of a cloud application.
 
         Args:
             app_name (str): the application name
@@ -631,8 +634,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         exit_code = int(resp.headers["Exit-Code"]) if "Exit-Code" in resp.headers else None
         return (resp.status_code == HTTPStatus.OK), resp.text, out_position, exit_code
 
-    def cloud_app_delete(self, app_name: str) -> bool:
-        """Delete a cloud application
+    def delete_cloud_app(self, app_name: str) -> bool:
+        """Delete a cloud application.
 
         Args:
             app_name (str): The application name for cloud
@@ -645,8 +648,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def cloud_app_add(self, app_json: dict) -> dict:
-        """Add a cloud application
+    def add_cloud_app(self, app_json: dict) -> dict:
+        """Add a new cloud application.
 
         Args:
             app_json (dict): the cloud application definition with replication, condition and resource requirement
@@ -659,8 +662,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def cloud_nodes(self) -> dict:
-        """Get cluster node list
+    def view_cloud_nodes(self) -> dict:
+        """Get a list of cluster nodes.
 
         Returns:
             dict: cluster node list json.
@@ -673,8 +676,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Configuration
     ########################################
-    def host_resource(self) -> dict:
-        """Get App Mesh host resource report include CPU, memory and disk
+    def view_host_resources(self) -> dict:
+        """Get a report of host resources including CPU, memory, and disk.
 
         Returns:
             dict: the host resource json.
@@ -684,8 +687,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def config_view(self) -> dict:
-        """Get App Mesh configuration JSON
+    def view_config(self) -> dict:
+        """Get the App Mesh configuration in JSON format.
 
         Returns:
             dict: the configuration json.
@@ -695,8 +698,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def config_set(self, cfg_json) -> dict:
-        """Update configuration, the format follow 'config.yaml', support partial update
+    def set_config(self, config_json: dict) -> dict:
+        """Update the configuration.
 
         Args:
             cfg_json (dict): the new configuration json.
@@ -704,13 +707,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             dict: the updated configuration json.
         """
-        resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/config", body=cfg_json)
+        resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/config", body=config_json)
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
         return resp.json()
 
-    def log_level_set(self, level: str = "DEBUG") -> str:
-        """Update App Mesh log level(DEBUG/INFO/NOTICE/WARN/ERROR), a wrapper of config_set()
+    def set_log_level(self, level: str = "DEBUG") -> str:
+        """Update the log level.
 
         Args:
             level (str, optional): log level.
@@ -726,8 +729,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # User Management
     ########################################
-    def user_passwd_update(self, new_password: str, user_name: str = "self") -> bool:
-        """Change user password
+    def update_user_password(self, new_password: str, user_name: str = "self") -> bool:
+        """Change the password of a user.
 
         Args:
             user_name (str): the user name.
@@ -745,8 +748,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return True
 
-    def user_add(self, user_name: str, user_json: dict) -> bool:
-        """Add a new user, not available for LDAP user
+    def add_user(self, user_name: str, user_json: dict) -> bool:
+        """Add a new user.
 
         Args:
             user_name (str): the user name.
@@ -762,8 +765,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         )
         return resp.status_code == HTTPStatus.OK
 
-    def user_delete(self, user_name: str) -> bool:
-        """Delete a user
+    def delete_user(self, user_name: str) -> bool:
+        """Delete a user.
 
         Args:
             user_name (str): the user name.
@@ -777,8 +780,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         )
         return resp.status_code == HTTPStatus.OK
 
-    def user_lock(self, user_name: str) -> bool:
-        """Lock a user
+    def lock_user(self, user_name: str) -> bool:
+        """Lock a user.
 
         Args:
             user_name (str): the user name.
@@ -794,8 +797,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def user_unlock(self, user_name: str) -> bool:
-        """Unlock a user
+    def unlock_user(self, user_name: str) -> bool:
+        """Unlock a user.
 
         Args:
             user_name (str): the user name.
@@ -811,8 +814,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def users_view(self) -> dict:
-        """Get all users
+    def view_users(self) -> dict:
+        """Get information about all users.
 
         Returns:
             dict: all user definition
@@ -822,8 +825,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def user_self(self) -> dict:
-        """Get current user infomation
+    def view_self(self) -> dict:
+        """Get information about the current user.
 
         Returns:
             dict: user definition.
@@ -833,8 +836,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def groups_view(self) -> list:
-        """Get all user groups
+    def view_groups(self) -> list:
+        """Get information about all user groups.
 
         Returns:
             dict: user group array.
@@ -844,8 +847,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def permissions_view(self) -> list:
-        """Get all available permissions
+    def view_permissions(self) -> list:
+        """Get information about all available permissions.
 
         Returns:
             dict: permission array
@@ -855,8 +858,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def permissions_for_user(self) -> list:
-        """Get current user permissions
+    def view_user_permissions(self) -> list:
+        """Get information about the permissions of the current user.
 
         Returns:
             dict: user permission array.
@@ -866,8 +869,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def roles_view(self) -> list:
-        """Get all roles with permission definition
+    def view_roles(self) -> list:
+        """Get information about all roles with permission definitions.
 
         Returns:
             dict: all role definition.
@@ -877,8 +880,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.json()
 
-    def role_update(self, role_name: str, role_permission_json: dict) -> bool:
-        """Update (or add) a role with defined permissions, the permission ID can be App Mesh pre-defined or other permission ID.
+    def update_role(self, role_name: str, role_permission_json: dict) -> bool:
+        """Update or add a role with defined permissions.
 
         Args:
             role_name (str): the role name.
@@ -892,8 +895,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def role_delete(self, role_name: str) -> bool:
-        """Delete a user role
+    def delete_role(self, role_name: str) -> bool:
+        """Delete a user role.
 
         Args:
             role_name (str): the role name.
@@ -912,8 +915,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Tag management
     ########################################
-    def tag_add(self, tag_name: str, tag_value: str) -> bool:
-        """Add a new label
+    def add_tag(self, tag_name: str, tag_value: str) -> bool:
+        """Add a new label.
 
         Args:
             tag_name (str): the label name.
@@ -931,8 +934,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def tag_delete(self, tag_name: str) -> bool:
-        """Delete a label
+    def delete_tag(self, tag_name: str) -> bool:
+        """Delete a label.
 
         Args:
             tag_name (str): the label name.
@@ -945,8 +948,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(resp.text)
         return resp.status_code == HTTPStatus.OK
 
-    def tag_view(self) -> dict:
-        """Get the server labels
+    def view_tags(self) -> dict:
+        """Get information about all labels.
 
         Returns:
             dict: label data.
@@ -959,8 +962,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Promethus metrics
     ########################################
-    def metrics(self):
-        """Prometheus metrics (this does not call Prometheus API /metrics, just copy the same metrics data)
+    def get_metrics(self):
+        """Get Prometheus metrics.
 
         Returns:
             str: prometheus metrics texts
@@ -973,8 +976,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # File management
     ########################################
-    def file_download(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
-        """Copy a remote file to local. Optionally, the local file will have the same permission as the remote file.
+    def download_file(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
+        """Download a remote file to the local system. Optionally, the local file will have the same permission as the remote file.
 
         Args:
             remote_file (str): the remote file path.
@@ -1002,7 +1005,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 except PermissionError:
                     print(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
 
-    def file_upload(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
+    def upload_file(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
         """Upload a local file to the remote server. Optionally, the remote file will have the same permission as the local file.
 
         Dependency:
@@ -1051,7 +1054,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         else:
             raise TypeError(f"Invalid timeout type: {str(timeout)}")
 
-    def run_async(
+    def run_app_async(
         self,
         app: Union[App, str],
         max_time_seconds: Union[int, str] = DURATION_TWO_DAYS_ISO,
@@ -1093,8 +1096,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # Return an AppRun object with the application name and process UUID
         return AppRun(self, resp.json()["name"], resp.json()["process_uuid"])
 
-    def run_async_wait(self, run: AppRun, stdout_print: bool = True, timeout: int = 0) -> int:
-        """Wait for an async run to be finished
+    def wait_for_async_run(self, run: AppRun, stdout_print: bool = True, timeout: int = 0) -> int:
+        """Wait for an asynchronous run to finish.
 
         Args:
             run (AppRun): asyncrized run result from run_async().
@@ -1109,14 +1112,14 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             start = datetime.now()
             interval = 1 if self.__class__.__name__ == "AppMeshClient" else 1000
             while len(run.proc_uid) > 0:
-                app_out = self.app_output(app_name=run.app_name, stdout_position=last_output_position, stdout_index=0, process_uuid=run.proc_uid, timeout=interval)
+                app_out = self.get_app_output(app_name=run.app_name, stdout_position=last_output_position, stdout_index=0, process_uuid=run.proc_uid, timeout=interval)
                 if app_out.output and stdout_print:
                     print(app_out.output, end="")
                 if app_out.out_position is not None:
                     last_output_position = app_out.out_position
                 if app_out.exit_code is not None:
                     # success
-                    self.app_delete(run.app_name)
+                    self.delete_app(run.app_name)
                     return app_out.exit_code
                 if app_out.status_code != HTTPStatus.OK:
                     # failed
@@ -1126,7 +1129,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                     break
         return None
 
-    def run_sync(
+    def run_app_sync(
         self,
         app: Union[App, str],
         stdout_print: bool = True,
@@ -1176,7 +1179,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return exit_code, resp.text
 
     def _request_http(self, method: Method, path: str, query: dict = None, header: dict = None, body=None) -> requests.Response:
-        """REST API
+        """Make an HTTP request.
 
         Args:
             method (Method): AppMeshClient.Method.
@@ -1193,11 +1196,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         header = {} if header is None else header
         if self.jwt_token:
             header["Authorization"] = "Bearer " + self.jwt_token
-        if self.forwarding_host and len(self.forwarding_host) > 0:
-            if ":" in self.forwarding_host:
-                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host
+        if self.forward_to and len(self.forward_to) > 0:
+            if ":" in self.forward_to:
+                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
             else:
-                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forwarding_host + ":" + str(parse.urlsplit(self.server_url).port)
+                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to + ":" + str(parse.urlsplit(self.server_url).port)
         header[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:

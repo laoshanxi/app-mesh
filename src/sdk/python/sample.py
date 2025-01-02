@@ -23,23 +23,23 @@ def main() -> None:
         myapp.command = "ping github.com"
 
         # Add the application to App Mesh
-        response = client.app_add(myapp)
+        response = client.add_app(myapp)
         print("Application added:", response)
 
         # View details of the added application
-        app_details = client.app_view(myapp.name)
+        app_details = client.view_app(myapp.name)
         print("Application details:", app_details)
 
         # Enable the application to start running
-        client.app_enable(myapp.name)
+        client.enable_app(myapp.name)
         sleep(3)  # Wait briefly to allow the app to start
 
         # Retrieve and print the application output with a 3-second timeout
-        output_response = client.app_output(myapp.name, timeout=3)
+        output_response = client.get_app_output(myapp.name, timeout=3)
         print("Application output:\n", output_response.output)
 
         # Delete the application after viewing the output
-        delete_response = client.app_delete(myapp.name)
+        delete_response = client.delete_app(myapp.name)
         print("Application deleted:", delete_response)
     else:
         print("Login failed. Check credentials.")

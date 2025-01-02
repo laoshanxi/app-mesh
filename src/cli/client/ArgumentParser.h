@@ -40,10 +40,6 @@ private:
 	int processShell();
 	void saveUserCmdHistory(const char *input);
 
-	void processCloudAppView();
-	void processCloudNodesView();
-	void processCloudJoinMaster();
-
 	void processFileDownload();
 	void processFileUpload();
 
@@ -56,7 +52,7 @@ private:
 	void processUserLock();
 	void processUserView();
 	void processUserPwdEncrypt();
-	void processUserMfaActive();
+	void processUserMfa();
 	void initRadomPassword();
 
 public:
@@ -76,6 +72,7 @@ private:
 	void shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered = false);
 	std::string reduceStr(std::string source, int limit);
 	bool confirmInput(const char *msg);
+	std::string inputPasswd();
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();
 	void unregSignal();
@@ -98,5 +95,5 @@ private:
 	std::string m_userpwd;
 	std::unique_ptr<ACE_Sig_Action> m_sigAction;
 	std::string m_jwtToken;
-	std::string m_forwardingHost;
+	std::string m_forwardTo;
 };
