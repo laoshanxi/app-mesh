@@ -132,7 +132,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	const std::string &host,
 	const web::http::method &mtd,
 	const std::string &path,
-	nlohmann::json *body,
+	const std::string &body,
 	std::map<std::string, std::string> header,
 	std::map<std::string, std::string> query)
 {
@@ -176,16 +176,14 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response->header);
 
 	// Handle request body
-	std::string bodyStr;
-	if (body)
+	if (!body.empty())
 	{
-		bodyStr = body->dump();
 		headers.append(std::string(web::http::header_names::content_type) + ": " + web::http::mime_types::application_json);
 
 		if (mtd == web::http::methods::PUT || mtd == web::http::methods::POST)
 		{
-			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyStr.c_str());
-			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, bodyStr.size());
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
 		}
 	}
 

@@ -3,7 +3,7 @@
 #include <boost/filesystem/operations.hpp>
 
 #include "../common/Utility.h"
-#include "client/ArgumentParser.h"
+#include "ArgumentParser.h"
 
 /// <summary>
 /// Command line entrypoint

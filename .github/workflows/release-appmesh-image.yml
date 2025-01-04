@@ -88,7 +88,7 @@ jobs:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           shell: bash
           run: |
-            /appmesh-entrypoint.sh &
+            /entrypoint.sh &
             sleep 5
             appc ls
             appc resource

@@ -29,20 +29,47 @@ struct ClientSSLConfig
 class RestClient
 {
 public:
+	/**
+	 * Make an HTTP request. Note: The response headers are returned in lower case.
+	 * @param host Server host address.
+	 * @param mtd HTTP method.
+	 * @param path Request path.
+	 * @param body Request body.
+	 * @param header Request headers.
+	 * @param query Query parameters.
+	 * @return Response result.
+	 */
 	static std::shared_ptr<CurlResponse> request(
 		const std::string &host,
 		const web::http::method &mtd,
 		const std::string &path,
-		nlohmann::json *body,
+		const std::string &body,
 		std::map<std::string, std::string> header,
 		std::map<std::string, std::string> query);
 
+	/**
+	 * Upload a file.
+	 * @param host Server host address.
+	 * @param path Upload path.
+	 * @param file File path.
+	 * @param header Request headers.
+	 * @return Response result.
+	 */
 	static std::shared_ptr<CurlResponse> upload(
 		const std::string &host,
 		const std::string &path,
 		const std::string &file,
 		std::map<std::string, std::string> header);
 
+	/**
+	 * Download a file.
+	 * @param host Server host address.
+	 * @param path Download path.
+	 * @param remoteFile Remote file path.
+	 * @param localFile Local file path.
+	 * @param header Request headers.
+	 * @return Response result.
+	 */
 	static std::shared_ptr<CurlResponse> download(
 		const std::string &host,
 		const std::string &path,
@@ -50,9 +77,17 @@ public:
 		const std::string &localFile,
 		std::map<std::string, std::string> header);
 
+	/**
+	 * Set default SSL configuration.
+	 * @param sslConfig SSL configuration.
+	 */
 	static void defaultSslConfiguration(const ClientSSLConfig &sslConfig);
 
 private:
+	/**
+	 * Configure SSL.
+	 * @param curl CURL handle.
+	 */
 	static void setSslConfig(CURL *curl);
 
 private:
@@ -62,5 +97,4 @@ private:
 namespace curlpp
 {
 	std::string unescape(const std::string &url);
-
 }

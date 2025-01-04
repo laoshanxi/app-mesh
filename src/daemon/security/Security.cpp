@@ -6,6 +6,7 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "./ldapplugin/LdapImpl.h"
+#include "ConsulConnection.h"
 #include "Security.h"
 
 std::shared_ptr<Security> Security::m_instance = nullptr;
@@ -22,13 +23,27 @@ Security::~Security()
 void Security::init(const std::string &interface)
 {
     const static char fname[] = "Security::init() ";
-    LOG_INF << fname << "Security plugin:" << interface;
+    LOG_INF << fname << "Security plugin: " << interface;
 
     if (interface == JSON_KEY_USER_key_method_local)
     {
         const auto securityYamlFile = Utility::getConfigFilePath(APPMESH_SECURITY_YAML_FILE);
         const auto security = Security::FromJson(Utility::yamlToJson(YAML::LoadFile(securityYamlFile)));
         Security::instance(security);
+    }
+    else if (interface == JSON_KEY_USER_key_method_consul)
+    {
+        ConsulConnection::instance()->initialize();
+        auto securityObj = Security::FromJson(ConsulConnection::instance()->fetchSecurityJson());
+        if (securityObj->getUsers().size())
+        {
+            Security::instance(securityObj);
+            LOG_INF << fname << "Security information successfully retrieved from Consul";
+        }
+        else
+        {
+            throw std::invalid_argument("no security info found in Consul");
+        }
     }
     else if (interface == JSON_KEY_USER_key_method_ldap)
     {
@@ -60,6 +75,12 @@ bool Security::encryptKey()
 void Security::save(const std::string &interface)
 {
     const static char fname[] = "Security::save() ";
+
+    if (interface == JSON_KEY_USER_key_method_consul)
+    {
+        ConsulConnection::instance()->saveSecurity();
+        return;
+    }
 
     // distinguish security.yaml and ldap.yaml
     std::string securityFile = APPMESH_SECURITY_YAML_FILE;

@@ -22,8 +22,6 @@ Roles:
   manage:
     - app-control
     - app-delete
-    - cloud-app-reg
-    - cloud-app-delete
     - app-reg
     - config-set
     - file-download
@@ -48,8 +46,6 @@ Roles:
     - user-list
     - permission-list
     - app-view-all
-    - cloud-app-view
-    - cloud-host-view
     - app-view
     - app-output-view
     - host-resource-view

@@ -28,8 +28,6 @@ User and Role design for App Mesh
       "manage": [
         "app-control",
         "app-delete",
-        "cloud-app-reg",
-        "cloud-app-delete",
         "app-reg",
         "config-set",
         "file-download",
@@ -58,7 +56,6 @@ User and Role design for App Mesh
         "user-list",
         "permission-list",
         "app-view-all",
-        "cloud-app-view",
         "app-view",
         "app-output-view",
         "host-resource-view"
@@ -112,9 +109,6 @@ User and Role design for App Mesh
 |     DEL     | /appmesh/app/app-name          | `app-delete`         |
 |    POST     | /appmesh/app/syncrun?timeout=5 | `run-app-sync`       |
 |    POST     | /appmesh/app/run?timeout=5     | `run-app-async`      |
-|     GET     | /appmesh/cloud/applications    | `cloud-app-view`     |
-|     PUT     | /appmesh/cloud/app/app-name    | `cloud-app-reg`      |
-|   DELETE    | /appmesh/cloud/app/app-name    | `cloud-app-delete`   |
 |     GET     | /appmesh/download              | `file-download`      |
 |    POST     | /appmesh/upload                | `file-upload`        |
 |     GET     | /appmesh/labels                | `label-view`         |

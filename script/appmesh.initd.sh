@@ -21,7 +21,7 @@ set -u # Exit on undefined variables
 # Environment variables with fallback defaults
 export PROG_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd -P)"
 export PROG=${PROG:-"${PROG_HOME}/bin/appsvc"}
-export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/appmesh-entrypoint.sh"}
+export PROG_WATCHDOG=${PROG_WATCHDOG:-"${PROG_HOME}/script/entrypoint.sh"}
 
 # Constants
 readonly TIMEOUT_SECONDS=10                    # Desired timeout in seconds

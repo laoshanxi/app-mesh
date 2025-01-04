@@ -1,8 +1,11 @@
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <memory>
 #include <string>
+
+#include <nlohmann/json.hpp>
 
 /// <summary>
 /// App Process Recover object
@@ -26,7 +29,6 @@ struct Snapshot
 	void persist();
 
 	std::map<std::string, AppSnap> m_apps;
-	std::string m_consulSessionId;
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> m_tokenBlackList;
 };
 

@@ -32,7 +32,6 @@
 #include "PersistManager.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
-#include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
 #include "rest/RestHandler.h"
 #include "rest/TcpClient.h"
@@ -209,13 +208,6 @@ int main(int argc, char *argv[])
 								  p->attach(appSnapshot.m_pid);
 						  }
 					  });
-
-		// consul id recover
-		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
-		if (Configuration::instance()->getConsul()->consulEnabled())
-		{
-			ConsulConnection::instance()->init(consulSsnIdFromRecover);
-		}
 
 		// Main application monitoring loop
 		fs::current_path(config->getWorkDir());

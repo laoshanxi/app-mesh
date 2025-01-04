@@ -45,7 +45,6 @@ public:
 	const std::string &healthCheckCmd() const;
 	const std::shared_ptr<User> &getOwner() const;
 	int getOwnerPermission() const;
-	bool isCloudApp() const;
 	STATUS getStatus() const;
 	bool isPersistAble() const;
 	void setUnPersistable();

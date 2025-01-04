@@ -393,7 +393,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		{
 			m_stdoutHandler = ACE_OS::open("/dev/null", O_RDWR);
 		}
-		if (stdinFileContent != EMPTY_STR_JSON && stdinFileContent != CLOUD_STR_JSON)
+		if (stdinFileContent != EMPTY_STR_JSON)
 		{
 			std::ofstream inputFile(m_stdinFileName, std::ios::trunc);
 			if (stdinFileContent.is_string())

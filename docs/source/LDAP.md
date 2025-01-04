@@ -47,8 +47,7 @@ AppMesh can manage user with groups, each group map to a LDAP organization unit 
         ],
         "view": [
             "config-view",
-            "app-view-all",
-            "cloud-app-view"
+            "app-view-all"
         ]
     }
 }

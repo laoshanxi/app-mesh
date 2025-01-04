@@ -122,11 +122,6 @@ int Application::getOwnerPermission() const
 	return m_ownerPermission;
 }
 
-bool Application::isCloudApp() const
-{
-	return (m_metadata == CLOUD_STR_JSON);
-}
-
 STATUS Application::getStatus() const
 {
 	return m_status.load();

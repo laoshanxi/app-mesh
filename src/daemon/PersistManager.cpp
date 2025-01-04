@@ -5,7 +5,6 @@
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"
-#include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
 #include "security/TokenBlacklist.h"
 
@@ -54,7 +53,6 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 			}
 		}
 	}
-	snap->m_consulSessionId = ConsulConnection::instance()->consulSessionId();
 	snap->m_tokenBlackList = TOKEN_BLACK_LIST::instance()->getTokens();
 	return snap;
 }
@@ -125,7 +123,7 @@ bool Snapshot::operator==(const Snapshot &snap) const
 				return false;
 		}
 
-	return snap.m_consulSessionId == m_consulSessionId;
+	return true;
 }
 
 nlohmann::json Snapshot::AsJson() const
@@ -142,8 +140,6 @@ nlohmann::json Snapshot::AsJson() const
 		apps[app.first] = std::move(json);
 	}
 	result["Applications"] = std::move(apps);
-
-	result["ConsulSessionId"] = std::string(m_consulSessionId);
 
 	// TODO: use seperate persist file or move to 3rd storage
 	// TokenBlackList
@@ -172,7 +168,6 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const nlohmann::json &obj)
 							GET_JSON_INT64_VALUE(app.value(), SNAPSHOT_JSON_KEY_starttime))));
 				}
 			}
-		snap->m_consulSessionId = GET_JSON_STR_VALUE(obj, "ConsulSessionId");
 		if (obj.contains("TokenBlackList"))
 			for (auto &token : obj.at("TokenBlackList").items())
 			{

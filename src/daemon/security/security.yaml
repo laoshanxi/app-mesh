@@ -35,8 +35,6 @@ Roles:
   manage:
     - app-control
     - app-delete
-    - cloud-app-reg
-    - cloud-app-delete
     - app-reg
     - config-set
     - file-download
@@ -63,9 +61,6 @@ Roles:
     - permission-list
     - passwd-change-self
     - app-view-all
-    - cloud-app-view
-    - cloud-app-output-view
-    - cloud-host-view
     - app-view
     - app-output-view
     - user-totp-active

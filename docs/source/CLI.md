@@ -55,10 +55,9 @@ Additional Information:
 ```text
 $ appc ls
 ID  NAME           OWNER STATUS   HEALTH PID     USER  MEMORY   %CPU RETURN AGE    DURATION STARTS COMMAND
-1   ping           mesh  enabled  -      -       -     -        -    2      6d     -        1      "ping github.com -w 300"
-2   backup         admin disabled -      -       -     -        -    -      6d     -        0      "mkdir -p /opt/appmesh/work/backup\ncd /*"
-4   start_app      -     enabled  OK     -       -     -        -    0      2m1s   -        1      "ls"
-5   pyrun          mesh  disabled -      -       -     -        -    -      2m1s   -        0      "python3 /opt/appmesh/bin/py_exec.py"
+1   pyrun          mesh  disabled -      -       -     -        -    -      7m34s  -        0      "python3 ../bin/py_exec.py"
+2   ping           mesh  enabled  OK     4894    lv    13.5 Mi  0    9      7m34s  N/A      2      "ping -w 300 -c 300 github.com"
+3   backup         admin enabled  -      -       -     -        -    -      7m34s  -        0      "mkdir -p /opt/appmesh/work/backup\ncd /*"
 ```
 
 - Register a New Application and View Output
@@ -119,43 +118,57 @@ $ appc ls -n ping -o
 
 ```text
 $ appc add
-Register a new application:
-  -b [ --url ] arg (=https://localhost:6060) Server URL
-  -z [ --forward ] arg                       Target host (or with port) for request forwarding
-  -u [ --user ] arg                          User name
-  -x [ --password ] arg                      User password
-  -V [ --verbose ]                           Enable verbose output
-  -n [ --name ] arg                          Application name (required)
-  -a [ --desc ] arg                          Application description
-  -g [ --metadata ] arg                      Metadata string/JSON (stdin input, '@' for file input)
-  --perm arg                                 Permission bits [group & other] (1=deny, 2=read, 3=write)
-  -c [ --cmd ] arg                           Command line with arguments (required)
-  -S [ --shell ]                             Enable shell mode for multiple commands
-  --session_login                            Execute with session login context
-  -l [ --health_check ] arg                  Health check command (returns 0 for healthy)
-  -d [ --docker_image ] arg                  Docker image for containerized execution
-  -w [ --workdir ] arg                       Working directory path
-  -s [ --status ] arg (=1)                   Initial status (true=enabled, false=disabled)
-  -t [ --start_time ] arg                    Start time (ISO8601: '2020-10-11T09:22:05')
-  -E [ --end_time ] arg                      End time (ISO8601: '2020-10-11T10:22:05')
-  -j [ --daily_start ] arg                   Daily start time ('09:00:00+08')
-  -y [ --daily_end ] arg                     Daily end time ('20:00:00+08')
-  -m [ --memory ] arg                        Memory limit (MB)
-  -v [ --virtual_memory ] arg                Virtual memory limit (MB)
-  -r [ --cpu_shares ] arg                    CPU shares (relative weight)
-  -p [ --pid ] arg                           Attach to existing process ID
-  -O [ --stdout_cache_num ] arg (=3)         Number of stdout cache files
-  -e [ --env ] arg                           Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to
-                                             input docker run parameters)
-  --sec_env arg                              Encrypted environment variables in server side with application owner's cipher
-  -i [ --interval ] arg                      Start interval (ISO8601 duration or cron: 'P1Y2M3DT4H5M6S', '* */5 * * * *')
-  --cron                                     Use cron expression for interval
-  -q [ --retention ] arg                     Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')
-  --exit arg (=standby)                      Exit behavior [restart|standby|keepalive|remove]
-  --control arg                              Exit code behaviors (--control CODE:ACTION, overrides default exit)
-  -f [ --force ]                             Skip confirmation prompts
-  --stdin arg                                Read YAML from stdin ('std') or file
-  -h [ --help ]                              Display command usage and exit
+Register a new application 
+Usage: appc add [options]:
+
+Connection Options:
+  -H [ --host-url ] arg             Server URL [default: https://localhost:6060]
+  -F [ --forward-to ] arg           Forward requests to target host[:port]
+  -U [ --user ] arg                 User name for authentication
+
+Basic Configuration Options:
+  -a [ --app ] arg                  Application name (required)
+  -c [ --cmd ] arg                  Command line with arguments (required)
+  -w [ --working-dir ] arg          Working directory path
+  -d [ --description ] arg          Application description
+  -s [ --status ] arg (=1)          Initial status (true=enabled, false=disabled)
+
+Runtime Options:
+  -u [ --shell ]                    Enable shell mode for multiple commands
+  -G [ --session-login ]            Execute with session login context
+  -H [ --health-check ] arg         Health check command (returns 0 for healthy)
+  -I [ --docker-image ] arg         Docker image for containerized execution
+  -P [ --pid ] arg                  Attach to existing process ID
+
+Schedule Options:
+  -B [ --begin-time ] arg           Start time (ISO8601: '2020-10-11T09:22:05')
+  -X [ --end-time ] arg             End time (ISO8601: '2020-10-11T10:22:05')
+  -S [ --daily-begin ] arg          Daily start time ('09:00:00+08')
+  -E [ --daily-end ] arg            Daily end time ('20:00:00+08')
+  -i [ --interval ] arg             Start interval (ISO8601 duration or cron: 'P1Y2M3DT4H5M6S', '* */5 * * * *')
+  -Y [ --cron ]                     Use cron expression for interval
+
+Resource Limits Options:
+  -M [ --memory-limit ] arg         Memory limit (MB)
+  -V [ --virtual-memory ] arg       Virtual memory limit (MB)
+  -C [ --cpu-shares ] arg           CPU shares (relative weight)
+  -N [ --log-cache-size ] arg (=3)  Number of stdout cache files
+
+Advanced Options:
+  -p [ --permission ] arg           Permission bits [group & other] (1=deny, 2=read, 3=write)
+  -m [ --metadata ] arg             Metadata string/JSON (stdin input, '@' for file input)
+  -e [ --env ] arg                  Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to input 
+                                    docker run parameters)
+  -z [ --security-env ] arg         Encrypted environment variables in server side with application owner's cipher
+  -R [ --stop-timeout ] arg         Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')
+  -Q [ --exit ] arg (=standby)      Exit behavior [restart|standby|keepalive|remove]
+  -T [ --control ] arg              Exit code behaviors (--control CODE:ACTION, overrides default exit)
+  -D [ --stdin ] arg                Read YAML from stdin ('std') or file
+
+Other Options:
+  -v [ --verbose ]                  Enable verbose output
+  -h [ --help ]                     Display command usage and exit
+  -f [ --force ]                    Skip confirmation prompts
 
 
 # register a app with a native command
@@ -210,70 +223,6 @@ Success
 appc enable -n ping
 appc disable -n ping
 appc restart -n ping
-```
-
----
-
-## Cloud management
-
-- Join Consul Cluster
-
-```text
-# appc join
-Join App Mesh cluster:
-  -b [ --url ] arg (=https://localhost:6060) Server URL.
-  -z [ --forward ] arg                       Target host name (or with port) for request forwarding.
-  -u [ --user ] arg                          User name for App Mesh connection.
-  -x [ --password ] arg                      User password for App Mesh connection.
-  -V [ --verbose ]                           Enable verbose output.
-  -c [ --consul ] arg                        Consul URL (e.g., http://localhost:8500).
-  -m [ --main ]                              Join as main node.
-  -w [ --worker ]                            Join as worker node.
-  -r [ --proxy ] arg                         App Mesh proxy URL.
-  -u [ --user ] arg                          Basic auth user name for Consul REST.
-  -p [ --pass ] arg                          Basic auth user password for Consul REST.
-  -l [ --ttl ] arg (=30)                     Consul session TTL in seconds.
-  -s [ --security ]                          Enable Consul security (security persist will use Consul storage).
-  -h [ --help ]                              Display command usage and exit.
-
-appc join -c http://127.0.0.1:8500 -l 30 -m -w
-App Mesh will join cluster with parameter:
-{
-  "EnableConsulSecurity": false,
-  "IsMainNode": true,
-  "IsWorkerNode": true,
-  "SessionTTL": 30,
-  "Url": "http://127.0.0.1:8500"
-}
-
-```
-
-- Cloud Applications
-
-```text
-$ appc cloud
-{
-  "myapp": {
-    "condition": {
-      "arch": "x86_64",
-      "os_version": "centos7.6"
-    },
-    "content": {
-      "command": "sleep 30",
-      "metadata": "cloud-app",
-      "name": "myapp",
-      "register_time": "2021-02-18 20:24:03+08",
-      "shell": true,
-      "status": 1
-    },
-    "port": 6666,
-    "priority": 0,
-    "replication": 1,
-    "status": {
-      "ubuntu-lsx": 0
-    }
-  }
-}
 ```
 
 ---

@@ -251,15 +251,19 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	header[DOCKER_REQUEST_ID_HEADER] = uuid;
 	header[HMAC_HTTP_HEADER] = HMACVerifierSingleton::instance()->generateHMAC(uuid);
 
+	std::string bodyContent;
 	if (body)
+	{
+		bodyContent = body->dump();
 		LOG_DBG << fname << path << "\n"
-				<< Utility::prettyJson(body->dump());
+				<< Utility::prettyJson(bodyContent);
+	}
 
 	std::string errorMsg = std::string("exception caught: ").append(path);
 	auto response = std::make_shared<CurlResponse>();
 	try
 	{
-		auto resp = RestClient::request(restURL, mtd, wrapperPath, body, header, query);
+		auto resp = RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query);
 		if (resp->status_code != web::http::status_codes::OK)
 			this->startError(resp->text);
 		return resp;
