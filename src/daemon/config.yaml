@@ -53,7 +53,7 @@ REST:
     # Defaults to the hostname if left empty.
     Issuer: ""
 
-    # Authentication type to use [local/ldap].
+    # Authentication type to use [local/ldap/consul].
     SecurityInterface: local
 
   SSL:
@@ -76,32 +76,6 @@ REST:
 
     # Enables or disables delegated server verification.
     VerifyServerDelegate: false
-
-Consul:
-  # Proxy URL for accessing Consul, if needed.
-  AppmeshProxyUrl: ""
-
-  # Enables or disables Consul's security features.
-  EnableConsulSecurity: false
-
-  # Node role configuration.
-  # In production, consider assigning separate roles for main and worker nodes.
-  IsMainNode: true
-  IsWorkerNode: true
-
-  # Consul authentication password.
-  # Required if EnableConsulSecurity is true.
-  Pass: ""
-
-  # Session time-to-live (TTL) for Consul in seconds.
-  SessionTTL: 30
-
-  # URL of the Consul server, required for service registration and discovery.
-  Url: ""
-
-  # Consul authentication username.
-  # Required if EnableConsulSecurity is true.
-  User: ""
 
 # Node labels with 2 default samples provided.
 Labels:

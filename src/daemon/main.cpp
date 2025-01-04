@@ -210,13 +210,6 @@ int main(int argc, char *argv[])
 						  }
 					  });
 
-		// consul id recover
-		std::string consulSsnIdFromRecover = snap ? snap->m_consulSessionId : "";
-		if (Configuration::instance()->getConsul()->consulEnabled())
-		{
-			ConsulConnection::instance()->init(consulSsnIdFromRecover);
-		}
-
 		// Main application monitoring loop
 		fs::current_path(config->getWorkDir());
 		int tcpErrorCounter = 0;

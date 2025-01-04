@@ -75,7 +75,7 @@ func (r *Cloud) registerHttpService() error {
 	return nil
 }
 
-func (r *Cloud) HostMetricsReportPeriod(ctx context.Context) error {
+func (r *Cloud) ReportHostMetricsPeriodically(ctx context.Context) error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		logManager.Log(fmt.Sprintf("failed to get hostname: %v", err))
@@ -85,7 +85,7 @@ func (r *Cloud) HostMetricsReportPeriod(ctx context.Context) error {
 	kvPath := fmt.Sprintf("appmesh/nodes/%s/resources", hostname)
 
 	// Initial report
-	r.doReport(kvPath)
+	r.updateHostResourcesInConsul(kvPath)
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop() // Ensure ticker is cleaned up when the function exits
@@ -96,12 +96,12 @@ func (r *Cloud) HostMetricsReportPeriod(ctx context.Context) error {
 			logManager.Log(fmt.Sprintf("context canceled: %v", ctx.Err()))
 			return ctx.Err()
 		case <-ticker.C:
-			r.doReport(kvPath)
+			r.updateHostResourcesInConsul(kvPath)
 		}
 	}
 }
 
-func (r *Cloud) doReport(kvPath string) {
+func (r *Cloud) updateHostResourcesInConsul(kvPath string) {
 	consul := getConsul()
 	if consul == nil {
 		logManager.Log("consul not initialized")
@@ -115,7 +115,7 @@ func (r *Cloud) doReport(kvPath string) {
 	}
 
 	// Fetch resources and report to Consul
-	resources, err := r.appmesh.GetCloudResource()
+	resources, err := r.appmesh.GetHostResources()
 	if err != nil {
 		logManager.Log(fmt.Sprintf("Failed to get cloud resources: %v", err))
 		return

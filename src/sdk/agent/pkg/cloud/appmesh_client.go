@@ -59,11 +59,11 @@ func NewAppMeshClient() *AppMesh {
 	return client
 }
 
-// GetCloudResource retrieves cloud resources via a TCP request
-func (r *AppMesh) GetCloudResource() (string, error) {
+// GetHostResources retrieves cloud resources via a TCP request
+func (r *AppMesh) GetHostResources() (string, error) {
 	data := r.generateRequest()
 	data.HttpMethod = "GET"
-	data.RequestUri = "/appmesh/cloud/resources"
+	data.RequestUri = "/appmesh/cloud/resources" // This URI rely on PSK (Pre-Shared Key) check instead of permission check
 
 	resp, err := r.request(data)
 	if err != nil {

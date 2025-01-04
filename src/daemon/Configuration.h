@@ -8,6 +8,7 @@
 
 #include <ace/Map_Manager.h>
 #include <ace/Recursive_Thread_Mutex.h>
+#include <boost/filesystem.hpp>
 #include <nlohmann/json.hpp>
 
 class RestHandler;
@@ -78,30 +79,6 @@ public:
 		std::shared_ptr<JsonJwt> m_jwt;
 	};
 
-	struct JsonConsul
-	{
-		JsonConsul();
-		static std::shared_ptr<JsonConsul> FromJson(const nlohmann::json &jsonObj, int appmeshRestPort);
-		nlohmann::json AsJson() const;
-		bool consulEnabled() const;
-		bool consulSecurityEnabled() const;
-		const std::string appmeshUrl() const;
-
-		bool m_isMaster;
-		bool m_isWorker;
-		// http://consul.service.consul:8500
-		std::string m_consulUrl;
-		// appmesh proxy url, used to report to Consul to expose local appmesh listen port address
-		std::string m_proxyUrl;
-		// in case of not set m_proxyUrl, use default dynamic value https://localhost:6060
-		std::string m_defaultProxyUrl;
-		// TTL (string: "") - Specifies the number of seconds (between 10s and 86400s).
-		int m_ttl;
-		bool m_securitySync;
-		std::string m_basicAuthUser;
-		std::string m_basicAuthPass;
-	};
-
 	Configuration();
 	virtual ~Configuration();
 
@@ -155,7 +132,6 @@ public:
 	const std::string getDescription() const;
 	const std::string getPosixTimezone() const;
 
-	const std::shared_ptr<Configuration::JsonConsul> getConsul() const;
 	const std::shared_ptr<JsonJwt> getJwt() const;
 	bool checkOwnerPermission(const std::string &user, const std::shared_ptr<User> &appOwner, int appPermission, bool requestWrite) const;
 
@@ -169,7 +145,6 @@ private:
 	mutable ACE_Map_Manager<std::string, int, ACE_Recursive_Thread_Mutex> m_appNameIndexMap;
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
-	std::shared_ptr<JsonConsul> m_consul;
 
 	mutable std::recursive_mutex m_hotupdateMutex;
 

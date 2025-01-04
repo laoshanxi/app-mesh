@@ -7,7 +7,7 @@
 #include <boost/program_options.hpp>
 #include <nlohmann/json.hpp>
 
-#include "../../common/Utility.h"
+#include "../common/Utility.h"
 
 struct CurlResponse;
 namespace po = boost::program_options;

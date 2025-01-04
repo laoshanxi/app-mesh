@@ -14,7 +14,6 @@ Welcome to AppMesh's documentation!
    README.md
    Build.md
    CLI.md
-   CONSUL.md
    Development.md
    Install.md
    JWT.md

@@ -23,33 +23,6 @@ class TestAppMeshClient(TestCase):
     unit test for AppMeshClient
     """
 
-    def test_cloud(self):
-        """test cloud"""
-        client = AppMeshClient()
-        client.login("admin", "admin123")
-        if "Url" in client.view_config()["Consul"] and client.view_config()["Consul"]["Url"] != "":
-            self.assertIsNotNone(client.view_all_cloud_apps())
-            self.assertIsNotNone(
-                client.add_cloud_app(
-                    {
-                        "condition": {"arch": "x86_64", "os_version": "centos7.6"},
-                        "content": {
-                            "command": "sleep 30",
-                            "metadata": "cloud-sdk-app",
-                            "name": "cloud",
-                            "shell": True,
-                        },
-                        "port": 6667,
-                        "priority": 0,
-                        "replication": 1,
-                        "memoryMB": 1024,
-                    }
-                )
-            )
-            self.assertEqual(client.view_cloud_app("cloud")["name"], "cloud")
-            self.assertTrue(client.delete_cloud_app("cloud"))
-            self.assertIsNotNone(client.view_cloud_nodes())
-
     def test_app_run(self):
         """test app run"""
         client = AppMeshClient()
@@ -202,7 +175,7 @@ class TestAppMeshClient(TestCase):
         self.assertTrue(client.unlock_user("mesh"))
 
         self.assertTrue(
-            client.update_role("manage", ["app-control", "app-delete", "cloud-app-reg", "cloud-app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"])
+            client.update_role("manage", ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"])
         )
 
         self.assertIn("manage", client.view_roles())

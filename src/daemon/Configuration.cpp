@@ -30,7 +30,6 @@ Configuration::Configuration()
 	m_baseConfig = std::make_shared<BaseConfig>();
 	m_label = std::make_unique<Label>();
 	m_rest = std::make_shared<JsonRest>();
-	m_consul = std::make_shared<JsonConsul>();
 }
 
 Configuration::~Configuration()
@@ -86,11 +85,6 @@ std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue
 		config->m_label = Label::FromJson(jsonValue.at(JSON_KEY_Labels));
 		// add default label here
 		config->m_label->readDefaultLabel();
-	}
-	// Consul
-	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSUL))
-	{
-		config->m_consul = JsonConsul::FromJson(jsonValue.at(JSON_KEY_CONSUL), config->getRestListenPort());
 	}
 
 	return config;
@@ -157,9 +151,6 @@ nlohmann::json Configuration::AsJson()
 
 	// Labels
 	result[JSON_KEY_Labels] = m_label->AsJson();
-
-	// Consul
-	result[JSON_KEY_CONSUL] = m_consul->AsJson();
 
 	// Build version
 	result[JSON_KEY_VERSION] = std::string(__MICRO_VAR__(BUILD_TAG));
@@ -377,12 +368,6 @@ const std::string Configuration::getPosixTimezone() const
 	return m_baseConfig->m_posixTimezone;
 }
 
-const std::shared_ptr<Configuration::JsonConsul> Configuration::getConsul() const
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_consul;
-}
-
 const std::shared_ptr<Configuration::JsonJwt> Configuration::getJwt() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -545,7 +530,6 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 	const static char fname[] = "Configuration::hotUpdate() ";
 
 	LOG_DBG << fname << "update configuration: " << jsonValue.dump();
-	bool consulUpdated = false;
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 
@@ -633,19 +617,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 		// Labels
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
 			SET_COMPARE(this->m_label, newConfig->m_label);
+	}
 
-		// Consul
-		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CONSUL))
-		{
-			SET_COMPARE(this->m_consul, newConfig->m_consul);
-			consulUpdated = true;
-		}
-	}
-	// do not hold Configuration lock to access timer, timer lock is higher level
-	if (consulUpdated)
-	{
-		ConsulConnection::instance()->init();
-	}
 	ResourceCollection::instance()->getHostName(true);
 
 	this->dump();
@@ -1019,73 +992,4 @@ nlohmann::json Configuration::JsonJwt::AsJson() const
 std::string Configuration::JsonJwt::getJwtInterface() const
 {
 	return m_jwtInterface;
-}
-
-std::shared_ptr<Configuration::JsonConsul> Configuration::JsonConsul::FromJson(const nlohmann::json &jsonObj, int appmeshRestPort)
-{
-	const static char fname[] = "Configuration::JsonConsul::FromJson() ";
-	auto consul = std::make_shared<JsonConsul>();
-	consul->m_consulUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_URL);
-	consul->m_proxyUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_APPMESH_PROXY_URL);
-	consul->m_basicAuthPass = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_AUTH_PASS);
-	consul->m_basicAuthUser = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_CONSUL_AUTH_USER);
-	consul->m_isMaster = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_MAIN);
-	consul->m_isWorker = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_IS_WORKER);
-	SET_JSON_INT_VALUE(jsonObj, JSON_KEY_CONSUL_SESSION_TTL, consul->m_ttl);
-	SET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_CONSUL_SECURITY, consul->m_securitySync);
-	const static boost::regex urlExpr("(http|https)://((\\w+\\.)*\\w+)(\\:[0-9]+)?");
-	if (consul->m_consulUrl.length() && !boost::regex_match(consul->m_consulUrl, urlExpr))
-	{
-		LOG_WAR << fname << "incorrect Consul url: " << consul->m_consulUrl;
-		throw std::invalid_argument("incorrect Consul url");
-	}
-	if (consul->m_ttl < 5 && jsonObj.contains(JSON_KEY_CONSUL_SESSION_TTL))
-		throw std::invalid_argument("session TTL should not less than 5s");
-
-	{
-		auto hostname = ResourceCollection::instance()->getHostName();
-		consul->m_defaultProxyUrl = Utility::stringFormat("https://%s:%d", hostname.c_str(), appmeshRestPort);
-	}
-	return consul;
-}
-
-nlohmann::json Configuration::JsonConsul::AsJson() const
-{
-	auto result = nlohmann::json::object();
-	if (m_consulUrl.length())
-		result[JSON_KEY_CONSUL_URL] = std::string(m_consulUrl);
-	result[JSON_KEY_CONSUL_IS_MAIN] = (m_isMaster);
-	result[JSON_KEY_CONSUL_IS_WORKER] = (m_isWorker);
-	result[JSON_KEY_CONSUL_SESSION_TTL] = (m_ttl);
-	result[JSON_KEY_CONSUL_SECURITY] = (m_securitySync);
-	if (m_proxyUrl.length())
-		result[JSON_KEY_CONSUL_APPMESH_PROXY_URL] = std::string(m_proxyUrl);
-	if (m_basicAuthUser.length())
-		result[JSON_KEY_CONSUL_AUTH_USER] = std::string(m_basicAuthUser);
-	if (m_basicAuthPass.length())
-		result[JSON_KEY_CONSUL_AUTH_PASS] = std::string(m_basicAuthPass);
-	return result;
-}
-
-bool Configuration::JsonConsul::consulEnabled() const
-{
-	return !m_consulUrl.empty();
-}
-
-bool Configuration::JsonConsul::consulSecurityEnabled() const
-{
-	return !m_consulUrl.empty() && m_securitySync;
-}
-
-const std::string Configuration::JsonConsul::appmeshUrl() const
-{
-	if (m_proxyUrl.empty())
-		return m_defaultProxyUrl;
-	else
-		return m_proxyUrl;
-}
-
-Configuration::JsonConsul::JsonConsul()
-	: m_isMaster(false), m_isWorker(false), m_ttl(CONSUL_SESSION_DEFAULT_TTL), m_securitySync(false)
-{
 }

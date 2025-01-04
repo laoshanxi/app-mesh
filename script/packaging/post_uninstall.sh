@@ -81,7 +81,7 @@ main() {
 	cleanup_systemd_service
 	cleanup_initd_service
 	cleanup_bash_completion
-	cleanup_temp_files
+	# cleanup_temp_files
 	cleanup_binary
 
 	info "Post-uninstallation cleanup completed successfully"

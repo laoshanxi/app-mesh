@@ -14,52 +14,52 @@
 #include <readline/history.h>
 #include <readline/readline.h>
 
-#include "../../common/DateTime.h"
-#include "../../common/DurationParse.h"
-#include "../../common/Password.h"
-#include "../../common/RestClient.h"
-#include "../../common/Utility.h"
-#include "../../common/os/linux.hpp"
+#include "../common/DateTime.h"
+#include "../common/DurationParse.h"
+#include "../common/Password.h"
+#include "../common/RestClient.h"
+#include "../common/Utility.h"
+#include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
 #include "cmd_args.h"
 
-#define CONNECTION_OPTIONS 														\
+#define CONNECTION_OPTIONS                                                      \
 	po::options_description connection("Connection Options", BOOST_DESC_WIDTH); \
-	connection.add_options() 													\
-		(HOST_URL_ARGS, po::value<std::string>(), (std::string("Server URL [default: ") + m_defaultUrl + "]").c_str())	\
-		(FORWARD_TO_ARGS, po::value<std::string>(), "Forward requests to target host[:port]") 							\
-		(USERNAME_ARGS, po::value<std::string>(), "User name for authentication")
-		
-#define OTHER_OPTIONS 													\
+	connection.add_options()													\
+	(HOST_URL_ARGS, po::value<std::string>(), (std::string("Server URL [default: ") + m_defaultUrl + "]").c_str())	\
+	(FORWARD_TO_ARGS, po::value<std::string>(), "Forward requests to target host[:port]")	\
+	(USERNAME_ARGS, po::value<std::string>(), "User name for authentication")
+
+#define OTHER_OPTIONS                                                 	\
 	po::options_description other("Other Options", BOOST_DESC_WIDTH); 	\
 	other.add_options()													\
-		(VERBOSE_ARGS, "Enable verbose output")							\
-		(HELP_ARGS, "Display command usage and exit")
+	(VERBOSE_ARGS, "Enable verbose output")								\
+	(HELP_ARGS, "Display command usage and exit")
 
-#define GET_USER_NAME_PASS                                              \
-	if (m_commandLineVariables.count(USERNAME))  						\
-	{                                                                   \
-		m_username = m_commandLineVariables[USERNAME].as<std::string>();\
-		m_userpwd = inputPasswd();               						\
-	}                                                                   \
+#define GET_USER_NAME_PASS                                               \
+	if (m_commandLineVariables.count(USERNAME))                          \
+	{                                                                    \
+		m_username = m_commandLineVariables[USERNAME].as<std::string>(); \
+		m_userpwd = inputPasswd();                                       \
+	}                                                                    \
 	log4cpp::Category::getRoot().setPriority(m_commandLineVariables.count(VERBOSE) ? log4cpp::Priority::DEBUG : log4cpp::Priority::INFO);
 
-#define HELP_ARG_CHECK_WITH_RETURN                \
-	GET_USER_NAME_PASS                            \
-	if (m_commandLineVariables.count(HELP) > 0)   \
-	{                                             \
-		std::cout << desc << std::endl;           \
-		return;                                   \
-	}                                             \
+#define HELP_ARG_CHECK_WITH_RETURN                                                                                                  \
+	GET_USER_NAME_PASS                                                                                                              \
+	if (m_commandLineVariables.count(HELP) > 0)                                                                                     \
+	{                                                                                                                               \
+		std::cout << desc << std::endl;                                                                                             \
+		return;                                                                                                                     \
+	}                                                                                                                               \
 	m_currentUrl = m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>(); \
 	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
-#define HELP_ARG_CHECK_WITH_RETURN_ZERO           \
-	GET_USER_NAME_PASS                            \
-	if (m_commandLineVariables.count(HELP) > 0)   \
-	{                                             \
-		std::cout << desc << std::endl;           \
-		return 0;                                 \
-	}                                             \
+#define HELP_ARG_CHECK_WITH_RETURN_ZERO                                                                                             \
+	GET_USER_NAME_PASS                                                                                                              \
+	if (m_commandLineVariables.count(HELP) > 0)                                                                                     \
+	{                                                                                                                               \
+		std::cout << desc << std::endl;                                                                                             \
+		return 0;                                                                                                                   \
+	}                                                                                                                               \
 	m_currentUrl = m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>(); \
 	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
 // Each user should have its own token path
@@ -93,9 +93,7 @@ void ArgumentParser::initArgs()
 		seteuid(getpwnam(getenv("SUDO_USER"))->pw_uid);
 	}
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
-	global.add_options()
-	("command", po::value<std::string>(), "Command to execute.")
-	("subargs", po::value<std::vector<std::string>>(), "Arguments for command.");
+	global.add_options()("command", po::value<std::string>(), "Command to execute.")("subargs", po::value<std::vector<std::string>>(), "Arguments for command.");
 
 	po::positional_options_description pos;
 	pos.add("command", 1).add("subargs", -1);
@@ -281,8 +279,7 @@ void ArgumentParser::processLogon()
 	CONNECTION_OPTIONS;
 	po::options_description authenticate("Authentication Options", BOOST_DESC_WIDTH);
 	authenticate.add_options()
-		(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format [default: PT7D]")
-		;
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format [default: PT7D]");
 	OTHER_OPTIONS;
 	desc.add(connection).add(authenticate).add(other);
 	shiftCommandLineArgs(desc);
@@ -379,55 +376,51 @@ void ArgumentParser::processAppAdd()
 	CONNECTION_OPTIONS;
 	po::options_description basic("Basic Configuration Options", BOOST_DESC_WIDTH);
 	basic.add_options()
-		(APP_ARGS, po::value<std::string>(), "Application name (required)")
-		(COMMAND_ARGS, po::value<std::string>(), "Command line with arguments (required)")
-		(WORKING_DIR_ARGS, po::value<std::string>(), "Working directory path")
-		(DESC_ARGS, po::value<std::string>(), "Application description")
-		(STATUS_ARGS, po::value<bool>()->default_value(true), "Initial status (true=enabled, false=disabled)")
-		;
+	(APP_ARGS, po::value<std::string>(), "Application name (required)")
+	(COMMAND_ARGS, po::value<std::string>(), "Command line with arguments (required)")
+	(WORKING_DIR_ARGS, po::value<std::string>(), "Working directory path")
+	(DESC_ARGS, po::value<std::string>(), "Application description")
+	(STATUS_ARGS, po::value<bool>()->default_value(true), "Initial status (true=enabled, false=disabled)");
 	po::options_description runtime("Runtime Options", BOOST_DESC_WIDTH);
 	runtime.add_options()
-		(SHELL_ARGS, "Enable shell mode for multiple commands")
-		(SESSION_LOGIN_ARGS, "Execute with session login context")
-		(HEALTHCHECK_ARGS, po::value<std::string>(), "Health check command (returns 0 for healthy)")
-		(DOCKER_IMAGE_ARGS, po::value<std::string>(), "Docker image for containerized execution")
-		(PID_ARGS, po::value<int>(), "Attach to existing process ID")
-		;
+	(SHELL_ARGS, "Enable shell mode for multiple commands")
+	(SESSION_LOGIN_ARGS, "Execute with session login context")
+	(HEALTHCHECK_ARGS, po::value<std::string>(), "Health check command (returns 0 for healthy)")
+	(DOCKER_IMAGE_ARGS, po::value<std::string>(), "Docker image for containerized execution")
+	(PID_ARGS, po::value<int>(), "Attach to existing process ID");
 	po::options_description schedule("Schedule Options", BOOST_DESC_WIDTH);
 	schedule.add_options()
-		(BEGIN_TIME_ARGS, po::value<std::string>(), "Start time (ISO8601: '2020-10-11T09:22:05')")
-		(END_TIME_ARGS, po::value<std::string>(), "End time (ISO8601: '2020-10-11T10:22:05')")
-		(DAILY_BEGIN_ARGS, po::value<std::string>(), "Daily start time ('09:00:00+08')")
-		(DAILY_END_ARGS, po::value<std::string>(), "Daily end time ('20:00:00+08')")
-		(INTERVAL_ARGS, po::value<std::string>(), "Start interval (ISO8601 duration or cron: 'P1Y2M3DT4H5M6S', '* */5 * * * *')")
-		(CRON_ARGS, "Use cron expression for interval")
-		;
+	(BEGIN_TIME_ARGS, po::value<std::string>(), "Start time (ISO8601: '2020-10-11T09:22:05')")
+	(END_TIME_ARGS, po::value<std::string>(), "End time (ISO8601: '2020-10-11T10:22:05')")
+	(DAILY_BEGIN_ARGS, po::value<std::string>(), "Daily start time ('09:00:00+08')")
+	(DAILY_END_ARGS, po::value<std::string>(), "Daily end time ('20:00:00+08')")
+	(INTERVAL_ARGS, po::value<std::string>(), "Start interval (ISO8601 duration or cron: 'P1Y2M3DT4H5M6S', '* */5 * * * *')")
+	(CRON_ARGS, "Use cron expression for interval");
 	po::options_description resource("Resource Limits Options", BOOST_DESC_WIDTH);
 	resource.add_options()
-		(MEMORY_LIMIT_ARGS, po::value<int>(), "Memory limit (MB)")
-		(VIRTUAL_MEMORY_ARGS, po::value<int>(), "Virtual memory limit (MB)")
-		(CPU_SHARES_ARGS, po::value<int>(), "CPU shares (relative weight)")
-		(LOG_CACHE_SIZE_ARGS, po::value<int>()->default_value(3), "Number of stdout cache files")
-		;
+	(MEMORY_LIMIT_ARGS, po::value<int>(), "Memory limit (MB)")
+	(VIRTUAL_MEMORY_ARGS, po::value<int>(), "Virtual memory limit (MB)")
+	(CPU_SHARES_ARGS, po::value<int>(), "CPU shares (relative weight)")
+	(LOG_CACHE_SIZE_ARGS, po::value<int>()->default_value(3), "Number of stdout cache files");
 	po::options_description advanced("Advanced Options", BOOST_DESC_WIDTH);
 	advanced.add_options()
-		(PERMISSION_ARGS, po::value<int>(), "Permission bits [group & other] (1=deny, 2=read, 3=write)")
-		(METADATA_ARGS, po::value<std::string>(), "Metadata string/JSON (stdin input, '@' for file input)")
-		(ENV_ARGS, po::value<std::vector<std::string>>(), "Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to input docker run parameters)")
-		(SECURITY_ENV_ARGS, po::value<std::vector<std::string>>(), "Encrypted environment variables in server side with application owner's cipher")
-		(STOP_TIMEOUT_ARGS, po::value<std::string>(), "Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')")
-		(EXIT_ARGS, po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Exit behavior [restart|standby|keepalive|remove]")
-		(CONTROL_ARGS, po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default exit)")
-		(STDIN_ARGS, po::value<std::string>(), "Read YAML from stdin ('std') or file")
-		;
+	(PERMISSION_ARGS, po::value<int>(), "Permission bits [group & other] (1=deny, 2=read, 3=write)")
+	(METADATA_ARGS, po::value<std::string>(), "Metadata string/JSON (stdin input, '@' for file input)")
+	(ENV_ARGS, po::value<std::vector<std::string>>(), "Environment variables (-e env1=value1 -e env2=value2, APP_DOCKER_OPTS env is used to input docker run parameters)")
+	(SECURITY_ENV_ARGS, po::value<std::vector<std::string>>(), "Encrypted environment variables in server side with application owner's cipher")
+	(STOP_TIMEOUT_ARGS, po::value<std::string>(), "Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')")
+	(EXIT_ARGS, po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Exit behavior [restart|standby|keepalive|remove]")
+	(CONTROL_ARGS, po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default exit)")
+	(STDIN_ARGS, po::value<std::string>(), "Read YAML from stdin ('std') or file");
 	OTHER_OPTIONS;
-	other.add_options()(FORCE_ARGS, "Skip confirmation prompts");
+	other.add_options()
+	(FORCE_ARGS, "Skip confirmation prompts");
 	desc.add(connection).add(basic).add(runtime).add(schedule).add(resource).add(advanced).add(other);
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 	const std::string default_control_string = "0:standby";
 	if (m_commandLineVariables.count(STDIN) == 0 && (m_commandLineVariables.count(APP) == 0 ||
-		(m_commandLineVariables.count(DOCKER_IMAGE) == 0 && m_commandLineVariables.count(COMMAND) == 0)))
+													 (m_commandLineVariables.count(DOCKER_IMAGE) == 0 && m_commandLineVariables.count(COMMAND) == 0)))
 	{
 		std::cout << desc << std::endl;
 		return;
@@ -661,10 +654,10 @@ void ArgumentParser::processAppDel()
 	CONNECTION_OPTIONS;
 	po::options_description app("Application Options", BOOST_DESC_WIDTH);
 	app.add_options()
-		(APP_ARGS, po::value<std::vector<std::string>>(), "One or more application names to remove")
-		;
+	(APP_ARGS, po::value<std::vector<std::string>>(), "One or more application names to remove");
 	OTHER_OPTIONS;
-	other.add_options()(FORCE_ARGS, "Skip confirmation prompts");
+	other.add_options()
+	(FORCE_ARGS, "Skip confirmation prompts");
 	desc.add(connection).add(app).add(other);
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
@@ -704,21 +697,18 @@ void ArgumentParser::processAppView()
 	po::options_description desc("List applications \nUsage: appc ls [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description display("Display Options", BOOST_DESC_WIDTH);
-		display.add_options()
-		(LONG_ARGS, "Show detailed information")
-		(SHOW_OUTPUT_ARGS, "View application output")
-		(PSTREE_ARGS, "Display process tree")
-		;
+	display.add_options()
+	(LONG_ARGS, "Show detailed information")
+	(SHOW_OUTPUT_ARGS, "View application output")
+	(PSTREE_ARGS, "Display process tree");
 	po::options_description filtering("Filtering Options", BOOST_DESC_WIDTH);
-		filtering.add_options()
-		(APP_ARGS, po::value<std::string>(), "Application name")
-		(LOG_INDEX_ARGS, po::value<int>(), "Specify output log index")
-		;
+	filtering.add_options()
+	(APP_ARGS, po::value<std::string>(), "Application name")
+	(LOG_INDEX_ARGS, po::value<int>(), "Specify output log index");
 	po::options_description output("Output Options", BOOST_DESC_WIDTH);
-		output.add_options()
-		(FOLLOW_ARGS, "Follow output in real-time")
-		(JSON_ARGS, "Output in JSON format")
-		;
+	output.add_options()
+	(FOLLOW_ARGS, "Follow output in real-time")
+	(JSON_ARGS, "Output in JSON format");
 	OTHER_OPTIONS;
 	desc.add(connection).add(display).add(filtering).add(output).add(other);
 	shiftCommandLineArgs(desc);
@@ -783,9 +773,6 @@ void ArgumentParser::processAppView()
 	}
 }
 
-
-
-
 void ArgumentParser::processResource()
 {
 	po::options_description desc("View host resource \nUsage: appc resource [options]", BOOST_DESC_WIDTH);
@@ -807,9 +794,8 @@ void ArgumentParser::processAppControl(bool start)
 	CONNECTION_OPTIONS;
 	po::options_description app("Application Options", BOOST_DESC_WIDTH);
 	app.add_options()
-		(APP_ARGS, po::value<std::vector<std::string>>(), "One or more application names to remove")
-		(ALL_ARGS, "Apply to all applications.")
-		;
+	(APP_ARGS, po::value<std::vector<std::string>>(), "One or more application names to remove")
+	(ALL_ARGS, "Apply to all applications.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(app).add(other);
 	shiftCommandLineArgs(desc);
@@ -824,12 +810,12 @@ void ArgumentParser::processAppControl(bool start)
 	if (all)
 	{
 		auto appMap = this->getAppList();
-		std::for_each(appMap.begin(), appMap.end(), [&appList, &start](const std::pair<std::string, bool> &pair) {
+		std::for_each(appMap.begin(), appMap.end(), [&appList, &start](const std::pair<std::string, bool> &pair)
+					  {
 			if (start != pair.second)
 			{
 				appList.push_back(pair.first);
-			}
-		});
+			} });
 	}
 	else
 	{
@@ -861,20 +847,18 @@ int ArgumentParser::processAppRun()
 	CONNECTION_OPTIONS;
 	po::options_description application("Application Options", BOOST_DESC_WIDTH);
 	application.add_options()
-		(APP_ARGS, po::value<std::string>(), "Existing application name to run, or specify a name for a new run; defaults to a random name if empty.")
-		(DESC_ARGS, po::value<std::string>(), "Application description.")
-		(COMMAND_ARGS, po::value<std::string>(), "Full command line with arguments (not needed for running an application).")
-		(WORKING_DIR_ARGS, po::value<std::string>(), "Working directory (default '/opt/appmesh/work').")
-		(METADATA_ARGS, po::value<std::string>(), "Metadata string/JSON (input for application, passed to process stdin), '@' allowed to read from file.")
-		(ENV_ARGS, po::value<std::vector<std::string>>(), "Environment variables (e.g., -e env1=value1 -e env2=value2).")
-		;
+	(APP_ARGS, po::value<std::string>(), "Existing application name to run, or specify a name for a new run; defaults to a random name if empty.")
+	(DESC_ARGS, po::value<std::string>(), "Application description.")
+	(COMMAND_ARGS, po::value<std::string>(), "Full command line with arguments (not needed for running an application).")
+	(WORKING_DIR_ARGS, po::value<std::string>(), "Working directory (default '/opt/appmesh/work').")
+	(METADATA_ARGS, po::value<std::string>(), "Metadata string/JSON (input for application, passed to process stdin), '@' allowed to read from file.")
+	(ENV_ARGS, po::value<std::vector<std::string>>(), "Environment variables (e.g., -e env1=value1 -e env2=value2).");
 	po::options_description execution("Execution Options", BOOST_DESC_WIDTH);
 	execution.add_options()
-		(SHELL_ARGS, "Use shell mode; cmd can be multiple shell commands in string format.")
-		(SESSION_LOGIN_ARGS, "Run with session login.")
-		(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		;
+	(SHELL_ARGS, "Use shell mode; cmd can be multiple shell commands in string format.")
+	(SESSION_LOGIN_ARGS, "Run with session login.")
+	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	OTHER_OPTIONS;
 	desc.add(connection).add(application).add(execution).add(other);
 	shiftCommandLineArgs(desc);
@@ -1113,10 +1097,9 @@ int ArgumentParser::processShell()
 	CONNECTION_OPTIONS;
 	po::options_description execute("Execution Options", BOOST_DESC_WIDTH);
 	execute.add_options()
-		(RETRY_ARGS, "Retry command until success.")
-		(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
-		;
+	(RETRY_ARGS, "Retry command until success.")
+	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	OTHER_OPTIONS;
 	desc.add(connection).add(execute).add(other);
 	shiftCommandLineArgs(desc, true);
@@ -1254,10 +1237,9 @@ void ArgumentParser::processFileDownload()
 	CONNECTION_OPTIONS;
 	po::options_description download("Download Options", BOOST_DESC_WIDTH);
 	download.add_options()
-		(REMOTE_ARGS, po::value<std::string>(), "Remote file path to download.")
-		(LOCAL_ARGS, po::value<std::string>(), "Local file path to save.")
-		(NO_ATTR_ARGS, "Not copy file attributes.")
-		;
+	(REMOTE_ARGS, po::value<std::string>(), "Remote file path to download.")
+	(LOCAL_ARGS, po::value<std::string>(), "Local file path to save.")
+	(NO_ATTR_ARGS, "Not copy file attributes.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(download).add(other);
 	shiftCommandLineArgs(desc);
@@ -1293,10 +1275,9 @@ void ArgumentParser::processFileUpload()
 	CONNECTION_OPTIONS;
 	po::options_description upload("Upload Options", BOOST_DESC_WIDTH);
 	upload.add_options()
-		(REMOTE_ARGS, po::value<std::string>(), "Remote file path to save.")
-		(LOCAL_ARGS, po::value<std::string>(), "Local file to upload.")
-		(NO_ATTR_ARGS, "Not copy file attributes.")
-		;
+	(REMOTE_ARGS, po::value<std::string>(), "Remote file path to save.")
+	(LOCAL_ARGS, po::value<std::string>(), "Local file to upload.")
+	(NO_ATTR_ARGS, "Not copy file attributes.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(upload).add(other);
 	shiftCommandLineArgs(desc);
@@ -1344,11 +1325,10 @@ void ArgumentParser::processTags()
 	CONNECTION_OPTIONS;
 	po::options_description label("Label Options", BOOST_DESC_WIDTH);
 	label.add_options()
-		(VIEW_ARGS, "List labels.")
-		(ADD_ARGS, "Add labels.")
-		(DELETE_ARGS, "Remove labels.")
-		(LABEL_ARGS, po::value<std::vector<std::string>>(), "Labels (e.g., -l os=linux -l arch=arm64).")
-		;
+	(VIEW_ARGS, "List labels.")
+	(ADD_ARGS, "Add labels.")
+	(DELETE_ARGS, "Remove labels.")
+	(LABEL_ARGS, po::value<std::vector<std::string>>(), "Labels (e.g., -l os=linux -l arch=arm64).");
 	OTHER_OPTIONS;
 	desc.add(connection).add(label).add(other);
 	shiftCommandLineArgs(desc);
@@ -1421,8 +1401,7 @@ void ArgumentParser::processLoglevel()
 	CONNECTION_OPTIONS;
 	po::options_description log("Log Options", BOOST_DESC_WIDTH);
 	log.add_options()
-		(LEVEL_ARGS, po::value<std::string>(), "Log level (e.g., DEBUG, INFO, NOTICE, WARN, ERROR).")
-		;
+	(LEVEL_ARGS, po::value<std::string>(), "Log level (e.g., DEBUG, INFO, NOTICE, WARN, ERROR).");
 	OTHER_OPTIONS;
 	desc.add(connection).add(log).add(other);
 	shiftCommandLineArgs(desc);
@@ -1450,8 +1429,7 @@ void ArgumentParser::processConfigView()
 	CONNECTION_OPTIONS;
 	po::options_description log("Configuration Options", BOOST_DESC_WIDTH);
 	log.add_options()
-		(VIEW_ARGS, "View basic configurations in JSON format.")
-		;
+	(VIEW_ARGS, "View basic configurations in JSON format.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(log).add(other);
 	shiftCommandLineArgs(desc);
@@ -1468,8 +1446,7 @@ void ArgumentParser::processUserChangePwd()
 	CONNECTION_OPTIONS;
 	po::options_description pwd("Password Options", BOOST_DESC_WIDTH);
 	pwd.add_options()
-		(TARGET_ARGS, po::value<std::string>(), "Target user to change password.")
-		;
+	(TARGET_ARGS, po::value<std::string>(), "Target user to change password.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(pwd).add(other);
 	shiftCommandLineArgs(desc);
@@ -1500,9 +1477,8 @@ void ArgumentParser::processUserLock()
 	CONNECTION_OPTIONS;
 	po::options_description useropt("Lock Options", BOOST_DESC_WIDTH);
 	useropt.add_options()
-		(TARGET_ARGS, po::value<std::string>(), "Target user.")
-		(LOCK_ARGS, po::value<bool>(), "Lock or unlock user ('true' to lock, 'false' to unlock).")
-		;
+	(TARGET_ARGS, po::value<std::string>(), "Target user.")
+	(LOCK_ARGS, po::value<bool>(), "Lock or unlock user ('true' to lock, 'false' to unlock).");
 	OTHER_OPTIONS;
 	desc.add(connection).add(useropt).add(other);
 	shiftCommandLineArgs(desc);
@@ -1528,8 +1504,7 @@ void ArgumentParser::processUserView()
 	CONNECTION_OPTIONS;
 	po::options_description user("User Options", BOOST_DESC_WIDTH);
 	user.add_options()
-		(ALL_ARGS, "View all users.")
-		;
+	(ALL_ARGS, "View all users.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(user).add(other);
 	shiftCommandLineArgs(desc);
@@ -1571,9 +1546,8 @@ void ArgumentParser::processUserMfa()
 	CONNECTION_OPTIONS;
 	po::options_description user("User Options", BOOST_DESC_WIDTH);
 	user.add_options()
-		(ADD_ARGS, "Activate MFA.")
-		(DELETE_ARGS, "Deactivate MFA.")
-		;
+	(ADD_ARGS, "Activate MFA.")
+	(DELETE_ARGS, "Deactivate MFA.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(user).add(other);
 	shiftCommandLineArgs(desc);
@@ -1728,7 +1702,8 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool throwAble, const 
 		else
 			header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
 	}
-	auto resp = RestClient::request(m_currentUrl, mtd, path, body, header, query);
+	std::string bodyContent = body ? body->dump() : std::string();
+	auto resp = RestClient::request(m_currentUrl, mtd, path, bodyContent, header, query);
 	if (throwAble && resp->status_code != web::http::status_codes::OK)
 	{
 		throw std::invalid_argument(parseOutputMessage(resp));
@@ -1910,7 +1885,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_Auth_BasicSpace) + Utility::encode64(user + ":" + passwd)});
 	header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 
-	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", nullptr, std::move(header), {});
+	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", "", std::move(header), {});
 	if (response->status_code == web::http::status_codes::OK)
 	{
 		m_currentUrl = url;
@@ -1933,7 +1908,7 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 			header.insert({HTTP_HEADER_JWT_totp, totp});
 			header.insert({HTTP_HEADER_JWT_totp_challenge, Utility::encode64(totpChallenge)});
 			header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
-			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", nullptr, std::move(header), {});
+			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", "", std::move(header), {});
 			if (response->status_code == web::http::status_codes::OK)
 			{
 				m_currentUrl = url;
@@ -1960,7 +1935,7 @@ void ArgumentParser::printApps(nlohmann::json json, bool reduce)
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_status)
 		<< std::setw(7) << Utility::strToupper(JSON_KEY_APP_health)
 		<< std::setw(8) << Utility::strToupper(JSON_KEY_APP_pid)
-		<< std::setw(6) << Utility::strToupper("user")	// JSON_KEY_APP_pid_user
+		<< std::setw(6) << Utility::strToupper("user") // JSON_KEY_APP_pid_user
 		<< std::setw(9) << Utility::strToupper(JSON_KEY_APP_memory)
 		<< std::setw(5) << std::string("%").append(Utility::strToupper(JSON_KEY_APP_cpu))
 		<< std::setw(7) << Utility::strToupper("return") // JSON_KEY_APP_return

@@ -75,7 +75,7 @@ func initializeServices(ctx context.Context) {
 	// Cloud resource reporting
 	go func() {
 		c := cloud.NewCloud()
-		if err := c.HostMetricsReportPeriod(ctx); err != nil {
+		if err := c.ReportHostMetricsPeriodically(ctx); err != nil {
 			logger.Errorf("Host resource reporting failed: %v", err)
 		}
 	}()

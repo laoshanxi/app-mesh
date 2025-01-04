@@ -135,7 +135,6 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 
 const char *GET_STATUS_STR(unsigned int status);
 const nlohmann::json EMPTY_STR_JSON(nullptr);
-const nlohmann::json CLOUD_STR_JSON("APPMESH-CLOUD-APP-FLAG");
 
 /// <summary>
 /// All common functions
@@ -281,16 +280,7 @@ public:
 #define JSON_KEY_Labels "Labels"
 #define JSON_KEY_JWTRedirectUrl "JWTRedirectUrl"
 #define JSON_KEY_SECURITY_EncryptKey "EncryptKey"
-#define JSON_KEY_CONSUL "Consul"
 #define JSON_KEY_VERSION "Version"
-#define JSON_KEY_CONSUL_URL "Url"
-#define JSON_KEY_CONSUL_IS_MAIN "IsMainNode"
-#define JSON_KEY_CONSUL_IS_WORKER "IsWorkerNode"
-#define JSON_KEY_CONSUL_SESSION_TTL "SessionTTL"
-#define JSON_KEY_CONSUL_AUTH_USER "User"
-#define JSON_KEY_CONSUL_AUTH_PASS "Pass"
-#define JSON_KEY_CONSUL_SECURITY "EnableConsulSecurity"
-#define JSON_KEY_CONSUL_APPMESH_PROXY_URL "AppmeshProxyUrl"
 #define JSON_KEY_JWT_Users "Users"
 #define JSON_KEY_APP_name "name"
 #define JSON_KEY_APP_owner "owner"
@@ -371,6 +361,7 @@ public:
 
 #define JSON_KEY_USER_key_method_local "local"
 #define JSON_KEY_USER_key_method_ldap "ldap"
+#define JSON_KEY_USER_key_method_consul "consul"
 #define JSON_KEY_USER_LDAP_ldap_uri "Uri"
 #define JSON_KEY_USER_LDAP_ldap_LoginDN "LoginDN"
 #define JSON_KEY_USER_LDAP_ldap_LoginPWD "LoginPWD"
@@ -421,11 +412,6 @@ public:
 #define PERMISSION_KEY_view_app "app-view"
 #define PERMISSION_KEY_view_app_output "app-output-view"
 #define PERMISSION_KEY_view_all_app "app-view-all"
-#define PERMISSION_KEY_cloud_app_view "cloud-app-view"
-#define PERMISSION_KEY_cloud_app_out_view "cloud-app-output-view"
-#define PERMISSION_KEY_cloud_app_reg "cloud-app-reg"
-#define PERMISSION_KEY_cloud_app_delete "cloud-app-delete"
-#define PERMISSION_KEY_cloud_host_view "cloud-host-view"
 #define PERMISSION_KEY_view_host_resource "host-resource-view"
 #define PERMISSION_KEY_app_reg "app-reg"
 #define PERMISSION_KEY_app_control "app-control"

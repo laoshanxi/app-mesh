@@ -44,12 +44,6 @@ protected:
 	void apiRunSync(const HttpRequest &message);
 
 	void apiCloudResourceView(const HttpRequest &message);
-	void apiCloudAppsView(const HttpRequest &message);
-	void apiCloudAppView(const HttpRequest &message);
-	void apiCloudAppOutputView(const HttpRequest &message);
-	void apiCloudAppAdd(const HttpRequest &message);
-	void apiCloudAppDel(const HttpRequest &message);
-	void apiCloudHostView(const HttpRequest &message);
 
 	void apiResourceView(const HttpRequest &message);
 

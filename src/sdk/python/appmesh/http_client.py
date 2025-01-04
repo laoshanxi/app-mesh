@@ -575,105 +575,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         return resp.status_code == HTTPStatus.OK
 
     ########################################
-    # Cloud management
-    ########################################
-    def view_all_cloud_apps(self) -> dict:
-        """Get information about all cloud applications.
-
-        Returns:
-            dict: cloud applications in JSON format.
-        """
-        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/applications")
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-        return resp.json()
-
-    def view_cloud_app(self, app_name: str) -> dict:
-        """Get information about a specific cloud application.
-
-        Args:
-            app_name (str): the application name.
-
-        Returns:
-            dict: application in JSON format.
-        """
-        resp = self._request_http(AppMeshClient.Method.GET, path=f"/appmesh/cloud/app/{app_name}")
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-        return resp.json()
-
-    def get_cloud_app_output(self, app_name: str, host_name: str, stdout_position: int = 0, stdout_index: int = 0, stdout_maxsize: int = 10240, process_uuid: str = ""):
-        """Get the stdout/stderr of a cloud application.
-
-        Args:
-            app_name (str): the application name
-            host_name (str): the target host name where the application is running
-            stdout_position (int, optional): start read position, 0 means start from beginning.
-            stdout_index (int, optional): index of history process stdout, 0 means get from current running process,
-                the stdout number depends on 'stdout_cache_size' of the application.
-            stdout_maxsize (int, optional): max buffer size to read.
-            process_uuid (str, optional): used to get the specified process.
-
-        Returns:
-            bool: success or failure.
-            str: output string.
-            int or None: current read position.
-            int or None: process exit code.
-        """
-        resp = self._request_http(
-            AppMeshClient.Method.GET,
-            path=f"/appmesh/cloud/app/{app_name}/output/{host_name}",
-            query={
-                "stdout_position": str(stdout_position),
-                "stdout_index": str(stdout_index),
-                "stdout_maxsize": str(stdout_maxsize),
-                "process_uuid": process_uuid,
-            },
-        )
-        out_position = int(resp.headers["Output-Position"]) if "Output-Position" in resp.headers else None
-        exit_code = int(resp.headers["Exit-Code"]) if "Exit-Code" in resp.headers else None
-        return (resp.status_code == HTTPStatus.OK), resp.text, out_position, exit_code
-
-    def delete_cloud_app(self, app_name: str) -> bool:
-        """Delete a cloud application.
-
-        Args:
-            app_name (str): The application name for cloud
-
-        Returns:
-            bool: success or failure.
-        """
-        resp = self._request_http(AppMeshClient.Method.DELETE, path=f"/appmesh/cloud/app/{app_name}")
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-        return resp.status_code == HTTPStatus.OK
-
-    def add_cloud_app(self, app_json: dict) -> dict:
-        """Add a new cloud application.
-
-        Args:
-            app_json (dict): the cloud application definition with replication, condition and resource requirement
-
-         Returns:
-            dict: cluster application json.
-        """
-        resp = self._request_http(AppMeshClient.Method.PUT, path=f"/appmesh/cloud/app/{app_json['content']['name']}", body=app_json)
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-        return resp.json()
-
-    def view_cloud_nodes(self) -> dict:
-        """Get a list of cluster nodes.
-
-        Returns:
-            dict: cluster node list json.
-        """
-        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/cloud/nodes")
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-        return resp.json()
-
-    ########################################
     # Configuration
     ########################################
     def view_host_resources(self) -> dict:
@@ -885,7 +786,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         Args:
             role_name (str): the role name.
-            role_permission_json (dict): role permission definition array, e.g: ["app-control", "app-delete", "cloud-app-reg", "cloud-app-delete"]
+            role_permission_json (dict): role permission definition array, e.g: ["app-control", "app-delete"]
 
         Returns:
             bool: success or failure.

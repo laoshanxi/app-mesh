@@ -47,3 +47,17 @@ export APPMESH_CONSUL_ENABLE=true
 export APPMESH_CONSUL_ADDRESS="192.168.1.1:8500"
 export APPMESH_CONSUL_TLS_CA_FILE="/new/path/to/ca.pem"
 ```
+
+## Use Consul for Security storage
+
+Setup initial Security JSON in consul:
+
+```bash
+cd script/consul/
+sh prepare_init_kv.sh
+docker cp initial_kv.json consul-consul-server1-1:/opt/
+docker exec -ti consul-consul-server1-1 consul kv import @/opt/initial_kv.json
+docker exec -ti consul-consul-server1-1 consul kv get appmesh/security
+```
+
+[TODO](https://stackoverflow.com/questions/43598002/how-to-run-consul-on-docker-with-initial-key-value-pair-data)

@@ -37,12 +37,6 @@ constexpr auto REST_PATH_APP_HEALTH = R"(/appmesh/app/([^/\*]+)/health)";
 
 // 3. Cloud Application
 constexpr auto REST_PATH_CLOUD_RESOURCES_VIEW = "/appmesh/cloud/resources";
-constexpr auto REST_PATH_CLOUD_APP_ALL_VIEW = "/appmesh/cloud/applications";
-constexpr auto REST_PATH_CLOUD_APP_VIEW = R"(/appmesh/cloud/app/([^/\*]+))";
-constexpr auto REST_PATH_CLOUD_APP_OUT_VIEW = R"(/appmesh/cloud/app/([^/\*]+)/output/([^/\*]+))";
-constexpr auto REST_PATH_CLOUD_APP_ADD = R"(/appmesh/cloud/app/([^/\*]+))";
-constexpr auto REST_PATH_CLOUD_APP_DELETE = R"(/appmesh/cloud/app/([^/\*]+))";
-constexpr auto REST_PATH_CLOUD_NODES_VIEW = "/appmesh/cloud/nodes";
 
 // 4. Manage Application
 constexpr auto REST_PATH_APP_ADD = R"(/appmesh/app/([^/\*]+))";
@@ -106,11 +100,6 @@ RestHandler::RestHandler() : PrometheusRest()
 
 	// 3. Cloud Application
 	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_RESOURCES_VIEW, std::bind(&RestHandler::apiCloudResourceView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_APP_ALL_VIEW, std::bind(&RestHandler::apiCloudAppsView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_APP_VIEW, std::bind(&RestHandler::apiCloudAppView, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::PUT, REST_PATH_CLOUD_APP_ADD, std::bind(&RestHandler::apiCloudAppAdd, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::DEL, REST_PATH_CLOUD_APP_DELETE, std::bind(&RestHandler::apiCloudAppDel, this, std::placeholders::_1));
-	bindRestMethod(web::http::methods::GET, REST_PATH_CLOUD_NODES_VIEW, std::bind(&RestHandler::apiCloudHostView, this, std::placeholders::_1));
 
 	// 4. Manage Application
 	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_ADD, std::bind(&RestHandler::apiAppAdd, this, std::placeholders::_1));
@@ -305,9 +294,6 @@ void RestHandler::apiAppDelete(const HttpRequest &message)
 	{
 		auto app = Configuration::instance()->getApp(appName);
 
-		if (app->isCloudApp())
-			throw std::invalid_argument("not allowed for cloud application");
-
 		if (!(app->getOwner() && app->getOwner()->getName() == getJwtUserName(message)))
 		{
 			// only check delete permission for none-self app
@@ -496,7 +482,6 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 
 	Security::instance()->changeUserPasswd(targetUser, newPasswd);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << targetUser << "> changed password by <" << tokenUserName << ">";
 	message.reply(web::http::status_codes::OK, convertText2Json("password changed success"));
@@ -518,7 +503,6 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 
 	Security::instance()->getUserInfo(pathUserName)->lock();
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
 	message.reply(web::http::status_codes::OK, convertText2Json("Lock user success"));
@@ -535,7 +519,6 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 
 	Security::instance()->getUserInfo(pathUserName)->unlock();
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
 	message.reply(web::http::status_codes::OK, convertText2Json("Unlock user success"));
@@ -552,7 +535,6 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 
 	Security::instance()->addUser(pathUserName, message.extractJson());
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
 	message.reply(web::http::status_codes::OK, convertText2Json("User add success"));
@@ -577,7 +559,6 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 
 	Security::instance()->delUser(pathUserName);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
 	message.reply(web::http::status_codes::OK, convertText2Json("User delete success"));
@@ -614,7 +595,6 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 
 	Security::instance()->addRole(message.extractJson(), pathRoleName);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
 	message.reply(web::http::status_codes::OK, convertText2Json("Role update success"));
@@ -632,7 +612,6 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 
 	Security::instance()->delRole(pathRoleName);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
 	message.reply(web::http::status_codes::OK, convertText2Json("Role delete success"));
@@ -850,7 +829,6 @@ void RestHandler::apiUserTotpSecret(const HttpRequest &message)
 
 	// save secret
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_DBG << fname << "User <" << uname << "> get TOTP secret";
 }
@@ -874,7 +852,6 @@ void RestHandler::apiUserTotpSetup(const HttpRequest &message)
 	// persist
 	user->totpActive(true);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-	ConsulConnection::instance()->saveSecurity();
 
 	LOG_DBG << fname << "User <" << userName << "> setup TOTP success";
 }
@@ -924,7 +901,6 @@ void RestHandler::apiUserTotpDisable(const HttpRequest &message)
 
 		// persist
 		Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
-		ConsulConnection::instance()->saveSecurity();
 		LOG_DBG << fname << "User <" << userName << "> disable TOTP success";
 	}
 	else
@@ -1067,66 +1043,6 @@ void RestHandler::apiAppsView(const HttpRequest &message)
 	message.reply(web::http::status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName, true));
 }
 
-void RestHandler::apiCloudAppsView(const HttpRequest &message)
-{
-	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
-	message.reply(web::http::status_codes::OK, ConsulConnection::instance()->viewCloudApps());
-}
-
-void RestHandler::apiCloudAppView(const HttpRequest &message)
-{
-	permissionCheck(message, PERMISSION_KEY_cloud_app_view);
-	const auto path = (curlpp::unescape(message.m_relative_uri));
-	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_VIEW);
-
-	message.reply(web::http::status_codes::OK, ConsulConnection::instance()->viewCloudApp(appName));
-}
-
-void RestHandler::apiCloudAppOutputView(const HttpRequest &message)
-{
-	permissionCheck(message, PERMISSION_KEY_cloud_app_out_view);
-	const auto path = (curlpp::unescape(message.m_relative_uri));
-	auto tp = regexSearch2(path, REST_PATH_CLOUD_APP_OUT_VIEW);
-	const auto &appName = std::get<0>(tp);
-	const auto &hostName = std::get<1>(tp);
-
-	auto querymap = message.m_querys;
-	auto resp = ConsulConnection::instance()->viewCloudAppOutput(appName, hostName, querymap, message.m_headers);
-	message.reply(resp->status_code, resp->text);
-}
-
-void RestHandler::apiCloudAppAdd(const HttpRequest &message)
-{
-	permissionCheck(message, PERMISSION_KEY_cloud_app_reg);
-
-	const auto path = (curlpp::unescape(message.m_relative_uri));
-	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_ADD);
-
-	auto jsonApp = message.extractJson();
-	if (jsonApp.is_null())
-	{
-		throw std::invalid_argument("Empty json input");
-	}
-	message.reply(web::http::status_codes::OK, ConsulConnection::instance()->addCloudApp(appName, jsonApp));
-}
-
-void RestHandler::apiCloudAppDel(const HttpRequest &message)
-{
-	permissionCheck(message, PERMISSION_KEY_cloud_app_delete);
-
-	const auto path = (curlpp::unescape(message.m_relative_uri));
-	auto appName = regexSearch(path, REST_PATH_CLOUD_APP_DELETE);
-
-	ConsulConnection::instance()->deleteCloudApp(appName);
-	message.reply(web::http::status_codes::OK, convertText2Json("Delete cloud application success"));
-}
-
-void RestHandler::apiCloudHostView(const HttpRequest &message)
-{
-	permissionCheck(message, PERMISSION_KEY_cloud_host_view);
-	message.reply(web::http::status_codes::OK, ConsulConnection::instance()->getCloudNodes());
-}
-
 void RestHandler::apiResourceView(const HttpRequest &message)
 {
 	permissionCheck(message, PERMISSION_KEY_view_host_resource);
@@ -1152,10 +1068,6 @@ void RestHandler::apiAppAdd(const HttpRequest &message)
 	LOG_DBG << fname << jsonApp;
 
 	auto appName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
-	if (Configuration::instance()->isAppExist(appName) && Configuration::instance()->getApp(appName)->isCloudApp())
-	{
-		throw std::invalid_argument("Cloud Application is not allowed to override");
-	}
 	if (Configuration::instance()->isAppExist(appName))
 	{
 		checkAppAccessPermission(message, appName, true);
