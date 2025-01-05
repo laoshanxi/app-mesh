@@ -5,8 +5,8 @@
 
 #include "../../common/Utility.h"
 #include "../Configuration.h"
-#include "../consul/ConsulConnection.h"
 #include "./ldapplugin/LdapImpl.h"
+#include "ConsulConnection.h"
 #include "Security.h"
 
 std::shared_ptr<Security> Security::m_instance = nullptr;
@@ -33,7 +33,7 @@ void Security::init(const std::string &interface)
     }
     else if (interface == JSON_KEY_USER_key_method_consul)
     {
-        ConsulConnection::instance()->init();
+        ConsulConnection::instance()->initialize();
         auto securityObj = Security::FromJson(ConsulConnection::instance()->fetchSecurityJson());
         if (securityObj->getUsers().size())
         {

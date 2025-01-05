@@ -3,9 +3,11 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <thread>
+#include <tuple>
 
 #include <nlohmann/json.hpp>
 
@@ -43,17 +45,14 @@ public:
 	ConsulConnection();
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection> &instance();
-	void init();
+	void initialize();
 	void saveSecurity();
-
 	nlohmann::json fetchSecurityJson();
 
 private:
 	std::shared_ptr<JsonConsul> getConfig();
 	long long getModifyIndex(const std::string &path, bool recurse = false);
-
 	std::shared_ptr<CurlResponse> requestConsul(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, const std::string &body, int timeoutSec = REST_REQUEST_TIMEOUT_SECONDS);
-
 	std::tuple<bool, long long> blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse = false);
 	void watchSecurityThread();
 

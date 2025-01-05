@@ -11,7 +11,7 @@
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
-#include "../consul/ConsulConnection.h"
+#include "../security/ConsulConnection.h"
 #include "../security/Security.h"
 #include "../security/TokenBlacklist.h"
 #include "../security/User.h"

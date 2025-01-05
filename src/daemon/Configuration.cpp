@@ -10,7 +10,6 @@
 #include "Label.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
-#include "consul/ConsulConnection.h"
 #include "rest/PrometheusRest.h"
 #include "rest/RestHandler.h"
 #include "security/HMACVerifier.h"

@@ -32,7 +32,6 @@
 #include "PersistManager.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
-#include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
 #include "rest/RestHandler.h"
 #include "rest/TcpClient.h"

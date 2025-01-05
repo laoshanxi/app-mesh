@@ -244,13 +244,20 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
             throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.as_string().c_str()));
 
         // check user token
-        const auto verifier = jwt::verify()
-                                  .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
-                                  .with_issuer(HTTP_HEADER_JWT_ISSUER)
-                                  .with_claim(HTTP_HEADER_JWT_name, userName)
-                                  .with_claim(HTTP_HEADER_JWT_user_group, userGroup);
+        try
+        {
+            const auto verifier = jwt::verify()
+                                      .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
+                                      .with_issuer(HTTP_HEADER_JWT_ISSUER)
+                                      .with_claim(HTTP_HEADER_JWT_name, userName)
+                                      .with_claim(HTTP_HEADER_JWT_user_group, userGroup);
 
-        verifier.verify(decoded_token);
+            verifier.verify(decoded_token);
+        }
+        catch (const std::exception &e)
+        {
+            throw std::runtime_error(std::string("Authentication failed: ") + e.what());
+        }
 
         return std::make_tuple(userName.as_string(), userGroup.as_string());
     }

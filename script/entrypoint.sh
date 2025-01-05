@@ -18,16 +18,8 @@ log() {
 	local message="$2"
 	local timestamp
 
-	# More portable date format that works across distributions
-	if command -v date >/dev/null 2>&1; then
-		if date -Iseconds >/dev/null 2>&1; then
-			timestamp=$(date -Iseconds)
-		else
-			timestamp=$(date '+%Y-%m-%d %H:%M:%S%z')
-		fi
-	else
-		timestamp=$(printf '%(%Y-%m-%d %H:%M:%S)T')
-	fi
+	# Fallback chain for timestamp generation
+	timestamp=$(date -Iseconds 2>/dev/null || date '+%Y-%m-%d %H:%M:%S%z' 2>/dev/null || printf '%(%Y-%m-%d %H:%M:%S)T')
 
 	printf '%s [%s]: %s\n' "$timestamp" "$level" "$message"
 
@@ -36,6 +28,9 @@ log() {
 		logger -t "appmesh" "$level" "$message"
 	fi
 }
+info() { log "INFO" "$@"; }
+warn() { log "ERROR" "$@"; }
+die() { error "$@" && exit 1; }
 
 # Function: Check Required Dependencies
 check_dependencies() {
@@ -44,27 +39,24 @@ check_dependencies() {
 
 	for cmd in $required_commands; do
 		if ! command -v "$cmd" >/dev/null 2>&1; then
-			log "ERROR" "Required command not found: $cmd"
+			warn "Required command not found: $cmd"
 			((missing_deps++))
 		fi
 	done
 
 	if [ "$missing_deps" -ne 0 ]; then
-		log "ERROR" "Missing required dependencies. Please install them first."
-		exit 1
+		die "Missing required dependencies. Please install them first."
 	fi
 }
 
 # Function: Change to Program Directory
 initialize_directory() {
 	if [ ! -d "${PROG_HOME}" ]; then
-		log "ERROR" "Program directory ${PROG_HOME} does not exist"
-		exit 1
+		die "Program directory ${PROG_HOME} does not exist"
 	fi
 
 	cd "${PROG_HOME}" || {
-		log "ERROR" "Failed to change directory to ${PROG_HOME}"
-		exit 1
+		die "Failed to change directory to ${PROG_HOME}"
 	}
 }
 
@@ -74,7 +66,7 @@ prepare_app_start() {
 		# Check if the first argument is "appc"
 		if [ "$1" = "appc" ]; then
 			shift
-			log "INFO" "Executing native command: $*"
+			info "Executing native command: $*"
 			exec "$@"
 		else
 			# Register as long-running app with escaped command
@@ -86,13 +78,13 @@ prepare_app_start() {
 
 			# Create YAML with proper escaping
 			{
-				echo "name: start_app"
-				echo "command: |"
-				echo "  $command" | sed 's/^/  /'
+				printf '%s\n' "name: start_app"
+				printf '%s\n' "command: |"
+				printf '  %s\n' "$command"
 			} >"$yaml_file"
 
 			chmod 600 "$yaml_file"
-			log "INFO" "Registered long-running application command in $yaml_file"
+			info "Registered long-running application command in $yaml_file"
 		fi
 	fi
 }
@@ -106,32 +98,11 @@ secure_installation_check() {
 		mkdir -p "${PROG_HOME}/work"
 
 		if [ ! -f "$flag_file" ]; then
-			touch "$flag_file"
-			chmod 600 "$flag_file"
-			log "INFO" "Initializing secure installation"
+			info "Initializing secure installation"
 			"${PROG_HOME}/bin/appc" appmginit
+			touch "$flag_file" && chmod 600 "$flag_file"
 		fi
 	fi
-}
-
-# Function: Start App Mesh Service in Loop
-start_service_loop() {
-	# Handle multiple signal types
-	trap 'log "INFO" "Received shutdown signal, stopping service"; exit 0' TERM INT QUIT
-
-	while true; do
-		if [ ! -x "$PROGRAM" ]; then
-			log "ERROR" "Program file not executable: $PROGRAM"
-			exit 1
-		fi
-
-		log "INFO" "Starting App Mesh service: $PROGRAM"
-		"$PROGRAM"
-		local exit_status=$?
-
-		log "WARNING" "App Mesh service exited with status: $exit_status"
-		sleep 3
-	done
 }
 
 ################################################################################
@@ -142,4 +113,6 @@ check_dependencies
 initialize_directory
 prepare_app_start "$@"
 secure_installation_check
-start_service_loop
+
+info "Starting App Mesh service: $PROGRAM"
+exec "$PROGRAM"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Input JSON file (replace with the path to your existing file)
-SOURCE_JSON_FILE="/opt/appmesh/security.yaml"
+SOURCE_JSON_FILE="../../src/daemon/security/security.yaml"
 
 # Output JSON file for KV initialization
 OUTPUT_KV_JSON="./initial_kv.json"

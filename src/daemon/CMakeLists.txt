@@ -5,7 +5,6 @@ add_subdirectory(application)
 add_subdirectory(process)
 add_subdirectory(rest)
 add_subdirectory(security)
-add_subdirectory(consul)
 
 ##########################################################################
 # appsvc
@@ -25,7 +24,6 @@ target_link_libraries(appsvc
     application
     process
     prometheus
-    consul
     common
 )
 

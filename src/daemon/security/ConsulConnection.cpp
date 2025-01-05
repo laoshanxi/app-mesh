@@ -11,18 +11,13 @@
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
-#include "../security/Security.h"
 #include "ConsulConnection.h"
+#include "Security.h"
 
 const auto SECURITY_CONSUL_PATH = fs::path("/v1/kv/") / "appmesh" / "security";
 
-ConsulConnection::ConsulConnection()
-{
-}
-
-ConsulConnection::~ConsulConnection()
-{
-}
+ConsulConnection::ConsulConnection() = default;
+ConsulConnection::~ConsulConnection() = default;
 
 std::shared_ptr<ConsulConnection> &ConsulConnection::instance()
 {
@@ -50,11 +45,8 @@ long long ConsulConnection::getModifyIndex(const std::string &path, bool recurse
 		LOG_DBG << fname << path << " index : " << index;
 		return index;
 	}
-	else
-	{
-		LOG_WAR << fname << path << " failed with return code : " << resp->status_code;
-		return 0;
-	}
+	LOG_WAR << fname << path << " failed with return code : " << resp->status_code;
+	return 0;
 }
 
 nlohmann::json ConsulConnection::fetchSecurityJson()
@@ -64,9 +56,7 @@ nlohmann::json ConsulConnection::fetchSecurityJson()
 	try
 	{
 		PerfLog perf(fname);
-
-		std::string path = SECURITY_CONSUL_PATH.string();
-		auto resp = requestConsul(web::http::methods::GET, path, {}, {}, "");
+		auto resp = requestConsul(web::http::methods::GET, SECURITY_CONSUL_PATH.string(), {}, {}, "");
 		if (resp->status_code == web::http::status_codes::OK)
 		{
 			auto respJson = nlohmann::json::parse(resp->text);
@@ -81,21 +71,13 @@ nlohmann::json ConsulConnection::fetchSecurityJson()
 				LOG_WAR << fname << "response JSON does not contain required fields: ModifyIndex or Value";
 				return EMPTY_STR_JSON;
 			}
-
 			return Utility::yamlToJson(YAML::Load(Utility::decode64(GET_JSON_STR_VALUE(securityJson, "Value"))));
 		}
-		else
-		{
-			LOG_WAR << fname << "failed with return code : " << resp->status_code;
-		}
+		LOG_WAR << fname << "failed with return code : " << resp->status_code;
 	}
 	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << "got exception: " << ex.what();
-	}
-	catch (...)
-	{
-		LOG_WAR << fname << "exception";
 	}
 	return EMPTY_STR_JSON;
 }
@@ -103,26 +85,18 @@ nlohmann::json ConsulConnection::fetchSecurityJson()
 void ConsulConnection::saveSecurity()
 {
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
-
-	// /appmesh/security
-	std::string path = SECURITY_CONSUL_PATH.string();
-
 	auto body = Utility::jsonToYaml(Security::instance()->AsJson());
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-	auto resp = requestConsul(web::http::methods::PUT, path, {{"flags", timestamp}}, {}, body);
-	if (resp->status_code == web::http::status_codes::OK)
+	auto resp = requestConsul(web::http::methods::PUT, SECURITY_CONSUL_PATH.string(), {{"flags", timestamp}}, {}, body);
+	if (resp->status_code == web::http::status_codes::OK && resp->text != "true")
 	{
-		auto result = resp->text;
-		if (resp->text != "true")
-		{
-			LOG_WAR << fname << "PUT " << path << " failed with response : " << result;
-		}
+		LOG_WAR << fname << "PUT " << SECURITY_CONSUL_PATH << " failed with response : " << resp->text;
 	}
 }
 
-void ConsulConnection::init()
+void ConsulConnection::initialize()
 {
-	const static char fname[] = "ConsulConnection::init() ";
+	const static char fname[] = "ConsulConnection::initialize() ";
 	LOG_DBG << fname;
 
 	auto file = (fs::path(Configuration::instance()->getWorkDir()) / "config" / APPMESH_CONSUL_API_CONFIG_FILE).string();
@@ -149,8 +123,7 @@ void ConsulConnection::init()
 
 	if (m_securityWatch == nullptr)
 	{
-		// security watch
-		m_securityWatch = std::make_shared<std::thread>(std::bind(&ConsulConnection::watchSecurityThread, this));
+		m_securityWatch = std::make_shared<std::thread>(&ConsulConnection::watchSecurityThread, this);
 		m_securityWatch->detach();
 	}
 }
@@ -160,8 +133,21 @@ std::shared_ptr<CurlResponse> ConsulConnection::requestConsul(const web::http::m
 	const static char fname[] = "ConsulConnection::requestConsul() ";
 
 	auto response = std::make_shared<CurlResponse>();
-	auto restURL = getConfig()->address;
 	auto aclToken = getConfig()->token;
+	auto restURL = getConfig()->address;
+
+	if (!Utility::startWith(restURL, "http"))
+	{
+		restURL = getConfig()->scheme + "://" + getConfig()->address;
+	}
+	if (!Utility::startWith(restURL, "http"))
+	{
+		if (getConfig()->tls_enable)
+			restURL = std::string("https://") + getConfig()->address;
+		else
+			restURL = std::string("http://") + getConfig()->address;
+	}
+
 	try
 	{
 		if (!aclToken.empty())
@@ -169,39 +155,29 @@ std::shared_ptr<CurlResponse> ConsulConnection::requestConsul(const web::http::m
 			header["X-Consul-Token"] = aclToken;
 		}
 		response = RestClient::request(restURL, mtd, path, body, header, query);
-		// In case of REST server crash or block query timeout, will throw exception:
-		// "Failed to read HTTP status line"
-		LOG_DBG << fname << mtd << " " << path << " return " << response->status_code;
+		LOG_DBG << fname << mtd << " " << restURL << path << " return " << response->status_code;
 		return response;
 	}
 	catch (const std::exception &ex)
 	{
 		LOG_WAR << fname << path << " got exception: " << ex.what();
 	}
-	catch (...)
-	{
-		LOG_WAR << fname << path << " exception";
-	}
-
 	response->status_code = web::http::status_codes::ResetContent;
 	response->text = std::string("failed access ").append(restURL);
 	return response;
 }
 
-// https://www.consul.io/api-docs/kv
 std::tuple<bool, long long> ConsulConnection::blockWatchKv(const std::string &kvPath, long long lastIndex, bool recurse)
 {
 	const static char fname[] = "ConsulConnection::blockWatchKv() ";
 
-	int waitTimeout = 10; // should less than REST_REQUEST_TIMEOUT_SECONDS(60)
+	int waitTimeout = 10;
 	std::map<std::string, std::string> query, header;
 	query["index"] = std::to_string(lastIndex);
 	query["wait"] = std::to_string(waitTimeout * 1000).append("ms");
 	query["stale"] = "false";
 	if (recurse)
-	{
 		query["recurse"] = "true";
-	}
 
 	auto response = requestConsul(web::http::methods::GET, kvPath, query, header, "");
 	long long index = 0;
@@ -226,9 +202,7 @@ void ConsulConnection::watchSecurityThread()
 		auto result = blockWatchKv(path, index);
 		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))
 		{
-			// watch success
 			index = std::get<1>(result);
-
 			auto securityObj = Security::FromJson(this->fetchSecurityJson());
 			if (securityObj->getUsers().size())
 			{
@@ -280,7 +254,6 @@ std::shared_ptr<JsonConsul> JsonConsul::FromJson(const nlohmann::json &jsonObj)
 				consul->tls_key_file = tlsJson.at("key_file").get<std::string>();
 		}
 	}
-
 	if (!Utility::startWith(consul->address, "http"))
 	{
 		consul->address = std::string("https://") + consul->address;

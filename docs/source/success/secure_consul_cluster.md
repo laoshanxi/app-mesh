@@ -16,7 +16,7 @@ docker run -ti hashicorp/consul consul keygen
 
 ```bash
 cd script/consul/
-docker-compose -f consul-service.yml up -d
+docker-compose up -d
 ```
 
 ## Verify the Setup
@@ -35,7 +35,7 @@ This should list all 5 nodes (3 servers and 2 agents).
 When you're done with the setup, you can stop and remove the containers and networks for each service:
 
 ```bash
-docker-compose -f consul-service.yml down
+docker-compose down
 ```
 
 ## Configuration
@@ -55,9 +55,15 @@ Setup initial Security JSON in consul:
 ```bash
 cd script/consul/
 sh prepare_init_kv.sh
-docker cp initial_kv.json consul-consul-server1-1:/opt/
-docker exec -ti consul-consul-server1-1 consul kv import @/opt/initial_kv.json
-docker exec -ti consul-consul-server1-1 consul kv get appmesh/security
+docker cp initial_kv.json consul-server1:/opt/
+docker exec -ti consul-server1 consul kv import @/opt/initial_kv.json
+docker exec -ti consul-server1 consul kv get appmesh/security
+```
+
+or
+
+```bash
+docker exec -ti consul-server1 sh /opt/kv_loader.sh
 ```
 
 [TODO](https://stackoverflow.com/questions/43598002/how-to-run-consul-on-docker-with-initial-key-value-pair-data)

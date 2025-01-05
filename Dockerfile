@@ -11,21 +11,20 @@ ENV APPMESH_BaseConfig_DisableExecUser=true
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
 COPY --from=compile_stage /opt/app-mesh/build/appmesh*.deb .
 RUN  bash -c "ls && apt-get update && \
-	apt-get install -y tini && \
 	apt-get install -y ./appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
 	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
 	rm -rf /opt/appmesh/apps/ping.yaml && rm -rf /opt/appmesh/apps/backup.yaml && \
 	groupadd -r -g $AM_GID appmesh && useradd -m -r -u $AM_UID -g appmesh appmesh && \
-	ln -s /opt/appmesh/script/appmesh-entrypoint.sh / && \
+	ln -s /opt/appmesh/script/entrypoint.sh /entrypoint.sh && \
 	touch /opt/appmesh/appmesh.pid && \
 	chown -R appmesh:appmesh /opt/appmesh/ && \
 	. /usr/local/bin/appc -v && /opt/appmesh/bin/appsvc -v"
 EXPOSE 6060
 USER appmesh
 WORKDIR /
-ENTRYPOINT ["tini", "--", "/appmesh-entrypoint.sh"]
-
+ENTRYPOINT ["/entrypoint.sh"]
+STOPSIGNAL SIGTERM
 ##################################################################################
 # docker container, accept parameters as bellow format:
 #  1. Run docker container and register a long running application

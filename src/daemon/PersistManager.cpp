@@ -5,7 +5,6 @@
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"
-#include "consul/ConsulConnection.h"
 #include "process/AppProcess.h"
 #include "security/TokenBlacklist.h"
 

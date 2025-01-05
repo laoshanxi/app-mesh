@@ -79,7 +79,7 @@ copy_configuration_files() {
 
     # Copy script files
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml" "${PACKAGE_HOME}/script/"
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{setup.sh,app*.sh,prom*.yml,docker*.yaml,*.html} "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{setup.sh,entrypoint.sh,app*.sh,prom*.yml,docker*.yaml,*.html} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 
     # Copy binary support files
