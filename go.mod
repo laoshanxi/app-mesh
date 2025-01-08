@@ -58,4 +58,4 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 )
 
-replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
+replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.4
