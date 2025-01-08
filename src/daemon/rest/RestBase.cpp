@@ -173,7 +173,7 @@ const std::string RestBase::createJwtToken(const std::string &uname, const std::
     // 3. Signature HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
     // creating a token that will expire in one hour
     const auto token = jwt::create()
-                           .set_issuer(HTTP_HEADER_JWT_ISSUER)
+                           .set_issuer(Configuration::instance()->getRestJwtIssuer())
                            .set_type(HTTP_HEADER_JWT)
                            .set_issued_at(jwt::date(std::chrono::system_clock::now()))
                            .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
@@ -248,7 +248,7 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
         {
             const auto verifier = jwt::verify()
                                       .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
-                                      .with_issuer(HTTP_HEADER_JWT_ISSUER)
+                                      .with_issuer(Configuration::instance()->getRestJwtIssuer())
                                       .with_claim(HTTP_HEADER_JWT_name, userName)
                                       .with_claim(HTTP_HEADER_JWT_user_group, userGroup);
 

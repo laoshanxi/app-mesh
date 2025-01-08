@@ -1,27 +1,28 @@
 # User and Role
 
-User and Role design for App Mesh
+User and Role design for App Mesh.
 
-### What is supported
+### Supported Features
 
-> - App Mesh REST API support user permission control
-> - App Mesh CLI (based on REST API) support user permission control
-> - Permission KEY is defined for each REST API
-> - Role list is configurable
-> - Each user can define a password and some roles
-> - All the user/role/permission can be defined in local json file and central Consul service
-> - user/role configuration support dynamic update by `systemctl reload appmesh`, WebGUI and CLI
-> - User support metadata attribute for extra usage
-> - User group is defined for a user
-> - App ownership permission can define group permission and other group permission
+* App Mesh REST API supports user permission control.
+* App Mesh CLI (based on REST API) supports user permission control.
+* Permission keys are defined for each REST API.
+* Role list is configurable.
+* Each user can define a password and roles.
+* All user/role/permissions can be defined in a local YAML file or central Consul service.
+* User/role configuration supports dynamic updates via `systemctl reload appmesh`, WebGUI, and CLI.
+* Users support metadata attributes for extra usage.
+* User groups are defined for users.
+* App ownership permissions can define group permissions and other group permissions.
 
-### What is **not** supported
+### Unsupported Features
 
-> - One user can only belong to one user group
+* One user can only belong to one user group.
 
-### User and Role configure json sample
+### User and Role Configuration JSON Sample
 
 ```json
+{
   "Security": {
     "EncryptKey": false,
     "Roles": {
@@ -93,11 +94,12 @@ User and Role design for App Mesh
       }
     }
   }
+}
 ```
 
-### Permission list
+### Permission List
 
-| REST method | PATH                           | Permission Key       |
+| REST Method | PATH                           | Permission Key       |
 | :---------: | ------------------------------ | -------------------- |
 |     GET     | /appmesh/app/app-name          | `view-app`           |
 |     GET     | /appmesh/app/app-name/output   | `view-app-output`    |
@@ -126,9 +128,9 @@ User and Role design for App Mesh
 |    POST     | /appmesh/totp/usera/disable    | `user-totp-disable`  |
 |     GET     | /appmesh/users                 | `get-users`          |
 
-### Command line authentication
+### Command Line Authentication
 
-- Invalid authentication will stop command line
+* Invalid authentication will stop command line:
 
 ```shell
 $ appc ls
@@ -136,7 +138,7 @@ login failed : Incorrect user password
 invalid token supplied
 ```
 
-- Use `appc logon` to authenticate from App Mesh
+* Use `appc logon` to authenticate from App Mesh:
 
 ```shell
 $ appc logon
@@ -149,7 +151,7 @@ id name        user  status   return pid    memory  start_time          command
 1  sleep       root  enabled  0      32646  812 K   2019-10-10 19:25:38 /bin/sleep 60
 ```
 
-- Use `appc logoff` to clear authentication information
+* Use `appc logoff` to clear authentication information:
 
 ```shell
 $ appc logoff
@@ -160,17 +162,16 @@ login failed : Incorrect user password
 invalid token supplied
 ```
 
-### REST API authentication
+### REST API Authentication
 
-- Get token from API `/appmesh/login`
+* Get token from API `/appmesh/login`:
 
 ```shell
 $ curl -X POST -k https://127.0.0.1:6060/appmesh/login -H "Authorization:Basic `echo -n admin:admin123 | base64`"
 {"Access-Token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1NzA3MDc3NzYsImlhdCI6MTU3MDcwNzE3NiwiaXNzIjoiYXBwbWdyLWF1dGgwIiwibmFtZSI6ImFkbWluIn0.CF_jXy4IrGpl0HKvM8Vh_T7LsGTGO-K73OkRxQ-BFF8","expire_time":1570707176508714400,"profile":{"auth_time":1570707176508711100,"name":"admin"},"token_type":"Bearer"}
 ```
 
-- All other API should add token in header `Authorization:Bearer <JWT_TOKEN>`
-  Use `POST` `/appmesh/auth` to verify token from above:
+* All other APIs should add the token in the header `Authorization:Bearer <JWT_TOKEN>`. Use `POST` `/appmesh/auth` to verify the token:
 
 ```shell
 $ curl -X POST -k -i -H "Authorization:Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NDE4MTM1NzQsImdyb3VwIjoiYWRtaW4iLCJpYXQiOjE2NDEyMDg3NzQsImlzcyI6ImFwcG1lc2gtYXV0aDAiLCJuYW1lIjoiYWRtaW4ifQ.BfiNR2JOk8lB_q3pwwfl8j3PlA3Jxhccrbq2cx-HHtE" https://127.0.0.1:6060/appmesh/auth
@@ -179,11 +180,11 @@ Content-Length: 7
 Content-Type: text/plain; charset=utf-8
 ```
 
-### Application permission
+### Application Permission
 
-Each application can define access permission for other users (option), by default, one registered application can be accessed by any user who has specific role permission, application permission is different with role permission, application permission define accessability for the users who does not register the application.
-The permission is a two digital int value:
+Each application can define access permissions for other users (optional). By default, a registered application can be accessed by any user with the specific role permission. Application permission is different from role permission; it defines accessibility for users who did not register the application. The permission is a two-digit integer value:
 
-- Unit Place : define the same group users permissions. 1=deny, 2=read, 3=write
-- Tenth Place : define the other group users permissions. 1=deny, 2=read, 3=write
-  For example, 11 indicates all other user can not access this application, 21 indicates only same group users can read this application.
+* Unit Place: defines the same group users' permissions. 1=deny, 2=read, 3=write.
+* Tenth Place: defines other group users' permissions. 1=deny, 2=read, 3=write.
+
+For example, 11 indicates all other users cannot access this application, 21 indicates only same group users can read this application.

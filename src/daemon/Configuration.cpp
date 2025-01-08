@@ -206,7 +206,7 @@ std::string Configuration::getRestListenAddress()
 std::string Configuration::getRestJwtIssuer()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_jwt->m_jwtIssuer;
+	return m_rest->m_jwt->m_jwtIssuer.empty() ? MY_HOST_NAME : m_rest->m_jwt->m_jwtIssuer;
 }
 
 int Configuration::getRestTcpPort()
@@ -983,7 +983,7 @@ nlohmann::json Configuration::JsonJwt::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_JWTSalt] = std::string(m_jwtSalt);
-	result[JSON_KEY_JWTIssuer] = std::string(m_jwtIssuer);
+	result[JSON_KEY_JWTIssuer] = Configuration::instance()->getRestJwtIssuer();
 	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);
 	return result;
 }

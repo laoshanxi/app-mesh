@@ -1,38 +1,86 @@
 # Security
 
-App Mesh act as an enterprise middleware, security is considered in multiple places to provide enterprise secure platform.
+App Mesh acts as enterprise middleware, implementing security at multiple levels to provide a secure platform.
 
-## Data Storage
+## Security Concepts
 
-### Configuration JSON file
+### User
 
-App Mesh use a local JSON file to persist all configuration parameters and all application/user definition contents, the JSON file can be only read/write by root user.
+App Mesh has built-in user management. Each user can define a process execution OS user for application execution. Each user has:
 
-### Consul user/role
+* Password
+* MFA key
+* Roles
 
-App Mesh support use local JSON file for user/role storage, and also support save user/role information in Consul, with this all App Mesh can share a centralized user info.
+```bash
+$ appc user
+{
+  "email": "admin@appmesh.com",
+  "exec_user": "root",
+  "group": "admin",
+  "locked": false,
+  "mfa_enabled": false,
+  "name": "admin",
+  "roles": [
+    "manage",
+    "shell",
+    "usermgr",
+    "view"
+  ]
+}
+```
 
-### User Password
+### RBAC
 
-App Mesh support encrypt user password for persist, you can store encrypted password in JSON or Consul.
+App Mesh implements role-based access control (RBAC). Users are assigned roles, each containing specific permissions. Every API request undergoes user password verification and permission checks.
+
+### Multi-tenant Applications
+
+Applications managed by App Mesh can define access permissions for other users and groups. You can:
+
+* Register an application visible only to yourself.
+* Register an application for your user group.
+
+## Security Data Storage
+
+### Local YAML File
+
+App Mesh uses a local YAML file `security.yaml` to persist all user definitions. This file can only be read and written by the root user.
+
+### Consul User/Role
+
+App Mesh supports storing security content in Consul, enabling all App Mesh instances to share centralized user information.
+
+### LDAP
+
+App Mesh supports LDAP integration for user information management.
 
 ## REST
 
 ### SSL
 
-SSL is enabled by default for REST service to provide secure communication, you can also config to use your own SSL cert files.
+SSL is enabled by default for REST services to ensure secure communication. You can configure custom SSL certificate files.
 
-#### JWT Authentication
+### JWT Authentication
 
-All REST Methods require authentication by default, JWT authentication was used to protect APIs, each user can have its own role with permissions to access corresponding methods.
+All REST methods require authentication by default. JWT authentication protects APIs, with each user having role-based permissions to access corresponding methods.
 
-## Multi tenant
+### PSK (Pre-Shared Key)
 
-### Multi tenant applications
+Non-user client requests are authenticated through PSK verification.
 
-Applications managed by App Mesh can define access permissions for other user and other groups, you can register an application only visible for yourself, or you can also register an application for your user group.
-Refer to command line: appc add "--perm" parameter
+## Encryption
 
-### Encrypt application information
+### Encrypt Application Environment
 
-If application need some confidential information, you can use encrypted environment variables to store this confidential information.
+For applications requiring confidential information, encrypted environment variables can be used to store sensitive data.
+
+### Encrypt User Password
+
+Password encryption is supported, allowing storage of encrypted passwords in YAML or Consul.
+
+## Reference
+
+* [User Role](https://app-mesh.readthedocs.io/en/latest/USER_ROLE.html)
+* [JWT](https://app-mesh.readthedocs.io/en/latest/JWT.html)
+* [MFA](https://app-mesh.readthedocs.io/en/latest/MFA.html)

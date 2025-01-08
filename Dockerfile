@@ -11,6 +11,7 @@ ENV APPMESH_BaseConfig_DisableExecUser=true
 ENV APPMESH_REST_RestListenAddress=0.0.0.0
 COPY --from=compile_stage /opt/app-mesh/build/appmesh*.deb .
 RUN  bash -c "ls && apt-get update && \
+	apt-get install -y tini && \
 	apt-get install -y ./appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
 	rm -f ./appmesh*.deb && apt-get clean && rm -rf /var/lib/apt/lists/* && \
@@ -23,7 +24,7 @@ RUN  bash -c "ls && apt-get update && \
 EXPOSE 6060
 USER appmesh
 WORKDIR /
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
 STOPSIGNAL SIGTERM
 ##################################################################################
 # docker container, accept parameters as bellow format:
