@@ -1170,7 +1170,7 @@ int ArgumentParser::processShell()
 	{
 		// shell interactive
 		auto response = requestHttp(true, web::http::methods::GET, std::string("/appmesh/user/self"));
-		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user_override].get<std::string>();
+		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
 		std::ofstream(m_shellHistoryFile, std::ios::trunc).close();

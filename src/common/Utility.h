@@ -355,7 +355,6 @@ public:
 #define JSON_KEY_USER_locked "locked"
 #define JSON_KEY_USER_metadata "metadata"
 #define JSON_KEY_USER_exec_user "exec_user"
-#define JSON_KEY_USER_exec_user_override "exec_user_override"
 #define JSON_KEY_USER_mfa_key "mfa_key"
 #define JSON_KEY_USER_mfa_enabled "mfa_enabled"
 
@@ -370,7 +369,6 @@ public:
 #define JSON_KEY_USER_LDAP_USER_REPLACE_HOLDER "{USER}"
 
 #define HTTP_HEADER_JWT "JWT"
-#define HTTP_HEADER_JWT_ISSUER Configuration::instance()->getRestJwtIssuer().empty() ? MY_HOST_NAME : Configuration::instance()->getRestJwtIssuer()
 #define HTTP_HEADER_JWT_name "name"
 #define HTTP_HEADER_JWT_user_group "group"
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization

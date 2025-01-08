@@ -149,8 +149,7 @@ nlohmann::json User::AsJson() const
 	result[JSON_KEY_USER_key] = std::string(m_key);
 	result[JSON_KEY_USER_email] = std::string(m_email);
 	result[JSON_KEY_USER_group] = std::string(m_group);
-	result[JSON_KEY_USER_exec_user] = std::string(m_execUser);
-	result[JSON_KEY_USER_exec_user_override] = getExecUserOverride();
+	result[JSON_KEY_USER_exec_user] = getExecUserOverride();
 	result[JSON_KEY_USER_locked] = (m_locked);
 	result[JSON_KEY_USER_mfa_enabled] = (m_enableMfa);
 	if (!m_metadata.empty())

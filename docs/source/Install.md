@@ -1,37 +1,48 @@
 # App Mesh Deployment Guide
 
-App Mesh can be deployed in various environments, either as a native systemd-managed service or within a Docker container. This guide provides detailed instructions for setting up App Mesh in several configurations, including standalone deployment, Docker-based deployment, and Docker Compose for multi-component setups.
+App Mesh supports native systemd-managed service and Docker container deployments. This guide covers installation methods and common configurations.
 
-## Installation Options
+## Installation Methods
 
-### Quick Installation via Docker Container
+### Docker Container (Quick Start)
 
-Deploy the App Mesh daemon as a Docker container with a memory limit:
+Create an App Mesh container, expose the service port `6060`, and enable Docker access inside the container:
 
 ```shell
-docker run -d --memory=8g --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh
+docker run -d -p 6060:6060 --restart=always --name=appmesh --net=host -v /var/run/docker.sock:/var/run/docker.sock laoshanxi/appmesh:latest
 ```
 
-You can override default configurations located at `/opt/appmesh/work/config/config.yaml` by using environment variables. Use the format `APPMESH_${BASE_JSON_KEY}_${SUB_JSON_KEY}_${SUB_JSON_KEY}=NEW_VALUE`. For example, to enable specific cluster configurations for request forwarding, you need set the following environment variables:
+Configuration:
 
-- Use `-e APPMESH_REST_JWT_JWTSalt=PRODUCTION_SALT` to specify the JWT salt at the cluster level.
-- Use `-e APPMESH_REST_JWT_Issuer=PRODUCTION_SERVICE_NAME` to specify the JWT issuer at the cluster level.
-- Use `-e APPMESH_REST_RestListenAddress=0.0.0.0` to enable listening on the LAN.
+- Configuration Files Location:
+  - Default: `/opt/appmesh/` (read-only)
+  - Override: `/opt/appmesh/work/config/`
+  - Files: `config.yaml`, `security.yaml`, `consul-api-config.yaml`
 
-The `/opt/appmesh/work` directory stores all data. To ensure data persistence, you can mount this directory from the host.
+- Configuration override by Environment Variables:
+  - Override defaults in `config.yaml` & `consul-api-config.yaml` using environment variables with the format `APPMESH_${BASE_JSON_KEY}_${SUB_JSON_KEY}_${SUB_JSON_KEY}=NEW_VALUE`. For example, to enable specific cluster configurations for request forwarding:
+    - `-e APPMESH_REST_JWT_JWTSalt=PRODUCTION_SALT`: Specify the JWT salt at the cluster level.
+    - `-e APPMESH_REST_JWT_Issuer=PRODUCTION_SERVICE_NAME`: Specify the JWT issuer at the cluster level.
+    - `-e APPMESH_REST_RestListenAddress=0.0.0.0`: Enable listening on the LAN.
+
+- Working data persists in `/opt/appmesh/work` - mount this directory for persistence.
+
+- Security plugin supports `local`/`consul`/`ldap`, mount `/opt/appmesh/security.yaml` to override local security information.
+
+- The remote TLS connection related certification files are located in `/opt/appmesh/ssl`.
 
 ### Native Installation on Linux
 
-App Mesh can be installed as a standalone service on Linux systems. The following steps outline installation on CentOS, Ubuntu, and SUSE systems.
+App Mesh can be installed as a systemd service on Linux systems. The following steps outline installation on macOS, CentOS, Ubuntu, and SUSE systems.
 
-1. Import the GPG Key (if needed for signature verification)
+* Import the GPG Key (if needed for signature verification)
 
 ```shell
 sudo rpm --import gpg_public.key
 sudo dpkg --import gpg_public.key
 ```
 
-2. Install native package:
+* Install native package:
 
 ```shell
 # centos
@@ -44,10 +55,10 @@ sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 sudo mkdir -p /opt/appmesh
 sudo tar zxvf appmesh_2.1.2_clang_15.0.0_macos_14.7.2_arm64.gz -C /opt/appmesh
 sudo bash /opt/appmesh/script/setup.sh
-# notes: use sudo -E to pass environment variables
+# Note: use sudo -E to pass current environment variables
 ```
 
-3. Start and Enable the Service:
+* Start and Enable the Service:
 
 ```shell
 # Linux
@@ -61,10 +72,10 @@ sudo systemctl status appmesh
 sudo launchctl load -w /Library/LaunchDaemons/com.appmesh.appmesh.plist
 ```
 
-4. Web UI Deployment: Access the Web UI at https://<hostname>:
+* Web UI Deployment: Access the Web UI at https://{hostname}:
 
 ```shell
-appc logon -u admin -x admin123
+appc logon -U admin # Input default password: admin123
 appc add -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/server.pem:/etc/nginx/conf.d/server.crt:ro -v /opt/appmesh/ssl/server-key.pem:/etc/nginx/conf.d/server.key:ro" -d laoshanxi/appmesh-ui:2.1.2 -f
 ```
 
@@ -72,19 +83,19 @@ appc add -n appweb --perm 11 -e APP_DOCKER_OPTS="--net=host -v /opt/appmesh/ssl/
 
 For a full-featured deployment, including App Mesh, App Mesh UI, and Consul, you can use Docker Compose.
 
-1. Install Docker Compose:
+* Install Docker Compose:
 
 ```bash
 sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-2. Download and Configure Docker Compose File:
+* Download and Configure Docker Compose File:
 
-- Obtain the [docker-compose.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml).
-- Configure the correct Consul bind IP address and network device name in the file.
+* Obtain the [docker-compose.yaml](https://github.com/laoshanxi/app-mesh/raw/main/script/docker-compose.yaml).
+* Configure the correct Consul bind IP address and network device name in the file.
 
-3. Start Services:
+* Start Services:
 
 ```bash
 mkdir appmesh
@@ -93,7 +104,7 @@ wget -O docker-compose.yaml https://github.com/laoshanxi/app-mesh/raw/main/scrip
 docker-compose -f docker-compose.yaml up -d
 ```
 
-4. Verify Running Services:
+* Verify Running Services:
 
 ```bash
 docker-compose -f docker-compose.yaml ps
@@ -103,24 +114,28 @@ By default, App Mesh will connect to Consul via `https://127.0.0.1:443`. App Mes
 
 ### Environment Variables and Additional Notes
 
-- WSL Support: Use service appmesh start on Windows WSL Ubuntu environments.
-- Fresh Installation: Set `export APPMESH_FRESH_INSTALL=Y` to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
-- Secure Installation: Set `export APPMESH_SECURE_INSTALLATION=Y` to generate an initial secure password for the admin user and enable password encryption.
-- Custom Installation Path: Set `PROMPT_INSTALL_PATH=1` to specify a custom installation directory interactively during installation. Alternatively, set `PROMPT_INSTALL_PATH=/opt` to specify the installation directory directly without a prompt. After moving the home directory to a new location, you can re-run the script `script/setup.sh` to complete the setup.
-- Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users.
-- Daemon User and Group: Use `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user and group.
-- Timezone Configuration: Use `APPMESH_BaseConfig_PosixTimezone` (e.g., export APPMESH_BaseConfig_PosixTimezone="+08") for timezone setting.
-- Default User: The installation creates an appmesh Linux user for app execution.
-- CentOS Dependencies: On CentOS 8, install libnsl with`sudo yum install libnsl`
+* WSL Support: Use `service appmesh start` on Windows WSL Ubuntu environments.
+* Fresh Installation: Set `export APPMESH_FRESH_INSTALL=Y` to enable a fresh installation (avoiding reuse of SSL and config files) and use sudo -E to pass environment variables.
+* Secure Installation: Set `export APPMESH_SECURE_INSTALLATION=Y` to generate an initial secure password for the admin user and enable password encryption.
+* Custom Installation Path: Set `PROMPT_INSTALL_PATH=1` to specify a custom installation directory interactively during installation. Alternatively, set `PROMPT_INSTALL_PATH=/opt` to specify the installation directory directly without a prompt. After moving the home directory to a new location, you can re-run the script `script/setup.sh` to complete the setup.
+* Disable Custom Process User: Set `export APPMESH_BaseConfig_DisableExecUser=true` to disable custom process users.
+* Daemon User and Group: Use `APPMESH_DAEMON_EXEC_USER` and `APPMESH_DAEMON_EXEC_USER_GROUP` to specify daemon process user and group.
+* Timezone Configuration: Use `APPMESH_BaseConfig_PosixTimezone` (e.g., `export APPMESH_BaseConfig_PosixTimezone="+08"`) for timezone setting.
+* Default User: The installation creates an appmesh Linux user for app execution.
+* CentOS Dependencies: On CentOS 8, install libnsl with `sudo yum install libnsl`
 
 ## Common Use Cases
 
 App Mesh can be utilized in various scenarios, including but not limited to:
 
-- Integrating RPM installation and managing startup behavior.
-- Executing remote synchronous/asynchronous shell commands (e.g., via web SSH).
-- Monitoring host and application resources.
-- Running as a standalone JWT server.
-- Functioning as a file server.
-- Managing microservices.
-- Deploying applications across clusters.
+* Integrating RPM installation and managing startup behavior.
+* Executing remote synchronous/asynchronous shell commands (e.g., via web SSH).
+* Monitoring host and application resources.
+* Running as a standalone JWT server.
+* Functioning as a file server.
+* Managing microservices.
+* Deploying applications across clusters.
+
+## Reference
+
+* [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)
