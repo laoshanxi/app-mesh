@@ -50,11 +50,11 @@ public:
 
 protected:
     // tuple: username, usergroup
-    const std::tuple<std::string, std::string> verifyToken(const HttpRequest &message);
+    const std::tuple<std::string, std::string> verifyToken(const HttpRequest &message, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
+    bool permissionCheck(const HttpRequest &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
     const std::string getJwtUserName(const HttpRequest &message);
-    bool permissionCheck(const HttpRequest &message, const std::string &permission);
     const std::string getJwtToken(const HttpRequest &message);
-    const std::string createJwtToken(const std::string &uname, const std::string &userGroup, int timeoutSeconds);
+    const std::string createJwtToken(const std::string &uname, const std::string &userGroup, const std::string &audience, int timeoutSeconds);
 
 protected:
     // API functions
@@ -66,7 +66,7 @@ protected:
 
 #define REST_INFO_PRINT                       \
     LOG_DBG                                   \
-        << "Function: " << __FUNCTION__         \
+        << "Function: " << __FUNCTION__       \
         << " Method: " << message.m_method    \
         << " URI: " << message.m_relative_uri \
         << " Remote: " << message.m_remote_address;

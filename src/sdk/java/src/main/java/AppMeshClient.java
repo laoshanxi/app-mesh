@@ -45,6 +45,7 @@ public class AppMeshClient {
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String ACCEPT_HEADER = "Accept";
     private static final String JSON_CONTENT_TYPE = "application/json; utf-8";
+    private static final String DEFAULT_JWT_AUDIENCE = "appmesh-service";
 
     private final String baseURL;
     private AtomicReference<String> jwtToken = new AtomicReference<String>(null);
@@ -190,7 +191,7 @@ public class AppMeshClient {
     }
 
     // Login with user name and password.
-    public String login(String username, String password, String totpCode, Object expireSeconds) throws IOException {
+    public String login(String username, String password, String totpCode, Object expireSeconds, String audience) throws IOException {
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BASIC_PREFIX + Base64.getEncoder().encodeToString((username + ":" + password).getBytes()));
         if (expireSeconds != null) {
@@ -198,6 +199,9 @@ public class AppMeshClient {
         }
         if (totpCode != null) {
             headers.put("Totp", totpCode);
+        }
+        if (audience != null && !audience.isEmpty()) {
+            headers.put("Audience", audience);
         }
 
         HttpURLConnection conn = request("POST", "/appmesh/login", null, headers, null);
@@ -215,10 +219,13 @@ public class AppMeshClient {
     }
 
     // Login with token and verify permission when specified, verified token will be stored in client object when success
-    public boolean authenticate(String token, String permission) throws IOException {
+    public boolean authenticate(String token, String permission, String audience) throws IOException {
         this.jwtToken.set(token);
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
+        if (audience != null && !audience.isEmpty()) {
+            headers.put("Audience", audience);
+        }
         if (permission != null) {
             headers.put("Auth-Permission", permission);
         }

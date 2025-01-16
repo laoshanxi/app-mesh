@@ -76,7 +76,9 @@ static ArgumentParser *WORK_PARSE = nullptr;
 static size_t BOOST_DESC_WIDTH = 130;
 
 ArgumentParser::ArgumentParser(int argc, const char *argv[])
-	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(DEFAULT_TOKEN_EXPIRE_SECONDS)
+	: m_argc(argc)
+	, m_argv(argv)
+	, m_tokenTimeoutSeconds(DEFAULT_TOKEN_EXPIRE_SECONDS)
 {
 	const std::string posixTimeZone = ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) ? ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) : getPosixTimezone();
 	Utility::initDateTimeZone(posixTimeZone, false);
@@ -279,13 +281,15 @@ void ArgumentParser::processLogon()
 	CONNECTION_OPTIONS;
 	po::options_description authenticate("Authentication Options", BOOST_DESC_WIDTH);
 	authenticate.add_options()
-	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format [default: PT7D]");
+	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_TOKEN_EXPIRE_SECONDS)), "Session duration in seconds or ISO 8601 format [default: PT7D]")
+	(AUDIENCE_ARGS, po::value<std::string>()->default_value(HTTP_HEADER_JWT_Audience_appmesh), "JWT Audience [default: 'appmesh-service']");
 	OTHER_OPTIONS;
 	desc.add(connection).add(authenticate).add(other);
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
 	m_tokenTimeoutSeconds = DurationParse::parse(m_commandLineVariables[TIMEOUT].as<std::string>());
+	m_audience = m_commandLineVariables[AUDIENCE].as<std::string>();
 	if (!m_commandLineVariables.count(USERNAME))
 	{
 		while (m_username.length() == 0)
@@ -360,10 +364,10 @@ std::string ArgumentParser::getLoginUser()
 	if (token.length())
 	{
 		auto decoded_token = jwt::decode(token);
-		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
+		if (decoded_token.has_subject())
 		{
 			// get user info
-			userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
+			userName = decoded_token.get_subject();
 		}
 	}
 	return userName;
@@ -1098,6 +1102,7 @@ int ArgumentParser::processShell()
 	po::options_description execute("Execution Options", BOOST_DESC_WIDTH);
 	execute.add_options()
 	(RETRY_ARGS, "Retry command until success.")
+	(SESSION_LOGIN_ARGS, "With session login.")
 	(LIFETIME_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_LIFECYCLE_SECONDS)), "Maximum lifecycle time (in seconds) for the command run. Default is 12 hours; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').")
 	(TIMEOUT_ARGS, po::value<std::string>()->default_value(std::to_string(DEFAULT_RUN_APP_TIMEOUT_SECONDS)), "Maximum time (in seconds) for the command run. Greater than 0 means output can be printed repeatedly, less than 0 means output will be printed until the process exits; supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P5W').");
 	OTHER_OPTIONS;
@@ -1140,7 +1145,7 @@ int ArgumentParser::processShell()
 	nlohmann::json jsonObj;
 	jsonObj[JSON_KEY_APP_name] = std::string(APPC_EXEC_APP_NAME);
 	jsonObj[JSON_KEY_APP_shell_mode] = (true);
-	jsonObj[JSON_KEY_APP_session_login] = (true);
+	jsonObj[JSON_KEY_APP_session_login] = m_commandLineVariables.count(SESSION_LOGIN) > 0;
 	jsonObj[JSON_KEY_APP_command] = std::string(initialCmd);
 	jsonObj[JSON_KEY_APP_description] = std::string("App Mesh exec environment");
 	jsonObj[JSON_KEY_APP_env] = objEnvs;
@@ -1737,7 +1742,7 @@ std::string ArgumentParser::getAuthenToken()
 	// 1. try to get from REST
 	if (m_username.length() && m_userpwd.length())
 	{
-		token = login(m_username, m_userpwd, m_currentUrl);
+		token = login(m_username, m_userpwd, m_currentUrl, m_audience);
 	}
 	else
 	{
@@ -1747,7 +1752,7 @@ std::string ArgumentParser::getAuthenToken()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl);
+			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl, m_audience);
 		}
 	}
 	return token;
@@ -1768,13 +1773,13 @@ std::string ArgumentParser::getAuthenUser()
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
-			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl);
+			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl, m_audience);
 		}
 		auto decoded_token = jwt::decode(token);
-		if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
+		if (decoded_token.has_subject())
 		{
 			// get user info
-			auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
+			auto userName = decoded_token.get_subject();
 			return userName;
 		}
 		throw std::invalid_argument("Failed to get token");
@@ -1877,13 +1882,14 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	}
 }
 
-std::string ArgumentParser::login(const std::string &user, const std::string &passwd, std::string targetHost)
+std::string ArgumentParser::login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience)
 {
 	auto url = Utility::stdStringTrim(targetHost, '/');
 	// header
 	std::map<std::string, std::string> header;
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_Auth_BasicSpace) + Utility::encode64(user + ":" + passwd)});
 	header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
+	header.insert({HTTP_HEADER_JWT_audience, audience});
 
 	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", "", std::move(header), {});
 	if (response->status_code == web::http::status_codes::OK)

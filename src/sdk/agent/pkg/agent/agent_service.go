@@ -317,10 +317,6 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Ensure only one request is processed at a time
-	targetConnection.mutex.Lock()
-	defer targetConnection.mutex.Unlock()
-
 	// Body buffer
 	request := NewAppMeshRequest(r)
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK

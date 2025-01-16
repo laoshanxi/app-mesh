@@ -115,7 +115,7 @@ public:
 	/// Set Docker container ID
 	/// </summary>
 	/// <param name="containerId"></param>
-	virtual void containerId(const std::string &containerId) {};
+	virtual void containerId(const std::string &) {};
 
 	/// <summary>
 	/// get process memory and cpu usage

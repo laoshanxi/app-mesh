@@ -1233,6 +1233,29 @@ void Utility::printQRcode(const std::string &src)
 	std::cout << std::endl;
 }
 
+std::string Utility::escapeCommandLine(const std::string &input)
+{
+	std::string output;
+	for (char c : input)
+	{
+		switch (c)
+		{
+		case '\'':
+			output += "\\'";
+			break;
+		case '\"':
+			output += "\\\"";
+			break;
+		case '\\':
+			output += "\\\\";
+			break;
+		default:
+			output += c;
+		}
+	}
+	return output;
+}
+
 #define _XPLATSTR(x) x
 namespace web
 {

@@ -14,7 +14,7 @@ func TestAppmeshTCPFile(t *testing.T) {
 	fmt.Println(err)
 	require.Nil(t, err)
 
-	success, _, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS)
+	success, _, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
 	require.True(t, success)
 
 	os.Remove("appsvc")

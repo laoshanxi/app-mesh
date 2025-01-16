@@ -12,7 +12,7 @@ import (
 
 type Connection struct {
 	*appmesh.TCPConnection
-	mutex sync.Mutex
+	mu sync.Mutex
 }
 
 // EstablishConnection returns a connection if it already exists or creates a new one
@@ -65,6 +65,9 @@ func (r *Connection) SendRequestData(request *appmesh.Request) error {
 
 	logger.Debugf("Received request: %s %s %s %s", request.ClientAddress, request.HttpMethod, request.RequestUri, request.Uuid)
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Send header and body to app mesh server
 	return r.SendMessage(bodyData)
 }
@@ -81,6 +84,9 @@ func (r *Connection) SendFileData(localFile string) error {
 
 	reader := bufio.NewReader(file)
 	buf := make([]byte, TCP_CHUNK_BLOCK_SIZE)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	for {
 		// Read a chunk from the file

@@ -47,7 +47,7 @@ public class AppMeshClientTest {
     @Test
     public void testLoginAndAuthentication() throws IOException {
         LOGGER.info("testLoginAndAuthentication");
-        String token = client.login(USERNAME, PASSWORD, null, "P1W");
+        String token = client.login(USERNAME, PASSWORD, null, "P1W", "");
         assertNotNull(token, "Login should return a non-null token");
 
         token = client.renewToken("P1D");
@@ -61,7 +61,7 @@ public class AppMeshClientTest {
         assertNotNull(pingApp, "viewApp for 'ping' should return a non-null JSONObject");
         System.out.println("Ping application: " + pingApp.toString(2));
 
-        boolean authenticated = client.authenticate(token, "app-view");
+        boolean authenticated = client.authenticate(token, "app-view", "");
         assertTrue(authenticated, "User should be authenticated with the token");
 
         boolean loggedOut = client.logoff();
@@ -70,7 +70,7 @@ public class AppMeshClientTest {
 
     @Test
     public void testApp() throws Exception {
-        client.login(USERNAME, PASSWORD, null, "P1W");
+        client.login(USERNAME, PASSWORD, null, "P1W", "");
 
         client.getAppOutput("ping", 0, 0, 0, "", 0); // System.out.println(out.httpBody);
 
@@ -92,7 +92,7 @@ public class AppMeshClientTest {
 
     @Test
     public void testFile() throws IOException {
-        client.login(USERNAME, PASSWORD, null, "P1W");
+        client.login(USERNAME, PASSWORD, null, "P1W", "");
 
         File file = new File("appsvc");
         if (file.exists()) {
@@ -110,20 +110,20 @@ public class AppMeshClientTest {
     @Test
     public void testInvalidLogin() {
         assertThrows(IOException.class, () -> {
-            client.login("invalidUser", "invalidPassword", null, "P1W");
+            client.login("invalidUser", "invalidPassword", null, "P1W", "");
         }, "Login with invalid credentials should throw an IOException");
     }
 
     @Test
     public void testAppHealth() throws IOException {
-        client.login(USERNAME, PASSWORD, null, "P1W");
+        client.login(USERNAME, PASSWORD, null, "P1W", "");
         boolean isHealthy = client.checkAppHealth("ping");
         assertTrue(isHealthy, "The 'ping' application should be healthy");
     }
 
     @Test
     public void testUser() throws IOException {
-        client.login(USERNAME, PASSWORD, null, "P1W");
+        client.login(USERNAME, PASSWORD, null, "P1W", "");
         System.out.println(client.viewUserPermissions().toString());
         System.out.println(client.viewSelf().toString());
         System.out.println(client.viewRoles().toString());
@@ -131,7 +131,7 @@ public class AppMeshClientTest {
 
     @Test
     public void testAppAddAndView() throws IOException {
-        client.login(USERNAME, PASSWORD, null, "P1W");
+        client.login(USERNAME, PASSWORD, null, "P1W", "");
 
         JSONObject newAppConfig =
                 new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'").put("description", "Test application");
@@ -147,7 +147,7 @@ public class AppMeshClientTest {
 
     @Test
     public void testHostResources() throws IOException {
-        client.login(USERNAME, PASSWORD, null, "P1W");
+        client.login(USERNAME, PASSWORD, null, "P1W", "");
         System.out.println(client.viewHostResources().toString());
         System.out.println(client.viewConfig().toString());
         assertEquals("DEBUG", client.setLogLevel("DEBUG").toString());
@@ -155,7 +155,7 @@ public class AppMeshClientTest {
 
     @Test
     public void testTag() throws IOException {
-        client.login(USERNAME, PASSWORD, null, "P1W");
+        client.login(USERNAME, PASSWORD, null, "P1W", "");
         System.out.println(client.viewTags().toString());
         System.out.println(client.addTag("ABC", "DEF"));
         assertTrue(client.viewTags().containsKey("ABC"));

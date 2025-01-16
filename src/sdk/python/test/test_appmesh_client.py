@@ -136,7 +136,18 @@ class TestAppMeshClient(TestCase):
     def test_auth(self):
         """test authentication"""
         client = AppMeshClient()
-        token = client.login("admin", "admin123")
+        with self.assertRaises(Exception):
+            client.login("admin", "admin123", audience="appmesh-service-na")
+        token = client.login("admin", "admin123", audience="your-service-api")
+        with self.assertRaises(Exception):
+            self.assertFalse(client.authenticate(token))
+        self.assertTrue(client.authenticate(token, audience="your-service-api"))
+
+        token = client.login("admin", "admin123", audience="appmesh-service")
+        self.assertTrue(client.authenticate(token, audience="appmesh-service"))
+        with self.assertRaises(Exception):
+            self.assertFalse(client.authenticate(token, audience="appmesh-service-na"))
+
         token2 = client.renew_token(100)
         self.assertNotEqual(token, token2)
 
@@ -174,9 +185,7 @@ class TestAppMeshClient(TestCase):
         self.assertTrue(client.lock_user("mesh"))
         self.assertTrue(client.unlock_user("mesh"))
 
-        self.assertTrue(
-            client.update_role("manage", ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"])
-        )
+        self.assertTrue(client.update_role("manage", ["app-control", "app-delete", "app-reg", "config-set", "file-download", "file-upload", "label-delete", "label-set"]))
 
         self.assertIn("manage", client.view_roles())
         self.assertIn("admin", client.view_groups())

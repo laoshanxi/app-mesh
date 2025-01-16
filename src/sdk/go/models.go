@@ -22,6 +22,8 @@ const (
 	HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
 
 	DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
+
+	DEFAULT_JWT_AUDIENCE = "appmesh-service"
 )
 
 // ClientRequester defines the interface for making HTTP requests.

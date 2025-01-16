@@ -159,27 +159,52 @@ const std::string RestBase::getJwtToken(const HttpRequest &message)
     return token;
 }
 
-const std::string RestBase::createJwtToken(const std::string &uname, const std::string &userGroup, int timeoutSeconds)
+const std::string RestBase::createJwtToken(const std::string &userName, const std::string &userGroup, const std::string &audience, int timeoutSeconds)
 {
-    if (uname.empty())
+    if (userName.empty())
     {
         throw std::invalid_argument("must provide name to generate token");
     }
 
+    std::string targetAudience = audience.empty() ? HTTP_HEADER_JWT_Audience_appmesh : audience;
+    if (Configuration::instance()->getJwt()->m_jwtAudience.count(targetAudience) == 0)
+    {
+        throw std::invalid_argument(Utility::stringFormat("Audience <%s> verification failed", targetAudience.c_str()));
+    }
+
     // https://thalhammer.it/projects/
-    // https://www.cnblogs.com/mantoudev/p/8994341.html
-    // 1. Header {"typ": "JWT","alg" : "HS256"}
-    // 2. Payload{"iss": "appmesh-auth0","name" : "u-name",}
-    // 3. Signature HMACSHA256((base64UrlEncode(header) + "." + base64UrlEncode(payload)), 'secret');
-    // creating a token that will expire in one hour
     const auto token = jwt::create()
-                           .set_issuer(Configuration::instance()->getRestJwtIssuer())
                            .set_type(HTTP_HEADER_JWT)
-                           .set_issued_at(jwt::date(std::chrono::system_clock::now()))
+                           .set_issuer(Configuration::instance()->getRestJwtIssuer())  // Issuer: your-app-name
+                           .set_subject(userName)                                      // Subject: user identifier
+                           .set_audience(targetAudience)                               // Audience: your-api
+                           .set_issued_at(jwt::date(std::chrono::system_clock::now())) // Issued at
                            .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
-                           .set_payload_claim(HTTP_HEADER_JWT_name, jwt::claim(uname))
                            .set_payload_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userGroup))
                            .sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
+    //  set_id() can be used to set the jti (JWT ID, UUID)  and store in redis with expiration and blacklist
+    //  set_audience() can design for multiple services with scope validation:
+    /*  JWT Payload Structure:
+            const jwtPayload = {
+                iss: "https://auth.example.com",    // Token issuer
+                sub: "user123",                     // Subject (user)
+                aud: ["service1", "service2"],      // Multiple audiences
+                iat: Math.floor(Date.now() / 1000), // Issued at
+                exp: Math.floor(Date.now() / 1000) + (60 * 60), // Expires in 1 hour
+                scope: ["read:service1", "write:service2"],
+                claims: {
+                    role: "admin",
+                    permissions: ["manage_users", "view_reports"]
+                }
+            };
+        JWT Configuration
+            const jwtConfig = {
+                algorithm: 'RS256',
+                keyId: 'key1-Salt',
+                issuer: 'https://auth.example.com',
+                audience: ['service1', 'service2']
+            };
+    */
     TOKEN_BLACK_LIST::instance()->tryRemoveFromList(token);
     return token;
 }
@@ -222,7 +247,7 @@ void RestBase::tranverseJsonTree(nlohmann::json &val)
     }
 }
 
-const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpRequest &message)
+const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpRequest &message, const std::string &audience)
 {
     const auto token = getJwtToken(message);
 
@@ -230,18 +255,15 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
         throw std::invalid_argument("token blocked");
 
     const auto decoded_token = jwt::decode(token);
-    if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
+    if (decoded_token.has_subject())
     {
         // get user info
-        const auto userName = decoded_token.get_payload_claim(HTTP_HEADER_JWT_name);
-        const auto userObj = Security::instance()->getUserInfo(userName.as_string());
-        jwt::claim userGroup;
-        if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_user_group))
-            userGroup = decoded_token.get_payload_claim(HTTP_HEADER_JWT_user_group);
+        const auto userName = decoded_token.get_subject();
+        const auto userObj = Security::instance()->getUserInfo(userName);
 
         // check locked
         if (userObj->locked())
-            throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.as_string().c_str()));
+            throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.c_str()));
 
         // check user token
         try
@@ -249,17 +271,20 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
             const auto verifier = jwt::verify()
                                       .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
                                       .with_issuer(Configuration::instance()->getRestJwtIssuer())
-                                      .with_claim(HTTP_HEADER_JWT_name, userName)
-                                      .with_claim(HTTP_HEADER_JWT_user_group, userGroup);
+                                      .with_audience(audience)
+                                      .with_subject(userName)
+                                      .with_type(HTTP_HEADER_JWT)
+                                      .with_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userObj->getGroup()));
 
             verifier.verify(decoded_token);
         }
         catch (const std::exception &e)
         {
-            throw std::runtime_error(std::string("Authentication failed: ") + e.what());
+            LOG_WAR << "User <" << userName << "> verify token failed: " << e.what();
+            throw std::runtime_error("Authentication failed");
         }
 
-        return std::make_tuple(userName.as_string(), userGroup.as_string());
+        return std::make_tuple(userName, userObj->getGroup());
     }
     else
     {
@@ -271,10 +296,10 @@ const std::string RestBase::getJwtUserName(const HttpRequest &message)
 {
     const auto token = getJwtToken(message);
     const auto decoded_token = jwt::decode(token);
-    if (decoded_token.has_payload_claim(HTTP_HEADER_JWT_name))
+    if (decoded_token.has_subject())
     {
         // get user info
-        return decoded_token.get_payload_claim(HTTP_HEADER_JWT_name).as_string();
+        return decoded_token.get_subject();
     }
     else
     {
@@ -282,17 +307,17 @@ const std::string RestBase::getJwtUserName(const HttpRequest &message)
     }
 }
 
-bool RestBase::permissionCheck(const HttpRequest &message, const std::string &permission)
+bool RestBase::permissionCheck(const HttpRequest &message, const std::string &permission, const std::string &audience)
 {
     const static char fname[] = "RestHandler::permissionCheck() ";
 
-    const auto result = verifyToken(message);
+    const auto result = verifyToken(message, audience);
     const auto userName = std::get<0>(result);
     const auto groupName = std::get<1>(result);
     // check user role permission
     if (permission.empty() || Security::instance()->getUserPermissions(userName, groupName).count(permission))
     {
-        LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user : " << userName << " and permission : " << permission;
+        LOG_DBG << fname << "authentication success for remote: " << message.m_remote_address << " with user: " << userName << " and permission: " << permission;
         return true;
     }
     else

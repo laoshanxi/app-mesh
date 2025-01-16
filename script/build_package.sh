@@ -96,7 +96,7 @@ copy_configuration_files() {
         "src/daemon/config.yaml"
         "src/daemon/security/security.yaml"
         "src/daemon/security/ldapplugin/ldap.yaml"
-        "src/sdk/agent/pkg/cloud/consul-api-config.yaml"
+        "src/sdk/agent/pkg/cloud/consul.yaml"
     )
     for file in "${config_files[@]}"; do
         cp "${CMAKE_CURRENT_SOURCE_DIR}/${file}" "${PACKAGE_HOME}/"

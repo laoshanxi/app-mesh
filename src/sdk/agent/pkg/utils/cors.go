@@ -28,6 +28,7 @@ var allowedHeaders = []string{
 	"Auth-Permission",
 	"Expire-Seconds",
 	"Username",
+	"Audience",
 	"Totp-Challenge",
 	"Totp",
 	"New-Password",

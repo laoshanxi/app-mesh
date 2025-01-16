@@ -60,6 +60,7 @@ public:
 
 		std::string m_jwtSalt;
 		std::string m_jwtIssuer;
+		std::set<std::string> m_jwtAudience;
 		std::string m_jwtInterface;
 	};
 

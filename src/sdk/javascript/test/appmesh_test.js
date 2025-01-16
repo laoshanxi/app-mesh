@@ -121,8 +121,8 @@ async function userTest() {
     //  document.getElementById('output').textContent += output;
     //};
 
-    const run_sync = await appmesh.run_app_sync(runApp);
-    console.log("run_sync:", run_sync);
+    const run_app_sync = await appmesh.run_app_sync(runApp);
+    console.log("run_app_sync:", run_app_sync);
 
     const run_async = await appmesh.run_app_async(runApp, "PT20S", "PT20S");
     await run_async.wait(nodeOutputHandler);

@@ -656,7 +656,7 @@ void RestHandler::apiRestMetrics(const HttpRequest &message)
 	message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
 }
 
-nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string *token)
+nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token)
 {
 	nlohmann::json result = nlohmann::json::object();
 	nlohmann::json profile = nlohmann::json::object();
@@ -664,7 +664,7 @@ nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const 
 	profile[("auth_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	result[("profile")] = std::move(profile);
 	result[("token_type")] = std::string(HTTP_HEADER_JWT_Bearer);
-	result[HTTP_HEADER_JWT_access_token] = token ? *token : createJwtToken(uname, ugroup, timeoutSeconds);
+	result[HTTP_HEADER_JWT_access_token] = token ? *token : createJwtToken(uname, ugroup, audience, timeoutSeconds);
 	result[("expire_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
 	result[("expire_seconds")] = (timeoutSeconds);
 	return result;
@@ -687,6 +687,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 	const auto passwd = authPair.size() == 2 ? authPair[1] : "";
 	// option
 	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
+	const auto audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
@@ -701,7 +702,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 		else if (user && !user->mfaEnabled())
 		{
 			// verify without TOTP
-			message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup()));
+			message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience));
 			LOG_DBG << fname << "User <" << uname << "> login success";
 		}
 		else if (user && user->mfaEnabled())
@@ -719,7 +720,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 				result["algorithm"] = std::string("HS256");
 				result["period"] = 60; // TOTP key refersh period
 				// result["provisioning_uri"] = std::string("otpauth://totp/Example:user@example.com?secret=JBSWY3DNEHXXE5TUN4&issuer=Example");
-				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(createJwtToken(user->getName(), user->getGroup(), timeoutSeconds), challengeTimeout);
+				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(createJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
 				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = time_t() + challengeTimeout;
 				message.reply(web::http::status_codes::Unauthorized, std::move(result), std::move(headers));
 				LOG_DBG << fname << "User <" << uname << "> request TOTP key success";
@@ -728,7 +729,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 			{
 				if (user->totpValidateCode(totp))
 				{
-					message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup()));
+					message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), audience));
 					LOG_DBG << fname << "User <" << uname << "> login with TOTP success";
 				}
 				else
@@ -777,6 +778,7 @@ void RestHandler::apiUserTokenRenew(const HttpRequest &message)
 	const auto token = getJwtToken(message);
 	const auto decoded_token = jwt::decode(token);
 	const auto expireTime = decoded_token.get_expires_at();
+	const auto audience = decoded_token.get_audience().empty() ? HTTP_HEADER_JWT_Audience_appmesh : decoded_token.get_audience().begin()->c_str();
 	// const auto issueTime = decoded_token.get_issued_at();
 	// const auto oneThirdTime = issueTime + (decoded_token.get_expires_at() - issueTime) / 3;
 	// if (oneThirdTime < std::chrono::system_clock::now())
@@ -788,7 +790,7 @@ void RestHandler::apiUserTokenRenew(const HttpRequest &message)
 	TOKEN_BLACK_LIST::instance()->addToken(token, expireTime);
 
 	// create new token
-	message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, userGroup));
+	message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, userGroup, audience));
 	LOG_DBG << fname << "User <" << uname << "> renew token success";
 }
 
@@ -796,7 +798,12 @@ void RestHandler::apiUserAuth(const HttpRequest &message)
 {
 	std::string permission = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_auth_permission);
 
-	if (permissionCheck(message, permission))
+	// Only this API can be used for external audience verification
+	auto audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
+	if (audience.empty())
+		audience = HTTP_HEADER_JWT_Audience_appmesh;
+
+	if (permissionCheck(message, permission, audience))
 	{
 		auto result = nlohmann::json::object();
 		result["user"] = getJwtUserName(message);
@@ -866,6 +873,7 @@ void RestHandler::apiUserTotpValidate(const HttpRequest &message)
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
+	LOG_DBG << fname << "User <" << uname << ">";
 	const auto user = Security::instance()->getUserInfo(uname);
 	if (!user->mfaEnabled())
 		throw std::invalid_argument("TOTP authentication not enabled for current user");
@@ -874,9 +882,10 @@ void RestHandler::apiUserTotpValidate(const HttpRequest &message)
 
 	std::string token;
 	user->totpValidateChallenge(totpChallenge, token);
-	message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), &token));
+	assert(token.empty() == false);
+	message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, user->getGroup(), "", &token));
 
-	LOG_DBG << fname << "User <" << uname << "> validate TOTP key with result success";
+	LOG_DBG << fname << "User <" << uname << "> validate TOTP key success";
 }
 
 void RestHandler::apiUserTotpDisable(const HttpRequest &message)
