@@ -22,6 +22,8 @@ const (
 type TCPConnection struct {
 	conn       net.Conn
 	readBuffer sync.Pool // Buffer pool for better memory management.
+	muSend     sync.Mutex
+	muRead     sync.Mutex
 }
 
 // NewTCPConnection initializes and returns a TCPConnection.
@@ -88,6 +90,9 @@ func (r *TCPConnection) Connect(url string, sslClientCert string, sslClientCertK
 
 // ReadMessage reads and returns a complete message from the TCP connection.
 func (r *TCPConnection) ReadMessage() ([]byte, error) {
+	r.muRead.Lock()
+	defer r.muRead.Unlock()
+
 	// Read the message header to get the body length.
 	bodySize, err := r.readHeader()
 	if err != nil {
@@ -155,6 +160,9 @@ func (r *TCPConnection) readBytes(msgLength uint32) ([]byte, error) {
 
 // SendMessage sends a complete message over the TCP connection.
 func (r *TCPConnection) SendMessage(buffer []byte) error {
+	r.muSend.Lock()
+	defer r.muSend.Unlock()
+
 	if err := r.sendHeader(len(buffer)); err != nil {
 		return fmt.Errorf("failed to send header: %w", err)
 	}

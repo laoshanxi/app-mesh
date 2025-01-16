@@ -40,7 +40,7 @@ docker-compose down
 
 ## Configuration
 
-Consul configuration can be changed from file `/opt/appmesh/work/config/consul-api-config.yaml` or from environment variable:
+Consul configuration can be changed from file `/opt/appmesh/work/config/consul.yaml` or from environment variable:
 
 ```bash
 export APPMESH_CONSUL_ENABLE=true

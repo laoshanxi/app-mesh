@@ -14,47 +14,68 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 
 	const static auto shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 	const auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", shellDir.c_str(), name.c_str());
+
+	// Open shell file for writing
 	std::ofstream shellFile(fileName, std::ios::out | std::ios::trunc);
-	if (shellFile.is_open() && shellFile.good())
+	if (!shellFile.is_open())
 	{
-		shellFile << "#!/bin/bash" << std::endl;
-		shellFile << "# App Mesh app: <" << name << ">" << std::endl;
-		shellFile << "set -e" << std::endl;
-		if (workingDir.length())
-			shellFile << "cd " << workingDir << std::endl;
-		shellFile << cmd << std::endl;
-		shellFile.close();
-		// only read permission
-		os::chmod(fileName, 500);
-		static const auto osUser = Utility::getUsernameByUid();
-		if (execUser.length() > 0 && osUser != execUser)
-		{
-			os::chown(fileName, execUser);
-		}
-		m_fileName = fileName;
-
-		if (execUser.length() && execUser != osUser)
-		{
-			// need switch user
-			if (getuid() == 0 && sessionLogin)
-				m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash %s", execUser.c_str(), m_fileName.c_str());
-			else
-				m_shellCmd = Utility::stringFormat("/usr/bin/sudo --user=%s bash %s", execUser.c_str(), m_fileName.c_str());
-		}
-		else
-		{
-			// keep current user
-			m_shellCmd = Utility::stringFormat("/bin/bash '%s'", m_fileName.c_str());
-		}
-
-		LOG_DBG << fname << "file  <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> run in shell mode";
+		LOG_WAR << fname << "Failed to open shell file for writing: " << fileName;
+		throw std::runtime_error("Failed to create shell script file.");
 	}
-	else
+
+	// Write the shell script content
+	shellFile << "#!/bin/bash" << std::endl;
+	shellFile << "# App Mesh app: <" << name << ">" << std::endl;
+	shellFile << "set -e" << std::endl;
+	if (!workingDir.empty())
 	{
-		m_shellCmd = cmd;
-		LOG_WAR << fname << "create shell file <" << fileName << "> failed with error: " << std::strerror(errno);
-		throw std::runtime_error(Utility::stringFormat("failed to create file: ", fileName.c_str()));
+		shellFile << "cd " << workingDir << std::endl;
 	}
+	shellFile << cmd << std::endl;
+	shellFile.close();
+
+	// Set the file permission to read and execute (owner only)
+	if (!os::chmod(fileName, 500))
+	{
+		LOG_WAR << fname << "Failed to set permissions for file: " << fileName;
+		throw std::runtime_error("Failed to set file permissions.");
+	}
+
+	// Get current user
+	static const auto osUser = Utility::getUsernameByUid();
+
+	// Change file ownership if necessary
+	if (!execUser.empty() && osUser != execUser)
+	{
+		if (!os::chown(fileName, execUser))
+		{
+			LOG_WAR << fname << "Failed to change ownership of file: " << fileName;
+			throw std::runtime_error("Failed to change file ownership.");
+		}
+	}
+
+	// Prepare the shell command
+	m_fileName = Utility::escapeCommandLine(fileName);
+	m_shellCmd = Utility::stringFormat("bash '%s'", m_fileName.c_str());
+
+	// Check if we need to switch user and handle sudo with session login
+	if (!execUser.empty() && execUser != osUser && sessionLogin)
+	{
+		if (getuid() == 0)
+		{
+			// If we are root and sessionLogin is true, use sudo with login option
+			m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash '%s'", execUser.c_str(), m_fileName.c_str());
+			LOG_DBG << fname << "Generated shell command with sudo for user <" << execUser << "> : " << m_shellCmd;
+		}
+		else if (getuid() != 0)
+		{
+			// If not root, attempt to execute as the specified user directly
+			m_shellCmd = Utility::stringFormat("/usr/bin/sudo --login --user=%s bash '%s'", execUser.c_str(), m_fileName.c_str());
+			LOG_DBG << fname << "Generated shell command with sudo login for non-root user <" << execUser << "> : " << m_shellCmd;
+		}
+	}
+
+	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";
 }
 
 ShellAppFileGen::~ShellAppFileGen()

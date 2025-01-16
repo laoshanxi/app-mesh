@@ -5,6 +5,7 @@ const HTTP_USER_AGENT = "appmesh/javascript";
 const DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"; // default 7 day(s)
 const DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"; // 2 days
 const DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"; // 2.5 days
+const DEFAULT_JWT_AUDIENCE = "appmesh-service";
 
 // Import dependencies conditionally based on environment
 let axios, https, base64;
@@ -163,14 +164,16 @@ class AppMeshClient {
    * @param {string|null} [totpCode=null] - Time-based One-Time Password for two-factor authentication. Optional.
    * @param {number|string} [expireSeconds=DEFAULT_TOKEN_EXPIRE_SECONDS] - The number of seconds until the token expires.
    *                                                                       Can be a number or an ISO 8601 duration string.
+   * @param {string} [audience=DEFAULT_JWT_AUDIENCE] - The audience of the JWT token.
    * @returns {Promise<string>} A promise that resolves to the JWT token if login is successful.
    * @throws {Error} If the login fails or if there's a network error.
    */
-  async login(username, password, totpCode = null, expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS) {
+  async login(username, password, totpCode = null, expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS, audience = DEFAULT_JWT_AUDIENCE) {
     const auth = base64.encode(`${username}:${password}`);
     const headers = { Authorization: `Basic ${auth}` };
     if (totpCode) headers["Totp"] = totpCode;
     if (expireSeconds) headers["Expire-Seconds"] = parseDuration(expireSeconds);
+    if (audience) headers["Audience"] = audience;
 
     try {
       this._jwtToken = null;
@@ -189,14 +192,14 @@ class AppMeshClient {
    * @async
    * @param {string} token - The JWT token to authenticate.
    * @param {string|null} [permission=null] - The specific permission to verify. Optional.
-   * @returns {Promise<boolean>} A promise that resolves to true if authentication is successful, false otherwise.
+   * @param {string} [audience=DEFAULT_JWT_AUDIENCE] - The audience to verify the token against.
+   * @returns {Promise<boolean>} A promise that resolves to true if authentication is successful.
    * @throws {Error} If there's a network error or other issues during authentication.
    */
-  async authenticate(token, permission = null) {
+  async authenticate(token, permission = null, audience = DEFAULT_JWT_AUDIENCE) {
     const headers = {};
-    if (permission) {
-      headers["Auth-Permission"] = permission;
-    }
+    if (permission) headers["Auth-Permission"] = permission;
+    if (audience) headers["Audience"] = audience;
     this._jwtToken = token;
     const response = await this._request("post", "/appmesh/auth", null, { headers });
     return response.status === 200;

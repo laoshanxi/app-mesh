@@ -33,7 +33,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [Read the Docs](https://app-mesh.readthedocs.io/)
 - [REST API](https://app-mesh.readthedocs.io/en/latest/Development.html#rest-apis)
 - [Command lines](https://app-mesh.readthedocs.io/en/latest/CLI.html)
-- [Security](https://app-mesh.readthedocs.io/en/latest/JWT.html)
+- [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)
 
 ## Comparison
 

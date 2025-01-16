@@ -88,13 +88,16 @@ func NewHttpClient(options Option) *AppMeshClient {
 }
 
 // Login authenticates the user with username and password.
-func (r *AppMeshClient) Login(user string, password string, totpCode string, timeoutSeconds int) (bool, string, error) {
+func (r *AppMeshClient) Login(user string, password string, totpCode string, timeoutSeconds int, audience string) (bool, string, error) {
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS
 	}
 	headers := map[string]string{
 		"Authorization":  "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
 		"Expire-Seconds": strconv.Itoa(timeoutSeconds),
+	}
+	if audience != "" {
+		headers["Audience"] = audience
 	}
 	code, raw, _, err := r.post("appmesh/login", nil, headers, nil)
 	if code == http.StatusOK {
@@ -114,6 +117,9 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 				"Totp":           totpCode,
 				"Totp-Challenge": base64.StdEncoding.EncodeToString([]byte(challenge)),
 				"Expire-Seconds": strconv.Itoa(timeoutSeconds),
+			}
+			if audience != "" {
+				headers["Audience"] = audience
 			}
 			code, raw, _, err = r.post("appmesh/totp/validate", nil, headers, nil)
 			if code == http.StatusOK {
@@ -137,10 +143,13 @@ func (r *AppMeshClient) Logoff() (bool, error) {
 }
 
 // Authenticate authenticates the user with an existing JWT token and optional permission check.
-func (r *AppMeshClient) Authenticate(jwtToken string, permission string) (bool, error) {
+func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string) (bool, error) {
 	headers := Headers{}
 	if permission != "" {
 		headers["Auth-Permission"] = permission
+	}
+	if audience != "" {
+		headers["Audience"] = audience
 	}
 	code, _, _, err := r.post("appmesh/auth", nil, headers, nil)
 	if code == http.StatusOK {

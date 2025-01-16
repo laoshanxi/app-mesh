@@ -608,6 +608,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtSalt, newConfig->m_rest->m_jwt->m_jwtSalt);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTIssuer))
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtIssuer, newConfig->m_rest->m_jwt->m_jwtIssuer);
+				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTAudience))
+					SET_COMPARE(this->m_rest->m_jwt->m_jwtAudience, newConfig->m_rest->m_jwt->m_jwtAudience);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_SECURITY_Interface))
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtInterface, newConfig->m_rest->m_jwt->m_jwtInterface);
 			}
@@ -929,21 +931,6 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 	ssl->m_clientCertFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLClientCertificateFile);
 	ssl->m_clientCertKeyFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLClientCertificateKeyFile);
 	ssl->m_sslCaPath = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCaPath);
-	if (!Utility::isFileExist(ssl->m_certFile) && jsonValue.contains(JSON_KEY_SSLCertificateFile))
-	{
-		LOG_WAR << fname << "SSLCertificateFile not exist: " << ssl->m_certFile;
-		throw std::invalid_argument("SSLCertificateFile not exist");
-	}
-	if (!Utility::isFileExist(ssl->m_certKeyFile) && jsonValue.contains(JSON_KEY_SSLCertificateKeyFile))
-	{
-		LOG_WAR << fname << "SSLCertificateKeyFile not exist: " << ssl->m_certKeyFile;
-		throw std::invalid_argument("SSLCertificateKeyFile not exist");
-	}
-	if (ssl->m_sslCaPath.length() && !(Utility::isFileExist(ssl->m_sslCaPath) || Utility::isDirExist(ssl->m_sslCaPath)) && jsonValue.contains(JSON_KEY_SSLCaPath))
-	{
-		LOG_WAR << fname << "SSLCaPath not exist: " << ssl->m_sslCaPath;
-		throw std::invalid_argument("SSLCaPath not exist");
-	}
 	return ssl;
 }
 
@@ -975,6 +962,16 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 	auto security = std::make_shared<Configuration::JsonJwt>();
 	security->m_jwtSalt = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTSalt);
 	security->m_jwtIssuer = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTIssuer);
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_JWTAudience))
+	{
+		for (const auto &value : jsonObj[JSON_KEY_JWTAudience])
+		{
+			if (!value.is_string())
+				throw std::invalid_argument("Invalid JWT Audience type");
+			security->m_jwtAudience.insert(value.get<std::string>());
+		}
+	}
+
 	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);
 	return security;
 }
@@ -984,6 +981,7 @@ nlohmann::json Configuration::JsonJwt::AsJson() const
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_JWTSalt] = std::string(m_jwtSalt);
 	result[JSON_KEY_JWTIssuer] = Configuration::instance()->getRestJwtIssuer();
+	result[JSON_KEY_JWTAudience] = m_jwtAudience;
 	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);
 	return result;
 }

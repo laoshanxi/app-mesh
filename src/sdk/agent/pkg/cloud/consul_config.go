@@ -38,8 +38,8 @@ func init() {
 }
 
 func initConfig() {
-	viperWatch.SetConfigName("consul-api-config") // Name of the config file (without extension)
-	viperWatch.SetConfigType("yaml")              // Config file type
+	viperWatch.SetConfigName("consul") // Name of the config file (without extension)
+	viperWatch.SetConfigType("yaml")   // Config file type
 
 	if !config.IsAgentProdEnv() {
 		viperWatch.AddConfigPath(".") // Path to look for the config file in, for debug test
@@ -48,7 +48,7 @@ func initConfig() {
 	viperWatch.AddConfigPath(config.GetAppMeshHomeDir())                                // Path to look for the config file in
 
 	if err := viperWatch.ReadInConfig(); err != nil {
-		logger.Warnf("failed to read consul-api-config.yaml: %v", err)
+		logger.Warnf("failed to read consul.yaml: %v", err)
 	} else {
 		/*
 			// Watch for changes to the config file
@@ -122,6 +122,6 @@ func readConsulConfig() (*consulapi.Config, error) {
 		}
 		return config, nil
 	} else {
-		return nil, fmt.Errorf("consul not enable in consul-api-config.yaml")
+		return nil, fmt.Errorf("consul not enable in consul.yaml")
 	}
 }

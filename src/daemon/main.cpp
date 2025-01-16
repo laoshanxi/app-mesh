@@ -214,6 +214,22 @@ int main(int argc, char *argv[])
 		int tcpErrorCounter = 0;
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
+			std::list<os::Process> ptree;
+			auto allApp = Configuration::instance()->getApps();
+			for (const auto &app : allApp)
+			{
+				if (!app->isPersistAble() && app->getName() != SEPARATE_AGENT_APP_NAME)
+					continue;
+				try
+				{
+					app->execute((void *)(&ptree));
+				}
+				catch (...)
+				{
+					LOG_ERR << fname << "Application <" << app->getName() << "> execute failed with error " << std::strerror(errno);
+				}
+			}
+
 			// wait and test connect
 			if (Configuration::instance()->getRestEnabled())
 			{
@@ -238,28 +254,10 @@ int main(int argc, char *argv[])
 				std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
 			}
 
-			// monitor application
-			std::list<os::Process> ptree;
+			PersistManager::instance()->persistSnapshot();
+			HealthCheckTask::instance()->doHealthCheck();
 			if (Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected())
 				ptree = os::processes();
-			auto allApp = Configuration::instance()->getApps();
-			for (const auto &app : allApp)
-			{
-				if (!app->isPersistAble() && app->getName() != SEPARATE_AGENT_APP_NAME)
-					continue;
-				try
-				{
-					app->execute((void *)(&ptree));
-				}
-				catch (...)
-				{
-					LOG_ERR << fname << "Application <" << app->getName() << "> execute failed with error " << std::strerror(errno);
-				}
-			}
-
-			PersistManager::instance()->persistSnapshot();
-			// health-check
-			HealthCheckTask::instance()->doHealthCheck();
 		}
 	}
 	catch (const std::exception &e)

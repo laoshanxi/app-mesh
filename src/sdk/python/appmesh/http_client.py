@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from enum import Enum, unique
 from http import HTTPStatus
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 from urllib import parse
 import aniso8601
 import requests
@@ -106,6 +106,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     DEFAULT_SSL_CA_CERT_PATH = "/opt/appmesh/ssl/ca.pem"
     DEFAULT_SSL_CLIENT_CERT_PATH = "/opt/appmesh/ssl/client.pem"
     DEFAULT_SSL_CLIENT_KEY_PATH = "/opt/appmesh/ssl/client-key.pem"
+
+    DEFAULT_JWT_AUDIENCE = "appmesh-service"
 
     JSON_KEY_MESSAGE = "message"
     HTTP_USER_AGENT = "appmesh/python"
@@ -251,7 +253,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Security
     ########################################
-    def login(self, user_name: str, user_pwd: str, totp_code="", timeout_seconds=DURATION_ONE_WEEK_ISO) -> str:
+    def login(self, user_name: str, user_pwd: str, totp_code: Optional[str] = "", timeout_seconds: Union[str, int] = DURATION_ONE_WEEK_ISO, audience: Optional[str] = None) -> str:
         """Login with user name and password
 
         Args:
@@ -259,6 +261,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             user_pwd (str): the password of the user.
             totp_code (str, optional): the TOTP code if enabled for the user.
             timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
+            audience (str, optional): The audience of the JWT token, should be available by JWT service configuration (default is 'appmesh-service').
 
         Returns:
             str: JWT token.
@@ -270,6 +273,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             header={
                 "Authorization": "Basic " + base64.b64encode((user_name + ":" + user_pwd).encode()).decode(),
                 "Expire-Seconds": self._parse_duration(timeout_seconds),
+                **({"Audience": audience} if audience else {}),
             },
         )
         if resp.status_code == HTTPStatus.OK:
@@ -308,11 +312,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self.jwt_token = None
         return resp.status_code == HTTPStatus.OK
 
-    def authentication(self, token: str, permission=None) -> bool:
+    def authentication(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
         """Deprecated: Use authenticate() instead."""
         return self.authenticate(token, permission)
 
-    def authenticate(self, token: str, permission: str = None) -> bool:
+    def authenticate(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
         """Authenticate with a token and verify permission if specified.
 
         Args:
@@ -321,15 +325,17 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 permission ID can be:
                 - pre-defined by App Mesh from security.yaml (e.g 'app-view', 'app-delete')
                 - defined by input from role_update() or security.yaml
+            audience (str, optional):The audience of the JWT token used to verify the target service.
 
         Returns:
             bool: authentication success or failure.
         """
         old_token = self.jwt_token
         self.jwt_token = token
-        headers = {}
-        if permission:
-            headers["Auth-Permission"] = permission
+        headers = {
+            **({"Audience": audience} if audience else {}),
+            **({"Auth-Permission": permission} if permission else {}),
+        }
         resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/auth", header=headers)
         if resp.status_code != HTTPStatus.OK:
             self.jwt_token = old_token

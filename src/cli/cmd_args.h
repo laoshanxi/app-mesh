@@ -20,6 +20,8 @@
 #define FORCE_ARGS "force,f"
 #define TIMEOUT "timeout"
 #define TIMEOUT_ARGS "timeout,t"
+#define AUDIENCE "audience"
+#define AUDIENCE_ARGS "audience,a"
 
 #define APP "app"
 #define APP_ARGS "app,a"

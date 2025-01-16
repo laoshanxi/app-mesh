@@ -56,6 +56,12 @@ paths:
           schema:
             type: integer
           description: Optional token expiration time in seconds.
+        - name: Audience
+          in: header
+          schema:
+            type: string
+          default: "appmesh-service"
+          description: JWT audience.
       responses:
         "200":
           $ref: "#/components/responses/GetTokenSuccess"
@@ -97,6 +103,12 @@ paths:
           schema:
             type: string
           description: Permission name to verify.
+        - name: Audience
+          in: header
+          schema:
+            type: string
+          default: "appmesh-service"
+          description: JWT audience.
       responses:
         "200":
           description: Verified successfully.

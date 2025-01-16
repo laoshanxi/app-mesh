@@ -6,9 +6,9 @@
 
 Method | URI | Body/Headers | Desc
 ---|---|---|---
-POST| /appmesh/login | Authorization=Basic base64(NAME:PASSWD) <br> Optional: <br> Expire-Seconds=600 <br> Totp=base64(TOTP_KEY) | User login, return JWT token or Totp-Challenge for TOTP validate next
+POST| /appmesh/login | Authorization=Basic base64(NAME:PASSWD) <br> Optional: <br> Expire-Seconds=600 <br> Totp=base64(TOTP_KEY) <br> Audience=appmesh-service | User login, return JWT token or Totp-Challenge for TOTP validate next
 POST | /appmesh/totp/validate | Totp=base64(TOTP_KEY) <br> Totp-Challenge=base64(TOTP_CHALLENGE) | Validate TOTP key (valid and not expired) and challenge, return JWT token
-POST| /appmesh/auth | Authorization="Bearer <JWT_TOKEN>" <br> Optional: <br> Auth-Permission=<PERMISSION-ID> | JWT token and permission authenticate
+POST| /appmesh/auth | Authorization="Bearer <JWT_TOKEN>" <br> Optional: <br> Auth-Permission=<PERMISSION-ID> <br> Audience=appmesh-service | JWT token and permission authenticate
 POST| /appmesh/token/renew | Authorization="Bearer <JWT_TOKEN>" <br> Optional: <br> Expire-Seconds=600 | Logoff old token and return new token
 POST| /appmesh/self/logoff | Authorization="Bearer <JWT_TOKEN>" | Logoff token
 POST | /appmesh/totp/secret | | Generate TOTP secret for user to enable TOTP, return Mfa-Uri

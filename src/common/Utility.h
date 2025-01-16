@@ -103,7 +103,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_CONFIG_YAML_FILE "config.yaml"
 #define APPMESH_SECURITY_YAML_FILE "security.yaml"
 #define APPMESH_SECURITY_LDAP_YAML_FILE "ldap.yaml"
-#define APPMESH_CONSUL_API_CONFIG_FILE "consul-api-config.yaml"
+#define APPMESH_CONSUL_API_CONFIG_FILE "consul.yaml"
 #define APPMESH_APPMG_INIT_FLAG_FILE ".appmginit"
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"
@@ -212,6 +212,7 @@ public:
 	static void initDateTimeZone(const std::string &posixTimezone, bool writeLog);
 
 	static const std::string readStdin2End();
+	static std::string escapeCommandLine(const std::string &input);
 };
 
 #ifdef __linux__
@@ -272,6 +273,7 @@ public:
 #define JSON_KEY_JWT "JWT"
 #define JSON_KEY_JWTSalt "JWTSalt"
 #define JSON_KEY_JWTIssuer "Issuer"
+#define JSON_KEY_JWTAudience "Audience"
 #define JSON_KEY_SECURITY_Interface "SecurityInterface"
 
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
@@ -369,6 +371,7 @@ public:
 #define JSON_KEY_USER_LDAP_USER_REPLACE_HOLDER "{USER}"
 
 #define HTTP_HEADER_JWT "JWT"
+#define HTTP_HEADER_JWT_Audience_appmesh "appmesh-service"
 #define HTTP_HEADER_JWT_name "name"
 #define HTTP_HEADER_JWT_user_group "group"
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization
@@ -378,6 +381,7 @@ public:
 #define HTTP_HEADER_JWT_access_token "Access-Token"
 #define HTTP_HEADER_JWT_expire_seconds "Expire-Seconds"
 #define HTTP_HEADER_JWT_username "Username"
+#define HTTP_HEADER_JWT_audience "Audience"
 #define HTTP_HEADER_JWT_totp "Totp"
 #define HTTP_HEADER_JWT_totp_challenge "Totp-Challenge"
 #define HTTP_HEADER_JWT_new_password "New-Password"

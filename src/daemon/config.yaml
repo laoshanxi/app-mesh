@@ -53,6 +53,9 @@ REST:
     # Defaults to the hostname if left empty.
     Issuer: ""
 
+    # Audience for the JWT token.
+    Audience: ["appmesh-service", "your-service-api"]
+
     # Authentication type to use [local/ldap/consul].
     SecurityInterface: local
 

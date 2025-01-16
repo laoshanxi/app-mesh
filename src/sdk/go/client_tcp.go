@@ -240,6 +240,8 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
+	// TODO: A lock will block the second request send while the first request is waiting for response
+
 	// Send the data over TCP.
 	if err := r.SendMessage(buf); err != nil {
 		return nil, err

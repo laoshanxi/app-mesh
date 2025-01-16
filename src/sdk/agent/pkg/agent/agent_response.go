@@ -52,7 +52,7 @@ func ReadAppMeshResponse(conn *Connection) (*Response, error) {
 		file := string(bytes)
 		logger.Infof("Downloading remote file <%s> to local file <%s>", file, r.TempDownloadFilePath)
 
-		if err := r.ReadDownloadFileData(conn, r.TempDownloadFilePath); err != nil {
+		if err := r.ReadFileData(conn, r.TempDownloadFilePath); err != nil {
 			return nil, err
 		}
 	}
@@ -74,8 +74,9 @@ func ReadAppMeshResponse(conn *Connection) (*Response, error) {
 	return r, err
 }
 
-// ReadDownloadFileData reads file data from the connection and writes it to the target file path
-func (r *Response) ReadDownloadFileData(conn *Connection, targetFilePath string) error {
+// ReadFileData reads file data from the connection and writes it to the target file path
+func (r *Response) ReadFileData(conn *Connection, targetFilePath string) error {
+	// No need lock here, as ReadAppMeshResponse() is a single thread
 	f, err := os.OpenFile(targetFilePath, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		logger.Warnf("Failed to create file: %v", err)

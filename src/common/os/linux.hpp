@@ -242,7 +242,7 @@ namespace os
 
 		if (pid <= 0)
 		{
-			LOG_DBG << fname << "Invalid PID: " << pid;
+			// LOG_DBG << fname << "Invalid PID: " << pid;
 			return nullptr;
 		}
 

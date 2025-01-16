@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -62,7 +61,6 @@ func (r *AppMeshClient) delete(path string) (int, []byte, error) {
 type ClientRequesterRest struct {
 	baseURL    string
 	httpClient *http.Client
-	mutex      sync.Mutex
 }
 
 // REST request
@@ -95,8 +93,6 @@ func (r *ClientRequesterRest) DoRequest(method string, apiPath string, queries u
 		req.Header.Add(k, v)
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
 	resp, err := r.httpClient.Do(req)
 
 	if err != nil {

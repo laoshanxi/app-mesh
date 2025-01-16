@@ -186,7 +186,6 @@ std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_poin
 	if (time == std::chrono::system_clock::time_point::min() || time == std::chrono::system_clock::time_point::max())
 	{
 		// Handle the invalid time case (perhaps return an empty string or a default value)
-		LOG_DBG << fname << "Invalid time point!";
 		return std::string();
 	}
 

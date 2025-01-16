@@ -63,7 +63,7 @@ public:
 	std::string readPersistAuthToken(const std::string &hostName);
 	std::string readPersistLastHost(const std::string &defaultAddress);
 	void persistAuthToken(const std::string &hostName, const std::string &token);
-	std::string login(const std::string &user, const std::string &passwd, std::string targetHost);
+	std::string login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience);
 
 private:
 	bool isAppExist(const std::string &appName);
@@ -89,6 +89,7 @@ private:
 	const int m_argc;
 	const char **m_argv;
 	int m_tokenTimeoutSeconds;
+	std::string m_audience;
 	std::string m_defaultUrl;
 	std::string m_currentUrl;
 	std::string m_username;
