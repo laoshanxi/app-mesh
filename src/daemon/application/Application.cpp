@@ -454,11 +454,13 @@ bool Application::onTimerSpawn()
 		}
 
 		// 2. start new process
-		const auto execUser = (m_shellAppFile) ? std::string("") : getExecUser(); // shell app will switch user in script
-		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
 		m_process.reset();
 		m_process = allocProcess(false, m_dockerImage, m_name);
+
 		m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+		const auto execUser = (m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : getExecUser();
+		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
+
 		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 		if (m_pid.load() > 0)
 			checkProcStdoutFile = m_process;

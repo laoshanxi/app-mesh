@@ -10,7 +10,7 @@ The general way build all dependencies on local Linux host, this will build all 
 
 ```shell
 $ git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
-$ sudo bash app-mesh/script/update_openssl.sh
+$ sudo bash app-mesh/script/setup_build_env/update_openssl.sh
 $ sudo bash app-mesh/script/setup_build_env/autogen.sh
 # clean
 $ rm -rf app-mesh dep

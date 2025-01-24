@@ -112,7 +112,7 @@ compile_and_install_openssl() {
     error "Configuration failed"
 
   log "Compiling OpenSSL..."
-  make -j"$(nproc)" >/dev/null || error "Compilation failed"
+  make -j"$(($(nproc) / 2))" >/dev/null || error "Compilation failed"
 
   # log "Running tests..."
   # make test || error "Tests failed"

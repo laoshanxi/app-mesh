@@ -921,7 +921,6 @@ Configuration::JsonRest::JsonRest()
 
 std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const nlohmann::json &jsonValue)
 {
-	const static char fname[] = "Configuration::JsonSsl::FromJson() ";
 	auto ssl = std::make_shared<JsonSsl>();
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServer, ssl->m_sslVerifyServer);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServerDelegate, ssl->m_sslVerifyServerDelegate);

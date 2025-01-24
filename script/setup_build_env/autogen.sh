@@ -82,7 +82,7 @@ rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 go version
 
-# check libssl in case of update_openssl.sh not executed
+# check libssl in case of setup_build_env/update_openssl.sh not executed
 if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then
 	echo 'openssl was alreay installed'
 	# set for appmesh cmake
@@ -120,7 +120,7 @@ $WGET_A https://curl.se/download/curl-8.5.0.tar.gz
 tar zxvf curl-8.5.0.tar.gz >/dev/null; cd curl-8.5.0
 mkdir build; cd build; # http2: -DHTTP_ONLY=OFF -DCURL_USE_NGHTTP2=ON
 cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DOPENSSL_ROOT_DIR=/usr/local/ssl || cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHTTP_ONLY=ON -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF -DCURL_USE_OPENSSL=ON
-make -j"$(nproc)" >/dev/null
+make -j"$(($(nproc) / 2))" >/dev/null
 make install
 ldconfig
 cd $ROOTDIR
@@ -133,7 +133,7 @@ if [ true ]; then
 	tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
 	cd ./boost_1_${BOOST_VER}_0
 	./bootstrap.sh --without-libraries=atomic,context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
-	./b2 -j"$(nproc)"
+	./b2 -j"$(($(nproc) / 2))"
 	./b2 install >/dev/null
 	ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
 fi
@@ -161,7 +161,7 @@ else
 	cd log4cpp/
 	./autogen.sh
 	./configure
-	make -j"$(nproc)"
+	make -j"$(($(nproc) / 2))"
 	make install
 	ls -al /usr/local/lib*/liblog4cpp.a
 fi
@@ -184,10 +184,10 @@ if [ true ]; then
 	cp ace/config-linux.h ace/config.h
 	cp include/makeinclude/platform_linux.GNU include/makeinclude/platform_macros.GNU
 	cd ${ACE_ROOT}/ace
-	make ssl=1 -j"$(nproc)"
+	make ssl=1 -j"$(($(nproc) / 2))"
 	make install ssl=1 INSTALL_PREFIX=/usr/local
 	# cd ${ACE_ROOT}/protocols/ace
-	# make ssl=1 -j"$(nproc)"
+	# make ssl=1 -j"$(($(nproc) / 2))"
 	# make install ssl=1 INSTALL_PREFIX=/usr/local
 	ls -al /usr/local/lib*/libACE.so
 fi
@@ -199,7 +199,7 @@ cd cryptopp/
 $WGET_A https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_8_9_0/cryptopp890.zip
 unzip -o cryptopp890.zip
 export CXXFLAGS="-DNDEBUG -Os -std=c++11"
-make -j"$(nproc)"
+make -j"$(($(nproc) / 2))"
 make install
 
 cd $ROOTDIR

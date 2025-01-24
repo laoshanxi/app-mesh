@@ -1,4 +1,4 @@
-name: "code_scan_Coverity"
+name: "Coverity Scan"
 
 on:
   # trigger when code changes

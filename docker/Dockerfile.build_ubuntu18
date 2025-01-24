@@ -6,5 +6,4 @@ COPY . /workspace/
 
 USER root
 
-RUN bash script/update_openssl.sh && bash script/setup_build_env/autogen.sh && rm -rf /workspace/*
-
+RUN bash script/setup_build_env/update_openssl.sh && bash script/setup_build_env/autogen.sh && rm -rf /workspace/*

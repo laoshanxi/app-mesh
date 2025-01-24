@@ -13,11 +13,13 @@ struct ShellAppFileGen
 	virtual ~ShellAppFileGen();
 	const std::string &getShellStartCmd() const { return m_shellCmd; };
 	const std::string &getShellFileName() const { return m_fileName; };
+	const bool isUsingSudo() const { return m_usingSudo; };
 
 private:
 	std::string m_cmd;
 	std::string m_shellCmd;
 	std::string m_fileName;
+	bool m_usingSudo;
 };
 
 /// <summary>
