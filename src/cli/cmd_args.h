@@ -11,6 +11,8 @@
 
 #define USERNAME "user"
 #define USERNAME_ARGS "user,U"
+#define PASSWORD "password"
+#define PASSWORD_ARGS "password,X"
 
 #define VERBOSE "verbose"
 #define VERBOSE_ARGS "verbose,v"
@@ -67,9 +69,9 @@
 #define STATUS "status"
 #define STATUS_ARGS "status,s"
 #define BEGIN_TIME "begin-time"
-#define BEGIN_TIME_ARGS "begin-time,B"
+#define BEGIN_TIME_ARGS "begin-time,b"
 #define END_TIME "end-time"
-#define END_TIME_ARGS "end-time,X"
+#define END_TIME_ARGS "end-time,x"
 #define DAILY_BEGIN "daily-begin"
 #define DAILY_BEGIN_ARGS "daily-begin,S"
 #define DAILY_END "daily-end"

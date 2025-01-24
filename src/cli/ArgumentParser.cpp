@@ -28,7 +28,8 @@
 	connection.add_options()													\
 	(HOST_URL_ARGS, po::value<std::string>(), (std::string("Server URL [default: ") + m_defaultUrl + "]").c_str())	\
 	(FORWARD_TO_ARGS, po::value<std::string>(), "Forward requests to target host[:port]")	\
-	(USERNAME_ARGS, po::value<std::string>(), "User name for authentication")
+	(USERNAME_ARGS, po::value<std::string>(), "User name")						\
+	(PASSWORD_ARGS, po::value<std::string>(), "User password")
 
 #define OTHER_OPTIONS                                                 	\
 	po::options_description other("Other Options", BOOST_DESC_WIDTH); 	\
@@ -36,12 +37,19 @@
 	(VERBOSE_ARGS, "Enable verbose output")								\
 	(HELP_ARGS, "Display command usage and exit")
 
-#define GET_USER_NAME_PASS                                               \
-	if (m_commandLineVariables.count(USERNAME))                          \
-	{                                                                    \
-		m_username = m_commandLineVariables[USERNAME].as<std::string>(); \
-		m_userpwd = inputPasswd();                                       \
-	}                                                                    \
+#define GET_USER_NAME_PASS                                               	\
+	if (m_commandLineVariables.count(USERNAME))                          	\
+	{                                                                    	\
+		m_username = m_commandLineVariables[USERNAME].as<std::string>(); 	\
+		if (m_commandLineVariables.count(PASSWORD))						 	\
+		{																 	\
+			m_userpwd = m_commandLineVariables[PASSWORD].as<std::string>();	\
+		}																	\
+		else																\
+		{																	\
+			m_userpwd = inputPasswd();										\
+		}																	\
+	}                                                                    	\
 	log4cpp::Category::getRoot().setPriority(m_commandLineVariables.count(VERBOSE) ? log4cpp::Priority::DEBUG : log4cpp::Priority::INFO);
 
 #define HELP_ARG_CHECK_WITH_RETURN                                                                                                  \
@@ -92,7 +100,8 @@ void ArgumentParser::initArgs()
 	if (!flag.test_and_set(std::memory_order_acquire) && getuid() == 0 && getenv("SUDO_USER") && getpwnam(getenv("SUDO_USER")))
 	{
 		m_tokenFile = std::string(getpwnam(getenv("SUDO_USER"))->pw_dir) + "/.appmesh.config";
-		seteuid(getpwnam(getenv("SUDO_USER"))->pw_uid);
+		int unused = seteuid(getpwnam(getenv("SUDO_USER"))->pw_uid);
+		(void)unused;
 	}
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
 	global.add_options()("command", po::value<std::string>(), "Command to execute.")("subargs", po::value<std::vector<std::string>>(), "Arguments for command.");

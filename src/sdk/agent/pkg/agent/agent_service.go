@@ -300,7 +300,8 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		logger.Debugf("Forward request to %s", forwardingHost)
 
 		parsedURL, _ := appmesh.ParseURL(forwardingHost)
-		if parsedURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
+		// If no port is provided, use HTTP forwarding
+		if parsedURL.Port() == "" || parsedURL.Port() == strconv.Itoa(config.ConfigData.REST.RestListenPort) {
 			// Forward with HTTP protocol
 			r.Header.Del(HTTP_HEADER_KEY_X_TARGET_HOST)
 			ForwardAppMeshRequest(w, r, forwardingHost)

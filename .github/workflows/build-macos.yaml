@@ -1,13 +1,13 @@
-name: Build on macOS
+name: "Release macOS Package"
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - ".github/workflows/build-macos.yaml"
       - "src/**"
       - "script/**"
+
 env:
   APPMESH_VERSION: "2.1.2"
 
@@ -51,7 +51,7 @@ jobs:
           cmake ..
 
           echo "Building the project..."
-          make -j"$(nproc)"
+          make -j"$(($(nproc) / 2))"
           make pack
 
       - name: Upload packages

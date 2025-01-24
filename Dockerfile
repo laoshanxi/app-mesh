@@ -1,6 +1,6 @@
 FROM laoshanxi/appmesh:build_ubuntu22 AS compile_stage
 RUN cd /opt && git clone https://github.com/laoshanxi/app-mesh.git && \
-	cd app-mesh && mkdir build && cd build && cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && make -j"$(nproc)" && make pack && ls
+	cd app-mesh && mkdir build && cd build && cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && make -j"$(($(nproc) / 2))" && make pack && ls
 
 FROM python:3.13-slim
 ARG AM_UID="482"
