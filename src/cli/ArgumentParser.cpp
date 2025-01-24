@@ -92,7 +92,8 @@ void ArgumentParser::initArgs()
 	if (!flag.test_and_set(std::memory_order_acquire) && getuid() == 0 && getenv("SUDO_USER") && getpwnam(getenv("SUDO_USER")))
 	{
 		m_tokenFile = std::string(getpwnam(getenv("SUDO_USER"))->pw_dir) + "/.appmesh.config";
-		seteuid(getpwnam(getenv("SUDO_USER"))->pw_uid);
+		int unused = seteuid(getpwnam(getenv("SUDO_USER"))->pw_uid);
+		(void*)unused;
 	}
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
 	global.add_options()("command", po::value<std::string>(), "Command to execute.")("subargs", po::value<std::vector<std::string>>(), "Arguments for command.");

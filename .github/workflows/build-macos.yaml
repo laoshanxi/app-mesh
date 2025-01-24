@@ -51,7 +51,7 @@ jobs:
           cmake ..
 
           echo "Building the project..."
-          make -j"$(nproc)"
+          make -j"$(( ($(nproc) / 3) > 0 ? $(nproc) / 3 : 1 ))"
           make pack
 
       - name: Upload packages
