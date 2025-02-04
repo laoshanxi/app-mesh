@@ -1,9 +1,9 @@
 name: Publish PyPI SDK package
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "src/sdk/python/**"
       - .github/workflows/release-pypi-package.yml
