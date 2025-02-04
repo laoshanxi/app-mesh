@@ -3,9 +3,9 @@ name: Publish JAR SDK to GitHub Packages
 # https://docs.github.com/en/actions/publishing-packages/publishing-java-packages-with-maven
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "src/sdk/java/**"
       - .github/workflows/release-jar-package.yml

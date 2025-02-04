@@ -971,6 +971,12 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 		}
 	}
 
+	// Add default audience
+	if (security->m_jwtAudience.empty())
+	{
+		security->m_jwtAudience.insert(HTTP_HEADER_JWT_Audience_appmesh);
+	}
+
 	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);
 	return security;
 }

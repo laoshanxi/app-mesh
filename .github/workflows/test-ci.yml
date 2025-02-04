@@ -7,7 +7,7 @@ on:
     paths:
       - .github/workflows/test-ci.yml
   workflow_run:
-    workflows: ["release_github_package"]
+    workflows: ["Release AppMesh Package"]
     types: [completed]
 
 env:

@@ -746,125 +746,131 @@ namespace os
 					  << "socket <" << cpu.socket << ">]";
 	}
 
-	// lscpu | grep -E '^Thread|^Core|^Socket|^CPU\('
-	// Reads from /proc/cpuinfo and returns a list of CPUs.
+	/**
+	 * @brief Get information about all CPUs in the system.
+	 *
+	 * This function reads CPU information from /proc/cpuinfo on Linux or uses sysctl on macOS.
+	 * The results are cached after first call for better performance.
+	 * Thread-safe implementation using double-checked locking pattern for C++11.
+	 *
+	 * @return List of CPU objects containing processor ID, core ID and socket ID.
+	 */
 	inline std::list<CPU> cpus()
 	{
 		const static char fname[] = "proc::cpus() ";
+
+		// Use double-checked locking pattern for thread-safe lazy initialization
+		static std::atomic<bool> initialized(false);
+		static std::mutex mutex;
 		static std::list<CPU> results;
 
-		if (!results.empty())
+		// First check without locking
+		if (!initialized.load(std::memory_order_acquire))
 		{
-			return results; // Return cached results if already populated
-		}
-
-#if defined(__linux__)
-		std::ifstream file("/proc/cpuinfo");
-		if (!file.is_open())
-		{
-			LOG_ERR << fname << "Failed to open /proc/cpuinfo";
-			return results; // Return empty list on failure
-		}
-
-		// Temporary variables for parsing
-		int id = -1, core = -1, socket = -1;
-
-		std::string line;
-		while (std::getline(file, line))
-		{
-			if (line.find("processor") == 0 || line.find("physical id") == 0 || line.find("core id") == 0)
+			std::lock_guard<std::mutex> lock(mutex);
+			// Second check after acquiring lock
+			if (!initialized.load(std::memory_order_relaxed))
 			{
-				// Parse key-value pair
-				auto tokens = Utility::splitString(line, ": ");
-				if (tokens.size() < 2)
+#if defined(__linux__)
+				std::ifstream file("/proc/cpuinfo");
+				if (!file.is_open())
 				{
-					LOG_ERR << fname << "Unexpected format in /proc/cpuinfo: " << line;
-					return {}; // Clear results and return empty list on error
+					LOG_ERR << fname << "Failed to open /proc/cpuinfo";
+					initialized.store(true, std::memory_order_release);
+					return results;
 				}
 
-				// Validate and extract numeric value
-				const std::string &value_str = tokens.back();
-				if (value_str.empty() || !Utility::isNumber(value_str))
-				{
-					LOG_ERR << fname << "Invalid value in /proc/cpuinfo: " << line;
-					return {};
-				}
+				// Map to store CPU information: id -> {core_id, socket_id}
+				std::map<int, std::pair<int, int>> cpuInfo;
+				int currentId = -1;
 
-				unsigned int value = std::stoi(value_str);
-
-				// Assign values based on the key
-				if (line.find("processor") == 0)
+				std::string line;
+				while (std::getline(file, line))
 				{
-					if (id >= 0)
+					// Parse key-value pairs from /proc/cpuinfo
+					size_t pos = line.find(':');
+					if (pos == std::string::npos)
 					{
-						results.emplace_back(CPU(id, 0, 0)); // Default core and socket if not present
+						continue;
 					}
-					id = value;
-				}
-				else if (line.find("physical id") == 0)
-				{
-					if (socket >= 0)
+
+					std::string key = Utility::stdStringTrim(line.substr(0, pos));
+					std::string value = Utility::stdStringTrim(line.substr(pos + 1));
+
+					// Process CPU information fields
+					if (key == "processor")
 					{
-						LOG_ERR << fname << "Duplicate 'physical id' entry in /proc/cpuinfo: " << line;
-						return {};
+						try
+						{
+							currentId = std::stoi(value);
+							cpuInfo[currentId] = std::make_pair(-1, -1); // Initialize with invalid IDs
+						}
+						catch (...)
+						{
+							currentId = -1; // Reset on parsing error
+						}
 					}
-					socket = value;
-				}
-				else if (line.find("core id") == 0)
-				{
-					if (core >= 0)
+					else if (currentId >= 0)
 					{
-						LOG_ERR << fname << "Duplicate 'core id' entry in /proc/cpuinfo: " << line;
-						return {};
+						try
+						{
+							if (key == "core id")
+							{
+								cpuInfo[currentId].first = std::stoi(value);
+							}
+							else if (key == "physical id")
+							{
+								cpuInfo[currentId].second = std::stoi(value);
+							}
+						}
+						catch (...)
+						{
+							// Ignore parsing errors for individual fields
+						}
 					}
-					core = value;
 				}
 
-				// Create a CPU object when all attributes are available
-				if (id >= 0 && core >= 0 && socket >= 0)
+				// Build CPU list from collected information
+				for (std::map<int, std::pair<int, int>>::const_iterator it = cpuInfo.begin();
+					 it != cpuInfo.end(); ++it)
 				{
-					results.emplace_back(id, core, socket);
-					id = core = socket = -1; // Reset for the next processor
+					results.push_back(CPU(
+						it->first,
+						it->second.first >= 0 ? it->second.first : 0,  // Default core ID to 0 if not found
+						it->second.second >= 0 ? it->second.second : 0 // Default socket ID to 0 if not found
+						));
 				}
-			}
-		}
-
-		// Handle the last processor entry if incomplete
-		if (id >= 0)
-		{
-			results.emplace_back(CPU(id, 0, 0)); // Default core and socket values
-		}
-
-		if (file.fail() && !file.eof())
-		{
-			LOG_ERR << fname << "Error reading /proc/cpuinfo";
-			results.clear(); // Clear results on error
-		}
 
 #elif defined(__APPLE__)
-		int num_cores = 0, num_threads = 0;
-		size_t len = sizeof(int);
+				// Query CPU information using sysctl on macOS
+				int num_cores = 0, num_threads = 0;
+				size_t len = sizeof(int);
 
-		// Query the number of physical cores
-		if (sysctlbyname("hw.physicalcpu", &num_cores, &len, NULL, 0) != 0)
-		{
-			LOG_ERR << fname << "Failed to query physical CPU count: " << std::strerror(errno);
-			return results;
-		}
+				// Get physical core count
+				if (sysctlbyname("hw.physicalcpu", &num_cores, &len, NULL, 0) != 0)
+				{
+					LOG_ERR << fname << "Failed to query physical CPU count";
+					initialized.store(true, std::memory_order_release);
+					return results;
+				}
 
-		// Query the number of logical CPUs (threads)
-		if (sysctlbyname("hw.logicalcpu", &num_threads, &len, NULL, 0) != 0)
-		{
-			LOG_ERR << fname << "Failed to query logical CPU count: " << std::strerror(errno);
-			return results;
-		}
+				// Get logical thread count
+				if (sysctlbyname("hw.logicalcpu", &num_threads, &len, NULL, 0) != 0)
+				{
+					LOG_ERR << fname << "Failed to query logical CPU count";
+					initialized.store(true, std::memory_order_release);
+					return results;
+				}
 
-		for (int i = 0; i < num_threads; ++i)
-		{
-			// Approximation: distribute threads across cores and sockets
-			results.emplace_back(i, i % num_cores, i / num_cores);
-		}
+				// Create CPU entries mapping logical threads to physical cores
+				for (int i = 0; i < num_threads; ++i)
+				{
+					results.push_back(CPU(i, i % num_cores, i / num_cores));
+				}
 #endif
+				initialized.store(true, std::memory_order_release);
+			}
+		}
 
 		return results;
 	}
@@ -1124,9 +1130,7 @@ namespace os
 	{
 		const static char fname[] = "fileStat() ";
 
-		struct stat fileStat
-		{
-		};
+		struct stat fileStat{};
 		if (::stat(path.c_str(), &fileStat) == 0)
 		{
 			// Extract permission bits using bitwise AND
