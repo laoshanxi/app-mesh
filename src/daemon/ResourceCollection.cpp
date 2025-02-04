@@ -46,17 +46,23 @@ const HostResource &ResourceCollection::getHostResource()
 	}
 	if (m_resources.m_cores == 0)
 	{
+		// Get CPU topology information
 		static auto cpus = os::cpus();
-		std::set<int> sockets;
-		std::set<int> processers;
-		for (auto &c : cpus)
+		std::set<unsigned int> uniqueSockets;
+		std::set<unsigned int> uniqueCores;
+		
+		// Count unique cores and sockets
+		for (const auto& cpu : cpus)
 		{
-			sockets.insert(c.socket);
-			processers.insert(c.id);
+			uniqueSockets.insert(cpu.socket);
+			// Create a unique core identifier combining socket and core ID
+			// to handle same core IDs across different sockets
+			uniqueCores.insert((cpu.socket << 16) | cpu.core);
 		}
-		m_resources.m_cores = cpus.size();
-		m_resources.m_sockets = sockets.size();
-		m_resources.m_processors = processers.size();
+
+		m_resources.m_processors = cpus.size();        // Total logical processors
+		m_resources.m_cores = uniqueCores.size();      // Total physical cores
+		m_resources.m_sockets = uniqueSockets.size();  // Total physical CPUs
 	}
 
 	// Memory
@@ -99,7 +105,7 @@ const HostResource &ResourceCollection::getHostResource()
 		{
 			HostNetInterface inet;
 			inet.address = net.address;
-			inet.ipv4 = net.ipv4;
+			inet.ipv6 = net.ipv6;
 			inet.name = net.name;
 			m_resources.m_ipaddress.push_back(inet);
 		}
@@ -124,7 +130,7 @@ void ResourceCollection::dump()
 	LOG_DBG << fname << "os_user:" << Utility::getUsernameByUid();
 	for (auto &pair : m_resources.m_ipaddress)
 	{
-		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv4 << "," << pair.address;
+		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv6 << "," << pair.address;
 	}
 	LOG_DBG << fname << "m_cores:" << m_resources.m_cores;
 	LOG_DBG << fname << "m_sockets:" << m_resources.m_sockets;
@@ -153,7 +159,7 @@ nlohmann::json ResourceCollection::AsJson()
 				  {
 					  nlohmann::json net_detail = nlohmann::json::object();
 					  net_detail["name"] = std::string(pair.name);
-					  net_detail["ipv4"] = (pair.ipv4);
+					  net_detail["ipv6"] = (pair.ipv6);
 					  net_detail["address"] = std::string(pair.address);
 					  arr.push_back(net_detail); });
 	result[("net")] = std::move(arr);

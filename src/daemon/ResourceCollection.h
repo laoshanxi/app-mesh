@@ -12,7 +12,7 @@
 struct HostNetInterface
 {
 	std::string name;
-	bool ipv4;
+	bool ipv6;
 	std::string address;
 };
 //////////////////////////////////////////////////////////////////////////

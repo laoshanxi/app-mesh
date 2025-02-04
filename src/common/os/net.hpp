@@ -24,7 +24,7 @@ namespace net
 	struct NetworkInterfaceInfo
 	{
 		std::string name;	 ///< Name of the network interface
-		bool ipv4;			 ///< True if IPv4, false if IPv6
+		bool ipv6;			 ///< True if IPv6, false if IPv4
 		std::string address; ///< IP address as string
 	};
 
@@ -261,7 +261,7 @@ namespace net
 
 				NetworkInterfaceInfo interface;
 				interface.name = ifa->ifa_name;
-				interface.ipv4 = (AF_INET == ifa->ifa_addr->sa_family);
+				interface.ipv6 = (AF_INET6 == ifa->ifa_addr->sa_family);
 				interface.address = sockaddrToString(ifa->ifa_addr);
 				interfaces.push_back(std::move(interface));
 			}

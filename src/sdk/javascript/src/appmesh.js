@@ -1,4 +1,5 @@
-// appmesh.js
+import axios from 'axios';
+import https from 'https';
 
 const HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
 const HTTP_USER_AGENT = "appmesh/javascript";
@@ -7,33 +8,21 @@ const DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"; // 2 days
 const DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"; // 2.5 days
 const DEFAULT_JWT_AUDIENCE = "appmesh-service";
 
-// Import dependencies conditionally based on environment
-let axios, https, base64;
-let isNode = typeof window === 'undefined';
+// Environment detection
+const isNode = typeof window === 'undefined';
 
-if (isNode) {
-  // Node.js environment
-  isNode = true;
-  axios = require('axios');
-  https = require('https');
-  base64 = require('base-64');
-} else {
-  // Browser environment
-  axios = window.axios; // Assuming axios is loaded globally in browser
-  // Create browser-compatible base64 utility
-  base64 = {
-    encode: (str) => btoa(str),
-    decode: (str) => atob(str)
-  };
-}
+// Define base64 utility for both environments
+const base64 = isNode ? {
+  encode: str => Buffer.from(str).toString('base64'),
+  decode: str => Buffer.from(str, 'base64').toString()
+} : {
+  encode: str => btoa(str),
+  decode: str => atob(str)
+};
 
 // Default output handler if none is provided
 const defaultOutputHandler = (output) => {
-  if (isNode) {
-    process.stdout.write(String(output));
-  } else {
-    console.log(output);
-  }
+  console.log(output);
 };
 
 /**
@@ -128,7 +117,7 @@ class AppMeshClient {
    * };
    * @param {string} jwtToken - Authentication JWT token for API requests.
    */
-  constructor(baseURL, sslConfig = null, jwtToken = null) {
+  constructor(baseURL = isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, jwtToken = null) {
     /**
      * @property {string} baseURL - The base URL of the App Mesh REST Service.
      */
@@ -310,7 +299,7 @@ class AppMeshClient {
    */
   async check_app_health(name) {
     const response = await this._request("get", `/appmesh/app/${name}/health`);
-    return response.data === "0";
+    return response.data === 0;
   }
 
   /**
@@ -1102,11 +1091,6 @@ class AppRun {
   }
 }
 
-// Export based on environment
-if (isNode) {
-  module.exports = { AppMeshClient, AppOutput, AppRun };
-} else {
-  window.AppMeshClient = AppMeshClient;
-  window.AppOutput = AppOutput;
-  window.AppRun = AppRun;
-}
+// Export classes directly
+export { AppMeshClient, AppOutput, AppRun };
+export default AppMeshClient;

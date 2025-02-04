@@ -8,7 +8,7 @@ on:
       - docker/Dockerfile.container_agent
       - .github/workflows/release-container-agent-image.yml
   workflow_run:
-    workflows: ["release_PyPI_package"]
+    workflows: ["Publish PyPI SDK package"]
     types:
       - completed
 
