@@ -1,9 +1,9 @@
 name: Publish npm SDK package
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "src/sdk/javascript/**"
       - ".github/workflows/release-npm-package.yml"
