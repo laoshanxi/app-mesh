@@ -1,24 +1,39 @@
 import axios from 'axios';
 import https from 'https';
 
-const HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
-const HTTP_USER_AGENT = "appmesh/javascript";
-const DEFAULT_TOKEN_EXPIRE_SECONDS = "P1W"; // default 7 day(s)
-const DEFAULT_RUN_APP_TIMEOUT_SECONDS = "P2D"; // 2 days
-const DEFAULT_RUN_APP_LIFECYCLE_SECONDS = "P2DT12H"; // 2.5 days
-const DEFAULT_JWT_AUDIENCE = "appmesh-service";
+// Constants definitions using Object.freeze to prevent modifications
+const CONSTANTS = Object.freeze({
+  HTTP_USER_AGENT_HEADER_NAME: "User-Agent",
+  HTTP_USER_AGENT: "appmesh/javascript",
+  DEFAULT_TOKEN_EXPIRE_SECONDS: "P1W",
+  DEFAULT_RUN_APP_TIMEOUT_SECONDS: "P2D",
+  DEFAULT_RUN_APP_LIFECYCLE_SECONDS: "P2DT12H",
+  DEFAULT_JWT_AUDIENCE: "appmesh-service"
+});
 
-// Environment detection
-const isNode = typeof window === 'undefined';
+// Environment detection utilities
+const ENV = Object.freeze({
+  isNode: !(typeof window !== 'undefined' && typeof window.document !== 'undefined')
+});
 
-// Define base64 utility for both environments
-const base64 = isNode ? {
+// Base64 utilities optimized for both Node.js and browser environments
+const base64Utils = ENV.isNode ? {
   encode: str => Buffer.from(str).toString('base64'),
   decode: str => Buffer.from(str, 'base64').toString()
 } : {
-  encode: str => btoa(str),
-  decode: str => atob(str)
+  encode: str => btoa(encodeURIComponent(str)),
+  decode: str => decodeURIComponent(atob(str))
 };
+
+// Custom error class for AppMesh specific errors
+class AppMeshError extends Error {
+  constructor(message, statusCode = null, responseData = null) {
+    super(message);
+    this.name = 'AppMeshError';
+    this.statusCode = statusCode;
+    this.responseData = responseData;
+  }
+}
 
 // Default output handler if none is provided
 const defaultOutputHandler = (output) => {
@@ -102,6 +117,10 @@ function parseDuration(duration) {
   return seconds;
 }
 
+/**
+ * Main AppMesh client class
+ * Provides interface to interact with AppMesh REST Service
+ */
 class AppMeshClient {
   /**
    * Creates an instance of AppMeshClient.
@@ -117,7 +136,7 @@ class AppMeshClient {
    * };
    * @param {string} jwtToken - Authentication JWT token for API requests.
    */
-  constructor(baseURL = isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, jwtToken = null) {
+  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, jwtToken = null) {
     /**
      * @property {string} baseURL - The base URL of the App Mesh REST Service.
      */
@@ -131,17 +150,31 @@ class AppMeshClient {
      */
     this.forwardingHost = null;
 
+    // Optimize axios configuration
     const axiosConfig = {
       baseURL,
-      httpsAgent: sslConfig ?
-        (isNode ? new https.Agent(sslConfig) : null) :
-        (isNode ? new https.Agent({ rejectUnauthorized: false }) : null)
+      timeout: 120000, // Default timeout to 120 seconds
+      httpsAgent: ENV.isNode && (sslConfig ?
+        new https.Agent(sslConfig) :
+        new https.Agent({ rejectUnauthorized: false })),
+      validateStatus: status => status >= 200 && status < 500 // Custom status validation
     };
-    /**
-     * @property {AxiosInstance} _client - Axios instance for making HTTP requests.
-     * Configured with the base URL and custom HTTPS agent for SSL verification.
-     */
+
     this._client = axios.create(axiosConfig);
+    // Add request interceptor
+    this._client.interceptors.request.use(
+      config => {
+        config.headers = { ...config.headers, ...this._commonHeaders() };
+        return config;
+      },
+      error => Promise.reject(new AppMeshError(error.message))
+    );
+
+    // Add response interceptor
+    this._client.interceptors.response.use(
+      response => response,
+      error => Promise.reject(this._handleError(error))
+    );
   }
 
   /**
@@ -151,14 +184,14 @@ class AppMeshClient {
    * @param {string} username - The username for authentication.
    * @param {string} password - The password for authentication.
    * @param {string|null} [totpCode=null] - Time-based One-Time Password for two-factor authentication. Optional.
-   * @param {number|string} [expireSeconds=DEFAULT_TOKEN_EXPIRE_SECONDS] - The number of seconds until the token expires.
+   * @param {number|string} [expireSeconds=CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS] - The number of seconds until the token expires.
    *                                                                       Can be a number or an ISO 8601 duration string.
-   * @param {string} [audience=DEFAULT_JWT_AUDIENCE] - The audience of the JWT token.
+   * @param {string} [audience=CONSTANTS.DEFAULT_JWT_AUDIENCE] - The audience of the JWT token.
    * @returns {Promise<string>} A promise that resolves to the JWT token if login is successful.
    * @throws {Error} If the login fails or if there's a network error.
    */
-  async login(username, password, totpCode = null, expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS, audience = DEFAULT_JWT_AUDIENCE) {
-    const auth = base64.encode(`${username}:${password}`);
+  async login(username, password, totpCode = null, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
+    const auth = base64Utils.encode(`${username}:${password}`);
     const headers = { Authorization: `Basic ${auth}` };
     if (totpCode) headers["Totp"] = totpCode;
     if (expireSeconds) headers["Expire-Seconds"] = parseDuration(expireSeconds);
@@ -181,11 +214,11 @@ class AppMeshClient {
    * @async
    * @param {string} token - The JWT token to authenticate.
    * @param {string|null} [permission=null] - The specific permission to verify. Optional.
-   * @param {string} [audience=DEFAULT_JWT_AUDIENCE] - The audience to verify the token against.
+   * @param {string} [audience=CONSTANTS.DEFAULT_JWT_AUDIENCE] - The audience to verify the token against.
    * @returns {Promise<boolean>} A promise that resolves to true if authentication is successful.
    * @throws {Error} If there's a network error or other issues during authentication.
    */
-  async authenticate(token, permission = null, audience = DEFAULT_JWT_AUDIENCE) {
+  async authenticate(token, permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     const headers = {};
     if (permission) headers["Auth-Permission"] = permission;
     if (audience) headers["Audience"] = audience;
@@ -210,12 +243,12 @@ class AppMeshClient {
    * Renews the current JWT token, optionally specifying a new expiration time.
    *
    * @async
-   * @param {number|string} [expireSeconds=DEFAULT_TOKEN_EXPIRE_SECONDS] - The number of seconds until the new token expires.
+   * @param {number|string} [expireSeconds=CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS] - The number of seconds until the new token expires.
    *                                                                       Can be a number or an ISO 8601 duration string.
    * @returns {Promise<string>} A promise that resolves to the new JWT token if renewal is successful.
    * @throws {Error} If token renewal fails or if there's a network error.
    */
-  async renew_token(expireSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS) {
+  async renew_token(expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {};
     if (expireSeconds) {
       headers["Expire-Seconds"] = parseDuration(expireSeconds);
@@ -234,7 +267,7 @@ class AppMeshClient {
    */
   async get_totp_secret() {
     const response = await this._request("post", "/appmesh/totp/secret");
-    return base64.decode(response.data["Mfa-Uri"]);
+    return base64Utils.decode(response.data["Mfa-Uri"]);
   }
 
   /**
@@ -429,12 +462,12 @@ class AppMeshClient {
    * @async
    * @param {Object} app - The application configuration.
    * @param {Function} [outputHandler=defaultOutputHandler] - A function to handle the application's output.
-   * @param {number|string} [maxTimeSeconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS] - The maximum time to run the application.
-   * @param {number|string} [lifeCycleSeconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS] - The lifecycle time for the application.
+   * @param {number|string} [maxTimeSeconds=CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS] - The maximum time to run the application.
+   * @param {number|string} [lifeCycleSeconds=CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS] - The lifecycle time for the application.
    * @returns {Promise<number|null>} A promise that resolves to the exit code of the application, or null if not available.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  async run_app_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async run_app_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
       timeout: parseDuration(maxTimeSeconds),
       lifecycle: parseDuration(lifeCycleSeconds)
@@ -467,12 +500,12 @@ class AppMeshClient {
    *
    * @async
    * @param {Object} app - The application configuration.
-   * @param {number|string} [maxTimeSeconds=DEFAULT_RUN_APP_TIMEOUT_SECONDS] - The maximum time to run the application.
-   * @param {number|string} [lifeCycleSeconds=DEFAULT_RUN_APP_LIFECYCLE_SECONDS] - The lifecycle time for the application.
+   * @param {number|string} [maxTimeSeconds=CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS] - The maximum time to run the application.
+   * @param {number|string} [lifeCycleSeconds=CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS] - The lifecycle time for the application.
    * @returns {Promise<AppRun>} A promise that resolves to an AppRun object representing the running application.
    * @throws {Error} If there's a network error or other issues during execution.
    */
-  async run_app_async(app, maxTimeSeconds = DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async run_app_async(app, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
       timeout: parseDuration(maxTimeSeconds),
       lifecycle: parseDuration(lifeCycleSeconds)
@@ -541,8 +574,7 @@ class AppMeshClient {
    * @param {string} localFile - The local file path to be downloaded.
    * @param {boolean} [applyFileAttributes=true] - Whether to apply the file permissions (mode, owner, group) 
    *                                               from the remote file to the local file. Default is true.
-   * @returns {Promise<boolean>} Success or failure.
-   * @throws {Error} If there's a network error or other issues during execution.
+   * @throws {AppMeshError} If there's a network error or other issues during execution.
    */
   async download_file(filePath, localFile, applyFileAttributes = true) {
     try {
@@ -550,36 +582,37 @@ class AppMeshClient {
       const response = await this._request("get", "/appmesh/file/download", null, {
         headers,
         config: {
-          responseType: "arraybuffer",
-        },
+          responseType: "arraybuffer"
+        }
       });
 
       if (response.status !== 200) {
         throw new Error(new TextDecoder().decode(response.data));
       }
 
-      if (isNode) {
-        const fs = require("fs").promises;
+      if (ENV.isNode) {
+        const fs = await import('fs/promises');
         await fs.writeFile(localFile, Buffer.from(response.data));
 
         if (applyFileAttributes) {
-          if (response.headers["file-mode"]) {
-            await fs.chmod(localFile, parseInt(response.headers["file-mode"]));
-          }
-
-          if (response.headers["file-user"] && response.headers["file-group"]) {
-            try {
+          const { headers } = response;
+          try {
+            if (headers["file-mode"]) {
+              await fs.chmod(localFile, parseInt(headers["file-mode"]));
+            }
+            if (headers["file-user"] && headers["file-group"]) {
               await fs.chown(
                 localFile,
-                parseInt(response.headers["file-user"]),
-                parseInt(response.headers["file-group"])
+                parseInt(headers["file-user"]),
+                parseInt(headers["file-group"])
               );
-            } catch (ex) {
-              console.log("Failed to change file ownership:", ex);
             }
+          } catch (ex) {
+            console.warn("Failed to apply file attributes:", ex.message);
           }
         }
       } else {
+        // Browser environment
         const blob = new Blob([response.data]);
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -589,12 +622,10 @@ class AppMeshClient {
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
       }
-
-      return true;
     } catch (error) {
-      console.error("Download failed:", error);
-      return false;
+      throw new AppMeshError(`Download failed: ${error.message}`);
     }
   }
 
@@ -605,64 +636,60 @@ class AppMeshClient {
    * @param {string} filePath - The target remote file to be uploaded.
    * @param {boolean} [applyFileAttributes=true] - Whether to apply the file permissions (mode, owner, group) 
    *                                               from the local file to the remote file. Default is true.
-   * @returns {Promise<boolean>} Success or failure.
-   * @throws {Error} If there's a network error or other issues during execution.
+   * @throws {AppMeshError} If there's a network error or other issues during execution.
    */
   async upload_file(localFile, filePath, applyFileAttributes = true) {
     try {
-      const headers = this._commonHeaders();
-      headers["File-Path"] = filePath;
+      const headers = { "File-Path": filePath };
       let formData;
 
-      if (isNode) {
-        const fs = require("fs");
-        const path = require("path");
-        const FormData = require("form-data");
-
+      if (ENV.isNode) {
+        // Only load modules in Node.js environment
+        const FormData = (await import('form-data')).default;
+        const fs = await import('fs');
         formData = new FormData();
-        formData.append("filename", path.basename(filePath));
+
+        const filename = filePath.split('/').pop();
+        formData.append("filename", filename);
 
         const stat = fs.statSync(localFile);
         if (stat.size < 10 * 1024 * 1024) {
-          // If file is smaller than 10MB
-          // Read file into buffer for small files
+          // For files smaller than 10MB, read into buffer for better performance
           const fileBuffer = fs.readFileSync(localFile);
-          formData.append("file", fileBuffer, { filename: path.basename(localFile) });
+          formData.append("file", fileBuffer, { filename: localFile.split('/').pop() });
         } else {
           // Use stream for larger files
           formData.append("file", fs.createReadStream(localFile));
         }
 
+        // Add file attributes if requested
         if (applyFileAttributes) {
           headers["File-Mode"] = stat.mode.toString();
           headers["File-User"] = stat.uid.toString();
           headers["File-Group"] = stat.gid.toString();
         }
 
-        // When using form-data, we need to set the content type manually for Axios
-        headers["Content-Type"] = `multipart/form-data; boundary=${formData.getBoundary()}`;
+        // Merge with form-data headers for Node.js
+        Object.assign(headers, formData.getHeaders());
       } else {
         formData = new FormData();
-        formData.append("filename", filePath.split("/").pop());
-        formData.append("file", localFile instanceof File ? localFile : new File([localFile], filePath.split("/").pop()));
+        formData.append("filename", filePath.split('/').pop());
+        formData.append("file", localFile instanceof File ? localFile : new File([localFile], filePath.split('/').pop()));
       }
 
       const response = await this._request("post", "/appmesh/file/upload", formData, {
         headers,
         config: {
           maxBodyLength: Infinity,
-          maxContentLength: Infinity,
-        },
+          maxContentLength: Infinity
+        }
       });
 
       if (response.status !== 200) {
-        throw new Error(response.data);
+        throw new AppMeshError(`Upload failed: ${response.data}`, response.status);
       }
-
-      return true;
     } catch (error) {
-      console.error("Upload failed:", error);
-      return false;
+      throw new AppMeshError(`Upload failed: ${error.message}`);
     }
   }
 
@@ -765,7 +792,7 @@ class AppMeshClient {
    * @throws {Error} If there's a network error or the server responds with a non-200 status.
    */
   async update_user_password(newPassword, userName = "self") {
-    const headers = { "New-Password": base64.encode(newPassword) };
+    const headers = { "New-Password": base64Utils.encode(newPassword) };
     const response = await this._request("post", `/appmesh/user/${userName}/passwd`, null, { headers });
     return response.status === 200;
   }
@@ -938,7 +965,7 @@ class AppMeshClient {
   }
 
   _commonHeaders() {
-    const headers = { [HTTP_USER_AGENT_HEADER_NAME]: HTTP_USER_AGENT };
+    const headers = { [CONSTANTS.HTTP_USER_AGENT_HEADER_NAME]: CONSTANTS.HTTP_USER_AGENT };
     if (this._jwtToken) {
       headers["Authorization"] = `Bearer ${this._jwtToken}`;
     }
@@ -971,42 +998,46 @@ class AppMeshClient {
     const { headers = {}, params = {}, config = {} } = options;
 
     try {
-      const mergedConfig = {
+      const requestConfig = {
+        method,
+        url: path,
         ...config,
-        headers: { ...this._commonHeaders(), ...headers },
-        params: { ...params },
+        headers: { ...headers },
+        params: { ...params }
       };
 
-      let response;
-      switch (method.toLowerCase()) {
-        case "get":
-        case "delete":
-          response = await this._client[method](path, mergedConfig);
-          break;
-        case "post":
-        case "put":
-        case "patch":
-          response = await this._client[method](path, body, mergedConfig);
-          break;
-        default:
-          throw new Error(`Unsupported HTTP method: ${method}`);
+      if (body !== null) {
+        requestConfig.data = body;
       }
 
+      const response = await this._client(requestConfig);
       return response;
     } catch (error) {
       throw this._handleError(error);
     }
   }
 
+  // Optimized error handling
   _handleError(error) {
     if (error.response) {
       const { status, data } = error.response;
-      return new Error(`HTTP ${status}: ${JSON.stringify(data)}`);
+      return new AppMeshError(
+        `HTTP ${status}: ${typeof data === 'object' ? JSON.stringify(data) : data}`,
+        status,
+        data
+      );
     }
-    return error;
+    if (error.request) {
+      return new AppMeshError('No response received from server');
+    }
+    return new AppMeshError(error.message);
   }
 }
 
+/**
+ * Class representing output from an AppMesh application
+ * Immutable after creation
+ */
 class AppOutput {
   /**
    * App output object for app_output() method
@@ -1016,32 +1047,20 @@ class AppOutput {
    * @param {number|null} exitCode - Process exit code (number or null)
    */
   constructor(statusCode, output, outPosition, exitCode) {
-    /**
-     * HTTP status code
-     * @type {number}
-     */
-    this.statusCode = statusCode;
-
-    /**
-     * HTTP response text
-     * @type {string}
-     */
-    this.output = output;
-
-    /**
-     * Current read position (number or null)
-     * @type {number|null}
-     */
-    this.outPosition = outPosition;
-
-    /**
-     * Process exit code (number or null)
-     * @type {number|null}
-     */
-    this.exitCode = exitCode;
+    Object.assign(this, {
+      statusCode: Number(statusCode),
+      output: String(output),
+      outPosition: outPosition !== null ? Number(outPosition) : null,
+      exitCode: exitCode !== null ? Number(exitCode) : null
+    });
+    Object.freeze(this); // Make instance immutable
   }
 }
 
+/**
+ * Class representing a running AppMesh application
+ * Handles async operation results
+ */
 class AppRun {
   /**
    * Application run object indicating a remote run from runAsync()
@@ -1091,6 +1110,6 @@ class AppRun {
   }
 }
 
-// Export classes directly
+// Export the main classes
 export { AppMeshClient, AppOutput, AppRun };
 export default AppMeshClient;

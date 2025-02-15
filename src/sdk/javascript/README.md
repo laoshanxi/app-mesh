@@ -1,11 +1,53 @@
-# Build
+# AppMesh JavaScript SDK
+
+## Build
 
 ```shell
 npm run build
 ```
 
-# Test
+## Install
 
 ```shell
-node test/appmesh_test.js
+npm i appmesh
+```
+
+## Usage
+
+### Node.js
+
+```js
+import { AppMeshClient } from 'appmesh'
+const client = new AppMeshClient()
+const token = await client.login(username, password)
+```
+
+### VUE
+
+```js
+import { AppMeshClient } from 'appmesh'
+import { Message } from 'element-ui'
+
+export class VueAppMeshClient extends AppMeshClient {
+  constructor(options = {}) {
+    super(options.baseURL, options.sslConfig, options.jwtToken)
+    this.messageConfig = {
+      duration: options.messageDuration || 3000,
+      showClose: true
+    }
+  }
+
+  _handleError(error) {
+    const baseError = super._handleError(error)
+
+    const message = error.message || 'Error'
+    Message({
+      message: message,
+      type: 'error',
+      duration: 5 * 1000
+    })
+
+    return baseError
+  }
+}
 ```

@@ -1,7 +1,5 @@
 import fs from 'fs'
-import { AppMeshClient } from '../src/appmesh.js'
-// import { AppMeshClient } from 'appmesh';
-// import node2fa from 'node-2fa'
+import { AppMeshClient } from 'appmesh'
 
 const baseURL = process.env.APPMESH_URL || 'https://127.0.0.1:6060'
 const username = process.env.APPMESH_USER || 'admin'
