@@ -2,8 +2,20 @@ const path = require('path');
 const TerserPlugin = require('terser-webpack-plugin');
 const webpack = require('webpack');
 
-const commonConfig = {
+const config = {
   entry: './src/appmesh.js',
+  experiments: { outputModule: true },
+  output: {
+    path: path.resolve(process.cwd(), 'dist'),
+    filename: 'appmesh.esm.js',
+    library: { type: 'module' },
+    module: true,
+    environment: { 
+      module: true,
+      dynamicImport: true
+    }
+  },
+  target: ['web', 'es2015'],
   module: {
     rules: [
       {
@@ -18,75 +30,23 @@ const commonConfig = {
   },
   optimization: {
     minimize: true,
-    minimizer: [new TerserPlugin()]
+    minimizer: [new TerserPlugin({ extractComments: false })]
   },
   resolve: {
     extensions: ['.js'],
     fallback: {
-      buffer: require.resolve('buffer/'),
-      https: require.resolve('https-browserify'),
-      http: require.resolve('stream-http'),
-      url: require.resolve('url/')
+      fs: false,
+      path: false,
+      https: false,
+      http: false,
+      buffer: false
     }
   },
-  plugins: [new webpack.ProvidePlugin({ Buffer: ['buffer', 'Buffer'] })]
+  plugins: [
+    new webpack.DefinePlugin({
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
+    })
+  ]
 };
 
-module.exports = [
-  // Node.js Build (Keep axios external)
-  {
-    ...commonConfig,
-    target: 'node',
-    output: {
-      path: path.resolve(process.cwd(), 'dist'),
-      filename: 'appmesh.node.js',
-      library: { type: 'umd', export: 'default' },
-      globalObject: 'this'
-    },
-    externals: { axios: 'axios', 'base-64': 'base-64' }
-  },
-
-  // Browser Build (Bundle axios)
-  {
-    ...commonConfig,
-    target: 'web',
-    output: {
-      path: path.resolve(process.cwd(), 'dist'),
-      filename: 'appmesh.browser.js',
-      library: { type: 'umd', export: 'default' },
-      globalObject: 'this'
-    }
-  },
-
-  // UMD Build for CommonJS and ES Module (appmesh.js)
-  {
-    ...commonConfig,
-    target: 'web',
-    output: {
-      path: path.resolve(process.cwd(), 'dist'),
-      filename: 'appmesh.js',
-      library: { type: 'umd', export: 'default' },
-      globalObject: 'this'
-    }
-  },
-
-  // ES Module Build (appmesh.esm.js)
-  {
-    ...commonConfig,
-    target: 'web',
-    output: {
-      path: path.resolve(process.cwd(), 'dist'),
-      filename: 'appmesh.esm.js',
-      library: {
-        type: 'module'
-      },
-      module: true,
-      environment: {
-        module: true
-      }
-    },
-    experiments: {
-      outputModule: true
-    }
-  }
-];
+module.exports = config;
