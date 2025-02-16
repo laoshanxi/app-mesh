@@ -1,0 +1,22 @@
+services:
+  auth_service:
+    image: laoshanxi/appmesh
+    container_name: auth_service
+    restart: always
+    volumes:
+      - ./work:/opt/appmesh/work/
+
+  auth_ui:
+    image: laoshanxi/appmesh-ui
+    container_name: auth_ui
+    restart: always
+    volumes:
+      - /data/ssl/server.pem:/etc/nginx/conf.d/server.crt
+      - /data/ssl/server-key.pem:/etc/nginx/conf.d/server.key
+    ports:
+      - "8443:443"
+    environment:
+      - APP_MESH_API_URL=https://auth_service:6060
+      - VUE_APP_TITLE=My Authentication Service
+    links:
+      - auth_service

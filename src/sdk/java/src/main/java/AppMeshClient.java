@@ -205,10 +205,51 @@ public class AppMeshClient {
         }
 
         HttpURLConnection conn = request("POST", "/appmesh/login", null, headers, null);
+        int statusCode = conn.getResponseCode();
         String responseContent = Utils.readResponse(conn);
-        JSONObject jsonResponse = new JSONObject(responseContent);
-        this.jwtToken.set(jsonResponse.getString("Access-Token"));
-        return this.jwtToken.get();
+
+        if (statusCode == HttpURLConnection.HTTP_OK) {
+            JSONObject jsonResponse = new JSONObject(responseContent);
+            this.jwtToken.set(jsonResponse.getString("Access-Token"));
+            return this.jwtToken.get();
+        } else if (statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && totpCode != null && !totpCode.isEmpty()) {
+            JSONObject jsonResponse = new JSONObject(responseContent);
+            if (jsonResponse.has("Totp-Challenge")) {
+                String challenge = jsonResponse.getString("Totp-Challenge");
+                return validateTotp(username, challenge, totpCode, expireSeconds);
+            }
+        }
+        throw new IOException("Login failed: " + responseContent);
+    }
+
+    /**
+     * Validates TOTP challenge.
+     * 
+     * @param username Username to validate
+     * @param challenge Challenge from server
+     * @param code TOTP code
+     * @param expireSeconds Token expiry duration in seconds or ISO duration string
+     * @return New JWT token
+     * @throws IOException if validation fails
+     */
+    public String validateTotp(String username, String challenge, String code, Object expireSeconds) throws IOException {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Username", Base64.getEncoder().encodeToString(username.getBytes()));
+        headers.put("Totp", code);
+        headers.put("Totp-Challenge", Base64.getEncoder().encodeToString(challenge.getBytes()));
+        if (expireSeconds != null) {
+            headers.put("Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
+        }
+
+        HttpURLConnection conn = request("POST", "/appmesh/totp/validate", null, headers, null);
+        String responseContent = Utils.readResponse(conn);
+
+        if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+            JSONObject jsonResponse = new JSONObject(responseContent);
+            this.jwtToken.set(jsonResponse.getString("Access-Token"));
+            return this.jwtToken.get();
+        }
+        throw new IOException("TOTP validation failed: " + responseContent);
     }
 
     // Logoff current session from server
@@ -260,7 +301,7 @@ public class AppMeshClient {
     }
 
     // Setup 2FA for current login user
-    public boolean setupTotp(String totpCode) throws IOException, IllegalArgumentException {
+    public String setupTotp(String totpCode) throws IOException, IllegalArgumentException {
         if (totpCode == null || !totpCode.matches("\\d{6}")) {
             throw new IllegalArgumentException("TOTP code must be a 6-digit number");
         }
@@ -269,7 +310,10 @@ public class AppMeshClient {
         headers.put("Totp", totpCode);
 
         HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
-        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        String responseContent = Utils.readResponse(conn);
+        JSONObject jsonResponse = new JSONObject(responseContent);
+        this.jwtToken.set(jsonResponse.getString("Access-Token"));
+        return this.jwtToken.get();
     }
 
     // Disable 2FA for current user

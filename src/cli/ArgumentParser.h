@@ -56,7 +56,7 @@ private:
 	void initRadomPassword();
 
 public:
-	std::shared_ptr<CurlResponse> requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
+	std::shared_ptr<CurlResponse> requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
 	std::string getAuthenToken();
 	std::string getAuthenUser();

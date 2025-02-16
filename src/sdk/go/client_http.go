@@ -112,27 +112,35 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		_ = decoder.Decode(&m)
 		if challenge, ok := m["Totp-Challenge"].(string); ok {
-			headers = map[string]string{
-				"Username":       base64.StdEncoding.EncodeToString([]byte(user)),
-				"Totp":           totpCode,
-				"Totp-Challenge": base64.StdEncoding.EncodeToString([]byte(challenge)),
-				"Expire-Seconds": strconv.Itoa(timeoutSeconds),
+			token, err := r.ValidateTotp(user, challenge, totpCode, timeoutSeconds)
+			if err == nil && token != "" {
+				return true, token, nil
 			}
-			if audience != "" {
-				headers["Audience"] = audience
-			}
-			code, raw, _, err = r.post("appmesh/totp/validate", nil, headers, nil)
-			if code == http.StatusOK {
-				result := JWTResponse{}
-				err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
-				if err == nil {
-					r.updateToken(result.AccessToken)
-					return true, r.getToken(), err
-				}
-			}
+			return false, "", err
 		}
 	}
 	return false, "", err
+}
+
+// ValidateTotp validates the TOTP code and returns a new JWT token.
+func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode string, timeoutSeconds int) (string, error) {
+	headers := map[string]string{
+		"Username":       base64.StdEncoding.EncodeToString([]byte(username)),
+		"Totp":           totpCode,
+		"Totp-Challenge": base64.StdEncoding.EncodeToString([]byte(challenge)),
+		"Expire-Seconds": strconv.Itoa(timeoutSeconds),
+	}
+
+	code, raw, _, err := r.post("appmesh/totp/validate", nil, headers, nil)
+	if code == http.StatusOK {
+		result := JWTResponse{}
+		err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
+		if err == nil {
+			r.updateToken(result.AccessToken)
+			return r.getToken(), nil
+		}
+	}
+	return "", err
 }
 
 // Logoff logs the user off from the server.
@@ -193,8 +201,16 @@ func (r *AppMeshClient) GetTotpSecret() (string, error) {
 // SetupTotp sets up TOTP for the user.
 func (r *AppMeshClient) SetupTotp(totpCode string) (bool, error) {
 	headers := map[string]string{"Totp": totpCode}
-	code, _, _, err := r.post("appmesh/totp/setup", nil, headers, nil)
-	return code == http.StatusOK, err
+	code, raw, _, err := r.post("appmesh/totp/setup", nil, headers, nil)
+	if code == http.StatusOK {
+		result := JWTResponse{}
+		err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
+		if err == nil {
+			r.updateToken(result.AccessToken)
+			return true, err
+		}
+	}
+	return false, err
 }
 
 // DisableTotp disables TOTP for the user.

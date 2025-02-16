@@ -40,9 +40,8 @@ export class VueAppMeshClient extends AppMeshClient {
   _handleError(error) {
     const baseError = super._handleError(error)
 
-    const message = error.message || 'Error'
     Message({
-      message: message,
+      message: typeof baseError.message === 'object' ? JSON.stringify(baseError.message, null, 2) : baseError.message,
       type: 'error',
       duration: 5 * 1000
     })

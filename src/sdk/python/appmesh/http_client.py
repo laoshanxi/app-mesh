@@ -281,24 +281,43 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 self.jwt_token = resp.json()["Access-Token"]
         elif resp.status_code == HTTPStatus.UNAUTHORIZED and "Totp-Challenge" in resp.json():
             challenge = resp.json()["Totp-Challenge"]
-            resp = self._request_http(
-                AppMeshClient.Method.POST,
-                path="/appmesh/totp/validate",
-                header={
-                    "Username": base64.b64encode(user_name.encode()).decode(),
-                    "Totp-Challenge": base64.b64encode(challenge.encode()).decode(),
-                    "Totp": totp_code,
-                    "Expire-Seconds": self._parse_duration(timeout_seconds),
-                },
-            )
-            if resp.status_code == HTTPStatus.OK:
-                if "Access-Token" in resp.json():
-                    self.jwt_token = resp.json()["Access-Token"]
-            else:
-                raise Exception(resp.text)
+            self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
         else:
             raise Exception(resp.text)
         return self.jwt_token
+
+    def validate_totp(self, username: str, challenge: str, code: str, timeout: Union[int, str] = DURATION_ONE_WEEK_ISO) -> str:
+        """Validate TOTP challenge and obtain a new JWT token.
+
+        Args:
+            username (str): Username to validate
+            challenge (str): Challenge string from server
+            code (str): TOTP code to validate
+            timeout (Union[int, str], optional): Token expiry timeout. 
+                Accepts ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P1W') or seconds.
+                Defaults to DURATION_ONE_WEEK_ISO.
+
+        Returns:
+            str: New JWT token if validation succeeds
+
+        Raises:
+            Exception: If validation fails or server returns error
+        """
+        resp = self._request_http(
+            AppMeshClient.Method.POST,
+            path="/appmesh/totp/validate",
+            header={
+                "Username": base64.b64encode(username.encode()).decode(),
+                "Totp": code,
+                "Totp-Challenge": base64.b64encode(challenge.encode()).decode(),
+                "Expire-Seconds": self._parse_duration(timeout),
+            },
+        )
+        if resp.status_code == HTTPStatus.OK:
+            if "Access-Token" in resp.json():
+                self.jwt_token = resp.json()["Access-Token"]
+                return self.jwt_token
+        raise Exception(resp.text)
 
     def logoff(self) -> bool:
         """Log out of the current session from the server.
@@ -349,7 +368,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
 
         Returns:
-            str: The new JWT token if renew success, otherwise return None.
+            str: The new JWT token if renew success, the old token will be blocked.
         """
         assert self.jwt_token
         resp = self._request_http(
@@ -377,23 +396,26 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             return self._parse_totp_uri(totp_uri).get("secret")
         raise Exception(resp.text)
 
-    def setup_totp(self, totp_code: str) -> bool:
+    def setup_totp(self, totp_code: str) -> str:
         """Set up 2FA for the current user.
 
         Args:
             totp_code (str): TOTP code
 
         Returns:
-            bool: success or failure.
+            str: The new JWT token if setup success, the old token will be blocked.
         """
         resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path="/appmesh/totp/setup",
             header={"Totp": totp_code},
         )
-        if resp.status_code != HTTPStatus.OK:
+        if resp.status_code == HTTPStatus.OK:
+            if "Access-Token" in resp.json():
+                self.jwt_token = resp.json()["Access-Token"]
+                return self.jwt_token
+        else:
             raise Exception(resp.text)
-        return resp.status_code == HTTPStatus.OK
 
     def disable_totp(self, user: str = "self") -> bool:
         """Disable 2FA for the specified user.
