@@ -52,7 +52,7 @@
     "buffer": "^6.0.3",
     "terser-webpack-plugin": "^5.3.9",
     "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4"
+    "webpack-cli": "^6.0.0"
   },
   "peerDependencies": {
     "axios": ">=1.0.0",
