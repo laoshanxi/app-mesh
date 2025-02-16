@@ -1702,7 +1702,7 @@ bool ArgumentParser::confirmInput(const char *msg)
 	return result == "y";
 }
 
-std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool throwAble, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
+std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
 	if (m_jwtToken.empty())
 	{
@@ -1718,7 +1718,7 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool throwAble, const 
 	}
 	std::string bodyContent = body ? body->dump() : std::string();
 	auto resp = RestClient::request(m_currentUrl, mtd, path, bodyContent, header, query);
-	if (throwAble && resp->status_code != web::http::status_codes::OK)
+	if (shouldThrow && resp->status_code != web::http::status_codes::OK)
 	{
 		throw std::invalid_argument(parseOutputMessage(resp));
 	}

@@ -21,8 +21,8 @@ const base64Utils = ENV.isNode ? {
   encode: str => Buffer.from(str).toString('base64'),
   decode: str => Buffer.from(str, 'base64').toString()
 } : {
-  encode: str => btoa(encodeURIComponent(str)),
-  decode: str => decodeURIComponent(atob(str))
+  encode: str => btoa(str),
+  decode: str => atob(str)
 };
 
 // Custom error class for AppMesh specific errors
@@ -41,10 +41,10 @@ const defaultOutputHandler = (output) => {
 };
 
 /**
- * Parse ISO8601 duration to seconds, supports: P[n]Y[n]M[n]DT[n]H[n]M[n]S or P[n]W
- * @param {string} {string|number} duration - ISO8601 duration string or number of seconds (e.g., "P1Y2M3DT4H5M6S").
- * @returns {number} The total duration in seconds.
- * @throws {RangeError} If the duration string is invalid.
+ * Converts ISO8601 duration to seconds
+ * @param {string|number} duration - Duration string (e.g. "P1Y2M3DT4H5M6S") or seconds
+ * @returns {number} Total seconds
+ * @throws {Error} If duration format invalid
  */
 function parseDuration(duration) {
   // If duration is already a number, return it
@@ -54,6 +54,9 @@ function parseDuration(duration) {
 
   if (typeof duration !== 'string') {
     throw new Error("Invalid input type. Expected number or ISO 8601 duration string.");
+  } else if (/^\d+$/.test(duration)) {
+    // If the duration is a string but contains only numbers, parse it to a number and return
+    return parseInt(duration, 10);
   }
 
   // Handle empty string
@@ -118,23 +121,21 @@ function parseDuration(duration) {
 }
 
 /**
- * Main AppMesh client class
- * Provides interface to interact with AppMesh REST Service
+ * AppMesh REST Service client
  */
 class AppMeshClient {
   /**
-   * Creates an instance of AppMeshClient.
-   * This client object is used to access the App Mesh REST Service.
-   *
-   * @param {string} baseURL - The base URL of the App Mesh REST Service.
-   * @param {Object} [sslConfig=null] - sslConfig definition. Default is null to disable SSL verify.
+   * Initialize client with connection settings
+   * @param {string} baseURL - Service URL (default: http://127.0.0.1:6060)
+   * @param {Object} [sslConfig] - SSL config. Default is null to disable SSL verify.
+   * @example
    * const sslConfig = {
    *   cert: fs.readFileSync("/opt/appmesh/ssl/client.pem"),
    *   key: fs.readFileSync("/opt/appmesh/ssl/client-key.pem"),
    *   ca: fs.readFileSync("/opt/appmesh/ssl/ca.pem"),  // Optional: if using a custom CA
    *   rejectUnauthorized: true,                        // Set to false if you want to ignore unauthorized SSL certificates
    * };
-   * @param {string} jwtToken - Authentication JWT token for API requests.
+   * @param {string} [jwtToken] - Auth token
    */
   constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, jwtToken = null) {
     /**
@@ -142,13 +143,15 @@ class AppMeshClient {
      */
     this.baseURL = baseURL;
     /**
-     * @property {string|null} _jwtToken - Authentication JWT token for API requests. Initially null.
+     * @property {string|null} jwtToken - Authentication JWT token for API requests. Initially null.
      */
-    this._jwtToken = jwtToken;
+    this.jwtToken = jwtToken;
+    Object.defineProperty(this, 'jwtToken', { writable: true, configurable: true });
     /**
      * @property {string|null} forwardingHost - The host to forward requests to, if any. Initially null.
      */
     this.forwardingHost = null;
+    Object.defineProperty(this, 'forwardingHost', { writable: true, configurable: true });
 
     // Optimize axios configuration
     const axiosConfig = {
@@ -178,17 +181,13 @@ class AppMeshClient {
   }
 
   /**
-   * Authenticates the user with the App Mesh service.
-   *
-   * @async
-   * @param {string} username - The username for authentication.
-   * @param {string} password - The password for authentication.
-   * @param {string|null} [totpCode=null] - Time-based One-Time Password for two-factor authentication. Optional.
-   * @param {number|string} [expireSeconds=CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS] - The number of seconds until the token expires.
-   *                                                                       Can be a number or an ISO 8601 duration string.
-   * @param {string} [audience=CONSTANTS.DEFAULT_JWT_AUDIENCE] - The audience of the JWT token.
-   * @returns {Promise<string>} A promise that resolves to the JWT token if login is successful.
-   * @throws {Error} If the login fails or if there's a network error.
+   * User authentication to get JWT token
+   * @param {string} username - Username
+   * @param {string} password - Password
+   * @param {string} [totpCode] - 2FA code
+   * @param {string|number} [expireSeconds] - Token expiry (e.g. "P1D" or 86400)
+   * @param {string} [audience] - Token audience
+   * @returns {Promise<string>} JWT token
    */
   async login(username, password, totpCode = null, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     const auth = base64Utils.encode(`${username}:${password}`);
@@ -197,15 +196,10 @@ class AppMeshClient {
     if (expireSeconds) headers["Expire-Seconds"] = parseDuration(expireSeconds);
     if (audience) headers["Audience"] = audience;
 
-    try {
-      this._jwtToken = null;
-      const response = await this._request("post", "/appmesh/login", null, { headers });
-      if (response.status !== 200) throw new Error(response.data);
-      this._jwtToken = response.data["Access-Token"];
-      return this._jwtToken;
-    } catch (error) {
-      throw this._handleError(error);
-    }
+    this.jwtToken = null;
+    const response = await this._request("post", "/appmesh/login", null, { headers });
+    this.jwtToken = response.data["Access-Token"];
+    return this.jwtToken;
   }
 
   /**
@@ -222,7 +216,7 @@ class AppMeshClient {
     const headers = {};
     if (permission) headers["Auth-Permission"] = permission;
     if (audience) headers["Audience"] = audience;
-    this._jwtToken = token;
+    this.jwtToken = token;
     const response = await this._request("post", "/appmesh/auth", null, { headers });
     return response.status === 200;
   }
@@ -254,8 +248,8 @@ class AppMeshClient {
       headers["Expire-Seconds"] = parseDuration(expireSeconds);
     }
     const response = await this._request("post", "/appmesh/token/renew", null, { headers });
-    this._jwtToken = response.data["Access-Token"];
-    return this._jwtToken;
+    this.jwtToken = response.data["Access-Token"];
+    return this.jwtToken;
   }
 
   /**
@@ -271,17 +265,36 @@ class AppMeshClient {
   }
 
   /**
-   * Sets up TOTP (Two-Factor Authentication) for the current user.
-   *
-   * @async
-   * @param {string} totpCode - The TOTP code to verify and complete setup.
-   * @returns {Promise<boolean>} A promise that resolves to true if setup is successful.
-   * @throws {Error} If setup fails or if there's a network error.
+   * Two-factor authentication setup
+   * @param {string} totpCode - TOTP verification code
+   * @returns {Promise<string>} Updated JWT token
    */
   async setup_totp(totpCode) {
     const headers = { Totp: totpCode };
     const response = await this._request("post", "/appmesh/totp/setup", null, { headers });
-    return response.status === 200;
+    this.jwtToken = response.data["Access-Token"];
+    return this.jwtToken;
+  }
+
+  /**
+   * Validates TOTP challenge
+   * @param {string} username - Username
+   * @param {string} challenge - Challenge from server
+   * @param {string} code - TOTP code
+   * @param {string|number} [expireSeconds] - Token expiry
+   * @returns {Promise<string>} New JWT token
+   */
+  async validate_totp(username, challenge, code, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
+    const headers = {
+      "Username": base64Utils.encode(username),
+      "Totp": code,
+      "Totp-Challenge": base64Utils.encode(challenge),
+      "Expire-Seconds": parseDuration(expireSeconds)
+    };
+
+    const response = await this._request("post", "/appmesh/totp/validate", null, { headers });
+    this.jwtToken = response.data["Access-Token"];
+    return this.jwtToken;
   }
 
   /**
@@ -336,11 +349,10 @@ class AppMeshClient {
   }
 
   /**
-   * Adds a new application or updates an existing one.
-   *
-   * @async
-   * @param {string} name - The name of the application to add or update.
-   * @param {Object} appJson - The application configuration in JSON format:
+   * Add/Update application
+   * @param {string} name - App name
+   * @param {Object} appJson - Config JSON 
+   * @example
    * {
    *  "name": "",
    *  "command": "",
@@ -377,8 +389,7 @@ class AppMeshClient {
    *          "0": "keepalive"
    *      }
    *  }
-   * @returns {Promise<Object>} The resigtered application json object.
-   * @throws {Error} If there's a network error or other issues during the operation.
+   * @returns {Promise<Object>} Registered app config
    */
   async add_app(name, appJson) {
     const response = await this._request("put", `/appmesh/app/${name}`, appJson);
@@ -569,16 +580,15 @@ class AppMeshClient {
   }
 
   /**
-   * Copy a remote file to local. Optionally apply the same permissions as the remote file.
-   * @param {string} filePath - The remote file path.
-   * @param {string} localFile - The local file path to be downloaded.
-   * @param {boolean} [applyFileAttributes=true] - Whether to apply the file permissions (mode, owner, group) 
-   *                                               from the remote file to the local file. Default is true.
-   * @throws {AppMeshError} If there's a network error or other issues during execution.
+   * Download remote file
+   * @param {string} remotePath - Remote path
+   * @param {string} localPath - Local path
+   * @param {boolean} [applyAttrs] - Copy file attributes
+   * @throws {AppMeshError} On transfer error
    */
-  async download_file(filePath, localFile, applyFileAttributes = true) {
+  async download_file(remotePath, localPath, applyAttrs = true) {
     try {
-      const headers = { "File-Path": filePath };
+      const headers = { "File-Path": remotePath };
       const response = await this._request("get", "/appmesh/file/download", null, {
         headers,
         config: {
@@ -592,17 +602,17 @@ class AppMeshClient {
 
       if (ENV.isNode) {
         const fs = await import('fs/promises');
-        await fs.writeFile(localFile, Buffer.from(response.data));
+        await fs.writeFile(localPath, Buffer.from(response.data));
 
-        if (applyFileAttributes) {
+        if (applyAttrs) {
           const { headers } = response;
           try {
             if (headers["file-mode"]) {
-              await fs.chmod(localFile, parseInt(headers["file-mode"]));
+              await fs.chmod(localPath, parseInt(headers["file-mode"]));
             }
             if (headers["file-user"] && headers["file-group"]) {
               await fs.chown(
-                localFile,
+                localPath,
                 parseInt(headers["file-user"]),
                 parseInt(headers["file-group"])
               );
@@ -618,7 +628,7 @@ class AppMeshClient {
         const a = document.createElement("a");
         a.style.display = "none";
         a.href = url;
-        a.download = localFile.split("/").pop();
+        a.download = localPath.split("/").pop();
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -630,26 +640,24 @@ class AppMeshClient {
   }
 
   /**
-   * Upload a local file to the remote server. Optionally apply the same permissions as the local file.
-   * 
-   * @param {string|File} localFile - The local file path or File object.
-   * @param {string} filePath - The target remote file to be uploaded.
-   * @param {boolean} [applyFileAttributes=true] - Whether to apply the file permissions (mode, owner, group) 
-   *                                               from the local file to the remote file. Default is true.
-   * @throws {AppMeshError} If there's a network error or other issues during execution.
+   * Upload file to remote
+   * @param {string|File|Blob} localFile - Local file path (Node.js) or File/Blob object (Browser)
+   * @param {string} remotePath - Remote path
+   * @param {boolean} [applyAttrs] - Copy file attributes
+   * @throws {AppMeshError} On transfer error
    */
-  async upload_file(localFile, filePath, applyFileAttributes = true) {
+  async upload_file(localFile, remotePath, applyAttrs = true) {
     try {
-      const headers = { "File-Path": filePath };
+      const headers = { "File-Path": remotePath };
       let formData;
 
       if (ENV.isNode) {
-        // Only load modules in Node.js environment
+        // Node.js environment handling
         const FormData = (await import('form-data')).default;
         const fs = await import('fs');
         formData = new FormData();
 
-        const filename = filePath.split('/').pop();
+        const filename = remotePath.split('/').pop();
         formData.append("filename", filename);
 
         const stat = fs.statSync(localFile);
@@ -663,7 +671,7 @@ class AppMeshClient {
         }
 
         // Add file attributes if requested
-        if (applyFileAttributes) {
+        if (applyAttrs) {
           headers["File-Mode"] = stat.mode.toString();
           headers["File-User"] = stat.uid.toString();
           headers["File-Group"] = stat.gid.toString();
@@ -672,9 +680,22 @@ class AppMeshClient {
         // Merge with form-data headers for Node.js
         Object.assign(headers, formData.getHeaders());
       } else {
+        // Browser environment
         formData = new FormData();
-        formData.append("filename", filePath.split('/').pop());
-        formData.append("file", localFile instanceof File ? localFile : new File([localFile], filePath.split('/').pop()));
+        
+        // Get the filename either from File object or remotePath
+        let filename;
+        if (localFile instanceof File) {
+          filename = localFile.name;
+        } else if (localFile instanceof Blob) {
+          // For Blob, use the last part of remotePath as filename
+          filename = remotePath.split('/').pop();
+        } else {
+          throw new AppMeshError('In browser environment, localFile must be a File or Blob object');
+        }
+        
+        formData.append("filename", filename);
+        formData.append("file", localFile);
       }
 
       const response = await this._request("post", "/appmesh/file/upload", formData, {
@@ -965,9 +986,12 @@ class AppMeshClient {
   }
 
   _commonHeaders() {
-    const headers = { [CONSTANTS.HTTP_USER_AGENT_HEADER_NAME]: CONSTANTS.HTTP_USER_AGENT };
-    if (this._jwtToken) {
-      headers["Authorization"] = `Bearer ${this._jwtToken}`;
+    const headers = {};
+    if (ENV.isNode) {
+      headers[CONSTANTS.HTTP_USER_AGENT_HEADER_NAME] = CONSTANTS.HTTP_USER_AGENT;
+    }
+    if (this.jwtToken) {
+      headers["Authorization"] = `Bearer ${this.jwtToken}`;
     }
     if (this.forwardingHost) {
       if (this.forwardingHost.includes(":")) {
@@ -981,20 +1005,16 @@ class AppMeshClient {
   }
 
   /**
-   * Wrapper function to handle HTTP requests and error checking.
-   * @async
+   * Common request wrapper
    * @private
-   * @param {string} method - The HTTP method (get, post, put, delete, etc.)
-   * @param {string} path - The endpoint URL
-   * @param {Object} [body=null] - The request payload (for POST, PUT, PATCH)
-   * @param {Object} [options={}] - Additional options for the request
-   * @param {Object} [options.headers={}] - Additional headers to include
-   * @param {Object} [options.params={}] - Query parameters to include
-   * @param {Object} [options.config={}] - Additional Axios config options
-   * @returns {Promise<any>} The http response object
-   * @throws {Error} If the request fails or returns a non-200 status
+   * @param {string} method - HTTP method 
+   * @param {string} path - API path
+   * @param {Object} [body] - Request body
+   * @param {Object} [options] - {headers, params, config}
+   * @param {boolean} [shouldThrow] - Throw on error
+   * @returns {Promise<Object>} Response
    */
-  async _request(method, path, body = null, options = {}) {
+  async _request(method, path, body = null, options = {}, shouldThrow = true) {
     const { headers = {}, params = {}, config = {} } = options;
 
     try {
@@ -1011,49 +1031,65 @@ class AppMeshClient {
       }
 
       const response = await this._client(requestConfig);
+
+      if (response.status !== 200 && shouldThrow) {
+        const errorMessage = typeof response.data === 'string'
+          ? response.data
+          : response.data.message || JSON.stringify(response.data);
+        throw new AppMeshError(errorMessage, response.status, response.data);
+      }
       return response;
     } catch (error) {
-      throw this._handleError(error);
+      const appMeshError = this._handleError(error);
+      if (shouldThrow) {
+        throw appMeshError;
+      }
+      return appMeshError;
     }
   }
 
-  // Optimized error handling
   _handleError(error) {
     if (error.response) {
       const { status, data } = error.response;
-      return new AppMeshError(
-        `HTTP ${status}: ${typeof data === 'object' ? JSON.stringify(data) : data}`,
-        status,
-        data
-      );
+      let errorMessage = '';
+      if (typeof data === 'string') {
+        errorMessage = data;
+      } else if (typeof data === 'object') {
+        errorMessage = data.message || JSON.stringify(data);
+      } else {
+        errorMessage = String(data);
+      }
+
+      return new AppMeshError(`HTTP ${status}: ${errorMessage}`, status, data);
     }
+
     if (error.request) {
-      return new AppMeshError('No response received from server');
+      return new AppMeshError('No response received from server', null, error.request);
     }
-    return new AppMeshError(error.message);
+
+    if (error instanceof AppMeshError) {
+      return error;
+    }
+
+    return new AppMeshError(error.message || 'Unknown error occurred', null, error);
   }
 }
 
 /**
- * Class representing output from an AppMesh application
- * Immutable after creation
+ * AppMesh application output container
  */
 class AppOutput {
   /**
-   * App output object for app_output() method
-   * @param {number} statusCode - HTTP status code
-   * @param {string} output - HTTP response text
-   * @param {number|null} outPosition - Current read position (number or null)
-   * @param {number|null} exitCode - Process exit code (number or null)
+   * @param {number} status - HTTP status
+   * @param {string} output - Output content
+   * @param {number} position - Read position
+   * @param {number} exitCode - Process exit code
    */
-  constructor(statusCode, output, outPosition, exitCode) {
-    Object.assign(this, {
-      statusCode: Number(statusCode),
-      output: String(output),
-      outPosition: outPosition !== null ? Number(outPosition) : null,
-      exitCode: exitCode !== null ? Number(exitCode) : null
-    });
-    Object.freeze(this); // Make instance immutable
+  constructor(status, output, position, exitCode) {
+    this.statusCode = Number(status);
+    this.output = String(output);
+    this.outPosition = position !== null ? Number(position) : null;
+    this.exitCode = exitCode !== null ? Number(exitCode) : null;
   }
 }
 
