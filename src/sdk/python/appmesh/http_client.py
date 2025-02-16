@@ -349,7 +349,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
 
         Returns:
-            str: The new JWT token if renew success, otherwise return None.
+            str: The new JWT token if renew success, the old token will be blocked.
         """
         assert self.jwt_token
         resp = self._request_http(
@@ -377,23 +377,26 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             return self._parse_totp_uri(totp_uri).get("secret")
         raise Exception(resp.text)
 
-    def setup_totp(self, totp_code: str) -> bool:
+    def setup_totp(self, totp_code: str) -> str:
         """Set up 2FA for the current user.
 
         Args:
             totp_code (str): TOTP code
 
         Returns:
-            bool: success or failure.
+            str: The new JWT token if setup success, the old token will be blocked.
         """
         resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path="/appmesh/totp/setup",
             header={"Totp": totp_code},
         )
-        if resp.status_code != HTTPStatus.OK:
+        if resp.status_code == HTTPStatus.OK:
+            if "Access-Token" in resp.json():
+                self.jwt_token = resp.json()["Access-Token"]
+                return self.jwt_token
+        else:
             raise Exception(resp.text)
-        return resp.status_code == HTTPStatus.OK
 
     def disable_totp(self, user: str = "self") -> bool:
         """Disable 2FA for the specified user.

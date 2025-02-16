@@ -260,7 +260,7 @@ public class AppMeshClient {
     }
 
     // Setup 2FA for current login user
-    public boolean setupTotp(String totpCode) throws IOException, IllegalArgumentException {
+    public String setupTotp(String totpCode) throws IOException, IllegalArgumentException {
         if (totpCode == null || !totpCode.matches("\\d{6}")) {
             throw new IllegalArgumentException("TOTP code must be a 6-digit number");
         }
@@ -269,7 +269,10 @@ public class AppMeshClient {
         headers.put("Totp", totpCode);
 
         HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
-        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        String responseContent = Utils.readResponse(conn);
+        JSONObject jsonResponse = new JSONObject(responseContent);
+        this.jwtToken.set(jsonResponse.getString("Access-Token"));
+        return this.jwtToken.get();
     }
 
     // Disable 2FA for current user

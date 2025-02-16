@@ -142,13 +142,15 @@ class AppMeshClient {
      */
     this.baseURL = baseURL;
     /**
-     * @property {string|null} _jwtToken - Authentication JWT token for API requests. Initially null.
+     * @property {string|null} jwtToken - Authentication JWT token for API requests. Initially null.
      */
-    this._jwtToken = jwtToken;
+    this.jwtToken = jwtToken;
+    Object.defineProperty(this, 'jwtToken', { writable: true, configurable: true });
     /**
      * @property {string|null} forwardingHost - The host to forward requests to, if any. Initially null.
      */
     this.forwardingHost = null;
+    Object.defineProperty(this, 'forwardingHost', { writable: true, configurable: true });
 
     // Optimize axios configuration
     const axiosConfig = {
@@ -198,11 +200,10 @@ class AppMeshClient {
     if (audience) headers["Audience"] = audience;
 
     try {
-      this._jwtToken = null;
+      this.jwtToken = null;
       const response = await this._request("post", "/appmesh/login", null, { headers });
-      if (response.status !== 200) throw new Error(response.data);
-      this._jwtToken = response.data["Access-Token"];
-      return this._jwtToken;
+      this.jwtToken = response.data["Access-Token"];
+      return this.jwtToken;
     } catch (error) {
       throw this._handleError(error);
     }
@@ -222,7 +223,7 @@ class AppMeshClient {
     const headers = {};
     if (permission) headers["Auth-Permission"] = permission;
     if (audience) headers["Audience"] = audience;
-    this._jwtToken = token;
+    this.jwtToken = token;
     const response = await this._request("post", "/appmesh/auth", null, { headers });
     return response.status === 200;
   }
@@ -254,8 +255,8 @@ class AppMeshClient {
       headers["Expire-Seconds"] = parseDuration(expireSeconds);
     }
     const response = await this._request("post", "/appmesh/token/renew", null, { headers });
-    this._jwtToken = response.data["Access-Token"];
-    return this._jwtToken;
+    this.jwtToken = response.data["Access-Token"];
+    return this.jwtToken;
   }
 
   /**
@@ -275,13 +276,14 @@ class AppMeshClient {
    *
    * @async
    * @param {string} totpCode - The TOTP code to verify and complete setup.
-   * @returns {Promise<boolean>} A promise that resolves to true if setup is successful.
+   * @returns {Promise<string>} A promise that resolves to the new JWT token if renewal is successful.
    * @throws {Error} If setup fails or if there's a network error.
    */
   async setup_totp(totpCode) {
     const headers = { Totp: totpCode };
     const response = await this._request("post", "/appmesh/totp/setup", null, { headers });
-    return response.status === 200;
+    this.jwtToken = response.data["Access-Token"];
+    return this.jwtToken;
   }
 
   /**
@@ -965,9 +967,12 @@ class AppMeshClient {
   }
 
   _commonHeaders() {
-    const headers = { [CONSTANTS.HTTP_USER_AGENT_HEADER_NAME]: CONSTANTS.HTTP_USER_AGENT };
-    if (this._jwtToken) {
-      headers["Authorization"] = `Bearer ${this._jwtToken}`;
+    const headers = {};
+    if (ENV.isNode) {
+      headers[CONSTANTS.HTTP_USER_AGENT_HEADER_NAME] = CONSTANTS.HTTP_USER_AGENT;
+    }
+    if (this.jwtToken) {
+      headers["Authorization"] = `Bearer ${this.jwtToken}`;
     }
     if (this.forwardingHost) {
       if (this.forwardingHost.includes(":")) {
@@ -991,10 +996,11 @@ class AppMeshClient {
    * @param {Object} [options.headers={}] - Additional headers to include
    * @param {Object} [options.params={}] - Query parameters to include
    * @param {Object} [options.config={}] - Additional Axios config options
+   * @param {boolean} [shouldThrow=true] - Whether to throw an error on non-200 status
    * @returns {Promise<any>} The http response object
    * @throws {Error} If the request fails or returns a non-200 status
    */
-  async _request(method, path, body = null, options = {}) {
+  async _request(method, path, body = null, options = {}, shouldThrow = true) {
     const { headers = {}, params = {}, config = {} } = options;
 
     try {
@@ -1011,26 +1017,47 @@ class AppMeshClient {
       }
 
       const response = await this._client(requestConfig);
+
+      if (response.status !== 200 && shouldThrow) {
+        const errorMessage = typeof response.data === 'string'
+          ? response.data
+          : response.data.message || JSON.stringify(response.data);
+        throw new AppMeshError(errorMessage, response.status, response.data);
+      }
       return response;
     } catch (error) {
-      throw this._handleError(error);
+      const appMeshError = this._handleError(error);
+      if (shouldThrow) {
+        throw appMeshError;
+      }
+      return appMeshError;
     }
   }
 
-  // Optimized error handling
   _handleError(error) {
     if (error.response) {
       const { status, data } = error.response;
-      return new AppMeshError(
-        `HTTP ${status}: ${typeof data === 'object' ? JSON.stringify(data) : data}`,
-        status,
-        data
-      );
+      let errorMessage = '';
+      if (typeof data === 'string') {
+        errorMessage = data;
+      } else if (typeof data === 'object') {
+        errorMessage = data.message || JSON.stringify(data);
+      } else {
+        errorMessage = String(data);
+      }
+
+      return new AppMeshError(`HTTP ${status}: ${errorMessage}`, status, data);
     }
+
     if (error.request) {
-      return new AppMeshError('No response received from server');
+      return new AppMeshError('No response received from server', null, error.request);
     }
-    return new AppMeshError(error.message);
+
+    if (error instanceof AppMeshError) {
+      return error;
+    }
+
+    return new AppMeshError(error.message || 'Unknown error occurred', null, error);
   }
 }
 

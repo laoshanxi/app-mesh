@@ -193,8 +193,16 @@ func (r *AppMeshClient) GetTotpSecret() (string, error) {
 // SetupTotp sets up TOTP for the user.
 func (r *AppMeshClient) SetupTotp(totpCode string) (bool, error) {
 	headers := map[string]string{"Totp": totpCode}
-	code, _, _, err := r.post("appmesh/totp/setup", nil, headers, nil)
-	return code == http.StatusOK, err
+	code, raw, _, err := r.post("appmesh/totp/setup", nil, headers, nil)
+	if code == http.StatusOK {
+		result := JWTResponse{}
+		err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
+		if err == nil {
+			r.updateToken(result.AccessToken)
+			return true, err
+		}
+	}
+	return false, err
 }
 
 // DisableTotp disables TOTP for the user.
