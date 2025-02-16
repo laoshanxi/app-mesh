@@ -126,6 +126,7 @@ func ListenAndServeREST() error {
 	logger.Infof("Established REST connection to TCP server <%s>", connectAddr)
 
 	// HTTP router using gorilla/mux
+	utils.DisableGlobalCORS()
 	router := mux.NewRouter()
 
 	// OpenAPI Swagger
