@@ -110,7 +110,6 @@ struct JsonSecurity
 	nlohmann::json AsJson();
 
 	bool m_encryptKey;
-	std::string m_jwtSalt;
 	std::shared_ptr<Users> m_users;
 	std::shared_ptr<Roles> m_roles;
 };

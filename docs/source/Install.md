@@ -21,7 +21,7 @@ Configuration:
 
 - Configuration override by Environment Variables:
   - Override defaults in `config.yaml` & `consul.yaml` using environment variables with the format `APPMESH_${JSON_KEY_LEVEL1}_${JSON_KEY_LEVEL2}_${JSON_KEY_LEVEL3}=NEW_VALUE`. For example, to enable specific cluster configurations for request forwarding:
-    - `-e APPMESH_REST_JWT_JWTSalt=PRODUCTION_SALT`: Specify the JWT salt at the cluster level.
+    - `-e APPMESH_REST_JWT_JWTSalt=PRODUCTION_SALT`: Specify the JWT salt at the cluster level in case of using HS256 sign algorithom (should share jwt-private.pem/jwt-private.pem in case of using RS256).
     - `-e APPMESH_REST_JWT_Issuer=PRODUCTION_SERVICE_NAME`: Specify the JWT issuer at the cluster level.
     - `-e APPMESH_REST_RestListenAddress=0.0.0.0`: Enable listening on the LAN.
 

@@ -49,6 +49,11 @@ REST:
     # Salt for JWT token generation. IMPORTANT: Change this in production.
     JWTSalt: HelloAppMesh
 
+    # JWT sign algorithm (HS256,RS256).
+    # - HS256 use JWTSalt as secret
+    # - RS256 use public/private key pair in ssl directory
+    Algorithm: HS256
+
     # Name of the JWT token issuer, typically set to your organization or service name.
     # Defaults to the hostname if left empty.
     Issuer: ""
