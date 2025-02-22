@@ -416,8 +416,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (!ldEnv.empty() && !envMap.count(ENV_LD_LIBRARY_PATH))
 	{
 		std::string env = ldEnv;
-		env = Utility::stringReplace(env, Utility::getParentDir() + "/lib64:", "");
-		env = Utility::stringReplace(env, Utility::getParentDir() + "/lib64", "");
+		env = Utility::stringReplace(env, Utility::getHomeDir() + "/lib64:", "");
+		env = Utility::stringReplace(env, Utility::getHomeDir() + "/lib64", "");
 		option.setenv(ENV_LD_LIBRARY_PATH, "%s", env.c_str());
 		LOG_DBG << fname << "replace LD_LIBRARY_PATH with " << env.c_str();
 	}

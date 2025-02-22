@@ -108,8 +108,8 @@
 #define REMOTE_ARGS "remote,r"
 #define LOCAL "local"
 #define LOCAL_ARGS "local,l"
-#define NO_ATTR "no-attr"
-#define NO_ATTR_ARGS "no-attr,n"
+#define COPY_ATTR "no-attr"
+#define COPY_ATTR_ARGS "no-attr,a"
 
 #define VIEW "view"
 #define VIEW_ARGS "view,v"

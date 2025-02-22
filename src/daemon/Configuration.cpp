@@ -316,7 +316,7 @@ const std::string Configuration::getWorkDir() const
 	if (m_baseConfig->m_defaultWorkDir.length())
 		return m_baseConfig->m_defaultWorkDir;
 	else
-		return (fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR).string();
+		return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR).string();
 }
 
 bool Configuration::getSslVerifyClient() const
@@ -790,7 +790,7 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
-	auto cmd = (fs::path(Utility::getSelfDir()) / "agent").string();
+	auto cmd = (fs::path(Utility::getBinDir()) / "agent").string();
 
 	LOG_INF << fname << " agent start command <" << cmd << ">";
 
@@ -809,7 +809,6 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 	nlohmann::json objEnvs = nlohmann::json::object();
 	objEnvs[PSK_SHM_ENV] = shmName;
 	restApp[JSON_KEY_APP_env] = std::move(objEnvs);
-	restApp[JSON_KEY_APP_working_dir] = Utility::getParentDir();
 
 	return restApp;
 }
@@ -967,7 +966,7 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 	{
 		security->m_jwtAlgorithm = APPMESH_JWT_ALGORITHM_HS256;
 	}
-	else if (security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_HS256 && security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_RS256)
+	else if (security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_HS256 && security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_RS256 && security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_ES256)
 	{
 		throw std::invalid_argument("Invalid JWT Algorithm");
 	}

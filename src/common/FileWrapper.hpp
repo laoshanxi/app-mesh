@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -16,6 +18,27 @@ public:
         }
     }
 
+    // Move constructor
+    FileWrapper(FileWrapper &&other) noexcept : file(other.file)
+    {
+        other.file = nullptr;
+    }
+
+    // Move assignment operator
+    FileWrapper &operator=(FileWrapper &&other) noexcept
+    {
+        if (this != &other)
+        {
+            if (file != nullptr)
+            {
+                fclose(file);
+            }
+            file = other.file;
+            other.file = nullptr;
+        }
+        return *this;
+    }
+
     // Destructor that closes the file if it's open
     ~FileWrapper()
     {
@@ -25,8 +48,15 @@ public:
         }
     }
 
+    // Delete copy constructor and copy assignment operator
+    FileWrapper(const FileWrapper &) = delete;
+    FileWrapper &operator=(const FileWrapper &) = delete;
+
     // Accessor for the raw FILE* pointer
     FILE *get() const { return file; }
+
+    // Check if file is open
+    bool is_open() const { return file != nullptr; }
 
 private:
     FILE *file; // Raw FILE* pointer

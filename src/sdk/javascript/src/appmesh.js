@@ -1,22 +1,23 @@
 import axios from 'axios';
 import https from 'https';
 
-// Constants definitions using Object.freeze to prevent modifications
+// Constants using Object.freeze to prevent modifications
 const CONSTANTS = Object.freeze({
   HTTP_USER_AGENT_HEADER_NAME: "User-Agent",
   HTTP_USER_AGENT: "appmesh/javascript",
+  HTTP_STATUS_PRECONDITION_REQUIRED: 428,
   DEFAULT_TOKEN_EXPIRE_SECONDS: "P1W",
   DEFAULT_RUN_APP_TIMEOUT_SECONDS: "P2D",
   DEFAULT_RUN_APP_LIFECYCLE_SECONDS: "P2DT12H",
   DEFAULT_JWT_AUDIENCE: "appmesh-service"
 });
 
-// Environment detection utilities
+// Environment detection
 const ENV = Object.freeze({
   isNode: !(typeof window !== 'undefined' && typeof window.document !== 'undefined')
 });
 
-// Base64 utilities optimized for both Node.js and browser environments
+// Base64 utilities for Node.js and browser
 const base64Utils = ENV.isNode ? {
   encode: str => Buffer.from(str).toString('base64'),
   decode: str => Buffer.from(str, 'base64').toString()
@@ -25,29 +26,38 @@ const base64Utils = ENV.isNode ? {
   decode: str => atob(str)
 };
 
-// Custom error class for AppMesh specific errors
+/**
+ * Custom error for AppMesh with enhanced debugging
+ */
 class AppMeshError extends Error {
+  /**
+   * Create AppMesh error
+   * @param {string} message - Error message
+   * @param {number|null} statusCode - HTTP status code
+   * @param {any} responseData - Raw response data
+   */
   constructor(message, statusCode = null, responseData = null) {
     super(message);
     this.name = 'AppMeshError';
     this.statusCode = statusCode;
     this.responseData = responseData;
+    this.timestamp = new Date().toISOString();
   }
 }
 
-// Default output handler if none is provided
+// Default output handler
 const defaultOutputHandler = (output) => {
   console.log(output);
 };
 
 /**
  * Converts ISO8601 duration to seconds
- * @param {string|number} duration - Duration string (e.g. "P1Y2M3DT4H5M6S") or seconds
+ * @param {string|number} duration - Duration string or seconds
  * @returns {number} Total seconds
- * @throws {Error} If duration format invalid
+ * @throws {Error} If format invalid
  */
 function parseDuration(duration) {
-  // If duration is already a number, return it
+  // Return if already number
   if (typeof duration === "number") {
     return duration;
   }
@@ -55,21 +65,21 @@ function parseDuration(duration) {
   if (typeof duration !== 'string') {
     throw new Error("Invalid input type. Expected number or ISO 8601 duration string.");
   } else if (/^\d+$/.test(duration)) {
-    // If the duration is a string but contains only numbers, parse it to a number and return
+    // Parse if string contains only numbers
     return parseInt(duration, 10);
   }
 
-  // Handle empty string
+  // Check empty string
   if (!duration.trim()) {
     throw new Error('Duration string cannot be empty');
   }
 
-  // Check if string starts with P (mandatory for ISO8601)
+  // Check ISO8601 format (must start with P)
   if (!duration.startsWith('P')) {
     throw new Error('Invalid ISO8601 duration: must start with P');
   }
 
-  // Define the regular expression pattern for matching ISO8601 duration format.
+  // Regex pattern for ISO8601 duration
   const numbers = "\\d+";
   const fractionalNumbers = `${numbers}(?:[\\.,]${numbers})?`;
   const datePattern = `(${numbers}Y)?(${numbers}M)?(${numbers}W)?(${numbers}D)?`;
@@ -79,41 +89,39 @@ function parseDuration(duration) {
     "years", "months", "weeks", "days", "hours", "minutes", "seconds",
   ];
 
-  // Parse the duration string using the regex pattern.
+  // Parse duration string
   const matches = duration.replace(/,/g, ".").match(new RegExp(iso8601));
   if (!matches) {
     throw new RangeError("invalid duration: " + duration);
   }
 
-  // Slice away the first match (the full matched string).
+  // Get matched groups
   const slicedMatches = matches.slice(1);
 
-  // If there are no valid matches, throw an error.
+  // Verify valid matches exist
   if (slicedMatches.filter(v => v != null).length === 0) {
     throw new RangeError("invalid duration: " + duration);
   }
 
-  // Check if only one fractional unit is used (for example, no fractional seconds allowed alongside minutes).
+  // Allow only one fractional unit
   if (slicedMatches.filter(v => /\./.test(v || "")).length > 1) {
     throw new RangeError("only the smallest unit can be fractional");
   }
 
-  // Reduce the parsed duration into an object of units.
+  // Build duration object from matches
   const durationObject = slicedMatches.reduce((prev, next, idx) => {
     prev[objMap[idx]] = parseFloat(next || "0") || 0;
     return prev;
   }, {});
 
-  // Convert the parsed duration object into total seconds.
+  // Convert to seconds
   let seconds = 0;
 
-  // Convert years, months, weeks, and days into seconds.
-  seconds += durationObject.years * 31536000; // 365 days * 24 hours * 60 minutes * 60 seconds
-  seconds += durationObject.months * 2592000; // 30 days * 24 hours * 60 minutes * 60 seconds (approximate)
-  seconds += durationObject.weeks * 604800; // 7 days * 24 hours * 60 minutes * 60 seconds
-  // Convert hours, minutes, and seconds into seconds.
-  seconds += durationObject.days * 86400;  // 24 hours * 60 minutes * 60 seconds
-  seconds += durationObject.hours * 3600; // 60 minutes * 60 seconds
+  seconds += durationObject.years * 31536000; // 365d * 24h * 60m * 60s
+  seconds += durationObject.months * 2592000; // 30d * 24h * 60m * 60s (approx)
+  seconds += durationObject.weeks * 604800;   // 7d * 24h * 60m * 60s
+  seconds += durationObject.days * 86400;     // 24h * 60m * 60s
+  seconds += durationObject.hours * 3600;     // 60m * 60s
   seconds += durationObject.minutes * 60;
   seconds += durationObject.seconds;
 
@@ -125,71 +133,83 @@ function parseDuration(duration) {
  */
 class AppMeshClient {
   /**
-   * Initialize client with connection settings
-   * @param {string} baseURL - Service URL (default: http://127.0.0.1:6060)
-   * @param {Object} [sslConfig] - SSL config. Default is null to disable SSL verify.
+   * Initialize AppMesh client
+   * @param {string} baseURL - Service URL
+   * @param {Object} [sslConfig] - SSL config 
    * @example
    * const sslConfig = {
-   *   cert: fs.readFileSync("/opt/appmesh/ssl/client.pem"),
-   *   key: fs.readFileSync("/opt/appmesh/ssl/client-key.pem"),
-   *   ca: fs.readFileSync("/opt/appmesh/ssl/ca.pem"),  // Optional: if using a custom CA
-   *   rejectUnauthorized: true,                        // Set to false if you want to ignore unauthorized SSL certificates
+   *   cert: fs.readFileSync("client.pem"),
+   *   key: fs.readFileSync("client-key.pem"),
+   *   ca: fs.readFileSync("ca.pem"),
+   *   rejectUnauthorized: true
    * };
    * @param {string} [jwtToken] - Auth token
    */
   constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, jwtToken = null) {
-    /**
-     * @property {string} baseURL - The base URL of the App Mesh REST Service.
-     */
+    // Base URL for API requests
     this.baseURL = baseURL;
-    /**
-     * @property {string|null} jwtToken - Authentication JWT token for API requests. Initially null.
-     */
+
+    // Auth token for API requests
     this.jwtToken = jwtToken;
     Object.defineProperty(this, 'jwtToken', { writable: true, configurable: true });
-    /**
-     * @property {string|null} forwardingHost - The host to forward requests to, if any. Initially null.
-     */
+
+    // Host to forward requests to
     this.forwardingHost = null;
     Object.defineProperty(this, 'forwardingHost', { writable: true, configurable: true });
 
-    // Optimize axios configuration
+    // Configure axios instance
     const axiosConfig = {
       baseURL,
-      timeout: 120000, // Default timeout to 120 seconds
+      timeout: 120000, // 120 seconds
       httpsAgent: ENV.isNode && (sslConfig ?
         new https.Agent(sslConfig) :
         new https.Agent({ rejectUnauthorized: false })),
-      validateStatus: status => status >= 200 && status < 500 // Custom status validation
+      validateStatus: status => true
     };
 
     this._client = axios.create(axiosConfig);
-    // Add request interceptor
+
+    // Request interceptor
     this._client.interceptors.request.use(
       config => {
+        // Apply common headers
         config.headers = { ...config.headers, ...this._commonHeaders() };
         return config;
       },
-      error => Promise.reject(new AppMeshError(error.message))
+      error => {
+        // Handle request setup errors
+        err = new AppMeshError('Request configuration error: ' + (error.message || 'Unknown error'))
+        return Promise.reject(err);
+      }
     );
 
-    // Add response interceptor
+    // Response interceptor
     this._client.interceptors.response.use(
       response => response,
-      error => Promise.reject(this._handleError(error))
+      error => {
+        // Handle response errors
+        err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status, error.response?.data);
+        return Promise.resolve(err);
+      }
     );
   }
 
   /**
-   * User authentication to get JWT token
+   * Login with optional 2FA
    * @param {string} username - Username
    * @param {string} password - Password
    * @param {string} [totpCode] - 2FA code
-   * @param {string|number} [expireSeconds] - Token expiry (e.g. "P1D" or 86400)
+   * @param {string|number} [expireSeconds] - Token expiry
    * @param {string} [audience] - Token audience
    * @returns {Promise<string>} JWT token
+   * @throws {AppMeshError} Invalid credentials or 2FA required (status=428)
    */
   async login(username, password, totpCode = null, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
+    // Validate inputs
+    if (!username || !password) {
+      throw new AppMeshError('Username and password are required', 400, null, 'INVALID_CREDENTIALS');
+    }
+
     const auth = base64Utils.encode(`${username}:${password}`);
     const headers = { Authorization: `Basic ${auth}` };
     if (totpCode) headers["Totp"] = totpCode;
@@ -203,14 +223,12 @@ class AppMeshClient {
   }
 
   /**
-   * Authenticates a token and optionally checks for a specific permission.
-   *
-   * @async
-   * @param {string} token - The JWT token to authenticate.
-   * @param {string|null} [permission=null] - The specific permission to verify. Optional.
-   * @param {string} [audience=CONSTANTS.DEFAULT_JWT_AUDIENCE] - The audience to verify the token against.
-   * @returns {Promise<boolean>} A promise that resolves to true if authentication is successful.
-   * @throws {Error} If there's a network error or other issues during authentication.
+   * Authenticate token and verify permission
+   * @param {string} token - JWT token
+   * @param {string} [permission] - Permission to verify
+   * @param {string} [audience] - Token audience
+   * @returns {Promise<boolean>} Authentication status
+   * @throws {AppMeshError} Authentication failed
    */
   async authenticate(token, permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     const headers = {};
@@ -222,25 +240,28 @@ class AppMeshClient {
   }
 
   /**
-   * Logs out the current user, invalidating their JWT token.
-   *
-   * @async
-   * @returns {Promise<boolean>} A promise that resolves to true if logout is successful, false otherwise.
-   * @throws {Error} If there's a network error or other issues during logout.
+   * Logout and invalidate JWT token
+   * @returns {Promise<boolean>} Success status
    */
   async logoff() {
-    const response = await this._request("post", "/appmesh/self/logoff");
-    return response.status === 200;
+    if (this.jwtToken) {
+      try {
+        const response = await this._request("post", "/appmesh/self/logoff");
+        this.jwtToken = null;
+        return response.status === 200;
+      } catch (error) {
+        console.error("Failed to logoff:", error.message);
+      }
+      this.jwtToken = null;
+      return false;
+    }
+    return true;
   }
 
   /**
-   * Renews the current JWT token, optionally specifying a new expiration time.
-   *
-   * @async
-   * @param {number|string} [expireSeconds=CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS] - The number of seconds until the new token expires.
-   *                                                                       Can be a number or an ISO 8601 duration string.
-   * @returns {Promise<string>} A promise that resolves to the new JWT token if renewal is successful.
-   * @throws {Error} If token renewal fails or if there's a network error.
+   * Renew JWT token
+   * @param {string|number} [expireSeconds] - New token expiry
+   * @returns {Promise<string>} New JWT token
    */
   async renew_token(expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {};
@@ -253,11 +274,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves the TOTP secret for the current user.
-   *
-   * @async
-   * @returns {Promise<string>} A promise that resolves to the TOTP secret.
-   * @throws {Error} If retrieval fails or if there's a network error.
+   * Get TOTP secret for current user
+   * @returns {Promise<string>} TOTP secret URI
    */
   async get_totp_secret() {
     const response = await this._request("post", "/appmesh/totp/secret");
@@ -265,7 +283,7 @@ class AppMeshClient {
   }
 
   /**
-   * Two-factor authentication setup
+   * Setup 2FA with verification code
    * @param {string} totpCode - TOTP verification code
    * @returns {Promise<string>} Updated JWT token
    */
@@ -277,18 +295,18 @@ class AppMeshClient {
   }
 
   /**
-   * Validates TOTP challenge
+   * Validate TOTP challenge for login
    * @param {string} username - Username
-   * @param {string} challenge - Challenge from server
-   * @param {string} code - TOTP code
+   * @param {string} totpChallenge - Server challenge
+   * @param {string} totpCode - TOTP code
    * @param {string|number} [expireSeconds] - Token expiry
-   * @returns {Promise<string>} New JWT token
+   * @returns {Promise<string>} JWT token
    */
-  async validate_totp(username, challenge, code, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
+  async validate_totp(username, totpChallenge, totpCode, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {
       "Username": base64Utils.encode(username),
-      "Totp": code,
-      "Totp-Challenge": base64Utils.encode(challenge),
+      "Totp": totpCode,
+      "Totp-Challenge": base64Utils.encode(totpChallenge),
       "Expire-Seconds": parseDuration(expireSeconds)
     };
 
@@ -298,12 +316,9 @@ class AppMeshClient {
   }
 
   /**
-   * Disables TOTP (Two-Factor Authentication) for a user.
-   *
-   * @async
-   * @param {string} [user='self'] - The user to disable TOTP for. Defaults to 'self' (the current user).
-   * @returns {Promise<boolean>} A promise that resolves to true if TOTP is successfully disabled.
-   * @throws {Error} If disabling fails or if there's a network error.
+   * Disable TOTP for user
+   * @param {string} [user='self'] - Username
+   * @returns {boolean} Success status
    */
   async disable_totp(user = "self") {
     const response = await this._request("post", `/appmesh/totp/${user}/disable`);
@@ -311,11 +326,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves information about all applications.
-   *
-   * @async
-   * @returns {Promise<Object>} A promise that resolves to an object containing information about all applications.
-   * @throws {Error} If there's a network error or other issues during retrieval.
+   * Get all applications info
+   * @returns {Object} All apps info
    */
   async view_all_apps() {
     const response = await this._request("get", "/appmesh/applications");
@@ -323,12 +335,9 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves information about a specific application.
-   *
-   * @async
-   * @param {string} name - The name of the application to view.
-   * @returns {Promise<Object>} A promise that resolves to an object containing information about the specified application.
-   * @throws {Error} If there's a network error or other issues during retrieval.
+   * Get app information
+   * @param {string} name - App name
+   * @returns {Object} App config
    */
   async view_app(name) {
     const response = await this._request("get", `/appmesh/app/${name}`);
@@ -336,12 +345,9 @@ class AppMeshClient {
   }
 
   /**
-   * Checks the health status of a specific application.
-   *
-   * @async
-   * @param {string} name - The name of the application to check.
-   * @returns {Promise<boolean>} A promise that resolves to true if the application is healthy, false otherwise.
-   * @throws {Error} If there's a network error or other issues during the health check.
+   * Check app health status
+   * @param {string} name - App name
+   * @returns {boolean} True if healthy
    */
   async check_app_health(name) {
     const response = await this._request("get", `/appmesh/app/${name}/health`);
@@ -349,11 +355,11 @@ class AppMeshClient {
   }
 
   /**
-   * Add/Update application
+   * Add or update application
    * @param {string} name - App name
-   * @param {Object} appJson - Config JSON 
+   * @param {Object} appJson - App configuration
    * @example
-   * {
+  * {
    *  "name": "",
    *  "command": "",
    *  "shell": false,
@@ -389,7 +395,7 @@ class AppMeshClient {
    *          "0": "keepalive"
    *      }
    *  }
-   * @returns {Promise<Object>} Registered app config
+   * @returns {Promise<Object>} Registered app
    */
   async add_app(name, appJson) {
     const response = await this._request("put", `/appmesh/app/${name}`, appJson);
@@ -397,12 +403,9 @@ class AppMeshClient {
   }
 
   /**
-   * Deletes a specific application.
-   *
-   * @async
-   * @param {string} name - The name of the application to delete.
-   * @returns {Promise<boolean>} A promise that resolves to true if the deletion is successful.
-   * @throws {Error} If there's a network error or other issues during the deletion.
+   * Delete application
+   * @param {string} name - App name
+   * @returns {Promise<boolean>} Success status
    */
   async delete_app(name) {
     const response = await this._request("delete", `/appmesh/app/${name}`);
@@ -410,12 +413,9 @@ class AppMeshClient {
   }
 
   /**
-   * Enables a specific application.
-   *
-   * @async
-   * @param {string} name - The name of the application to enable.
-   * @returns {Promise<boolean>} A promise that resolves to true if the application is successfully enabled.
-   * @throws {Error} If there's a network error or other issues during the operation.
+   * Enable application
+   * @param {string} name - App name
+   * @returns {Promise<boolean>} Success status
    */
   async enable_app(name) {
     const response = await this._request("post", `/appmesh/app/${name}/enable`);
@@ -423,12 +423,9 @@ class AppMeshClient {
   }
 
   /**
-   * Disables a specific application.
-   *
-   * @async
-   * @param {string} name - The name of the application to disable.
-   * @returns {Promise<boolean>} A promise that resolves to true if the application is successfully disabled, false if not found.
-   * @throws {Error} If there's a network error or other issues during the operation.
+   * Disable application
+   * @param {string} name - App name
+   * @returns {Promise<boolean>} Success status
    */
   async disable_app(name) {
     const response = await this._request("post", `/appmesh/app/${name}/disable`);
@@ -436,47 +433,37 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves the output of a running application.
-   *
-   * @async
-   * @param {string} app_name - The name of the application.
-   * @param {number} [stdout_position=0] - The starting position of the stdout to retrieve.
-   * @param {number} [stdout_index=0] - The index of the stdout to retrieve.
-   * @param {number} [stdout_maxsize=10240] - The maximum size of stdout to retrieve.
-   * @param {string} [process_uuid=""] - The UUID of the process.
-   * @param {number} [timeout=0] - The timeout for the request.
-   * @returns {Promise<AppOutput>} A promise that resolves to an AppOutput object containing the application's output.
-   * @throws {Error} If there's a network error or other issues during retrieval.
+   * Get running app output
+   * @param {string} app_name - App name
+   * @param {number} [stdout_position=0] - Output start position
+   * @param {number} [stdout_index=0] - Output index
+   * @param {number} [stdout_maxsize=10240] - Max output size
+   * @param {string} [process_uuid=""] - Process UUID
+   * @param {number} [timeout=0] - Request timeout
+   * @returns {Promise<AppOutput>} App output
    */
   async get_app_output(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240, process_uuid = "", timeout = 0) {
-    try {
-      const params = {
-        stdout_position: stdout_position.toString(),
-        stdout_index: stdout_index.toString(),
-        stdout_maxsize: stdout_maxsize.toString(),
-        process_uuid: process_uuid,
-        timeout: parseDuration(timeout)
-      };
+    const params = {
+      stdout_position: stdout_position.toString(),
+      stdout_index: stdout_index.toString(),
+      stdout_maxsize: stdout_maxsize.toString(),
+      process_uuid: process_uuid,
+      timeout: parseDuration(timeout)
+    };
 
-      const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
-      const outPosition = response.headers["output-position"] ? parseInt(response.headers["output-position"]) : null;
-      const exitCode = response.headers["exit-code"] ? parseInt(response.headers["exit-code"]) : null;
-      return new AppOutput(response.status, response.data, outPosition, exitCode);
-    } catch (error) {
-      throw this._handleError(error);
-    }
+    const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
+    const outPosition = response.headers["output-position"] ? parseInt(response.headers["output-position"]) : null;
+    const exitCode = response.headers["exit-code"] ? parseInt(response.headers["exit-code"]) : null;
+    return new AppOutput(response.status, response.data, outPosition, exitCode);
   }
 
   /**
-   * Runs an application synchronously.
-   *
-   * @async
-   * @param {Object} app - The application configuration.
-   * @param {Function} [outputHandler=defaultOutputHandler] - A function to handle the application's output.
-   * @param {number|string} [maxTimeSeconds=CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS] - The maximum time to run the application.
-   * @param {number|string} [lifeCycleSeconds=CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS] - The lifecycle time for the application.
-   * @returns {Promise<number|null>} A promise that resolves to the exit code of the application, or null if not available.
-   * @throws {Error} If there's a network error or other issues during execution.
+   * Run app synchronously
+   * @param {Object} app - App configuration
+   * @param {Function} [outputHandler=defaultOutputHandler] - Output handler
+   * @param {number|string} [maxTimeSeconds] - Max runtime
+   * @param {number|string} [lifeCycleSeconds] - Lifecycle time
+   * @returns {Promise<number|null>} Exit code or null
    */
   async run_app_sync(app, outputHandler = defaultOutputHandler, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
@@ -484,37 +471,29 @@ class AppMeshClient {
       lifecycle: parseDuration(lifeCycleSeconds)
     };
 
-    try {
-      const response = await this._request("post", "/appmesh/app/syncrun", app, { params });
-      let exitCode = null;
+    const response = await this._request("post", "/appmesh/app/syncrun", app, { params });
+    let exitCode = null;
 
-      if (response.status === 200) {
-        if (outputHandler) {
-          outputHandler(response.data);
-        }
-        if (response.headers["exit-code"]) {
-          exitCode = parseInt(response.headers["exit-code"]);
-        }
-      } else if (outputHandler) {
+    if (response.status === 200) {
+      if (outputHandler) {
         outputHandler(response.data);
       }
-
-      return exitCode;
-    } catch (error) {
-      console.error(error);
-      throw error;
+      if (response.headers["exit-code"]) {
+        exitCode = parseInt(response.headers["exit-code"]);
+      }
+    } else if (outputHandler) {
+      outputHandler(response.data);
     }
+
+    return exitCode;
   }
 
   /**
-   * Runs an application asynchronously.
-   *
-   * @async
-   * @param {Object} app - The application configuration.
-   * @param {number|string} [maxTimeSeconds=CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS] - The maximum time to run the application.
-   * @param {number|string} [lifeCycleSeconds=CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS] - The lifecycle time for the application.
-   * @returns {Promise<AppRun>} A promise that resolves to an AppRun object representing the running application.
-   * @throws {Error} If there's a network error or other issues during execution.
+   * Run app asynchronously
+   * @param {Object} app - App config
+   * @param {string|number} [maxTimeSeconds] - Max runtime
+   * @param {string|number} [lifeCycleSeconds] - Lifecycle time
+   * @returns {AppRun} Running app instance
    */
   async run_app_async(app, maxTimeSeconds = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifeCycleSeconds = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
@@ -527,14 +506,11 @@ class AppMeshClient {
   }
 
   /**
-   * Waits for an asynchronously running application to complete and retrieves its output.
-   *
-   * @async
-   * @param {AppRun} run - The AppRun object representing the running application.
-   * @param {Function} [outputHandler=defaultOutputHandler] - A function to handle the application's output.
-   * @param {number} [timeout=0] - The maximum time to wait for the application to complete.
-   * @returns {Promise<number|null>} A promise that resolves to the exit code of the application, or null if not available.
-   * @throws {Error} If there's a network error or other issues during execution.
+   * Wait for async app to complete
+   * @param {AppRun} run - AppRun object
+   * @param {Function} [outputHandler] - Output handler
+   * @param {number} [timeout=0] - Max wait time
+   * @returns {Promise<number|null>} Exit code or null
    */
   async wait_for_async_run(run, outputHandler = defaultOutputHandler, timeout = 0) {
     if (run) {
@@ -554,21 +530,21 @@ class AppMeshClient {
           }
 
           if (appOut.exitCode !== null) {
-            // success
+            // Process finished
             await this.delete_app(run.appName);
             return appOut.exitCode;
           }
 
           if (appOut.statusCode !== 200) {
-            // failed
+            // Request failed
             break;
           }
 
           if (timeout > 0 && (new Date() - start) / 1000 > timeout) {
-            // timeout
+            // Timeout reached
             break;
           }
-          // Add a small delay to prevent tight looping
+          // Small delay to prevent tight looping
           await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
           console.error(error);
@@ -581,145 +557,123 @@ class AppMeshClient {
 
   /**
    * Download remote file
-   * @param {string} remotePath - Remote path
-   * @param {string} localPath - Local path
-   * @param {boolean} [applyAttrs] - Copy file attributes
-   * @throws {AppMeshError} On transfer error
+   * @param {string} filePath - Remote file path
+   * @param {string} localFile - Local file path
+   * @param {boolean} [applyAttrs=true] - Apply file permissions
    */
-  async download_file(remotePath, localPath, applyAttrs = true) {
-    try {
-      const headers = { "File-Path": remotePath };
-      const response = await this._request("get", "/appmesh/file/download", null, {
-        headers,
-        config: {
-          responseType: "arraybuffer"
-        }
-      });
-
-      if (response.status !== 200) {
-        throw new Error(new TextDecoder().decode(response.data));
+  async download_file(filePath, localFile, applyAttrs = true) {
+    const headers = { "File-Path": encodeURIComponent(filePath) };
+    const response = await this._request("get", "/appmesh/file/download", null, {
+      headers,
+      config: {
+        responseType: "arraybuffer"
       }
+    });
 
-      if (ENV.isNode) {
-        const fs = await import('fs/promises');
-        await fs.writeFile(localPath, Buffer.from(response.data));
+    if (ENV.isNode) {
+      const fs = await import('fs/promises');
+      await fs.writeFile(localFile, Buffer.from(response.data));
 
-        if (applyAttrs) {
-          const { headers } = response;
-          try {
-            if (headers["file-mode"]) {
-              await fs.chmod(localPath, parseInt(headers["file-mode"]));
-            }
-            if (headers["file-user"] && headers["file-group"]) {
-              await fs.chown(
-                localPath,
-                parseInt(headers["file-user"]),
-                parseInt(headers["file-group"])
-              );
-            }
-          } catch (ex) {
-            console.warn("Failed to apply file attributes:", ex.message);
+      if (applyAttrs) {
+        const { headers } = response;
+        try {
+          if (headers["file-mode"]) {
+            await fs.chmod(localFile, parseInt(headers["file-mode"]));
           }
+          if (headers["file-user"] && headers["file-group"]) {
+            await fs.chown(
+              localFile,
+              parseInt(headers["file-user"]),
+              parseInt(headers["file-group"])
+            );
+          }
+        } catch (ex) {
+          console.warn("Failed to apply file attributes:", ex.message);
         }
-      } else {
-        // Browser environment
-        const blob = new Blob([response.data]);
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = url;
-        a.download = localPath.split("/").pop();
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
       }
-    } catch (error) {
-      throw new AppMeshError(`Download failed: ${error.message}`);
+    } else {
+      // Browser download
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = localFile.split("/").pop();
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     }
   }
 
   /**
-   * Upload file to remote
-   * @param {string|File|Blob} localFile - Local file path (Node.js) or File/Blob object (Browser)
-   * @param {string} remotePath - Remote path
-   * @param {boolean} [applyAttrs] - Copy file attributes
-   * @throws {AppMeshError} On transfer error
+   * Upload file to remote server
+   * @param {string|File} localFile - Local file path/object
+   * @param {string} filePath - Remote target path
+   * @param {boolean} [applyAttrs] - Copy file permissions
    */
-  async upload_file(localFile, remotePath, applyAttrs = true) {
-    try {
-      const headers = { "File-Path": remotePath };
-      let formData;
+  async upload_file(localFile, filePath, applyAttrs = true) {
+    const headers = { "File-Path": encodeURIComponent(filePath) };
+    let formData;
 
-      if (ENV.isNode) {
-        // Node.js environment handling
-        const FormData = (await import('form-data')).default;
-        const fs = await import('fs');
-        formData = new FormData();
+    if (ENV.isNode) {
+      // Node.js environment
+      const FormData = (await import('form-data')).default;
+      const fs = await import('fs');
+      formData = new FormData();
 
-        const filename = remotePath.split('/').pop();
-        formData.append("filename", filename);
+      const filename = filePath.split('/').pop();
+      formData.append("filename", filename);
 
-        const stat = fs.statSync(localFile);
-        if (stat.size < 10 * 1024 * 1024) {
-          // For files smaller than 10MB, read into buffer for better performance
-          const fileBuffer = fs.readFileSync(localFile);
-          formData.append("file", fileBuffer, { filename: localFile.split('/').pop() });
-        } else {
-          // Use stream for larger files
-          formData.append("file", fs.createReadStream(localFile));
-        }
-
-        // Add file attributes if requested
-        if (applyAttrs) {
-          headers["File-Mode"] = stat.mode.toString();
-          headers["File-User"] = stat.uid.toString();
-          headers["File-Group"] = stat.gid.toString();
-        }
-
-        // Merge with form-data headers for Node.js
-        Object.assign(headers, formData.getHeaders());
+      const stat = fs.statSync(localFile);
+      if (stat.size < 10 * 1024 * 1024) {
+        // For files < 10MB, use buffer
+        const fileBuffer = fs.readFileSync(localFile);
+        formData.append("file", fileBuffer, { filename: localFile.split('/').pop() });
       } else {
-        // Browser environment
-        formData = new FormData();
-        
-        // Get the filename either from File object or remotePath
-        let filename;
-        if (localFile instanceof File) {
-          filename = localFile.name;
-        } else if (localFile instanceof Blob) {
-          // For Blob, use the last part of remotePath as filename
-          filename = remotePath.split('/').pop();
-        } else {
-          throw new AppMeshError('In browser environment, localFile must be a File or Blob object');
-        }
-        
-        formData.append("filename", filename);
-        formData.append("file", localFile);
+        // Stream for larger files
+        formData.append("file", fs.createReadStream(localFile));
       }
 
-      const response = await this._request("post", "/appmesh/file/upload", formData, {
-        headers,
-        config: {
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity
-        }
-      });
-
-      if (response.status !== 200) {
-        throw new AppMeshError(`Upload failed: ${response.data}`, response.status);
+      // Add file attributes
+      if (applyAttrs) {
+        headers["File-Mode"] = stat.mode.toString();
+        headers["File-User"] = stat.uid.toString();
+        headers["File-Group"] = stat.gid.toString();
       }
-    } catch (error) {
-      throw new AppMeshError(`Upload failed: ${error.message}`);
+
+      // Add form-data headers
+      Object.assign(headers, formData.getHeaders());
+    } else {
+      // Browser environment
+      formData = new FormData();
+
+      // Get filename
+      let filename;
+      if (localFile instanceof File) {
+        filename = localFile.name;
+      } else if (localFile instanceof Blob) {
+        filename = remotePath.split('/').pop();
+      } else {
+        throw new AppMeshError('In browser, localFile must be File or Blob');
+      }
+
+      formData.append("filename", filename);
+      formData.append("file", localFile);
     }
+
+    const response = await this._request("post", "/appmesh/file/upload", formData, {
+      headers,
+      config: {
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
+      }
+    });
   }
 
   /**
-   * Gets the App Mesh host resource report including CPU, memory, and disk usage.
-   *
-   * @async
-   * @returns {Promise<Object>} A promise that resolves to the host resource JSON.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get host resource usage
+   * @returns {Object} Resource stats
    */
   async view_host_resources() {
     const response = await this._request("get", "/appmesh/resources");
@@ -727,11 +681,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves the current App Mesh configuration.
-   *
-   * @async
-   * @returns {Promise<Object>} A promise that resolves to the configuration JSON.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get current configuration
+   * @returns {Promise<Object>} Config JSON
    */
   async view_config() {
     const response = await this._request("get", "/appmesh/config");
@@ -739,12 +690,9 @@ class AppMeshClient {
   }
 
   /**
-   * Updates the App Mesh configuration. Supports partial updates.
-   *
-   * @async
-   * @param {Object} configJsonSection - The new configuration JSON. Format should follow 'config.yaml'.
-   * @returns {Promise<Object>} A promise that resolves to the updated configuration JSON.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Update config section
+   * @param {Object} configJsonSection - Config section
+   * @returns {Object} Updated config
    */
   async set_config(configJsonSection) {
     const response = await this._request("post", "/appmesh/config", configJsonSection);
@@ -752,12 +700,9 @@ class AppMeshClient {
   }
 
   /**
-   * Updates the App Mesh log level. This is a wrapper around configSet().
-   *
-   * @async
-   * @param {string} [level="DEBUG"] - The new log level. Can be "DEBUG", "INFO", "NOTICE", "WARN", or "ERROR".
-   * @returns {Promise<string>} A promise that resolves to the updated log level.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Set log level
+   * @param {string} [level="DEBUG"] - Log level
+   * @returns {string} Updated level
    */
   async set_log_level(level = "DEBUG") {
     const response = await this.set_config({ BaseConfig: { LogLevel: level } });
@@ -765,13 +710,10 @@ class AppMeshClient {
   }
 
   /**
-   * Adds a new label (tag) to the server.
-   *
-   * @async
-   * @param {string} tagName - The name of the label to add.
-   * @param {string} tagValue - The value of the label to add.
-   * @returns {Promise<boolean>} A promise that resolves to true if the label was added successfully, false otherwise.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Add tag to server
+   * @param {string} tagName - Tag name
+   * @param {string} tagValue - Tag value
+   * @returns {boolean} Success status
    */
   async add_tag(tagName, tagValue) {
     const response = await this._request("put", `/appmesh/label/${tagName}`, null, { params: { value: tagValue } });
@@ -779,12 +721,9 @@ class AppMeshClient {
   }
 
   /**
-   * Deletes a label (tag) from the server.
-   *
-   * @async
-   * @param {string} tagName - The name of the label to delete.
-   * @returns {Promise<boolean>} A promise that resolves to true if the label was deleted successfully, false otherwise.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Delete tag from server
+   * @param {string} tagName - Tag name
+   * @returns {boolean} Success status
    */
   async delete_tag(tagName) {
     const response = await this._request("delete", `/appmesh/label/${tagName}`);
@@ -792,11 +731,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves all labels (tags) from the server.
-   *
-   * @async
-   * @returns {Promise<Object>} A promise that resolves to an object containing all server labels.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get all server tags
+   * @returns {Promise<Object>} All tags
    */
   async view_tags() {
     const response = await this._request("get", "/appmesh/labels");
@@ -804,13 +740,10 @@ class AppMeshClient {
   }
 
   /**
-   * Changes a user's password.
-   *
-   * @async
-   * @param {string} newPassword - The new password.
-   * @param {string} [userName="self"] - The username of the account to update. Defaults to "self".
-   * @returns {Promise<boolean>} A promise that resolves to true if the password was updated successfully.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Change user password
+   * @param {string} newPassword - New password
+   * @param {string} [userName="self"] - Username
+   * @returns {Promise<boolean>} Success status
    */
   async update_user_password(newPassword, userName = "self") {
     const headers = { "New-Password": base64Utils.encode(newPassword) };
@@ -819,13 +752,10 @@ class AppMeshClient {
   }
 
   /**
-   * Adds a new user. Not available for LDAP users.
-   *
-   * @async
-   * @param {string} userName - The username of the new account.
-   * @param {Object} userJson - User definition, following the same user format from security.yaml.
-   * @returns {Promise<boolean>} A promise that resolves to true if the user was added successfully.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Add new user
+   * @param {string} userName - Username
+   * @param {Object} userJson - User definition
+   * @returns {Promise<boolean>} Success status
    */
   async add_user(userName, userJson) {
     const response = await this._request("put", `/appmesh/user/${userName}`, userJson);
@@ -833,12 +763,9 @@ class AppMeshClient {
   }
 
   /**
-   * Deletes a user.
-   *
-   * @async
-   * @param {string} userName - The username of the account to delete.
-   * @returns {Promise<boolean>} A promise that resolves to true if the user was deleted successfully.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Delete user
+   * @param {string} userName - Username
+   * @returns {Promise<boolean>} Success status
    */
   async delete_user(userName) {
     const response = await this._request("delete", `/appmesh/user/${userName}`);
@@ -846,12 +773,9 @@ class AppMeshClient {
   }
 
   /**
-   * Locks a user account.
-   *
-   * @async
-   * @param {string} userName - The username of the account to lock.
-   * @returns {Promise<boolean>} A promise that resolves to true if the user was locked successfully.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Lock user account
+   * @param {string} userName - Username
+   * @returns {Promise<boolean>} Success status
    */
   async lock_user(userName) {
     const response = await this._request("post", `/appmesh/user/${userName}/lock`);
@@ -859,12 +783,9 @@ class AppMeshClient {
   }
 
   /**
-   * Unlocks a user account.
-   *
-   * @async
-   * @param {string} userName - The username of the account to unlock.
-   * @returns {Promise<boolean>} A promise that resolves to true if the user was unlocked successfully.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Unlock user account
+   * @param {string} userName - Username
+   * @returns {Promise<boolean>} Success status
    */
   async unlock_user(userName) {
     const response = await this._request("post", `/appmesh/user/${userName}/unlock`);
@@ -872,11 +793,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves all user definitions.
-   *
-   * @async
-   * @returns {Promise<Object>} A promise that resolves to an object containing all user definitions.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get user list
+   * @returns {Object[]} User array
    */
   async view_users() {
     const response = await this._request("get", "/appmesh/users");
@@ -884,11 +802,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves current user information.
-   *
-   * @async
-   * @returns {Promise<Object>} A promise that resolves to an object containing the current user's definition.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get current user info
+   * @returns {Object} User properties
    */
   async view_self() {
     const response = await this._request("get", "/appmesh/user/self");
@@ -896,11 +811,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves all user groups.
-   *
-   * @async
-   * @returns {Promise<Array>} A promise that resolves to an array of user groups.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get all user groups
+   * @returns {Object[]} Group array
    */
   async view_groups() {
     const response = await this._request("get", "/appmesh/user/groups");
@@ -908,11 +820,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves all available permissions.
-   *
-   * @async
-   * @returns {Promise<Array>} A promise that resolves to an array of all available permissions.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get available permissions
+   * @returns {Object[]} Permission list
    */
   async view_permissions() {
     const response = await this._request("get", "/appmesh/permissions");
@@ -920,11 +829,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves current user permissions.
-   *
-   * @async
-   * @returns {Promise<Array>} A promise that resolves to an array of the current user's permissions.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get user permissions
+   * @returns {Object[]} Permission array
    */
   async view_user_permissions() {
     const response = await this._request("get", "/appmesh/user/permissions");
@@ -932,11 +838,8 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves all roles with permission definitions.
-   *
-   * @async
-   * @returns {Promise<Array>} A promise that resolves to an array of all role definitions.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get all roles and permissions
+   * @returns {Object[]} Role array
    */
   async view_roles() {
     const response = await this._request("get", "/appmesh/roles");
@@ -944,13 +847,10 @@ class AppMeshClient {
   }
 
   /**
-   * Updates (or adds) a role with defined permissions.
-   *
-   * @async
-   * @param {string} roleName - The name of the role to update or add.
-   * @param {Object} rolePermissionJson - An array of permission IDs for the role.
-   * @returns {Promise<boolean>} A promise that resolves to true if the role was updated successfully.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Update or add role
+   * @param {string} roleName - Role name
+   * @param {Object} rolePermissionJson - Permission IDs
+   * @returns {Promise<boolean>} Success status
    */
   async update_role(roleName, rolePermissionJson) {
     const response = await this._request("post", `/appmesh/role/${roleName}`, rolePermissionJson);
@@ -958,12 +858,9 @@ class AppMeshClient {
   }
 
   /**
-   * Deletes a user role.
-   *
-   * @async
-   * @param {string} roleName - The name of the role to delete.
-   * @returns {Promise<boolean>} A promise that resolves to true if the role was deleted successfully.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Delete role
+   * @param {string} roleName - Role name
+   * @returns {boolean} Success status
    */
   async delete_role(roleName) {
     const response = await this._request("delete", `/appmesh/role/${roleName}`);
@@ -971,28 +868,30 @@ class AppMeshClient {
   }
 
   /**
-   * Retrieves Prometheus metrics data.
-   *
-   * This method does not call the Prometheus API /metrics directly,
-   * but instead retrieves a copy of the same metrics data from App Mesh.
-   *
-   * @async
-   * @returns {Promise<string>} A promise that resolves to the Prometheus metrics text.
-   * @throws {Error} If there's a network error or the server responds with a non-200 status.
+   * Get Prometheus metrics data
+   * @returns {Promise<string>} Metrics text
    */
   async metrics() {
     const response = await this._request("get", "/appmesh/metrics", { responseType: "text" });
     return response.data;
   }
 
+  /**
+   * Generate common request headers
+   * @private
+   * @returns {Object} Headers object
+   */
   _commonHeaders() {
     const headers = {};
+    // Add user agent in Node.js
     if (ENV.isNode) {
       headers[CONSTANTS.HTTP_USER_AGENT_HEADER_NAME] = CONSTANTS.HTTP_USER_AGENT;
     }
+    // Add auth token if available
     if (this.jwtToken) {
       headers["Authorization"] = `Bearer ${this.jwtToken}`;
     }
+    // Add forwarding host if specified
     if (this.forwardingHost) {
       if (this.forwardingHost.includes(":")) {
         headers["X-Target-Host"] = this.forwardingHost;
@@ -1005,16 +904,17 @@ class AppMeshClient {
   }
 
   /**
-   * Common request wrapper
+   * Wrapper function to handle HTTP requests and error checking.
+   * @async
    * @private
-   * @param {string} method - HTTP method 
-   * @param {string} path - API path
-   * @param {Object} [body] - Request body
-   * @param {Object} [options] - {headers, params, config}
-   * @param {boolean} [shouldThrow] - Throw on error
-   * @returns {Promise<Object>} Response
+   * @param {string} method - The HTTP method (get, post, put, delete, etc.)
+   * @param {string} path - The endpoint URL
+   * @param {Object} [body=null] - The request payload (for POST, PUT, PATCH)
+   * @param {Object} [options={}] - Additional options for the request
+   * @returns {Promise<any>} The http response object
+   * @throws {AppMeshError} If the request fails
    */
-  async _request(method, path, body = null, options = {}, shouldThrow = true) {
+  async _request(method, path, body = null, options = {}) {
     const { headers = {}, params = {}, config = {} } = options;
 
     try {
@@ -1031,59 +931,77 @@ class AppMeshClient {
       }
 
       const response = await this._client(requestConfig);
-
-      if (response.status !== 200 && shouldThrow) {
-        const errorMessage = typeof response.data === 'string'
-          ? response.data
-          : response.data.message || JSON.stringify(response.data);
-        throw new AppMeshError(errorMessage, response.status, response.data);
+      if (response.status !== 200) {
+        throw new AppMeshError(this._extractErrorMessage(response.data), response.status, response.data);
       }
       return response;
     } catch (error) {
-      const appMeshError = this._handleError(error);
-      if (shouldThrow) {
-        throw appMeshError;
+      if (error instanceof AppMeshError && error.statusCode === CONSTANTS.HTTP_STATUS_PRECONDITION_REQUIRED) {
+        throw error;
       }
-      return appMeshError;
+      throw this.onError(error);
     }
   }
 
-  _handleError(error) {
-    if (error.response) {
-      const { status, data } = error.response;
-      let errorMessage = '';
-      if (typeof data === 'string') {
-        errorMessage = data;
-      } else if (typeof data === 'object') {
-        errorMessage = data.message || JSON.stringify(data);
-      } else {
-        errorMessage = String(data);
+  /**
+   * Extract user-friendly error message from response data
+   * @private
+   * @param {any} data - Response data
+   * @returns {string|null} Error message or null
+   */
+  _extractErrorMessage(responseData) {
+    if (!responseData) {
+      return "Unknown error";
+    }
+
+    if (responseData instanceof ArrayBuffer) {
+      try {
+        const textDecoder = new TextDecoder("utf-8");
+        const parsedJson = JSON.parse(textDecoder.decode(responseData));
+        return parsedJson.message || parsedJson.error || "Binary response error";
+      } catch (e) {
+        return 'Binary response error (could not decode)';
       }
-
-      return new AppMeshError(`HTTP ${status}: ${errorMessage}`, status, data);
     }
 
-    if (error.request) {
-      return new AppMeshError('No response received from server', null, error.request);
+    if (typeof responseData === 'string') {
+      try {
+        const parsedJson = JSON.parse(responseData);
+        return parsedJson.message || parsedJson.error || responseData;
+      } catch (e) {
+        return responseData;
+      }
     }
 
-    if (error instanceof AppMeshError) {
-      return error;
+    if (typeof responseData === 'object') {
+      return responseData.message || responseData.error || JSON.stringify(responseData);
     }
 
-    return new AppMeshError(error.message || 'Unknown error occurred', null, error);
+    return String(responseData);
+  }
+
+  /**
+   * Comprehensive error handler for all client errors
+   * @protected
+   * @param {Error} error - The caught error
+   * @returns {AppMeshError} Standardized AppMeshError
+   */
+  onError(error) {
+    console.log("AppMeshClient error:", error);
+    return error
   }
 }
 
 /**
- * AppMesh application output container
+ * Class representing output from an AppMesh application
+ * Immutable after creation
  */
 class AppOutput {
   /**
    * @param {number} status - HTTP status
-   * @param {string} output - Output content
+   * @param {string} output - Content
    * @param {number} position - Read position
-   * @param {number} exitCode - Process exit code
+   * @param {number} exitCode - Exit code
    */
   constructor(status, output, position, exitCode) {
     this.statusCode = Number(status);

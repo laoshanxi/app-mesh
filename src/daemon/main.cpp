@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
 	{
 		ACE::init();
 		// ACE::set_handle_limit(); // TODO: this will cause timer issue.
-		fs::current_path(Utility::getParentDir());
+		fs::current_path(Utility::getHomeDir());
 
 		// create pid file: /appmesh.pid
 		Utility::createPidFile();
@@ -106,8 +106,8 @@ int main(int argc, char *argv[])
 
 		// recover applications
 		Utility::removeDir((fs::path(config->getWorkDir()) / "shell").string());
-		config->loadApps(fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR);
-		config->loadApps(fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR);
+		config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
+		config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR);
 
 		// working dir
 		Utility::createDirectory(config->getWorkDir());
@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
 		Configuration::instance()->saveConfigToDisk();
 
 		// copy consul config to config dir
-		const auto consulConfigSource = (fs::path(Utility::getParentDir()) / APPMESH_CONSUL_API_CONFIG_FILE).string();
+		const auto consulConfigSource = (fs::path(Utility::getHomeDir()) / APPMESH_CONSUL_API_CONFIG_FILE).string();
 		const auto consulConfigTarget = (fs::path(config->getWorkDir()) / APPMESH_WORK_CONFIG_DIR / APPMESH_CONSUL_API_CONFIG_FILE).string();
 		if (Utility::isFileExist(consulConfigSource) && !Utility::isFileExist(consulConfigTarget))
 		{
@@ -210,7 +210,7 @@ int main(int argc, char *argv[])
 					  });
 
 		// Main application monitoring loop
-		fs::current_path(config->getWorkDir());
+		fs::current_path(tmpDir);
 		int tcpErrorCounter = 0;
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{

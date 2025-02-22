@@ -136,9 +136,9 @@ std::string Utility::stdStringTrim(const std::string &str, const std::string &tr
 	return result;
 }
 
-const std::string Utility::getSelfFullPath()
+const std::string Utility::getExecutablePath()
 {
-	const static char fname[] = "Utility::getSelfFullPath() ";
+	const static char fname[] = "Utility::getExecutablePath() ";
 #if defined(WIN32)
 	char buf[MAX_PATH] = {0};
 	if (::GetModuleFileNameA(NULL, buf, MAX_PATH) == 0)
@@ -194,27 +194,27 @@ const std::string Utility::getSelfFullPath()
 #endif
 }
 
-const std::string &Utility::getSelfDir()
+const std::string &Utility::getBinDir()
 {
-	static const auto selfBinDir = fs::path(getSelfFullPath()).parent_path().string();
+	static const auto selfBinDir = fs::path(getExecutablePath()).parent_path().string();
 	return selfBinDir;
 }
 
-const std::string &Utility::getParentDir()
+const std::string &Utility::getHomeDir()
 {
-	static const auto homeDir = fs::path(getSelfDir()).parent_path().string();
+	static const auto homeDir = fs::path(getBinDir()).parent_path().string();
 	return homeDir;
 }
 
 std::string Utility::getConfigFilePath(const std::string &configFile, bool write)
 {
-	const auto workingConfigFile = (fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
+	const auto workingConfigFile = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
 	if (write || Utility::isFileExist(workingConfigFile))
 	{
-		createDirectory((fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
+		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
 		return workingConfigFile;
 	}
-	return (fs::path(Utility::getParentDir()) / configFile).string();
+	return (fs::path(Utility::getHomeDir()) / configFile).string();
 }
 
 // program_name from errno.h
@@ -339,7 +339,7 @@ void Utility::initLogging(const std::string &name)
 	// Configure rolling file logging if name is provided
 	if (!name.empty())
 	{
-		auto logPath = (fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / name).string() + ".log";
+		auto logPath = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / name).string() + ".log";
 		auto rollingFileAppender = new RollingFileAppender(
 			"rollingFileAppender",
 			logPath,
@@ -414,6 +414,62 @@ std::string Utility::decode64(const std::string &val)
 	using It = transform_width<binary_from_base64<std::string::const_iterator>, 8, 6>;
 	return boost::algorithm::trim_right_copy_if(std::string(It(std::begin(val)), It(std::end(val))), [](char c)
 												{ return c == '\0'; });
+}
+
+std::string Utility::encodeURIComponent(const std::string &str)
+{
+	std::ostringstream escaped;
+	escaped.fill('0');
+	escaped << std::hex;
+
+	for (char c : str)
+	{
+		// JavaScript's encodeURIComponent escapes all characters except:
+		// A-Z a-z 0-9 - _ . ! ~ * ' ( )
+		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '!' ||
+			c == '~' || c == '*' || c == '\'' || c == '(' || c == ')')
+		{
+			escaped << c;
+		}
+		else
+		{
+			escaped << std::uppercase;
+			escaped << '%' << std::setw(2) << int((unsigned char)c);
+			escaped << std::nouppercase;
+		}
+	}
+
+	return escaped.str();
+}
+
+std::string Utility::decodeURIComponent(const std::string &encoded)
+{
+	std::string result;
+	size_t i = 0;
+
+	while (i < encoded.size())
+	{
+		if (encoded[i] == '%')
+		{
+			if (i + 2 < encoded.size() && std::isxdigit(encoded[i + 1]) && std::isxdigit(encoded[i + 2]))
+			{
+				int value = std::stoi(encoded.substr(i + 1, 2), nullptr, 16);
+				result += static_cast<char>(value);
+				i += 3;
+			}
+			else
+			{
+				throw std::invalid_argument("URI malformed");
+			}
+		}
+		else
+		{
+			result += encoded[i];
+			i++;
+		}
+	}
+
+	return result;
 }
 
 std::string Utility::readFile(const std::string &path)
@@ -661,7 +717,7 @@ bool Utility::createPidFile()
 {
 	const static char fname[] = "Utility::createPidFile() ";
 
-	const auto pidFile = (fs::path(Utility::getParentDir()) / PID_FILE).string();
+	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
 	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
 	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
 	auto fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);

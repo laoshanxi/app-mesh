@@ -128,6 +128,22 @@ ClientSSLConfig::ClientSSLConfig()
 	}
 }
 
+void ClientSSLConfig::AbsConfigPath(std::string workingHome)
+{
+	m_certificate = HomeDir(workingHome, m_certificate);
+	m_private_key = HomeDir(workingHome, m_private_key);
+	m_ca_location = HomeDir(workingHome, m_ca_location);
+}
+
+std::string ClientSSLConfig::HomeDir(std::string workingHome, std::string filePath)
+{
+	if (!workingHome.empty())
+	{
+		return (fs::path(workingHome) / filePath).string();
+	}
+	return filePath;
+}
+
 std::shared_ptr<CurlResponse> RestClient::request(
 	const std::string &host,
 	const web::http::method &mtd,

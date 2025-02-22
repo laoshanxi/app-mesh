@@ -1,6 +1,6 @@
 {
   "name": "appmesh",
-  "version": "0.5.6",
+  "version": "0.6.6",
   "description": "JavaScript SDK for App Mesh (https://github.com/laoshanxi/app-mesh)",
   "main": "./src/appmesh.js",
   "module": "./dist/appmesh.esm.js",

@@ -445,7 +445,7 @@ void RestHandler::apiBasicConfigSet(const HttpRequest &message)
 
 	Configuration::instance()->saveConfigToDisk();
 
-	apiBasicConfigView(message);
+	message.reply(web::http::status_codes::OK, Configuration::instance()->AsJson());
 }
 
 void RestHandler::apiUserChangePwd(const HttpRequest &message)
@@ -722,7 +722,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 				// result["provisioning_uri"] = std::string("otpauth://totp/Example:user@example.com?secret=JBSWY3DNEHXXE5TUN4&issuer=Example");
 				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(createJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
 				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = time_t() + challengeTimeout;
-				message.reply(web::http::status_codes::Unauthorized, std::move(result), std::move(headers));
+				message.reply(web::http::status_codes::PreconditionRequired, std::move(result), std::move(headers));
 				LOG_DBG << fname << "User <" << uname << "> request TOTP key success";
 			}
 			else

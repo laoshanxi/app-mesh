@@ -59,6 +59,14 @@ func init() {
 	}
 }
 
+func AbsConfigPath() {
+	ConfigData.REST.SSL.SSLCaPath = HomeDir(ConfigData.REST.SSL.SSLCaPath)
+	ConfigData.REST.SSL.SSLCertificateFile = HomeDir(ConfigData.REST.SSL.SSLCertificateFile)
+	ConfigData.REST.SSL.SSLCertificateKeyFile = HomeDir(ConfigData.REST.SSL.SSLCertificateKeyFile)
+	ConfigData.REST.SSL.SSLClientCertificateFile = HomeDir(ConfigData.REST.SSL.SSLClientCertificateFile)
+	ConfigData.REST.SSL.SSLClientCertificateKeyFile = HomeDir(ConfigData.REST.SSL.SSLClientCertificateKeyFile)
+}
+
 func readConfig() error {
 	// Load YAML configuration
 	yamlFile, err := os.ReadFile(getConfigFilePath())
@@ -175,4 +183,14 @@ func GetAppMeshHomeDir() string {
 func IsAgentProdEnv() bool {
 	exePath, _ := os.Executable()
 	return filepath.Base(exePath) == "agent"
+}
+
+func HomeDir(path string) string {
+	// Convert relative paths to absolute paths if necessary
+	if !filepath.IsAbs(path) {
+		absPath := filepath.Join(GetAppMeshHomeDir(), path)
+		logger.Infof("Converting relative path <%s> to absolute path <%s>", path, absPath)
+		return absPath
+	}
+	return path
 }

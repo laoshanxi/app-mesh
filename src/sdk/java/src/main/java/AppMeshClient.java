@@ -46,6 +46,7 @@ public class AppMeshClient {
     private static final String ACCEPT_HEADER = "Accept";
     private static final String JSON_CONTENT_TYPE = "application/json; utf-8";
     private static final String DEFAULT_JWT_AUDIENCE = "appmesh-service";
+    private static final int HTTP_PRECONDITION_REQUIRED = 428;
 
     private final String baseURL;
     private AtomicReference<String> jwtToken = new AtomicReference<String>(null);
@@ -212,7 +213,7 @@ public class AppMeshClient {
             JSONObject jsonResponse = new JSONObject(responseContent);
             this.jwtToken.set(jsonResponse.getString("Access-Token"));
             return this.jwtToken.get();
-        } else if (statusCode == HttpURLConnection.HTTP_UNAUTHORIZED && totpCode != null && !totpCode.isEmpty()) {
+        } else if (statusCode == HTTP_PRECONDITION_REQUIRED && totpCode != null && !totpCode.isEmpty()) {
             JSONObject jsonResponse = new JSONObject(responseContent);
             if (jsonResponse.has("Totp-Challenge")) {
                 String challenge = jsonResponse.getString("Totp-Challenge");
@@ -254,9 +255,12 @@ public class AppMeshClient {
 
     // Logoff current session from server
     public boolean logoff() throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
-        this.jwtToken.set(null);
-        return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        if (this.jwtToken != null) {
+            HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
+            this.jwtToken.set(null);
+            return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        }
+        return true;
     }
 
     // Login with token and verify permission when specified, verified token will be stored in client object when success
@@ -513,7 +517,7 @@ public class AppMeshClient {
     // Copy a remote file to local, the local file will have the same permission as the remote file
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
-        headers.put("File-Path", filePath);
+        headers.put("File-Path", encodeURIComponent(filePath));
 
         HttpURLConnection conn = request("GET", "/appmesh/file/download", null, headers, null);
 
@@ -557,7 +561,7 @@ public class AppMeshClient {
     public boolean uploadFile(Object localFile, String filePath, boolean applyFileAttributes) {
         try {
             Map<String, String> headers = commonHeaders();
-            headers.put("File-Path", filePath);
+            headers.put("File-Path", encodeURIComponent(filePath));
 
             File file;
             if (localFile instanceof String) {
@@ -751,6 +755,28 @@ public class AppMeshClient {
             headers.put("X-Target-Host", host);
         }
         return headers;
+    }
+
+    private String encodeURIComponent(String value) {
+        if (value == null)
+            return null;
+
+        try {
+            // Convert the string to UTF-8 bytes and encode special characters
+            String encoded = java.net.URLEncoder.encode(value, "UTF-8");
+
+            // JavaScript's encodeURIComponent() doesn't encode these characters
+            return encoded.replace("+", "%20") // Space is encoded as + in Java, but %20 in JavaScript
+                    .replace("%21", "!") // !
+                    .replace("%27", "'") // '
+                    .replace("%28", "(") // (
+                    .replace("%29", ")") // )
+                    .replace("%7E", "~") // ~
+                    .replace("%2A", "*"); // *
+
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new RuntimeException("UTF-8 encoding not supported", e);
+        }
     }
 
     private HttpURLConnection request(String method, String path, JSONObject body, Map<String, String> headers, Map<String, String> params)

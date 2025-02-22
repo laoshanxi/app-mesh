@@ -859,13 +859,13 @@ void Application::save()
 
 std::string Application::getYamlPath()
 {
-	return (fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string();
+	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string();
 }
 
 void Application::remove()
 {
 	Utility::removeFile(getYamlPath());
-	Utility::removeFile((fs::path(Utility::getParentDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
+	Utility::removeFile((fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
 }
 
 void Application::dump()

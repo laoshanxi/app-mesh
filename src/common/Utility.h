@@ -110,8 +110,11 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_WORK_CONFIG_DIR "config"
 #define APPMESH_JWT_RS256_PUBLIC_KEY_FILE "ssl/jwt-public.pem"
 #define APPMESH_JWT_RS256_PRIVATE_KEY_FILE "ssl/jwt-private.pem"
+#define APPMESH_JWT_ES256_PUBLIC_KEY_FILE "ssl/jwt-ec-public.pem"
+#define APPMESH_JWT_ES256_PRIVATE_KEY_FILE "ssl/jwt-ec-private.pem"
 #define APPMESH_JWT_ALGORITHM_RS256 "RS256"
 #define APPMESH_JWT_ALGORITHM_HS256 "HS256"
+#define APPMESH_JWT_ALGORITHM_ES256 "ES256"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
@@ -150,9 +153,9 @@ public:
 	virtual ~Utility();
 
 	// OS related
-	static const std::string getSelfFullPath();
-	static const std::string &getSelfDir();
-	static const std::string &getParentDir();
+	static const std::string getExecutablePath();
+	static const std::string &getBinDir();
+	static const std::string &getHomeDir();
 	static std::string getConfigFilePath(const std::string &configFile, bool write = false);
 	static const std::string getBinaryName();
 	static bool isDirExist(const std::string &path);
@@ -202,6 +205,9 @@ public:
 	// Base64
 	static std::string encode64(const std::string &val);
 	static std::string decode64(const std::string &val);
+
+	static std::string encodeURIComponent(const std::string &str);
+	static std::string decodeURIComponent(const std::string &encoded);
 
 	// Read file to string
 	static std::string readFile(const std::string &path);

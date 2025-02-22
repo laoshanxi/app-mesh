@@ -35,6 +35,7 @@ const (
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
+	HTTP_HEADER_KEY_File_Path          = "File-Path"
 
 	TCP_CHUNK_BLOCK_SIZE = appmesh.TCP_CHUNK_BLOCK_SIZE
 )
@@ -319,6 +320,11 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Handle File-Path URI decode
+	if filePath := r.Header.Get(HTTP_HEADER_KEY_File_Path); filePath != "" {
+		r.Header.Set(HTTP_HEADER_KEY_File_Path, utils.DecodeURIComponent(filePath))
+	}
+
 	// Body buffer
 	request := NewAppMeshRequest(r)
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
@@ -408,7 +414,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) error {
 	logger.Debugf("Requesting path: %s", r.URL.Path)
 
-	filePath := r.Header.Get("File-Path")
+	filePath := r.Header.Get(HTTP_HEADER_KEY_File_Path)
 
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == REST_PATH_DOWNLOAD && data.HttpStatus == http.StatusOK:
@@ -416,7 +422,7 @@ func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) erro
 	case r.Method == http.MethodPost && r.URL.Path == REST_PATH_UPLOAD && data.HttpStatus == http.StatusOK:
 		return HandleUpload(w, r, data, filePath)
 	default:
-		return fmt.Errorf("incorrect file request: %s:%s", r.Method, data.Body)
+		return fmt.Errorf(data.Body)
 	}
 }
 

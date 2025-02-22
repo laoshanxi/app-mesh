@@ -109,9 +109,9 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
         LOG_WAR << fname << web::http::status_codes::NotFound << " : " << e.what();
         message.reply(web::http::status_codes::NotFound, convertText2Json(e.what()));
     }
-    catch (const std::system_error &e)
+    catch (const std::underflow_error &e)
     {
-        LOG_WAR << fname << "rest " << path << " failed with error code: " << e.code() << ", message: " << e.what();
+        LOG_WAR << fname << "rest " << path << " authentication failed with error: " << e.what();
         message.reply(web::http::status_codes::Unauthorized, convertText2Json(e.what()));
     }
     catch (const std::exception &e)
@@ -172,8 +172,11 @@ const std::string RestBase::createJwtToken(const std::string &userName, const st
         throw std::invalid_argument(Utility::stringFormat("Audience <%s> verification failed", targetAudience.c_str()));
     }
 
-    const static std::string jwtPublicKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
-    const static std::string jwtPrivateKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
+    const static std::string rsPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
+    const static std::string rsPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
+
+    const static std::string ecPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PUBLIC_KEY_FILE).string());
+    const static std::string ecPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PRIVATE_KEY_FILE).string());
 
     // https://thalhammer.it/projects/
     auto jwt = jwt::create()
@@ -188,7 +191,9 @@ const std::string RestBase::createJwtToken(const std::string &userName, const st
     if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_HS256)
         token = jwt.sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
     else if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_RS256)
-        token = jwt.sign(jwt::algorithm::rs256{jwtPublicKey, jwtPrivateKey});
+        token = jwt.sign(jwt::algorithm::rs256{rsPub, rsPri});
+    else if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_ES256)
+        token = jwt.sign(jwt::algorithm::es256{ecPub, ecPri});
     else
         throw std::invalid_argument("JWT algorithm not supported");
     //  set_id() can be used to set the jti (JWT ID, UUID)  and store in redis with expiration and blacklist
@@ -261,7 +266,7 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
     const auto token = getJwtToken(message);
 
     if (TOKEN_BLACK_LIST::instance()->isTokenBlacklisted(token))
-        throw std::invalid_argument("token blocked");
+        throw std::underflow_error("token blocked");
 
     const auto decoded_token = jwt::decode(token);
     if (decoded_token.has_subject())
@@ -272,10 +277,13 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
 
         // check locked
         if (userObj->locked())
-            throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.c_str()));
+            throw std::underflow_error(Utility::stringFormat("User <%s> was locked", userName.c_str()));
 
-        const static std::string jwtPublicKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
-        const static std::string jwtPrivateKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
+        const static std::string rsPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
+        const static std::string rsPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
+
+        const static std::string ecPub = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PUBLIC_KEY_FILE).string());
+        const static std::string ecPri = Utility::readFileCpp((fs::path(Utility::getHomeDir()) / APPMESH_JWT_ES256_PRIVATE_KEY_FILE).string());
 
         // check user token
         try
@@ -290,23 +298,25 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
             if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_HS256)
                 verifier.allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
             else if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_RS256)
-                verifier.allow_algorithm(jwt::algorithm::rs256{jwtPublicKey, jwtPrivateKey});
+                verifier.allow_algorithm(jwt::algorithm::rs256{rsPub, rsPri});
+            else if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_ES256)
+                verifier.allow_algorithm(jwt::algorithm::es256{ecPub, ecPri});
             else
-                throw std::invalid_argument("JWT algorithm not supported");
+                throw std::underflow_error("JWT algorithm not supported");
 
             verifier.verify(decoded_token);
         }
         catch (const std::exception &e)
         {
             LOG_WAR << "User <" << userName << "> verify token failed: " << e.what();
-            throw std::runtime_error("Authentication failed");
+            throw std::underflow_error("Authentication failed");
         }
 
         return std::make_tuple(userName, userObj->getGroup());
     }
     else
     {
-        throw std::invalid_argument("No user info in token");
+        throw std::underflow_error("No user info in token");
     }
 }
 

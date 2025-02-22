@@ -8,9 +8,9 @@ from datetime import datetime
 from enum import Enum, unique
 from http import HTTPStatus
 from typing import Optional, Tuple, Union
-from urllib import parse
 import aniso8601
 import requests
+import urllib
 from .app import App
 from .app_run import AppRun
 from .app_output import AppOutput
@@ -279,7 +279,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if resp.status_code == HTTPStatus.OK:
             if "Access-Token" in resp.json():
                 self.jwt_token = resp.json()["Access-Token"]
-        elif resp.status_code == HTTPStatus.UNAUTHORIZED and "Totp-Challenge" in resp.json():
+        elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED and "Totp-Challenge" in resp.json():
             challenge = resp.json()["Totp-Challenge"]
             self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
         else:
@@ -325,11 +325,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: logoff success or failure.
         """
-        resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/self/logoff")
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(resp.text)
-        self.jwt_token = None
-        return resp.status_code == HTTPStatus.OK
+        if self.jwt_token:
+            resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/self/logoff")
+            self.jwt_token = None
+            if resp.status_code != HTTPStatus.OK:
+                raise Exception(resp.text)
+            return resp.status_code == HTTPStatus.OK
+        return True
 
     def authentication(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
         """Deprecated: Use authenticate() instead."""
@@ -445,13 +447,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             dict: eextract parameters
         """
         parsed_info = {}
-        parsed_uri = parse.urlparse(totp_uri)
+        parsed_uri = urllib.parse.urlparse(totp_uri)
 
         # Extract label from the path
         parsed_info["label"] = parsed_uri.path[1:]  # Remove the leading slash
 
         # Extract parameters from the query string
-        query_params = parse.parse_qs(parsed_uri.query)
+        query_params = urllib.parse.parse_qs(parsed_uri.query)
         for key, value in query_params.items():
             parsed_info[key] = value[0]
         return parsed_info
@@ -953,7 +955,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         with open(file=local_file, mode="rb") as fp:
             encoder = MultipartEncoder(fields={"filename": os.path.basename(remote_file), "file": ("filename", fp, "application/octet-stream")})
-            header = {"File-Path": remote_file, "Content-Type": encoder.content_type}
+            header = {"File-Path": urllib.parse.quote(remote_file), "Content-Type": encoder.content_type}
 
             # Include file attributes (permissions, owner, group) if requested
             if apply_file_attributes:
@@ -1120,7 +1122,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             requests.Response: HTTP response
         """
-        rest_url = parse.urljoin(self.server_url, path)
+        rest_url = urllib.parse.urljoin(self.server_url, path)
 
         header = {} if header is None else header
         if self.jwt_token:
@@ -1129,7 +1131,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             if ":" in self.forward_to:
                 header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
             else:
-                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to + ":" + str(parse.urlsplit(self.server_url).port)
+                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to + ":" + str(urllib.parse.urlsplit(self.server_url).port)
         header[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:

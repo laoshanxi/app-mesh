@@ -12,6 +12,7 @@
 #include <ace/SSL/SSL_SOCK_Connector.h>
 #endif
 
+#include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "TcpClient.h"
@@ -76,11 +77,12 @@ ACE_SSL_Context *TcpClient::initTcpSSL(ACE_SSL_Context *context)
 {
 	// Initialize SSL
 	context->set_mode(ACE_SSL_Context::SSLv23_client);
-	bool verifyClient = Configuration::instance()->getSslVerifyClient();
+	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
+	const static auto homeDir = Utility::getHomeDir();
 	if (verifyClient)
 	{
-		auto cert = Configuration::instance()->getSSLCertificateFile();
-		auto key = Configuration::instance()->getSSLCertificateKeyFile();
+		auto cert = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateFile());
+		auto key = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateKeyFile());
 
 		context->certificate(cert.c_str(), SSL_FILETYPE_PEM);
 		context->private_key(key.c_str(), SSL_FILETYPE_PEM);

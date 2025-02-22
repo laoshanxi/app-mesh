@@ -19,7 +19,7 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
 }
 
-check_dependencies() {
+ensure_dependencies() {
     for cmd in cfssl cfssljson hostname openssl; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             log "Error: Missing required dependency: $cmd"
@@ -28,7 +28,7 @@ check_dependencies() {
     done
 }
 
-create_ca_config() {
+setup_ca_config() {
     cat >"$CA_CONFIG" <<EOF
 {
     "signing": {
@@ -59,7 +59,7 @@ create_ca_config() {
 EOF
 }
 
-create_ca_csr() {
+setup_ca_csr() {
     cat >"$CA_CSR" <<EOF
 {
     "CN": "AppMesh",
@@ -80,7 +80,7 @@ create_ca_csr() {
 EOF
 }
 
-get_hosts_list() {
+resolve_host_addresses() {
     local ip_addresses hostname_long hostname_short
 
     # Get IP addresses
@@ -104,7 +104,7 @@ get_hosts_list() {
     echo "${hostname_short},${hostname_long},${ip_addresses},localhost,127.0.0.1" | tr ',' '\n' | sort -u -r | tr '\n' ',' | sed 's/,$//'
 }
 
-generate_certificates() {
+create_certificates() {
     local hosts="$1"
     local hostname_short=$(hostname)
 
@@ -118,7 +118,7 @@ generate_certificates() {
     echo '{"CN":"appmesh-client","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config="$CA_CONFIG" -profile=client -hostname="$hosts" - | cfssljson -bare client
 }
 
-verify_certificates() {
+validate_certs() {
     local error_count=0
     log "Verifying certificates..."
 
@@ -191,22 +191,57 @@ verify_certificates() {
     return $error_count
 }
 
-cleanup() {
+remove_temp_files() {
     log "Cleaning up configuration files..."
     rm -f "$CA_CONFIG" "$CA_CSR"
 }
 
-convert_jwt_rs256_key() {
+generate_es256_keypair() {
+    log "Generating ECDSA keys for JWT ES256..."
+    
+    # Check if output files already exist
+    if [ -f jwt-ec-private.pem ] || [ -f jwt-ec-public.pem ]; then
+        log "Warning: JWT EC key files already exist, skipping generation"
+        return 0
+    fi
+
+    # Generate private key
+    if ! openssl ecparam -genkey -name prime256v1 -noout -out jwt-ec-private.pem; then
+        log "Error: Failed to generate private EC key"
+        return 1
+    fi
+
+    # Generate public key
+    if ! openssl ec -in jwt-ec-private.pem -pubout -out jwt-ec-public.pem; then
+        log "Error: Failed to generate public EC key"
+        return 1
+    fi
+
+    # Verify the keys match
+    if openssl ec -in jwt-ec-private.pem -pubout -outform DER | openssl sha256 >/tmp/priv.sha256 &&
+       openssl ec -in jwt-ec-public.pem -pubin -outform DER | openssl sha256 >/tmp/pub.sha256 &&
+       cmp -s /tmp/priv.sha256 /tmp/pub.sha256; then
+        log "✓ Successfully created and verified jwt-ec-private.pem and jwt-ec-public.pem"
+        rm -f /tmp/priv.sha256 /tmp/pub.sha256
+        return 0
+    else
+        log "Error: Key verification failed"
+        rm -f /tmp/priv.sha256 /tmp/pub.sha256
+        return 1
+    fi
+}
+
+generate_rs256_keypair() {
     log "Converting SSL keys to JWT RS256 format..."
     
     # Check if input files exist
-    if [[ ! -f server-key.pem || ! -f server.pem ]]; then
+    if [ ! -f server-key.pem ] || [ ! -f server.pem ]; then
         log "Error: Required input files (server-key.pem, server.pem) not found"
         return 1
     fi
 
     # Check if output files already exist
-    if [[ -f jwt-private.pem || -f jwt-public.pem ]]; then
+    if [ -f jwt-private.pem ] || [ -f jwt-public.pem ]; then
         log "Warning: JWT key files already exist, skipping conversion"
         return 0
     fi
@@ -229,37 +264,29 @@ convert_jwt_rs256_key() {
 main() {
     log "Starting SSL certificate generation..."
 
-    # Check for required dependencies
-    check_dependencies
-
-    # Ensure we're in the correct directory
+    ensure_dependencies
+    
     PATH="$PATH:$WORKING_DIR"
 
-    # Create configuration files
-    create_ca_config
-    create_ca_csr
+    setup_ca_config
+    setup_ca_csr
 
-    # Get list of hosts
     local hosts
-    hosts=$(get_hosts_list)
+    hosts=$(resolve_host_addresses)
     log "Using hosts: $hosts"
 
-    # Generate certificates
-    generate_certificates "$hosts"
+    create_certificates "$hosts"
 
-    # Verify certificates
-    if verify_certificates; then
+    if validate_certs; then
         log "All certificates verified successfully"
     else
         log "Certificate verification failed"
         exit 1
     fi
 
-    # Convert SSL keys to JWT RS256 format
-    convert_jwt_rs256_key
-
-    # Cleanup temporary files
-    cleanup
+    generate_rs256_keypair
+    generate_es256_keypair
+    remove_temp_files
 
     log "Certificate generation completed successfully"
     log "Generated files: ca.pem, ca-key.pem, server.pem, server-key.pem, client.pem, client-key.pem"

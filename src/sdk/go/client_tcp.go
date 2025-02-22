@@ -53,7 +53,7 @@ func (client *AppMeshClientTCP) CloseConnection() {
 // FileDownload downloads a file from the server to the local file system.
 func (r *AppMeshClientTCP) FileDownload(remoteFile, localFile string, applyFileAttributes bool) error {
 	headers := map[string]string{
-		"File-Path":                        remoteFile,
+		HTTP_HEADER_KEY_File_Path:          remoteFile,
 		HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: "true",
 	}
 
@@ -107,7 +107,7 @@ func (client *AppMeshClientTCP) FileUpload(localFile, remoteFile string, applyFi
 	defer file.Close()
 
 	headers := map[string]string{
-		"File-Path":                        remoteFile,
+		HTTP_HEADER_KEY_File_Path:          remoteFile,
 		"Content-Type":                     "text/plain",
 		HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: "true",
 	}
