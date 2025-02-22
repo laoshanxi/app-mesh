@@ -34,12 +34,7 @@ public class AppMeshClientTest {
     public void tearDown() {
         LOGGER.info("tearDown");
         if (client != null) {
-            try {
-                client.logoff();
-            } catch (IOException e) {
-                // Log the exception or handle it as appropriate for your testing environment
-                System.err.println("Error during logout in tearDown: " + e.getMessage());
-            }
+            client.logoff();
             client = null;
         }
     }

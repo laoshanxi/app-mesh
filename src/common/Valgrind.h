@@ -58,7 +58,7 @@ std::string binaryName()
 /// self binary full path
 /// </summary>
 /// <returns></returns>
-std::string getSelfFullPath()
+std::string getExecutablePath()
 {
     std::string path;
     char buf[1024] = {0};
@@ -81,7 +81,7 @@ std::string getSelfFullPath()
 /// <returns></returns>
 std::string getFullCommandLine()
 {
-    auto path = getSelfFullPath();
+    auto path = getExecutablePath();
     int i = 1;
     while (CMD_ARGV && CMD_ARGV[i])
     {
@@ -99,7 +99,7 @@ std::string getFullCommandLine()
 /// <returns></returns>
 bool binaryExtentionExist(const char *fileSuffix)
 {
-    auto cmdPath = getSelfFullPath() + fileSuffix;
+    auto cmdPath = getExecutablePath() + fileSuffix;
     if (access(cmdPath.c_str(), 0) == 0)
     {
         return true;
@@ -183,7 +183,7 @@ void valgrind_main()
         pthread_create(&t_id, NULL, valgrindStopMonitorThread, NULL);
         if (getenv(VALGRIND_ENV_RUN_ONCE))
         {
-            std::string valrindEnableFile = getSelfFullPath() + VALGRIND_ENABLE_FILE;
+            std::string valrindEnableFile = getExecutablePath() + VALGRIND_ENABLE_FILE;
             unlink(valrindEnableFile.c_str());
             printf("Run for one time, remove : %s\n", valrindEnableFile.c_str());
         }

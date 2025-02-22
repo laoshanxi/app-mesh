@@ -27,7 +27,7 @@ void init()
         initialized = true;
         ACE::init();
         using namespace log4cpp;
-        auto logDir = Utility::stringFormat("%s", Utility::getSelfDir().c_str());
+        auto logDir = Utility::stringFormat("%s", Utility::getBinDir().c_str());
         auto consoleLayout = new PatternLayout();
         consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
         auto consoleAppender = new OstreamAppender("console", &std::cout);

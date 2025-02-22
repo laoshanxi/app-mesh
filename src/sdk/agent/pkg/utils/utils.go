@@ -3,10 +3,10 @@ package utils
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -89,14 +89,24 @@ func GetParentDir(dirctory string) string {
 	return substr(dirctory, 0, strings.LastIndex(dirctory, "/"))
 }
 
-func IsValidFileName(fileName string) bool {
-	// Use a regular expression to allow alphanumeric characters, underscores, dashes, dots, and slashes
-	// Avoid special characters and patterns that might lead to security issues
-	regex := regexp.MustCompile(`^[a-zA-Z0-9_\-./]+$`)
-	if !regex.MatchString(fileName) {
-		return false
+// DecodeURIComponent decodes a URI component string by replacing each escaped sequence
+// with its actual character. It's compatible with JavaScript's decodeURIComponent.
+func DecodeURIComponent(encoded string) string {
+	decoded, err := url.QueryUnescape(encoded)
+	if err != nil {
+		fmt.Printf("decode URI component failed: %v", err)
+		return encoded
 	}
+	return decoded
+}
 
+// EncodeURIComponent encodes a string as a URI component by escaping all characters
+// that could interfere with URI syntax. It's compatible with JavaScript's encodeURIComponent.
+func EncodeURIComponent(str string) string {
+	return url.QueryEscape(str)
+}
+
+func IsValidFileName(fileName string) bool {
 	// Ensure the resulting file path is safe on the Linux file system
 	// Avoid certain unsafe patterns
 	unsafePrefixes := []string{"/etc/", "/var/", "/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/proc/", "/sys/", "/boot/"}

@@ -107,7 +107,7 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 			r.updateToken(result.AccessToken)
 			return true, r.getToken(), err
 		}
-	} else if code == http.StatusUnauthorized && len(totpCode) > 0 {
+	} else if code == http.StatusPreconditionRequired && len(totpCode) > 0 {
 		m := make(map[string]interface{})
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		_ = decoder.Decode(&m)
@@ -145,9 +145,12 @@ func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode
 
 // Logoff logs the user off from the server.
 func (r *AppMeshClient) Logoff() (bool, error) {
-	code, _, _, err := r.post("appmesh/self/logoff", nil, nil, nil)
-	r.updateToken("")
-	return code == http.StatusOK, err
+	if r.getToken() != "" {
+		code, _, _, err := r.post("appmesh/self/logoff", nil, nil, nil)
+		r.updateToken("")
+		return code == http.StatusOK, err
+	}
+	return true, nil
 }
 
 // Authenticate authenticates the user with an existing JWT token and optional permission check.
@@ -436,7 +439,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 
 	headers := map[string]string{
 		"Content-Type": writer.FormDataContentType(),
-		"File-Path":    remoteFile,
+		"File-Path":    url.QueryEscape(remoteFile),
 	}
 
 	// Get the file attributes.
@@ -463,7 +466,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 // DownloadFile downloads a file from the server.
 func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttributes bool) error {
 
-	headers := map[string]string{"File-Path": remoteFile}
+	headers := map[string]string{"File-Path": url.QueryEscape(remoteFile)}
 	code, raw, respHeaders, _ := r.get("/appmesh/file/download", nil, headers)
 
 	if code != http.StatusOK {

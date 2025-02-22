@@ -34,7 +34,7 @@ void init()
 		initialized = true;
 		ACE::init();
 		using namespace log4cpp;
-		auto logDir = Utility::stringFormat("%s", Utility::getSelfDir().c_str());
+		auto logDir = Utility::stringFormat("%s", Utility::getBinDir().c_str());
 		auto consoleLayout = new PatternLayout();
 		consoleLayout->setConversionPattern("%d [%t] %p %c: %m%n");
 		auto consoleAppender = new OstreamAppender("console", &std::cout);
@@ -67,12 +67,12 @@ TEST_CASE("Utility Test", "[Utility]")
 {
 	init();
 
-	LOG_INF << "Utility::getSelfFullPath():" << Utility::getSelfFullPath();
-	LOG_INF << "Utility::getSelfDir():" << Utility::getSelfDir();
+	LOG_INF << "Utility::getExecutablePath():" << Utility::getExecutablePath();
+	LOG_INF << "Utility::getBinDir():" << Utility::getBinDir();
 
 	// setup
-	const std::string selfPath = Utility::getSelfFullPath();
-	const std::string selfDir = Utility::getSelfDir();
+	const std::string selfPath = Utility::getExecutablePath();
+	const std::string selfDir = Utility::getBinDir();
 	REQUIRE(selfPath.length() > selfDir.length());
 
 	SECTION("File function test")
@@ -140,8 +140,8 @@ TEST_CASE("json", "[Utility]")
 {
 	init();
 
-	LOG_INF << "Utility::getSelfFullPath():" << Utility::getSelfFullPath();
-	LOG_INF << "Utility::getSelfDir():" << Utility::getSelfDir();
+	LOG_INF << "Utility::getExecutablePath():" << Utility::getExecutablePath();
+	LOG_INF << "Utility::getBinDir():" << Utility::getBinDir();
 
 	nlohmann::json a;
 	LOG_INF << "nlohmann::json: " << a;

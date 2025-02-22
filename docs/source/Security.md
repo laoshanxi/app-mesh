@@ -71,6 +71,7 @@ App Mesh supports two JWT signing algorithms:
 
 * HS256 - Uses JWTSalt as the secret key
 * RS256 - Uses public and private PEM key files for signing
+* ES256 - Uses public and private PEM key files with ECDSA algrithom
 
 
 ### PSK (Pre-Shared Key)

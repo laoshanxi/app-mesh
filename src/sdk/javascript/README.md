@@ -30,23 +30,21 @@ import { Message } from 'element-ui'
 
 export class VueAppMeshClient extends AppMeshClient {
   constructor(options = {}) {
-    super(options.baseURL, options.sslConfig, options.jwtToken)
-    this.messageConfig = {
-      duration: options.messageDuration || 3000,
-      showClose: true
-    }
+    super(options.baseURL, options.sslConfig, options.jwtToken);
   }
 
-  _handleError(error) {
-    const baseError = super._handleError(error)
-
-    Message({
-      message: typeof baseError.message === 'object' ? JSON.stringify(baseError.message, null, 2) : baseError.message,
-      type: 'error',
-      duration: 5 * 1000
-    })
-
-    return baseError
+  /**
+   * Override error handler
+   * @protected
+   * @param {Error} error - The caught error
+   * @returns {AppMeshError} Standardized AppMeshError
+   */
+  onError(error) {
+    let message = error.message;
+    if (message) {
+      Message({ message, type: 'error', duration: 5 * 1000 });
+    }
+    return error;
   }
 }
 ```

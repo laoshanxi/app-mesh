@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"path"
 	"syscall"
 	"time"
 
@@ -93,12 +94,25 @@ func setupGracefulShutdown(cancel context.CancelFunc) {
 	}()
 }
 
+func changeWorkDir(dir string) {
+	if err := os.Chdir(dir); err != nil {
+		logger.Fatalf("Failed to change directory to %s : %v", dir, err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		logger.Fatalf("Failed to get working directory: %v", err)
+	}
+	logger.Infof("Changed working directory to: %s", cwd)
+}
+
 func main() {
 	cwd, _ := os.Getwd()
 	logger.Info("Current working directory:", cwd)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	config.AbsConfigPath()
 
 	// Handle graceful shutdown
 	setupGracefulShutdown(cancel)
@@ -113,6 +127,8 @@ func main() {
 	// Start all services
 	initializeServices(ctx)
 	go monitorParentProcess(ctx)
+
+	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), "work", "tmp"))
 
 	// Wait for shutdown signal
 	<-ctx.Done()

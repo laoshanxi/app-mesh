@@ -17,6 +17,8 @@ struct CurlResponse
 struct ClientSSLConfig
 {
 	ClientSSLConfig();
+	void AbsConfigPath(std::string workingHome);
+	static std::string HomeDir(std::string workingHome, std::string filePath);
 	unsigned long m_ssl_version;
 	bool m_verify_client;			  // client certificate verification
 	bool m_verify_server;			  // server's certificate matches the host name

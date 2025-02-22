@@ -1253,7 +1253,7 @@ void ArgumentParser::processFileDownload()
 	download.add_options()
 	(REMOTE_ARGS, po::value<std::string>(), "Remote file path to download.")
 	(LOCAL_ARGS, po::value<std::string>(), "Local file path to save.")
-	(NO_ATTR_ARGS, "Not copy file attributes.");
+	(COPY_ATTR_ARGS, "Copy file attributes.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(download).add(other);
 	shiftCommandLineArgs(desc);
@@ -1271,11 +1271,11 @@ void ArgumentParser::processFileDownload()
 
 	// header
 	std::map<std::string, std::string> header;
-	header.insert({HTTP_HEADER_KEY_file_path, file});
+	header.insert({HTTP_HEADER_KEY_file_path, Utility::encodeURIComponent(file)});
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	auto response = RestClient::download(m_currentUrl, restPath, file, local, header);
 
-	if (m_commandLineVariables.count(NO_ATTR) == 0)
+	if (m_commandLineVariables.count(COPY_ATTR))
 		Utility::applyFilePermission(local, response->header);
 	if (response->status_code == web::http::status_codes::OK)
 		std::cout << "Download remote file <" << file << "> to local <" << local << "> size <" << Utility::humanReadableSize(std::ifstream(local).seekg(0, std::ios::end).tellg()) << ">" << std::endl;
@@ -1291,7 +1291,7 @@ void ArgumentParser::processFileUpload()
 	upload.add_options()
 	(REMOTE_ARGS, po::value<std::string>(), "Remote file path to save.")
 	(LOCAL_ARGS, po::value<std::string>(), "Local file to upload.")
-	(NO_ATTR_ARGS, "Not copy file attributes.");
+	(COPY_ATTR_ARGS, "Not copy file attributes.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(upload).add(other);
 	shiftCommandLineArgs(desc);
@@ -1316,9 +1316,9 @@ void ArgumentParser::processFileUpload()
 
 	// header
 	std::map<std::string, std::string> header;
-	header.insert({HTTP_HEADER_KEY_file_path, file});
+	header.insert({HTTP_HEADER_KEY_file_path, Utility::encodeURIComponent(file)});
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
-	if (m_commandLineVariables.count(NO_ATTR) == 0)
+	if (m_commandLineVariables.count(COPY_ATTR))
 	{
 		auto fileInfo = os::fileStat(local);
 		header.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
@@ -1650,7 +1650,7 @@ void ArgumentParser::initRadomPassword()
 		return;
 	}
 
-	const auto flagFile = fs::path(Utility::getParentDir()) / APPMESH_WORK_DIR / APPMESH_APPMG_INIT_FLAG_FILE;
+	const auto flagFile = fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPMG_INIT_FLAG_FILE;
 	if (Utility::isFileExist(flagFile.string()))
 	{
 		std::cerr << "The 'appc appmginit' should only run once." << std::endl;
@@ -2209,6 +2209,7 @@ const std::string ArgumentParser::getAppMeshUrl()
 					config.m_private_key = sslConfig[JSON_KEY_SSLClientCertificateKeyFile].Scalar();
 				if (sslConfig[JSON_KEY_SSLCaPath].IsDefined())
 					config.m_ca_location = sslConfig[JSON_KEY_SSLCaPath].Scalar();
+				config.AbsConfigPath(Utility::getHomeDir());
 				RestClient::defaultSslConfiguration(config);
 			}
 			url = Utility::stringFormat("https://%s:%d", readPersistLastHost(address).c_str(), port);

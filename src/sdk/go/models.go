@@ -20,6 +20,7 @@ const (
 	HTTP_USER_AGENT_TCP                = "appmesh/golang/tcp"
 	HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
+	HTTP_HEADER_KEY_File_Path          = "File-Path"
 
 	DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
 
