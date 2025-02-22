@@ -59,6 +59,7 @@ public:
 		std::string getJwtInterface() const;
 
 		std::string m_jwtSalt;
+		std::string m_jwtAlgorithm;
 		std::string m_jwtIssuer;
 		std::set<std::string> m_jwtAudience;
 		std::string m_jwtInterface;

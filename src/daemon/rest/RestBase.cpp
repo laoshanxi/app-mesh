@@ -172,16 +172,25 @@ const std::string RestBase::createJwtToken(const std::string &userName, const st
         throw std::invalid_argument(Utility::stringFormat("Audience <%s> verification failed", targetAudience.c_str()));
     }
 
+    const static std::string jwtPublicKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
+    const static std::string jwtPrivateKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
+
     // https://thalhammer.it/projects/
-    const auto token = jwt::create()
-                           .set_type(HTTP_HEADER_JWT)
-                           .set_issuer(Configuration::instance()->getRestJwtIssuer())  // Issuer: your-app-name
-                           .set_subject(userName)                                      // Subject: user identifier
-                           .set_audience(targetAudience)                               // Audience: your-api
-                           .set_issued_at(jwt::date(std::chrono::system_clock::now())) // Issued at
-                           .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
-                           .set_payload_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userGroup))
-                           .sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
+    auto jwt = jwt::create()
+                   .set_type(HTTP_HEADER_JWT)
+                   .set_issuer(Configuration::instance()->getRestJwtIssuer())  // Issuer: your-app-name
+                   .set_subject(userName)                                      // Subject: user identifier
+                   .set_audience(targetAudience)                               // Audience: your-api
+                   .set_issued_at(jwt::date(std::chrono::system_clock::now())) // Issued at
+                   .set_expires_at(jwt::date(std::chrono::system_clock::now() + std::chrono::seconds{timeoutSeconds}))
+                   .set_payload_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userGroup));
+    std::string token;
+    if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_HS256)
+        token = jwt.sign(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
+    else if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_RS256)
+        token = jwt.sign(jwt::algorithm::rs256{jwtPublicKey, jwtPrivateKey});
+    else
+        throw std::invalid_argument("JWT algorithm not supported");
     //  set_id() can be used to set the jti (JWT ID, UUID)  and store in redis with expiration and blacklist
     //  set_audience() can design for multiple services with scope validation:
     /*  JWT Payload Structure:
@@ -265,16 +274,25 @@ const std::tuple<std::string, std::string> RestBase::verifyToken(const HttpReque
         if (userObj->locked())
             throw std::invalid_argument(Utility::stringFormat("User <%s> was locked", userName.c_str()));
 
+        const static std::string jwtPublicKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PUBLIC_KEY_FILE).string());
+        const static std::string jwtPrivateKey = Utility::readFileCpp((fs::path(Utility::getParentDir()) / APPMESH_JWT_RS256_PRIVATE_KEY_FILE).string());
+
         // check user token
         try
         {
-            const auto verifier = jwt::verify()
-                                      .allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt})
-                                      .with_issuer(Configuration::instance()->getRestJwtIssuer())
-                                      .with_audience(audience)
-                                      .with_subject(userName)
-                                      .with_type(HTTP_HEADER_JWT)
-                                      .with_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userObj->getGroup()));
+            auto verifier = jwt::verify()
+                                .with_issuer(Configuration::instance()->getRestJwtIssuer())
+                                .with_audience(audience)
+                                .with_subject(userName)
+                                .with_type(HTTP_HEADER_JWT)
+                                .with_claim(HTTP_HEADER_JWT_user_group, jwt::claim(userObj->getGroup()));
+
+            if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_HS256)
+                verifier.allow_algorithm(jwt::algorithm::hs256{Configuration::instance()->getJwt()->m_jwtSalt});
+            else if (Configuration::instance()->getJwt()->m_jwtAlgorithm == APPMESH_JWT_ALGORITHM_RS256)
+                verifier.allow_algorithm(jwt::algorithm::rs256{jwtPublicKey, jwtPrivateKey});
+            else
+                throw std::invalid_argument("JWT algorithm not supported");
 
             verifier.verify(decoded_token);
         }

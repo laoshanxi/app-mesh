@@ -196,6 +196,36 @@ cleanup() {
     rm -f "$CA_CONFIG" "$CA_CSR"
 }
 
+convert_jwt_rs256_key() {
+    log "Converting SSL keys to JWT RS256 format..."
+    
+    # Check if input files exist
+    if [[ ! -f server-key.pem || ! -f server.pem ]]; then
+        log "Error: Required input files (server-key.pem, server.pem) not found"
+        return 1
+    fi
+
+    # Check if output files already exist
+    if [[ -f jwt-private.pem || -f jwt-public.pem ]]; then
+        log "Warning: JWT key files already exist, skipping conversion"
+        return 0
+    fi
+
+    # Convert private key to PKCS#8 format
+    if ! openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in server-key.pem -out jwt-private.pem; then
+        log "Error: Failed to convert private key"
+        return 1
+    fi
+
+    # Extract public key from certificate
+    if ! openssl x509 -pubkey -noout -in server.pem > jwt-public.pem; then
+        log "Error: Failed to extract public key"
+        return 1
+    fi
+
+    log "✓ Successfully created jwt-private.pem and jwt-public.pem"
+}
+
 main() {
     log "Starting SSL certificate generation..."
 
@@ -224,6 +254,9 @@ main() {
         log "Certificate verification failed"
         exit 1
     fi
+
+    # Convert SSL keys to JWT RS256 format
+    convert_jwt_rs256_key
 
     # Cleanup temporary files
     cleanup

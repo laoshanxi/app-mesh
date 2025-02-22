@@ -1664,6 +1664,8 @@ void ArgumentParser::initRadomPassword()
 	{
 		// update JWT salt
 		configFile[JSON_KEY_REST][JSON_KEY_JWT][JSON_KEY_JWTSalt] = generatePassword(8, true, true, true, false);
+		// use RS256 sign algorithm
+		configFile[JSON_KEY_REST][JSON_KEY_JWT][JSON_KEY_JWTAlgorithm] = APPMESH_JWT_ALGORITHM_RS256;
 		// serialize and save JSON config
 		std::ofstream ofsCfg(Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true), ios::trunc);
 		if (ofsCfg.is_open())

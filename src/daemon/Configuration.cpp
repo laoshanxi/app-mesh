@@ -606,6 +606,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				auto sec = rest.at(JSON_KEY_JWT);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTSalt))
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtSalt, newConfig->m_rest->m_jwt->m_jwtSalt);
+				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTAlgorithm))
+					SET_COMPARE(this->m_rest->m_jwt->m_jwtAlgorithm, newConfig->m_rest->m_jwt->m_jwtAlgorithm);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTIssuer))
 					SET_COMPARE(this->m_rest->m_jwt->m_jwtIssuer, newConfig->m_rest->m_jwt->m_jwtIssuer);
 				if (HAS_JSON_FIELD(sec, JSON_KEY_JWTAudience))
@@ -960,6 +962,15 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 {
 	auto security = std::make_shared<Configuration::JsonJwt>();
 	security->m_jwtSalt = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTSalt);
+	security->m_jwtAlgorithm = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTAlgorithm);
+	if (security->m_jwtAlgorithm.empty())
+	{
+		security->m_jwtAlgorithm = APPMESH_JWT_ALGORITHM_HS256;
+	}
+	else if (security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_HS256 && security->m_jwtAlgorithm != APPMESH_JWT_ALGORITHM_RS256)
+	{
+		throw std::invalid_argument("Invalid JWT Algorithm");
+	}
 	security->m_jwtIssuer = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWTIssuer);
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_JWTAudience))
 	{
@@ -985,6 +996,7 @@ nlohmann::json Configuration::JsonJwt::AsJson() const
 {
 	auto result = nlohmann::json::object();
 	result[JSON_KEY_JWTSalt] = std::string(m_jwtSalt);
+	result[JSON_KEY_JWTAlgorithm] = std::string(m_jwtAlgorithm);
 	result[JSON_KEY_JWTIssuer] = Configuration::instance()->getRestJwtIssuer();
 	result[JSON_KEY_JWTAudience] = m_jwtAudience;
 	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);

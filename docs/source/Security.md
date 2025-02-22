@@ -65,6 +65,14 @@ SSL is enabled by default for REST services to ensure secure communication. You 
 
 All REST methods require authentication by default. JWT authentication protects APIs, with each user having role-based permissions to access corresponding methods.
 
+#### JWT Sign Algorithm
+
+App Mesh supports two JWT signing algorithms:
+
+* HS256 - Uses JWTSalt as the secret key
+* RS256 - Uses public and private PEM key files for signing
+
+
 ### PSK (Pre-Shared Key)
 
 Non-user client requests are authenticated through PSK verification.

@@ -717,7 +717,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 				auto result = nlohmann::json::object();
 				result["status"] = std::string("TOTP_CHALLENGE_REQUIRED");
 				result["digits"] = 6;
-				result["algorithm"] = std::string("HS256");
+				result["algorithm"] = Configuration::instance()->getJwt()->m_jwtAlgorithm;
 				result["period"] = 60; // TOTP key refersh period
 				// result["provisioning_uri"] = std::string("otpauth://totp/Example:user@example.com?secret=JBSWY3DNEHXXE5TUN4&issuer=Example");
 				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(createJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
