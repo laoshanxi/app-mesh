@@ -107,6 +107,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_APPMG_INIT_FLAG_FILE ".appmginit"
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"
+#define APPMESH_WORK_TMP_DIR "tmp"
 #define APPMESH_WORK_CONFIG_DIR "config"
 #define APPMESH_JWT_RS256_PUBLIC_KEY_FILE "ssl/jwt-public.pem"
 #define APPMESH_JWT_RS256_PRIVATE_KEY_FILE "ssl/jwt-private.pem"

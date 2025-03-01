@@ -328,8 +328,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         if self.jwt_token:
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/self/logoff")
             self.jwt_token = None
-            if resp.status_code != HTTPStatus.OK:
-                raise Exception(resp.text)
             return resp.status_code == HTTPStatus.OK
         return True
 

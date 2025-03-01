@@ -1,10 +1,11 @@
-﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![release.badge]][release.url] [![pypi.badge]][pypi.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
+﻿[![language.badge]][language.url] [![standard.badge]][standard.url] [![unittest.badge]][unittest.url] [![docker.badge]][docker.url] [![cockpit.badge]][cockpit.url]
 [![Documentation Status](https://readthedocs.org/projects/app-mesh/badge/?version=latest)](https://app-mesh.readthedocs.io/en/latest/?badge=latest) [![Join the chat at https://gitter.im/app-mesh/community](https://badges.gitter.im/app-mesh/community.svg)](https://gitter.im/app-mesh/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 <a href="https://scan.coverity.com/projects/laoshanxi-app-mesh">
   <img alt="Coverity Scan Build Status"
        src="https://img.shields.io/coverity/scan/21528.svg"/>
 </a>
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh/badge)](https://api.securityscorecards.dev/projects/github.com/laoshanxi/app-mesh)
+[![release.badge]][release.url] [![pypi.badge]][pypi.url] [![npm.badge]][npm.url]
 
 # App Mesh: Advanced Application Management Platform
 
@@ -118,7 +119,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 [standard.url]:   https://en.wikipedia.org/wiki/C%2B%2B#Standardization
 [standard.badge]: https://img.shields.io/badge/C%2B%2B-11%2F14%2F17-blue.svg
 [release.url]:    https://github.com/laoshanxi/app-mesh/releases
-[release.badge]:  https://img.shields.io/github/v/release/laoshanxi/app-mesh.svg
+[release.badge]:  https://img.shields.io/github/v/release/laoshanxi/app-mesh?label=Github%20package
 [docker.url]:     https://hub.docker.com/repository/docker/laoshanxi/appmesh
 [docker.badge]:   https://img.shields.io/docker/pulls/laoshanxi/appmesh.svg
 [cockpit.url]:    https://github.com/laoshanxi/app-mesh-ui
@@ -127,3 +128,5 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 [unittest.badge]: https://img.shields.io/badge/UnitTest-Catch2-blue?logo=appveyor
 [pypi.badge]: https://img.shields.io/pypi/v/appmesh?label=PyPI%3Aappmesh
 [pypi.url]: https://pypi.org/project/appmesh/
+[npm.badge]: https://img.shields.io/npm/v/appmesh?label=npm%3Aappmesh
+[npm.url]: https://www.npmjs.com/package/appmesh

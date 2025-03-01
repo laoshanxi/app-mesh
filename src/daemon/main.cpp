@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
 
 		// working dir
 		Utility::createDirectory(config->getWorkDir());
-		const auto tmpDir = (fs::path(config->getWorkDir()) / "tmp").string();
+		const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 		const auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout").string();
 		const auto inputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdin").string();
 		const auto shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();

@@ -358,7 +358,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 	if (workDir.empty())
 	{
-		workDir = Configuration::instance()->getWorkDir();
+		workDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	}
 	option.working_directory(workDir.c_str());
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
