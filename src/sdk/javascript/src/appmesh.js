@@ -199,7 +199,7 @@ class AppMeshClient {
    * @param {string} username - Username
    * @param {string} password - Password
    * @param {string} [totpCode] - 2FA code
-   * @param {string|number} [expireSeconds] - Token expiry
+   * @param {string|number} [expireSeconds] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
    * @param {string} [audience] - Token audience
    * @returns {Promise<string>} JWT token
    * @throws {AppMeshError} Invalid credentials or 2FA required (status=428)
@@ -260,7 +260,7 @@ class AppMeshClient {
 
   /**
    * Renew JWT token
-   * @param {string|number} [expireSeconds] - New token expiry
+   * @param {string|number} [expireSeconds] - New token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
    * @returns {Promise<string>} New JWT token
    */
   async renew_token(expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
@@ -299,7 +299,7 @@ class AppMeshClient {
    * @param {string} username - Username
    * @param {string} totpChallenge - Server challenge
    * @param {string} totpCode - TOTP code
-   * @param {string|number} [expireSeconds] - Token expiry
+   * @param {string|number} [expireSeconds] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
    * @returns {Promise<string>} JWT token
    */
   async validate_totp(username, totpChallenge, totpCode, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {

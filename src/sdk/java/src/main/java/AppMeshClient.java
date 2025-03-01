@@ -254,11 +254,17 @@ public class AppMeshClient {
     }
 
     // Logoff current session from server
-    public boolean logoff() throws IOException {
+    public boolean logoff() {
         if (this.jwtToken != null) {
-            HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
-            this.jwtToken.set(null);
-            return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+            try {
+                HttpURLConnection conn = request("POST", "/appmesh/self/logoff", null, null, null);
+                return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Failed to logoff", e);
+            } finally {
+                this.jwtToken.set(null);
+            }
+            return false;
         }
         return true;
     }

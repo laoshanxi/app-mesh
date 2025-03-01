@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - "!src/sdk/**"
       - .github/workflows/code-scan-coverity.yml
 
 permissions: # added using https://github.com/step-security/secure-workflows
