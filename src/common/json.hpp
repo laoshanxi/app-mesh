@@ -48,45 +48,23 @@ public:
     {
         if (!errors.empty())
         {
-            LOG_ERR << "Found the following issues:";
-            for (const auto &error : errors)
+            LOG_ERR << "Found the following issue:";
+            try
             {
-                LOG_ERR << "Path: " << error.path;
-                if (!error.value.empty())
-                {
-                    // Truncate very long values
-                    std::string displayValue = (error.value.length() > 100) ? error.value.substr(0, 97) + "..." : error.value;
-                    LOG_ERR << "Value: " << displayValue;
-                }
-                LOG_ERR << "Details: " << error.details;
-                LOG_ERR << "---";
+                const auto &error = *(errors.begin());
+                LOG_ERR << "Path: " << (error.path.empty() ? "<root>" : error.path);
+                LOG_ERR << "Value: " << (error.value.empty() ? "<empty>" : error.value);
+                LOG_ERR << "Details: " << (error.details.empty() ? "No details available" : error.details);
+            }
+            catch (...)
+            {
+                LOG_ERR << "Error while reporting issue";
             }
         }
         else
         {
             LOG_ERR << "No specific issues found during validation. The error might be in the overall structure.";
         }
-    }
-
-    // Get a summary of JSON errors
-    static std::string getErrorSummary(const std::vector<JSONErrorContext> &errors) noexcept
-    {
-        std::ostringstream oss;
-        if (!errors.empty())
-        {
-            oss << "Found " << errors.size() << " issue(s):\n";
-            for (const auto &error : errors)
-            {
-                oss << "Path: " << error.path << "\n";
-                oss << "Details: " << error.details << "\n";
-                oss << "---\n";
-            }
-        }
-        else
-        {
-            oss << "No specific issues found during validation.";
-        }
-        return oss.str();
     }
 
 private:
@@ -126,54 +104,47 @@ private:
     // Validate JSON string
     static void validateString(const nlohmann::json &j, std::vector<JSONErrorContext> &errors, const std::string &path) noexcept
     {
-        const std::string &value = j.get<std::string>();
-        // Check for UTF-8 validity
-        const unsigned char *bytes = reinterpret_cast<const unsigned char *>(value.data());
-        size_t len = value.length();
+        try
+        { // Adding try-catch block to ensure noexcept semantics
+            const std::string &value = j.get<std::string>();
+            // Check for UTF-8 validity
+            const unsigned char *bytes = reinterpret_cast<const unsigned char *>(value.data());
+            size_t len = value.length();
 
-        for (size_t i = 0; i < len; i++)
-        {
-            if (bytes[i] <= 0x7F)
-                continue;
-
-            size_t extraBytes = 0;
-            if ((bytes[i] & 0xE0) == 0xC0)
-                extraBytes = 1;
-            else if ((bytes[i] & 0xF0) == 0xE0)
-                extraBytes = 2;
-            else if ((bytes[i] & 0xF8) == 0xF0)
-                extraBytes = 3;
-
-            if (extraBytes == 0 || i + extraBytes >= len)
+            for (size_t i = 0; i < len; i++)
             {
-                std::ostringstream hexDump;
-                size_t contextStart = (i > 8) ? i - 8 : 0;
-                size_t contextEnd = std::min(i + 8, len);
+                if (bytes[i] <= 0x7F)
+                    continue;
 
-                for (size_t pos = contextStart; pos < contextEnd; pos++)
+                size_t extraBytes = 0;
+                if ((bytes[i] & 0xE0) == 0xC0)
+                    extraBytes = 1;
+                else if ((bytes[i] & 0xF0) == 0xE0)
+                    extraBytes = 2;
+                else if ((bytes[i] & 0xF8) == 0xF0)
+                    extraBytes = 3;
+                else
                 {
-                    if (pos == i)
-                        hexDump << "[";
-                    hexDump << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(bytes[pos]);
-                    if (pos == i)
-                        hexDump << "]";
-                    hexDump << " ";
-                }
-
-                errors.emplace_back(JSONErrorContext{path, value, "Invalid UTF-8 sequence at position " + std::to_string(i) + " (hex: " + hexDump.str() + ")"});
-                break;
-            }
-
-            for (size_t j = 1; j <= extraBytes; j++)
-            {
-                if ((bytes[i + j] & 0xC0) != 0x80)
-                {
-                    errors.emplace_back(JSONErrorContext{path, value, "Invalid UTF-8 continuation byte at position " + std::to_string(i + j)});
-                    i = len; // Break outer loop
+                    // Invalid UTF-8 leading byte
+                    errors.emplace_back(JSONErrorContext{path, value, "Invalid UTF-8 leading byte at position " + std::to_string(i)});
                     break;
                 }
+
+                for (size_t j = 1; j <= extraBytes; j++)
+                {
+                    if ((bytes[i + j] & 0xC0) != 0x80)
+                    {
+                        errors.emplace_back(JSONErrorContext{path, value, "Invalid UTF-8 continuation byte at position " + std::to_string(i + j)});
+                        i = len; // Break outer loop
+                        break;
+                    }
+                }
+                i += extraBytes;
             }
-            i += extraBytes;
+        }
+        catch (const std::exception &e)
+        {
+            errors.emplace_back(JSONErrorContext{path, j.dump(), std::string("Error validating string: ") + e.what()});
         }
     }
 
@@ -187,13 +158,29 @@ private:
                 double value = j.get<double>();
                 if (std::isinf(value) || std::isnan(value))
                 {
-                    errors.emplace_back(JSONErrorContext{path, j.dump(), "Invalid floating-point value (inf or nan)"});
+                    std::string valueStr;
+                    try
+                    {
+                        valueStr = j.dump();
+                    }
+                    catch (...)
+                    {
+                        valueStr = "[unprintable value]";
+                    }
+                    errors.emplace_back(JSONErrorContext{path, std::move(valueStr), "Invalid floating-point value (inf or nan)"});
                 }
             }
         }
         catch (const std::exception &e)
         {
-            errors.emplace_back(JSONErrorContext{path, j.dump(), e.what()});
+            try
+            {
+                errors.emplace_back(JSONErrorContext{path, j.dump(), e.what()});
+            }
+            catch (...)
+            {
+                errors.emplace_back(JSONErrorContext{path, "[unprintable value]", e.what()});
+            }
         }
     }
 };
@@ -212,7 +199,14 @@ public:
         catch (const nlohmann::json::exception &e)
         {
             LOG_ERR << "JSON exception during dump: " << e.what();
-            handleJsonDumpException(j, e);
+            try
+            {
+                handleJsonDumpException(j, e);
+            }
+            catch (...)
+            {
+                LOG_ERR << "Exception occurred during error handling";
+            }
             throw;
         }
         catch (const std::exception &e)
@@ -277,36 +271,50 @@ private:
         LOG_ERR << " Exception id: " << e.id;
         LOG_ERR << " Byte position of error: " << e.byte;
 
-        // Print the context around the error
-        size_t contextStart = e.byte > 20 ? e.byte - 20 : 0;
-        size_t contextEnd = std::min(e.byte + 20, input.length());
-        std::string errorContext = input.substr(contextStart, contextEnd - contextStart);
-
-        LOG_ERR << "Error context:";
-        LOG_ERR << " " << errorContext;
-        LOG_ERR << " " << std::string(e.byte - contextStart, ' ') << "^";
-
-        // Try to parse partially and validate
-        std::vector<JSONErrorContext> errors;
         try
         {
-            nlohmann::json partialJson = nlohmann::json::parse(input, nullptr, false);
-            if (!partialJson.is_discarded())
+            // Ensure e.byte is within valid range
+            if (e.byte > input.length())
             {
-                JSONValidator::findErrors(partialJson, errors);
-                JSONValidator::reportErrors(errors);
+                LOG_ERR << "Warning: Error position exceeds input length";
+                return;
             }
-            else
-            {
-                LOG_ERR << "The JSON could not be partially parsed for validation.";
-            }
-        }
-        catch (const std::exception &validationError)
-        {
-            LOG_ERR << "Error during validation: " << validationError.what();
-        }
 
-        logSpecificErrorType(e.id);
+            // Calculate error context
+            size_t contextStart = e.byte > 20 ? e.byte - 20 : 0;
+            size_t contextEnd = std::min(e.byte + 20, input.length());
+            std::string errorContext = input.substr(contextStart, contextEnd - contextStart);
+
+            LOG_ERR << "Error context:";
+            LOG_ERR << " " << errorContext;
+            LOG_ERR << " " << std::string(e.byte - contextStart, ' ') << "^";
+
+            // Try to parse partially and validate
+            std::vector<JSONErrorContext> errors;
+            try
+            {
+                nlohmann::json partialJson = nlohmann::json::parse(input, nullptr, false);
+                if (!partialJson.is_discarded())
+                {
+                    JSONValidator::findErrors(partialJson, errors);
+                    JSONValidator::reportErrors(errors);
+                }
+                else
+                {
+                    LOG_ERR << "The JSON could not be partially parsed for validation.";
+                }
+            }
+            catch (const std::exception &validationError)
+            {
+                LOG_ERR << "Error during validation: " << validationError.what();
+            }
+
+            logSpecificErrorType(e.id);
+        }
+        catch (const std::exception &ex)
+        {
+            LOG_ERR << "Error while generating error context: " << ex.what();
+        }
     }
 
     // Log specific JSON error types

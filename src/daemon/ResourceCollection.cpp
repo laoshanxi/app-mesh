@@ -107,7 +107,7 @@ const HostResource &ResourceCollection::getHostResource()
 			inet.address = net.address;
 			inet.ipv6 = net.ipv6;
 			inet.name = net.name;
-			m_resources.m_ipaddress.push_back(inet);
+			m_resources.m_ipaddress.push_back(std::move(inet));
 		}
 	}
 

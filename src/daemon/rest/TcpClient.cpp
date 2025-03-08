@@ -78,7 +78,7 @@ ACE_SSL_Context *TcpClient::initTcpSSL(ACE_SSL_Context *context)
 	// Initialize SSL
 	context->set_mode(ACE_SSL_Context::SSLv23_client);
 	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	const static auto homeDir = Utility::getHomeDir();
+	const static auto &homeDir = Utility::getHomeDir();
 	if (verifyClient)
 	{
 		auto cert = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateFile());

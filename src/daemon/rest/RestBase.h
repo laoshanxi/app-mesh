@@ -1,5 +1,6 @@
 #pragma once
 
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <map>
 #include <memory>
 
@@ -50,11 +51,11 @@ public:
 
 protected:
     // tuple: username, usergroup
-    const std::tuple<std::string, std::string> verifyToken(const HttpRequest &message, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
+    const std::tuple<std::string, std::string, std::set<std::string>> verifyToken(const HttpRequest &message, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
     bool permissionCheck(const HttpRequest &message, const std::string &permission, const std::string &audience = HTTP_HEADER_JWT_Audience_appmesh);
     const std::string getJwtUserName(const HttpRequest &message);
     const std::string getJwtToken(const HttpRequest &message);
-    const std::string createJwtToken(const std::string &uname, const std::string &userGroup, const std::string &audience, int timeoutSeconds);
+    const std::string generateJwtToken(const std::string &uname, const std::string &userGroup, const std::string &audience, int timeoutSeconds);
 
 protected:
     // API functions
@@ -62,6 +63,17 @@ protected:
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restPutFunctions;
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restPstFunctions;
     std::map<std::string, std::function<void(const HttpRequest &)>> m_restDelFunctions;
+
+protected:
+    // Keycloak token verification helpers
+    static const std::string formatCertificateToPem(const std::string &cert_base64);
+    static const std::string extractCertificate(const std::string &keysJson, const std::string &kid);
+    static const std::string fetchKeycloakPublicKeys(const std::string &keycloakUrl, const std::string &realm, const std::string &kid);
+    static const std::tuple<std::string, std::string, std::set<std::string>> extractUserInfo(const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded);
+    static const std::tuple<std::string, std::string, std::set<std::string>> verifyKeycloakToken(const std::string &token,
+                                                                                                 const std::string &keycloakUrl,
+                                                                                                 const std::string &realm,
+                                                                                                 const std::string &clientId);
 };
 
 #define REST_INFO_PRINT                       \

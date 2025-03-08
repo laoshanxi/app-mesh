@@ -196,19 +196,19 @@ const std::string Utility::getExecutablePath()
 
 const std::string &Utility::getBinDir()
 {
-	static const auto selfBinDir = fs::path(getExecutablePath()).parent_path().string();
+	static const std::string selfBinDir = fs::path(getExecutablePath()).parent_path().string();
 	return selfBinDir;
 }
 
 const std::string &Utility::getHomeDir()
 {
-	static const auto homeDir = fs::path(getBinDir()).parent_path().string();
+	static const std::string homeDir = fs::path(getBinDir()).parent_path().string();
 	return homeDir;
 }
 
-std::string Utility::getConfigFilePath(const std::string &configFile, bool write)
+const std::string Utility::getConfigFilePath(const std::string &configFile, bool write)
 {
-	const auto workingConfigFile = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
+	const std::string workingConfigFile = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
 	if (write || Utility::isFileExist(workingConfigFile))
 	{
 		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
@@ -801,8 +801,8 @@ std::vector<std::string> Utility::splitString(const std::string &source, const s
 	if (pos1 != source.length())
 	{
 		std::string str = stdStringTrim(source.substr(pos1));
-		if (str.length() > 0)
-			result.push_back(str);
+		if (!str.empty())
+			result.push_back(std::move(str));
 	}
 	return result;
 }

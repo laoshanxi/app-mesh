@@ -40,6 +40,7 @@ public:
     virtual nlohmann::json getRolesJson() const;
     virtual void addRole(const nlohmann::json &obj, std::string name);
     virtual void delRole(const std::string &name);
+    virtual std::shared_ptr<Role> getRole(const std::string &roleName);
 
     virtual std::set<std::string> getAllUserGroups() const;
     virtual std::set<std::string> getUserPermissions(const std::string &userName, const std::string &userGroup);

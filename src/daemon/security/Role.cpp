@@ -22,7 +22,7 @@ std::shared_ptr<Role> Roles::getRole(const std::string &roleName)
 	}
 	else
 	{
-		throw std::invalid_argument("No such user role");
+		return std::make_shared<Role>(roleName);
 	}
 }
 
@@ -43,7 +43,7 @@ const std::shared_ptr<Roles> Roles::FromJson(const nlohmann::json &obj)
 	for (auto &roleJson : obj.items())
 	{
 		const auto &roleName = roleJson.key();
-		roles->m_roles[roleName] = Role::FromJson(roleName, roleJson.value());;
+		roles->m_roles[roleName] = Role::FromJson(roleName, roleJson.value());
 	}
 	return roles;
 }

@@ -25,11 +25,12 @@ void Security::init(const std::string &interface)
     const static char fname[] = "Security::init() ";
     LOG_INF << fname << "Security plugin: " << interface;
 
-    if (interface == JSON_KEY_USER_key_method_local)
+    // TODO: re-design security plugin interface for local, consul, oauth
+    if (interface == JSON_KEY_USER_key_method_local || interface == JSON_KEY_USER_key_method_oauth2)
     {
         const auto securityYamlFile = Utility::getConfigFilePath(APPMESH_SECURITY_YAML_FILE);
         const auto security = Security::FromJson(Utility::yamlToJson(YAML::LoadFile(securityYamlFile)));
-        Security::instance(security);
+        Security::instance(std::move(security));
     }
     else if (interface == JSON_KEY_USER_key_method_consul)
     {
@@ -223,6 +224,11 @@ void Security::addRole(const nlohmann::json &obj, std::string name)
 void Security::delRole(const std::string &name)
 {
     m_securityConfig->m_roles->delRole(name);
+}
+
+std::shared_ptr<Role> Security::getRole(const std::string &roleName)
+{
+    return m_securityConfig->m_roles->getRole(roleName);
 }
 
 std::set<std::string> Security::getAllUserGroups() const

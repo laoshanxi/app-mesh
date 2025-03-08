@@ -126,8 +126,15 @@ func ListenAndServeREST() error {
 	}
 	logger.Infof("Established REST connection to TCP server <%s>", connectAddr)
 
+	// Check env "APPMESH_CORS_DISABLE"
+	corsDisabled := os.Getenv("APPMESH_CORS_DISABLE") != ""
+	if corsDisabled {
+		corsDisabled, _ = strconv.ParseBool(os.Getenv("APPMESH_CORS_DISABLE"))
+	}
+	utils.EnableGlobalCORS(!corsDisabled)
+	logger.Infof("CORS enabled: %v (from env APPMESH_CORS_DISABLE=%s)", !corsDisabled, os.Getenv("APPMESH_CORS_DISABLE"))
+
 	// HTTP router using gorilla/mux
-	utils.EnableGlobalCORS() // disable CORS will block swagger UI
 	router := mux.NewRouter()
 
 	// OpenAPI Swagger
