@@ -13,7 +13,8 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 
-	const static auto shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
+	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
+	const static std::string defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	const auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", shellDir.c_str(), name.c_str());
 
 	// Open shell file for writing
@@ -28,10 +29,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	shellFile << "#!/bin/bash" << std::endl;
 	shellFile << "# App Mesh app: <" << name << ">" << std::endl;
 	shellFile << "set -e" << std::endl;
-	if (!workingDir.empty())
-	{
-		shellFile << "cd " << workingDir << std::endl;
-	}
+	shellFile << "cd " << (workingDir.empty() ? defaultWorkDir : workingDir) << std::endl;
 	shellFile << cmd << std::endl;
 	shellFile.close();
 

@@ -157,7 +157,7 @@ public:
 	static const std::string getExecutablePath();
 	static const std::string &getBinDir();
 	static const std::string &getHomeDir();
-	static std::string getConfigFilePath(const std::string &configFile, bool write = false);
+	static const std::string getConfigFilePath(const std::string &configFile, bool write = false);
 	static const std::string getBinaryName();
 	static bool isDirExist(const std::string &path);
 	static bool isFileExist(const std::string &path);
@@ -287,6 +287,10 @@ public:
 #define JSON_KEY_JWTIssuer "Issuer"
 #define JSON_KEY_JWTAudience "Audience"
 #define JSON_KEY_SECURITY_Interface "SecurityInterface"
+#define JSON_KEY_JWT_Keycloak "Keycloak"
+#define JSON_KEY_JWT_Keycloak_URL "AuthServerUrl"
+#define JSON_KEY_JWT_Keycloak_Realm "Realm"
+#define JSON_KEY_JWT_Keycloak_ClientID "ClientID"
 
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
@@ -368,13 +372,16 @@ public:
 #define JSON_KEY_USER_roles "roles"
 #define JSON_KEY_USER_locked "locked"
 #define JSON_KEY_USER_metadata "metadata"
-#define JSON_KEY_USER_exec_user "exec_user"
 #define JSON_KEY_USER_mfa_key "mfa_key"
 #define JSON_KEY_USER_mfa_enabled "mfa_enabled"
+
+#define JSON_KEY_USER_exec_user "exec_user"
+#define JSON_KEY_USER_audience "audience"
 
 #define JSON_KEY_USER_key_method_local "local"
 #define JSON_KEY_USER_key_method_ldap "ldap"
 #define JSON_KEY_USER_key_method_consul "consul"
+#define JSON_KEY_USER_key_method_oauth2 "oauth2"
 #define JSON_KEY_USER_LDAP_ldap_uri "Uri"
 #define JSON_KEY_USER_LDAP_ldap_LoginDN "LoginDN"
 #define JSON_KEY_USER_LDAP_ldap_LoginPWD "LoginPWD"

@@ -957,6 +957,28 @@ Configuration::JsonJwt::JsonJwt()
 {
 }
 
+Configuration::JsonJwt::JsonKeycloak::JsonKeycloak()
+{
+}
+
+nlohmann::json Configuration::JsonJwt::JsonKeycloak::AsJson() const
+{
+	auto result = nlohmann::json::object();
+	result[JSON_KEY_JWT_Keycloak_URL] = std::string(m_keycloakUrl);
+	result[JSON_KEY_JWT_Keycloak_Realm] = std::string(m_keycloakRealm);
+	result[JSON_KEY_JWT_Keycloak_ClientID] = std::string(m_keycloakClientId);
+	return result;
+}
+
+std::shared_ptr<Configuration::JsonJwt::JsonKeycloak> Configuration::JsonJwt::JsonKeycloak::FromJson(const nlohmann::json &jsonObj)
+{
+	auto keycloak = std::make_shared<Configuration::JsonJwt::JsonKeycloak>();
+	keycloak->m_keycloakUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_URL);
+	keycloak->m_keycloakRealm = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_Realm);
+	keycloak->m_keycloakClientId = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_ClientID);
+	return keycloak;
+}
+
 std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const nlohmann::json &jsonObj)
 {
 	auto security = std::make_shared<Configuration::JsonJwt>();
@@ -987,6 +1009,19 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 		security->m_jwtAudience.insert(HTTP_HEADER_JWT_Audience_appmesh);
 	}
 
+	// Keycloak
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_JWT_Keycloak))
+	{
+		security->m_jwtKeycloak = JsonKeycloak::FromJson(jsonObj.at(JSON_KEY_JWT_Keycloak));
+	}
+	else
+	{
+		security->m_jwtKeycloak = std::make_shared<Configuration::JsonJwt::JsonKeycloak>();
+		security->m_jwtKeycloak->m_keycloakUrl = "http://localhost:8080";
+		security->m_jwtKeycloak->m_keycloakRealm = "appmesh-realm";
+		security->m_jwtKeycloak->m_keycloakClientId = "appmesh-client";
+	}
+
 	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);
 	return security;
 }
@@ -998,6 +1033,7 @@ nlohmann::json Configuration::JsonJwt::AsJson() const
 	result[JSON_KEY_JWTAlgorithm] = std::string(m_jwtAlgorithm);
 	result[JSON_KEY_JWTIssuer] = Configuration::instance()->getRestJwtIssuer();
 	result[JSON_KEY_JWTAudience] = m_jwtAudience;
+	result[JSON_KEY_JWT_Keycloak] = m_jwtKeycloak->AsJson();
 	result[JSON_KEY_SECURITY_Interface] = std::string(m_jwtInterface);
 	return result;
 }

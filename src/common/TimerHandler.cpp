@@ -117,7 +117,7 @@ bool TimerManager::cancelTimer(long &timerId)
 /// TimerHandler
 ////////////////////////////////////////////////////////////////
 
-long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, std::string from)
+long TimerHandler::registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, const std::string from)
 {
 	return TIMER_MANAGER::instance()->registerTimer(delayMilliseconds, intervalSeconds, from, shared_from_this(), handler);
 }

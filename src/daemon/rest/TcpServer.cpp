@@ -368,7 +368,7 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 	const static char fname[] = "TcpHandler::initTcpSSL() ";
 
 	// Retrieve SSL configuration settings from the configuration instance
-	const static auto homeDir = Utility::getHomeDir();
+	const static std::string homeDir = Utility::getHomeDir();
 	bool verifyClient = Configuration::instance()->getSslVerifyClient();
 	auto cert = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateFile());	 // Server certificate (should include intermediate certs)
 	auto key = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key file path

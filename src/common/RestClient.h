@@ -12,13 +12,14 @@ struct CurlResponse
 	long status_code = 0;
 	std::string text;
 	std::map<std::string, std::string> header;
+	void raise_for_status();
 };
 
 struct ClientSSLConfig
 {
 	ClientSSLConfig();
 	void AbsConfigPath(std::string workingHome);
-	static std::string HomeDir(std::string workingHome, std::string filePath);
+	static std::string HomeDir(const std::string &workingHome, std::string filePath);
 	unsigned long m_ssl_version;
 	bool m_verify_client;			  // client certificate verification
 	bool m_verify_server;			  // server's certificate matches the host name

@@ -57,7 +57,7 @@ public:
 	 * @note Timer IDs will be reused to maintain a compact range. Ensure to reset your timer ID variable
 	 *       in the TimerCallback to prevent cancellation mismatches.
 	 */
-	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, std::string from);
+	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, const std::string from);
 
 	/**
 	 * @brief Cancels a timer.
