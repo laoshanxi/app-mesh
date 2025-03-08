@@ -152,11 +152,11 @@ RestHandler::~RestHandler()
 
 void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite)
 {
-	const auto tokenUserName = getJwtUserName(message);
+	const auto tokenUser = getJwtUserName(message);
 	auto app = Configuration::instance()->getApp(appName);
-	if (!Configuration::instance()->checkOwnerPermission(tokenUserName, app->getOwner(), app->getOwnerPermission(), requestWrite))
+	if (!Configuration::instance()->checkOwnerPermission(tokenUser, app->getOwner(), app->getOwnerPermission(), requestWrite))
 	{
-		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to <%s> app <%s>", tokenUserName.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
+		throw std::invalid_argument(Utility::stringFormat("User <%s> is not allowed to <%s> app <%s>", tokenUser.c_str(), (requestWrite ? "EDIT" : "VIEW"), appName.c_str()));
 	}
 	if (requestWrite && appName == SEPARATE_AGENT_APP_NAME)
 	{
@@ -416,7 +416,7 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 {
-	const auto result = verifyToken(message);
+	const auto result = verifyToken(getJwtToken(message));
 	const auto &userName = std::get<0>(result);
 	const auto &groupName = std::get<1>(result);
 	const auto permissions = Security::instance()->getUserPermissions(userName, groupName);
@@ -454,13 +454,13 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto targetUser = regexSearch(path, REST_PATH_SEC_USER_CHANGE_PWD);
-	const auto tokenUserName = getJwtUserName(message);
+	const auto tokenUser = getJwtUserName(message);
 	if (targetUser == "self")
 	{
-		targetUser = tokenUserName;
+		targetUser = tokenUser;
 	}
 	// permission check
-	if (targetUser == tokenUserName)
+	if (targetUser == tokenUser)
 	{
 		permissionCheck(message, PERMISSION_KEY_change_passwd_self);
 	}
@@ -483,7 +483,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 	Security::instance()->changeUserPasswd(targetUser, newPasswd);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "User <" << targetUser << "> changed password by <" << tokenUserName << ">";
+	LOG_INF << fname << "User <" << targetUser << "> changed password by <" << tokenUser << ">";
 	message.reply(web::http::status_codes::OK, convertText2Json("password changed success"));
 }
 
@@ -492,9 +492,8 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserLock() ";
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
-	permissionCheck(message, PERMISSION_KEY_lock_user);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_lock_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_LOCK);
-	const auto tokenUserName = getJwtUserName(message);
 
 	if (pathUserName == JWT_ADMIN_NAME)
 	{
@@ -504,7 +503,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	Security::instance()->getUserInfo(pathUserName)->lock();
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUserName;
+	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("Lock user success"));
 }
 
@@ -513,14 +512,13 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserUnlock() ";
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
-	permissionCheck(message, PERMISSION_KEY_unlock_user);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_unlock_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_UNLOCK);
-	const auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->getUserInfo(pathUserName)->unlock();
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUserName;
+	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("Unlock user success"));
 }
 
@@ -529,22 +527,22 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserAdd() ";
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
-	permissionCheck(message, PERMISSION_KEY_add_user);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_add_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_ADD);
-	const auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->addUser(pathUserName, message.extractJson());
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUserName;
+	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("User add success"));
 }
 
 void RestHandler::apiUserView(const HttpRequest &message)
 {
-	const auto tokenUserName = getJwtUserName(message);
-	auto user = Security::instance()->getUserInfo(tokenUserName);
+	const auto tokenUser = getJwtUserName(message);
+	auto user = Security::instance()->getUserInfo(tokenUser);
 	auto userJson = user->AsJson();
+	userJson[JSON_KEY_USER_audience] = getJwtUserAudience(message);
 	message.reply(web::http::status_codes::OK, User::clearConfidentialInfo(userJson));
 }
 
@@ -553,14 +551,13 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserDel() ";
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
-	permissionCheck(message, PERMISSION_KEY_delete_user);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_delete_user);
 	auto pathUserName = regexSearch(path, REST_PATH_SEC_USER_DELETE);
-	const auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->delUser(pathUserName);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUserName;
+	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("User delete success"));
 }
 
@@ -589,14 +586,13 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiRoleUpdate() ";
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
-	permissionCheck(message, PERMISSION_KEY_role_update);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_role_update);
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_UPDATE);
-	const auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->addRole(message.extractJson(), pathRoleName);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUserName;
+	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("Role update success"));
 }
 
@@ -605,15 +601,14 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiRoleDelete() ";
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
-	permissionCheck(message, PERMISSION_KEY_role_delete);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_role_delete);
 
 	auto pathRoleName = regexSearch(path, REST_PATH_SEC_ROLE_DELETE);
-	const auto tokenUserName = getJwtUserName(message);
 
 	Security::instance()->delRole(pathRoleName);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUserName;
+	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("Role delete success"));
 }
 
@@ -664,7 +659,7 @@ nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const 
 	profile[("auth_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	result[("profile")] = std::move(profile);
 	result[("token_type")] = std::string(HTTP_HEADER_JWT_Bearer);
-	result[HTTP_HEADER_JWT_access_token] = token ? *token : createJwtToken(uname, ugroup, audience, timeoutSeconds);
+	result[HTTP_HEADER_JWT_access_token] = token ? *token : generateJwtToken(uname, ugroup, audience, timeoutSeconds);
 	result[("expire_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
 	result[("expire_seconds")] = (timeoutSeconds);
 	return result;
@@ -720,7 +715,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 				result["algorithm"] = Configuration::instance()->getJwt()->m_jwtAlgorithm;
 				result["period"] = 60; // TOTP key refersh period
 				// result["provisioning_uri"] = std::string("otpauth://totp/Example:user@example.com?secret=JBSWY3DNEHXXE5TUN4&issuer=Example");
-				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(createJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
+				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(generateJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
 				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = time_t() + challengeTimeout;
 				message.reply(web::http::status_codes::PreconditionRequired, std::move(result), std::move(headers));
 				LOG_DBG << fname << "User <" << uname << "> request TOTP key success";
@@ -751,12 +746,13 @@ void RestHandler::apiUserLogoff(const HttpRequest &message)
 	const static char fname[] = "RestHandler::apiUserLogoff() ";
 
 	// verify current token
-	const auto verify = verifyToken(message);
+	const auto verify = verifyToken(getJwtToken(message));
 	const auto &uname = std::get<0>(verify);
 
 	// retire current token
 	const auto token = getJwtToken(message);
-	TOKEN_BLACK_LIST::instance()->addToken(token, jwt::decode(token).get_expires_at());
+	const auto decodedToken = decodeJwtToken(token);
+	TOKEN_BLACK_LIST::instance()->addToken(token, decodedToken.get_expires_at());
 
 	message.reply(web::http::status_codes::OK);
 	LOG_DBG << fname << "User <" << uname << "> logoff success";
@@ -770,17 +766,17 @@ void RestHandler::apiUserTokenRenew(const HttpRequest &message)
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
 	// verify current token
-	const auto verify = verifyToken(message);
+	const auto verify = verifyToken(getJwtToken(message));
 	const auto &uname = std::get<0>(verify);
 	const auto &userGroup = std::get<1>(verify);
 
 	// TODO: limit renew time, consider setup
 	const auto token = getJwtToken(message);
-	const auto decoded_token = jwt::decode(token);
-	const auto expireTime = decoded_token.get_expires_at();
-	const auto audience = decoded_token.get_audience().empty() ? HTTP_HEADER_JWT_Audience_appmesh : decoded_token.get_audience().begin()->c_str();
-	// const auto issueTime = decoded_token.get_issued_at();
-	// const auto oneThirdTime = issueTime + (decoded_token.get_expires_at() - issueTime) / 3;
+	const auto decodedToken = decodeJwtToken(token);
+	const auto expireTime = decodedToken.get_expires_at();
+	const auto audience = decodedToken.get_audience().empty() ? HTTP_HEADER_JWT_Audience_appmesh : decodedToken.get_audience().begin()->c_str();
+	// const auto issueTime = decodedToken.get_issued_at();
+	// const auto oneThirdTime = issueTime + (decodedToken.get_expires_at() - issueTime) / 3;
 	// if (oneThirdTime < std::chrono::system_clock::now())
 	//{
 	//	throw std::invalid_argument("The current time is still before the midpoint of the expire time");
@@ -796,39 +792,31 @@ void RestHandler::apiUserTokenRenew(const HttpRequest &message)
 
 void RestHandler::apiUserAuth(const HttpRequest &message)
 {
-	std::string permission = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_auth_permission);
-
-	// Only this API can be used for external audience verification
-	auto audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
+	const std::string permission = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_auth_permission);
+	std::string audience = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_audience);
 	if (audience.empty())
 		audience = HTTP_HEADER_JWT_Audience_appmesh;
 
-	if (permissionCheck(message, permission, audience))
-	{
-		auto result = nlohmann::json::object();
-		result["user"] = getJwtUserName(message);
-		result["success"] = (true);
-		result["permission"] = std::move(permission);
-		message.reply(web::http::status_codes::OK, result);
-	}
-	else
-	{
-		message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect authentication info"));
-	}
+	const auto tokenUser = permissionCheck(message, permission, audience); // External audience verification
+	auto result = nlohmann::json::object();
+	result["user"] = tokenUser;
+	result["success"] = (true);
+	result["permission"] = std::move(permission);
+	result[JSON_KEY_USER_audience] = std::move(audience);
+	message.reply(web::http::status_codes::OK, result);
 }
 
 void RestHandler::apiUserTotpSecret(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserTotpSecret() ";
-	permissionCheck(message, PERMISSION_KEY_user_totp_active);
-	auto userName = getJwtUserName(message);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_totp_active);
 
-	const auto user = Security::instance()->getUserInfo(userName);
+	const auto user = Security::instance()->getUserInfo(tokenUser);
 	const auto mfaSecret = user->totpGenerateKey();
 	user->totpActive(false); // set to under setup status
 	// otpauth://totp/{label}?secret={secret}&issuer={issuer}
 	const auto totpUri = Utility::stringFormat(
-		"otpauth://totp/%s?secret=%s&issuer=%s", userName.c_str(), mfaSecret.c_str(), "AppMesh");
+		"otpauth://totp/%s?secret=%s&issuer=%s", tokenUser.c_str(), mfaSecret.c_str(), "AppMesh");
 
 	auto result = nlohmann::json();
 	result[HTTP_BODY_KEY_MFA_URI] = nlohmann::json(Utility::encode64(totpUri));
@@ -843,12 +831,11 @@ void RestHandler::apiUserTotpSecret(const HttpRequest &message)
 void RestHandler::apiUserTotpSetup(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserTotpSetup() ";
-	permissionCheck(message, PERMISSION_KEY_user_totp_active);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_totp_active);
 	std::string totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
 
 	// get user
-	auto userName = getJwtUserName(message);
-	const auto user = Security::instance()->getUserInfo(userName);
+	const auto user = Security::instance()->getUserInfo(tokenUser);
 	if (user->getMfaKey().empty())
 		throw std::invalid_argument("please generate TOTP secret first");
 	user->totpValidateCode(totp);
@@ -860,7 +847,7 @@ void RestHandler::apiUserTotpSetup(const HttpRequest &message)
 	user->totpActive(true);
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_DBG << fname << "User <" << userName << "> setup TOTP success";
+	LOG_DBG << fname << "User <" << tokenUser << "> setup TOTP success";
 }
 
 void RestHandler::apiUserTotpValidate(const HttpRequest &message)
@@ -892,16 +879,15 @@ void RestHandler::apiUserTotpDisable(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserTotpDisable() ";
 
-	permissionCheck(message, PERMISSION_KEY_user_totp_disable);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_totp_disable);
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	const auto pathUserName = regexSearch(path, REST_PATH_SEC_TOTP_DISABLE);
-	const auto tokenUserName = getJwtUserName(message);
-	const auto &userName = (pathUserName == "self") ? tokenUserName : pathUserName;
+	const auto &userName = (pathUserName == "self") ? tokenUser : pathUserName;
 
 	auto user = Security::instance()->getUserInfo(userName);
 	if (user)
 	{
-		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" || pathUserName != tokenUserName))
+		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" || pathUserName != tokenUser))
 		{
 			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
 		}
@@ -1047,9 +1033,8 @@ void RestHandler::apiAppOutputView(const HttpRequest &message)
 
 void RestHandler::apiAppsView(const HttpRequest &message)
 {
-	permissionCheck(message, PERMISSION_KEY_view_all_app);
-	const auto tokenUserName = getJwtUserName(message);
-	message.reply(web::http::status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUserName, true));
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_view_all_app);
+	message.reply(web::http::status_codes::OK, Configuration::instance()->serializeApplication(true, tokenUser, true));
 }
 
 void RestHandler::apiResourceView(const HttpRequest &message)
@@ -1068,7 +1053,7 @@ void RestHandler::apiAppAdd(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiAppAdd() ";
 
-	permissionCheck(message, PERMISSION_KEY_app_reg);
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_app_reg);
 	auto jsonApp = message.extractJson();
 	if (jsonApp.is_null())
 	{
@@ -1081,7 +1066,7 @@ void RestHandler::apiAppAdd(const HttpRequest &message)
 	{
 		checkAppAccessPermission(message, appName, true);
 	}
-	jsonApp[JSON_KEY_APP_owner] = std::string(getJwtUserName(message));
+	jsonApp[JSON_KEY_APP_owner] = tokenUser;
 	auto app = Configuration::instance()->addApp(jsonApp);
 	app->save();
 	message.reply(web::http::status_codes::OK, app->AsJson(false));

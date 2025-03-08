@@ -372,11 +372,11 @@ std::string ArgumentParser::getLoginUser()
 	auto token = getAuthenToken();
 	if (token.length())
 	{
-		auto decoded_token = jwt::decode(token);
-		if (decoded_token.has_subject())
+		auto decodedToken = jwt::decode(token);
+		if (decodedToken.has_subject())
 		{
 			// get user info
-			userName = decoded_token.get_subject();
+			userName = decodedToken.get_subject();
 		}
 	}
 	return userName;
@@ -1786,11 +1786,11 @@ std::string ArgumentParser::getAuthenUser()
 		{
 			token = login(std::string(JWT_USER_NAME), std::string(JWT_USER_KEY), m_currentUrl, m_audience);
 		}
-		auto decoded_token = jwt::decode(token);
-		if (decoded_token.has_subject())
+		auto decodedToken = jwt::decode(token);
+		if (decodedToken.has_subject())
 		{
 			// get user info
-			auto userName = decoded_token.get_subject();
+			auto userName = decodedToken.get_subject();
 			return userName;
 		}
 		throw std::invalid_argument("Failed to get token");

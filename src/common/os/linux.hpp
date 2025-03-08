@@ -88,7 +88,7 @@ namespace os
 			{
 				continue;
 			}
-			result.push_back(name);
+			result.push_back(std::move(name));
 		}
 
 		// Check for `readdir` errors.

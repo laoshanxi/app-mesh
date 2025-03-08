@@ -13,6 +13,12 @@ constexpr const char *HTTP_USER_AGENT = "appmeshsdk/cpp";
 constexpr long CONNECT_TIMEOUT_SECONDS = 10L;
 constexpr long REQUEST_TIMEOUT_SECONDS = 200L;
 
+void CurlResponse::raise_for_status()
+{
+	if (status_code != web::http::status_codes::OK)
+		throw std::runtime_error("HTTP request failed with status code: " + std::to_string(status_code) + " response: " + text);
+}
+
 // RAII wrapper for CURL cleanup
 class CurlHandle
 {
@@ -135,7 +141,7 @@ void ClientSSLConfig::AbsConfigPath(std::string workingHome)
 	m_ca_location = HomeDir(workingHome, m_ca_location);
 }
 
-std::string ClientSSLConfig::HomeDir(std::string workingHome, std::string filePath)
+std::string ClientSSLConfig::HomeDir(const std::string &workingHome, std::string filePath)
 {
 	if (!workingHome.empty())
 	{

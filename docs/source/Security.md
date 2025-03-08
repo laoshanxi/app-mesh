@@ -55,6 +55,10 @@ App Mesh supports storing security content in Consul, enabling all App Mesh inst
 
 App Mesh supports LDAP integration for user information management.
 
+### OAuth2
+
+App Mesh supports Keycloak OIDC authentication.
+
 ## REST
 
 ### SSL
