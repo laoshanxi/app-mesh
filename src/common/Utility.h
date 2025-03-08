@@ -287,6 +287,10 @@ public:
 #define JSON_KEY_JWTIssuer "Issuer"
 #define JSON_KEY_JWTAudience "Audience"
 #define JSON_KEY_SECURITY_Interface "SecurityInterface"
+#define JSON_KEY_JWT_Keycloak "Keycloak"
+#define JSON_KEY_JWT_Keycloak_URL "AuthServerUrl"
+#define JSON_KEY_JWT_Keycloak_Realm "Realm"
+#define JSON_KEY_JWT_Keycloak_ClientID "ClientID"
 
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
@@ -375,6 +379,7 @@ public:
 #define JSON_KEY_USER_key_method_local "local"
 #define JSON_KEY_USER_key_method_ldap "ldap"
 #define JSON_KEY_USER_key_method_consul "consul"
+#define JSON_KEY_USER_key_method_oauth2 "oauth2"
 #define JSON_KEY_USER_LDAP_ldap_uri "Uri"
 #define JSON_KEY_USER_LDAP_ldap_LoginDN "LoginDN"
 #define JSON_KEY_USER_LDAP_ldap_LoginPWD "LoginPWD"

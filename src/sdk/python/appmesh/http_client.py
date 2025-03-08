@@ -8,12 +8,13 @@ from datetime import datetime
 from enum import Enum, unique
 from http import HTTPStatus
 from typing import Optional, Tuple, Union
+from urllib import parse
 import aniso8601
 import requests
-import urllib
 from .app import App
 from .app_run import AppRun
 from .app_output import AppOutput
+from .keycloak import KeycloakClient
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -131,6 +132,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_ssl_client_cert=(DEFAULT_SSL_CLIENT_CERT_PATH, DEFAULT_SSL_CLIENT_KEY_PATH) if os.path.exists(DEFAULT_SSL_CLIENT_CERT_PATH) else None,
         rest_timeout=(60, 300),
         jwt_token=None,
+        oauth2_config=None,
     ):
         """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
 
@@ -152,14 +154,47 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
             jwt_token (str, optional): JWT token for API authentication, used in headers to authorize requests where required.
 
+            oauth2 (Dict[str, Any], optional): Keycloak configuration for oauth2 authentication:
+                - auth_server_url: Keycloak server URL (e.g. "https://keycloak.example.com")
+                - realm: Keycloak realm
+                - client_id: Keycloak client ID
+                - client_secret: Keycloak client secret (optional)
         """
 
-        self.server_url = rest_url
+        self.session = requests.Session()
+        self.auth_server_url = rest_url
         self._jwt_token = jwt_token
         self.ssl_verify = rest_ssl_verify
         self.ssl_client_cert = rest_ssl_client_cert
         self.rest_timeout = rest_timeout
         self._forward_to = None
+
+        # Keycloak integration
+        self._keycloak_client = None
+        if oauth2_config:
+            self._keycloak_client = KeycloakClient(
+                auth_server_url=oauth2_config.get("auth_server_url"),
+                realm=oauth2_config.get("realm"),
+                client_id=oauth2_config.get("client_id"),
+                client_secret=oauth2_config.get("client_secret"),
+                ssl_verify=oauth2_config.get("ssl_verify", self.ssl_verify),
+                timeout=oauth2_config.get("timeout", (30, 60)),
+            )
+            
+    def close(self):
+        """Close the session and release resources."""
+        if hasattr(self, 'session'):
+            self.session.close()
+        if self._keycloak_client and hasattr(self._keycloak_client, 'close'):
+            self._keycloak_client.close()
+            
+    def __enter__(self):
+        """Support for context manager protocol."""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Support for context manager protocol, ensuring resources are released."""
+        self.close()
 
     @property
     def jwt_token(self) -> str:
@@ -266,6 +301,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             str: JWT token.
         """
+        # Keycloak authentication if configured
+        if self._keycloak_client:
+            self.jwt_token = self._keycloak_client.authenticate(user_name, user_pwd)
+            return self.jwt_token
+
+        # Standard App Mesh authentication
         self.jwt_token = None
         resp = self._request_http(
             AppMeshClient.Method.POST,
@@ -293,7 +334,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             username (str): Username to validate
             challenge (str): Challenge string from server
             code (str): TOTP code to validate
-            timeout (Union[int, str], optional): Token expiry timeout. 
+            timeout (Union[int, str], optional): Token expiry timeout.
                 Accepts ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P1W') or seconds.
                 Defaults to DURATION_ONE_WEEK_ISO.
 
@@ -370,6 +411,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             str: The new JWT token if renew success, the old token will be blocked.
         """
+        # Refresh the Keycloak token
+        if self._keycloak_client:
+            self.jwt_token = self._keycloak_client.refresh_tokens()
+            return self.jwt_token
+
+        # Refresh the App Mesh token
         assert self.jwt_token
         resp = self._request_http(
             AppMeshClient.Method.POST,
@@ -445,13 +492,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             dict: eextract parameters
         """
         parsed_info = {}
-        parsed_uri = urllib.parse.urlparse(totp_uri)
+        parsed_uri = parse.urlparse(totp_uri)
 
         # Extract label from the path
         parsed_info["label"] = parsed_uri.path[1:]  # Remove the leading slash
 
         # Extract parameters from the query string
-        query_params = urllib.parse.parse_qs(parsed_uri.query)
+        query_params = parse.parse_qs(parsed_uri.query)
         for key, value in query_params.items():
             parsed_info[key] = value[0]
         return parsed_info
@@ -953,7 +1000,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         with open(file=local_file, mode="rb") as fp:
             encoder = MultipartEncoder(fields={"filename": os.path.basename(remote_file), "file": ("filename", fp, "application/octet-stream")})
-            header = {"File-Path": urllib.parse.quote(remote_file), "Content-Type": encoder.content_type}
+            header = {"File-Path": parse.quote(remote_file), "Content-Type": encoder.content_type}
 
             # Include file attributes (permissions, owner, group) if requested
             if apply_file_attributes:
@@ -1120,7 +1167,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             requests.Response: HTTP response
         """
-        rest_url = urllib.parse.urljoin(self.server_url, path)
+        # Try to refresh token via Keycloak if using Keycloak and token needs refreshing
+        if self._keycloak_client and self.jwt_token and not self._keycloak_client.validate_token():
+            self.jwt_token = self._keycloak_client.get_active_token()
+
+        rest_url = parse.urljoin(self.auth_server_url, path)
 
         header = {} if header is None else header
         if self.jwt_token:
@@ -1129,20 +1180,20 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             if ":" in self.forward_to:
                 header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
             else:
-                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to + ":" + str(urllib.parse.urlsplit(self.server_url).port)
+                header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to + ":" + str(parse.urlsplit(self.auth_server_url).port)
         header[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT
 
         if method is AppMeshClient.Method.GET:
-            return requests.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return self.session.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.POST:
-            return requests.post(
+            return self.session.post(
                 url=rest_url, params=query, headers=header, data=json.dumps(body) if type(body) in (dict, list) else body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout
             )
         elif method is AppMeshClient.Method.POST_STREAM:
-            return requests.post(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
+            return self.session.post(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.DELETE:
-            return requests.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return self.session.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         elif method is AppMeshClient.Method.PUT:
-            return requests.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+            return self.session.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
         else:
             raise Exception("Invalid http method", method)
