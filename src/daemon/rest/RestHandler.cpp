@@ -664,7 +664,7 @@ nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const 
 	profile[("auth_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	result[("profile")] = std::move(profile);
 	result[("token_type")] = std::string(HTTP_HEADER_JWT_Bearer);
-	result[HTTP_HEADER_JWT_access_token] = token ? *token : createJwtToken(uname, ugroup, audience, timeoutSeconds);
+	result[HTTP_HEADER_JWT_access_token] = token ? *token : generateJwtToken(uname, ugroup, audience, timeoutSeconds);
 	result[("expire_time")] = (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + timeoutSeconds);
 	result[("expire_seconds")] = (timeoutSeconds);
 	return result;
@@ -720,7 +720,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 				result["algorithm"] = Configuration::instance()->getJwt()->m_jwtAlgorithm;
 				result["period"] = 60; // TOTP key refersh period
 				// result["provisioning_uri"] = std::string("otpauth://totp/Example:user@example.com?secret=JBSWY3DNEHXXE5TUN4&issuer=Example");
-				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(createJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
+				result[REST_TEXT_TOTP_CHALLENGE_JSON_KEY] = user->totpGenerateChallenge(generateJwtToken(user->getName(), user->getGroup(), audience, timeoutSeconds), challengeTimeout);
 				result[REST_TEXT_TOTP_CHALLENGE_EXPIRES_JSON_KEY] = time_t() + challengeTimeout;
 				message.reply(web::http::status_codes::PreconditionRequired, std::move(result), std::move(headers));
 				LOG_DBG << fname << "User <" << uname << "> request TOTP key success";

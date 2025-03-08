@@ -12,6 +12,7 @@ struct CurlResponse
 	long status_code = 0;
 	std::string text;
 	std::map<std::string, std::string> header;
+	void raise_for_status();
 };
 
 struct ClientSSLConfig
