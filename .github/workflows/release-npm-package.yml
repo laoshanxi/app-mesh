@@ -27,7 +27,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18" # specify the version of Node.js you want to use
+          node-version: "22" # specify the version of Node.js you want to use
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
