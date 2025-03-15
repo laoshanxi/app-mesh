@@ -125,6 +125,7 @@ User and Role design for App Mesh.
 |     PUT     | /appmesh/user/usera            | `add-user`           |
 |    POST     | /appmesh/totp/secret           | `user-totp-active`   |
 |    POST     | /appmesh/totp/setup            | `user-totp-active`   |
+|    POST     | /appmesh/token/renew           | `user-token-renew`   |
 |    POST     | /appmesh/totp/usera/disable    | `user-totp-disable`  |
 |     GET     | /appmesh/users                 | `get-users`          |
 

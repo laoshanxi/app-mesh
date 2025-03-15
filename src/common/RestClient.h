@@ -40,6 +40,7 @@ public:
 	 * @param body Request body.
 	 * @param header Request headers.
 	 * @param query Query parameters.
+	 * @param formData Form data parameters (will be sent as application/x-www-form-urlencoded).
 	 * @return Response result.
 	 */
 	static std::shared_ptr<CurlResponse> request(
@@ -48,21 +49,24 @@ public:
 		const std::string &path,
 		const std::string &body,
 		std::map<std::string, std::string> header,
-		std::map<std::string, std::string> query);
+		std::map<std::string, std::string> query,
+		std::map<std::string, std::string> formData = {});
 
 	/**
-	 * Upload a file.
+	 * Upload a file using multipart/form-data.
 	 * @param host Server host address.
 	 * @param path Upload path.
 	 * @param file File path.
 	 * @param header Request headers.
+	 * @param fieldName The field name for the file in the form (defaults to "file").
 	 * @return Response result.
 	 */
 	static std::shared_ptr<CurlResponse> upload(
 		const std::string &host,
 		const std::string &path,
 		const std::string &file,
-		std::map<std::string, std::string> header);
+		std::map<std::string, std::string> header,
+		const std::string &fieldName = "file");
 
 	/**
 	 * Download a file.
@@ -92,6 +96,8 @@ private:
 	 * @param curl CURL handle.
 	 */
 	static void setSslConfig(CURL *curl);
+	// Encode a URL string.
+	static const std::string urlEncode(CURL *curl, const std::string &value);
 
 private:
 	static ClientSSLConfig m_sslConfig;

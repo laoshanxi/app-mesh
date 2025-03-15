@@ -1,6 +1,7 @@
 name: "Build Ubuntu 24 Build Image"
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main

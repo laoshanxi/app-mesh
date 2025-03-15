@@ -127,5 +127,7 @@
 #define TARGET_ARGS "target,t"
 #define LOCK "lock"
 #define LOCK_ARGS "lock,k"
+#define JSON "json"
+#define JSON_ARGS "json,j"
 
 #endif // APP_MESH_CLI_ARGUMENTS_H

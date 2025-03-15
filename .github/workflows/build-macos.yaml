@@ -1,6 +1,7 @@
 name: "Release macOS Package"
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -51,7 +52,7 @@ jobs:
           cmake ..
 
           echo "Building the project..."
-          make -j"$(($(nproc) / 2))"
+          make -j"$(sysctl -n hw.ncpu)"
           make pack
 
       - name: Upload packages
@@ -81,17 +82,18 @@ jobs:
           sudo bash /opt/appmesh/script/setup.sh
 
           # Start App Mesh
-          sudo bash /opt/appmesh/script/appmesh.initd.sh start
+          appc -v || true
+          sudo bash /opt/appmesh/script/appmesh.initd.sh start || true
 
           # Check
-          appc -v || true
           sudo otool /opt/appmesh/bin/appsvc -L
 
           # hostname resolve need some time
           sleep 10
 
           # Test
-          # cat /opt/appmesh/work/server.log
+          tail /opt/appmesh/work/server.log
+          tail /opt/appmesh/work/stdout/appmesh.agent.out
           # sudo lldb -p $(cat /opt/appmesh/appmesh.pid) -o "thread backtrace all" -o "quit" || true
           appc ls
           appc resource

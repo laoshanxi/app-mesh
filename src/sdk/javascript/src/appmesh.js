@@ -143,15 +143,10 @@ class AppMeshClient {
    *   ca: fs.readFileSync("ca.pem"),
    *   rejectUnauthorized: true
    * };
-   * @param {string} [jwtToken] - Auth token
    */
-  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, jwtToken = null) {
+  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null) {
     // Base URL for API requests
     this.baseURL = baseURL;
-
-    // Auth token for API requests
-    this.jwtToken = jwtToken;
-    Object.defineProperty(this, 'jwtToken', { writable: true, configurable: true });
 
     // Host to forward requests to
     this.forwardingHost = null;
@@ -178,7 +173,7 @@ class AppMeshClient {
       },
       error => {
         // Handle request setup errors
-        err = new AppMeshError('Request configuration error: ' + (error.message || 'Unknown error'))
+        const err = new AppMeshError('Request configuration error: ' + (error.message || 'Unknown error'))
         return Promise.reject(err);
       }
     );
@@ -188,7 +183,7 @@ class AppMeshClient {
       response => response,
       error => {
         // Handle response errors
-        err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status, error.response?.data);
+        const err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status, error.response?.data);
         return Promise.resolve(err);
       }
     );
@@ -201,7 +196,6 @@ class AppMeshClient {
    * @param {string} [totpCode] - 2FA code
    * @param {string|number} [expireSeconds] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
    * @param {string} [audience] - Token audience
-   * @returns {Promise<string>} JWT token
    * @throws {AppMeshError} Invalid credentials or 2FA required (status=428)
    */
   async login(username, password, totpCode = null, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
@@ -211,66 +205,51 @@ class AppMeshClient {
     }
 
     const auth = base64Utils.encode(`${username}:${password}`);
-    const headers = { Authorization: `Basic ${auth}` };
+    const headers = {
+      "Authorization": `Basic ${auth}`,
+      "X-Set-Cookie": "true"
+    };
     if (totpCode) headers["Totp"] = totpCode;
     if (expireSeconds) headers["Expire-Seconds"] = parseDuration(expireSeconds);
     if (audience) headers["Audience"] = audience;
 
-    this.jwtToken = null;
-    const response = await this._request("post", "/appmesh/login", null, { headers });
-    this.jwtToken = response.data["Access-Token"];
-    return this.jwtToken;
+    await this._request("post", "/appmesh/login", null, { headers });
   }
 
   /**
-   * Authenticate token and verify permission
-   * @param {string} token - JWT token
+   * Authenticate cookie token and verify permission
    * @param {string} [permission] - Permission to verify
    * @param {string} [audience] - Token audience
-   * @returns {Promise<boolean>} Authentication status
    * @throws {AppMeshError} Authentication failed
    */
-  async authenticate(token, permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
+  async authenticate(permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     const headers = {};
     if (permission) headers["Auth-Permission"] = permission;
     if (audience) headers["Audience"] = audience;
-    this.jwtToken = token;
-    const response = await this._request("post", "/appmesh/auth", null, { headers });
-    return response.status === 200;
+    await this._request("post", "/appmesh/auth", null, { headers });
   }
 
   /**
    * Logout and invalidate JWT token
-   * @returns {Promise<boolean>} Success status
    */
   async logoff() {
-    if (this.jwtToken) {
-      try {
-        const response = await this._request("post", "/appmesh/self/logoff");
-        this.jwtToken = null;
-        return response.status === 200;
-      } catch (error) {
-        console.error("Failed to logoff:", error.message);
-      }
-      this.jwtToken = null;
-      return false;
+    try {
+      await this._request("post", "/appmesh/self/logoff");
+    } catch (error) {
+      console.error("Failed to logoff:", error.message);
     }
-    return true;
   }
 
   /**
    * Renew JWT token
    * @param {string|number} [expireSeconds] - New token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
-   * @returns {Promise<string>} New JWT token
    */
   async renew_token(expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {};
     if (expireSeconds) {
       headers["Expire-Seconds"] = parseDuration(expireSeconds);
     }
-    const response = await this._request("post", "/appmesh/token/renew", null, { headers });
-    this.jwtToken = response.data["Access-Token"];
-    return this.jwtToken;
+    await this._request("post", "/appmesh/token/renew", null, { headers });
   }
 
   /**
@@ -285,13 +264,10 @@ class AppMeshClient {
   /**
    * Setup 2FA with verification code
    * @param {string} totpCode - TOTP verification code
-   * @returns {Promise<string>} Updated JWT token
    */
   async setup_totp(totpCode) {
     const headers = { Totp: totpCode };
-    const response = await this._request("post", "/appmesh/totp/setup", null, { headers });
-    this.jwtToken = response.data["Access-Token"];
-    return this.jwtToken;
+    await this._request("post", "/appmesh/totp/setup", null, { headers });
   }
 
   /**
@@ -300,19 +276,17 @@ class AppMeshClient {
    * @param {string} totpChallenge - Server challenge
    * @param {string} totpCode - TOTP code
    * @param {string|number} [expireSeconds] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
-   * @returns {Promise<string>} JWT token
    */
   async validate_totp(username, totpChallenge, totpCode, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {
       "Username": base64Utils.encode(username),
       "Totp": totpCode,
       "Totp-Challenge": base64Utils.encode(totpChallenge),
-      "Expire-Seconds": parseDuration(expireSeconds)
+      "Expire-Seconds": parseDuration(expireSeconds),
+      "X-Set-Cookie": "true"
     };
 
-    const response = await this._request("post", "/appmesh/totp/validate", null, { headers });
-    this.jwtToken = response.data["Access-Token"];
-    return this.jwtToken;
+    await this._request("post", "/appmesh/totp/validate", null, { headers });
   }
 
   /**
@@ -570,26 +544,35 @@ class AppMeshClient {
       }
     });
 
+    if (response.status !== 200) {
+      throw new AppMeshError(`Failed to download file: ${filePath}`, response.status, response.data);
+    }
+
     if (ENV.isNode) {
       const fs = await import('fs/promises');
-      await fs.writeFile(localFile, Buffer.from(response.data));
 
-      if (applyAttrs) {
-        const { headers } = response;
-        try {
-          if (headers["file-mode"]) {
-            await fs.chmod(localFile, parseInt(headers["file-mode"]));
+      try {
+        await fs.writeFile(localFile, Buffer.from(response.data));
+
+        if (applyAttrs) {
+          const { headers } = response;
+          try {
+            if (headers["file-mode"]) {
+              await fs.chmod(localFile, parseInt(headers["file-mode"]));
+            }
+            if (headers["file-user"] && headers["file-group"]) {
+              await fs.chown(
+                localFile,
+                parseInt(headers["file-user"]),
+                parseInt(headers["file-group"])
+              );
+            }
+          } catch (ex) {
+            console.warn("Failed to apply file attributes:", ex.message);
           }
-          if (headers["file-user"] && headers["file-group"]) {
-            await fs.chown(
-              localFile,
-              parseInt(headers["file-user"]),
-              parseInt(headers["file-group"])
-            );
-          }
-        } catch (ex) {
-          console.warn("Failed to apply file attributes:", ex.message);
         }
+      } catch (error) {
+        throw new AppMeshError(`Failed to write file to ${localFile}: ${error.message}`, response.status);
       }
     } else {
       // Browser download
@@ -653,7 +636,7 @@ class AppMeshClient {
       if (localFile instanceof File) {
         filename = localFile.name;
       } else if (localFile instanceof Blob) {
-        filename = remotePath.split('/').pop();
+        filename = filePath.split('/').pop();
       } else {
         throw new AppMeshError('In browser, localFile must be File or Blob');
       }
@@ -887,10 +870,6 @@ class AppMeshClient {
     if (ENV.isNode) {
       headers[CONSTANTS.HTTP_USER_AGENT_HEADER_NAME] = CONSTANTS.HTTP_USER_AGENT;
     }
-    // Add auth token if available
-    if (this.jwtToken) {
-      headers["Authorization"] = `Bearer ${this.jwtToken}`;
-    }
     // Add forwarding host if specified
     if (this.forwardingHost) {
       if (this.forwardingHost.includes(":")) {
@@ -921,6 +900,7 @@ class AppMeshClient {
       const requestConfig = {
         method,
         url: path,
+        withCredentials: true,  // for browser send cookie
         ...config,
         headers: { ...headers },
         params: { ...params }
@@ -932,12 +912,21 @@ class AppMeshClient {
 
       const response = await this._client(requestConfig);
       if (response.status !== 200) {
-        throw new AppMeshError(this._extractErrorMessage(response.data), response.status, response.data);
+        const errMsg = this._extractErrorMessage(response.data);
+        throw new AppMeshError(errMsg, response.status, response.data);
+      }
+
+      if (ENV.isNode && response.headers['set-cookie']) {
+        this._client.defaults.headers.Cookie = response.headers['set-cookie'][0];
       }
       return response;
     } catch (error) {
       if (error instanceof AppMeshError && error.statusCode === CONSTANTS.HTTP_STATUS_PRECONDITION_REQUIRED) {
         throw error;
+      }
+      if (path === "/appmesh/self/logoff") {
+        // console.log("Logoff error:", error.message);
+        return;
       }
       throw this.onError(error);
     }
@@ -957,8 +946,13 @@ class AppMeshClient {
     if (responseData instanceof ArrayBuffer) {
       try {
         const textDecoder = new TextDecoder("utf-8");
-        const parsedJson = JSON.parse(textDecoder.decode(responseData));
-        return parsedJson.message || parsedJson.error || "Binary response error";
+        const text = textDecoder.decode(responseData);
+        try {
+          const parsedJson = JSON.parse(text);
+          return parsedJson.message || parsedJson.error || "Binary response error";
+        } catch (e) {
+          return text; // not json, return raw text
+        }
       } catch (e) {
         return 'Binary response error (could not decode)';
       }

@@ -50,7 +50,7 @@ private:
 
 	void processUserChangePwd();
 	void processUserLock();
-	void processUserView();
+	void processUserManage();
 	void processUserPwdEncrypt();
 	void processUserMfa();
 	void initRadomPassword();
@@ -72,7 +72,7 @@ private:
 	void shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered = false);
 	std::string reduceStr(std::string source, int limit);
 	bool confirmInput(const char *msg);
-	std::string inputPasswd();
+	std::string inputPasswd(const std::string &userNameDesc);
 	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
 	void regSignal();
 	void unregSignal();

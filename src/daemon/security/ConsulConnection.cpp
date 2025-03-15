@@ -12,7 +12,7 @@
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
 #include "ConsulConnection.h"
-#include "Security.h"
+#include "SecurityConsul.h"
 
 const auto SECURITY_CONSUL_PATH = fs::path("/v1/kv/") / "appmesh" / "security";
 
@@ -82,10 +82,10 @@ nlohmann::json ConsulConnection::fetchSecurityJson()
 	return EMPTY_STR_JSON;
 }
 
-void ConsulConnection::saveSecurity()
+void ConsulConnection::saveSecurity(const nlohmann::json &content)
 {
 	const static char fname[] = "ConsulConnection::saveSecurity() ";
-	auto body = Utility::jsonToYaml(Security::instance()->AsJson());
+	auto body = Utility::jsonToYaml(content);
 	auto timestamp = std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
 	auto resp = requestConsul(web::http::methods::PUT, SECURITY_CONSUL_PATH.string(), {{"flags", timestamp}}, {}, body);
 	if (resp->status_code == web::http::status_codes::OK && resp->text != "true")
@@ -108,7 +108,13 @@ void ConsulConnection::initialize()
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_consulMutex);
 		assert(m_config == nullptr);
-		m_config = JsonConsul::FromJson(Utility::yamlToJson(YAML::Load(Utility::readFile(file))));
+		auto consolJson = Utility::yamlToJson(YAML::Load(Utility::readFile(file)));
+		m_config = JsonConsul::FromJson(consolJson);
+
+		// debug dump Consul config without token
+		if (HAS_JSON_FIELD(consolJson, "token"))
+			consolJson["token"] = Utility::maskSecret(consolJson["token"].get<std::string>());
+		LOG_DBG << fname << "Consul configuration loaded: " << consolJson.dump();
 	}
 
 	{
@@ -204,7 +210,8 @@ void ConsulConnection::watchSecurityThread()
 		if (std::get<0>(result) || (std::get<1>(result) != index && std::get<1>(result) > 0))
 		{
 			index = std::get<1>(result);
-			auto securityObj = Security::FromJson(this->fetchSecurityJson());
+			auto securityObj = std::make_shared<SecurityConsul>();
+			securityObj->init();
 			if (securityObj->getUsers().size())
 			{
 				Security::instance(securityObj);
@@ -224,8 +231,11 @@ JsonConsul::JsonConsul()
 {
 }
 
-std::shared_ptr<JsonConsul> JsonConsul::FromJson(const nlohmann::json &jsonObj)
+std::shared_ptr<JsonConsul> JsonConsul::FromJson(nlohmann::json &jsonObj)
 {
+	// Accept ENV override
+	Configuration::overrideConfigWithEnv(jsonObj);
+
 	auto consul = std::make_shared<JsonConsul>();
 	if (jsonObj.contains("consul"))
 	{

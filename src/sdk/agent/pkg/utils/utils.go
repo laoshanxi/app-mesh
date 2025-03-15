@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 )
 
 func MoveFile(src string, dst string) error {
@@ -132,4 +133,44 @@ func SaveStreamToFile(src io.Reader, filePath string) error {
 	}
 
 	return nil
+}
+
+// MaskSecret masks the input secret, keeping `visibleChars` at the beginning and end, replacing the middle with `mask`.
+// Defaults: visibleChars = 2, mask = "***".
+func MaskSecret(secret string, visibleChars int, mask string) string {
+	// Handle invalid input
+	if visibleChars < 0 {
+		visibleChars = 0
+	}
+
+	length := len(secret)
+
+	if length <= visibleChars*2 {
+		return "***"
+	}
+
+	result := make([]byte, 0, visibleChars*2+len(mask))
+	result = append(result, secret[:visibleChars]...)
+	result = append(result, mask...)
+	result = append(result, secret[length-visibleChars:]...)
+
+	return string(result)
+}
+
+// IsProcessRunning checks if a process with the given PID is running.
+// It uses /proc on Linux for performance, falling back to Signal(0) on other platforms.
+func IsProcessRunning(pid int) bool {
+	// Fast check for Linux using /proc
+	if runtime.GOOS == "linux" {
+		_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
+		return err == nil
+	}
+
+	// Fallback for non-Linux systems
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// Signal 0 does not send a signal but performs error checking
+	return proc.Signal(syscall.Signal(0)) == nil
 }

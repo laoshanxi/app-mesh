@@ -1,6 +1,7 @@
 name: "Build CentOS 7 Build Image"
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main

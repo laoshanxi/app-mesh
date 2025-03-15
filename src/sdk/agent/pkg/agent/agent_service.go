@@ -26,12 +26,19 @@ import (
 
 // Constants for REST paths and headers
 const (
+	COOKIE_TOKEN                = "appmesh_auth"
+	REST_PATH_LOGIN             = "/appmesh/login"
+	REST_PATH_TOTP_VALIDATE     = "/appmesh/totp/validate"
+	REST_PATH_LOGOFF            = "/appmesh/self/logoff"
+	REST_PATH_TOKEN_RENEW       = "/appmesh/token/renew"
+	REST_PATH_TOTP_SETUP        = "/appmesh/totp/setup"
 	REST_PATH_UPLOAD            = "/appmesh/file/upload"
 	REST_PATH_DOWNLOAD          = "/appmesh/file/download"
 	HTTP_USER_AGENT_HEADER_NAME = "User-Agent"
 	USER_AGENT_APPMESH_SDK      = "appmesh/sdk"
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 
+	HTTP_HEADER_KEY_X_SET_COOKIE       = "X-Set-Cookie"
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
@@ -192,13 +199,16 @@ func StartHTTPSServer(restAgentAddr string, router *mux.Router) error {
 		CurvePreferences:         []tls.CurveID{tls.CurveP256, tls.CurveP384}, // Remove P521 for performance
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
-			// TLS 1.2 ciphers
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			// TLS 1.3 ciphers
 			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_AES_256_GCM_SHA384,
 			tls.TLS_CHACHA20_POLY1305_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+
+			// TLS 1.2 (fallback and broader compatibility)
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 		},
 
 		// Client authentication
@@ -354,7 +364,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		// Wait for channel to get response
 		resp := <-ch
 		// Reply to client
-		resp.ApplyResponse(w, r)
+		resp.ApplyResponse(w, r, request)
 
 		// Handle file upload after response to client
 		if resp.TempUploadFilePath != "" {

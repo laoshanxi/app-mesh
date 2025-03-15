@@ -31,9 +31,9 @@ class TCPTransport:
                 **Note**: Unlike HTTP requests, TCP connections cannot automatically retrieve intermediate or public CA certificates.
                 When `rest_ssl_verify` is a path, it explicitly identifies a CA issuer to ensure certificate validation.
 
-            ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. If a `str`,
-                it should be the path to a PEM file containing both the client certificate and private key. If a `tuple`, it should
-                be a pair of paths: (`cert`, `key`), where `cert` is the client certificate file and `key` is the private key file.
+            ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. Can be:
+                - `str`: A path to a single PEM file containing both the client certificate and private key.
+                - `tuple`: A pair of paths (`cert_file`, `key_file`), where `cert_file` is the client certificate file path and `key_file` is the private key file path.
 
             tcp_address (Tuple[str, int], optional): Address and port for establishing a TCP connection to the server.
                 Defaults to `("localhost", 6059)`.
@@ -83,21 +83,31 @@ class TCPTransport:
 
         if self.ssl_client_cert is not None:
             # Load client-side certificate and private key
-            context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])
+            if isinstance(self.ssl_client_cert, tuple) and len(self.ssl_client_cert) == 2:
+                context.load_cert_chain(certfile=self.ssl_client_cert[0], keyfile=self.ssl_client_cert[1])
+            elif isinstance(self.ssl_client_cert, str):
+                # Handle case where cert and key are in the same file
+                context.load_cert_chain(certfile=self.ssl_client_cert)
+            else:
+                raise ValueError("ssl_client_cert must be a string filepath or a tuple of (cert_file, key_file)")
 
         # Create a TCP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(True)
         sock.settimeout(30)  # Connection timeout set to 30 seconds
-        # Wrap the socket with SSL/TLS
-        ssl_socket = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
-        # Connect to the server
-        ssl_socket.connect(self.tcp_address)
-        # Disable Nagle's algorithm
-        ssl_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        # After connecting, set separate timeout for recv/send
-        # ssl_socket.settimeout(20)  # 20 seconds for recv/send
-        self._socket = ssl_socket
+        try:
+            # Wrap the socket with SSL/TLS
+            ssl_socket = context.wrap_socket(sock, server_hostname=self.tcp_address[0])
+            # Connect to the server
+            ssl_socket.connect(self.tcp_address)
+            # Disable Nagle's algorithm
+            ssl_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            # After connecting, set separate timeout for recv/send
+            # ssl_socket.settimeout(20)  # 20 seconds for recv/send
+            self._socket = ssl_socket
+        except (socket.error, ssl.SSLError) as e:
+            sock.close()
+            raise RuntimeError(f"Failed to connect to {self.tcp_address}: {e}")
 
     def close(self) -> None:
         """Close socket connection"""
@@ -115,23 +125,37 @@ class TCPTransport:
 
     def send_message(self, data) -> None:
         """Send a message with a prefixed header indicating its length"""
-        length = len(data)
-        # Pack the header into 8 bytes using big-endian format
-        self._socket.sendall(struct.pack("!II", self.TCP_MESSAGE_MAGIC, length))
-        if length > 0:
-            self._socket.sendall(data)
+        if self._socket is None:
+            raise RuntimeError("Cannot send message: not connected")
+
+        try:
+            length = len(data)
+            # Pack the header into 8 bytes using big-endian format
+            self._socket.sendall(struct.pack("!II", self.TCP_MESSAGE_MAGIC, length))
+            if length > 0:
+                self._socket.sendall(data)
+        except (socket.error, ssl.SSLError) as e:
+            self.close()
+            raise RuntimeError(f"Error sending message: {e}")
 
     def receive_message(self) -> Optional[bytearray]:
         """Receive a message with a prefixed header indicating its length and validate it"""
-        # Unpack the data (big-endian format)
-        magic, length = struct.unpack("!II", self._recvall(self.TCP_MESSAGE_HEADER_LENGTH))
-        if magic != self.TCP_MESSAGE_MAGIC:
-            raise ValueError(f"Invalid message: incorrect magic number 0x{magic:X}.")
-        if length > self.TCP_MAX_BLOCK_SIZE:
-            raise ValueError(f"Message size {length} exceeds the maximum allowed size of {self.TCP_MAX_BLOCK_SIZE} bytes.")
-        if length > 0:
-            return self._recvall(length)
-        return None
+        if self._socket is None:
+            raise RuntimeError("Cannot receive message: not connected")
+
+        try:
+            # Unpack the data (big-endian format)
+            magic, length = struct.unpack("!II", self._recvall(self.TCP_MESSAGE_HEADER_LENGTH))
+            if magic != self.TCP_MESSAGE_MAGIC:
+                raise ValueError(f"Invalid message: incorrect magic number 0x{magic:X}.")
+            if length > self.TCP_MAX_BLOCK_SIZE:
+                raise ValueError(f"Message size {length} exceeds the maximum allowed size of {self.TCP_MAX_BLOCK_SIZE} bytes.")
+            if length > 0:
+                return self._recvall(length)
+            return None
+        except (socket.error, ssl.SSLError) as e:
+            self.close()
+            raise RuntimeError(f"Error receiving message: {e}")
 
     def _recvall(self, length: int) -> bytearray:
         """socket recv data with fixed length
@@ -156,11 +180,14 @@ class TCPTransport:
 
         while bytes_received < length:
             # Use recv_into to read directly into our buffer
-            chunk_size = self._socket.recv_into(view[bytes_received:], length - bytes_received)
+            try:
+                chunk_size = self._socket.recv_into(view[bytes_received:], length - bytes_received)
 
-            if chunk_size == 0:
-                raise EOFError("Connection closed by peer")
+                if chunk_size == 0:
+                    raise EOFError("Connection closed by peer")
 
-            bytes_received += chunk_size
+                bytes_received += chunk_size
+            except socket.timeout:
+                raise socket.timeout(f"Socket operation timed out after receiving {bytes_received}/{length} bytes")
 
         return buffer

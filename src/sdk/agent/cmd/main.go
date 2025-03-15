@@ -15,37 +15,35 @@ import (
 )
 
 const (
-	parentCheckInterval = time.Second
+	parentCheckInterval = time.Second * 2
 	minPort             = 1024
 )
 
 var logger = utils.GetLogger()
+var parentPID = os.Getppid()
 
 // monitorParentProcess monitors the parent process and exits if it is no longer alive or the context is canceled.
 func monitorParentProcess(ctx context.Context) {
-	parentPID := os.Getppid()
 	if parentPID <= 1 {
 		return // No valid parent to monitor
 	}
 
-	proc, err := os.FindProcess(parentPID)
-	if err != nil {
-		logger.Errorf("Failed to find parent process: %v", err)
-		return
-	}
-
-	ticker := time.NewTicker(parentCheckInterval)
-	defer ticker.Stop() // Ensure ticker is cleaned up
+	// Instead of creating a ticker that runs constantly, use a longer interval
+	// and efficiently wait using a timer channel
+	timer := time.NewTimer(parentCheckInterval)
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			// Check if the parent process is alive
-			if err := proc.Signal(syscall.Signal(0)); err != nil {
+		case <-timer.C:
+			// Check if parent exists by checking /proc directly instead of using Signal(0)
+			if !utils.IsProcessRunning(parentPID) {
 				logger.Fatal("Parent process exited, shutting down")
 			}
+			// Reset the timer with a longer interval
+			timer.Reset(parentCheckInterval)
 		}
 	}
 }
@@ -106,6 +104,12 @@ func changeWorkDir(dir string) {
 }
 
 func main() {
+
+	//import _ "net/http/pprof"
+	//go func() {
+	//    log.Println(http.ListenAndServe("localhost:7070", nil))
+	//}()
+
 	cwd, _ := os.Getwd()
 	logger.Info("Current working directory:", cwd)
 

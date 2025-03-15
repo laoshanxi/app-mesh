@@ -1,16 +1,15 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/spf13/viper"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 )
 
 type (
@@ -67,108 +66,56 @@ func AbsConfigPath() {
 	ConfigData.REST.SSL.SSLClientCertificateKeyFile = HomeDir(ConfigData.REST.SSL.SSLClientCertificateKeyFile)
 }
 
+// readConfig loads the application config.yaml from files and environment variables.
+// It returns an error if the configuration cannot be loaded or unmarshaled.
 func readConfig() error {
-	// Load YAML configuration
-	yamlFile, err := os.ReadFile(getConfigFilePath())
-	if err != nil {
-		return err
+	config := viper.New()
+	config.SetConfigName("config")
+	config.SetConfigType("yaml")
+
+	// Add config file paths
+	if !IsAgentProdEnv() {
+		config.AddConfigPath("../../../../daemon")
 	}
-	if err = yaml.Unmarshal(yamlFile, &ConfigData); err != nil {
-		return err
+	config.AddConfigPath(filepath.Join(GetAppMeshHomeDir(), "work/config/"))
+	config.AddConfigPath(GetAppMeshHomeDir())
+
+	// Read YAML file
+	if err := config.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Apply environment variable overrides
-	return ApplyEnvConfig(&ConfigData)
-}
+	// Override config with environment variables
+	OverrideConfigWithEnv(config)
 
-// Reads environment variables and applies overrides
-func ApplyEnvConfig(config interface{}) error {
-	envVars := os.Environ()
-	const ENV_PREFIX = "APPMESH_"
-
-	v := reflect.ValueOf(config).Elem()
-
-	for _, env := range envVars {
-		if strings.HasPrefix(env, ENV_PREFIX) {
-			parts := strings.SplitN(env, "=", 2)
-			envKey := parts[0]
-			envValue := parts[1]
-
-			// Split and remove the prefix from the environment key
-			keys := strings.Split(envKey[len(ENV_PREFIX):], "_")
-
-			// Check if the path exists in YAML
-			exists, result := traverseStruct(v, keys, envValue)
-			if !exists {
-				logger.Warnf("Env configuration <%s>: path not found in YAML configuration", envKey)
-			} else if result {
-				logger.Infof("Env configuration <%s>: applied environment value", envKey)
-			} else {
-				logger.Errorf("Env configuration <%s>: failed to apply environment value", envKey)
-			}
-		}
+	// Unmarshal into struct
+	if err := config.Unmarshal(&ConfigData); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+
 	return nil
 }
 
-// Traverse struct to find and apply environment values
-// Returns (exists, applied) where:
-// - exists: indicates if the path exists in the YAML
-// - applied: indicates if the value was successfully applied
-func traverseStruct(v reflect.Value, keys []string, envValue string) (bool, bool) {
-	if len(keys) == 0 {
-		return false, false
-	}
+// OverrideConfigWithEnv overrides configuration with environment variables that have the APPMESH_ prefix.
+func OverrideConfigWithEnv(config *viper.Viper) {
+	const prefix = "APPMESH_"
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, prefix) {
+			continue
+		}
 
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		fieldType := v.Type().Field(i)
+		key, value, _ := strings.Cut(env, "=")
+		configKey := strings.ToLower(strings.NewReplacer(prefix, "", "_", ".").Replace(key))
 
-		// Match the field with the first key
-		if strings.EqualFold(fieldType.Name, keys[0]) {
-			if len(keys) == 1 {
-				// If this is the last key, apply the environment value
-				return true, applyEnv(field, envValue)
-			} else if field.Kind() == reflect.Struct {
-				// Traverse deeper into the nested struct
-				return traverseStruct(field, keys[1:], envValue)
-			}
-			// Path exists but not complete
-			return true, false
+		// Check if the key already exists in config and set
+		if config.IsSet(configKey) {
+			existing := config.GetString(configKey)
+			config.Set(configKey, value)
+			logger.Infof("Overriding config: %s (previous: %s, new: %s)", configKey, utils.MaskSecret(existing, 2, "***"), utils.MaskSecret(value, 2, "***"))
+		} else {
+			logger.Infof("Ignoring environment variable: '%s' (not found in config)", key)
 		}
 	}
-	// Path doesn't exist in YAML
-	return false, false
-}
-
-// Apply environment value to field based on its type
-func applyEnv(fieldVal reflect.Value, envValue string) bool {
-	switch fieldVal.Kind() {
-	case reflect.String:
-		fieldVal.SetString(envValue)
-		return true
-	case reflect.Int:
-		if num, err := strconv.Atoi(envValue); err == nil {
-			fieldVal.SetInt(int64(num))
-			return true
-		}
-	case reflect.Bool:
-		boolVal, err := strconv.ParseBool(envValue)
-		if err == nil {
-			fieldVal.SetBool(boolVal)
-			return true
-		}
-	}
-	return false
-}
-
-// GetConfigFilePath determines the configuration file path
-func getConfigFilePath() string {
-	workConfig := filepath.Join(GetAppMeshHomeDir(), "work/config/config.yaml")
-	if appmesh.IsFileExist(workConfig) {
-		return workConfig
-	}
-	return filepath.Join(GetAppMeshHomeDir(), "config.yaml")
 }
 
 // GetAppMeshHomeDir determines the app mesh home directory

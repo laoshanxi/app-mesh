@@ -1034,7 +1034,19 @@ std::string Utility::prettyJson(const std::string &jsonStr)
 
 std::string Utility::hash(const std::string &str)
 {
-	return std::string("H") + std::to_string(std::hash<std::string>()(str));
+	// FNV-1a hash algorithm - cross platform
+	const uint64_t FNV_prime = 1099511628211ULL;
+	const uint64_t FNV_offset_basis = 14695981039346656037ULL;
+
+	uint64_t hash = FNV_offset_basis;
+
+	for (char c : str)
+	{
+		hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+		hash *= FNV_prime;
+	}
+
+	return std::string("H") + std::to_string(hash);
 }
 
 std::string Utility::hashId()
@@ -1310,6 +1322,23 @@ std::string Utility::escapeCommandLine(const std::string &input)
 		}
 	}
 	return output;
+}
+
+std::string Utility::maskSecret(const std::string &secret, size_t visibleChars, const std::string &mask)
+{
+	const size_t length = secret.length();
+
+	if (length <= static_cast<size_t>(visibleChars * 2))
+		return std::string(3, '*');
+
+	std::string result;
+	result.reserve(visibleChars * 2 + mask.length());
+
+	result.append(secret, 0, visibleChars);
+	result.append(mask);
+	result.append(secret, length - visibleChars, visibleChars);
+
+	return result;
 }
 
 #define _XPLATSTR(x) x

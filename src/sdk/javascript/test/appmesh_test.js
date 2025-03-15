@@ -18,12 +18,12 @@ async function test () {
   try {
     // Login test
     console.log('Testing login...')
-    const token = await client.login(username, password)
-    console.log('Login successful, token:', token)
+    await client.login(username, password)
+    console.log('Login successful')
 
     // Authentication test
-    const auth = await client.authenticate(token)
-    console.log('Authentication response:', auth)
+    await client.authenticate()
+    console.log('Authentication')
 
     // User and Role tests
     console.log('\nTesting user permissions...')

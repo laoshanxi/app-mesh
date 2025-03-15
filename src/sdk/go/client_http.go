@@ -465,9 +465,12 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 
 // DownloadFile downloads a file from the server.
 func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttributes bool) error {
-
 	headers := map[string]string{"File-Path": url.QueryEscape(remoteFile)}
-	code, raw, respHeaders, _ := r.get("/appmesh/file/download", nil, headers)
+	code, raw, respHeaders, err := r.get("/appmesh/file/download", nil, headers)
+
+	if err != nil {
+		return fmt.Errorf("download request failed: %w", err)
+	}
 
 	if code != http.StatusOK {
 		return fmt.Errorf("download failed with status: %s", raw)
@@ -478,37 +481,41 @@ func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttr
 		return err
 	}
 	defer out.Close()
+
 	_, err = out.Write(raw)
+	if err != nil {
+		return fmt.Errorf("failed to write to file %s: %w", localFile, err)
+	}
 
 	if applyFileAttributes {
 		SetFileAttributes(localFile, respHeaders)
 	}
 
-	return err
+	return nil
 }
 
-// getForwardTo retrieves the forwarding host.
+// getForwardTo retrieves the forwarding host thread-safely.
 func (r *AppMeshClient) getForwardTo() string {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	return r.forwardTo
 }
 
-// updateForwardTo updates the forwarding host.
+// updateForwardTo updates the forwarding host thread-safely.
 func (r *AppMeshClient) updateForwardTo(host string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	r.forwardTo = host
 }
 
-// getToken retrieves the JWT token.
+// getToken retrieves the JWT token thread-safely.
 func (r *AppMeshClient) getToken() string {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	return r.jwtToken
 }
 
-// updateToken updates the JWT token.
+// updateToken updates the JWT token thread-safely.
 func (r *AppMeshClient) updateToken(token string) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()

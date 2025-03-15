@@ -62,6 +62,12 @@ paths:
             type: string
           default: "appmesh-service"
           description: JWT audience.
+        - name: X-Set-Cookie
+          in: header
+          schema:
+            type: boolean
+          default: true
+          description: Request to set cookie for authentication.
       responses:
         "200":
           $ref: "#/components/responses/GetTokenSuccess"
@@ -233,6 +239,12 @@ paths:
           schema:
             type: integer
           description: Optional token expiration time in seconds.
+        - name: X-Set-Cookie
+          in: header
+          schema:
+            type: boolean
+          default: true
+          description: Request to set cookie for authentication.
       responses:
         "200":
           $ref: "#/components/responses/GetTokenSuccess"
