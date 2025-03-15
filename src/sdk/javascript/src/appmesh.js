@@ -178,7 +178,7 @@ class AppMeshClient {
       },
       error => {
         // Handle request setup errors
-        err = new AppMeshError('Request configuration error: ' + (error.message || 'Unknown error'))
+        const err = new AppMeshError('Request configuration error: ' + (error.message || 'Unknown error'))
         return Promise.reject(err);
       }
     );
@@ -188,7 +188,7 @@ class AppMeshClient {
       response => response,
       error => {
         // Handle response errors
-        err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status, error.response?.data);
+        const err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status, error.response?.data);
         return Promise.resolve(err);
       }
     );
@@ -570,26 +570,35 @@ class AppMeshClient {
       }
     });
 
+    if (response.status !== 200) {
+      throw new AppMeshError(`Failed to download file: ${filePath}`, response.status, response.data);
+    }
+
     if (ENV.isNode) {
       const fs = await import('fs/promises');
-      await fs.writeFile(localFile, Buffer.from(response.data));
 
-      if (applyAttrs) {
-        const { headers } = response;
-        try {
-          if (headers["file-mode"]) {
-            await fs.chmod(localFile, parseInt(headers["file-mode"]));
+      try {
+        await fs.writeFile(localFile, Buffer.from(response.data));
+
+        if (applyAttrs) {
+          const { headers } = response;
+          try {
+            if (headers["file-mode"]) {
+              await fs.chmod(localFile, parseInt(headers["file-mode"]));
+            }
+            if (headers["file-user"] && headers["file-group"]) {
+              await fs.chown(
+                localFile,
+                parseInt(headers["file-user"]),
+                parseInt(headers["file-group"])
+              );
+            }
+          } catch (ex) {
+            console.warn("Failed to apply file attributes:", ex.message);
           }
-          if (headers["file-user"] && headers["file-group"]) {
-            await fs.chown(
-              localFile,
-              parseInt(headers["file-user"]),
-              parseInt(headers["file-group"])
-            );
-          }
-        } catch (ex) {
-          console.warn("Failed to apply file attributes:", ex.message);
         }
+      } catch (error) {
+        throw new AppMeshError(`Failed to write file to ${localFile}: ${error.message}`, response.status);
       }
     } else {
       // Browser download
@@ -653,7 +662,7 @@ class AppMeshClient {
       if (localFile instanceof File) {
         filename = localFile.name;
       } else if (localFile instanceof Blob) {
-        filename = remotePath.split('/').pop();
+        filename = filePath.split('/').pop();
       } else {
         throw new AppMeshError('In browser, localFile must be File or Blob');
       }
@@ -932,7 +941,8 @@ class AppMeshClient {
 
       const response = await this._client(requestConfig);
       if (response.status !== 200) {
-        throw new AppMeshError(this._extractErrorMessage(response.data), response.status, response.data);
+        const errMsg = this._extractErrorMessage(response.data);
+        throw new AppMeshError(errMsg, response.status, response.data);
       }
       return response;
     } catch (error) {
@@ -957,8 +967,13 @@ class AppMeshClient {
     if (responseData instanceof ArrayBuffer) {
       try {
         const textDecoder = new TextDecoder("utf-8");
-        const parsedJson = JSON.parse(textDecoder.decode(responseData));
-        return parsedJson.message || parsedJson.error || "Binary response error";
+        const text = textDecoder.decode(responseData);
+        try {
+          const parsedJson = JSON.parse(text);
+          return parsedJson.message || parsedJson.error || "Binary response error";
+        } catch (e) {
+          return text; // not json, return raw text
+        }
       } catch (e) {
         return 'Binary response error (could not decode)';
       }

@@ -54,9 +54,24 @@ class KeycloakClient:
         # Construct the token endpoint URL
         self.token_endpoint = f"{self.auth_server_url}/realms/{self.realm}/protocol/openid-connect/token"
         self.userinfo_endpoint = f"{self.auth_server_url}/realms/{self.realm}/protocol/openid-connect/userinfo"
-        
+
         # Create a session for connection pooling
         self.session = requests.Session()
+
+    def __enter__(self):
+        """Support for context manager protocol."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up resources when exiting context."""
+        self.close()
+
+    def __del__(self):
+        """Ensure resources are properly released when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass  # Avoid exceptions during garbage collection
 
     def authenticate(self, username: str, password: str) -> str:
         """Authenticate with username and password.
@@ -203,8 +218,9 @@ class KeycloakClient:
 
     def close(self) -> None:
         """Close the session and release resources."""
-        if hasattr(self, 'session'):
+        if hasattr(self, "session") and self.session:
             self.session.close()
+            self.session = None
 
     @staticmethod
     def decode_token(token: str) -> Dict[str, Any]:

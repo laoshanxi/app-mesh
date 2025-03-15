@@ -14,7 +14,6 @@ import requests
 from .app import App
 from .app_run import AppRun
 from .app_output import AppOutput
-from .keycloak import KeycloakClient
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -145,9 +144,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 - `str`: Path to a custom CA certificate or directory for verification. This option allows custom CA configuration,
                 which may be necessary in environments requiring specific CA chains that differ from the default system CAs.
 
-            rest_ssl_client_cert (Union[tuple, str], optional): Specifies a client certificate for mutual TLS authentication:
-                - If a `str`, provides the path to a PEM file with both client certificate and private key.
-                - If a `tuple`, contains two paths as (`cert`, `key`), where `cert` is the certificate file and `key` is the private key file.
+            ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. Can be:
+                - `str`: A path to a single PEM file containing both the client certificate and private key.
+                - `tuple`: A pair of paths (`cert_file`, `key_file`), where `cert_file` is the client certificate file path and `key_file` is the private key file path.
 
             rest_timeout (tuple, optional): HTTP connection timeouts for API requests, as `(connect_timeout, read_timeout)`.
                 The default is `(60, 300)`, where `60` seconds is the maximum time to establish a connection and `300` seconds for the maximum read duration.
@@ -172,6 +171,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # Keycloak integration
         self._keycloak_client = None
         if oauth2_config:
+            from .keycloak import KeycloakClient  # lazy import
+
             self._keycloak_client = KeycloakClient(
                 auth_server_url=oauth2_config.get("auth_server_url"),
                 realm=oauth2_config.get("realm"),
@@ -180,21 +181,30 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 ssl_verify=oauth2_config.get("ssl_verify", self.ssl_verify),
                 timeout=oauth2_config.get("timeout", (30, 60)),
             )
-            
+
     def close(self):
         """Close the session and release resources."""
-        if hasattr(self, 'session'):
+        if hasattr(self, "session") and self.session:
             self.session.close()
-        if self._keycloak_client and hasattr(self._keycloak_client, 'close'):
+            self.session = None
+        if self._keycloak_client and hasattr(self._keycloak_client, "close"):
             self._keycloak_client.close()
-            
+            self._keycloak_client = None
+
     def __enter__(self):
         """Support for context manager protocol."""
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Support for context manager protocol, ensuring resources are released."""
         self.close()
+
+    def __del__(self):
+        """Ensure resources are properly released when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass  # Avoid exceptions during garbage collection
 
     @property
     def jwt_token(self) -> str:
@@ -354,10 +364,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 "Expire-Seconds": self._parse_duration(timeout),
             },
         )
-        if resp.status_code == HTTPStatus.OK:
-            if "Access-Token" in resp.json():
-                self.jwt_token = resp.json()["Access-Token"]
-                return self.jwt_token
+        if resp.status_code == HTTPStatus.OK and "Access-Token" in resp.json():
+            self.jwt_token = resp.json()["Access-Token"]
+            return self.jwt_token
         raise Exception(resp.text)
 
     def logoff(self) -> bool:
@@ -374,7 +383,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
     def authentication(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
         """Deprecated: Use authenticate() instead."""
-        return self.authenticate(token, permission)
+        return self.authenticate(token, permission, audience)
 
     def authenticate(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
         """Authenticate with a token and verify permission if specified.
@@ -1090,12 +1099,15 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             while len(run.proc_uid) > 0:
                 app_out = self.get_app_output(app_name=run.app_name, stdout_position=last_output_position, stdout_index=0, process_uuid=run.proc_uid, timeout=interval)
                 if app_out.output and stdout_print:
-                    print(app_out.output, end="")
+                    print(app_out.output, end="", flush=True)
                 if app_out.out_position is not None:
                     last_output_position = app_out.out_position
                 if app_out.exit_code is not None:
                     # success
-                    self.delete_app(run.app_name)
+                    try:
+                        self.delete_app(run.app_name)
+                    except Exception:
+                        pass
                     return app_out.exit_code
                 if app_out.status_code != HTTPStatus.OK:
                     # failed
@@ -1169,7 +1181,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         # Try to refresh token via Keycloak if using Keycloak and token needs refreshing
         if self._keycloak_client and self.jwt_token and not self._keycloak_client.validate_token():
-            self.jwt_token = self._keycloak_client.get_active_token()
+            try:
+                self.jwt_token = self._keycloak_client.get_active_token()
+            except Exception as e:
+                print(f"Token refresh failed: {str(e)}")
 
         rest_url = parse.urljoin(self.auth_server_url, path)
 
@@ -1183,17 +1198,26 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to + ":" + str(parse.urlsplit(self.auth_server_url).port)
         header[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT
 
-        if method is AppMeshClient.Method.GET:
-            return self.session.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
-        elif method is AppMeshClient.Method.POST:
-            return self.session.post(
-                url=rest_url, params=query, headers=header, data=json.dumps(body) if type(body) in (dict, list) else body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout
-            )
-        elif method is AppMeshClient.Method.POST_STREAM:
-            return self.session.post(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
-        elif method is AppMeshClient.Method.DELETE:
-            return self.session.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
-        elif method is AppMeshClient.Method.PUT:
-            return self.session.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
-        else:
-            raise Exception("Invalid http method", method)
+        try:
+            if method is AppMeshClient.Method.GET:
+                return self.session.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+            elif method is AppMeshClient.Method.POST:
+                return self.session.post(
+                    url=rest_url,
+                    params=query,
+                    headers=header,
+                    data=json.dumps(body) if type(body) in (dict, list) else body,
+                    cert=self.ssl_client_cert,
+                    verify=self.ssl_verify,
+                    timeout=self.rest_timeout,
+                )
+            elif method is AppMeshClient.Method.POST_STREAM:
+                return self.session.post(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
+            elif method is AppMeshClient.Method.DELETE:
+                return self.session.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+            elif method is AppMeshClient.Method.PUT:
+                return self.session.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+            else:
+                raise Exception("Invalid http method", method)
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"HTTP request failed: {str(e)}")
