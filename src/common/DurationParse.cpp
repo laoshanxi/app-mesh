@@ -12,7 +12,7 @@
 int DurationParse::parse(const std::string &duration)
 {
     const static char fname[] = "DurationParse::parse ";
-    LOG_DBG << fname << duration;
+    LOG_DBG << fname << "Parsing duration: <" << duration << ">";
     int totalSeconds = 0;
 
     // return 0 for empty input
@@ -23,7 +23,7 @@ int DurationParse::parse(const std::string &duration)
     if (Utility::isNumber(duration))
     {
         totalSeconds = std::stoi(duration);
-        LOG_DBG << fname << "number duration: " << duration << "=" << totalSeconds;
+        LOG_DBG << fname << "Numeric duration: <" << duration << "> = <" << totalSeconds << "> seconds";
         return totalSeconds;
     }
 

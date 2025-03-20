@@ -15,7 +15,7 @@ constexpr long REQUEST_TIMEOUT_SECONDS = 200L;
 
 void CurlResponse::raise_for_status()
 {
-	if (status_code != web::http::status_codes::OK)
+	if (status_code < web::http::status_codes::OK || status_code >= web::http::status_codes::MultipleChoices)
 		throw std::runtime_error("HTTP request failed with status code: " + std::to_string(status_code) + " response: " + text);
 }
 
@@ -99,6 +99,26 @@ private:
 	struct curl_slist *list = nullptr;
 };
 
+class CurlGlobalInitializer
+{
+public:
+	CurlGlobalInitializer()
+	{
+		curl_global_init(CURL_GLOBAL_ALL);
+	}
+
+	~CurlGlobalInitializer()
+	{
+		curl_global_cleanup();
+	}
+
+	static CurlGlobalInitializer &instance()
+	{
+		static CurlGlobalInitializer init;
+		return init;
+	}
+};
+
 // Callback functions
 size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *userp)
 {
@@ -156,16 +176,18 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	const std::string &path,
 	const std::string &body,
 	std::map<std::string, std::string> header,
-	std::map<std::string, std::string> query)
+	std::map<std::string, std::string> query,
+	std::map<std::string, std::string> formData)
 {
-	static std::once_flag initFlag;
-	std::call_once(initFlag, []()
-				   { curl_global_init(CURL_GLOBAL_ALL); });
+	CurlGlobalInitializer::instance();
 
 	auto response = std::make_shared<CurlResponse>();
 	CurlHandle curl;
 	if (!curl.isValid())
+	{
+		response->text = "Failed to initialize CURL handle";
 		return response;
+	}
 
 	// Build URL with query parameters
 	auto url = (fs::path(host) / path).string();
@@ -175,7 +197,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 		for (const auto &q : query)
 		{
 			url += url.back() == '?' ? "" : "&";
-			url += q.first + "=" + q.second;
+			url += urlEncode(curl, q.first) + "=" + urlEncode(curl, q.second);
 		}
 	}
 
@@ -196,10 +218,32 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response->text);
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
 	curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response->header);
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L); // Disable signals for multi-threaded applications
 
-	// Handle request body
-	if (!body.empty())
+	// Handle form data if provided (takes precedence over body)
+	std::string formString;
+	if (!formData.empty() && (mtd == web::http::methods::POST || mtd == web::http::methods::PUT))
 	{
+		bool first = true;
+		for (const auto &field : formData)
+		{
+			if (!first)
+				formString += "&";
+			formString += urlEncode(curl, field.first) + "=" + urlEncode(curl, field.second);
+			first = false;
+		}
+
+		// Set the Content-Type: application/x-www-form-urlencoded
+		headers.append(std::string(web::http::header_names::content_type) + ": " + web::http::mime_types::application_x_www_form_urlencoded);
+
+		// Set the form data as POST fields
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, formString.c_str());
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, formString.size());
+	}
+	// Handle JSON body if no form data is provided
+	else if (!body.empty())
+	{
+		// Add Content-Type header for JSON
 		headers.append(std::string(web::http::header_names::content_type) + ": " + web::http::mime_types::application_json);
 
 		if (mtd == web::http::methods::PUT || mtd == web::http::methods::POST)
@@ -231,15 +275,29 @@ std::shared_ptr<CurlResponse> RestClient::upload(
 	const std::string &host,
 	const std::string &path,
 	const std::string &file,
-	std::map<std::string, std::string> header)
+	std::map<std::string, std::string> header,
+	const std::string &fieldName)
 {
+	CurlGlobalInitializer::instance();
+
 	auto response = std::make_shared<CurlResponse>();
+
+	if (!Utility::isFileExist(file))
+	{
+		response->text = "File does not exist: " + file;
+		return response;
+	}
+
 	CurlHandle curl;
 	if (!curl.isValid())
+	{
+		response->text = "Failed to initialize CURL handle";
 		return response;
+	}
 
 	// Setup headers
 	CurlHeaderList headers;
+	headers.append(std::string(HTTP_USER_AGENT_HEADER) + ": " + HTTP_USER_AGENT);
 	for (const auto &h : header)
 	{
 		headers.append(h.first + ": " + h.second);
@@ -247,13 +305,16 @@ std::shared_ptr<CurlResponse> RestClient::upload(
 
 	// Create a multipart form
 	CurlForm form(curl);
-	form.addFile("file", file); // Add the file field
+	form.addFile(fieldName, file);
 
 	// Configure CURL options
-	const std::string url = host + path;
+	const std::string url = (fs::path(host) / path).string();
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
 	curl_easy_setopt(curl, CURLOPT_MIMEPOST, form.getMime()); // Use the MIME API
+	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CONNECT_TIMEOUT_SECONDS);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, REQUEST_TIMEOUT_SECONDS * 5);
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
 	// Setup the response handling
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
@@ -261,7 +322,7 @@ std::shared_ptr<CurlResponse> RestClient::upload(
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
 	curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response->header);
 
-	// SSL configuration - assuming this function configures SSL as required.
+	// SSL configuration
 	setSslConfig(curl);
 
 	// Perform the request
@@ -286,12 +347,15 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	const std::string &localFile,
 	std::map<std::string, std::string> header)
 {
+	CurlGlobalInitializer::instance();
+
 	auto response = std::make_shared<CurlResponse>();
 	CurlHandle curl;
 
 	if (!curl.isValid())
 	{
-		throw std::runtime_error("Failed to initialize CURL handle");
+		response->text = "Failed to initialize CURL handle";
+		return response;
 	}
 
 	// Open the file for writing
@@ -299,15 +363,19 @@ std::shared_ptr<CurlResponse> RestClient::download(
 
 	// Setup headers
 	CurlHeaderList headers;
+	headers.append(std::string(HTTP_USER_AGENT_HEADER) + ": " + HTTP_USER_AGENT);
 	for (const auto &h : header)
 	{
 		headers.append(h.first + ": " + h.second);
 	}
 
 	// Configure CURL options
-	const std::string url = host + path;
+	const std::string url = (fs::path(host) / path).string();
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
+	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CONNECT_TIMEOUT_SECONDS);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, REQUEST_TIMEOUT_SECONDS * 5);
+	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
 	// Setup the write function and user data
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
@@ -386,6 +454,14 @@ void RestClient::setSslConfig(CURL *curl)
 			curl_easy_setopt(curl, CURLOPT_CAINFO, m_sslConfig.m_ca_location.c_str());
 		}
 	}
+}
+
+const std::string RestClient::urlEncode(CURL *curl, const std::string &value)
+{
+	char *encoded = curl_easy_escape(curl, value.c_str(), static_cast<int>(value.length()));
+	std::string result = encoded ? std::string(encoded) : value;
+	curl_free(encoded);
+	return result;
 }
 
 namespace curlpp

@@ -62,6 +62,7 @@ public:
 			std::string m_keycloakUrl;
 			std::string m_keycloakRealm;
 			std::string m_keycloakClientId;
+			std::string m_keycloakClientSecret;
 		};
 
 		JsonJwt();

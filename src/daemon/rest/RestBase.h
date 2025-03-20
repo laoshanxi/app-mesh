@@ -77,6 +77,8 @@ protected:
         const std::string &keycloakUrl,
         const std::string &realm,
         const std::string &clientId);
+    static const std::string getKeycloakToken(const std::string &keycloakUrl, const std::string &realm, const std::string &userName, const std::string &password, const std::string &totp, int timeout);
+    static const nlohmann::json getKeycloakUser(const std::string &keycloakUrl, const std::string &realm, const std::string &accessToken);
 };
 
 #define REST_INFO_PRINT                       \

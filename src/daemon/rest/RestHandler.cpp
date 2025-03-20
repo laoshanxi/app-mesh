@@ -147,7 +147,7 @@ RestHandler::RestHandler() : PrometheusRest()
 RestHandler::~RestHandler()
 {
 	const static char fname[] = "RestHandler::~RestHandler() ";
-	LOG_INF << fname << "Entered";
+	LOG_INF << fname << "RestHandler destroyed";
 }
 
 void RestHandler::checkAppAccessPermission(const HttpRequest &message, const std::string &appName, bool requestWrite)
@@ -195,7 +195,7 @@ std::string RestHandler::getHttpQueryString(const HttpRequest &message, const st
 	{
 		rt = (querymap.find((key))->second);
 	}
-	LOG_DBG << fname << key << "=" << rt;
+	LOG_DBG << fname << "Query parameter <" << key << "> = <" << rt << ">";
 	return rt;
 }
 
@@ -218,13 +218,13 @@ std::string RestHandler::regexSearch(const std::string &value, const char *expr)
 				{
 					return result;
 				}
-				LOG_WAR << fname << "no data from path :" << value << " for regex expression: " << expr;
-				throw std::invalid_argument("no data from path for regex search");
+				LOG_WAR << fname << "Found empty data from path <" << value << "> for regex expression: <" << expr << ">";
+				throw std::invalid_argument("No data found from path for regex search");
 			}
 		}
 	}
-	LOG_WAR << fname << "failed parse data from path :" << value << " for regex expression: " << expr;
-	throw std::invalid_argument("failed to search data from regex expression");
+	LOG_WAR << fname << "Failed to parse data from path <" << value << "> for regex expression: <" << expr << ">";
+	throw std::invalid_argument("Failed to search data from regex expression");
 }
 
 std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string &value, const char *expr)
@@ -253,8 +253,8 @@ std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string
 			}
 		}
 	}
-	LOG_WAR << fname << "failed parse data from path :" << value << " for regex expression: " << expr;
-	throw std::invalid_argument("failed to search data from regex expression");
+	LOG_WAR << fname << "Failed to parse data pair from path <" << value << "> for regex expression: <" << expr << ">";
+	throw std::invalid_argument("Failed to search data from regex expression");
 }
 
 void RestHandler::apiAppEnable(const HttpRequest &message)
@@ -380,7 +380,8 @@ void RestHandler::apiLabelsView(const HttpRequest &message)
 
 void RestHandler::apiLabelAdd(const HttpRequest &message)
 {
-	permissionCheck(message, PERMISSION_KEY_label_set);
+	const static char fname[] = "RestHandler::apiLabelAdd() ";
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_label_set);
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_ADD);
@@ -393,17 +394,20 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 		Configuration::instance()->getLabel()->addLabel(labelKey, value);
 		Configuration::instance()->saveConfigToDisk();
 
+		LOG_INF << fname << "User <" << tokenUser << "> added label <" << labelKey << ":" << value << ">";
 		message.reply(web::http::status_codes::OK, convertText2Json("Add label success"));
 	}
 	else
 	{
+		LOG_WAR << fname << "User <" << tokenUser << "> attempted to add label without value";
 		message.reply(web::http::status_codes::BadRequest, convertText2Json("query value required"));
 	}
 }
 
 void RestHandler::apiLabelDel(const HttpRequest &message)
 {
-	permissionCheck(message, PERMISSION_KEY_label_delete);
+	const static char fname[] = "RestHandler::apiLabelDel() ";
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_label_delete);
 
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_DELETE);
@@ -411,6 +415,7 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 	Configuration::instance()->getLabel()->delLabel(labelKey);
 	Configuration::instance()->saveConfigToDisk();
 
+	LOG_INF << fname << "User <" << tokenUser << "> deleted label <" << labelKey << ">";
 	message.reply(web::http::status_codes::OK, convertText2Json("Label delete success"));
 }
 
@@ -430,7 +435,9 @@ void RestHandler::apiUserPermissionsView(const HttpRequest &message)
 
 void RestHandler::apiBasicConfigView(const HttpRequest &message)
 {
-	permissionCheck(message, PERMISSION_KEY_config_view);
+	const static char fname[] = "RestHandler::apiBasicConfigView() ";
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_view);
+	LOG_DBG << fname << "User <" << tokenUser << "> viewing configuration";
 
 	auto config = Configuration::instance()->AsJson();
 	message.reply(web::http::status_codes::OK, config);
@@ -438,13 +445,14 @@ void RestHandler::apiBasicConfigView(const HttpRequest &message)
 
 void RestHandler::apiBasicConfigSet(const HttpRequest &message)
 {
-	permissionCheck(message, PERMISSION_KEY_config_set);
+	const static char fname[] = "RestHandler::apiBasicConfigSet() ";
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_set);
 
 	auto json = message.extractJson();
 	Configuration::instance()->hotUpdate(json);
-
 	Configuration::instance()->saveConfigToDisk();
 
+	LOG_INF << fname << "User <" << tokenUser << "> updated configuration";
 	message.reply(web::http::status_codes::OK, Configuration::instance()->AsJson());
 }
 
@@ -503,7 +511,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	Security::instance()->getUserInfo(pathUserName)->lock();
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "User <" << uname << "> locked by " << tokenUser;
+	LOG_INF << fname << "User <" << pathUserName << "> locked by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("Lock user success"));
 }
 
@@ -518,7 +526,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	Security::instance()->getUserInfo(pathUserName)->unlock();
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_INF << fname << "User <" << uname << "> unlocked by " << tokenUser;
+	LOG_INF << fname << "User <" << pathUserName << "> unlocked by " << tokenUser;
 	message.reply(web::http::status_codes::OK, convertText2Json("Unlock user success"));
 }
 
@@ -539,6 +547,16 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 
 void RestHandler::apiUserView(const HttpRequest &message)
 {
+	if (Configuration::instance()->getJwt()->getJwtInterface() == JSON_KEY_USER_key_method_oauth2)
+	{
+		const auto token = getJwtToken(message);
+		message.reply(web::http::status_codes::OK,
+					  getKeycloakUser(
+						  Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakUrl,
+						  Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakRealm,
+						  token));
+		return;
+	}
 	const auto tokenUser = getJwtUserName(message);
 	auto user = Security::instance()->getUserInfo(tokenUser);
 	auto userJson = user->AsJson();
@@ -686,7 +704,22 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
-	if (message.m_headers.count(HTTP_HEADER_JWT_Authorization))
+	if (message.m_headers.count(HTTP_HEADER_JWT_Authorization) == 0)
+	{
+		message.reply(web::http::status_codes::NetworkAuthenticationRequired, convertText2Json("Username or Password missing"));
+		return;
+	}
+
+	if (Configuration::instance()->getJwt()->getJwtInterface() == JSON_KEY_USER_key_method_oauth2)
+	{
+		auto token = getKeycloakToken(
+			Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakUrl,
+			Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakRealm,
+			uname, passwd, totp, timeoutSeconds);
+		message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, "Keyloak", audience, &token));
+		LOG_DBG << fname << "User <" << uname << "> login from Keyloak success";
+	}
+	else
 	{
 		const auto user = Security::instance()->getUserInfo(uname);
 		if (!Security::instance()->verifyUserKey(uname, passwd))
@@ -735,15 +768,13 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 			}
 		}
 	}
-	else
-	{
-		message.reply(web::http::status_codes::NetworkAuthenticationRequired, convertText2Json("Username or Password missing"));
-	}
 }
 
 void RestHandler::apiUserLogoff(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserLogoff() ";
+
+	// TODO: use refresh token to logout from keyloak
 
 	// verify current token
 	const auto verify = verifyToken(getJwtToken(message));
@@ -762,16 +793,23 @@ void RestHandler::apiUserTokenRenew(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserTokenRenew() ";
 
+	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_user_token_renew);
 	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
 	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
 
+	if (Configuration::instance()->getJwt()->getJwtInterface() == JSON_KEY_USER_key_method_oauth2)
+	{
+		// TODO: use refresh_token as claim and do refresh here
+		throw std::invalid_argument("Token renewal is not supported with OAuth2");
+	}
+
 	// verify current token
-	const auto verify = verifyToken(getJwtToken(message));
+	const auto token = getJwtToken(message);
+	const auto verify = verifyToken(token);
 	const auto &uname = std::get<0>(verify);
 	const auto &userGroup = std::get<1>(verify);
 
 	// TODO: limit renew time, consider setup
-	const auto token = getJwtToken(message);
 	const auto decodedToken = decodeJwtToken(token);
 	const auto expireTime = decodedToken.get_expires_at();
 	const auto audience = decodedToken.get_audience().empty() ? HTTP_HEADER_JWT_Audience_appmesh : decodedToken.get_audience().begin()->c_str();
@@ -825,7 +863,7 @@ void RestHandler::apiUserTotpSecret(const HttpRequest &message)
 	// save secret
 	Security::instance()->save(Configuration::instance()->getJwt()->getJwtInterface());
 
-	LOG_DBG << fname << "User <" << uname << "> get TOTP secret";
+	LOG_DBG << fname << "User <" << tokenUser << "> get TOTP secret";
 }
 
 void RestHandler::apiUserTotpSetup(const HttpRequest &message)
@@ -887,7 +925,7 @@ void RestHandler::apiUserTotpDisable(const HttpRequest &message)
 	auto user = Security::instance()->getUserInfo(userName);
 	if (user)
 	{
-		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" || pathUserName != tokenUser))
+		if (user->getName() != JWT_ADMIN_NAME && (pathUserName != "self" && pathUserName != tokenUser))
 		{
 			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
 		}
@@ -960,7 +998,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 			// CASE: new a application and run, client provide command
 			if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command) && !HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_docker_image))
 			{
-				LOG_WAR << fname << "Should specify command to run application: " << clientProvideAppName;
+				LOG_WAR << fname << "Missing required command to run application <" << clientProvideAppName << ">";
 				throw std::invalid_argument("Should specify command to run application");
 			}
 		}
@@ -971,6 +1009,7 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const HttpRequest &m
 		jsonApp[JSON_KEY_APP_name] = Utility::createUUID(); // specify a UUID app name
 		if (!HAS_JSON_FIELD(jsonApp, JSON_KEY_APP_command))
 		{
+			LOG_WAR << fname << "Missing required command field in application JSON";
 			throw std::invalid_argument("Should specify command run application");
 		}
 	}

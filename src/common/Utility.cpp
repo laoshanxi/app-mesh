@@ -1034,7 +1034,19 @@ std::string Utility::prettyJson(const std::string &jsonStr)
 
 std::string Utility::hash(const std::string &str)
 {
-	return std::string("H") + std::to_string(std::hash<std::string>()(str));
+	// FNV-1a hash algorithm - cross platform
+	const uint64_t FNV_prime = 1099511628211ULL;
+	const uint64_t FNV_offset_basis = 14695981039346656037ULL;
+
+	uint64_t hash = FNV_offset_basis;
+
+	for (char c : str)
+	{
+		hash ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+		hash *= FNV_prime;
+	}
+
+	return std::string("H") + std::to_string(hash);
 }
 
 std::string Utility::hashId()

@@ -84,6 +84,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     if (!findRest)
     {
+        LOG_WAR << fname << "Path not found: " << message.m_method << ":" << path;
         message.reply(web::http::status_codes::NotFound, convertText2Json(Utility::stringFormat("Path not found %s:%s", message.m_method.c_str(), path.c_str())));
         return;
     }
@@ -112,20 +113,18 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     catch (const std::underflow_error &e)
     {
-        LOG_WAR << fname << "rest " << path << " authentication failed with error: " << e.what();
+        LOG_WAR << fname << "Authentication failed for path " << path << ": " << e.what();
         message.reply(web::http::status_codes::Unauthorized, convertText2Json(e.what()));
     }
     catch (const std::exception &e)
     {
-        // message.dump();
-        LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
+        LOG_WAR << fname << "Request failed for path " << path << ": " << e.what();
         message.reply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
     }
     catch (...)
     {
-        // message.dump();
-        LOG_WAR << fname << "rest " << path << " failed";
-        message.reply(web::http::status_codes::BadRequest, convertText2Json("unknow exception"));
+        LOG_WAR << fname << "Unknown exception occurred for path " << path;
+        message.reply(web::http::status_codes::BadRequest, convertText2Json("unknown exception"));
     }
 }
 
@@ -235,21 +234,21 @@ const std::string RestBase::generateJwtToken(const std::string &userName, const 
 
 const std::string RestBase::replaceXssRiskChars(const std::string &source)
 {
-    static const std::map<std::string, std::string> xssRiskChars =
-        {{"<", "&lt;"},
-         {">", "&gt;"},
-         {"\\(", "&#40;"},
-         {"\\)", "&#41;"},
-         {"'", "&#39;"},
-         {"\"", "&quot;"},
-         {"%", "&#37;"}};
+    static const std::vector<std::pair<boost::regex, std::string>> xssRiskRegexes = {
+        {boost::regex("<", boost::regex::icase), "&lt;"},
+        {boost::regex(">", boost::regex::icase), "&gt;"},
+        {boost::regex("\\(", boost::regex::icase), "&#40;"},
+        {boost::regex("\\)", boost::regex::icase), "&#41;"},
+        {boost::regex("'", boost::regex::icase), "&#39;"},
+        {boost::regex("\"", boost::regex::icase), "&quot;"},
+        {boost::regex("%", boost::regex::icase), "&#37;"}};
 
     auto result = source;
     if (source.length())
     {
-        for (const auto &kvp : xssRiskChars)
+        for (const auto &regex_pair : xssRiskRegexes)
         {
-            boost::replace_all_regex(result, boost::regex(kvp.first, boost::regex::icase), kvp.second, boost::match_flag_type::match_default);
+            boost::replace_all_regex(result, regex_pair.first, regex_pair.second, boost::match_flag_type::match_default);
         }
     }
     return result;
@@ -276,6 +275,13 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     const static char fname[] = "RestBase::verifyToken() ";
     LOG_DBG << fname << "Verifying token for audience: " << audience;
 
+    // Check if token is blacklisted regardless of authentication method
+    if (TOKEN_BLACK_LIST::instance()->isTokenBlacklisted(token))
+    {
+        LOG_WAR << fname << "Token is blacklisted";
+        throw std::underflow_error("Token has been revoked");
+    }
+
     const auto decodedToken = decodeJwtToken(token);
 
     // Check if we're using OAuth2/Keycloak or internal authentication
@@ -290,13 +296,6 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     }
 
     // Internal token validation flow
-
-    // First check if token is blacklisted
-    if (TOKEN_BLACK_LIST::instance()->isTokenBlacklisted(token))
-    {
-        LOG_WAR << fname << "Token is blacklisted";
-        throw std::underflow_error("Token has been revoked");
-    }
 
     // Verify subject claim exists (contains username)
     if (!decodedToken.has_subject())
@@ -508,10 +507,10 @@ const std::string RestBase::fetchKeycloakPublicKeys(const std::string &keycloakU
 
     try
     {
-        const auto endpoint = "/realms/" + realm + "/protocol/openid-connect/certs";
-        LOG_DBG << fname << "Fetching public keys from " << keycloakUrl << endpoint;
+        const auto path = "/realms/" + realm + "/protocol/openid-connect/certs";
+        LOG_DBG << fname << "Fetching public keys from " << keycloakUrl << path;
 
-        auto response = RestClient::request(keycloakUrl, web::http::methods::GET, endpoint, "", {}, {});
+        auto response = RestClient::request(keycloakUrl, web::http::methods::GET, path, "", {}, {});
         response->raise_for_status();
 
         // Extract the certificate and convert to PEM format
@@ -523,6 +522,68 @@ const std::string RestBase::fetchKeycloakPublicKeys(const std::string &keycloakU
     {
         LOG_ERR << fname << "Failed to fetch Keycloak public keys: " << e.what();
         throw std::runtime_error(Utility::stringFormat("Failed to fetch Keycloak public keys: %s", e.what()));
+    }
+}
+
+const std::string RestBase::getKeycloakToken(const std::string &keycloakUrl, const std::string &realm, const std::string &userName, const std::string &password, const std::string &totp, int timeout)
+{
+    const static char fname[] = "RestBase::getKeycloakToken() ";
+
+    try
+    {
+        const auto path = "/realms/" + realm + "/protocol/openid-connect/token";
+        LOG_DBG << fname << "Get user token from " << keycloakUrl << path;
+
+        std::map<std::string, std::string> formData;
+        formData["client_id"] = Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakClientId;
+        formData["grant_type"] = "password";
+        formData["scope"] = "openid";
+        formData["username"] = userName;
+        formData["password"] = password;
+        if (Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakClientSecret.length())
+            formData["client_secret"] = Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakClientSecret;
+        if (!totp.empty())
+            formData["totp"] = totp;
+        if (timeout)
+            formData["requested_token_lifespan"] = std::to_string(timeout);
+
+        auto response = RestClient::request(keycloakUrl, web::http::methods::POST, path, "", {}, {}, std::move(formData));
+        response->raise_for_status();
+
+        // Extract the tokens
+        auto result = nlohmann::json::parse(response->text);
+        const std::string accessToken = result.at("access_token").get<std::string>();
+        const std::string refreshToken = result.at("refresh_token").get<std::string>();
+        return accessToken;
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERR << fname << "Failed to fetch Keycloak token: " << e.what();
+        throw std::runtime_error(Utility::stringFormat("Failed to fetch Keycloak token: %s", e.what()));
+    }
+}
+
+const nlohmann::json RestBase::getKeycloakUser(const std::string &keycloakUrl, const std::string &realm, const std::string &accessToken)
+{
+    const static char fname[] = "RestBase::getKeycloakUser() ";
+
+    try
+    {
+        const auto path = "/realms/" + realm + "/protocol/openid-connect/userinfo";
+        LOG_DBG << fname << "Get user info from " << keycloakUrl << path;
+
+        std::map<std::string, std::string> headers;
+        headers["Authorization"] = "Bearer " + accessToken;
+
+        auto response = RestClient::request(keycloakUrl, web::http::methods::GET, path, "", std::move(headers), {});
+        response->raise_for_status();
+
+        return nlohmann::json::parse(response->text);
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERR << fname << "Failed to fetch Keycloak user info: " << e.what();
+        throw std::runtime_error(Utility::stringFormat("Failed to fetch Keycloak user info: %s", e.what()));
     }
 }
 
@@ -548,6 +609,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::extr
     else
     {
         LOG_WAR << fname << "No username found in token";
+        throw std::runtime_error("No username could be extracted from the token");
     }
 
     // Extract groups - they can be in different claims based on Keycloak configuration
@@ -579,7 +641,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::extr
         }
     }
 
-    LOG_DBG << fname << "User: " << userName << " Group: " << groupName << " Roles: " << roles.size();
+    LOG_DBG << fname << "Extracted user info - User: " << userName << ", Group: " << groupName << ", Roles: " << roles.size();
     return std::make_tuple(userName, groupName, roles);
 }
 
@@ -624,24 +686,37 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
         }
 
         // Construct issuer URL
-        const std::string issuer = keycloakUrl + "/realms/" + realm;
+        const std::string issuer = (fs::path(keycloakUrl) / "realms" / realm).string();
 
         // Verify the token
         const auto verifier = jwt::verify()
                                   .allow_algorithm(jwt::algorithm::rs256{pem})
-                                  .with_audience("account") // use "acount" or client id, depend on "Direct Access Grants"
+                                  .with_audience("account") // TODO: use "account" or client id, depend on "Direct Access Grants"
                                   .with_issuer(issuer);
 
         verifier.verify(decoded);
 
-        // Additional checks for token expiration
+        // Additional checks for token expiration and not-before time
         auto currentTime = std::chrono::system_clock::now();
         auto exp = decoded.get_payload_claim("exp").as_integer();
         auto expTime = std::chrono::system_clock::from_time_t(exp);
+
         if (currentTime > expTime)
         {
             LOG_WAR << fname << "Token has expired";
             throw std::runtime_error("Token has expired");
+        }
+
+        // Check if token is not yet valid (if nbf claim exists)
+        if (decoded.has_payload_claim("nbf"))
+        {
+            auto nbf = decoded.get_payload_claim("nbf").as_integer();
+            auto nbfTime = std::chrono::system_clock::from_time_t(nbf);
+            if (currentTime < nbfTime)
+            {
+                LOG_WAR << fname << "Token not yet valid";
+                throw std::runtime_error("Token not yet valid");
+            }
         }
 
         // Success - parse user info from token

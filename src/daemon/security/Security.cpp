@@ -132,15 +132,11 @@ nlohmann::json Security::AsJson() const
 bool Security::verifyUserKey(const std::string &userName, const std::string &userKey)
 {
     const static char fname[] = "Security::verifyUserKey() ";
-    auto key = userKey;
-    if (m_securityConfig->m_encryptKey)
-    {
-        key = Utility::hash(userKey);
-    }
+
     auto user = this->getUserInfo(userName);
     if (user)
     {
-        if (user->getKey() != key)
+        if (!user->verifyKey(userKey))
             return false;
         if (user->locked())
             return false;

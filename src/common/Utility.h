@@ -127,7 +127,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
 #define JWT_ADMIN_NAME "admin"
-#define APPMESH_PASSWD_MIN_LENGTH 8
+#define APPMESH_PASSWD_MIN_LENGTH 6
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 
@@ -291,6 +291,7 @@ public:
 #define JSON_KEY_JWT_Keycloak_URL "AuthServerUrl"
 #define JSON_KEY_JWT_Keycloak_Realm "Realm"
 #define JSON_KEY_JWT_Keycloak_ClientID "ClientID"
+#define JSON_KEY_JWT_Keycloak_ClientSecret "ClientSecret"
 
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
@@ -455,6 +456,7 @@ public:
 #define PERMISSION_KEY_delete_user "user-delete"
 #define PERMISSION_KEY_user_totp_disable "user-totp-disable"
 #define PERMISSION_KEY_user_totp_active "user-totp-active"
+#define PERMISSION_KEY_user_token_renew "user-token-renew"
 #define PERMISSION_KEY_get_users "user-list"
 #define PERMISSION_KEY_role_update "role-set"
 #define PERMISSION_KEY_role_delete "role-delete"

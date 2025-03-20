@@ -967,6 +967,7 @@ nlohmann::json Configuration::JsonJwt::JsonKeycloak::AsJson() const
 	result[JSON_KEY_JWT_Keycloak_URL] = std::string(m_keycloakUrl);
 	result[JSON_KEY_JWT_Keycloak_Realm] = std::string(m_keycloakRealm);
 	result[JSON_KEY_JWT_Keycloak_ClientID] = std::string(m_keycloakClientId);
+	result[JSON_KEY_JWT_Keycloak_ClientSecret] = std::string(m_keycloakClientSecret);
 	return result;
 }
 
@@ -976,6 +977,7 @@ std::shared_ptr<Configuration::JsonJwt::JsonKeycloak> Configuration::JsonJwt::Js
 	keycloak->m_keycloakUrl = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_URL);
 	keycloak->m_keycloakRealm = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_Realm);
 	keycloak->m_keycloakClientId = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_ClientID);
+	keycloak->m_keycloakClientSecret = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_JWT_Keycloak_ClientSecret);
 	return keycloak;
 }
 
@@ -1017,9 +1019,6 @@ std::shared_ptr<Configuration::JsonJwt> Configuration::JsonJwt::FromJson(const n
 	else
 	{
 		security->m_jwtKeycloak = std::make_shared<Configuration::JsonJwt::JsonKeycloak>();
-		security->m_jwtKeycloak->m_keycloakUrl = "http://localhost:8080";
-		security->m_jwtKeycloak->m_keycloakRealm = "appmesh-realm";
-		security->m_jwtKeycloak->m_keycloakClientId = "appmesh-client";
 	}
 
 	security->m_jwtInterface = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_SECURITY_Interface);

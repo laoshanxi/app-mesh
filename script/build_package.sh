@@ -124,6 +124,13 @@ handle_macos_specifics() {
                 [[ -f "$lib" ]] && cp "$lib" "${PACKAGE_HOME}/lib64/"
             done
 
+        # Handle libicu dependency (required by libboost_regex)
+        $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_regex | eval $LIBRARY_EXTRACTOR |
+            xargs $LIBRARY_INSPECTOR | grep "libicu" | eval $LIBRARY_EXTRACTOR |
+            while read -r lib; do
+                [[ -f "$lib" ]] && cp "$lib" "${PACKAGE_HOME}/lib64/"
+            done
+
         # Handle boost_atomic dependency (required by libboost_filesystem)
         local boost_filesystem=$($LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_filesystem | eval $LIBRARY_EXTRACTOR)
         local boost_atomic="$(dirname "$boost_filesystem")/libboost_atomic.dylib"

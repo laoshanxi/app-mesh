@@ -75,6 +75,9 @@ REST:
       # Keycloak client ID for OAuth2 authentication.
       ClientID: "appmesh-client"
 
+      # Keycloak client secret for OAuth2 authentication.
+      ClientSecret: "V87QbGeDJ4RCtzL8VNG4DTzsavZZENAx"
+
   SSL:
     # Path to the Certificate Authority (CA) certificate.
     SSLCaPath: ssl/ca.pem
