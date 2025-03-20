@@ -1,0 +1,6 @@
+---
+Keycloak:
+  auth_server_url: http://localhost:8080
+  realm: appmesh-realm
+  client_id: appmesh-client
+  client_secret: V87QbGeDJ4RCtzL8VNG4DTzsavZZENAx

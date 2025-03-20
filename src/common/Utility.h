@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <typeinfo>
 #include <vector>
 
 #include <boost/filesystem.hpp>
@@ -17,6 +18,13 @@
 namespace fs = boost::filesystem;
 
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
+
+template <typename TargetType, typename SourceType>
+std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<SourceType> &ptr)
+{
+	auto result = std::dynamic_pointer_cast<TargetType>(ptr);
+	return result;
+}
 
 #define LOG_DBG log4cpp::Category::getRoot() << log4cpp::Priority::DEBUG
 #define LOG_INF log4cpp::Category::getRoot() << log4cpp::Priority::INFO
@@ -104,6 +112,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_SECURITY_YAML_FILE "security.yaml"
 #define APPMESH_SECURITY_LDAP_YAML_FILE "ldap.yaml"
 #define APPMESH_CONSUL_API_CONFIG_FILE "consul.yaml"
+#define APPMESH_OAUTH2_CONFIG_FILE "oauth2.yaml"
 #define APPMESH_APPMG_INIT_FLAG_FILE ".appmginit"
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"
@@ -127,7 +136,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define JWT_USER_KEY "mesh123"
 #define JWT_USER_NAME "mesh"
 #define JWT_ADMIN_NAME "admin"
-#define APPMESH_PASSWD_MIN_LENGTH 8
+#define APPMESH_PASSWD_MIN_LENGTH 6
 #define DEFAULT_HEALTH_CHECK_INTERVAL 10
 #define MAX_COMMAND_LINE_LENGTH 2048
 
@@ -224,14 +233,17 @@ public:
 
 	static const std::string readStdin2End();
 	static std::string escapeCommandLine(const std::string &input);
+	static std::string maskSecret(const std::string &secret, size_t visibleChars = 2, const std::string &mask = "***");
 };
 
 #ifdef __linux__
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 #elif defined(__APPLE__)
 #define ENV_LD_LIBRARY_PATH "DYLD_LIBRARY_PATH"
+#elif defined(_WIN32) || defined(_WIN64)
+#define ENV_LD_LIBRARY_PATH "PATH"
 #else
-#error "Unsupported platform"
+#define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH" // Default to Linux style for other platforms
 #endif
 #define PID_FILE "appmesh.pid"
 #define ENV_APPMESH_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
@@ -288,9 +300,10 @@ public:
 #define JSON_KEY_JWTAudience "Audience"
 #define JSON_KEY_SECURITY_Interface "SecurityInterface"
 #define JSON_KEY_JWT_Keycloak "Keycloak"
-#define JSON_KEY_JWT_Keycloak_URL "AuthServerUrl"
-#define JSON_KEY_JWT_Keycloak_Realm "Realm"
-#define JSON_KEY_JWT_Keycloak_ClientID "ClientID"
+#define JSON_KEY_JWT_Keycloak_URL "auth_server_url"
+#define JSON_KEY_JWT_Keycloak_Realm "realm"
+#define JSON_KEY_JWT_Keycloak_ClientID "client_id"
+#define JSON_KEY_JWT_Keycloak_ClientSecret "client_secret"
 
 #define JSON_KEY_HttpThreadPoolSize "HttpThreadPoolSize"
 #define JSON_KEY_Roles "Roles"
@@ -455,6 +468,7 @@ public:
 #define PERMISSION_KEY_delete_user "user-delete"
 #define PERMISSION_KEY_user_totp_disable "user-totp-disable"
 #define PERMISSION_KEY_user_totp_active "user-totp-active"
+#define PERMISSION_KEY_user_token_renew "user-token-renew"
 #define PERMISSION_KEY_get_users "user-list"
 #define PERMISSION_KEY_role_update "role-set"
 #define PERMISSION_KEY_role_delete "role-delete"

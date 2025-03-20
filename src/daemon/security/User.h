@@ -40,6 +40,7 @@ public:
 	bool locked() const;
 	bool mfaEnabled() const;
 	const std::string &getKey();
+	bool verifyKey(const std::string &key);
 	const std::string &getMfaKey();
 	const std::string getExecUserOverride() const;
 	const std::string &getExecUser() const
@@ -106,7 +107,7 @@ private:
 struct JsonSecurity
 {
 	JsonSecurity();
-	static std::shared_ptr<JsonSecurity> FromJson(const nlohmann::json &jsonObj);
+	static std::shared_ptr<JsonSecurity> FromJson(nlohmann::json &jsonObj);
 	nlohmann::json AsJson();
 
 	bool m_encryptKey;

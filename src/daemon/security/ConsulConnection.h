@@ -21,7 +21,7 @@ struct CurlResponse;
 struct JsonConsul
 {
 	JsonConsul();
-	static std::shared_ptr<JsonConsul> FromJson(const nlohmann::json &jsonObj);
+	static std::shared_ptr<JsonConsul> FromJson(nlohmann::json &jsonObj);
 	nlohmann::json AsJson() const;
 
 	bool enable;
@@ -46,7 +46,7 @@ public:
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection> &instance();
 	void initialize();
-	void saveSecurity();
+	void saveSecurity(const nlohmann::json &content);
 	nlohmann::json fetchSecurityJson();
 
 private:

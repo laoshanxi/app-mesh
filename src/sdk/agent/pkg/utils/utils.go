@@ -133,3 +133,25 @@ func SaveStreamToFile(src io.Reader, filePath string) error {
 
 	return nil
 }
+
+// MaskSecret masks the input secret, keeping `visibleChars` at the beginning and end, replacing the middle with `mask`.
+// Defaults: visibleChars = 2, mask = "***".
+func MaskSecret(secret string, visibleChars int, mask string) string {
+	// Handle invalid input
+	if visibleChars < 0 {
+		visibleChars = 0
+	}
+
+	length := len(secret)
+
+	if length <= visibleChars*2 {
+		return "***"
+	}
+
+	result := make([]byte, 0, visibleChars*2+len(mask))
+	result = append(result, secret[:visibleChars]...)
+	result = append(result, mask...)
+	result = append(result, secret[length-visibleChars:]...)
+
+	return string(result)
+}

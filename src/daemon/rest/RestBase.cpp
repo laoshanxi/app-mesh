@@ -1,13 +1,12 @@
 #include <functional>
 
 #include <boost/algorithm/string_regex.hpp>
-#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 
-#include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "../security/Security.h"
+#include "../security/SecurityKeycloak.h"
 #include "../security/TokenBlacklist.h"
 #include "HttpRequest.h"
 #include "RestBase.h"
@@ -84,6 +83,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     if (!findRest)
     {
+        LOG_WAR << fname << "Path not found: " << message.m_method << ":" << path;
         message.reply(web::http::status_codes::NotFound, convertText2Json(Utility::stringFormat("Path not found %s:%s", message.m_method.c_str(), path.c_str())));
         return;
     }
@@ -112,20 +112,18 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     }
     catch (const std::underflow_error &e)
     {
-        LOG_WAR << fname << "rest " << path << " authentication failed with error: " << e.what();
+        LOG_WAR << fname << "Authentication failed for path " << path << ": " << e.what();
         message.reply(web::http::status_codes::Unauthorized, convertText2Json(e.what()));
     }
     catch (const std::exception &e)
     {
-        // message.dump();
-        LOG_WAR << fname << "rest " << path << " failed with error: " << e.what();
+        LOG_WAR << fname << "Request failed for path " << path << ": " << e.what();
         message.reply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
     }
     catch (...)
     {
-        // message.dump();
-        LOG_WAR << fname << "rest " << path << " failed";
-        message.reply(web::http::status_codes::BadRequest, convertText2Json("unknow exception"));
+        LOG_WAR << fname << "Unknown exception occurred for path " << path;
+        message.reply(web::http::status_codes::BadRequest, convertText2Json("unknown exception"));
     }
 }
 
@@ -235,21 +233,21 @@ const std::string RestBase::generateJwtToken(const std::string &userName, const 
 
 const std::string RestBase::replaceXssRiskChars(const std::string &source)
 {
-    static const std::map<std::string, std::string> xssRiskChars =
-        {{"<", "&lt;"},
-         {">", "&gt;"},
-         {"\\(", "&#40;"},
-         {"\\)", "&#41;"},
-         {"'", "&#39;"},
-         {"\"", "&quot;"},
-         {"%", "&#37;"}};
+    static const std::vector<std::pair<boost::regex, std::string>> xssRiskRegexes = {
+        {boost::regex("<", boost::regex::icase), "&lt;"},
+        {boost::regex(">", boost::regex::icase), "&gt;"},
+        {boost::regex("\\(", boost::regex::icase), "&#40;"},
+        {boost::regex("\\)", boost::regex::icase), "&#41;"},
+        {boost::regex("'", boost::regex::icase), "&#39;"},
+        {boost::regex("\"", boost::regex::icase), "&quot;"},
+        {boost::regex("%", boost::regex::icase), "&#37;"}};
 
     auto result = source;
     if (source.length())
     {
-        for (const auto &kvp : xssRiskChars)
+        for (const auto &regex_pair : xssRiskRegexes)
         {
-            boost::replace_all_regex(result, boost::regex(kvp.first, boost::regex::icase), kvp.second, boost::match_flag_type::match_default);
+            boost::replace_all_regex(result, regex_pair.first, regex_pair.second, boost::match_flag_type::match_default);
         }
     }
     return result;
@@ -276,26 +274,20 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     const static char fname[] = "RestBase::verifyToken() ";
     LOG_DBG << fname << "Verifying token for audience: " << audience;
 
-    const auto decodedToken = decodeJwtToken(token);
-
-    // Check if we're using OAuth2/Keycloak or internal authentication
-    if (Configuration::instance()->getJwt()->getJwtInterface() == JSON_KEY_USER_key_method_oauth2)
-    {
-        // For OAuth2/Keycloak tokens, delegate to the Keycloak verification method
-        return verifyKeycloakToken(
-            decodedToken,
-            Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakUrl,
-            Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakRealm,
-            Configuration::instance()->getJwt()->m_jwtKeycloak->m_keycloakClientId);
-    }
-
-    // Internal token validation flow
-
-    // First check if token is blacklisted
+    // Check if token is blacklisted regardless of authentication method
     if (TOKEN_BLACK_LIST::instance()->isTokenBlacklisted(token))
     {
         LOG_WAR << fname << "Token is blacklisted";
         throw std::underflow_error("Token has been revoked");
+    }
+
+    const auto decodedToken = decodeJwtToken(token);
+
+    // Check if we're using OAuth2/Keycloak or internal authentication
+    if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
+    {
+        // For OAuth2/Keycloak tokens, delegate to the Keycloak verification method
+        return keycloak->verifyKeycloakToken(decodedToken);
     }
 
     // Verify subject claim exists (contains username)
@@ -391,9 +383,9 @@ const std::string RestBase::getJwtUserName(const HttpRequest &message)
 {
     const auto decodedToken = decodeJwtToken(getJwtToken(message));
 
-    if (Configuration::instance()->getJwt()->getJwtInterface() == JSON_KEY_USER_key_method_oauth2)
+    if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
     {
-        return std::get<0>(this->extractUserInfo(decodedToken));
+        return std::get<0>(keycloak->extractUserInfo(decodedToken));
     }
 
     if (decodedToken.has_subject())
@@ -438,7 +430,7 @@ const std::string RestBase::permissionCheck(const HttpRequest &message, const st
     if (!permission.empty())
     {
         std::set<std::string> userPermissions;
-        if (Configuration::instance()->getJwt()->getJwtInterface() == JSON_KEY_USER_key_method_oauth2)
+        if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
         {
             // For OAuth2(Keycloak): extract permissions from roles in the token
             const auto &userRoles = std::get<2>(tokenValidationResult);
@@ -469,188 +461,4 @@ const std::string RestBase::permissionCheck(const HttpRequest &message, const st
 
     LOG_DBG << fname << "Authentication successful for client: " << message.m_remote_address << ", user: " << userName << ", permission: " << (permission.empty() ? "none" : permission);
     return userName;
-}
-
-const std::string RestBase::formatCertificateToPem(const std::string &cert_base64)
-{
-    std::string cert_pem = "-----BEGIN CERTIFICATE-----\n";
-    cert_pem += cert_base64;
-    cert_pem += "\n-----END CERTIFICATE-----";
-    return cert_pem;
-}
-
-const std::string RestBase::extractCertificate(const std::string &keysJson, const std::string &kid)
-{
-    const static char fname[] = "RestBase::extractCertificate() ";
-    try
-    {
-        nlohmann::json j = nlohmann::json::parse(keysJson);
-        for (const auto &key : j["keys"])
-        {
-            if (key["kid"] == kid)
-            {
-                return key["x5c"][0];
-            }
-        }
-        LOG_WAR << fname << "Key ID not found: " << kid;
-        throw std::runtime_error(Utility::stringFormat("Key ID <%s> not found", kid.c_str()));
-    }
-    catch (const nlohmann::json::exception &e)
-    {
-        LOG_ERR << fname << "JSON parsing error: " << e.what();
-        throw std::runtime_error(Utility::stringFormat("Failed to parse keys JSON: %s", e.what()));
-    }
-}
-
-const std::string RestBase::fetchKeycloakPublicKeys(const std::string &keycloakUrl, const std::string &realm, const std::string &kid)
-{
-    const static char fname[] = "RestBase::fetchKeycloakPublicKeys() ";
-
-    try
-    {
-        const auto endpoint = "/realms/" + realm + "/protocol/openid-connect/certs";
-        LOG_DBG << fname << "Fetching public keys from " << keycloakUrl << endpoint;
-
-        auto response = RestClient::request(keycloakUrl, web::http::methods::GET, endpoint, "", {}, {});
-        response->raise_for_status();
-
-        // Extract the certificate and convert to PEM format
-        const std::string cert_base64 = extractCertificate(response->text, kid);
-        const std::string pem = formatCertificateToPem(cert_base64);
-        return pem;
-    }
-    catch (const std::exception &e)
-    {
-        LOG_ERR << fname << "Failed to fetch Keycloak public keys: " << e.what();
-        throw std::runtime_error(Utility::stringFormat("Failed to fetch Keycloak public keys: %s", e.what()));
-    }
-}
-
-const std::tuple<std::string, std::string, std::set<std::string>> RestBase::extractUserInfo(const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded)
-{
-    const static char fname[] = "RestBase::extractUserInfo() ";
-    std::string userName, groupName;
-    std::set<std::string> roles;
-
-    // Extract username - could be in different claims depending on Keycloak configuration
-    if (decoded.has_payload_claim("preferred_username"))
-    {
-        userName = decoded.get_payload_claim("preferred_username").as_string();
-    }
-    else if (decoded.has_payload_claim("username"))
-    {
-        userName = decoded.get_payload_claim("username").as_string();
-    }
-    else if (decoded.has_payload_claim("sub"))
-    {
-        userName = decoded.get_payload_claim("sub").as_string();
-    }
-    else
-    {
-        LOG_WAR << fname << "No username found in token";
-    }
-
-    // Extract groups - they can be in different claims based on Keycloak configuration
-    if (decoded.has_payload_claim("groups"))
-    {
-        auto groups = decoded.get_payload_claim("groups");
-        if (groups.get_type() == jwt::json::type::array && !groups.as_array().empty())
-        {
-            // Just use the first group for now
-            groupName = groups.as_array()[0].get<std::string>();
-        }
-    }
-
-    // Extract roles from resource_access
-    if (decoded.has_payload_claim("resource_access"))
-    {
-        auto resource_access = decoded.get_payload_claim("resource_access").to_json();
-        for (const auto &item : resource_access.items())
-        {
-            const auto &client_data = item.value();
-            if (client_data.contains("roles") && client_data["roles"].is_array())
-            {
-                for (const auto &role : client_data["roles"])
-                {
-                    // Add client-prefixed role for better context
-                    roles.insert(role.get<std::string>());
-                }
-            }
-        }
-    }
-
-    LOG_DBG << fname << "User: " << userName << " Group: " << groupName << " Roles: " << roles.size();
-    return std::make_tuple(userName, groupName, roles);
-}
-
-// Main function to verify a Keycloak token
-const std::tuple<std::string, std::string, std::set<std::string>> RestBase::verifyKeycloakToken(
-    const jwt::decoded_jwt<jwt::traits::nlohmann_json> &decoded,
-    const std::string &keycloakUrl,
-    const std::string &realm,
-    const std::string &clientId)
-{
-    const static char fname[] = "RestBase::verifyKeycloakToken() ";
-
-    try
-    {
-        LOG_DBG << fname << "Verifying token for realm: " << realm;
-
-        // Get the key ID from the token header
-        std::string kid = decoded.get_header_claim("kid").as_string();
-        LOG_DBG << fname << "Token key ID: " << kid;
-
-        // Fetch Keycloak public keys
-        // Use a static mutex for thread safety and static map to cache keys
-        static std::mutex keysLock;
-        static std::unordered_map<std::string, std::string> keyCache;
-
-        std::string pem;
-        {
-            // Thread-safe access to the key cache
-            std::lock_guard<std::mutex> lock(keysLock);
-            auto it = keyCache.find(kid);
-            if (it != keyCache.end())
-            {
-                LOG_DBG << fname << "Using cached public key for kid: " << kid;
-                pem = it->second;
-            }
-            else
-            {
-                LOG_DBG << fname << "Fetching new public key for kid: " << kid;
-                pem = fetchKeycloakPublicKeys(keycloakUrl, realm, kid);
-                keyCache[kid] = pem;
-            }
-        }
-
-        // Construct issuer URL
-        const std::string issuer = keycloakUrl + "/realms/" + realm;
-
-        // Verify the token
-        const auto verifier = jwt::verify()
-                                  .allow_algorithm(jwt::algorithm::rs256{pem})
-                                  .with_audience("account") // use "acount" or client id, depend on "Direct Access Grants"
-                                  .with_issuer(issuer);
-
-        verifier.verify(decoded);
-
-        // Additional checks for token expiration
-        auto currentTime = std::chrono::system_clock::now();
-        auto exp = decoded.get_payload_claim("exp").as_integer();
-        auto expTime = std::chrono::system_clock::from_time_t(exp);
-        if (currentTime > expTime)
-        {
-            LOG_WAR << fname << "Token has expired";
-            throw std::runtime_error("Token has expired");
-        }
-
-        // Success - parse user info from token
-        LOG_DBG << fname << "Token verification successful";
-        return extractUserInfo(decoded);
-    }
-    catch (const std::exception &e)
-    {
-        LOG_WAR << fname << "Token verification failed: " << e.what();
-        throw std::runtime_error(Utility::stringFormat("Token verification failed: %s", e.what()));
-    }
 }

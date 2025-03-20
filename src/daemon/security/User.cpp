@@ -340,6 +340,16 @@ const std::string &User::getKey()
 	return m_key;
 }
 
+bool User::verifyKey(const std::string &key)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (Security::instance()->encryptKey())
+	{
+		return m_key == Utility::hash(key);
+	}
+	return m_key == key;
+}
+
 const std::string &User::getMfaKey()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -490,8 +500,11 @@ JsonSecurity::JsonSecurity()
 	m_users = std::make_shared<Users>();
 }
 
-std::shared_ptr<JsonSecurity> JsonSecurity::FromJson(const nlohmann::json &jsonValue)
+std::shared_ptr<JsonSecurity> JsonSecurity::FromJson(nlohmann::json &jsonValue)
 {
+	// Accept ENV override
+	Configuration::overrideConfigWithEnv(jsonValue);
+
 	auto security = std::make_shared<JsonSecurity>();
 	// Roles
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Roles))

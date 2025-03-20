@@ -30,42 +30,11 @@ type Config struct {
 var (
 	consulClient *consulapi.Client
 	consulMutex  sync.Mutex // Mutex to protect the consul client
-	viperWatch   = viper.New()
 )
 
 func init() {
-	initConfig()
-}
-
-func initConfig() {
-	viperWatch.SetConfigName("consul") // Name of the config file (without extension)
-	viperWatch.SetConfigType("yaml")   // Config file type
-
-	if !config.IsAgentProdEnv() {
-		viperWatch.AddConfigPath(".") // Path to look for the config file in, for debug test
-	}
-	viperWatch.AddConfigPath(filepath.Join(config.GetAppMeshHomeDir(), "work/config/")) // Path to look for the config file in
-	viperWatch.AddConfigPath(config.GetAppMeshHomeDir())                                // Path to look for the config file in
-
-	if err := viperWatch.ReadInConfig(); err != nil {
-		logger.Warnf("failed to read consul.yaml: %v", err)
-	} else {
-		/*
-			// Watch for changes to the config file
-			viperWatch.WatchConfig()
-			// Define what happens when the config changes
-			viperWatch.OnConfigChange(func(e fsnotify.Event) {
-				logger.Infof("Config file changed: %s", e.Name)
-				// Here you can handle what to do with the new configuration
-				if err := newConsulClient(); err != nil {
-					logger.Warnf("failed to reload Consul client after config change: %v", err)
-					setConsul(nil)
-				}
-			})
-		*/
-		if err := newConsulClient(); err != nil {
-			logger.Warnf("failed to create Consul client: %v", err)
-		}
+	if err := newConsulClient(); err != nil {
+		logger.Warnf("failed to create Consul client: %v", err)
 	}
 }
 
@@ -74,8 +43,6 @@ func newConsulClient() error {
 	if err != nil {
 		return fmt.Errorf("failed to read Consul config: %v", err)
 	}
-
-	config.ApplyEnvConfig(cfg)
 
 	client, err := consulapi.NewClient(cfg)
 	if err != nil {
@@ -100,10 +67,28 @@ func setConsul(client *consulapi.Client) {
 }
 
 func readConsulConfig() (*consulapi.Config, error) {
+	viperConfig := viper.New()
+	viperConfig.SetConfigName("consul") // Name of the config file (without extension)
+	viperConfig.SetConfigType("yaml")   // Config file type
+
+	if !config.IsAgentProdEnv() {
+		viperConfig.AddConfigPath(".") // Path to look for the config file in, for debug test
+	}
+	viperConfig.AddConfigPath(filepath.Join(config.GetAppMeshHomeDir(), "work/config/")) // Path to look for the config file in
+	viperConfig.AddConfigPath(config.GetAppMeshHomeDir())                                // Path to look for the config file in
+
+	// Read YAML file
+	if err := viperConfig.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Override config with environment variables
+	config.OverrideConfigWithEnv(viperConfig)
+
+	// Unmarshal into struct
 	var consulConfig Config
-	// Unmarshal YAML and ENV into consulConfig struct
-	if err := viperWatch.Unmarshal(&consulConfig); err != nil {
-		return nil, fmt.Errorf("unable to decode into config struct: %v", err)
+	if err := viperConfig.Unmarshal(&consulConfig); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	if consulConfig.Consul.Enable {

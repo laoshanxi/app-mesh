@@ -53,17 +53,6 @@ public:
 
 	struct JsonJwt
 	{
-		struct JsonKeycloak
-		{
-			JsonKeycloak();
-			static std::shared_ptr<JsonKeycloak> FromJson(const nlohmann::json &jsonObj);
-			nlohmann::json AsJson() const;
-
-			std::string m_keycloakUrl;
-			std::string m_keycloakRealm;
-			std::string m_keycloakClientId;
-		};
-
 		JsonJwt();
 		static std::shared_ptr<JsonJwt> FromJson(const nlohmann::json &jsonObj);
 		nlohmann::json AsJson() const;
@@ -73,7 +62,6 @@ public:
 		std::string m_jwtAlgorithm;
 		std::string m_jwtIssuer;
 		std::set<std::string> m_jwtAudience;
-		std::shared_ptr<JsonKeycloak> m_jwtKeycloak;
 		std::string m_jwtInterface;
 	};
 
@@ -106,7 +94,7 @@ public:
 	void loadApps(const boost::filesystem::path &appDir);
 	void saveConfigToDisk();
 	void hotUpdate(nlohmann::json &config);
-	static bool readConfigFromEnv(nlohmann::json &jsonConfig);
+	static bool overrideConfigWithEnv(nlohmann::json &jsonConfig);
 	static bool applyEnvConfig(nlohmann::json &jsonValue, std::string envValue);
 	void registerPrometheus();
 	bool prometheusEnabled() const;

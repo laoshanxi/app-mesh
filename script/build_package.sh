@@ -96,6 +96,7 @@ copy_configuration_files() {
         "src/daemon/config.yaml"
         "src/daemon/security/security.yaml"
         "src/daemon/security/ldapplugin/ldap.yaml"
+        "src/daemon/security/oauth2.yaml"
         "src/sdk/agent/pkg/cloud/consul.yaml"
     )
     for file in "${config_files[@]}"; do
@@ -120,6 +121,13 @@ handle_macos_specifics() {
         # Handle openldap dependency (required by curl)
         $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appsvc" | grep curl | eval $LIBRARY_EXTRACTOR |
             xargs $LIBRARY_INSPECTOR | grep "openldap" | eval $LIBRARY_EXTRACTOR |
+            while read -r lib; do
+                [[ -f "$lib" ]] && cp "$lib" "${PACKAGE_HOME}/lib64/"
+            done
+
+        # Handle libicu dependency (required by libboost_regex)
+        $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_regex | eval $LIBRARY_EXTRACTOR |
+            xargs $LIBRARY_INSPECTOR | grep "libicu" | eval $LIBRARY_EXTRACTOR |
             while read -r lib; do
                 [[ -f "$lib" ]] && cp "$lib" "${PACKAGE_HOME}/lib64/"
             done

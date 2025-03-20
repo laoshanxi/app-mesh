@@ -65,16 +65,6 @@ REST:
     # Authentication type to use [local/ldap/consul/oauth2].
     SecurityInterface: local
 
-    Keycloak:
-      # Keycloak URL for OAuth2 authentication.
-      AuthServerUrl: "http://localhost:8080"
-
-      # Keycloak realm for OAuth2 authentication.
-      Realm: "appmesh-realm"
-
-      # Keycloak client ID for OAuth2 authentication.
-      ClientID: "appmesh-client"
-
   SSL:
     # Path to the Certificate Authority (CA) certificate.
     SSLCaPath: ssl/ca.pem
