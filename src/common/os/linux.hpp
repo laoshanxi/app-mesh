@@ -142,16 +142,18 @@ namespace os
 #ifdef __linux__
 			static const long ticks_per_second = sysconf(_SC_CLK_TCK);
 			// Read system uptime from /proc/uptime
-			static double uptime_seconds = 0;
-			static std::atomic_flag flag = ATOMIC_FLAG_INIT;
-			if (!flag.test_and_set(std::memory_order_acquire))
-			{
+			static std::atomic<double> uptime_seconds{0.0};
+			static std::once_flag init_flag;
+			std::call_once(init_flag, []()
+						   {
 				std::ifstream uptime_file("/proc/uptime");
 				if (uptime_file)
-				{
-					uptime_file >> uptime_seconds;
-				}
-			}
+				 {
+					double temp_uptime = 0.0;
+					uptime_file >> temp_uptime;
+					uptime_seconds.store(temp_uptime);
+				} });
+
 			// Calculate system boot time in seconds
 			time_t system_boot_time = time(nullptr) - static_cast<time_t>(uptime_seconds);
 			// Calculate start time since system boot in seconds + boot time
@@ -1187,6 +1189,11 @@ namespace os
 		{
 			LOG_WAR << fname << "Invalid shorthand mode value <" << mode << "> for chmod <" << path << ">";
 			return false;
+		}
+
+		if (mode == 0)
+		{
+			LOG_WAR << fname << "Warning: mode 0 will remove all permissions for path <" << path << ">";
 		}
 
 		// Convert shorthand mode (e.g., 755) to octal mode (e.g., 0755)

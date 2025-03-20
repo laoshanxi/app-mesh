@@ -4,59 +4,38 @@
 #include "../../../common/Utility.h"
 #include "../../Configuration.h"
 #include "LdapGroup.h"
-#include "LdapImpl.h"
+#include "SecurityLDAP.h"
 
 //////////////////////////////////////////////////////////////////////
 /// LDAP wrapper
 //////////////////////////////////////////////////////////////////////
-LdapImpl::LdapImpl(std::shared_ptr<JsonLdap> ldap)
-    : Security(nullptr), m_ldap(ldap), m_syncTimerId(INVALID_TIMER_ID)
+SecurityLDAP::SecurityLDAP() : m_syncTimerId(INVALID_TIMER_ID)
 {
+    m_ldap = std::make_shared<JsonLdap>();
 }
 
-LdapImpl::~LdapImpl()
+void SecurityLDAP::init()
 {
-}
-
-void LdapImpl::init(const std::string &interface)
-{
-    const static char fname[] = "LdapImpl::init() ";
+    const static char fname[] = "SecurityLDAP::init() ";
     LOG_DBG << fname;
 
-    if (interface == JSON_KEY_USER_key_method_ldap)
-    {
-        const auto securityYamlFile = Utility::getConfigFilePath(APPMESH_SECURITY_LDAP_YAML_FILE);
-        const auto security = LdapImpl::FromJson(Utility::yamlToJson(YAML::LoadFile(securityYamlFile)));
-        Security::instance(security);
+    const auto securityYamlFile = Utility::getConfigFilePath(APPMESH_SECURITY_LDAP_YAML_FILE);
+    m_ldap = JsonLdap::FromJson(Utility::yamlToJson(YAML::LoadFile(securityYamlFile)));
 
-        security->syncGroupUsers();
-    }
-    else
-    {
-        throw std::invalid_argument("not supported security plugin");
-    }
+    LOG_DBG << fname << "LDAP URI: " << m_ldap->m_ldapUri;
+    LOG_DBG << fname << "LDAP Admin: " << m_ldap->m_ldapAdmin;
+    LOG_DBG << fname << "LDAP Admin Password: " << Utility::maskSecret(m_ldap->m_ldapAdminPwd);
+    LOG_DBG << fname << "LDAP Sync Period: " << m_ldap->m_syncSeconds;
+
+    this->syncGroupUsers();
+
+    LOG_DBG << fname << "LDAP Sync Groups: " << m_ldap->m_groups->getGroups().size();
+    LOG_DBG << fname << "LDAP Sync Roles: " << m_ldap->m_roles->getRoles().size();
 }
 
-nlohmann::json LdapImpl::AsJson() const
+std::shared_ptr<User> SecurityLDAP::getUserInfo(const std::string &userName)
 {
-    const static char fname[] = "LdapImpl::AsJson() ";
-    LOG_DBG << fname;
-
-    return this->m_ldap->AsJson();
-}
-
-std::shared_ptr<LdapImpl> LdapImpl::FromJson(const nlohmann::json &obj) noexcept(false)
-{
-    const static char fname[] = "LdapImpl::FromJson() ";
-    LOG_DBG << fname;
-
-    std::shared_ptr<LdapImpl> security(new LdapImpl(JsonLdap::FromJson(obj)));
-    return security;
-}
-
-std::shared_ptr<User> LdapImpl::getUserInfo(const std::string &userName)
-{
-    const static char fname[] = "LdapImpl::getUserInfo() ";
+    const static char fname[] = "SecurityLDAP::getUserInfo() ";
 
     auto groups = this->m_ldap->m_groups->getGroups();
     for (const auto &group : groups)
@@ -71,7 +50,7 @@ std::shared_ptr<User> LdapImpl::getUserInfo(const std::string &userName)
     throw std::invalid_argument("No such user in LDAP");
 }
 
-std::set<std::string> LdapImpl::getUserPermissions(const std::string &userName, const std::string &userGroup)
+std::set<std::string> SecurityLDAP::getUserPermissions(const std::string &userName, const std::string &userGroup)
 {
     std::set<std::string> permissionSet;
     const auto group = m_ldap->m_groups->getGroup(userGroup);
@@ -83,9 +62,15 @@ std::set<std::string> LdapImpl::getUserPermissions(const std::string &userName, 
     return permissionSet;
 }
 
-std::shared_ptr<Ldap::Server> LdapImpl::connect()
+std::shared_ptr<Ldap::Server> SecurityLDAP::connect()
 {
-    const static char fname[] = "LdapImpl::connect() ";
+    const static char fname[] = "SecurityLDAP::connect() ";
+
+    if (m_ldap->m_ldapUri.empty())
+    {
+        LOG_WAR << fname << "LDAP URI is empty";
+        return nullptr;
+    }
 
     auto ldap = std::make_shared<Ldap::Server>();
     LOG_DBG << fname << "connecting to LDAP: " << m_ldap->m_ldapUri;
@@ -101,9 +86,9 @@ std::shared_ptr<Ldap::Server> LdapImpl::connect()
     return nullptr;
 }
 
-bool LdapImpl::syncGroupUsers()
+bool SecurityLDAP::syncGroupUsers()
 {
-    const static char fname[] = "LdapImpl::syncGroupUsers() ";
+    const static char fname[] = "SecurityLDAP::syncGroupUsers() ";
     LOG_DBG << fname;
 
     try
@@ -111,10 +96,10 @@ bool LdapImpl::syncGroupUsers()
         auto ldap = connect();
         if (ldap)
         {
-            char prefix[5] = {'A', 'P', 'P', '_', '\0'};
-            char postfix[6] = {'_', 'M', 'E', 'S', 'H', '\0'};
-            auto pwd = Utility::stdStringTrim(Utility::decode64(m_ldap->m_ldapAdminPwd), std::string(prefix), true, false);
-            pwd = Utility::stdStringTrim(pwd, std::string(postfix), false, true);
+            static const std::string prefix = "APP_";
+            static const std::string postfix = "_MESH";
+            auto pwd = Utility::stdStringTrim(Utility::decode64(m_ldap->m_ldapAdminPwd), prefix, true, false);
+            pwd = Utility::stdStringTrim(pwd, postfix, false, true);
             // LOG_ERR << fname << "bind " << m_ldap->m_ldapAdmin << " with " << pwd;
             if (ldap->Bind(m_ldap->m_ldapAdmin, pwd))
             {
@@ -126,30 +111,39 @@ bool LdapImpl::syncGroupUsers()
             }
             else
             {
-                LOG_WAR << fname << ("Failed to sync LDAP users due to incorrect password");
+                LOG_WAR << fname << "Failed to sync LDAP users due to incorrect password or bind credentials";
+                return false;
             }
         }
         else
         {
-            LOG_WAR << fname << ("Failed to sync LDAP users due to can not connect to LDAP Server");
+            LOG_WAR << fname << "Failed to sync LDAP users due to can not connect to LDAP Server";
+            return false;
         }
     }
     catch (const std::exception &ex)
     {
-        LOG_WAR << fname << ex.what();
+        LOG_WAR << fname << "Exception during LDAP sync: " << ex.what();
+        return false;
     }
 
     if (!IS_VALID_TIMER_ID(m_syncTimerId) && m_ldap->m_syncSeconds > 0)
     {
-        m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, std::bind(&LdapImpl::syncGroupUsers, this), fname);
+        m_syncTimerId = this->registerTimer(1000L, m_ldap->m_syncSeconds, std::bind(&SecurityLDAP::syncGroupUsers, this), fname);
     }
     return true;
 }
 
-bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &userKey)
+bool SecurityLDAP::verifyUserKey(const std::string &userName, const std::string &userKey)
 {
-    const static char fname[] = "LdapImpl::verifyUserKey() ";
-    LOG_DBG << fname;
+    const static char fname[] = "SecurityLDAP::verifyUserKey() ";
+    LOG_DBG << fname << "Verifying user: " << userName;
+
+    if (userName.empty() || userKey.empty())
+    {
+        LOG_WAR << fname << "Empty username or password";
+        throw std::invalid_argument("username and password cannot be empty");
+    }
 
     auto ldap = connect();
     if (ldap)
@@ -165,19 +159,19 @@ bool LdapImpl::verifyUserKey(const std::string &userName, const std::string &use
             }
             // TODO: validate TOTP
         }
+        LOG_WAR << fname << "Authentication failed for user: " << userName;
         throw std::invalid_argument("verify user password failed");
     }
     else
     {
+        LOG_ERR << fname << "Failed to connect to LDAP server";
         throw std::invalid_argument("failed to connect to LDAP server");
     }
-
-    return false;
 }
 
-std::set<std::string> LdapImpl::getAllUserGroups() const
+std::set<std::string> SecurityLDAP::getAllUserGroups() const
 {
-    const static char fname[] = "LdapImpl::getAllUserGroups() ";
+    const static char fname[] = "SecurityLDAP::getAllUserGroups() ";
     LOG_DBG << fname;
 
     std::set<std::string> groupSet;
@@ -189,9 +183,9 @@ std::set<std::string> LdapImpl::getAllUserGroups() const
     return groupSet;
 }
 
-std::set<std::string> LdapImpl::getAllPermissions()
+std::set<std::string> SecurityLDAP::getAllPermissions()
 {
-    const static char fname[] = "LdapImpl::getAllPermissions() ";
+    const static char fname[] = "SecurityLDAP::getAllPermissions() ";
     LOG_DBG << fname;
 
     std::set<std::string> permissionSet;

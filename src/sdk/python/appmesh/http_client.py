@@ -3,14 +3,18 @@
 import abc
 import base64
 import json
+import logging
 import os
 from datetime import datetime
 from enum import Enum, unique
 from http import HTTPStatus
+import threading
 from typing import Optional, Tuple, Union
 from urllib import parse
 import aniso8601
+import jwt
 import requests
+import time
 from .app import App
 from .app_run import AppRun
 from .app_output import AppOutput
@@ -102,6 +106,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     DURATION_ONE_WEEK_ISO = "P1W"
     DURATION_TWO_DAYS_ISO = "P2D"
     DURATION_TWO_DAYS_HALF_ISO = "P2DT12H"
+    TOKEN_REFRESH_INTERVAL = 60
 
     DEFAULT_SSL_CA_CERT_PATH = "/opt/appmesh/ssl/ca.pem"
     DEFAULT_SSL_CLIENT_CERT_PATH = "/opt/appmesh/ssl/client.pem"
@@ -131,7 +136,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_ssl_client_cert=(DEFAULT_SSL_CLIENT_CERT_PATH, DEFAULT_SSL_CLIENT_KEY_PATH) if os.path.exists(DEFAULT_SSL_CLIENT_CERT_PATH) else None,
         rest_timeout=(60, 300),
         jwt_token=None,
-        oauth2_config=None,
+        oauth2=None,
+        auto_refresh_token=False,
     ):
         """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
 
@@ -154,12 +160,18 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             jwt_token (str, optional): JWT token for API authentication, used in headers to authorize requests where required.
 
             oauth2 (Dict[str, Any], optional): Keycloak configuration for oauth2 authentication:
-                - auth_server_url: Keycloak server URL (e.g. "https://keycloak.example.com")
+                - server_url: Keycloak server URL (e.g. "https://keycloak.example.com/auth/")
                 - realm: Keycloak realm
                 - client_id: Keycloak client ID
                 - client_secret: Keycloak client secret (optional)
-        """
+                Using this parameter enables Keycloak integration for authentication. The 'python-keycloak' package
+                will be imported on-demand only when this parameter is, make sure package is installed (pip3 install python-keycloak).
 
+            auto_refresh_token (bool, optional): Enable automatic token refresh before expiration.
+                When enabled, a background timer will monitor token expiration and attempt to refresh
+                the token before it expires. This works with both native App Mesh tokens and Keycloak tokens.
+        """
+        self._ensure_logging_configured()
         self.session = requests.Session()
         self.auth_server_url = rest_url
         self._jwt_token = jwt_token
@@ -169,27 +181,131 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self._forward_to = None
 
         # Keycloak integration
-        self._keycloak_client = None
-        if oauth2_config:
-            from .keycloak import KeycloakClient  # lazy import
+        self._keycloak_openid = None
+        if oauth2:
+            try:
+                from keycloak import KeycloakOpenID
 
-            self._keycloak_client = KeycloakClient(
-                auth_server_url=oauth2_config.get("auth_server_url"),
-                realm=oauth2_config.get("realm"),
-                client_id=oauth2_config.get("client_id"),
-                client_secret=oauth2_config.get("client_secret"),
-                ssl_verify=oauth2_config.get("ssl_verify", self.ssl_verify),
-                timeout=oauth2_config.get("timeout", (30, 60)),
-            )
+                self._keycloak_openid = KeycloakOpenID(
+                    server_url=oauth2.get("auth_server_url"),
+                    client_id=oauth2.get("client_id"),
+                    realm_name=oauth2.get("realm"),
+                    client_secret_key=oauth2.get("client_secret"),
+                    verify=self.ssl_verify,
+                    timeout=rest_timeout,
+                )
+            except ImportError:
+                logging.error("Keycloak package not installed. Install with: pip install python-keycloak")
+                raise Exception("Keycloak integration requested but python-keycloak package is not installed")
+
+        # Token auto-refresh
+        self._token_refresh_timer = None
+        self._auto_refresh_token = auto_refresh_token
+        if auto_refresh_token and jwt_token:
+            self._schedule_token_refresh()
+
+    @staticmethod
+    def _ensure_logging_configured():
+        """Ensure logging is configured. If no handlers are configured, add a default console handler."""
+        if not logging.root.handlers:
+            logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    def _check_and_refresh_token(self):
+        """Check and refresh token if needed, then schedule next check.
+
+        This method is triggered by the refresh timer and will:
+        1. Check if token needs refresh based on expiration time
+        2. Refresh the token if needed
+        3. Schedule the next refresh check
+        """
+        if not self.jwt_token:
+            return
+
+        # Check if token needs refresh
+        needs_refresh = True
+        time_to_expiry = float("inf")
+
+        # Check token expiration directly from JWT
+        try:
+            decoded_token = jwt.decode(self.jwt_token if isinstance(self.jwt_token, str) else self.jwt_token.get("access_token", ""), options={"verify_signature": False})
+            expiry = decoded_token.get("exp", 0)
+            current_time = time.time()
+            time_to_expiry = expiry - current_time
+            # Refresh if token expires within 5 minutes
+            needs_refresh = time_to_expiry < 300
+        except Exception as e:
+            logging.debug("Failed to parse JWT token for expiration check: %s", str(e))
+
+        # Refresh token if needed
+        if needs_refresh:
+            try:
+                self.renew_token()
+                logging.info("Token successfully refreshed")
+            except Exception as e:
+                logging.error("Token refresh failed: %s", str(e))
+
+        # Schedule next check if auto-refresh is still enabled
+        if self._auto_refresh_token and self.jwt_token:
+            self._schedule_token_refresh(time_to_expiry)
+
+    def _schedule_token_refresh(self, time_to_expiry=None):
+        """Schedule next token refresh check.
+
+        Args:
+            time_to_expiry (float, optional): Time in seconds until token expiration.
+                When provided, helps calculate optimal refresh timing.
+
+        Calculates appropriate check interval:
+        - If token expires soon (within 5 minutes), refresh immediately
+        - Otherwise schedule refresh for the earlier of:
+          1. 5 minutes before expiration
+          2. 60 seconds from now
+        """
+        # Cancel existing timer if any
+        if self._token_refresh_timer:
+            self._token_refresh_timer.cancel()
+            self._token_refresh_timer = None
+
+        try:
+            # Default to checking after 60 seconds
+            check_interval = self.TOKEN_REFRESH_INTERVAL
+
+            # Calculate more precise check time if expiry is known
+            if time_to_expiry is not None:
+                if time_to_expiry <= 300:  # Expires within 5 minutes
+                    check_interval = 1  # Almost immediate refresh
+                else:
+                    # Check at earlier of 5 minutes before expiry or regular interval
+                    check_interval = min(time_to_expiry - 300, self.TOKEN_REFRESH_INTERVAL)
+
+            # Create timer to execute refresh check
+            self._token_refresh_timer = threading.Timer(check_interval, self._check_and_refresh_token)
+            self._token_refresh_timer.daemon = True
+            self._token_refresh_timer.start()
+            logging.debug("Auto-refresh: Next token check scheduled in %.1f seconds", check_interval)
+        except Exception as e:
+            logging.error("Auto-refresh: Failed to schedule token refresh: %s", str(e))
 
     def close(self):
         """Close the session and release resources."""
+        # Cancel token refresh timer
+        if hasattr(self, "_token_refresh_timer") and self._token_refresh_timer:
+            self._token_refresh_timer.cancel()
+            self._token_refresh_timer = None
+
+        # Close the session
         if hasattr(self, "session") and self.session:
             self.session.close()
             self.session = None
-        if self._keycloak_client and hasattr(self._keycloak_client, "close"):
-            self._keycloak_client.close()
-            self._keycloak_client = None
+
+        # Logout from Keycloak if needed
+        if hasattr(self, "_keycloak_openid") and self._keycloak_openid and hasattr(self, "_jwt_token") and self._jwt_token and isinstance(self._jwt_token, dict) and "refresh_token" in self._jwt_token:
+            try:
+                self._keycloak_openid.logout(self._jwt_token.get("refresh_token"))
+            except Exception as e:
+                logging.warning("Failed to logout from Keycloak: %s", str(e))
+            finally:
+                self._keycloak_openid = None
 
     def __enter__(self):
         """Support for context manager protocol."""
@@ -312,8 +428,17 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             str: JWT token.
         """
         # Keycloak authentication if configured
-        if self._keycloak_client:
-            self.jwt_token = self._keycloak_client.authenticate(user_name, user_pwd)
+        if self._keycloak_openid:
+            self.jwt_token = self._keycloak_openid.token(
+                username=user_name,
+                password=user_pwd,
+                totp=totp_code if totp_code else None,
+                grant_type="password",  # grant type for token request: "password" / "client_credentials" / "refresh_token"
+                scope="openid",  # what information to include in the token, such as "openid profile email"
+            )
+
+            if self._auto_refresh_token:
+                self._schedule_token_refresh()
             return self.jwt_token
 
         # Standard App Mesh authentication
@@ -325,6 +450,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 "Authorization": "Basic " + base64.b64encode((user_name + ":" + user_pwd).encode()).decode(),
                 "Expire-Seconds": self._parse_duration(timeout_seconds),
                 **({"Audience": audience} if audience else {}),
+                # **({"Totp": totp_code} if totp_code else {}),
             },
         )
         if resp.status_code == HTTPStatus.OK:
@@ -335,6 +461,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
         else:
             raise Exception(resp.text)
+
+        if self._auto_refresh_token:
+            self._schedule_token_refresh()
         return self.jwt_token
 
     def validate_totp(self, username: str, challenge: str, code: str, timeout: Union[int, str] = DURATION_ONE_WEEK_ISO) -> str:
@@ -375,11 +504,26 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             bool: logoff success or failure.
         """
-        if self.jwt_token:
+        result = False
+        # Handle Keycloak logout if configured
+        if self._keycloak_openid and self.jwt_token and isinstance(self.jwt_token, dict) and "refresh_token" in self.jwt_token:
+            refresh_token = self.jwt_token.get("refresh_token")
+            self._keycloak_openid.logout(refresh_token)
+            self.jwt_token = None
+            result = True
+
+        # Standard App Mesh logout
+        if self.jwt_token and isinstance(self.jwt_token, str):
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/self/logoff")
             self.jwt_token = None
-            return resp.status_code == HTTPStatus.OK
-        return True
+            result = resp.status_code == HTTPStatus.OK
+
+        # Cancel token refresh timer
+        if self._token_refresh_timer:
+            self._token_refresh_timer.cancel()
+            self._token_refresh_timer = None
+
+        return result
 
     def authentication(self, token: str, permission: Optional[str] = None, audience: Optional[str] = None) -> bool:
         """Deprecated: Use authenticate() instead."""
@@ -418,27 +562,46 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             timeout_seconds (int | str, optional): token expire timeout of seconds. support ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S' 'P1W').
 
         Returns:
-            str: The new JWT token if renew success, the old token will be blocked.
+            str: The new JWT token. The old token will be invalidated.
+
+        Raises:
+            Exception: If token renewal fails or no token exists to renew
         """
-        # Refresh the Keycloak token
-        if self._keycloak_client:
-            self.jwt_token = self._keycloak_client.refresh_tokens()
+        # Ensure token exists
+        if not self.jwt_token:
+            raise Exception("No token to renew")
+
+        try:
+            # Handle Keycloak token (dictionary format)
+            if self._keycloak_openid and isinstance(self.jwt_token, dict) and "refresh_token" in self.jwt_token:
+                new_token = self._keycloak_openid.refresh_token(self.jwt_token.get("refresh_token"))
+                self.jwt_token = new_token
+
+            # Handle App Mesh token (string format)
+            elif isinstance(self.jwt_token, str):
+                resp = self._request_http(
+                    AppMeshClient.Method.POST,
+                    path="/appmesh/token/renew",
+                    header={
+                        "Expire-Seconds": self._parse_duration(timeout),
+                    },
+                )
+                if resp.status_code == HTTPStatus.OK:
+                    if "Access-Token" in resp.json():
+                        new_token = resp.json()["Access-Token"]
+                        self.jwt_token = new_token
+                    else:
+                        raise Exception("Token renewal response missing Access-Token")
+                else:
+                    raise Exception(resp.text)
+            else:
+                raise Exception("Unsupported token format")
+
             return self.jwt_token
 
-        # Refresh the App Mesh token
-        assert self.jwt_token
-        resp = self._request_http(
-            AppMeshClient.Method.POST,
-            path="/appmesh/token/renew",
-            header={
-                "Expire-Seconds": self._parse_duration(timeout),
-            },
-        )
-        if resp.status_code == HTTPStatus.OK:
-            if "Access-Token" in resp.json():
-                self.jwt_token = resp.json()["Access-Token"]
-                return self.jwt_token
-        raise Exception(resp.text)
+        except Exception as e:
+            logging.error("Token renewal failed: %s", str(e))
+            raise Exception(f"Token renewal failed: {str(e)}") from e
 
     def get_totp_secret(self) -> str:
         """Generate TOTP secret for the current user and return MFA URI.
@@ -816,6 +979,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             dict: user definition.
         """
+        if self._keycloak_openid and isinstance(self.jwt_token, dict) and "access_token" in self.jwt_token:
+            return self._keycloak_openid.userinfo(self.jwt_token.get("access_token"))
+
         resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/self")
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
@@ -988,7 +1154,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 try:
                     os.chown(path=local_file, uid=file_uid, gid=file_gid)
                 except PermissionError:
-                    print(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
+                    logging.warning(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
 
     def upload_file(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
         """Upload a local file to the remote server. Optionally, the remote file will have the same permission as the local file.
@@ -1179,18 +1345,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             requests.Response: HTTP response
         """
-        # Try to refresh token via Keycloak if using Keycloak and token needs refreshing
-        if self._keycloak_client and self.jwt_token and not self._keycloak_client.validate_token():
-            try:
-                self.jwt_token = self._keycloak_client.get_active_token()
-            except Exception as e:
-                print(f"Token refresh failed: {str(e)}")
-
         rest_url = parse.urljoin(self.auth_server_url, path)
 
         header = {} if header is None else header
         if self.jwt_token:
-            header["Authorization"] = "Bearer " + self.jwt_token
+            token = self.jwt_token["access_token"] if isinstance(self.jwt_token, dict) and "access_token" in self.jwt_token else self.jwt_token
+            header["Authorization"] = "Bearer " + token
         if self.forward_to and len(self.forward_to) > 0:
             if ":" in self.forward_to:
                 header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to

@@ -139,6 +139,8 @@ jobs:
           echo "8. JWT authentication for client requests" >> CHANGELOG.txt
           echo "9. PSK authentication for requests from App Mesh agent to engine" >> CHANGELOG.txt
           echo "10. PSK authentication for Docker requests from App Mesh engine to agent" >> CHANGELOG.txt
+          echo "11. OAuth2 authentication" >> CHANGELOG.txt
+          echo "12. Enable key encryption by default" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency

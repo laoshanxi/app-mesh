@@ -340,6 +340,16 @@ const std::string &User::getKey()
 	return m_key;
 }
 
+bool User::verifyKey(const std::string &key)
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	if (Security::instance()->encryptKey())
+	{
+		return m_key == Utility::hash(key);
+	}
+	return m_key == key;
+}
+
 const std::string &User::getMfaKey()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);

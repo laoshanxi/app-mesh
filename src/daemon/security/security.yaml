@@ -1,12 +1,12 @@
 ---
-EncryptKey: false
+EncryptKey: true
 
 Users:
   admin:
     email: admin@appmesh.com
     exec_user: ""
     group: admin
-    key: admin123
+    key: H17197393981645110028
     locked: false
     mfa_enabled: false
     mfa_key: ""
@@ -19,7 +19,7 @@ Users:
     email: mesh@appmesh.com
     exec_user: ""
     group: user
-    key: mesh123
+    key: H15079608314932066436
     locked: false
     roles:
       - view
@@ -27,7 +27,7 @@ Users:
     email: test@appmesh.com
     exec_user: appmesh
     group: user
-    key: test123
+    key: H15910623431124983003
     locked: false
     roles: []
 
@@ -64,4 +64,5 @@ Roles:
     - app-view
     - app-output-view
     - user-totp-active
+    - user-token-renew
     - host-resource-view

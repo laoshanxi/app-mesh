@@ -56,7 +56,7 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	// Check if the input time string is empty and return epoch time if so.
 	if (strTime.empty())
 	{
-		LOG_WAR << fname << "Empty date-time string input, returning epoch time.";
+		LOG_DBG << fname << "Empty date-time string input, returning epoch time.";
 		return std::chrono::system_clock::from_time_t(0);
 	}
 
@@ -111,7 +111,7 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 		boost::local_time::local_date_time localDateTime(boost::date_time::special_values::not_a_date_time);
 		iss >> localDateTime;
 
-		LOG_DBG << fname << "<" << iso8601TimeStr << "> converted to local <" << localDateTime << ">.";
+		LOG_DBG << fname << "Converted ISO8601 string <" << iso8601TimeStr << "> to local time <" << localDateTime << ">";
 
 		// Convert the parsed time to UTC and then to std::chrono::system_clock::time_point
 		auto ptime = localDateTime.utc_time();
@@ -120,13 +120,13 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 	catch (const std::ios_base::failure &fail)
 	{
 		// Log and rethrow exception for invalid ISO8601 strings
-		LOG_WAR << fname << "Invalid ISO8601 string: " << iso8601TimeStr << ", Error: " << fail.what();
+		LOG_WAR << fname << "Failed to parse ISO8601 string: <" << iso8601TimeStr << ">, Error: " << fail.what();
 		throw std::invalid_argument("Invalid ISO8601 string");
 	}
 	catch (...)
 	{
 		// Catch any other exceptions and log a generic error
-		LOG_WAR << fname << "Invalid ISO8601 string: " << iso8601TimeStr;
+		LOG_WAR << fname << "Failed to parse ISO8601 string: <" << iso8601TimeStr << ">, unknown error occurred";
 		throw std::invalid_argument("Invalid ISO8601 string");
 	}
 }
@@ -143,7 +143,7 @@ const std::string DateTime::getLocalZoneUTCOffset()
 		ss << (tz_offset.is_negative() ? "" : "+");
 		ss << tz_offset;
 		zone = ss.str();
-		LOG_DBG << fname << zone;
+		LOG_DBG << fname << "Local timezone UTC offset: " << zone;
 	}
 	return zone;
 }
@@ -185,7 +185,7 @@ std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_poin
 
 	if (time == std::chrono::system_clock::time_point::min() || time == std::chrono::system_clock::time_point::max())
 	{
-		// Handle the invalid time case (perhaps return an empty string or a default value)
+		LOG_DBG << fname << "Invalid time point provided (min/max value)";
 		return std::string();
 	}
 
@@ -215,7 +215,7 @@ std::string DateTime::formatLocalTime(const std::chrono::system_clock::time_poin
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "format <" << std::chrono::system_clock::to_time_t(time) << "> with fmt <" << fmt << "> failed with error: " << e.what();
+		LOG_ERR << fname << "Failed to format time <" << std::chrono::system_clock::to_time_t(time) << "> with format <" << fmt << ">. Error: " << e.what();
 	}
 	return std::string();
 }
@@ -257,7 +257,8 @@ boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(std::string s
 	std::string fakeDate = Utility::stringFormat("2000-01-01T%02d:%02d:%02d", duration.hours(), duration.minutes(), duration.seconds());
 	auto timePoint = parseISO8601DateTime(fakeDate, posixTimezone);
 	duration = pickDayTimeUtcDuration(timePoint);
-	LOG_DBG << fname << "parse <" << fakeDate << "> with zone <" << posixTimezone << "> to <" << formatISO8601Time(timePoint) << "> with duration: " << duration;
+
+	LOG_DBG << fname << "Parsed <" << strTime << "> with zone <" << posixTimezone << "> to <" << formatISO8601Time(timePoint) << "> with duration: " << duration;
 	return duration;
 }
 

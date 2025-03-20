@@ -1541,7 +1541,7 @@ void ArgumentParser::processUserPwdEncrypt()
 		std::cin >> str;
 		while (str.size())
 		{
-			std::cout << std::hash<std::string>()(str) << std::endl;
+			std::cout << Utility::hash(str) << std::endl;
 			std::cin >> str;
 		}
 	}
@@ -1549,7 +1549,7 @@ void ArgumentParser::processUserPwdEncrypt()
 	{
 		for (auto &optStr : opts)
 		{
-			std::cout << std::hash<std::string>()(optStr) << std::endl;
+			std::cout << Utility::hash(optStr) << std::endl;
 		}
 	}
 }

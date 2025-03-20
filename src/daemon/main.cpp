@@ -84,13 +84,14 @@ int main(int argc, char *argv[])
 		// Initialize logging. IMPORTANT: Do not use logger before this point
 		Utility::initLogging("server");
 		LOG_INF << fname << "Build: " << __MICRO_VAR__(BUILD_TAG);
-		LOG_INF << fname << "Entered working dir: " << fs::current_path().string();
+		LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
 		{
 			// catch SIGHUP for 'systemctl reload'
 			Configuration::handleSignal();
 
 			// Resource init
+			LOG_INF << fname << "Initializing host resource collection";
 			ResourceCollection::instance()->getHostResource();
 			ResourceCollection::instance()->dump();
 		}
@@ -100,11 +101,14 @@ int main(int argc, char *argv[])
 		auto config = Configuration::FromJson(configJson, true);
 		Configuration::instance(config);
 		Utility::initDateTimeZone(Configuration::instance()->getPosixTimezone(), true);
+		// set log level
+		Utility::setLogLevel(config->getLogLevel());
 
 		// init security [both for server side and REST client side (file operation API)]
-		Security::init(Configuration::instance()->getJwt()->m_jwtInterface);
+		Security::init(Configuration::instance()->getJwt()->getJwtInterface());
 
 		// recover applications
+		LOG_INF << fname << "Starting application recovery process";
 		Utility::removeDir((fs::path(config->getWorkDir()) / "shell").string());
 		config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
 		config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_APPLICATION_DIR);
@@ -121,32 +125,25 @@ int main(int argc, char *argv[])
 		Utility::createDirectory(shellDir);
 		if (!Configuration::instance()->getDefaultExecUser().empty())
 		{
+			LOG_INF << fname << "Setting directory ownership to user <" << Configuration::instance()->getDefaultExecUser() << ">";
 			os::chown(tmpDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(outputDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(inputDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(shellDir, Configuration::instance()->getDefaultExecUser());
 		}
 
-		// set log level
-		Utility::setLogLevel(config->getLogLevel());
-		Configuration::instance()->dump();
+		// Configuration::instance()->dump();
 		Configuration::instance()->saveConfigToDisk();
-
-		// copy consul config to config dir
-		const auto consulConfigSource = (fs::path(Utility::getHomeDir()) / APPMESH_CONSUL_API_CONFIG_FILE).string();
-		const auto consulConfigTarget = (fs::path(config->getWorkDir()) / APPMESH_WORK_CONFIG_DIR / APPMESH_CONSUL_API_CONFIG_FILE).string();
-		if (Utility::isFileExist(consulConfigSource) && !Utility::isFileExist(consulConfigTarget))
-		{
-			std::ofstream(consulConfigTarget) << Utility::readFileCpp(consulConfigSource);
-		}
 
 		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
 		ACE_Reactor::instance()->register_handler(SIGTERM, QUIT_HANDLER::instance());
 		Process_Manager::instance()->open(ACE_Process_Manager::DEFAULT_SIZE, ACE_Reactor::instance());
 		// start <1> thread for pooled reactor to handle <Process_Manager> & <ACE_Acceptor>
+		LOG_INF << fname << "Starting thread for reactor event handler";
 		m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&runReactorEvent, ACE_Reactor::instance())));
 
 		// start <1> thread for timer event
+		LOG_INF << fname << "Activating timer manager";
 		TIMER_MANAGER::instance()->activate();
 
 		// init REST
@@ -155,6 +152,7 @@ int main(int argc, char *argv[])
 		ACE_INET_Addr acceptorAddr(Configuration::instance()->getRestTcpPort(), Configuration::instance()->getRestListenAddress().c_str());
 		if (config->getRestEnabled())
 		{
+			LOG_INF << fname << "Initializing REST service on <" << Configuration::instance()->getRestListenAddress() << ":" << Configuration::instance()->getRestTcpPort() << ">";
 			TcpHandler::initTcpSSL(ACE_SSL_Context::instance());
 			// start <1> thread for pooled reactor to handle <Process_Manager> & <ACE_Acceptor>
 			m_threadPool.push_back(std::make_unique<std::thread>(std::bind(&runReactorEvent, ACE_Reactor::instance())));
@@ -163,16 +161,17 @@ int main(int argc, char *argv[])
 			{
 				m_threadPool.push_back(std::make_unique<std::thread>(TcpHandler::handleTcpRest));
 			}
-			LOG_INF << fname << "starting <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
+			LOG_INF << fname << "Started <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
 			if (acceptor.open(acceptorAddr, ACE_Reactor::instance()) == -1)
 			{
-				throw std::runtime_error(std::string("Failed to listen with error: ") + std::strerror(errno));
+				throw std::runtime_error(std::string("Failed to listen on port ") + std::to_string(Configuration::instance()->getRestTcpPort()) + " with error: " + std::strerror(errno));
 			}
 			client.connect(acceptorAddr);
 			// start agent
 			if (!Configuration::instance()->isAppExist(SEPARATE_AGENT_APP_NAME))
 			{
+				LOG_INF << fname << "Starting agent application";
 				bool psk = HMACVerifierSingleton::instance()->writePSKToSHM();
 				Configuration::instance()->addApp(config->getAgentAppJson(HMACVerifierSingleton::instance()->getShmName()), nullptr, false)->execute();
 				if (psk)
@@ -183,20 +182,25 @@ int main(int argc, char *argv[])
 		}
 
 		// High Availability: Attach existing processes to Applications
+		LOG_INF << fname << "Starting high availability process recovery";
 		auto snap = std::make_shared<Snapshot>();
 		auto apps = config->getApps();
 		auto snapfile = Utility::readFileCpp(SNAPSHOT_FILE_NAME);
 		try
 		{
 			snap = Snapshot::FromJson(nlohmann::json::parse(snapfile.length() ? std::move(snapfile) : std::string("{}")));
+			LOG_INF << fname << "Successfully loaded snapshot file";
 		}
-		catch (...)
+		catch (const std::exception &ex)
 		{
-			LOG_ERR << fname << "Recover from snapshot failed with error " << std::strerror(errno);
+			LOG_ERR << fname << "Failed to recover from snapshot with error: " << ex.what();
+			snap = std::make_shared<Snapshot>();
 		}
 		// token black list recover
+		LOG_INF << fname << "Recovering token blacklist";
 		TOKEN_BLACK_LIST::instance()->init(snap->m_tokenBlackList);
 		// app pid recover
+		LOG_INF << fname << "Recovering application processes";
 		std::for_each(apps.begin(), apps.end(),
 					  [&snap](std::vector<std::shared_ptr<Application>>::reference p)
 					  {
@@ -205,13 +209,17 @@ int main(int argc, char *argv[])
 							  auto &appSnapshot = snap->m_apps.find(p->getName())->second;
 							  auto stat = os::status(appSnapshot.m_pid);
 							  if (stat && appSnapshot.m_startTime == std::chrono::system_clock::to_time_t(stat->get_starttime()))
+							  {
+								  LOG_INF << "Attaching application <" << p->getName() << "> to existing process PID <" << appSnapshot.m_pid << ">";
 								  p->attach(appSnapshot.m_pid);
+							  }
 						  }
 					  });
 
 		// Main application monitoring loop
 		fs::current_path(tmpDir);
 		int tcpErrorCounter = 0;
+		LOG_INF << fname << "Entering main application monitoring loop";
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
 			std::list<os::Process> ptree;
@@ -224,9 +232,13 @@ int main(int argc, char *argv[])
 				{
 					app->execute((void *)(&ptree));
 				}
+				catch (const std::exception &ex)
+				{
+					LOG_ERR << fname << "Application <" << app->getName() << "> execute failed with error: " << ex.what();
+				}
 				catch (...)
 				{
-					LOG_ERR << fname << "Application <" << app->getName() << "> execute failed with error " << std::strerror(errno);
+					LOG_ERR << fname << "Application <" << app->getName() << "> execute failed with unknown error";
 				}
 			}
 
@@ -237,8 +249,10 @@ int main(int argc, char *argv[])
 				if (!client.testConnection(Configuration::instance()->getScheduleInterval()))
 				{
 					tcpErrorCounter++;
+					LOG_WAR << fname << "REST TCP connection test failed, attempt <" << tcpErrorCounter << ">";
 					if (tcpErrorCounter > 30)
 					{
+						LOG_ERR << fname << "REST TCP connection test failed more than 30 times, exiting";
 						ACE_OS::_exit(-1);
 					}
 					std::this_thread::sleep_for(std::chrono::seconds(Configuration::instance()->getScheduleInterval()));
@@ -262,16 +276,19 @@ int main(int argc, char *argv[])
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << e.what();
+		LOG_ERR << fname << "Fatal error: " << e.what();
 	}
 	catch (...)
 	{
-		LOG_ERR << fname << "unknown exception";
+		LOG_ERR << fname << "Unknown fatal exception occurred";
 	}
 
+	LOG_INF << fname << "Ending reactor event loop";
 	endReactorEvent(ACE_Reactor::instance());
 	TcpHandler::closeMsgQueue();
-	LOG_INF << fname << "exited";
+	Utility::removeFile((fs::path(Utility::getHomeDir()) / PID_FILE).string());
+
+	LOG_INF << fname << "AppMesh daemon exited";
 	ACE_OS::_exit(0); // to avoid something hang while exiting, direct exit here.
 	ACE::fini();
 	return 0;
@@ -283,15 +300,15 @@ int main(int argc, char *argv[])
 void runReactorEvent(ACE_Reactor *reactor)
 {
 	const static char fname[] = "runReactorEvent() ";
-	LOG_DBG << fname << "Entered";
+	LOG_DBG << fname << "Reactor event thread started";
 
 	reactor->owner(ACE_OS::thr_self());
 	while (QUIT_HANDLER::instance()->is_set() == 0 && !reactor->reactor_event_loop_done())
 	{
 		reactor->run_reactor_event_loop();
-		LOG_WAR << fname << "reactor_event_loop";
+		LOG_WAR << fname << "Reactor event loop interrupted, restarting";
 	}
-	LOG_WAR << fname << "Exit";
+	LOG_WAR << fname << "Reactor event thread exiting";
 }
 
 /**
@@ -300,7 +317,7 @@ void runReactorEvent(ACE_Reactor *reactor)
 int endReactorEvent(ACE_Reactor *reactor)
 {
 	const static char fname[] = "endReactorEvent() ";
-	LOG_DBG << fname << "Entered";
+	LOG_DBG << fname << "Ending reactor event loop";
 
 	return reactor->end_reactor_event_loop();
 }

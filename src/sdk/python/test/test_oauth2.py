@@ -4,11 +4,24 @@ App Mesh Client Authentication Example
 
 This example demonstrates how to use the App Mesh client for Keycloak authentication
 and verification of the obtained access token.
+
+Setup:
+1. Start Keycloak:
+    docker run --restart=always -d -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin --name keycloak2 quay.io/keycloak/keycloak:latest start-dev
+
+2. Configure Keycloak:
+    - Create realm: appmesh-realm, select this realm
+    - In "Authentication" menu, disable all Required actions
+    - Create user 'mesh' with password 'mesh123' and disable temporary password
+    - In Realm roles > create role: manage/view
+    - In Clients > create client: appmesh-client with client secret V87QbGeDJ4RCtzL8VNG4DTzsavZZENAx
+    - In Users > User details, assign role: appmesh-client manage/view
 """
 
 import os
 import sys
 import json
+import time
 import requests
 import jwt
 from jwt.algorithms import RSAAlgorithm
@@ -105,7 +118,7 @@ def main():
     }
 
     # Create App Mesh client
-    client = AppMeshClient(rest_ssl_verify=False, oauth2_config=keycloak_config)  # Only disable SSL verification in development environments
+    client = AppMeshClient(rest_ssl_verify=False, oauth2=keycloak_config, auto_refresh_token=True)
 
     # Try to login and verify the token
     # Make sure "Required Actions" is disabled in "appmesh-realm" Authentication
@@ -114,12 +127,11 @@ def main():
         print("Attempting to login...")
         token = client.login("mesh", "mesh123")
         print("Login successful!")
-        print(f"Token: {token[:20]}...(truncated)")
 
         # Verify token
         print("Verifying token...")
         verifier = KeycloakTokenVerifier(keycloak_config["auth_server_url"], keycloak_config["realm"])
-        is_valid, result = verifier.verify_token(token)
+        is_valid, result = verifier.verify_token(token.get("access_token"))
 
         if is_valid:
             print("Token verification successful!")

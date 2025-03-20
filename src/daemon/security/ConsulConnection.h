@@ -46,7 +46,7 @@ public:
 	virtual ~ConsulConnection();
 	static std::shared_ptr<ConsulConnection> &instance();
 	void initialize();
-	void saveSecurity();
+	void saveSecurity(const nlohmann::json &content);
 	nlohmann::json fetchSecurityJson();
 
 private:

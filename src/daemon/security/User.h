@@ -40,6 +40,7 @@ public:
 	bool locked() const;
 	bool mfaEnabled() const;
 	const std::string &getKey();
+	bool verifyKey(const std::string &key);
 	const std::string &getMfaKey();
 	const std::string getExecUserOverride() const;
 	const std::string &getExecUser() const
