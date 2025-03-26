@@ -51,6 +51,6 @@ require (
 	github.com/hashicorp/consul/api v1.31.2
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
-	github.com/spf13/viper v1.20.0
+	github.com/spf13/viper v1.20.1
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 )
