@@ -1,6 +1,7 @@
 name: "Build Ubuntu Build Image"
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "0 9 * * 3" # every Thursday at 9:00 UTC
   push:

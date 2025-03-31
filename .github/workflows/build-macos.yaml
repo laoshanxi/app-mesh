@@ -1,6 +1,7 @@
 name: "Release macOS Package"
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
