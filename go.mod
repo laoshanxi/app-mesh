@@ -1,6 +1,7 @@
 module github.com/laoshanxi/app-mesh
 
 go 1.23.1
+toolchain go1.24.1
 
 require (
 	github.com/gorilla/mux v1.8.1
@@ -48,7 +49,7 @@ require (
 require (
 	github.com/boombuler/barcode v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/hashicorp/consul/api v1.31.2
+	github.com/hashicorp/consul/api v1.32.0
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/spf13/viper v1.20.1
