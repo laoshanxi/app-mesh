@@ -23,7 +23,10 @@ void CurlResponse::raise_for_status()
 class CurlHandle
 {
 public:
-	CurlHandle() : curl(curl_easy_init()) {}
+	CurlHandle() : curl(curl_easy_init())
+	{
+		curl_easy_setopt(curl, CURLOPT_NOPROXY, "*"); // Disable proxy for all requests
+	}
 	~CurlHandle()
 	{
 		if (curl)

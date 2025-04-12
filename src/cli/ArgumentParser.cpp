@@ -47,7 +47,7 @@
 		}																	\
 		else																\
 		{																	\
-			m_userpwd = inputPasswd();										\
+			m_userpwd = inputPasswd(m_username);										\
 		}																	\
 	}                                                                    	\
 	log4cpp::Category::getRoot().setPriority(m_commandLineVariables.count(VERBOSE) ? log4cpp::Priority::DEBUG : log4cpp::Priority::INFO);
@@ -218,7 +218,7 @@ int ArgumentParser::parse()
 	}
 	else if (cmd == "user")
 	{
-		processUserView();
+		processUserManage();
 	}
 	else if (cmd == "appmgpwd")
 	{
@@ -321,7 +321,7 @@ void ArgumentParser::processLogon()
 		}
 		if (m_userpwd.empty())
 		{
-			m_userpwd = inputPasswd();
+			m_userpwd = inputPasswd(m_username);
 		}
 	}
 
@@ -1472,11 +1472,8 @@ void ArgumentParser::processUserChangePwd()
 		return;
 	}
 
-	auto loginUser = m_username;
 	auto user = m_commandLineVariables[TARGET].as<std::string>();
-	m_username = user;
-	auto passwd = inputPasswd();
-	m_username = loginUser;
+	auto passwd = inputPasswd(user);
 
 	std::string restPath = std::string("/appmesh/user/") + user + "/passwd";
 	std::map<std::string, std::string> query, headers;
@@ -1487,7 +1484,7 @@ void ArgumentParser::processUserChangePwd()
 
 void ArgumentParser::processUserLock()
 {
-	po::options_description desc("Manage user \nUsage: appc lock [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("Control user \nUsage: appc lock [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description useropt("Lock Options", BOOST_DESC_WIDTH);
 	useropt.add_options()
@@ -1512,21 +1509,58 @@ void ArgumentParser::processUserLock()
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
-void ArgumentParser::processUserView()
+void ArgumentParser::processUserManage()
 {
-	po::options_description desc("View users \nUsage: appc user [options]", BOOST_DESC_WIDTH);
+	po::options_description desc("View/Add users \nUsage: appc user [options]", BOOST_DESC_WIDTH);
 	CONNECTION_OPTIONS;
 	po::options_description user("User Options", BOOST_DESC_WIDTH);
 	user.add_options()
+	(JSON_ARGS, po::value<std::string>(), "Path to a JSON file containing a user definition.")
 	(ALL_ARGS, "View all users.");
 	OTHER_OPTIONS;
+	other.add_options()
+	(FORCE_ARGS, "Skip confirmation prompts");
 	desc.add(connection).add(user).add(other);
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	std::string restPath = m_commandLineVariables.count(ALL) ? "/appmesh/users" : "/appmesh/user/self";
-	auto response = requestHttp(true, web::http::methods::GET, restPath);
-	std::cout << parseOutputMessage(response) << std::endl;
+	if (m_commandLineVariables.count(JSON) == 0)
+	{
+		// View user
+		std::string restPath = m_commandLineVariables.count(ALL) ? "/appmesh/users" : "/appmesh/user/self";
+		auto response = requestHttp(true, web::http::methods::GET, restPath);
+		std::cout << parseOutputMessage(response) << std::endl;
+	}
+	else
+	{
+		// Add user
+		auto fileName = m_commandLineVariables[JSON].as<std::string>();
+		if (!Utility::isFileExist(fileName))
+		{
+			throw std::invalid_argument(Utility::stringFormat("input file %s does not exist", fileName.c_str()));
+		}
+
+		auto jsonObj = nlohmann::json::parse(Utility::readFile(fileName));
+		std::string userName = jsonObj[JSON_KEY_USER_readonly_name].get<std::string>();
+
+		if (m_commandLineVariables.count(FORCE) == 0)
+		{
+			std::string msg = std::string("Confirm to register user <") + userName + "> ? [y/n]";
+			if (!confirmInput(msg.c_str()))
+			{
+				return;
+			}
+		}
+
+		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_USER_key))
+		{
+			jsonObj[JSON_KEY_USER_key] = inputPasswd(userName);
+		}
+
+		std::string restPath = "/appmesh/user/" + userName;
+		auto response = requestHttp(true, web::http::methods::PUT, restPath, &jsonObj);
+		std::cout << parseOutputMessage(response) << std::endl;
+	}
 }
 
 void ArgumentParser::processUserPwdEncrypt()
@@ -2086,12 +2120,12 @@ std::string ArgumentParser::reduceStr(std::string source, int limit)
 	}
 }
 
-std::string ArgumentParser::inputPasswd()
+std::string ArgumentParser::inputPasswd(const std::string &userNameDesc)
 {
 	std::string passwd;
 	while (passwd.empty())
 	{
-		std::cout << "Password(" << m_username << "): ";
+		std::cout << "Password(" << userNameDesc << "): ";
 		char buffer[256] = {0};
 		char *str = buffer;
 		FILE *fp = stdin;

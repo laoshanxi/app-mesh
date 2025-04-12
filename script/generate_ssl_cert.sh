@@ -64,8 +64,8 @@ setup_ca_csr() {
 {
     "CN": "AppMesh",
     "key": {
-        "algo": "rsa",
-        "size": 2048
+        "algo": "ecdsa",
+        "size": 256
     },
     "names": [
         {
@@ -112,10 +112,10 @@ create_certificates() {
     cfssl gencert -initca "$CA_CSR" | cfssljson -bare ca -
 
     log "Generating server certificate..."
-    echo '{"CN":"'"$hostname_short"'","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config="$CA_CONFIG" -profile=server -hostname="$hosts" - | cfssljson -bare server
+    echo '{"CN":"'"$hostname_short"'","hosts":[""],"key":{"algo":"ecdsa","size":256}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config="$CA_CONFIG" -profile=server -hostname="$hosts" - | cfssljson -bare server
 
     log "Generating client certificate..."
-    echo '{"CN":"appmesh-client","hosts":[""],"key":{"algo":"rsa","size":2048}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config="$CA_CONFIG" -profile=client -hostname="$hosts" - | cfssljson -bare client
+    echo '{"CN":"appmesh-client","hosts":[""],"key":{"algo":"ecdsa","size":256}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config="$CA_CONFIG" -profile=client -hostname="$hosts" - | cfssljson -bare client
 }
 
 validate_certs() {
@@ -135,59 +135,52 @@ validate_certs() {
         error_count=$((error_count + 1))
     fi
 
-    # Verify server certificate
-    log "Verifying server certificate..."
+    # Verify server certificate and key
+    log "Verifying server certificate and key..."
+    if openssl ec -in server-key.pem -noout 2>/dev/null; then
+        if openssl x509 -in server.pem -noout -pubkey 2>/dev/null | \
+           diff <(openssl ec -in server-key.pem -pubout 2>/dev/null) - >/dev/null 2>&1; then
+            log "✓ Server certificate and private key match"
+        else
+            log "✗ Server certificate and private key do not match"
+            error_count=$((error_count + 1))
+        fi
+    else
+        log "✗ Invalid server private key"
+        error_count=$((error_count + 1))
+    fi
+
+    # Verify client certificate and key
+    log "Verifying client certificate and key..."
+    if openssl ec -in client-key.pem -noout 2>/dev/null; then
+        if openssl x509 -in client.pem -noout -pubkey 2>/dev/null | \
+           diff <(openssl ec -in client-key.pem -pubout 2>/dev/null) - >/dev/null 2>&1; then
+            log "✓ Client certificate and private key match"
+        else
+            log "✗ Client certificate and private key do not match"
+            error_count=$((error_count + 1))
+        fi
+    else
+        log "✗ Invalid client private key"
+        error_count=$((error_count + 1))
+    fi
+
+    # Verify certificate chain
+    log "Verifying certificate chain..."
     if openssl verify -CAfile ca.pem server.pem >/dev/null 2>&1; then
-        log "✓ Server certificate is valid"
-
-        # Show server certificate details
-        log "Server certificate details:"
-        openssl x509 -in server.pem -noout -subject -issuer -dates | sed 's/^/    /'
+        log "✓ Server certificate chain is valid"
     else
-        log "✗ Server certificate verification failed"
+        log "✗ Server certificate chain verification failed"
         error_count=$((error_count + 1))
     fi
 
-    # Verify client certificate
-    log "Verifying client certificate..."
     if openssl verify -CAfile ca.pem client.pem >/dev/null 2>&1; then
-        log "✓ Client certificate is valid"
-
-        # Show client certificate details
-        log "Client certificate details:"
-        openssl x509 -in client.pem -noout -subject -issuer -dates | sed 's/^/    /'
+        log "✓ Client certificate chain is valid"
     else
-        log "✗ Client certificate verification failed"
+        log "✗ Client certificate chain verification failed"
         error_count=$((error_count + 1))
     fi
 
-    # Verify private keys match their certificates
-    log "Verifying private key matches..."
-
-    # Verify server key pair
-    if openssl x509 -noout -modulus -in server.pem | openssl md5 >/tmp/cert.md5 &&
-        openssl rsa -noout -modulus -in server-key.pem | openssl md5 >/tmp/key.md5 &&
-        cmp -s /tmp/cert.md5 /tmp/key.md5; then
-        log "✓ Server certificate and private key match"
-    else
-        log "✗ Server certificate and private key do not match"
-        error_count=$((error_count + 1))
-    fi
-
-    # Verify client key pair
-    if openssl x509 -noout -modulus -in client.pem | openssl md5 >/tmp/cert.md5 &&
-        openssl rsa -noout -modulus -in client-key.pem | openssl md5 >/tmp/key.md5 &&
-        cmp -s /tmp/cert.md5 /tmp/key.md5; then
-        log "✓ Client certificate and private key match"
-    else
-        log "✗ Client certificate and private key do not match"
-        error_count=$((error_count + 1))
-    fi
-
-    # Cleanup temporary files
-    rm -f /tmp/cert.md5 /tmp/key.md5
-
-    # Return verification status
     return $error_count
 }
 

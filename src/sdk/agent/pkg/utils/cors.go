@@ -42,6 +42,7 @@ var allowedHeaders = []string{
 	"X-Send-File-Socket",
 	"X-Recv-File-Socket",
 	"X-Target-Host",
+	"X-Set-Cookie",
 	"Username",
 	"Totp-Challenge",
 	"Totp",

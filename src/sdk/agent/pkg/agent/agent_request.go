@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"html"
 	"io"
 	"net/http"
@@ -43,9 +44,26 @@ func NewAppMeshRequest(req *http.Request) *appmesh.Request {
 	if !(req.Method == http.MethodPost && req.URL.Path == REST_PATH_UPLOAD) && req.Body != nil {
 		bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, maxBodySize))
 		if err == nil {
-			data.Body = html.UnescapeString(string(bodyBytes))
-			// Reset the request body to allow subsequent reads
-			// req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			// Only unescape if the content actually contains HTML entities
+			// This avoids unnecessary string conversions
+			if bytes.ContainsAny(bodyBytes, "&<>\"'") {
+				data.Body = html.UnescapeString(string(bodyBytes))
+			} else {
+				data.Body = string(bodyBytes)
+			}
+		}
+		// Reset the request body to allow subsequent reads
+		// req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
+
+	// Read cookies
+	if req.Header.Get("Authorization") == "" {
+		// If Authorization header is not present, try to find the token in cookies
+		for _, cookie := range req.Cookies() {
+			if cookie.Name == COOKIE_TOKEN {
+				data.Headers["Authorization"] = "Bearer " + cookie.Value
+				break // Exit loop after finding the token cookie
+			}
 		}
 	}
 

@@ -1,6 +1,6 @@
 {
   "name": "appmesh",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "JavaScript SDK for App Mesh (https://github.com/laoshanxi/app-mesh)",
   "main": "./src/appmesh.js",
   "module": "./dist/appmesh.esm.js",
@@ -41,7 +41,7 @@
     "npm": ">=6.0.0"
   },
   "dependencies": {
-    "axios": "^1.8.2",
+    "axios": "^1.8.4",
     "base-64": ">=1.0.0"
   },
   "devDependencies": {
