@@ -124,7 +124,7 @@ void ConsulConnection::initialize()
 		config.m_certificate = m_config->tls_cert_file;
 		config.m_private_key = m_config->tls_key_file;
 		config.m_ca_location = m_config->tls_ca_file;
-		config.AbsConfigPath(Utility::getHomeDir());
+		config.ResolveAbsolutePaths(Utility::getHomeDir());
 		RestClient::defaultSslConfiguration(config);
 	}
 

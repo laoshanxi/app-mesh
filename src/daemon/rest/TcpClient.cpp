@@ -84,8 +84,8 @@ ACE_SSL_Context *TcpClient::initTcpSSL(ACE_SSL_Context *context)
 	const static auto &homeDir = Utility::getHomeDir();
 	if (verifyClient)
 	{
-		auto cert = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateFile());
-		auto key = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateKeyFile());
+		auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());
+		auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile());
 
 		context->certificate(cert.c_str(), SSL_FILETYPE_PEM);
 		context->private_key(key.c_str(), SSL_FILETYPE_PEM);

@@ -58,12 +58,13 @@ func init() {
 	}
 }
 
-func AbsConfigPath() {
-	ConfigData.REST.SSL.SSLCaPath = HomeDir(ConfigData.REST.SSL.SSLCaPath)
-	ConfigData.REST.SSL.SSLCertificateFile = HomeDir(ConfigData.REST.SSL.SSLCertificateFile)
-	ConfigData.REST.SSL.SSLCertificateKeyFile = HomeDir(ConfigData.REST.SSL.SSLCertificateKeyFile)
-	ConfigData.REST.SSL.SSLClientCertificateFile = HomeDir(ConfigData.REST.SSL.SSLClientCertificateFile)
-	ConfigData.REST.SSL.SSLClientCertificateKeyFile = HomeDir(ConfigData.REST.SSL.SSLClientCertificateKeyFile)
+// Convert all relative paths to absolute paths
+func ResolveAbsolutePaths() {
+	ConfigData.REST.SSL.SSLCaPath = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCaPath)
+	ConfigData.REST.SSL.SSLCertificateFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCertificateFile)
+	ConfigData.REST.SSL.SSLCertificateKeyFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCertificateKeyFile)
+	ConfigData.REST.SSL.SSLClientCertificateFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLClientCertificateFile)
+	ConfigData.REST.SSL.SSLClientCertificateKeyFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLClientCertificateKeyFile)
 }
 
 // readConfig loads the application config.yaml from files and environment variables.
@@ -132,7 +133,7 @@ func IsAgentProdEnv() bool {
 	return filepath.Base(exePath) == "agent"
 }
 
-func HomeDir(path string) string {
+func ResolveAbsolutePath(path string) string {
 	// Convert relative paths to absolute paths if necessary
 	if !filepath.IsAbs(path) {
 		absPath := filepath.Join(GetAppMeshHomeDir(), path)

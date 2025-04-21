@@ -7,6 +7,7 @@
 #include "Utility.h"
 #include <curl/curl.h>
 
+/// @brief CURL response data structure
 struct CurlResponse
 {
 	long status_code = 0;
@@ -15,11 +16,13 @@ struct CurlResponse
 	void raise_for_status();
 };
 
+/// @brief SSL configuration structure for CURL client
 struct ClientSSLConfig
 {
 	ClientSSLConfig();
-	void AbsConfigPath(std::string workingHome);
-	static std::string HomeDir(const std::string &workingHome, std::string filePath);
+	void ResolveAbsolutePaths(std::string workingHome);
+	// Convert relative paths to absolute paths if necessary
+	static std::string ResolveAbsolutePath(const std::string &workingHome, std::string filePath);
 	unsigned long m_ssl_version;
 	bool m_verify_client;			  // client certificate verification
 	bool m_verify_server;			  // server's certificate matches the host name
@@ -33,15 +36,17 @@ class RestClient
 {
 public:
 	/**
-	 * Make an HTTP request. Note: The response headers are returned in lower case.
-	 * @param host Server host address.
-	 * @param mtd HTTP method.
-	 * @param path Request path.
-	 * @param body Request body.
-	 * @param header Request headers.
-	 * @param query Query parameters.
-	 * @param formData Form data parameters (will be sent as application/x-www-form-urlencoded).
-	 * @return Response result.
+	 * @brief Performs an HTTP request
+	 * @details The response headers are returned in lowercase
+	 *
+	 * @param host The server host address
+	 * @param mtd The HTTP method to use
+	 * @param path The request path
+	 * @param body The request body
+	 * @param header Map of request headers
+	 * @param query Map of query parameters
+	 * @param formData Optional form data parameters (sent as application/x-www-form-urlencoded)
+	 * @return std::shared_ptr<CurlResponse> containing status code, response body and headers
 	 */
 	static std::shared_ptr<CurlResponse> request(
 		const std::string &host,
@@ -53,13 +58,14 @@ public:
 		std::map<std::string, std::string> formData = {});
 
 	/**
-	 * Upload a file using multipart/form-data.
-	 * @param host Server host address.
-	 * @param path Upload path.
-	 * @param file File path.
-	 * @param header Request headers.
-	 * @param fieldName The field name for the file in the form (defaults to "file").
-	 * @return Response result.
+	 * @brief Uploads a file using multipart/form-data
+	 *
+	 * @param host The server host address
+	 * @param path The upload endpoint path
+	 * @param file The path to the local file to upload
+	 * @param header Map of request headers
+	 * @param fieldName The form field name for the file (defaults to "file")
+	 * @return std::shared_ptr<CurlResponse> containing upload response
 	 */
 	static std::shared_ptr<CurlResponse> upload(
 		const std::string &host,
@@ -69,13 +75,14 @@ public:
 		const std::string &fieldName = "file");
 
 	/**
-	 * Download a file.
-	 * @param host Server host address.
-	 * @param path Download path.
-	 * @param remoteFile Remote file path.
-	 * @param localFile Local file path.
-	 * @param header Request headers.
-	 * @return Response result.
+	 * @brief Downloads a file from remote server
+	 *
+	 * @param host The server host address
+	 * @param path The download endpoint path
+	 * @param remoteFile The path/name of file on remote server
+	 * @param localFile The path where to save the downloaded file
+	 * @param header Map of request headers
+	 * @return std::shared_ptr<CurlResponse> containing download response
 	 */
 	static std::shared_ptr<CurlResponse> download(
 		const std::string &host,
@@ -85,18 +92,24 @@ public:
 		std::map<std::string, std::string> header);
 
 	/**
-	 * Set default SSL configuration.
-	 * @param sslConfig SSL configuration.
+	 * @brief Sets the default SSL configuration for all requests
+	 * @param sslConfig SSL configuration object containing certificates and verification options
 	 */
 	static void defaultSslConfiguration(const ClientSSLConfig &sslConfig);
 
 private:
 	/**
-	 * Configure SSL.
-	 * @param curl CURL handle.
+	 * @brief Configures SSL parameters for a CURL handle
+	 * @param curl The CURL handle to configure
 	 */
 	static void setSslConfig(CURL *curl);
-	// Encode a URL string.
+
+	/**
+	 * @brief URL encodes a string value using CURL
+	 * @param curl The CURL handle to use for encoding
+	 * @param value The string to encode
+	 * @return The URL encoded string
+	 */
 	static const std::string urlEncode(CURL *curl, const std::string &value);
 
 private:

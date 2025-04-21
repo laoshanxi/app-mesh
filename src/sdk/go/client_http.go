@@ -93,11 +93,11 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 		timeoutSeconds = DEFAULT_TOKEN_EXPIRE_SECONDS
 	}
 	headers := map[string]string{
-		"Authorization":  "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
-		"Expire-Seconds": strconv.Itoa(timeoutSeconds),
+		"Authorization":    "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password)),
+		"X-Expire-Seconds": strconv.Itoa(timeoutSeconds),
 	}
 	if audience != "" {
-		headers["Audience"] = audience
+		headers["X-Audience"] = audience
 	}
 	code, raw, _, err := r.post("appmesh/login", nil, headers, nil)
 	if code == http.StatusOK {
@@ -111,7 +111,7 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 		m := make(map[string]interface{})
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		_ = decoder.Decode(&m)
-		if challenge, ok := m["Totp-Challenge"].(string); ok {
+		if challenge, ok := m["totp_challenge"].(string); ok {
 			token, err := r.ValidateTotp(user, challenge, totpCode, timeoutSeconds)
 			if err == nil && token != "" {
 				return true, token, nil
@@ -124,14 +124,20 @@ func (r *AppMeshClient) Login(user string, password string, totpCode string, tim
 
 // ValidateTotp validates the TOTP code and returns a new JWT token.
 func (r *AppMeshClient) ValidateTotp(username string, challenge string, totpCode string, timeoutSeconds int) (string, error) {
-	headers := map[string]string{
-		"Username":       base64.StdEncoding.EncodeToString([]byte(username)),
-		"Totp":           totpCode,
-		"Totp-Challenge": base64.StdEncoding.EncodeToString([]byte(challenge)),
-		"Expire-Seconds": strconv.Itoa(timeoutSeconds),
+	type TotpRequest struct {
+		UserName      string `json:"user_name"`
+		TotpCode      string `json:"totp_code"`
+		TotpChallenge string `json:"totp_challenge"`
+		ExpireSeconds int    `json:"expire_seconds"`
 	}
-
-	code, raw, _, err := r.post("appmesh/totp/validate", nil, headers, nil)
+	request := TotpRequest{
+		UserName:      username,
+		TotpCode:      totpCode,
+		TotpChallenge: challenge,
+		ExpireSeconds: timeoutSeconds,
+	}
+	body, _ := json.Marshal(request)
+	code, raw, _, err := r.post("appmesh/totp/validate", nil, nil, body)
 	if code == http.StatusOK {
 		result := JWTResponse{}
 		err = json.NewDecoder(bytes.NewReader(raw)).Decode(&result)
@@ -157,10 +163,10 @@ func (r *AppMeshClient) Logoff() (bool, error) {
 func (r *AppMeshClient) Authenticate(jwtToken string, permission string, audience string) (bool, error) {
 	headers := Headers{}
 	if permission != "" {
-		headers["Auth-Permission"] = permission
+		headers["X-Permission"] = permission
 	}
 	if audience != "" {
-		headers["Audience"] = audience
+		headers["X-Audience"] = audience
 	}
 	code, _, _, err := r.post("appmesh/auth", nil, headers, nil)
 	if code == http.StatusOK {
@@ -191,7 +197,7 @@ func (r *AppMeshClient) GetTotpSecret() (string, error) {
 		m := make(map[string]interface{})
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		_ = decoder.Decode(&m)
-		totpUri, _ := base64.StdEncoding.DecodeString(m["Mfa-Uri"].(string))
+		totpUri, _ := base64.StdEncoding.DecodeString(m["mfa_uri"].(string))
 		k, err := otp.NewKeyFromURL(string(totpUri))
 		if err != nil {
 			return "", err
@@ -203,7 +209,7 @@ func (r *AppMeshClient) GetTotpSecret() (string, error) {
 
 // SetupTotp sets up TOTP for the user.
 func (r *AppMeshClient) SetupTotp(totpCode string) (bool, error) {
-	headers := map[string]string{"Totp": totpCode}
+	headers := map[string]string{"X-Totp-Code": totpCode}
 	code, raw, _, err := r.post("appmesh/totp/setup", nil, headers, nil)
 	if code == http.StatusOK {
 		result := JWTResponse{}
@@ -271,13 +277,13 @@ func (r *AppMeshClient) GetAppOutput(appName string, stdoutPosition int64, stdou
 	resp := AppOutput{Error: err, HttpSuccess: code == http.StatusOK, HttpBody: string(body)}
 
 	// Extract and parse headers.
-	if exitCodeStr := header.Get("Exit-Code"); exitCodeStr != "" {
+	if exitCodeStr := header.Get("X-Exit-Code"); exitCodeStr != "" {
 		if exitCode, err := strconv.Atoi(exitCodeStr); err == nil {
 			resp.ExitCode = &exitCode
 		}
 	}
 
-	if outputPositionStr := header.Get("Output-Position"); outputPositionStr != "" {
+	if outputPositionStr := header.Get("X-Output-Position"); outputPositionStr != "" {
 		if outputPosition, err := strconv.ParseInt(outputPositionStr, 10, 64); err == nil {
 			resp.OutputPosition = &outputPosition
 		}
@@ -355,8 +361,8 @@ func (r *AppMeshClient) RunAppSync(app Application, maxTimeoutSeconds int) (*int
 		query.Add("timeout", strconv.Itoa(maxTimeoutSeconds))
 
 		code, raw, headers, err := r.post(path, query, nil, appJson)
-		if headers.Get("Exit-Code") != "" {
-			value, _ := strconv.Atoi(headers.Get("Exit-Code"))
+		if headers.Get("X-Exit-Code") != "" {
+			value, _ := strconv.Atoi(headers.Get("X-Exit-Code"))
 			exitCode = new(int)
 			*exitCode = value
 		}
@@ -439,7 +445,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 
 	headers := map[string]string{
 		"Content-Type": writer.FormDataContentType(),
-		"File-Path":    url.QueryEscape(remoteFile),
+		"X-File-Path":  url.QueryEscape(remoteFile),
 	}
 
 	// Get the file attributes.
@@ -465,7 +471,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 
 // DownloadFile downloads a file from the server.
 func (r *AppMeshClient) DownloadFile(remoteFile, localFile string, applyFileAttributes bool) error {
-	headers := map[string]string{"File-Path": url.QueryEscape(remoteFile)}
+	headers := map[string]string{"X-File-Path": url.QueryEscape(remoteFile)}
 	code, raw, respHeaders, err := r.get("/appmesh/file/download", nil, headers)
 
 	if err != nil {

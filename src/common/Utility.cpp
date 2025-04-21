@@ -853,26 +853,48 @@ std::string Utility::stringReplace(const std::string &strBase, const std::string
 
 std::string Utility::humanReadableSize(long double bytesSize)
 {
-	const static int base = 1024;
-	// const static char* fmt[] = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" };
-	const static char *fmt[] = {"B", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi", "Yi"};
+	static constexpr int base = 1024;
+	static constexpr const char *fmt[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"};
+	static constexpr size_t fmtSize = sizeof(fmt) / sizeof(fmt[0]);
 
+	// Handle invalid cases
+	if (bytesSize < 0 || std::isnan(bytesSize) || std::isinf(bytesSize))
+	{
+		return "N/A";
+	}
+
+	// Handle zero case
 	if (bytesSize == 0)
 	{
-		return "0";
+		return "0 B";
 	}
 
 	std::size_t units = 0;
-	long double n = bytesSize;
-	while (n > base && units + 1 < sizeof(fmt) / sizeof(*fmt))
+	long double n = std::abs(bytesSize);
+
+	// Find appropriate unit
+	while (n >= base && units + 1 < fmtSize)
 	{
 		units++;
 		n /= base;
 	}
-	char buffer[64] = {0};
-	snprintf(buffer, sizeof(buffer), "%.1Lf %s", n, fmt[units]);
-	std::string str = buffer;
-	return stringReplace(str, ".0", "");
+
+	// Format with 1 decimal place and handle the .0 case directly
+	std::ostringstream ss;
+	ss.precision(1);
+	ss << std::fixed << n;
+	std::string result = ss.str();
+
+	// Remove ".0" if present
+	if (result.size() > 2 && result.substr(result.size() - 2) == ".0")
+	{
+		result.resize(result.size() - 2);
+	}
+
+	// Add unit
+	result += " " + std::string(fmt[units]);
+
+	return result;
 }
 
 std::string Utility::humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime)
