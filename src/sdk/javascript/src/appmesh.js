@@ -9,7 +9,9 @@ const CONSTANTS = Object.freeze({
   DEFAULT_TOKEN_EXPIRE_SECONDS: "P1W",
   DEFAULT_RUN_APP_TIMEOUT_SECONDS: "P2D",
   DEFAULT_RUN_APP_LIFECYCLE_SECONDS: "P2DT12H",
-  DEFAULT_JWT_AUDIENCE: "appmesh-service"
+  DEFAULT_JWT_AUDIENCE: "appmesh-service",
+  HTTP_CSRF_TOKEN_NAME: "X-CSRF-Token",
+  CSRF_TOKEN_NAME: "appmesh_csrf_token",
 });
 
 // Environment detection
@@ -209,9 +211,9 @@ class AppMeshClient {
       "Authorization": `Basic ${auth}`,
       "X-Set-Cookie": "true"
     };
-    if (totpCode) headers["Totp"] = totpCode;
-    if (expireSeconds) headers["Expire-Seconds"] = parseDuration(expireSeconds);
-    if (audience) headers["Audience"] = audience;
+    if (totpCode) headers["X-Totp-Code"] = totpCode;
+    if (expireSeconds) headers["X-Expire-Seconds"] = parseDuration(expireSeconds);
+    if (audience) headers["X-Audience"] = audience;
 
     await this._request("post", "/appmesh/login", null, { headers });
   }
@@ -224,8 +226,8 @@ class AppMeshClient {
    */
   async authenticate(permission = null, audience = CONSTANTS.DEFAULT_JWT_AUDIENCE) {
     const headers = {};
-    if (permission) headers["Auth-Permission"] = permission;
-    if (audience) headers["Audience"] = audience;
+    if (permission) headers["X-Permission"] = permission;
+    if (audience) headers["X-Audience"] = audience;
     await this._request("post", "/appmesh/auth", null, { headers });
   }
 
@@ -247,7 +249,7 @@ class AppMeshClient {
   async renew_token(expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
     const headers = {};
     if (expireSeconds) {
-      headers["Expire-Seconds"] = parseDuration(expireSeconds);
+      headers["X-Expire-Seconds"] = parseDuration(expireSeconds);
     }
     await this._request("post", "/appmesh/token/renew", null, { headers });
   }
@@ -258,7 +260,7 @@ class AppMeshClient {
    */
   async get_totp_secret() {
     const response = await this._request("post", "/appmesh/totp/secret");
-    return base64Utils.decode(response.data["Mfa-Uri"]);
+    return base64Utils.decode(response.data["mfa_uri"]);
   }
 
   /**
@@ -266,7 +268,7 @@ class AppMeshClient {
    * @param {string} totpCode - TOTP verification code
    */
   async setup_totp(totpCode) {
-    const headers = { Totp: totpCode };
+    const headers = { "X-Totp-Code": totpCode };
     await this._request("post", "/appmesh/totp/setup", null, { headers });
   }
 
@@ -278,15 +280,16 @@ class AppMeshClient {
    * @param {string|number} [expireSeconds] - Token expiry in seconds or ISO8601 duration (e.g. "P1DT12H", 604800)
    */
   async validate_totp(username, totpChallenge, totpCode, expireSeconds = CONSTANTS.DEFAULT_TOKEN_EXPIRE_SECONDS) {
-    const headers = {
-      "Username": base64Utils.encode(username),
-      "Totp": totpCode,
-      "Totp-Challenge": base64Utils.encode(totpChallenge),
-      "Expire-Seconds": parseDuration(expireSeconds),
-      "X-Set-Cookie": "true"
+    const body = {
+      "user_name": username,
+      "totp_code": totpCode,
+      "totp_challenge": totpChallenge,
+      "expire_seconds": parseDuration(expireSeconds)
     };
+    // Set cookie header for browser
+    const headers = { "X-Set-Cookie": "true" };
 
-    await this._request("post", "/appmesh/totp/validate", null, { headers });
+    await this._request("post", "/appmesh/totp/validate", body, { headers });
   }
 
   /**
@@ -426,8 +429,9 @@ class AppMeshClient {
     };
 
     const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
-    const outPosition = response.headers["output-position"] ? parseInt(response.headers["output-position"]) : null;
-    const exitCode = response.headers["exit-code"] ? parseInt(response.headers["exit-code"]) : null;
+    // axios response header use lower case
+    const outPosition = response.headers["X-Output-Position".toLowerCase()] ? parseInt(response.headers["X-Output-Position".toLowerCase()]) : null;
+    const exitCode = response.headers["X-Exit-Code".toLowerCase()] ? parseInt(response.headers["X-Exit-Code".toLowerCase()]) : null;
     return new AppOutput(response.status, response.data, outPosition, exitCode);
   }
 
@@ -452,8 +456,9 @@ class AppMeshClient {
       if (outputHandler) {
         outputHandler(response.data);
       }
-      if (response.headers["exit-code"]) {
-        exitCode = parseInt(response.headers["exit-code"]);
+      // axios response header use lower case
+      if (response.headers["X-Exit-Code".toLowerCase()]) {
+        exitCode = parseInt(response.headers["X-Exit-Code".toLowerCase()]);
       }
     } else if (outputHandler) {
       outputHandler(response.data);
@@ -536,7 +541,7 @@ class AppMeshClient {
    * @param {boolean} [applyAttrs=true] - Apply file permissions
    */
   async download_file(filePath, localFile, applyAttrs = true) {
-    const headers = { "File-Path": encodeURIComponent(filePath) };
+    const headers = { "X-File-Path": encodeURIComponent(filePath) };
     const response = await this._request("get", "/appmesh/file/download", null, {
       headers,
       config: {
@@ -556,15 +561,16 @@ class AppMeshClient {
 
         if (applyAttrs) {
           const { headers } = response;
+          // axios response header use lower case
           try {
-            if (headers["file-mode"]) {
-              await fs.chmod(localFile, parseInt(headers["file-mode"]));
+            if (headers["X-File-Mode".toLowerCase()]) {
+              await fs.chmod(localFile, parseInt(headers["X-File-Mode".toLowerCase()]));
             }
-            if (headers["file-user"] && headers["file-group"]) {
+            if (headers["X-File-User".toLowerCase()] && headers["X-File-Group".toLowerCase()]) {
               await fs.chown(
                 localFile,
-                parseInt(headers["file-user"]),
-                parseInt(headers["file-group"])
+                parseInt(headers["X-File-User".toLowerCase()]),
+                parseInt(headers["X-File-Group".toLowerCase()])
               );
             }
           } catch (ex) {
@@ -596,7 +602,7 @@ class AppMeshClient {
    * @param {boolean} [applyAttrs] - Copy file permissions
    */
   async upload_file(localFile, filePath, applyAttrs = true) {
-    const headers = { "File-Path": encodeURIComponent(filePath) };
+    const headers = { "X-File-Path": encodeURIComponent(filePath) };
     let formData;
 
     if (ENV.isNode) {
@@ -620,9 +626,9 @@ class AppMeshClient {
 
       // Add file attributes
       if (applyAttrs) {
-        headers["File-Mode"] = stat.mode.toString();
-        headers["File-User"] = stat.uid.toString();
-        headers["File-Group"] = stat.gid.toString();
+        headers["X-File-Mode"] = stat.mode.toString();
+        headers["X-File-User"] = stat.uid.toString();
+        headers["X-File-Group"] = stat.gid.toString();
       }
 
       // Add form-data headers
@@ -724,13 +730,17 @@ class AppMeshClient {
 
   /**
    * Change user password
+   * @param {string} oldPassword - Old password
    * @param {string} newPassword - New password
    * @param {string} [userName="self"] - Username
    * @returns {Promise<boolean>} Success status
    */
-  async update_user_password(newPassword, userName = "self") {
-    const headers = { "New-Password": base64Utils.encode(newPassword) };
-    const response = await this._request("post", `/appmesh/user/${userName}/passwd`, null, { headers });
+  async update_user_password(oldPassword, newPassword, userName = "self") {
+    const body = {
+      "old_password": base64Utils.encode(oldPassword),
+      "new_password": base64Utils.encode(newPassword)
+    };
+    const response = await this._request("post", `/appmesh/user/${userName}/passwd`, body);
     return response.status === 200;
   }
 
@@ -870,6 +880,21 @@ class AppMeshClient {
     if (ENV.isNode) {
       headers[CONSTANTS.HTTP_USER_AGENT_HEADER_NAME] = CONSTANTS.HTTP_USER_AGENT;
     }
+
+    // Add CSRF token from cookies to headers
+    const getCsrfToken = (cookieStr) => {
+      if (!cookieStr) return null;
+      const match = cookieStr.split('; ').find(c => c.startsWith(CONSTANTS.CSRF_TOKEN_NAME + '='));
+      return match ? match.split('=')[1] : null;
+    };
+    if (ENV.isNode) {
+      const token = getCsrfToken(this._client.defaults.headers.Cookie);
+      if (token) headers[CONSTANTS.HTTP_CSRF_TOKEN_NAME] = token;
+    } else {
+      const token = getCsrfToken(document.cookie);
+      if (token) headers[CONSTANTS.HTTP_CSRF_TOKEN_NAME] = token;
+    }
+
     // Add forwarding host if specified
     if (this.forwardingHost) {
       if (this.forwardingHost.includes(":")) {
@@ -916,8 +941,15 @@ class AppMeshClient {
         throw new AppMeshError(errMsg, response.status, response.data);
       }
 
-      if (ENV.isNode && response.headers['set-cookie']) {
-        this._client.defaults.headers.Cookie = response.headers['set-cookie'][0];
+      // axios response header use lower case
+      if (ENV.isNode && response.headers['Set-Cookie'.toLowerCase()]) {
+        // Handle array of cookies or single cookie
+        const cookies = Array.isArray(response.headers['Set-Cookie'.toLowerCase()]) ?
+          response.headers['Set-Cookie'.toLowerCase()] :
+          [response.headers['Set-Cookie'.toLowerCase()]];
+
+        // Join all cookies with semicolon separator
+        this._client.defaults.headers.Cookie = cookies.join('; ');
       }
       return response;
     } catch (error) {

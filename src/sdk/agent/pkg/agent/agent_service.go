@@ -26,7 +26,8 @@ import (
 
 // Constants for REST paths and headers
 const (
-	COOKIE_TOKEN                = "appmesh_auth"
+	COOKIE_TOKEN                = "appmesh_auth_token"
+	COOKIE_CSRF_TOKEN           = "appmesh_csrf_token"
 	REST_PATH_LOGIN             = "/appmesh/login"
 	REST_PATH_TOTP_VALIDATE     = "/appmesh/totp/validate"
 	REST_PATH_LOGOFF            = "/appmesh/self/logoff"
@@ -39,10 +40,11 @@ const (
 	USER_AGENT_APPMESH_TCP      = "appmesh/sdk/tcp"
 
 	HTTP_HEADER_KEY_X_SET_COOKIE       = "X-Set-Cookie"
+	HTTP_HEADER_KEY_X_CSRF_TOKEN       = "X-CSRF-Token"
 	HTTP_HEADER_KEY_X_TARGET_HOST      = "X-Target-Host"
 	HTTP_HEADER_KEY_X_Send_File_Socket = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_Recv_File_Socket = "X-Recv-File-Socket"
-	HTTP_HEADER_KEY_File_Path          = "File-Path"
+	HTTP_HEADER_KEY_File_Path          = "X-File-Path"
 
 	TCP_CHUNK_BLOCK_SIZE = appmesh.TCP_CHUNK_BLOCK_SIZE
 )
@@ -337,13 +339,17 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Handle File-Path URI decode
+	// Handle X-File-Path URI decode
 	if filePath := r.Header.Get(HTTP_HEADER_KEY_File_Path); filePath != "" {
 		r.Header.Set(HTTP_HEADER_KEY_File_Path, utils.DecodeURIComponent(filePath))
 	}
 
 	// Body buffer
-	request := NewAppMeshRequest(r)
+	request, err := NewAppMeshRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
 	if targetConnection != localConnection {
 		request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_TCP
