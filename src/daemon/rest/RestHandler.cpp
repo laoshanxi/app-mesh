@@ -314,7 +314,7 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
-		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
+		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'X-File-Path' not found"));
 		return;
 	}
 	const auto &file = (message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
@@ -347,7 +347,7 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
-		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'File-Path' not found"));
+		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'X-File-Path' not found"));
 		return;
 	}
 	const auto &file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
@@ -477,17 +477,27 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 		permissionCheck(message, PERMISSION_KEY_change_passwd_user);
 	}
 
-	if (!(message.m_headers.count(HTTP_HEADER_JWT_new_password)))
+	const auto body = message.extractJson();
+	if (!HAS_JSON_FIELD(body, HTTP_BODY_KEY_OLD_PASSWORD))
 	{
-		throw std::invalid_argument("can not find new password from header");
+		throw std::invalid_argument("can not find old password from body");
 	}
-	auto newPasswd = Utility::stdStringTrim(Utility::decode64((message.m_headers.find(HTTP_HEADER_JWT_new_password)->second)));
+	auto curPasswd = Utility::decode64(GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_OLD_PASSWORD));
+	if (!HAS_JSON_FIELD(body, HTTP_BODY_KEY_NEW_PASSWORD))
+	{
+		throw std::invalid_argument("can not find new password from body");
+	}
+	auto newPasswd = Utility::decode64(GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_NEW_PASSWORD));
 
 	if (newPasswd.length() < APPMESH_PASSWD_MIN_LENGTH)
 	{
 		throw std::invalid_argument(Utility::stringFormat("password length should be greater than %d", APPMESH_PASSWD_MIN_LENGTH));
 	}
 
+	if (!Security::instance()->verifyUserKey(targetUser, curPasswd))
+	{
+		throw std::invalid_argument(Utility::stringFormat("old password for user <%s> is incorrect", targetUser.c_str()));
+	}
 	Security::instance()->changeUserPasswd(targetUser, newPasswd);
 	Security::instance()->save();
 
@@ -885,11 +895,12 @@ void RestHandler::apiUserTotpValidate(const HttpRequest &message)
 {
 	const static char fname[] = "RestHandler::apiUserTotpValidate() ";
 
-	const auto uname = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_username));
-	const auto totp = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp);
-	const auto totpChallenge = Utility::decode64(GET_HTTP_HEADER(message, HTTP_HEADER_JWT_totp_challenge));
-	const auto timeout = GET_HTTP_HEADER(message, HTTP_HEADER_JWT_expire_seconds);
-	int timeoutSeconds = (timeout.empty() || timeout == "0") ? DEFAULT_TOKEN_EXPIRE_SECONDS : std::stoi(timeout);
+	const auto body = message.extractJson();
+	const auto uname = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_username);
+	const auto totp = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_totp);
+	const auto totpChallenge = GET_JSON_STR_VALUE(body, HTTP_BODY_KEY_JWT_totp_challenge);
+	const auto timeout = GET_JSON_INT64_VALUE(body, HTTP_BODY_KEY_JWT_expire_seconds);
+	int timeoutSeconds = (timeout == 0) ? DEFAULT_TOKEN_EXPIRE_SECONDS : timeout;
 
 	LOG_DBG << fname << "User <" << uname << ">";
 	const auto user = Security::instance()->getUserInfo(uname);
