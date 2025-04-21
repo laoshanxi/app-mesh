@@ -153,7 +153,7 @@ class AppMeshClientTCP(AppMeshClient):
             local_file (str): the local file path to be downloaded.
             apply_file_attributes (bool): whether to apply file attributes (permissions, owner, group) to the local file.
         """
-        header = {"File-Path": remote_file}
+        header = {AppMeshClient.HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
         header[self.HTTP_HEADER_KEY_X_RECV_FILE_SOCKET] = "true"
         resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header=header)
 
@@ -169,11 +169,11 @@ class AppMeshClientTCP(AppMeshClient):
                 fp.write(chunk_data)
 
         if apply_file_attributes:
-            if "File-Mode" in resp.headers:
-                os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
-            if "File-User" in resp.headers and "File-Group" in resp.headers:
-                file_uid = int(resp.headers["File-User"])
-                file_gid = int(resp.headers["File-Group"])
+            if "X-File-Mode" in resp.headers:
+                os.chmod(path=local_file, mode=int(resp.headers["X-File-Mode"]))
+            if "X-File-User" in resp.headers and "X-File-Group" in resp.headers:
+                file_uid = int(resp.headers["X-File-User"])
+                file_gid = int(resp.headers["X-File-Group"])
                 try:
                     os.chown(path=local_file, uid=file_uid, gid=file_gid)
                 except PermissionError:
@@ -195,14 +195,14 @@ class AppMeshClientTCP(AppMeshClient):
             raise FileNotFoundError(f"Local file not found: {local_file}")
 
         with open(file=local_file, mode="rb") as fp:
-            header = {"File-Path": remote_file, "Content-Type": "text/plain"}
+            header = {AppMeshClient.HTTP_HEADER_KEY_X_FILE_PATH: remote_file, "Content-Type": "text/plain"}
             header[self.HTTP_HEADER_KEY_X_SEND_FILE_SOCKET] = "true"
 
             if apply_file_attributes:
                 file_stat = os.stat(local_file)
-                header["File-Mode"] = str(file_stat.st_mode & 0o777)  # Mask to keep only permission bits
-                header["File-User"] = str(file_stat.st_uid)
-                header["File-Group"] = str(file_stat.st_gid)
+                header["X-File-Mode"] = str(file_stat.st_mode & 0o777)  # Mask to keep only permission bits
+                header["X-File-User"] = str(file_stat.st_uid)
+                header["X-File-Group"] = str(file_stat.st_gid)
 
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
 

@@ -200,7 +200,7 @@ install_systemd_service() {
     }
 
     update_appmesh_paths ${PROG_HOME}/script/appmesh.systemd.service
-    rm -f "$SYSTEMD_FILE" && ln -sf "$service_template" "$SYSTEMD_FILE"
+    rm -f "$SYSTEMD_FILE" && cp "$service_template" "$SYSTEMD_FILE"
 
     if [ -n "${APPMESH_DAEMON_EXEC_USER:-}" ]; then
         sed -i "s/^User=.*/User=${APPMESH_DAEMON_EXEC_USER}/" "$SYSTEMD_FILE"

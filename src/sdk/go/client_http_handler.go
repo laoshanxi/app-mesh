@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"path"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile string) *http.Client {
@@ -24,18 +27,39 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 		fmt.Println(err)
 	}
 
+	jar, err := cookiejar.New(
+		&cookiejar.Options{
+			PublicSuffixList: publicsuffix.List,
+		})
+	if err != nil {
+		fmt.Println("Error creating cookie jar:", err)
+	}
+
 	return &http.Client{
-		Timeout: 2 * time.Minute,
+		Timeout: 2 * time.Minute, // Overall timeout for the entire request
+		Jar:     jar,             // Cookie jar for session management
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				RootCAs:            caCert,
-				InsecureSkipVerify: (caCert == nil),
-				Certificates:       []tls.Certificate{clientCert},
-			}}}
+				RootCAs:            caCert,                        // Trusted root CAs
+				InsecureSkipVerify: (caCert == nil),               // Skip verification if no CA provided
+				Certificates:       []tls.Certificate{clientCert}, // Client certificates for mutual TLS
+			},
+
+			// Connection pooling configuration
+			MaxIdleConns:          100,              // Good default for moderate traffic
+			MaxIdleConnsPerHost:   20,               // Increased for better connection reuse
+			IdleConnTimeout:       90 * time.Second, // Standard timeout for idle connections
+			MaxConnsPerHost:       100,              // Balanced limit for concurrent connections
+			ResponseHeaderTimeout: 10 * time.Second, // Reasonable timeout for response headers
+
+			// Additional optimizations
+			ForceAttemptHTTP2:  true,  // Enable HTTP/2 support
+			DisableKeepAlives:  false, // Keep connection pooling enabled
+			DisableCompression: false, // Allow compression for better performance
+		}}
 }
 
 // REST GET
-
 func (r *AppMeshClient) get(path string, params url.Values, headers map[string]string) (int, []byte, http.Header, error) {
 	return r.Proxy.DoRequest("GET", path, params, headers, nil, r.getToken(), r.getForwardTo())
 }

@@ -116,7 +116,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config.AbsConfigPath()
+	config.ResolveAbsolutePaths()
 
 	// Handle graceful shutdown
 	setupGracefulShutdown(cancel)

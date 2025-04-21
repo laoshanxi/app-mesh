@@ -68,7 +68,7 @@ public:
 private:
 	bool isAppExist(const std::string &appName);
 	std::map<std::string, bool> getAppList();
-	void printApps(nlohmann::json json, bool reduce);
+	void printApps(const nlohmann::json &json, bool reduce);
 	void shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered = false);
 	std::string reduceStr(std::string source, int limit);
 	bool confirmInput(const char *msg);

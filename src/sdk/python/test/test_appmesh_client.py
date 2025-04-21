@@ -166,13 +166,15 @@ class TestAppMeshClient(TestCase):
         client = AppMeshClient()
         self.assertIsNotNone(client.login("admin", "admin123"))
         with self.assertRaises(Exception):
-            client.update_user_password("admin")
-        self.assertTrue(client.update_user_password("admin1234"))
+            client.update_user_password("admin123", "admin")
+        with self.assertRaises(Exception):
+            client.update_user_password("admin", "admin123")
+        self.assertTrue(client.update_user_password("admin123", "admin1234"))
 
         with self.assertRaises(Exception):
             self.assertIsNone(client.login("admin", "admin123"))
         self.assertIsNotNone(client.login("admin", "admin1234"))
-        self.assertTrue(client.update_user_password("admin123"))
+        self.assertTrue(client.update_user_password("admin1234", "admin123"))
 
         self.assertIn("permission-list", client.view_permissions())
         self.assertIn("permission-list", client.view_user_permissions())

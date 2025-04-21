@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
@@ -197,7 +198,7 @@ func (r *Response) createAuthCookie(w http.ResponseWriter, req *http.Request) {
 	logger.Infof("Creating authentication cookie for %s", r.Uuid)
 	// Parse JWT from response body
 	var jwtResponse struct {
-		AccessToken   string  `json:"Access-Token"`
+		AccessToken   string  `json:"access_token"`
 		ExpireSeconds float64 `json:"expire_seconds"`
 	}
 
@@ -208,7 +209,7 @@ func (r *Response) createAuthCookie(w http.ResponseWriter, req *http.Request) {
 
 	// Validate token presence
 	if jwtResponse.AccessToken == "" {
-		logger.Warnf("Missing Access-Token in response body for %s", r.Uuid)
+		logger.Warnf("Missing access_token in response body for %s", r.Uuid)
 		return
 	}
 
@@ -228,11 +229,14 @@ func (r *Response) createAuthCookie(w http.ResponseWriter, req *http.Request) {
 	}
 
 	http.SetCookie(w, cookie)
+
+	// Create CSRF token cookie (generate HMAC token from access token)
+	r.createCSRFToken(w, req, cookie.MaxAge, jwtResponse.AccessToken)
 }
 
 // clearAuthCookie invalidates the authentication cookie
 func (r *Response) clearAuthCookie(w http.ResponseWriter, req *http.Request) {
-	logger.Infof(" Clearing authentication cookie for %s", r.Uuid)
+	logger.Debugf(" Clearing authentication cookie for %s", r.Uuid)
 	http.SetCookie(w, &http.Cookie{
 		Name:     COOKIE_TOKEN,
 		Value:    "",
@@ -242,4 +246,39 @@ func (r *Response) clearAuthCookie(w http.ResponseWriter, req *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1, // Expire immediately
 	})
+
+	r.clearCSRFToken(w, req)
+}
+
+// clearCSRFToken invalidates the CSRF token cookie
+func (r *Response) clearCSRFToken(w http.ResponseWriter, req *http.Request) {
+	logger.Debugf("Clearing CSRF token for %s", r.Uuid)
+	http.SetCookie(w, &http.Cookie{
+		Name:     COOKIE_TOKEN,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   req.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1, // Expire immediately
+	})
+}
+
+// createCSRFToken generates a CSRF token and sets it in the response header
+func (r *Response) createCSRFToken(w http.ResponseWriter, req *http.Request, maxAge int, hmacMessage string) {
+	logger.Debugf("Creating CSRF token for %s", r.Uuid)
+
+	token := cloud.HMAC.GenerateHMAC(hmacMessage)
+
+	cookie := &http.Cookie{
+		Name:     COOKIE_CSRF_TOKEN,
+		Value:    token, // Set the CSRF token as the cookie value
+		Path:     "/",
+		HttpOnly: false, // CSRF token should be accessible via JavaScript
+		Secure:   req.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   maxAge,
+	}
+
+	http.SetCookie(w, cookie)
 }

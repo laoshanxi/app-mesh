@@ -29,6 +29,7 @@ Or with custom config:
 
 // allowedHeaders defines the list of allowed headers for CORS
 var allowedHeaders = []string{
+	// Standard Headers
 	"Content-Type",
 	"Accept",
 	"Origin",
@@ -36,21 +37,21 @@ var allowedHeaders = []string{
 	"DNT",
 	"Cache-Control",
 	"Authorization",
-	"Audience",
-	"Auth-Permission",
-	"Expire-Seconds",
+	// Security headers
+	"X-Audience",
+	"X-Permission",
+	"X-Totp-Code",
+	"X-Expire-Seconds",
+	"X-Set-Cookie",
+	// Proxy header
+	"X-Target-Host",
+	// File headers
 	"X-Send-File-Socket",
 	"X-Recv-File-Socket",
-	"X-Target-Host",
-	"X-Set-Cookie",
-	"Username",
-	"Totp-Challenge",
-	"Totp",
-	"New-Password",
-	"File-Path",
-	"File-Mode",
-	"File-User",
-	"File-Group",
+	"X-File-Path",
+	"X-File-Mode",
+	"X-File-User",
+	"X-File-Group",
 }
 
 // CORSConfig holds the configuration for CORS
@@ -68,7 +69,7 @@ var DefaultCORSConfig = CORSConfig{
 	AllowedOrigins:   []string{"*"},
 	AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
 	AllowedHeaders:   allowedHeaders,
-	ExposedHeaders:   []string{"Exit-Code", "Output-Position", "File-Mode", "File-User", "File-Group", "Content-Type"},
+	ExposedHeaders:   []string{"X-Exit-Code", "X-Output-Position", "X-File-Mode", "X-File-User", "X-File-Group", "Content-Type"},
 	MaxAge:           86400, // 24 hours
 	AllowCredentials: false,
 }

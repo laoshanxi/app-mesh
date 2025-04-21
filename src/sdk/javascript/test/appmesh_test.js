@@ -5,7 +5,7 @@ const baseURL = process.env.APPMESH_URL || 'https://127.0.0.1:6060'
 const username = process.env.APPMESH_USER || 'admin'
 const password = process.env.APPMESH_PASS || 'admin123'
 
-async function test () {
+async function test() {
   // SSL configuration
   const sslConfig = {
     cert: fs.readFileSync('/opt/appmesh/ssl/client.pem'),
@@ -61,7 +61,7 @@ async function test () {
 
     try {
       await fs.promises.unlink('1.log')
-    } catch (err) {}
+    } catch (err) { }
 
     await client.download_file('/opt/appmesh/bin/appsvc', '1.log')
     await client.upload_file('1.log', '/tmp/2.log')
@@ -103,7 +103,7 @@ async function test () {
     // Run app tests
     try {
       await client.delete_app('test-run')
-    } catch {}
+    } catch { }
 
     const runApp = {
       name: 'test-run',
@@ -139,6 +139,9 @@ async function test () {
     // Logout test
     await client.logoff()
     console.log('Logged out successfully')
+
+    await client.login(username, password)
+    console.log('Re-login successful')
   } catch (error) {
     console.error('Test failed:', error)
     process.exit(1)

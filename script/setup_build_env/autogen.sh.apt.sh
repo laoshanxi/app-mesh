@@ -63,7 +63,7 @@ if command -v go >/dev/null 2>&1; then
 	echo "Go is installed: $(go version)"
 else
 	GO_ARCH=$architecture
-	GO_VER=1.23.1
+	GO_VER=1.23.8
 	$WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 	rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 	rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go

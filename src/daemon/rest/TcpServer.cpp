@@ -370,9 +370,9 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 	// Retrieve SSL configuration settings from the configuration instance
 	const static std::string homeDir = Utility::getHomeDir();
 	bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	auto cert = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateFile());	 // Server certificate (should include intermediate certs)
-	auto key = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key file path
-	auto ca = ClientSSLConfig::HomeDir(homeDir, Configuration::instance()->getSSLCaPath());				 // CA path or file for client verification
+	auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());	 // Server certificate (should include intermediate certs)
+	auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key file path
+	auto ca = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());				 // CA path or file for client verification
 	LOG_INF << fname << "Init SSL with CA <" << ca << "> server cert <" << cert << "> server private key <" << key << ">";
 
 	// Set SSL/TLS mode with support for TLS, explicitly excluding SSL versions for security

@@ -197,9 +197,9 @@ func GetFileAttributes(filePath string) (map[string]string, error) {
 	}
 
 	// Populate the attributes map
-	attributes["File-Mode"] = strconv.Itoa(int(fileInfo.Mode().Perm()))
-	attributes["File-User"] = strconv.Itoa(int(stat.Uid))
-	attributes["File-Group"] = strconv.Itoa(int(stat.Gid))
+	attributes["X-File-Mode"] = strconv.Itoa(int(fileInfo.Mode().Perm()))
+	attributes["X-File-User"] = strconv.Itoa(int(stat.Uid))
+	attributes["X-File-Group"] = strconv.Itoa(int(stat.Gid))
 
 	return attributes, nil
 }
@@ -207,7 +207,7 @@ func GetFileAttributes(filePath string) (map[string]string, error) {
 // SetFileAttributes applies file mode and ownership (UID, GID) to a given file based on HTTP headers.
 func SetFileAttributes(filePath string, headers http.Header) error {
 	// Apply file mode if provided
-	if fileModeStr := headers.Get("File-Mode"); fileModeStr != "" {
+	if fileModeStr := headers.Get("X-File-Mode"); fileModeStr != "" {
 		mode, err := strconv.ParseUint(fileModeStr, 10, 32)
 		if err != nil {
 			return fmt.Errorf("invalid file mode: %w", err)
@@ -218,8 +218,8 @@ func SetFileAttributes(filePath string, headers http.Header) error {
 	}
 
 	// Apply file ownership (UID, GID) if provided
-	fileUserStr := headers.Get("File-User")
-	fileGroupStr := headers.Get("File-Group")
+	fileUserStr := headers.Get("X-File-User")
+	fileGroupStr := headers.Get("X-File-Group")
 
 	if fileUserStr != "" || fileGroupStr != "" {
 		uid := -1 // Default to -1 (no change) unless provided

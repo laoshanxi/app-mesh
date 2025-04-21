@@ -122,25 +122,27 @@ public:
 	}
 };
 
-// Callback functions
-size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *userp)
+// Response body write callback
+size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *userParam)
 {
 	const size_t total_size = size * nmemb;
-	userp->append(static_cast<char *>(contents), total_size);
+	userParam->append(static_cast<char *>(contents), total_size);
 	return total_size;
 }
 
-size_t HeaderCallback(char *buffer, size_t size, size_t nitems, std::map<std::string, std::string> *headers)
+// Header callback to parse headers
+size_t HeaderCallback(char *buffer, size_t size, size_t nitems, std::map<std::string, std::string> *userHeader)
 {
 	const std::string header(buffer, size * nitems);
-	if (header.find(':') != std::string::npos)
+	// Skip empty lines and HTTP status line
+	if (header.find(':') != std::string::npos && userHeader != nullptr)
 	{
 		auto pair = Utility::splitString(header, ":");
 		if (pair.size() == 2)
 		{
 			auto key = Utility::stdStringTrim(pair[0]);
 			auto value = Utility::stdStringTrim(pair[1]);
-			(*headers)[key] = value;
+			(*userHeader)[key] = value;
 		}
 	}
 	return size * nitems;
@@ -157,14 +159,14 @@ ClientSSLConfig::ClientSSLConfig()
 	}
 }
 
-void ClientSSLConfig::AbsConfigPath(std::string workingHome)
+void ClientSSLConfig::ResolveAbsolutePaths(std::string workingHome)
 {
-	m_certificate = HomeDir(workingHome, m_certificate);
-	m_private_key = HomeDir(workingHome, m_private_key);
-	m_ca_location = HomeDir(workingHome, m_ca_location);
+	m_certificate = ResolveAbsolutePath(workingHome, m_certificate);
+	m_private_key = ResolveAbsolutePath(workingHome, m_private_key);
+	m_ca_location = ResolveAbsolutePath(workingHome, m_ca_location);
 }
 
-std::string ClientSSLConfig::HomeDir(const std::string &workingHome, std::string filePath)
+std::string ClientSSLConfig::ResolveAbsolutePath(const std::string &workingHome, std::string filePath)
 {
 	if (!workingHome.empty())
 	{
