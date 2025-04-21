@@ -9,7 +9,7 @@ with io.open(os.path.abspath(readme_path), mode="r", encoding="utf-8") as fh:
 
 def get_version():
     """PyPI package version"""
-    return "1.4.8"
+    return "1.5.4"
 
 
 setuptools.setup(
@@ -33,6 +33,6 @@ setuptools.setup(
     # msgpack for TCP serialization
     # requests_toolbelt for MultipartEncoder
     # aniso8601 for ISO8601 duration parse
-    install_requires=["requests", "msgpack", "requests_toolbelt", "aniso8601"],
+    install_requires=["requests", "msgpack", "requests_toolbelt", "aniso8601", "PyJWT"],
     python_requires=">=3",
 )
