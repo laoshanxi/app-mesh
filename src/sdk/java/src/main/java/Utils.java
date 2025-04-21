@@ -271,8 +271,8 @@ public class Utils {
         try {
             PosixFileAttributeView posixView = Files.getFileAttributeView(file.toPath(), PosixFileAttributeView.class);
             PosixFileAttributes attrs = posixView.readAttributes();
-            attributes.put("File-User", attrs.owner().getName());
-            attributes.put("File-Group", attrs.group().getName());
+            attributes.put("X-File-User", attrs.owner().getName());
+            attributes.put("X-File-Group", attrs.group().getName());
         } catch (UnsupportedOperationException e) {
             LOGGER.log(Level.WARNING, "POSIX file attributes not supported", e);
         } catch (IOException e) {

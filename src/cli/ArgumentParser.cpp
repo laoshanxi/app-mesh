@@ -1460,25 +1460,23 @@ void ArgumentParser::processUserChangePwd()
 	CONNECTION_OPTIONS;
 	po::options_description pwd("Password Options", BOOST_DESC_WIDTH);
 	pwd.add_options()
-	(TARGET_ARGS, po::value<std::string>(), "Target user to change password.");
+	(TARGET_ARGS, po::value<std::string>()->default_value("self"), "Target user to change password.");
 	OTHER_OPTIONS;
 	desc.add(connection).add(pwd).add(other);
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (!m_commandLineVariables.count(TARGET))
-	{
-		std::cout << desc << std::endl;
-		return;
-	}
-
 	auto user = m_commandLineVariables[TARGET].as<std::string>();
-	auto passwd = inputPasswd(user);
-
+	if (user == "self")
+	{
+		user = getAuthenUser();
+	}
 	std::string restPath = std::string("/appmesh/user/") + user + "/passwd";
-	std::map<std::string, std::string> query, headers;
-	headers[HTTP_HEADER_JWT_new_password] = Utility::encode64(passwd);
-	auto response = requestHttp(true, web::http::methods::POST, restPath, nullptr, headers, query);
+
+	nlohmann::json jsonObj;
+	jsonObj[HTTP_BODY_KEY_OLD_PASSWORD] = Utility::encode64(inputPasswd("old password for " + user));
+	jsonObj[HTTP_BODY_KEY_NEW_PASSWORD] = Utility::encode64(inputPasswd("new password for " + user));
+	auto response = requestHttp(true, web::http::methods::POST, restPath, &jsonObj);
 	std::cout << parseOutputMessage(response) << std::endl;
 }
 
@@ -1541,7 +1539,7 @@ void ArgumentParser::processUserManage()
 		}
 
 		auto jsonObj = nlohmann::json::parse(Utility::readFile(fileName));
-		std::string userName = jsonObj[JSON_KEY_USER_readonly_name].get<std::string>();
+		const std::string userName = jsonObj[JSON_KEY_USER_readonly_name].get<std::string>();
 
 		if (m_commandLineVariables.count(FORCE) == 0)
 		{
@@ -1954,12 +1952,12 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 			std::cout << "Enter TOTP key: ";
 			std::cin >> totp;
 
-			std::map<std::string, std::string> header;
-			header.insert({HTTP_HEADER_JWT_username, Utility::encode64(user)});
-			header.insert({HTTP_HEADER_JWT_totp, totp});
-			header.insert({HTTP_HEADER_JWT_totp_challenge, Utility::encode64(totpChallenge)});
-			header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
-			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", "", std::move(header), {});
+			nlohmann::json body;
+			body[HTTP_BODY_KEY_JWT_username] = user;
+			body[HTTP_BODY_KEY_JWT_totp] = totp;
+			body[HTTP_BODY_KEY_JWT_totp_challenge] = totpChallenge;
+			body[HTTP_BODY_KEY_JWT_expire_seconds] = m_tokenTimeoutSeconds;
+			response = RestClient::request(url, web::http::methods::POST, "/appmesh/totp/validate", body.dump(), {}, {});
 			if (response->status_code == web::http::status_codes::OK)
 			{
 				m_currentUrl = url;
