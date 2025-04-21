@@ -1,6 +1,6 @@
 module github.com/laoshanxi/app-mesh
 
-go 1.23.1
+go 1.23.8
 
 require (
 	github.com/gorilla/mux v1.8.1

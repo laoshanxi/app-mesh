@@ -118,6 +118,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     HTTP_USER_AGENT = "appmesh/python"
     HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
     HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
+    HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
 
     @unique
     class Method(Enum):
@@ -448,16 +449,16 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             path="/appmesh/login",
             header={
                 "Authorization": "Basic " + base64.b64encode((user_name + ":" + user_pwd).encode()).decode(),
-                "Expire-Seconds": self._parse_duration(timeout_seconds),
-                **({"Audience": audience} if audience else {}),
-                # **({"Totp": totp_code} if totp_code else {}),
+                "X-Expire-Seconds": str(self._parse_duration(timeout_seconds)),
+                **({"X-Audience": audience} if audience else {}),
+                # **({"X-Totp-Code": totp_code} if totp_code else {}),
             },
         )
         if resp.status_code == HTTPStatus.OK:
-            if "Access-Token" in resp.json():
-                self.jwt_token = resp.json()["Access-Token"]
-        elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED and "Totp-Challenge" in resp.json():
-            challenge = resp.json()["Totp-Challenge"]
+            if "access_token" in resp.json():
+                self.jwt_token = resp.json()["access_token"]
+        elif resp.status_code == HTTPStatus.PRECONDITION_REQUIRED and "totp_challenge" in resp.json():
+            challenge = resp.json()["totp_challenge"]
             self.validate_totp(user_name, challenge, totp_code, timeout_seconds)
         else:
             raise Exception(resp.text)
@@ -486,15 +487,15 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         resp = self._request_http(
             AppMeshClient.Method.POST,
             path="/appmesh/totp/validate",
-            header={
-                "Username": base64.b64encode(username.encode()).decode(),
-                "Totp": code,
-                "Totp-Challenge": base64.b64encode(challenge.encode()).decode(),
-                "Expire-Seconds": self._parse_duration(timeout),
+            body={
+                "user_name": username,
+                "totp_code": code,
+                "totp_challenge": challenge,
+                "expire_seconds": self._parse_duration(timeout),
             },
         )
-        if resp.status_code == HTTPStatus.OK and "Access-Token" in resp.json():
-            self.jwt_token = resp.json()["Access-Token"]
+        if resp.status_code == HTTPStatus.OK and "access_token" in resp.json():
+            self.jwt_token = resp.json()["access_token"]
             return self.jwt_token
         raise Exception(resp.text)
 
@@ -546,8 +547,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         old_token = self.jwt_token
         self.jwt_token = token
         headers = {
-            **({"Audience": audience} if audience else {}),
-            **({"Auth-Permission": permission} if permission else {}),
+            **({"X-Audience": audience} if audience else {}),
+            **({"X-Permission": permission} if permission else {}),
         }
         resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/auth", header=headers)
         if resp.status_code != HTTPStatus.OK:
@@ -582,16 +583,14 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 resp = self._request_http(
                     AppMeshClient.Method.POST,
                     path="/appmesh/token/renew",
-                    header={
-                        "Expire-Seconds": self._parse_duration(timeout),
-                    },
+                    header={"X-Expire-Seconds": str(self._parse_duration(timeout))},
                 )
                 if resp.status_code == HTTPStatus.OK:
-                    if "Access-Token" in resp.json():
-                        new_token = resp.json()["Access-Token"]
+                    if "access_token" in resp.json():
+                        new_token = resp.json()["access_token"]
                         self.jwt_token = new_token
                     else:
-                        raise Exception("Token renewal response missing Access-Token")
+                        raise Exception("Token renewal response missing access_token")
                 else:
                     raise Exception(resp.text)
             else:
@@ -611,7 +610,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         resp = self._request_http(method=AppMeshClient.Method.POST, path="/appmesh/totp/secret")
         if resp.status_code == HTTPStatus.OK:
-            totp_uri = base64.b64decode(resp.json()["Mfa-Uri"]).decode()
+            totp_uri = base64.b64decode(resp.json()["mfa_uri"]).decode()
             return self._parse_totp_uri(totp_uri).get("secret")
         raise Exception(resp.text)
 
@@ -627,11 +626,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path="/appmesh/totp/setup",
-            header={"Totp": totp_code},
+            header={"X-Totp-Code": totp_code},
         )
         if resp.status_code == HTTPStatus.OK:
-            if "Access-Token" in resp.json():
-                self.jwt_token = resp.json()["Access-Token"]
+            if "access_token" in resp.json():
+                self.jwt_token = resp.json()["access_token"]
                 return self.jwt_token
         else:
             raise Exception(resp.text)
@@ -738,8 +737,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 "timeout": str(timeout),
             },
         )
-        out_position = int(resp.headers["Output-Position"]) if "Output-Position" in resp.headers else None
-        exit_code = int(resp.headers["Exit-Code"]) if "Exit-Code" in resp.headers else None
+        out_position = int(resp.headers["X-Output-Position"]) if "X-Output-Position" in resp.headers else None
+        exit_code = int(resp.headers["X-Exit-Code"]) if "X-Exit-Code" in resp.headers else None
         return AppOutput(status_code=resp.status_code, output=resp.text, out_position=out_position, exit_code=exit_code)
 
     def check_app_health(self, app_name: str) -> bool:
@@ -877,12 +876,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # User Management
     ########################################
-    def update_user_password(self, new_password: str, user_name: str = "self") -> bool:
+    def update_user_password(self, old_password: str, new_password: str, user_name: str = "self") -> bool:
         """Change the password of a user.
 
         Args:
             user_name (str): the user name.
-            new_password (str):the new password string
+            old_password (str): the old password string.
+            new_password (str):the new password string.
 
         Returns:
             bool: success
@@ -890,7 +890,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         resp = self._request_http(
             method=AppMeshClient.Method.POST,
             path=f"/appmesh/user/{user_name}/passwd",
-            header={"New-Password": base64.b64encode(new_password.encode())},
+            body={
+                "old_password": base64.b64encode(old_password.encode()).decode(),
+                "new_password": base64.b64encode(new_password.encode()).decode(),
+            },
         )
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
@@ -1135,7 +1138,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             local_file (str): the local file path to be downloaded.
             apply_file_attributes (bool): whether to apply file attributes (permissions, owner, group) to the local file.
         """
-        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={"File-Path": remote_file})
+        resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header={self.HTTP_HEADER_KEY_X_FILE_PATH: remote_file})
         resp.raise_for_status()
 
         # Write the file content locally
@@ -1146,11 +1149,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         # Apply file attributes (permissions, owner, group) if requested
         if apply_file_attributes:
-            if "File-Mode" in resp.headers:
-                os.chmod(path=local_file, mode=int(resp.headers["File-Mode"]))
-            if "File-User" in resp.headers and "File-Group" in resp.headers:
-                file_uid = int(resp.headers["File-User"])
-                file_gid = int(resp.headers["File-Group"])
+            if "X-File-Mode" in resp.headers:
+                os.chmod(path=local_file, mode=int(resp.headers["X-File-Mode"]))
+            if "X-File-User" in resp.headers and "X-File-Group" in resp.headers:
+                file_uid = int(resp.headers["X-File-User"])
+                file_gid = int(resp.headers["X-File-Group"])
                 try:
                     os.chown(path=local_file, uid=file_uid, gid=file_gid)
                 except PermissionError:
@@ -1175,14 +1178,14 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         with open(file=local_file, mode="rb") as fp:
             encoder = MultipartEncoder(fields={"filename": os.path.basename(remote_file), "file": ("filename", fp, "application/octet-stream")})
-            header = {"File-Path": parse.quote(remote_file), "Content-Type": encoder.content_type}
+            header = {self.HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file), "Content-Type": encoder.content_type}
 
             # Include file attributes (permissions, owner, group) if requested
             if apply_file_attributes:
                 file_stat = os.stat(local_file)
-                header["File-Mode"] = str(file_stat.st_mode & 0o777)  # Mask to keep only permission bits
-                header["File-User"] = str(file_stat.st_uid)
-                header["File-Group"] = str(file_stat.st_gid)
+                header["X-File-Mode"] = str(file_stat.st_mode & 0o777)  # Mask to keep only permission bits
+                header["X-File-User"] = str(file_stat.st_uid)
+                header["X-File-Group"] = str(file_stat.st_gid)
 
             # Upload file with or without attributes
             # https://stackoverflow.com/questions/22567306/python-requests-file-upload
@@ -1197,11 +1200,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Application run
     ########################################
-    def _parse_duration(self, timeout) -> str:
+    def _parse_duration(self, timeout) -> int:
         if isinstance(timeout, int):
-            return str(timeout)
+            return timeout
         elif isinstance(timeout, str):
-            return str(int(aniso8601.parse_duration(timeout).total_seconds()))
+            return int(aniso8601.parse_duration(timeout).total_seconds())
         else:
             raise TypeError(f"Invalid timeout type: {str(timeout)}")
 
@@ -1237,8 +1240,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             body=app.json(),
             path=path,
             query={
-                "timeout": self._parse_duration(max_time_seconds),
-                "lifecycle": self._parse_duration(life_cycle_seconds),
+                "timeout": str(self._parse_duration(max_time_seconds)),
+                "lifecycle": str(self._parse_duration(life_cycle_seconds)),
             },
         )
         if resp.status_code != HTTPStatus.OK:
@@ -1317,16 +1320,16 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             body=app.json(),
             path=path,
             query={
-                "timeout": self._parse_duration(max_time_seconds),
-                "lifecycle": self._parse_duration(life_cycle_seconds),
+                "timeout": str(self._parse_duration(max_time_seconds)),
+                "lifecycle": str(self._parse_duration(life_cycle_seconds)),
             },
         )
         exit_code = None
         if resp.status_code == HTTPStatus.OK:
             if stdout_print:
                 print(resp.text, end="")
-            if "Exit-Code" in resp.headers:
-                exit_code = int(resp.headers.get("Exit-Code"))
+            if "X-Exit-Code" in resp.headers:
+                exit_code = int(resp.headers.get("X-Exit-Code"))
         elif stdout_print:
             print(resp.text)
 
