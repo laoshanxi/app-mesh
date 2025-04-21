@@ -2,10 +2,12 @@ package agent
 
 import (
 	"bytes"
+	"errors"
 	"html"
 	"io"
 	"net/http"
 
+	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/rs/xid"
 )
@@ -13,7 +15,7 @@ import (
 const maxBodySize = 100 * 1024 * 1024 // 100 MB, adjust as needed
 
 // NewAppMeshRequest creates a new AppMesh request from the HTTP request
-func NewAppMeshRequest(req *http.Request) *appmesh.Request {
+func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 	// Remove "Connection" header to avoid proxying it
 	req.Header.Del("Connection")
 
@@ -26,14 +28,12 @@ func NewAppMeshRequest(req *http.Request) *appmesh.Request {
 		Queries:       make(map[string]string, len(req.URL.Query())),
 	}
 
-	// Copy headers
+	// Copy headers and query parameters
 	for key, values := range req.Header {
 		if len(values) > 0 {
 			data.Headers[key] = values[0]
 		}
 	}
-
-	// Copy query parameters
 	for key, values := range req.URL.Query() {
 		if len(values) > 0 {
 			data.Queries[key] = values[0]
@@ -43,9 +43,14 @@ func NewAppMeshRequest(req *http.Request) *appmesh.Request {
 	// Read body for non-file upload requests
 	if !(req.Method == http.MethodPost && req.URL.Path == REST_PATH_UPLOAD) && req.Body != nil {
 		bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, maxBodySize))
-		if err == nil {
-			// Only unescape if the content actually contains HTML entities
-			// This avoids unnecessary string conversions
+		if err != nil {
+			return nil, errors.New("failed to read request body")
+		}
+		if len(bodyBytes) >= maxBodySize {
+			return nil, errors.New("request body too large")
+		}
+		// Optimize HTML entity check
+		if len(bodyBytes) > 0 {
 			if bytes.ContainsAny(bodyBytes, "&<>\"'") {
 				data.Body = html.UnescapeString(string(bodyBytes))
 			} else {
@@ -56,16 +61,30 @@ func NewAppMeshRequest(req *http.Request) *appmesh.Request {
 		// req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}
 
-	// Read cookies
+	// Handle authorization and CSRF validation
 	if req.Header.Get("Authorization") == "" {
-		// If Authorization header is not present, try to find the token in cookies
+		var authCookieValue, csrfCookieValue string
 		for _, cookie := range req.Cookies() {
-			if cookie.Name == COOKIE_TOKEN {
-				data.Headers["Authorization"] = "Bearer " + cookie.Value
-				break // Exit loop after finding the token cookie
+			switch cookie.Name {
+			case COOKIE_TOKEN:
+				authCookieValue = cookie.Value
+			case COOKIE_CSRF_TOKEN:
+				csrfCookieValue = cookie.Value
+			}
+		}
+
+		if authCookieValue != "" {
+			data.Headers["Authorization"] = "Bearer " + authCookieValue
+
+			// Verify CSRF token
+			csrfHeader := req.Header.Get(HTTP_HEADER_KEY_X_CSRF_TOKEN)
+			if csrfHeader == "" || csrfCookieValue == "" || csrfCookieValue != csrfHeader || !cloud.HMAC.VerifyHMAC(authCookieValue, csrfCookieValue) {
+				logger.Warnf("CSRF validation failed - RequestID: %s, Path: %s, Cookie: %s, Header: %s",
+					data.Uuid, data.RequestUri, csrfCookieValue, csrfHeader)
+				return nil, errors.New("invalid CSRF token")
 			}
 		}
 	}
 
-	return data
+	return data, nil
 }

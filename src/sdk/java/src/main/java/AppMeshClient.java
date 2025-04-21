@@ -196,13 +196,13 @@ public class AppMeshClient {
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BASIC_PREFIX + Base64.getEncoder().encodeToString((username + ":" + password).getBytes()));
         if (expireSeconds != null) {
-            headers.put("Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
+            headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
         }
         if (totpCode != null) {
-            headers.put("Totp", totpCode);
+            headers.put("X-Totp-Code", totpCode);
         }
         if (audience != null && !audience.isEmpty()) {
-            headers.put("Audience", audience);
+            headers.put("X-Audience", audience);
         }
 
         HttpURLConnection conn = request("POST", "/appmesh/login", null, headers, null);
@@ -211,12 +211,12 @@ public class AppMeshClient {
 
         if (statusCode == HttpURLConnection.HTTP_OK) {
             JSONObject jsonResponse = new JSONObject(responseContent);
-            this.jwtToken.set(jsonResponse.getString("Access-Token"));
+            this.jwtToken.set(jsonResponse.getString("access_token"));
             return this.jwtToken.get();
         } else if (statusCode == HTTP_PRECONDITION_REQUIRED && totpCode != null && !totpCode.isEmpty()) {
             JSONObject jsonResponse = new JSONObject(responseContent);
-            if (jsonResponse.has("Totp-Challenge")) {
-                String challenge = jsonResponse.getString("Totp-Challenge");
+            if (jsonResponse.has("totp_challenge")) {
+                String challenge = jsonResponse.getString("totp_challenge");
                 return validateTotp(username, challenge, totpCode, expireSeconds);
             }
         }
@@ -234,20 +234,20 @@ public class AppMeshClient {
      * @throws IOException if validation fails
      */
     public String validateTotp(String username, String challenge, String code, Object expireSeconds) throws IOException {
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Username", Base64.getEncoder().encodeToString(username.getBytes()));
-        headers.put("Totp", code);
-        headers.put("Totp-Challenge", Base64.getEncoder().encodeToString(challenge.getBytes()));
+        JSONObject body = new JSONObject();
+        body.put("user_name", username);
+        body.put("totp_code", code);
+        body.put("totp_challenge", challenge);
         if (expireSeconds != null) {
-            headers.put("Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
+            body.put("expire_seconds", Utils.toSeconds(expireSeconds));
         }
 
-        HttpURLConnection conn = request("POST", "/appmesh/totp/validate", null, headers, null);
+        HttpURLConnection conn = request("POST", "/appmesh/totp/validate", body, null, null);
         String responseContent = Utils.readResponse(conn);
 
         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
             JSONObject jsonResponse = new JSONObject(responseContent);
-            this.jwtToken.set(jsonResponse.getString("Access-Token"));
+            this.jwtToken.set(jsonResponse.getString("access_token"));
             return this.jwtToken.get();
         }
         throw new IOException("TOTP validation failed: " + responseContent);
@@ -275,10 +275,10 @@ public class AppMeshClient {
         Map<String, String> headers = new HashMap<>();
         headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         if (audience != null && !audience.isEmpty()) {
-            headers.put("Audience", audience);
+            headers.put("X-Audience", audience);
         }
         if (permission != null) {
-            headers.put("Auth-Permission", permission);
+            headers.put("X-Permission", permission);
         }
 
         HttpURLConnection conn = request("POST", "/appmesh/auth", null, headers, null);
@@ -291,13 +291,13 @@ public class AppMeshClient {
     public String renewToken(Object expireSeconds) throws IOException {
         Map<String, String> headers = new HashMap<>();
         if (expireSeconds != null) {
-            headers.put("Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
+            headers.put("X-Expire-Seconds", Long.toString(Utils.toSeconds(expireSeconds)));
         }
 
         HttpURLConnection conn = request("POST", "/appmesh/token/renew", null, headers, null);
         String responseContent = Utils.readResponse(conn);
         JSONObject jsonResponse = new JSONObject(responseContent);
-        this.jwtToken.set(jsonResponse.getString("Access-Token"));
+        this.jwtToken.set(jsonResponse.getString("access_token"));
         return this.jwtToken.get();
     }
 
@@ -306,7 +306,7 @@ public class AppMeshClient {
         HttpURLConnection conn = request("POST", "/appmesh/totp/secret", null, null, null);
         String responseContent = Utils.readResponse(conn);
         JSONObject jsonResponse = new JSONObject(responseContent);
-        String mfaUri = jsonResponse.getString("Mfa-Uri");
+        String mfaUri = jsonResponse.getString("mfa_uri");
         return new String(Base64.getDecoder().decode(mfaUri));
     }
 
@@ -317,12 +317,12 @@ public class AppMeshClient {
         }
 
         Map<String, String> headers = new HashMap<>();
-        headers.put("Totp", totpCode);
+        headers.put("X-Totp-Code", totpCode);
 
         HttpURLConnection conn = request("POST", "/appmesh/totp/setup", null, headers, null);
         String responseContent = Utils.readResponse(conn);
         JSONObject jsonResponse = new JSONObject(responseContent);
-        this.jwtToken.set(jsonResponse.getString("Access-Token"));
+        this.jwtToken.set(jsonResponse.getString("access_token"));
         return this.jwtToken.get();
     }
 
@@ -429,7 +429,7 @@ public class AppMeshClient {
         response.httpBody = Utils.readResponse(conn);
 
         // Extract and parse headers
-        String exitCodeStr = conn.getHeaderField("Exit-Code");
+        String exitCodeStr = conn.getHeaderField("X-Exit-Code");
         if (exitCodeStr != null && !exitCodeStr.isEmpty()) {
             try {
                 response.exitCode = Integer.parseInt(exitCodeStr);
@@ -438,7 +438,7 @@ public class AppMeshClient {
             }
         }
 
-        String outputPositionStr = conn.getHeaderField("Output-Position");
+        String outputPositionStr = conn.getHeaderField("X-Output-Position");
         if (outputPositionStr != null && !outputPositionStr.isEmpty()) {
             try {
                 response.outputPosition = Long.parseLong(outputPositionStr);
@@ -459,7 +459,7 @@ public class AppMeshClient {
 
         HttpURLConnection conn = request("POST", "/appmesh/app/syncrun", appJson, null, query);
 
-        String exitCodeHeader = conn.getHeaderField("Exit-Code");
+        String exitCodeHeader = conn.getHeaderField("X-Exit-Code");
         if (exitCodeHeader != null && !exitCodeHeader.isEmpty()) {
             exitCode = Integer.parseInt(exitCodeHeader);
         }
@@ -523,7 +523,7 @@ public class AppMeshClient {
     // Copy a remote file to local, the local file will have the same permission as the remote file
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
-        headers.put("File-Path", encodeURIComponent(filePath));
+        headers.put("X-File-Path", encodeURIComponent(filePath));
 
         HttpURLConnection conn = request("GET", "/appmesh/file/download", null, headers, null);
 
@@ -540,14 +540,14 @@ public class AppMeshClient {
         }
 
         if (applyFileAttributes) {
-            String fileMode = conn.getHeaderField("File-Mode");
+            String fileMode = conn.getHeaderField("X-File-Mode");
             if (fileMode != null) {
                 Files.setPosixFilePermissions(Paths.get(localFile),
                         PosixFilePermissions.fromString(Utils.toPermissionString(Integer.parseInt(fileMode))));
             }
 
-            String fileUser = conn.getHeaderField("File-User");
-            String fileGroup = conn.getHeaderField("File-Group");
+            String fileUser = conn.getHeaderField("X-File-User");
+            String fileGroup = conn.getHeaderField("X-File-Group");
             if (fileUser != null && fileGroup != null) {
                 try {
                     Files.setOwner(Paths.get(localFile),
@@ -567,7 +567,7 @@ public class AppMeshClient {
     public boolean uploadFile(Object localFile, String filePath, boolean applyFileAttributes) {
         try {
             Map<String, String> headers = commonHeaders();
-            headers.put("File-Path", encodeURIComponent(filePath));
+            headers.put("X-File-Path", encodeURIComponent(filePath));
 
             File file;
             if (localFile instanceof String) {
@@ -581,7 +581,7 @@ public class AppMeshClient {
             // Get file permissions and attributes
             if (applyFileAttributes) {
                 int fileMode = Utils.getFilePermissions(file);
-                headers.put("File-Mode", String.valueOf(fileMode));
+                headers.put("X-File-Mode", String.valueOf(fileMode));
 
                 Map<String, String> fileAttributes = Utils.getFileAttributes(file);
                 headers.putAll(fileAttributes);
@@ -651,13 +651,16 @@ public class AppMeshClient {
         return config.getJSONObject("BaseConfig").getString("LogLevel");
     }
 
-    public boolean updateUserPassword(String newPassword, String userName) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/user/" + userName + "/passwd", null, null, null);
+    public boolean updateUserPassword(String oldPassword, String newPassword, String userName) throws IOException {
+        JSONObject newPwd = new JSONObject();
+        newPwd.put("old_password", Base64.getEncoder().encodeToString(oldPassword.getBytes()));
+        newPwd.put("new_password", Base64.getEncoder().encodeToString(newPassword.getBytes()));
+        HttpURLConnection conn = request("POST", "/appmesh/user/" + userName + "/passwd", newPwd, null, null);
         return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
     }
 
-    public boolean updateUserPassword(String newPassword) throws IOException {
-        return updateUserPassword(newPassword, "self");
+    public boolean updateUserPassword(String oldPassword, String newPassword) throws IOException {
+        return updateUserPassword(oldPassword, newPassword, "self");
     }
 
     public boolean addUser(String userName, JSONObject userJson) throws IOException {
