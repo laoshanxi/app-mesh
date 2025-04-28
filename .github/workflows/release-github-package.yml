@@ -172,7 +172,7 @@ jobs:
           dpkg-sig --verify */*.deb
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v2.2.3
+        uses: actions/attest-build-provenance@v2.3.0
         with:
           subject-path: "*/*.rpm"
 
