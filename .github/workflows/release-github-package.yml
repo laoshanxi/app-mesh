@@ -92,10 +92,10 @@ jobs:
           if [ "${BUILD_DIR}" == "amd64" ]; then
             docker run --rm --volume ${{ github.workspace }}:/workspace --workdir /workspace laoshanxi/appmesh:build_ubuntu /bin/bash --login -c "set -e; mkdir syft_$BUILD_DIR; cd syft_$BUILD_DIR; cmake ..; make -j'$(nproc)'; make pack; ls; make test ARGS='-V'"
             BUILD_DIR_SYFT=${{ github.workspace }}/syft_${BUILD_DIR}
-            sudo python3 -m venv $BUILD_DIR_SYFT/home/venv
-            source $BUILD_DIR_SYFT/home/venv/bin/activate
-            sudo $BUILD_DIR_SYFT/home/venv/bin/pip3 install appmesh
-            ${{ steps.syft.outputs.cmd }} scan $BUILD_DIR_SYFT/home/ -c ${{ github.workspace }}/script/syft.yaml --source-name app-mesh --source-version ${{ env.APPMESH_VERSION }}
+            sudo python3 -m venv $BUILD_DIR_SYFT/nfpm_home/venv
+            source $BUILD_DIR_SYFT/nfpm_home/venv/bin/activate
+            sudo $BUILD_DIR_SYFT/nfpm_home/venv/bin/pip3 install appmesh
+            ${{ steps.syft.outputs.cmd }} scan $BUILD_DIR_SYFT/nfpm_home/ -c ${{ github.workspace }}/script/syft.yaml --source-name app-mesh --source-version ${{ env.APPMESH_VERSION }}
             SBOM_JSON_FILE=${{ github.workspace }}/appmesh.${{ env.APPMESH_VERSION }}.sbom.spdx.json
             mv sbom.spdx.json $SBOM_JSON_FILE
           fi
@@ -130,9 +130,9 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          echo "1. Enhanced object design in Python SDK" >> CHANGELOG.txt
+          echo "1. Object design for Python SDK" >> CHANGELOG.txt
           echo "2. CentOS 7 compatibility" >> CHANGELOG.txt
-          echo "3. SSL enabled for all connections" >> CHANGELOG.txt
+          echo "3. SSL for all connections" >> CHANGELOG.txt
           echo "4. GPG signing for RPM and DPKG packages (use 'rpm/dpkg --import gpg_public.key')" >> CHANGELOG.txt
           echo "5. Generated SBOM (Software Bill of Materials) file" >> CHANGELOG.txt
           echo "6. YAML format support for application configuration" >> CHANGELOG.txt
@@ -142,6 +142,7 @@ jobs:
           echo "10. PSK authentication for Docker requests from App Mesh engine to agent" >> CHANGELOG.txt
           echo "11. OAuth2 authentication" >> CHANGELOG.txt
           echo "12. Enable key encryption by default" >> CHANGELOG.txt
+          echo "13. Cookie token and CSRF token" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency
