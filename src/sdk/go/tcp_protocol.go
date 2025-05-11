@@ -3,9 +3,9 @@ package appmesh
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -20,50 +20,47 @@ const (
 
 // TCPConnection represents a non-thread-safe TCP connection wrapper.
 type TCPConnection struct {
-	conn       net.Conn
-	readBuffer sync.Pool // Buffer pool for better memory management.
-	muSend     sync.Mutex
-	muRead     sync.Mutex
+	conn   net.Conn
+	muSend sync.Mutex
+	muRead sync.Mutex
 }
 
 // NewTCPConnection initializes and returns a TCPConnection.
 func NewTCPConnection() *TCPConnection {
-	return &TCPConnection{
-		readBuffer: sync.Pool{
-			New: func() interface{} {
-				return make([]byte, TCP_CHUNK_BLOCK_SIZE)
-			},
-		}}
+	return &TCPConnection{}
 }
 
 // Connect establishes a secure TLS TCP connection to an App Mesh server.
 func (r *TCPConnection) Connect(url string, sslClientCert string, sslClientCertKey string, sslCAPath string) error {
-	// Prepare socket URI.
+	// Close existing connection if any
+	r.Close()
+
+	// Validate and parse URL
 	u, err := ParseURL(url)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid URL: %w", err)
 	}
+
 	tcpAddr := net.JoinHostPort(u.Hostname(), u.Port())
 
-	// Load server CA if server verification is enabled.
-	verifyServer := (sslCAPath != "")
-	var serverCA *x509.CertPool
-	if verifyServer {
-		serverCA, err = LoadCA(sslCAPath)
+	// TLS configuration with secure defaults
+	conf := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	// Configure server verification
+	if sslCAPath != "" {
+		serverCA, err := LoadCA(sslCAPath)
 		if err != nil {
 			return fmt.Errorf("failed to load server CA: %w", err)
 		}
+		conf.RootCAs = serverCA
+	} else {
+		conf.InsecureSkipVerify = true
 	}
 
-	// TLS configuration.
-	conf := &tls.Config{
-		InsecureSkipVerify: !verifyServer,
-		RootCAs:            serverCA,
-	}
-
-	// Load client certificate if client verification is enabled.
-	verifyClient := (sslClientCert != "" && sslClientCertKey != "")
-	if verifyClient {
+	// Configure client certificate
+	if sslClientCert != "" && sslClientCertKey != "" {
 		clientCert, err := LoadCertificatePair(sslClientCert, sslClientCertKey)
 		if err != nil {
 			return fmt.Errorf("failed to load client certificate: %w", err)
@@ -71,19 +68,21 @@ func (r *TCPConnection) Connect(url string, sslClientCert string, sslClientCertK
 		conf.Certificates = []tls.Certificate{clientCert}
 	}
 
-	// Dialer with timeout.
+	// Establish connection
 	dialer := net.Dialer{Timeout: TCP_CONNECT_TIMEOUT_SECONDS * time.Second}
-
-	// Establish a TLS connection.
 	conn, err := tls.DialWithDialer(&dialer, "tcp", tcpAddr, conf)
 	if err != nil {
-		return fmt.Errorf("failed to establish TLS connection: %w", err)
+		if conn != nil {
+			conn.Close()
+		}
+		return fmt.Errorf("failed to establish TLS connection to %s: %w", tcpAddr, err)
 	}
 
 	// Set TCP_NODELAY for low-latency communication.
 	if err := SetTcpNoDelay(conn); err != nil {
-		fmt.Printf("warning: failed to set TCP_NODELAY: %v", err)
+		fmt.Printf("warning: failed to set TCP_NODELAY: %v\n", err)
 	}
+
 	r.conn = conn
 	return nil
 }
@@ -127,35 +126,22 @@ func (r *TCPConnection) readHeader() (uint32, error) {
 
 // readBytes reads the specified number of bytes from the TCP connection.
 func (r *TCPConnection) readBytes(msgLength uint32) ([]byte, error) {
+	if msgLength == 0 {
+		return []byte{}, nil
+	}
+
 	if msgLength > TCP_MAX_BLOCK_SIZE {
-		return nil, fmt.Errorf("read message size exceeds the maximum allowed size")
+		return nil, fmt.Errorf("read message size %d exceeds maximum allowed size %d", msgLength, TCP_MAX_BLOCK_SIZE)
 	}
 
-	buffer := make([]byte, 0, msgLength)
-	remaining := msgLength
+	data := make([]byte, msgLength)
 
-	for remaining > 0 {
-		chunkSize := min(remaining, TCP_CHUNK_BLOCK_SIZE)
-
-		// Get a buffer from the pool.
-		chunk := r.readBuffer.Get().([]byte)
-
-		n, err := r.conn.Read(chunk[:chunkSize])
-		if err != nil {
-			// Explicitly return the buffer to the pool.
-			r.readBuffer.Put(chunk)
-			return nil, fmt.Errorf("read error after %d bytes: %w", msgLength-remaining, err)
-		}
-
-		if n > 0 {
-			buffer = append(buffer, chunk[:n]...)
-			remaining -= uint32(n)
-		}
-		// Explicitly return the buffer to the pool.
-		r.readBuffer.Put(chunk)
+	// Use io.ReadFull for simpler, more robust reading
+	if _, err := io.ReadFull(r.conn, data); err != nil {
+		return nil, fmt.Errorf("failed to read %d bytes: %w", msgLength, err)
 	}
 
-	return buffer, nil
+	return data, nil
 }
 
 // SendMessage sends a complete message over the TCP connection.

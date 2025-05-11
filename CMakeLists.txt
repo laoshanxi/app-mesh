@@ -276,6 +276,7 @@ add_custom_target(cppcheck
 #   create venv under home and use pip install appmesh
 ##########################################################################
 add_custom_target(sbom
-    COMMENT "Generate SBOM file: ${CMAKE_BINARY_DIR}/home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml"
-    COMMAND syft ${CMAKE_BINARY_DIR}/home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
+    COMMENT "Generate SBOM dependency list from ${CMAKE_BINARY_DIR}/nfpm_home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml"
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/script/syft_dpkg_generate.sh
+    COMMAND syft ${CMAKE_BINARY_DIR}/nfpm_home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
 )

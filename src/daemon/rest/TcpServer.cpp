@@ -202,10 +202,9 @@ int TcpHandler::open(void *)
 			{
 				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << std::strerror(errno);
 			}
-			if (this->peer().disable(ACE_NONBLOCK) == -1)
-			{
-				LOG_ERR << fname << "Can't disable nonblocking with error: " << std::strerror(errno);
-			}
+
+			// if (this->peer().disable(ACE_NONBLOCK) == -1) // Disable non-blocking mode already controled by ACE_NONBLOCK_FLAG
+
 			LOG_INF << fname << "client <" << m_clientHostName << "> connected";
 		}
 		return 0;

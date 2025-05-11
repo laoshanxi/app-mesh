@@ -48,7 +48,7 @@ public:
 	virtual ~TcpHandler(void);
 
 	// = Hooks for opening and closing handlers.
-	virtual int open(void *);
+	virtual int open(void *) override;
 
 	/// <summary>
 	/// Process TCP request
@@ -59,7 +59,7 @@ public:
 
 protected:
 	// = Demultiplexing hooks.
-	virtual int handle_input(ACE_HANDLE);
+	virtual int handle_input(ACE_HANDLE) override;
 
 	/// <summary>
 	/// Reply response to Golang
