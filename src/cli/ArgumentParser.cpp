@@ -278,9 +278,8 @@ void ArgumentParser::printMainHelp()
 			  << std::endl;
 
 	std::cout << "Additional Information:" << std::endl;
-	std::cout << "  - Run 'appc COMMAND --help' for detailed command usage" << std::endl;
-	std::cout << "  - Remote connection: Use '-b $server_url' (e.g., https://127.0.0.1:6060)" << std::endl;
-	std::cout << "  - All commands support --help flag for detailed options" << std::endl
+	std::cout << "  - Remote CLI use '-H [ --host-url ]' (e.g., -H https://127.0.0.1:6060)" << std::endl;
+	std::cout << "  - Use '-h [ --help ]' flag for detailed usage" << std::endl
 			  << std::endl;
 }
 
