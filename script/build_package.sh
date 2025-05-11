@@ -168,8 +168,8 @@ build_packages() {
             mv "$pkg" "${PACKAGE_FILE_NAME}" && info "Package built: ${PACKAGE_FILE_NAME}"
         done
     elif [[ "$OSTYPE" == "darwin"* ]]; then
-        local MACOS_VERSION=$(sw_vers -productVersion)
-        local CLANG_VERSION=$(clang --version | awk '/Apple clang version/ {print $4}')
+        local MACOS_VERSION=$(sw_vers -productVersion | cut -d '.' -f1)
+        local CLANG_VERSION=$(clang --version | awk -F ' ' '/Apple clang version/ {print $4}' | cut -d '.' -f1)
         local PACKAGE_FILE_NAME="${CMAKE_BINARY_DIR}/${PROJECT_NAME}_${PROJECT_VERSION}_clang_${CLANG_VERSION}_macos_${MACOS_VERSION}_${GOARCH}.gz"
 
         info "Building for macOS (Version: $MACOS_VERSION, Clang: $CLANG_VERSION, ARCH: $GOARCH)"

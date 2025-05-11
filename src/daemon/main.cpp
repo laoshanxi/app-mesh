@@ -156,7 +156,9 @@ int main(int argc, char *argv[])
 			}
 			LOG_INF << fname << "Started <" << Configuration::instance()->getThreadPoolSize() << "> threads for REST thread pool";
 
-			if (acceptor.open(acceptorAddr, ACE_Reactor::instance()) == -1)
+			int FLAG_ACE_NONBLOCK = 0; // non-blocking mode disabled (default)
+			int FLAG_SO_REUSEADDR = 1; // enable address reuse (default)
+			if (acceptor.open(acceptorAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
 			{
 				throw std::runtime_error(std::string("Failed to listen on port ") + std::to_string(Configuration::instance()->getRestTcpPort()) + " with error: " + std::strerror(errno));
 			}
