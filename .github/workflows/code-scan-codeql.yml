@@ -65,7 +65,13 @@ jobs:
       # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
       # If this step fails, then you should remove it and run the build manually (see below)
       - name: Autobuild
+        if: matrix.language != 'java'
         uses: github/codeql-action/autobuild@v3
+
+      - name: Build Java project
+        if: matrix.language == 'java'
+        run: mvn clean compile
+        working-directory: src/sdk/java
 
       # ℹ️ Command-line programs to run using the OS shell.
       # 📚 https://git.io/JvXDl

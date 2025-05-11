@@ -28,6 +28,7 @@ exclude:
   - "**/*.sh"
   - "**/*.yml"
   - "**/*.yaml"
+  - "**/cfssl*"
 
 # os and/or architecture to use when referencing container images (e.g. "windows/armv6" or "arm64")
 # SYFT_PLATFORM env var / --platform flag
@@ -201,6 +202,9 @@ golang:
       # search for semver-like strings in the binary contents.
       # SYFT_GOLANG_MAIN_MODULE_VERSION_FROM_CONTENTS env var
       from-contents: true
+
+   # scan only direct dependencies from go.mod
+   scan-indirect-deps: false
 
 
 python:
