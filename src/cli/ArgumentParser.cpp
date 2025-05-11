@@ -278,9 +278,8 @@ void ArgumentParser::printMainHelp()
 			  << std::endl;
 
 	std::cout << "Additional Information:" << std::endl;
-	std::cout << "  - Run 'appc COMMAND --help' for detailed command usage" << std::endl;
-	std::cout << "  - Remote connection: Use '-b $server_url' (e.g., https://127.0.0.1:6060)" << std::endl;
-	std::cout << "  - All commands support --help flag for detailed options" << std::endl
+	std::cout << "  - Remote CLI use '-H [ --host-url ]' (e.g., -H https://127.0.0.1:6060)" << std::endl;
+	std::cout << "  - Use '-h [ --help ]' flag for detailed usage" << std::endl
 			  << std::endl;
 }
 
@@ -1973,306 +1972,172 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 
 void ArgumentParser::printApps(const nlohmann::json &json, bool reduce)
 {
-	// Define column configurations with minimum widths
-	struct Column
-	{
-		const std::string title;
-		const std::string jsonKey;
-		const bool truncatable;
-		const size_t minWidth;
-		size_t optimalWidth;
-		Column(const std::string &t, const std::string &key, bool trunc)
-			: title(t), jsonKey(key), truncatable(trunc), minWidth(t.length()), optimalWidth(minWidth)
-		{
+    const int COLUMN_PADDING = 2;
+
+    // Define columns with their properties
+    struct Column
+    {
+        const std::string title;
+        const std::string jsonKey;
+		size_t width;												  // Single width field that will be calculated
+		std::function<std::string(const nlohmann::json &)> formatter; // Function to format a value for this column
+
+        Column(const std::string &title, const std::string &key, std::function<std::string(const nlohmann::json &)> formatter)
+            : title(title), jsonKey(key), width(title.length()), formatter(formatter)
+        {
+			width += (title == "COMMAND" ? 0 : COLUMN_PADDING); // Add padding for all but COMMAND column
 		}
 	};
 
-	std::vector<Column> columns = {
-		{"ID", "", false},
-		{"NAME", JSON_KEY_APP_name, false},
-		{"OWNER", JSON_KEY_APP_owner, false},
-		{"STATUS", JSON_KEY_APP_status, false},
-		{"HEALTH", JSON_KEY_APP_health, false},
-		{"PID", JSON_KEY_APP_pid, false},
-		{"USER", JSON_KEY_APP_pid_user, false},
-		{"MEMORY", JSON_KEY_APP_memory, false},
-		{"%CPU", JSON_KEY_APP_cpu, false},
-		{"RETURN", JSON_KEY_APP_return, false},
-		{"AGE", "", false},
-		{"DURATION", "", false},
-		{"STARTS", JSON_KEY_APP_starts, false},
-		{"COMMAND", JSON_KEY_APP_command, true}};
+    // Create all column definitions with their formatters
+    std::vector<Column> columns = {
+        {"ID", "", [](const auto&) { return ""; }},  // Index is handled separately
+        {"NAME", JSON_KEY_APP_name, [](const auto& obj) { 
+            return GET_JSON_STR_VALUE(obj, JSON_KEY_APP_name); 
+        }},
+        {"OWNER", JSON_KEY_APP_owner, [](const auto& obj) { 
+            std::string value = GET_JSON_STR_VALUE(obj, JSON_KEY_APP_owner);
+            return value.empty() ? EMPTY_PLACEHOLDER : value;
+        }},
+        {"STATUS", JSON_KEY_APP_status, [](const auto& obj) {
+            return GET_STATUS_STR(GET_JSON_INT_VALUE(obj, JSON_KEY_APP_status));
+        }},
+        {"HEALTH", JSON_KEY_APP_health, [](const auto& obj) {
+            return (0 == GET_JSON_INT_VALUE(obj, JSON_KEY_APP_health)) ? "OK" : EMPTY_PLACEHOLDER;
+        }},
+        {"PID", JSON_KEY_APP_pid, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_pid) ? std::to_string(GET_JSON_INT_VALUE(obj, JSON_KEY_APP_pid)) : EMPTY_PLACEHOLDER;
+        }},
+        {"USER", JSON_KEY_APP_pid_user, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_pid_user) ? GET_JSON_STR_VALUE(obj, JSON_KEY_APP_pid_user) : EMPTY_PLACEHOLDER;
+        }},
+        {"MEMORY", JSON_KEY_APP_memory, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_memory) ? Utility::humanReadableSize(GET_JSON_INT64_VALUE(obj, JSON_KEY_APP_memory)) : EMPTY_PLACEHOLDER;
+        }},
+        {"%CPU", JSON_KEY_APP_cpu, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_cpu) ? std::to_string(static_cast<int>(GET_JSON_DOUBLE_VALUE(obj, JSON_KEY_APP_cpu))) : EMPTY_PLACEHOLDER;
+        }},
+        {"RETURN", JSON_KEY_APP_return, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_return) ? std::to_string(GET_JSON_INT_VALUE(obj, JSON_KEY_APP_return)) : EMPTY_PLACEHOLDER;
+        }},
+        {"AGE", JSON_KEY_APP_REG_TIME, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_REG_TIME) ? 
+                Utility::humanReadableDuration(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(obj, JSON_KEY_APP_REG_TIME))) : EMPTY_PLACEHOLDER;
+        }},
+        {"DURATION", "", [](const auto& obj) {
+            if (HAS_JSON_FIELD(obj, JSON_KEY_APP_last_start) && HAS_JSON_FIELD(obj, JSON_KEY_APP_pid)) {
+                auto startTime = std::chrono::system_clock::from_time_t(
+                    GET_JSON_INT64_VALUE(obj, JSON_KEY_APP_last_start));
+                auto endTime = HAS_JSON_FIELD(obj, JSON_KEY_APP_last_exit) ? 
+                    std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(obj, JSON_KEY_APP_last_exit)) : 
+                    std::chrono::system_clock::now();
+                return Utility::humanReadableDuration(startTime, endTime);
+            }
+            return std::string(EMPTY_PLACEHOLDER);
+        }},
+        {"STARTS", JSON_KEY_APP_starts, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_starts) ? std::to_string(GET_JSON_INT_VALUE(obj, JSON_KEY_APP_starts)) : EMPTY_PLACEHOLDER;
+        }},
+        {"COMMAND", JSON_KEY_APP_command, [](const auto& obj) {
+            return HAS_JSON_FIELD(obj, JSON_KEY_APP_command) ? obj.at(JSON_KEY_APP_command).dump() : "";
+        }}
+    };
 
-	const int columnSpaces = 2;
+    // Step 1: Prepare row data for analysis and later display
+    std::vector<std::vector<std::string>> rows;
+    int index = 1;
+    for (const auto &item : json.items()) {
+        const auto &jsonObj = item.value();
+        std::vector<std::string> row;
 
-	// Calculate optimal column: analyze data to determine optimal column widths
-	int index = 1;
-	for (auto &entity : json.items())
-	{
-		auto jsonObj = entity.value();
+        // Handle ID column specially
+        row.push_back(std::to_string(index++));
 
-		// ID column - index
-		columns[0].optimalWidth = std::max(columns[0].optimalWidth, std::to_string(index++).length() + columnSpaces);
+        // Format all other columns 
+        for (size_t i = 1; i < columns.size(); i++)
+            row.push_back(columns[i].formatter(jsonObj));
 
-		for (size_t i = 1; i < columns.size() - 1; i++)
-		{ // Skip last column (COMMAND) for special handling
-			if (columns[i].jsonKey.empty())
-				continue;
+        rows.push_back(row);
+    }
 
-			std::string value;
-			if (columns[i].title == "NAME")
-			{
-				value = GET_JSON_STR_VALUE(jsonObj, columns[i].jsonKey);
-			}
-			else if (columns[i].title == "OWNER")
-			{
-				value = GET_JSON_STR_VALUE(jsonObj, columns[i].jsonKey);
-				if (value.empty())
-					value = "-";
-			}
-			else if (columns[i].title == "STATUS")
-			{
-				value = GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, columns[i].jsonKey));
-			}
-			else if (columns[i].title == "HEALTH")
-			{
-				value = ((0 == GET_JSON_INT_VALUE(jsonObj, columns[i].jsonKey)) ? "OK" : "-");
-			}
-			else if (columns[i].title == "PID")
-			{
-				value = HAS_JSON_FIELD(jsonObj, columns[i].jsonKey) ? std::to_string(GET_JSON_INT_VALUE(jsonObj, columns[i].jsonKey)) : "-";
-			}
-			else if (columns[i].title == "USER")
-			{
-				value = HAS_JSON_FIELD(jsonObj, columns[i].jsonKey) ? GET_JSON_STR_VALUE(jsonObj, columns[i].jsonKey) : "-";
-			}
-			else if (columns[i].title == "MEMORY")
-			{
-				value = HAS_JSON_FIELD(jsonObj, columns[i].jsonKey) ? Utility::humanReadableSize(GET_JSON_INT64_VALUE(jsonObj, columns[i].jsonKey)) : "-";
-			}
-			else if (columns[i].title == "%CPU")
-			{
-				value = HAS_JSON_FIELD(jsonObj, columns[i].jsonKey) ? std::to_string((int)GET_JSON_DOUBLE_VALUE(jsonObj, columns[i].jsonKey)) : "-";
-			}
-			else if (columns[i].title == "RETURN")
-			{
-				value = HAS_JSON_FIELD(jsonObj, columns[i].jsonKey) ? std::to_string(GET_JSON_INT_VALUE(jsonObj, columns[i].jsonKey)) : "-";
-			}
-			else if (columns[i].title == "AGE")
-			{
-				value = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME) ? Utility::humanReadableDuration(std::chrono::system_clock::from_time_t(
-																			 GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)))
-																	   : "-";
-			}
-			else if (columns[i].title == "DURATION")
-			{
-				if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start) && HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
-				{
-					auto startTime = std::chrono::system_clock::from_time_t(
-						GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_start));
-					auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();
-					value = Utility::humanReadableDuration(startTime, endTime);
-				}
-				else
-				{
-					value = "-";
-				}
-			}
-			else if (columns[i].title == "STARTS")
-			{
-				value = HAS_JSON_FIELD(jsonObj, columns[i].jsonKey) ? std::to_string(GET_JSON_INT_VALUE(jsonObj, columns[i].jsonKey)) : "-";
-			}
+    // Step 2: Calculate optimal column widths with padding
+    for (const auto &row : rows) {
+        for (size_t i = 0; i < columns.size() - 1; i++) {  // Skip the last (COMMAND) column
+            columns[i].width = std::max(columns[i].width, row[i].length() + COLUMN_PADDING); // Add padding here as well
+        }
+    }
 
-			if (!columns[i].truncatable)
-			{
-				columns[i].optimalWidth = std::max(columns[i].optimalWidth, value.length());
-			}
-			else
-			{
-				// For truncatable columns, cap the max width to some reasonable value
-				size_t maxWidth = columns[i].minWidth * 2;
-				columns[i].optimalWidth = std::min(std::max(columns[i].optimalWidth, std::min(value.length(), maxWidth)), maxWidth);
-			}
-		}
-	}
-
-	// Apply minimum widths and add padding
-	for (size_t i = 0; i < columns.size() - 1; i++)
-	{ // Exclude COMMAND
-		columns[i].optimalWidth = std::max(columns[i].optimalWidth, columns[i].minWidth) + columnSpaces;
-	}
-
-	// Terminal width detection and adjustment
-	int terminalWidth = 80; // Default fallback width
-
+    // Step 3: Determine terminal width and adjust column display
+    int terminalWidth = 80;  // Default fallback width
 #ifdef _WIN32
-	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi))
-	{
-		terminalWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-	}
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        terminalWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    }
 #else
-	struct winsize w;
-	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) != -1)
-	{
-		terminalWidth = w.ws_col;
-	}
+    struct winsize w;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) != -1) {
+        terminalWidth = w.ws_col;
+    }
 #endif
-
-	// Calculate available space for the COMMAND column
-	size_t usedWidth = 2; // COMMAND column consume "" by default
-	for (size_t i = 0; i < columns.size() - 1; i++)
-	{
-		usedWidth += columns[i].optimalWidth;
+	if (!reduce) {
+		terminalWidth = 32767; // Max terminal width for none-reduce mode
 	}
 
-	// Command column gets remaining space
-	size_t commandColWidth = std::max<int>(columns.back().minWidth, terminalWidth - usedWidth - 1);
+    // Calculate available columns that fit in terminal width
+    size_t totalWidth = 0;
 
-	// Print header
-	boost::io::ios_all_saver guard(std::cout);
-	std::cout << std::left;
+    size_t visibleColumns = 0; // Without counting COMMAND column
+    for (size_t i = 0; i < columns.size() - 1; i++) {
+        if (totalWidth + columns[i].width <= terminalWidth) {
+            totalWidth += columns[i].width;
+            visibleColumns++;
+        } else {
+            break;
+        }
+    }
+    
+    // Calculate COMMAND column width if there's space left
+    size_t commandColWidth = 0;
+    if (totalWidth + columns.back().width < terminalWidth) {
+        commandColWidth = terminalWidth - totalWidth;
+    }
 
-	for (size_t i = 0; i < columns.size() - 1; i++)
-	{
-		std::cout << std::setw(columns[i].optimalWidth) << Utility::strToupper(columns[i].title);
-	}
-	std::cout << Utility::strToupper(columns.back().title) << std::endl;
+    // Step 4: Print the table
+    boost::io::ios_all_saver guard(std::cout);
+    std::cout << std::left;
 
-	// Print data rows
-	index = 1;
-	auto reduceFunc = std::bind(&ArgumentParser::reduceStr, this, std::placeholders::_1, std::placeholders::_2);
+    // Print header
+    for (size_t i = 0; i < visibleColumns; i++) {
+        std::cout << std::setw(columns[i].width) << Utility::strToupper(columns[i].title);
+    }
+    if (commandColWidth > 0) {
+        std::cout << Utility::strToupper(columns.back().title);
+    }
+    std::cout << std::endl;
 
-	for (auto &entity : json.items())
-	{
-		auto jsonObj = entity.value();
-		const char *slash = "-";
-
-		// Print ID
-		std::cout << std::setw(columns[0].optimalWidth) << (std::to_string(index++) + ' ');
-
-		// Print NAME
-		auto name = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_name);
-		if (reduce || name.length() > columns[1].optimalWidth - 1)
-		{
-			name = reduceFunc(name, columns[1].optimalWidth - 1);
-		}
-		std::cout << std::setw(columns[1].optimalWidth) << name;
-
-		// Print OWNER
-		std::string owner = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner);
-		if (owner.empty())
-			owner = slash;
-		if (reduce || owner.length() > columns[2].optimalWidth - 1)
-		{
-			owner = reduceFunc(owner, columns[2].optimalWidth - 1);
-		}
-		std::cout << std::setw(columns[2].optimalWidth) << owner;
-
-		// Print STATUS
-		std::cout << std::setw(columns[3].optimalWidth) << GET_STATUS_STR(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_status));
-
-		// Print HEALTH
-		std::cout << std::setw(columns[4].optimalWidth) << ((0 == GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_health)) ? "OK" : slash);
-
-		// Print PID
-		std::cout << std::setw(columns[5].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
-			std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid);
-		else
-			std::cout << slash;
-
-		// Print USER
-		std::cout << std::setw(columns[6].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid_user))
-		{
-			std::string user = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_pid_user);
-			if (reduce || user.length() > columns[6].optimalWidth - 1)
-			{
-				user = reduceFunc(user, columns[6].optimalWidth - 1);
-			}
-			std::cout << user;
-		}
-		else
-		{
-			std::cout << slash;
-		}
-
-		// Print MEMORY
-		std::cout << std::setw(columns[7].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_memory))
-			std::cout << Utility::humanReadableSize(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_memory));
-		else
-			std::cout << slash;
-
-		// Print CPU
-		std::cout << std::setw(columns[8].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cpu))
-		{
-			std::cout << static_cast<int>(GET_JSON_DOUBLE_VALUE(jsonObj, JSON_KEY_APP_cpu));
-		}
-		else
-		{
-			std::cout << slash;
-		}
-
-		// Print RETURN
-		std::cout << std::setw(columns[9].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_return))
-			std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_return);
-		else
-			std::cout << slash;
-
-		// Print AGE
-		std::cout << std::setw(columns[10].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_REG_TIME))
-			std::cout << Utility::humanReadableDuration(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_REG_TIME)));
-		else
-			std::cout << slash;
-
-		// Print DURATION
-		std::cout << std::setw(columns[11].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_start) && HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
-		{
-			auto startTime = std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_start));
-			auto endTime = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_last_exit) ? std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_last_exit)) : std::chrono::system_clock::now();
-			std::cout << Utility::humanReadableDuration(startTime, endTime);
-		}
-		else
-		{
-			std::cout << slash;
-		}
-
-		// Print STARTS
-		std::cout << std::setw(columns[12].optimalWidth);
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_starts))
-			std::cout << GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_starts);
-		else
-			std::cout << slash;
-
-		// Print COMMAND (always last, with smart truncation)
-		if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_command))
-		{
-			std::string command = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command);
-			if (command.length() > commandColWidth)
-			{
-				if (reduce)
-				{
-					command = reduceFunc(command, commandColWidth);
-				}
-				else
-				{
-					// If not reducing, we'll show the first part with an ellipsis
-					command = command.substr(0, commandColWidth - 3) + "...";
-				}
-				jsonObj[JSON_KEY_APP_command] = command;
-			}
-			// Use JSON object print to ensure proper escaping
-			std::cout << jsonObj.at(JSON_KEY_APP_command);
-		}
-
-		std::cout << std::endl;
-	}
+    // Print data rows
+    for (const auto &row : rows) {
+        for (size_t i = 0; i < visibleColumns; i++) {
+            std::string value = row[i];
+            // Ensure value doesn't exceed column width
+            if (value.length() > columns[i].width - COLUMN_PADDING) {
+                value = value.substr(0, columns[i].width - COLUMN_PADDING);
+            }
+            std::cout << std::setw(columns[i].width) << value;
+        }
+        
+        // Print COMMAND column if there's space
+        if (commandColWidth > 0) {
+            std::string command = row.back();
+            if (command.length() > commandColWidth) {
+                command = reduce ? reduceStr(command, commandColWidth) : command;
+            }
+            std::cout << command;
+        }
+        
+        std::cout << std::endl;
+    }
 }
 
 void ArgumentParser::shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered)
@@ -2293,7 +2158,14 @@ std::string ArgumentParser::reduceStr(std::string source, int limit)
 {
 	if (source.length() >= (std::size_t)limit)
 	{
-		return source.substr(0, limit - 2).append("*");
+		if (source.back() == '"')
+		{
+			return source.substr(0, limit - 2).append("*\"");
+		}
+		else
+		{
+			return source.substr(0, limit - 1).append("*");
+		}
 	}
 	else
 	{

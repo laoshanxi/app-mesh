@@ -72,19 +72,19 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object
-#define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<std::string>() : std::string(""))
-#define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<int>() : 0)
-#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<int64_t>() : 0L)
-#define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<double>() : 0.0L)
+#define GET_JSON_STR_VALUE(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<std::string>() : std::string(""))
+#define GET_JSON_INT_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<int>() : 0)
+#define GET_JSON_INT64_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<int64_t>() : 0L)
+#define GET_JSON_DOUBLE_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<double>() : 0.0L)
 #define SET_JSON_INT_VALUE(jsonObj, key, value) \
 	if (HAS_JSON_FIELD(jsonObj, key))           \
 		value = GET_JSON_INT_VALUE(jsonObj, key);
-#define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).get<bool>() : false)
+#define GET_JSON_BOOL_VALUE(jsonObj, key) (HAS_JSON_FIELD(jsonObj, key) ? jsonObj.at(key).template get<bool>() : false)
 #define SET_JSON_BOOL_VALUE(jsonObj, key, value) \
 	if (HAS_JSON_FIELD(jsonObj, key))            \
 		value = GET_JSON_BOOL_VALUE(jsonObj, key);
 #define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
-#define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? (jsonObj.at(key).is_string() ? jsonObj.at(key).get<std::string>() : std::to_string(jsonObj.at(key).get<int64_t>())) : std::string(""))
+#define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? (jsonObj.at(key).is_string() ? jsonObj.at(key).template get<std::string>() : std::to_string(jsonObj.at(key).template get<int64_t>())) : std::string(""))
 
 #define CLOSE_ACE_HANDLER(handler)                                \
 	do                                                            \
@@ -377,6 +377,7 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
 
 #define JSON_KEY_TIME_POSTTIX_STR "_TEXT"
+#define EMPTY_PLACEHOLDER "-"
 
 #define JSON_KEY_USER_readonly_name "name"
 #define JSON_KEY_USER_key "key"
