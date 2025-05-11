@@ -150,6 +150,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 - `False`: Disables SSL verification (insecure, use cautiously for development).
                 - `str`: Path to a custom CA certificate or directory for verification. This option allows custom CA configuration,
                 which may be necessary in environments requiring specific CA chains that differ from the default system CAs.
+                To use both a custom CA and the system's default CAs, create a combined CA bundle by concatenating them into a single file. (e.g., `cat custom_ca.pem /etc/ssl/certs/ca-certificates.crt > combined_ca.pem`).
 
             ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. Can be:
                 - `str`: A path to a single PEM file containing both the client certificate and private key.

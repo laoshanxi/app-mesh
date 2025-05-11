@@ -33,12 +33,19 @@ type AppMeshClient struct {
 
 // Option represents the configuration options for the AppMeshClient.
 type Option struct {
-	AppMeshUri                  string  // URI of the App Mesh server; use "https://localhost:6060" for HTTP or "localhost:6059" for TCP.
-	Token                       string  // JWT authentication token for API requests.
-	ForwardTo                   string  // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests.
-	SslClientCertificateFile    string  // Path to the client SSL certificate file; leave empty to disable client SSL authentication.
-	SslClientCertificateKeyFile string  // Path to the client SSL certificate key file; leave empty to disable client SSL authentication.
-	SslTrustedCA                *string // Path to the trusted CA file/dir for server verification; set to nil to disable server SSL verification.
+	AppMeshUri string // URI of the App Mesh server; use "https://localhost:6060" for HTTP or "localhost:6059" for TCP.
+	Token      string // JWT authentication token for API requests.
+	ForwardTo  string // The target host to which all requests will be forwarded; with this set, AppMeshUri will act as a proxy to forward requests.
+
+	SslClientCertificateFile    string // Path to the client certificate file (PEM format), leave empty to disable client authentication.
+	SslClientCertificateKeyFile string // Path to the client certificate private key (PEM format), leave empty to disable client authentication.
+
+	// SslTrustedCA controls server certificate verification:
+	//   - Empty string (""): disables server certificate verification
+	//   - nil: uses default App Mesh CA at /opt/appmesh/ssl/ca.pem
+	//   - File path: uses custom CA file or directory
+	// Note: System CAs are not included by default. Create a combined CA bundle if needed.
+	SslTrustedCA *string
 
 	HttpTimeoutMinutes *time.Duration // Timeout for http.Client requests in minutes.
 	tcpOnly            *bool          // Indicates if the client is for TCP connections only, skip create http.Client.
