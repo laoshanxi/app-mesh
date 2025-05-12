@@ -50,28 +50,7 @@ import org.threeten.extra.PeriodDuration;
 public class Utils {
     private static final Logger LOGGER = Logger.getLogger(Utils.class.getName());
 
-    public static void disableSSLVerification() throws Exception {
-        LOGGER.log(Level.WARNING, "SSL verification is disabled. This is insecure and should only be used in development environments.");
-        TrustManager[] trustAllCerts = new TrustManager[] {new X509TrustManager() {
-            @Override
-            public X509Certificate[] getAcceptedIssuers() {
-                return null;
-            }
-
-            @Override
-            public void checkClientTrusted(X509Certificate[] certs, String authType) {}
-
-            @Override
-            public void checkServerTrusted(X509Certificate[] certs, String authType) {}
-        }};
-
-        SSLContext sc = SSLContext.getInstance("TLS");
-        sc.init(null, trustAllCerts, new java.security.SecureRandom());
-        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-
-        HostnameVerifier allHostsValid = (hostname, session) -> true;
-        HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
-    }
+// Removed the insecure disableSSLVerification method to prevent misuse and enhance security.
 
     public static void configureSSLCertificates(String caCertFilePath, String clientCertFilePath, String clientCertKeyFilePath)
             throws Exception {
