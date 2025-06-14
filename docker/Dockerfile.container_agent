@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS BUILD_STAGE
+FROM python:3.13-slim AS build_stage
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -24,8 +24,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Copy virtual environment from the build stage
-COPY --from=BUILD_STAGE /opt/venv /opt/venv
-COPY --from=BUILD_STAGE /appmesh/appmesh_arm.py /appmesh/
+COPY --from=build_stage /opt/venv /opt/venv
+COPY --from=build_stage /appmesh/appmesh_arm.py /appmesh/
 
 # Set PATH to include Python venv binary
 ENV PATH="/opt/venv/bin:$PATH"
