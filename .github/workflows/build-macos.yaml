@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-${{ github.sha }}
-          path: build/appmesh_*.gz
+          path: build/appmesh_*.pkg
 
   test:
     needs: build
@@ -75,11 +75,21 @@ jobs:
 
       - name: Run tests
         run: |
+          set -x
           echo "Testing the project..."
           # Install App Mesh
-          sudo mkdir -p /opt/appmesh
-          sudo tar zxvf appmesh_*_arm64.gz -C /opt/appmesh
-          sudo bash /opt/appmesh/script/setup.sh
+          os_ver="${{ matrix.os }}"
+          os_ver="${os_ver#*-}"
+          pkg_file=$(ls appmesh_*_macos_${os_ver}_*.pkg | head -n1)
+          if [ -z "$pkg_file" ]; then
+            echo "No matching pkg file found!" && ls -l && exit 1
+          fi
+          if ! sudo installer -pkg "$pkg_file" -target /; then
+            echo "Installer failed! Printing debug info:"
+            ls -l
+            cat /var/log/install.log | tail -n 100
+            exit 1
+          fi
 
           # Start App Mesh
           appc -v || true
@@ -119,4 +129,4 @@ jobs:
           tag_name: ${{ env.APPMESH_VERSION }}
           fail_on_unmatched_files: false
           token: ${{ secrets.PUBLISH_RELEASE }}
-          files: appmesh_*.gz
+          files: appmesh_*.pkg

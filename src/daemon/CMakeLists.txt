@@ -26,10 +26,3 @@ target_link_libraries(appsvc
     prometheus
     common
 )
-
-##########################################################################
-# install
-##########################################################################
-install(TARGETS appsvc
-    RUNTIME DESTINATION ${CMAKE_BINARY_DIR}/bin
-)

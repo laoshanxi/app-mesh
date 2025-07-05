@@ -52,9 +52,7 @@ sudo -E apt install appmesh_2.1.1_gcc_7_glibc_2.27_x86_64.deb
 # SUSE
 sudo zypper install appmesh_2.1.1_gcc_9_glibc_2.31_x86_64.rpm
 # macOS
-sudo mkdir -p /opt/appmesh
-sudo tar zxvf appmesh_2.1.2_clang_15.0.0_macos_14.7.2_arm64.gz -C /opt/appmesh
-sudo bash /opt/appmesh/script/setup.sh
+sudo installer -pkg appmesh_2.1.2_clang_16_macos_15_arm64.pkg -target /
 # Note: use sudo -E to pass current environment variables
 ```
 
@@ -86,7 +84,7 @@ For a full-featured deployment, including App Mesh, App Mesh UI, and Consul, you
 - Install Docker Compose:
 
 ```bash
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 ```
 
