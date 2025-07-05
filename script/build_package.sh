@@ -170,11 +170,15 @@ build_packages() {
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         local MACOS_VERSION=$(sw_vers -productVersion | cut -d '.' -f1)
         local CLANG_VERSION=$(clang --version | awk -F ' ' '/Apple clang version/ {print $4}' | cut -d '.' -f1)
-        local PACKAGE_FILE_NAME="${CMAKE_BINARY_DIR}/${PROJECT_NAME}_${PROJECT_VERSION}_clang_${CLANG_VERSION}_macos_${MACOS_VERSION}_${GOARCH}.gz"
+        local PACKAGE_FILE_NAME="${CMAKE_BINARY_DIR}/${PROJECT_NAME}_${PROJECT_VERSION}_clang_${CLANG_VERSION}_macos_${MACOS_VERSION}_${GOARCH}.pkg"
 
         info "Building for macOS (Version: $MACOS_VERSION, Clang: $CLANG_VERSION, ARCH: $GOARCH)"
-
-        tar czvf ${PACKAGE_FILE_NAME} -C "${PACKAGE_HOME}" . && info "Package built: ${PACKAGE_FILE_NAME}"
+        mkdir -p "${CMAKE_BINARY_DIR}/pkg_scripts"
+        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_install.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postinstall"
+        # cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/pre_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/preuninstall"
+        # cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postuninstall"
+        chmod +x ${CMAKE_BINARY_DIR}/pkg_scripts/*
+        pkgbuild --root "${PACKAGE_HOME}" --scripts "${CMAKE_BINARY_DIR}/pkg_scripts" --identifier "com.laoshanxi.appmesh" --version "${PROJECT_VERSION}" --install-location /opt/appmesh "${PACKAGE_FILE_NAME}"
     else
         die "Unsupported platform: $OSTYPE"
     fi
