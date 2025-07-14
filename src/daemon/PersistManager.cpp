@@ -1,7 +1,9 @@
 #include <chrono>
 #include <fstream>
 
+#if !defined(WIN32)
 #include "../common/os/linux.hpp"
+#endif
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"

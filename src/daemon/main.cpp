@@ -25,8 +25,10 @@
 
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
+#if !defined(WIN32)
 #include "../common/os/chown.hpp"
 #include "../common/os/pstree.hpp"
+#endif
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
@@ -121,11 +123,13 @@ int main(int argc, char *argv[])
 		Utility::createDirectory(shellDir);
 		if (!Configuration::instance()->getDefaultExecUser().empty())
 		{
+#if !defined(WIN32)
 			LOG_INF << fname << "Setting directory ownership to user <" << Configuration::instance()->getDefaultExecUser() << ">";
 			os::chown(tmpDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(outputDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(inputDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(shellDir, Configuration::instance()->getDefaultExecUser());
+#endif
 		}
 
 		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());

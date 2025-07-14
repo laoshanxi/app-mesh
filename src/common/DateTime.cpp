@@ -41,7 +41,7 @@ const std::string &machine_time_zone::get_std_zone_abbrev()
 		init = true;
 		struct tm local_tm;
 		time_t cur_time = 0;
-		localtime_r(&cur_time, &local_tm);
+		ACE_OS::localtime_r(&cur_time, &local_tm);
 		char buff[64] = {0};
 		strftime(buff, sizeof(buff), "%Z", &local_tm);
 		zone = buff;

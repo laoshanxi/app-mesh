@@ -38,7 +38,7 @@ jobs:
           echo "Verifying installed packages..."
           brew list
 
-      - name: Configure Build Environment
+      - name: Setup Build Environment
         run: |
           bash script/setup_build_env/autogen.sh.mac.sh
 

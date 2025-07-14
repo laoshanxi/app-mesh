@@ -81,7 +81,10 @@ endif()
 ##########################################################################
 # MessagePack    https://msgpack.org/
 ##########################################################################
-find_package(msgpack-cxx REQUIRED)
+if (NOT WIN32)
+    find_package(msgpack-cxx REQUIRED)
+endif()
+# Windows use local installed C:\local\include\msgpack
 
 ##########################################################################
 # libcurl
@@ -106,6 +109,15 @@ if (APPLE)
     # Include directories and link libraries
     include_directories(${CURL_INCLUDE_DIR})
     link_directories(${CURL_LIBRARY})
+elseif (WIN32)
+    # For Windows, use vcpkg or other package manager to find libcurl
+    find_package(CURL REQUIRED)
+    if (CURL_FOUND)
+        message(STATUS "Found CURL: ${CURL_INCLUDE_DIRS} ${CURL_LIBRARIES}")
+        set(CURL_LIB ${CURL_LIBRARIES})
+    else()
+        message(FATAL_ERROR "libcurl not found")
+    endif()
 else()
     find_library(CURL_LIB NAMES libcurl.a PATHS /usr/local/lib NO_DEFAULT_PATH)
     if (NOT CURL_LIB)
@@ -129,12 +141,16 @@ if (OPENSSL_FOUND)
 else()
     message(FATAL_ERROR "openssl library not found")
 endif()
+find_package(ZLIB REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 ##########################################################################
-# openldap
+# openldap for none-WIN32
 ##########################################################################
-set(LDAP_LIBRARIES ldap lber)
-find_library(${LDAP_LIBRARIES} REQUIRED)
+if (NOT WIN32)
+    set(LDAP_LIBRARIES ldap lber)
+    find_library(${LDAP_LIBRARIES} REQUIRED)
+endif()
 
 ##########################################################################
 # pthread
@@ -255,7 +271,7 @@ add_custom_target(pack
 ##########################################################################
 # Golang agent build
 ##########################################################################
-set(AGENT_BIN ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/agent)
+set(AGENT_BIN ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/agent${CMAKE_EXECUTABLE_SUFFIX})
 add_custom_command(
     OUTPUT ${AGENT_BIN}
     COMMAND go build -buildvcs=false -o ${AGENT_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd

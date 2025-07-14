@@ -9,7 +9,9 @@
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/linux.hpp"
+#endif
 #include "../../common/os/process.hpp"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"

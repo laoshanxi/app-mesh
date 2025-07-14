@@ -118,24 +118,38 @@ copy_libraries() {
 
 handle_macos_specifics() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
+        copy_if_not_exists() {
+            [[ -f "$1" ]] || return 0
+            if [[ -d "$2" ]]; then
+                local dest="$2/$(basename "$1")"
+            else
+                local dest="$2"
+            fi
+            [[ -f "$dest" ]] && echo "Skip $dest" || cp "$1" "$dest"
+        }
         # Handle openldap dependency (required by curl)
         $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appsvc" | grep curl | eval $LIBRARY_EXTRACTOR |
             xargs $LIBRARY_INSPECTOR | grep "openldap" | eval $LIBRARY_EXTRACTOR |
             while read -r lib; do
-                [[ -f "$lib" ]] && cp "$lib" "${PACKAGE_HOME}/lib64/"
+                echo "Copying openldap dependency: $lib"
+                copy_if_not_exists "$lib" "${PACKAGE_HOME}/lib64/"
             done
 
         # Handle libicu dependency (required by libboost_regex)
         $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_regex | eval $LIBRARY_EXTRACTOR |
             xargs $LIBRARY_INSPECTOR | grep "libicu" | eval $LIBRARY_EXTRACTOR |
             while read -r lib; do
-                [[ -f "$lib" ]] && cp "$lib" "${PACKAGE_HOME}/lib64/"
+                echo "Copying libicu dependency: $lib"
+                copy_if_not_exists "$lib" "${PACKAGE_HOME}/lib64/"
             done
 
         # Handle boost_atomic dependency (required by libboost_filesystem)
         local boost_filesystem=$($LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_filesystem | eval $LIBRARY_EXTRACTOR)
         local boost_atomic="$(dirname "$boost_filesystem")/libboost_atomic.dylib"
-        [[ -f "$boost_atomic" ]] && cp "$boost_atomic" "${PACKAGE_HOME}/lib64/"
+        if [[ -f "$boost_atomic" ]]; then
+            echo "Copying boost_atomic dependency: $boost_atomic"
+            copy_if_not_exists "$boost_atomic" "${PACKAGE_HOME}/lib64/"
+        fi
 
         # Modify ping arguments for macOS
         sed -i '' 's/ -w / -t /g' "${PACKAGE_HOME}/apps/ping.yaml"
@@ -175,8 +189,8 @@ build_packages() {
         info "Building for macOS (Version: $MACOS_VERSION, Clang: $CLANG_VERSION, ARCH: $GOARCH)"
         mkdir -p "${CMAKE_BINARY_DIR}/pkg_scripts"
         cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_install.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postinstall"
-        # cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/pre_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/preuninstall"
-        # cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postuninstall"
+        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/pre_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/preuninstall"
+        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postuninstall"
         chmod +x ${CMAKE_BINARY_DIR}/pkg_scripts/*
         pkgbuild --root "${PACKAGE_HOME}" --scripts "${CMAKE_BINARY_DIR}/pkg_scripts" --identifier "com.laoshanxi.appmesh" --version "${PROJECT_VERSION}" --install-location /opt/appmesh "${PACKAGE_FILE_NAME}"
     else

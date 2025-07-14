@@ -10,7 +10,9 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/pstree.hpp"
+#endif
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../application/Application.h"
@@ -54,8 +56,8 @@ void AppProcess::attach(int pid, const std::string &stdoutFile)
 	m_stdoutFileName = stdoutFile;
 
 	CLOSE_ACE_HANDLER(m_stdoutHandler);
-	auto stdout = Utility::stringFormat("/proc/%d/fd/1", getpid());
-	m_stdoutHandler = ACE_OS::open(stdout.c_str(), O_RDWR);
+	std::string stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
+	m_stdoutHandler = ACE_OS::open(stdOut.c_str(), O_RDWR);
 	m_stdOutMaxSize = APP_STD_OUT_MAX_FILE_SIZE;
 }
 
@@ -293,8 +295,8 @@ bool AppProcess::onTimerCheckStdout()
 			{
 				LOG_ERR << fname << "fstat failed with error : " << std::strerror(errno);
 				CLOSE_ACE_HANDLER(m_stdoutHandler);
-				auto stdout = Utility::stringFormat("/proc/%d/fd/1", getpid());
-				m_stdoutHandler = ACE_OS::open(stdout.c_str(), O_RDWR);
+				auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
+				m_stdoutHandler = ACE_OS::open(stdOut.c_str(), O_RDWR);
 			}
 		}
 	}
@@ -336,6 +338,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	// option.avoid_zombies(1);
+#if !defined(WIN32)
 	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
@@ -352,6 +355,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			return ACE_INVALID_PID;
 		}
 	}
+#endif
 	option.setgroup(0); // set group id with the process id, used to kill process group
 	option.inherit_environment(true);
 	option.handle_inheritance(0);

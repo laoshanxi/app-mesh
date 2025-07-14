@@ -31,6 +31,13 @@ if (APPLE)
     boost_program_options
     common
   )
+elseif (WIN32)
+  target_link_libraries(appc
+   PRIVATE
+    Threads::Threads
+    Boost::program_options
+    common
+  )
 else()
   target_link_libraries(appc
    PRIVATE

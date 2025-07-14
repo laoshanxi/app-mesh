@@ -4,8 +4,10 @@
 #include <memory>
 
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
+#endif
 #include "../Configuration.h"
 
 ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin, const std::string &workingDir)
@@ -46,11 +48,13 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	// Change file ownership if necessary
 	if (!execUser.empty() && osUser != execUser)
 	{
+#if !defined(WIN32)
 		if (!os::chown(fileName, execUser))
 		{
 			LOG_WAR << fname << "Failed to change ownership of file: " << fileName;
 			throw std::runtime_error("Failed to change file ownership.");
 		}
+#endif
 	}
 
 	// Prepare the shell command

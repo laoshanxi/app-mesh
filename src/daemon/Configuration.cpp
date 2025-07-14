@@ -19,7 +19,9 @@
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
+#if !defined(WIN32)
 #include "../common/os/pstree.hpp"
+#endif
 
 extern char **environ; // unistd.h
 

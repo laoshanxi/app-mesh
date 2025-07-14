@@ -14,7 +14,7 @@
 
         <!-- Working directory, defining the working directory for the service -->
         <key>WorkingDirectory</key>
-        <string>/opt/appmesh/</string>
+        <string>/opt/appmesh</string>
 
         <!-- Environment variables, you can add required environment variables here -->
         <key>EnvironmentVariables</key>

@@ -3,11 +3,15 @@
 #include <fstream>
 #include <list>
 #include <string>
+#if !defined(WIN32)
 #include <sys/file.h>
+#endif
 #include <thread>
 #if defined(__APPLE__)
 #include <crt_externs.h> // For getprogname
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
+#elif defined(WIN32)
+#include <windows.h>
 #endif
 
 #include <ace/OS.h>
@@ -31,8 +35,10 @@
 #include "DateTime.h"
 #include "Password.h"
 #include "Utility.h"
+#if !defined(WIN32)
 #include "os/chown.hpp"
 #include "os/linux.hpp"
+#endif
 
 const char *GET_STATUS_STR(unsigned int status)
 {
@@ -222,9 +228,21 @@ const std::string Utility::getBinaryName()
 {
 #if defined(__APPLE__)
 	return getprogname(); // macOS-specific function
+#elif defined(_WIN32)
+	// Windows implementation without filesystem
+	char buffer[MAX_PATH];
+	DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
+	if (length == 0) {
+		return "unknown";
+	}
+
+	std::string fullPath(buffer);
+	size_t pos = fullPath.find_last_of("\\/");
+	return pos != std::string::npos ? fullPath.substr(pos + 1) : fullPath;
 #else
+	// Linux implementation
 	extern char *program_invocation_short_name;
-	return program_invocation_short_name; // Linux-specific variable
+	return program_invocation_short_name;
 #endif
 }
 
@@ -726,6 +744,7 @@ bool Utility::createPidFile()
 		std::cout << fname << "Failed to create PID file:" << pidFile << " with error: " << std::strerror(errno) << std::endl;
 		return false;
 	}
+#if !defined(WIN32)
 	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
 	{
 		std::cout << fname << "New process running";
@@ -739,6 +758,19 @@ bool Utility::createPidFile()
 		else
 			std::cerr << fname << "Failed with error: " << std::strerror(errno);
 	}
+#else
+	// Windows does not support flock, so we just write the PID
+	auto pid = std::to_string(ACE_OS::getpid());
+	if (write(fd, pid.c_str(), pid.length() + 1) > 0)
+	{
+		std::cout << fname << "New process running";
+		return true;
+	}
+	else
+	{
+		std::cerr << fname << "Failed to write PID to file with error: " << std::strerror(errno);
+	}
+#endif
 	return false;
 }
 
@@ -944,7 +976,7 @@ std::string Utility::humanReadableDuration(const std::chrono::system_clock::time
 
 	return result;
 }
-
+#if !defined(WIN32)
 bool Utility::getUid(const std::string &userName, unsigned int &uid, unsigned int &groupid)
 {
 	const static char fname[] = "Utility::getUid() ";
@@ -1013,7 +1045,7 @@ std::string Utility::getUsernameByUid(uid_t uid)
 
 	return "";
 }
-
+#endif
 void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs)
 {
 	// get env size
@@ -1038,6 +1070,7 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMa
 
 void Utility::applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers)
 {
+#if !defined(WIN32)
 	if (Utility::isFileExist(file))
 	{
 		if (headers.count(HTTP_HEADER_KEY_file_mode))
@@ -1047,6 +1080,7 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second));
 	}
+#endif
 }
 
 std::string Utility::prettyJson(const std::string &jsonStr)
@@ -1077,7 +1111,8 @@ std::string Utility::hashId()
 	static const auto salt = generatePassword(6, true, true, false, false);
 	static hashidsxx::Hashids hash(salt, 10);
 	static std::atomic_int index(1000);
-	return hash.encode(++index);
+	int value = ++index;
+	return hash.encode(&value, &value + 1);
 }
 
 std::string Utility::stringFormat(const std::string fmt_str, ...)

@@ -1,0 +1,37 @@
+name: "Release Windows Package"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-windows.yaml"
+      - "src/**"
+      - "script/**"
+
+env:
+  APPMESH_VERSION: "2.1.2"
+
+jobs:
+  setup-build-env:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set PowerShell Execution Policy
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+      - name: Setup Build Environment
+        shell: pwsh
+        run: |
+          pwsh -File script\setup_build_env\autogen.ps1
+
+      - name: Build project
+        shell: pwsh
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=C:\local\windows-toolchain.cmake -G "Visual Studio 17 2022" -A x64
+          cmake --build . --config Release --target pack

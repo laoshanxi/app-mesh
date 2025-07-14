@@ -5,7 +5,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#if !defined(WIN32)
 #include <unistd.h>
+#endif
 
 #include <nlohmann/json.hpp>
 

@@ -9,6 +9,7 @@
 #include <typeinfo>
 #include <vector>
 
+#include <ace/OS.h>
 #include <boost/filesystem.hpp>
 #include <log4cpp/Category.hh>
 #include <log4cpp/Priority.hh>
@@ -50,7 +51,7 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	}
 
 // make_unique implementation for C++11, C++14 already support
-#if (__cplusplus <= 201103L)
+#if (__cplusplus <= 201103L) && !defined(WIN32)
 namespace std
 {
 	template <typename T, typename... Args>
@@ -208,7 +209,7 @@ public:
 	// OS related
 	static unsigned long long getThreadId();
 	static bool getUid(const std::string &userName, unsigned int &uid, unsigned int &groupid);
-	static std::string getUsernameByUid(uid_t uid = getuid());
+	static std::string getUsernameByUid(uid_t uid = ACE_OS::getuid());
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 	static void applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers);
 

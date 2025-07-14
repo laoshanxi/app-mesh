@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 const TCP_CONNECT_TIMEOUT_SECONDS = 30
@@ -179,31 +178,6 @@ func MergeStringMaps(map1, map2 map[string]string) {
 	}
 }
 
-// GetFileAttributes returns a map with file attributes: mode, user ID, and group ID.
-func GetFileAttributes(filePath string) (map[string]string, error) {
-	// Initialize the map to store file attributes
-	attributes := make(map[string]string)
-
-	// Get the file attributes
-	fileInfo, err := os.Stat(filePath)
-	if err != nil {
-		return attributes, err // Return nil map and the error if file stats cannot be retrieved
-	}
-
-	// Retrieve syscall.Stat_t from the file info
-	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		return attributes, syscall.EINVAL // Return nil map and an invalid argument error if Sys() is not *syscall.Stat_t
-	}
-
-	// Populate the attributes map
-	attributes["X-File-Mode"] = strconv.Itoa(int(fileInfo.Mode().Perm()))
-	attributes["X-File-User"] = strconv.Itoa(int(stat.Uid))
-	attributes["X-File-Group"] = strconv.Itoa(int(stat.Gid))
-
-	return attributes, nil
-}
-
 // SetFileAttributes applies file mode and ownership (UID, GID) to a given file based on HTTP headers.
 func SetFileAttributes(filePath string, headers http.Header) error {
 	// Apply file mode if provided
@@ -253,41 +227,26 @@ func SetFileAttributes(filePath string, headers http.Header) error {
 // and supports both TCP and TLS connections.
 func SetTcpNoDelay(conn net.Conn) error {
 	var tcpConn *net.TCPConn
-	var ok bool
 
-	// Check if the connection is a TLS connection
-	if tlsConn, isTLS := conn.(*tls.Conn); isTLS {
-		// Extract the underlying TCP connection
-		tcpConn, ok = tlsConn.NetConn().(*net.TCPConn)
-		if !ok {
-			return errors.New("underlying connection is not a TCP connection")
+	switch c := conn.(type) {
+	case *net.TCPConn:
+		tcpConn = c
+	case *tls.Conn:
+		// Try to unwrap tls.Conn to get the underlying net.TCPConn
+		if innerConn, ok := c.NetConn().(*net.TCPConn); ok {
+			tcpConn = innerConn
+		} else {
+			return errors.New("tls.Conn does not wrap *net.TCPConn")
 		}
-	} else {
-		// Assume it's a direct TCP connection
-		tcpConn, ok = conn.(*net.TCPConn)
-		if !ok {
-			return errors.New("connection is not a TCP connection")
-		}
+	default:
+		return errors.New("unsupported connection type")
 	}
 
-	// Get the underlying syscall connection
-	rawConn, err := tcpConn.SyscallConn()
-	if err != nil {
-		return fmt.Errorf("error getting syscall connection: %w", err)
+	if tcpConn == nil {
+		return errors.New("not a TCP connection")
 	}
 
-	// Use the Control method to set TCP_NODELAY on the socket
-	err = rawConn.Control(func(fd uintptr) {
-		if setsockoptErr := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1); setsockoptErr != nil {
-			err = fmt.Errorf("error setting TCP_NODELAY: %w", setsockoptErr)
-		}
-	})
-
-	if err != nil {
-		return fmt.Errorf("error controlling connection: %w", err)
-	}
-
-	return nil
+	return tcpConn.SetNoDelay(true)
 }
 
 // PrettyJSON takes a JSON string as input and returns a formatted, indented JSON string.

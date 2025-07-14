@@ -5,7 +5,9 @@
 #include "../common/DateTime.h"
 #include "../common/Utility.h"
 #include "../common/os/net.hpp"
+#if !defined(WIN32)
 #include "../common/os/pstree.hpp"
+#endif
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "process/LinuxCgroup.h"

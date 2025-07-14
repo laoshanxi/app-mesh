@@ -14,7 +14,7 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
     rest
-    boost_regex
+    Boost::regex
     security
     application
     process
