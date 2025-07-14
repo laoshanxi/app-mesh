@@ -6,7 +6,9 @@
 #include "../../common/DurationParse.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/linux.hpp"
+#endif
 #include "../Configuration.h"
 #include "../Label.h"
 #include "../ResourceCollection.h"
@@ -326,11 +328,13 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 
 	LOG_DBG << fname << "Downloading file <" << file << ">";
 
-	auto fileInfo = os::fileStat(file);
 	std::map<std::string, std::string> headers;
+#if !defined(WIN32)
+	auto fileInfo = os::fileStat(file);
 	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
+#endif
 	std::string body = HttpRequest::emptyJson().dump();
 	if (message.m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) && message.m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
 	{

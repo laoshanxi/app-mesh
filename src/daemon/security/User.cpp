@@ -1,8 +1,11 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/default.h>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
+#if !defined(WIN32)
 #include <liboath/oath.h>
+#endif
 
+#include "../../common/Password.h"
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "Security.h"
@@ -241,6 +244,7 @@ const std::string User::totpGenerateKey()
 {
 	const static char fname[] = "User::totpGenerateKey() ";
 
+#if !defined(WIN32)
 	char *secret = NULL;
 	char randomBuffer[32];
 	constexpr int mfaKeyLen = 16;
@@ -270,6 +274,9 @@ const std::string User::totpGenerateKey()
 	{
 		m_mfaKey = m_mfaKey.substr(0, mfaKeyLen);
 	}
+#else
+	m_mfaKey = generatePassword(16, true, true, true, false);
+#endif
 	LOG_INF << fname << "2FA secret generated for user: " << m_name;
 	return m_mfaKey;
 }
@@ -278,6 +285,7 @@ bool User::totpValidateCode(const std::string &totpCode)
 {
 	const static char fname[] = "User::totpValidateCode() ";
 
+#if !defined(WIN32)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	char *key = NULL;
 	size_t keyLen = 0;
@@ -296,6 +304,7 @@ bool User::totpValidateCode(const std::string &totpCode)
 		LOG_WAR << fname << "invalid token <" << totpCode << ">:" << oath_strerror(res);
 		throw std::runtime_error(Utility::stringFormat("%s", oath_strerror(res)));
 	}
+#endif
 	LOG_INF << fname << "2FA validate success for user: " << m_name;
 	return true;
 }
@@ -367,8 +376,10 @@ const std::string User::getExecUserOverride() const
 			executeUser = Configuration::instance()->getDefaultExecUser();
 		}
 	}
+#if !defined(WIN32)
 	if (executeUser.empty())
 		executeUser = Utility::getUsernameByUid();
+#endif
 	return executeUser;
 }
 

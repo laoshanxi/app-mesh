@@ -9,15 +9,19 @@
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/linux.hpp"
+#endif
 #include "../../common/os/process.hpp"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
 #include "../ResourceCollection.h"
 #include "../ResourceLimitation.h"
 #include "../process/AppProcess.h"
+#if !defined(WIN32)
 #include "../process/DockerApiProcess.h"
 #include "../process/DockerProcess.h"
+#endif
 #include "../process/MonitoredProcess.h"
 #include "../rest/RestHandler.h"
 #include "../security/HMACVerifier.h"
@@ -357,6 +361,9 @@ bool Application::attach(int pid)
 		m_process->attach(pid, m_stdoutFile);
 		m_pid = m_process->getpid();
 		m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+#if defined(WIN32)
+		// TODO: For Windows, implement process status check
+#else
 		auto stat = os::status(m_pid.load());
 		if (stat)
 		{
@@ -364,6 +371,7 @@ bool Application::attach(int pid)
 			m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(stat->get_starttime());
 			nextLaunchTime(stat->get_starttime());
 		}
+#endif
 		LOG_INF << fname << "Attached pid <" << pid << "> to application " << m_name << ", last start on: " << DateTime::formatLocalTime(*m_procStartTime);
 		if (m_process->running())
 			checkProcStdoutFile = m_process;
@@ -582,6 +590,9 @@ const std::string Application::getExecUser() const
 	if (m_name == SEPARATE_AGENT_APP_NAME)
 		return "";
 
+#if defined(WIN32)
+	return "";
+#else
 	if (m_owner)
 	{
 		// get correct execute user when Application has user info
@@ -598,6 +609,7 @@ const std::string Application::getExecUser() const
 		executeUser = osUser;
 	}
 	return executeUser;
+#endif
 }
 
 const std::string &Application::getCmdLine() const
@@ -747,6 +759,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 			result[JSON_KEY_APP_return] = m_return.load();
 		if (m_process && m_process->running())
 		{
+#if !defined(WIN32)
 			result[JSON_KEY_APP_pid] = m_pid.load();
 			result[JSON_KEY_APP_pid_user] = Utility::getUsernameByUid(os::getProcessUid(m_pid.load()));
 
@@ -764,6 +777,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 						result[JSON_KEY_APP_pid_user] = leafProcessUser;
 				}
 			}
+#endif
 		}
 		if (m_procStartTime && std::chrono::time_point_cast<std::chrono::hours>(*m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[JSON_KEY_APP_last_start] = std::chrono::duration_cast<std::chrono::seconds>((*m_procStartTime).time_since_epoch()).count();
@@ -923,6 +937,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	// alloc process object
 	if (dockerImage.length())
 	{
+#if !defined(WIN32)
 		if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
 		{
 			process.reset(new DockerApiProcess(appName, dockerImage));
@@ -931,6 +946,9 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 		{
 			process.reset(new DockerProcess(appName, dockerImage));
 		}
+#else
+		throw std::invalid_argument("Docker application does not support on Windows");
+#endif
 	}
 	else
 	{

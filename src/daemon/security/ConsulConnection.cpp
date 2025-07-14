@@ -7,7 +7,9 @@
 #include "../../common/PerfLog.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/linux.hpp"
+#endif
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"

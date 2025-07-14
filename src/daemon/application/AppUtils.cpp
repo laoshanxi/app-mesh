@@ -4,15 +4,20 @@
 #include <memory>
 
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
+#endif
 #include "../Configuration.h"
 
 ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin, const std::string &workingDir)
 	: m_usingSudo(false)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
-
+#if defined(WIN32)
+	// TODO: For Windows, implement bat solution
+	m_shellCmd = cmd;
+#else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 	const static std::string defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	const auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", shellDir.c_str(), name.c_str());
@@ -77,6 +82,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	}
 
 	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";
+#endif
 }
 
 ShellAppFileGen::~ShellAppFileGen()

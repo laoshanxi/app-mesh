@@ -132,7 +132,7 @@ if [ true ]; then
 	$WGET_A https://cytranet.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
 	tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
 	cd ./boost_1_${BOOST_VER}_0
-	./bootstrap.sh --without-libraries=atomic,context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
+	./bootstrap.sh --without-libraries=context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
 	./b2 -j"$(($(nproc) / 2))"
 	./b2 install >/dev/null
 	ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp

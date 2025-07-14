@@ -13,6 +13,6 @@ add_library(${PROJECT_NAME}::rest ALIAS rest)
 ##########################################################################
 target_link_libraries(rest
   PRIVATE
-    boost_regex
+    Boost::regex
     protoc
 )

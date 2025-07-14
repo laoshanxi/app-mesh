@@ -1,8 +1,10 @@
 #include <atomic>
 #include <chrono>
-#include <termios.h>
 #include <thread>
+#if !defined(WIN32)
+#include <termios.h>
 #include <unistd.h>
+#endif
 
 #include <ace/Signal.h>
 #include <boost/algorithm/string/join.hpp>
@@ -12,14 +14,18 @@
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
 #include <readline/history.h>
+#if !defined(WIN32)
 #include <readline/readline.h>
+#endif
 
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Password.h"
 #include "../common/RestClient.h"
 #include "../common/Utility.h"
+#if !defined(WIN32)
 #include "../common/os/linux.hpp"
+#endif
 #include "ArgumentParser.h"
 #include "cmd_args.h"
 
@@ -71,8 +77,8 @@
 	m_currentUrl = m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>(); \
 	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
 // Each user should have its own token path
-static std::string m_tokenFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.config";
-const static std::string m_shellHistoryFile = std::string(getenv("HOME") ? getenv("HOME") : ".") + "/.appmesh.shell.history";
+static std::string m_tokenFile = std::string(ACE_OS::getenv("HOME") ? ACE_OS::getenv("HOME") : ".") + "/.appmesh.config";
+const static std::string m_shellHistoryFile = std::string(ACE_OS::getenv("HOME") ? ACE_OS::getenv("HOME") : ".") + "/.appmesh.shell.history";
 extern char **environ;
 
 // Global variable for appc exec
@@ -83,10 +89,8 @@ static ArgumentParser *WORK_PARSE = nullptr;
 // command line help width
 static size_t BOOST_DESC_WIDTH = 130;
 
-ArgumentParser::ArgumentParser(int argc, const char *argv[])
-	: m_argc(argc)
-	, m_argv(argv)
-	, m_tokenTimeoutSeconds(DEFAULT_TOKEN_EXPIRE_SECONDS)
+ArgumentParser::ArgumentParser(int argc, char *argv[])
+	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(DEFAULT_TOKEN_EXPIRE_SECONDS)
 {
 	const std::string posixTimeZone = ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) ? ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) : getPosixTimezone();
 	Utility::initDateTimeZone(posixTimeZone, false);
@@ -96,6 +100,7 @@ void ArgumentParser::initArgs()
 {
 	WORK_PARSE = this;
 	m_defaultUrl = this->getAppMeshUrl();
+#if !defined(WIN32)
 	static std::atomic_flag flag = ATOMIC_FLAG_INIT;
 	if (!flag.test_and_set(std::memory_order_acquire) && getuid() == 0 && getenv("SUDO_USER") && getpwnam(getenv("SUDO_USER")))
 	{
@@ -103,6 +108,7 @@ void ArgumentParser::initArgs()
 		int unused = seteuid(getpwnam(getenv("SUDO_USER"))->pw_uid);
 		(void)unused;
 	}
+#endif
 	po::options_description global("Global options", BOOST_DESC_WIDTH);
 	global.add_options()("command", po::value<std::string>(), "Command to execute.")("subargs", po::value<std::vector<std::string>>(), "Arguments for command.");
 
@@ -1015,12 +1021,14 @@ void SIGINT_Handler(int signo)
 	SIGINIT_BREAKING = true;
 	const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
 	WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
+#if !defined(WIN32)
 	if (READING_LINE.load())
 	{
 		rl_replace_line("", 0); // Clean up after the signal and redraw the prompt
 		rl_on_new_line();		// Notify readline that we're on a new line
 		rl_redisplay();			// Redisplay the prompt
 	}
+#endif
 }
 
 std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
@@ -1063,18 +1071,18 @@ void ArgumentParser::unregSignal()
 
 pid_t get_bash_pid()
 {
-	pid_t pid = getpid();
+	pid_t pid = ACE_OS::getpid();
 
 	// VSCode uses an integrated terminal that spawns its own Bash shell process.
 	// This shell process remains persistent across terminal sessions,
 	// meaning that the same Bash process is reused for all the commands executed in that terminal
 	// until you explicitly close the terminal or VSCode.
-	if (getenv("VSCODE_PID"))
+	if (ACE_OS::getenv("VSCODE_PID"))
 	{
 		return pid;
 	}
 
-	pid_t ppid = getppid();
+	pid_t ppid = ACE_OS::getppid();
 
 	while (ppid != 1) // 1 is the init process
 	{
@@ -1120,6 +1128,7 @@ int ArgumentParser::processShell()
 
 	bool retry = m_commandLineVariables.count(RETRY);
 	int returnCode = 0;
+#if !defined(WIN32)
 	// Get current session id (bash pid)
 	auto bashId = get_bash_pid();
 	// Get appmesh user
@@ -1226,6 +1235,7 @@ int ArgumentParser::processShell()
 			}
 		}
 	}
+#endif
 	return returnCode;
 }
 
@@ -1319,10 +1329,12 @@ void ArgumentParser::processFileUpload()
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	if (m_commandLineVariables.count(COPY_ATTR))
 	{
+#if !defined(WIN32)
 		auto fileInfo = os::fileStat(local);
 		header.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
 		header.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
 		header.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
+#endif
 	}
 
 	auto response = RestClient::upload(m_currentUrl, restPath, local, header);
@@ -1675,7 +1687,7 @@ void ArgumentParser::processUserMfa()
 void ArgumentParser::initRadomPassword()
 {
 	// only for root user generate password for admin user after installation
-	if (geteuid() != 0 && !Utility::runningInContainer())
+	if (ACE_OS::geteuid() != 0 && !Utility::runningInContainer())
 	{
 		std::cerr << "only root user can generate a initial password" << std::endl;
 		return;
@@ -1916,7 +1928,9 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 		ofs << Utility::prettyJson(config.dump());
 		ofs.close();
 		// only owner to read and write for token file
+#if !defined(WIN32)
 		os::chmod(m_tokenFile, 600);
+#endif
 	}
 	else
 	{
@@ -2239,7 +2253,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 
 	std::size_t idx = 0; /* index, number of chars in read   */
 	int c = 0;
-
+#if !defined(WIN32)
 	struct termios old_kbd_mode; /* orig keyboard settings   */
 	struct termios new_kbd_mode;
 
@@ -2260,7 +2274,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 		fprintf(stderr, "%s() error: tcsetattr failed.\n", __func__);
 		return -1;
 	}
-
+#endif
 	/* read chars from fp, mask if valid char specified */
 	while (((c = fgetc(fp)) != '\n' && c != EOF && idx < sz - 1) ||
 		   (idx == sz - 1 && c == 127))
@@ -2285,13 +2299,14 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 	}
 	(*pw)[idx] = 0; /* null-terminate   */
 
+#if !defined(WIN32)
 	/* reset original keyboard  */
 	if (tcsetattr(0, TCSANOW, &old_kbd_mode))
 	{
 		fprintf(stderr, "%s() error: tcsetattr failed.\n", __func__);
 		return -1;
 	}
-
+#endif
 	if (idx == sz - 1 && c != '\n') /* warn if pw truncated */
 		fprintf(stderr, " (%s() warning: truncated at %zu chars.)\n",
 				__func__, sz - 1);

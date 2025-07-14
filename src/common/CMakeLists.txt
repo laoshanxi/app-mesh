@@ -10,15 +10,16 @@ add_library(${PROJECT_NAME}::common ALIAS common)
 ##########################################################################
 target_link_libraries(common
   PRIVATE
-    ${CURL_LIB} z # nghttp2
-    ACE
-    ACE_SSL
+    ${CURL_LIB}
+    ZLIB::ZLIB # nghttp2
+    ${ACE_LIBRARY}
+    ${ACE_SSL_LIBRARY}
     log4cpp
-    yaml-cpp
-    boost_regex
-    boost_system
-    boost_filesystem
-    boost_program_options
+    yaml-cpp::yaml-cpp
+    Boost::regex
+    Boost::system
+    Boost::filesystem
+    Boost::program_options
     ${OPENSSL_LIBRARIES}
     qrcodegencpp
 )

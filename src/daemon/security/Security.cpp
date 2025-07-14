@@ -29,7 +29,11 @@ void Security::init(const std::string &interface)
     }
     else if (interface == JSON_KEY_USER_key_method_ldap)
     {
+#if !defined(WIN32)
         instance = std::make_shared<SecurityLDAP>();
+#else
+        throw std::invalid_argument("LDAP security plugin is not supported on Windows");
+#endif
     }
     else
     {

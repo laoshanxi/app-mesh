@@ -32,7 +32,7 @@ func (r *Request) SetHMACVerify() error {
 	if HMAC == nil {
 		return fmt.Errorf("HMAC not initialized")
 	}
-	r.Headers[HTTP_HEADER_MHAC] = HMAC.GenerateHMAC(r.Uuid)
+	r.Headers[HTTP_HEADER_HMAC] = HMAC.GenerateHMAC(r.Uuid)
 	return nil
 }
 

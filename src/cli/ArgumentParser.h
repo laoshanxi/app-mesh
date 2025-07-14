@@ -19,7 +19,7 @@ class ACE_Sig_Action;
 class ArgumentParser
 {
 public:
-	explicit ArgumentParser(int argc, const char *argv[]);
+	explicit ArgumentParser(int argc, char *argv[]);
 	virtual ~ArgumentParser();
 
 	int parse();
@@ -86,8 +86,8 @@ private:
 private:
 	po::variables_map m_commandLineVariables;
 	std::vector<po::option> m_parsedOptions;
-	const int m_argc;
-	const char **m_argv;
+	int m_argc;
+	char **m_argv;
 	int m_tokenTimeoutSeconds;
 	std::string m_audience;
 	std::string m_defaultUrl;

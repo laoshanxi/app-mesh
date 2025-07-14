@@ -11,6 +11,10 @@
 #define PSK_FLAG_OFFSET (PSK_LENGTH + 1)
 #define PSK_SHM_TOTAL_SIZE (PSK_LENGTH + 2) // PSK + null terminator + flag
 
+#ifdef _WIN32
+class ACE_Shared_Memory_MM; // Forward declaration
+#endif
+
 /*
 Hash-based Message Authentication Code
 */
@@ -37,6 +41,10 @@ private:
     const std::string m_psk;
 
     void *m_shmPtr;
+
+#ifdef _WIN32
+    ACE_Shared_Memory_MM *m_aceShm;
+#endif
 
     HMACVerifier(const HMACVerifier &) = delete;
     HMACVerifier &operator=(const HMACVerifier &) = delete;

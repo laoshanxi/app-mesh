@@ -25,8 +25,10 @@
 
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
+#if !defined(WIN32)
 #include "../common/os/chown.hpp"
 #include "../common/os/pstree.hpp"
+#endif
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"
@@ -53,6 +55,7 @@ int main(int argc, char *argv[])
 {
 	const static char fname[] = "main() ";
 	PRINT_VERSION();
+	std::cout << fname << "App Mesh server starting." << std::endl;
 #ifndef NDEBUG
 	VALGRIND_ENTRYPOINT_ONE_TIME(argv); // enable valgrind in debug mode
 #endif
@@ -121,11 +124,13 @@ int main(int argc, char *argv[])
 		Utility::createDirectory(shellDir);
 		if (!Configuration::instance()->getDefaultExecUser().empty())
 		{
+#if !defined(WIN32)
 			LOG_INF << fname << "Setting directory ownership to user <" << Configuration::instance()->getDefaultExecUser() << ">";
 			os::chown(tmpDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(outputDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(inputDir, Configuration::instance()->getDefaultExecUser());
 			os::chown(shellDir, Configuration::instance()->getDefaultExecUser());
+#endif
 		}
 
 		ACE_Reactor::instance()->register_handler(SIGINT, QUIT_HANDLER::instance());
@@ -202,12 +207,16 @@ int main(int argc, char *argv[])
 						  if (snap && snap->m_apps.count(p->getName()))
 						  {
 							  auto &appSnapshot = snap->m_apps.find(p->getName())->second;
+#if defined(WIN32)
+							  p->attach(appSnapshot.m_pid);
+#else
 							  auto stat = os::status(appSnapshot.m_pid);
 							  if (stat && appSnapshot.m_startTime == std::chrono::system_clock::to_time_t(stat->get_starttime()))
 							  {
 								  LOG_INF << "Attaching application <" << p->getName() << "> to existing process PID <" << appSnapshot.m_pid << ">";
 								  p->attach(appSnapshot.m_pid);
 							  }
+#endif
 						  }
 					  });
 
@@ -217,7 +226,11 @@ int main(int argc, char *argv[])
 		LOG_INF << fname << "Entering main application monitoring loop";
 		while (QUIT_HANDLER::instance()->is_set() == 0)
 		{
+#if defined(WIN32)
+			void *ptree = nullptr;
+#else
 			std::list<os::Process> ptree;
+#endif
 			auto allApp = Configuration::instance()->getApps();
 			for (const auto &app : allApp)
 			{
@@ -265,16 +278,20 @@ int main(int argc, char *argv[])
 
 			PersistManager::instance()->persistSnapshot();
 			HealthCheckTask::instance()->doHealthCheck();
+#if !defined(WIN32)
 			if (Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected())
 				ptree = os::processes();
+#endif
 		}
 	}
 	catch (const std::exception &e)
 	{
+		std::cerr << fname << "Fatal error: " << e.what() << std::endl;
 		LOG_ERR << fname << "Fatal error: " << e.what();
 	}
 	catch (...)
 	{
+		std::cerr << fname << "Unknown fatal exception occurred" << std::endl;
 		LOG_ERR << fname << "Unknown fatal exception occurred";
 	}
 

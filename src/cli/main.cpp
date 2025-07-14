@@ -8,7 +8,7 @@
 /// <summary>
 /// Command line entrypoint
 /// </summary>
-int main(int argc, const char *argv[])
+int main(int argc, char *argv[])
 {
 	PRINT_VERSION();
 	try

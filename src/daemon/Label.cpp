@@ -74,11 +74,13 @@ void Label::readDefaultLabel()
 	addLabel(DEFAULT_LABEL_HOST_NAME, MY_HOST_NAME);
 
 	// 2. arch
+#if !defined(WIN32)
 	struct utsname buffer;
 	if (uname(&buffer) == 0)
 	{
 		addLabel("arch", buffer.machine);
 	}
+#endif
 
 	// 3. os_version
 	std::ifstream file("/etc/os-release");

@@ -5,8 +5,10 @@
 #include <prometheus/text_serializer.h>
 
 #include "../../common/Utility.h"
+#if !defined(WIN32)
 #include "../../common/os/process.hpp"
 #include "../../common/os/pstree.hpp"
+#endif
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "PrometheusRest.h"
@@ -116,7 +118,9 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 	}
 	if (m_appmeshFileDesc)
 	{
+#if !defined(WIN32)
 		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
+#endif
 	}
 	auto body = collectData();
 	message.reply(web::http::status_codes::OK, body, CONTENT_TYPE);

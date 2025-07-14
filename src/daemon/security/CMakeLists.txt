@@ -1,7 +1,9 @@
 ##########################################################################
 # sub dir
 ##########################################################################
+if (NOT WIN32)
 add_subdirectory(ldapplugin)
+endif()
 
 ##########################################################################
 # security
@@ -21,6 +23,11 @@ if(APPLE)
       ldapplugin
       oath
 )
+elseif(WIN32)
+  target_link_libraries(security
+    PRIVATE
+      cryptopp::cryptopp
+  )
 else()
   target_link_libraries(security
     PRIVATE
