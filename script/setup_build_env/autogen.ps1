@@ -166,6 +166,9 @@ function Install-VcpkgPackages {
         'boost-program-options:x64-windows',
         'boost-asio:x64-windows',
         'boost-variant:x64-windows',
+        'boost-serialization:x64-windows',
+        'boost-lockfree:x64-windows',
+        'ace[ssl]:x64-windows',
         'cryptopp:x64-windows',
         'curl:x64-windows',
         'yaml-cpp:x64-windows'
@@ -176,77 +179,6 @@ function Install-VcpkgPackages {
         C:\vcpkg\vcpkg.exe install $package
         Write-Host "$package installed successfully" -ForegroundColor Green
     }
-}
-
-function Install-ACEFramework {
-    Write-Host "Installing ACE Framework..." -ForegroundColor Cyan
-    
-    $aceUrl = "https://github.com/DOCGroup/ACE_TAO/releases/download/ACE%2BTAO-7_1_2/ACE-7.1.2.tar.gz"
-    Save-File $aceUrl "ACE-7.1.2.tar.gz"
-    tar zxvf ACE-7.1.2.tar.gz
-    
-    $acePath = Get-ChildItem -Directory -Name "*ACE_wrappers*" | Select-Object -First 1
-    Set-Location $acePath
-    
-    # Ensure Perl is available
-    $perlPath = Find-Perl
-    if (!$perlPath) {
-        Write-Host "Installing Perl..." -ForegroundColor Yellow
-        choco install -y strawberryperl
-        $perlPath = Find-Perl
-        if (!$perlPath) {
-            Write-Error "Failed to install and locate Perl"
-            exit 1
-        }
-    }
-    $env:PATH = "$perlPath;$env:PATH"
-    
-    # Configure ACE environment
-    $env:ACE_ROOT = $PWD
-    $env:PATH = "$env:ACE_ROOT\bin;$env:PATH"
-    $env:SSL_ROOT = "C:\vcpkg\installed\x64-windows"
-    
-    # Create ACE configuration
-    @"
-#define ACE_HAS_STANDARD_CPP_LIBRARY 1
-#define ACE_HAS_STDCPP_STL_INCLUDES 1
-#define ACE_LACKS_PRAGMA_ONCE 1
-#define ACE_HAS_SSL 1
-#include "ace/config-win32.h"
-"@ | Out-File -FilePath "$env:ACE_ROOT\ace\config.h" -Encoding ascii
-    
-    # Enable SSL support
-    Write-Host "Enabling SSL support in ACE..." -ForegroundColor Yellow
-    Add-Content "$env:ACE_ROOT\bin\MakeProjectCreator\config\default.features" "ssl=1"
-    Add-Content "$env:ACE_ROOT\bin\MakeProjectCreator\config\default.features" "openssl11=1"
-    perl .\bin\mwc.pl -type vs2019 ACE.mwc
-    
-    # Patch for VS2022 toolset
-    Write-Host "Updating project files for VS2022..." -ForegroundColor Yellow
-    Get-ChildItem -Path "$env:ACE_ROOT" -Recurse -Filter *.vcxproj | ForEach-Object {
-        (Get-Content $_.FullName) -replace '<PlatformToolset>v142</PlatformToolset>', '<PlatformToolset>v143</PlatformToolset>' | Set-Content $_.FullName
-    }
-    
-    # Build ACE
-    Write-Host "Building ACE libraries..." -ForegroundColor Yellow
-    Set-Location "$env:ACE_ROOT"
-    & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat"
-    & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" ACE.sln /t:ACE /p:Configuration=Release /p:Platform=x64 /maxcpucount
-    & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" ACE.sln /t:SSL /p:Configuration=Release /p:Platform=x64 /maxcpucount
-    
-    # Install ACE
-    New-Item -ItemType Directory -Force -Path "C:\local\include\" | Out-Null
-    Copy-Item -Recurse "$env:ACE_ROOT\ace" "C:\local\include\" -Force
-    New-Item -ItemType Directory -Force -Path "C:\local\lib\" | Out-Null
-    Copy-Item "$env:ACE_ROOT\lib\*" "C:\local\lib\" -Force
-    
-    Write-Host "ACE Framework installed successfully" -ForegroundColor Green
-    Write-Host "Installed ACE libraries:" -ForegroundColor Green
-    Get-ChildItem -Path "C:\local\lib\" | ForEach-Object {
-        Write-Host "  $($_.Name)" -ForegroundColor White
-    }
-    
-    Set-Location $ROOTDIR
 }
 
 function Install-HeaderOnlyLibraries {
@@ -467,23 +399,12 @@ add_compile_definitions(
     WIN32_LEAN_AND_MEAN
 )
 
-# Disable all warnings
-if(MSVC)
-    # Disable specific warnings
-    add_compile_options(
-        /wd4710
-        /wd4711
-        /wd4712
-    )
-
-    # Suppress all warnings (optional and not recommended)
-    # add_compile_options(/w)
-
-    # Disable linker warnings for executables, shared libs, and modules
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /warn:0")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /warn:0")
-    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /warn:0")
-endif()
+# Disable all warnings (DO NOT USE for production use)
+add_compile_options(
+    /W0
+    /external:anglebrackets /external:W0
+    /wd4244 /wd4267 /wd4996
+)
 
 # Debugging output
 message(STATUS "Toolchain CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
@@ -528,7 +449,6 @@ try {
     Install-DevelopmentTools
     Install-Vcpkg
     Install-VcpkgPackages
-    Install-ACEFramework
     Install-HeaderOnlyLibraries
     Install-Go
     Install-GoTools

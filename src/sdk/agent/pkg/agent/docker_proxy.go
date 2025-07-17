@@ -59,13 +59,13 @@ func (dp *DockerProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// PSK verify
 	pskMsg := r.Header.Get(DOCKER_REQUEST_ID_HEADER)
-	pskMsgHmac := r.Header.Get(cloud.HTTP_HEADER_MHAC)
+	pskMsgHmac := r.Header.Get(cloud.HTTP_HEADER_HMAC)
 	if cloud.HMAC == nil || !cloud.HMAC.VerifyHMAC(pskMsg, pskMsgHmac) {
 		http.Error(w, "PSK authentication failed", http.StatusProxyAuthRequired)
 		return
 	}
 	r.Header.Del(DOCKER_REQUEST_ID_HEADER)
-	r.Header.Del(cloud.HTTP_HEADER_MHAC)
+	r.Header.Del(cloud.HTTP_HEADER_HMAC)
 	logger.Debug("PSK authentication success")
 
 	// Do proxy
@@ -85,7 +85,7 @@ func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 		Transport: dp.transport,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Errorf("Proxy error: %v", err)
-			http.Error(w, "Bad Gateway: " + err.Error(), http.StatusBadGateway)
+			http.Error(w, "Bad Gateway: "+err.Error(), http.StatusBadGateway)
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("Connection")

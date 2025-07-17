@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	HTTP_HEADER_MHAC = "X-Request-HMAC"
+	HTTP_HEADER_HMAC = "X-Request-HMAC"
 	pskLength        = 32
 	pskSHMEnv        = "SHM_NAME"
 	pskFlagOffset    = pskLength + 1

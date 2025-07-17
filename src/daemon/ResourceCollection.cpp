@@ -1,11 +1,12 @@
 #include <set>
 
 #include <ace/OS.h>
+#include <boost/asio.hpp>
 
 #include "../common/DateTime.h"
 #include "../common/Utility.h"
-#include "../common/os/net.hpp"
 #if !defined(WIN32)
+#include "../common/os/net.hpp"
 #include "../common/os/pstree.hpp"
 #endif
 #include "Configuration.h"
@@ -29,11 +30,18 @@ std::unique_ptr<ResourceCollection> &ResourceCollection::instance()
 
 const std::string ResourceCollection::getHostName(bool refresh)
 {
+#if defined(WIN32)
+	boost::asio::io_context io;
+	boost::asio::ip::tcp::resolver resolver(io);
+	return boost::asio::ip::host_name();
+#else
 	return net::hostname();
+#endif
 }
 
 const HostResource &ResourceCollection::getHostResource()
 {
+#if !defined(WIN32)
 	auto nets = net::getNetworkLinks();
 	bool isDocker = Utility::runningInContainer();
 
@@ -52,9 +60,9 @@ const HostResource &ResourceCollection::getHostResource()
 		static auto cpus = os::cpus();
 		std::set<unsigned int> uniqueSockets;
 		std::set<unsigned int> uniqueCores;
-		
+
 		// Count unique cores and sockets
-		for (const auto& cpu : cpus)
+		for (const auto &cpu : cpus)
 		{
 			uniqueSockets.insert(cpu.socket);
 			// Create a unique core identifier combining socket and core ID
@@ -62,9 +70,9 @@ const HostResource &ResourceCollection::getHostResource()
 			uniqueCores.insert((cpu.socket << 16) | cpu.core);
 		}
 
-		m_resources.m_processors = cpus.size();        // Total logical processors
-		m_resources.m_cores = uniqueCores.size();      // Total physical cores
-		m_resources.m_sockets = uniqueSockets.size();  // Total physical CPUs
+		m_resources.m_processors = cpus.size();		  // Total logical processors
+		m_resources.m_cores = uniqueCores.size();	  // Total physical cores
+		m_resources.m_sockets = uniqueSockets.size(); // Total physical CPUs
 	}
 
 	// Memory
@@ -112,7 +120,7 @@ const HostResource &ResourceCollection::getHostResource()
 			m_resources.m_ipaddress.push_back(std::move(inet));
 		}
 	}
-
+#endif
 	return m_resources;
 }
 
@@ -129,7 +137,9 @@ void ResourceCollection::dump()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	LOG_DBG << fname << "host_name:" << getHostName();
+#if !defined(WIN32)
 	LOG_DBG << fname << "os_user:" << Utility::getUsernameByUid();
+#endif
 	for (auto &pair : m_resources.m_ipaddress)
 	{
 		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv6 << "," << pair.address;
@@ -153,9 +163,10 @@ nlohmann::json ResourceCollection::AsJson()
 
 	nlohmann::json result = nlohmann::json::object();
 	result[("host_name")] = std::string((getHostName()));
+	result[("host_description")] = std::string(Configuration::instance()->getDescription());
+#if !defined(WIN32)
 	static const auto osUser = Utility::getUsernameByUid();
 	result[("os_user")] = osUser;
-	result[("host_description")] = std::string(Configuration::instance()->getDescription());
 	auto arr = nlohmann::json::array();
 	std::for_each(res.m_ipaddress.begin(), res.m_ipaddress.end(), [&arr](const HostNetInterface &pair)
 				  {
@@ -210,6 +221,7 @@ nlohmann::json ResourceCollection::AsJson()
 	result[("pid")] = (getPid());
 	result[("home")] = (Utility::getHomeDir());
 	result[("fd")] = (os::pstree()->totalFileDescriptors());
+#endif
 	LOG_DBG << fname << "Exit";
 	return result;
 }
