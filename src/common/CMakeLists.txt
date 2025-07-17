@@ -12,8 +12,8 @@ target_link_libraries(common
   PRIVATE
     ${CURL_LIB}
     ZLIB::ZLIB # nghttp2
-    ACE
-    ACE_SSL
+    ${ACE_LIBRARY}
+    ${ACE_SSL_LIBRARY}
     log4cpp
     yaml-cpp::yaml-cpp
     Boost::regex

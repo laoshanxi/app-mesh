@@ -1,5 +1,7 @@
 #include <set>
+#if !defined(WIN32)
 #include <unistd.h> //environ
+#endif
 
 #include <ace/Signal.h>
 #include <boost/algorithm/string_regex.hpp>
@@ -233,7 +235,11 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	// Build Json
 	if (returnRuntimeInfo)
 	{
+#if defined(WIN32)
+		void *ptree = nullptr;
+#else
 		std::list<os::Process> ptree = os::processes();
+#endif
 		for (std::size_t i = 0; i < apps.size(); ++i)
 		{
 			result.push_back(apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree)));
@@ -874,12 +880,14 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
 	config->m_posixTimezone = GET_JSON_STR_INT_TEXT(jsonValue, JSON_KEY_PosixTimezone);
 
+#if !defined(WIN32)
 	unsigned int gid, uid;
 	if (!config->m_defaultExecUser.empty() && !Utility::getUid(config->m_defaultExecUser, uid, gid))
 	{
 		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
 		throw std::invalid_argument("No such OS user for default execution");
 	}
+#endif
 	if (config->m_scheduleInterval < 1 || config->m_scheduleInterval > 100)
 	{
 		// Use default value instead

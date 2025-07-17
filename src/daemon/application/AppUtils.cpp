@@ -14,7 +14,10 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	: m_usingSudo(false)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
-
+#if defined(WIN32)
+	// TODO: For Windows, implement bat solution
+	m_shellCmd = cmd;
+#else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
 	const static std::string defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	const auto fileName = Utility::stringFormat("%s/appmesh.%s.sh", shellDir.c_str(), name.c_str());
@@ -48,13 +51,11 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	// Change file ownership if necessary
 	if (!execUser.empty() && osUser != execUser)
 	{
-#if !defined(WIN32)
 		if (!os::chown(fileName, execUser))
 		{
 			LOG_WAR << fname << "Failed to change ownership of file: " << fileName;
 			throw std::runtime_error("Failed to change file ownership.");
 		}
-#endif
 	}
 
 	// Prepare the shell command
@@ -81,6 +82,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	}
 
 	LOG_DBG << fname << "Shell file <" << fileName << "> generated for app <" << name << "> with owner <" << execUser << "> and command <" << m_shellCmd << ">";
+#endif
 }
 
 ShellAppFileGen::~ShellAppFileGen()

@@ -10,7 +10,15 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
-#if !defined(WIN32)
+#if defined(WIN32)
+#include <pdh.h>
+#include <pdhmsg.h>
+#include <psapi.h>
+#include <tlhelp32.h>
+#include <windows.h>
+#pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "pdh.lib")
+#else
 #include "../../common/os/pstree.hpp"
 #endif
 #include "../Configuration.h"
@@ -26,6 +34,9 @@ constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 AppProcess::AppProcess(void *owner)
 	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
+#if defined(WIN32)
+	  m_jobHandler(ACE_INVALID_HANDLE),
+#endif
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID()),
 	  m_pid(ACE_INVALID_PID), m_returnValue(-1)
 {
@@ -181,7 +192,11 @@ void AppProcess::terminate()
 		LOG_INF << fname << "kill process <" << pid << ">.";
 
 		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
+#if defined(WIN32)
+		if ((m_jobHandler != ACE_INVALID_HANDLE && TerminateJobObject(m_jobHandler, 1)) || ACE_OS::kill(pid, SIGTERM) == 0)
+#else
 		if (ACE_OS::kill(-pid, SIGKILL) == 0)
+#endif
 		{
 			// kill group success
 			if (Process_Manager::instance()->remove(pid) == 0)
@@ -355,10 +370,10 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			return ACE_INVALID_PID;
 		}
 	}
-#endif
 	option.setgroup(0); // set group id with the process id, used to kill process group
 	option.inherit_environment(true);
 	option.handle_inheritance(0);
+#endif
 
 	if (workDir.empty())
 	{
@@ -449,6 +464,20 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 	if (pid != ACE_INVALID_PID)
 	{
 		Process_Manager::instance()->register_handler(this, pid);
+#if defined(WIN32)
+		// Windows Job Object Setup
+		m_jobHandler = CreateJobObject(NULL, NULL);
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {0};
+		info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		SetInformationJobObject(m_jobHandler, JobObjectExtendedLimitInformation, &info, sizeof(info));
+		// Spawn Process and Assign to Job (Windows)
+		HANDLE processHandle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+		if (processHandle)
+		{
+			AssignProcessToJobObject(m_jobHandler, processHandle);
+			CloseHandle(processHandle);
+		}
+#endif
 	}
 	return pid;
 }
@@ -469,6 +498,147 @@ const std::string AppProcess::startError() const
 	return m_startError;
 }
 
+#if defined(WIN32)
+// Helper function to calculate CPU usage on Windows
+float AppProcess::calculateCpuUsage(HANDLE hProcess)
+{
+	static auto cpuNumber = std::thread::hardware_concurrency();
+	std::lock_guard<std::recursive_mutex> guard(m_cpuMutex);
+
+	FILETIME ftCreation, ftExit, ftKernel, ftUser;
+	if (!GetProcessTimes(hProcess, &ftCreation, &ftExit, &ftKernel, &ftUser))
+	{
+		return 0.0f;
+	}
+
+	// Convert FILETIME to uint64_t (100-nanosecond intervals)
+	auto fileTimeToUint64 = [](const FILETIME &ft) -> uint64_t
+	{
+		return ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+	};
+
+	uint64_t curProcCpuTime = fileTimeToUint64(ftKernel) + fileTimeToUint64(ftUser);
+
+	// Get system time
+	FILETIME ftSysIdle, ftSysKernel, ftSysUser;
+	if (!GetSystemTimes(&ftSysIdle, &ftSysKernel, &ftSysUser))
+	{
+		return 0.0f;
+	}
+
+	uint64_t curSysCpuTime = fileTimeToUint64(ftSysKernel) + fileTimeToUint64(ftSysUser);
+
+	float cpuUsage = 0.0f;
+	if (m_lastSysCpuTime && curSysCpuTime && curProcCpuTime)
+	{
+		auto totalTimeDiff = curSysCpuTime - m_lastSysCpuTime;
+		if (totalTimeDiff > 0)
+		{
+			cpuUsage = 100.0f * (curProcCpuTime - m_lastProcCpuTime) / (float)totalTimeDiff;
+		}
+	}
+
+	m_lastProcCpuTime = curProcCpuTime;
+	m_lastSysCpuTime = curSysCpuTime;
+
+	return cpuUsage;
+}
+
+// Helper function to build process tree string
+std::string AppProcess::buildProcessTreeString(DWORD pid)
+{
+	std::stringstream ss;
+	std::vector<DWORD> childPids = getChildProcesses(pid);
+
+	ss << "Process " << pid;
+	for (DWORD childPid : childPids)
+	{
+		ss << "\n  └─ " << childPid;
+	}
+
+	return ss.str();
+}
+
+// Helper function to find child processes
+std::vector<DWORD> AppProcess::getChildProcesses(DWORD parentPid)
+{
+	std::vector<DWORD> childPids;
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+	if (hSnapshot == INVALID_HANDLE_VALUE)
+	{
+		return childPids;
+	}
+
+	PROCESSENTRY32 pe32;
+	pe32.dwSize = sizeof(PROCESSENTRY32);
+
+	if (Process32First(hSnapshot, &pe32))
+	{
+		do
+		{
+			if (pe32.th32ParentProcessID == parentPid)
+			{
+				childPids.push_back(pe32.th32ProcessID);
+			}
+		} while (Process32Next(hSnapshot, &pe32));
+	}
+
+	CloseHandle(hSnapshot);
+	return childPids;
+}
+
+// Helper function to find leaf process
+pid_t AppProcess::findLeafProcess(DWORD pid)
+{
+	std::vector<DWORD> children = getChildProcesses(pid);
+	if (children.empty())
+	{
+		return pid; // This is a leaf process
+	}
+
+	// Return the first child's leaf (simplified)
+	return findLeafProcess(children[0]);
+}
+
+std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)
+{
+	// Get process handle
+	HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, this->getpid());
+	if (!hProcess)
+	{
+		return std::make_tuple(false, 0, 0.0f, 0, "", ACE_INVALID_PID);
+	}
+
+	uint64_t totalMemory = 0;
+	uint64_t totalFileDescriptors = 0;
+	std::string pstreeStr;
+	pid_t leafPid = ACE_INVALID_PID;
+	float cpuUsage = 0.0f;
+
+	// Get memory usage
+	PROCESS_MEMORY_COUNTERS_EX pmc;
+	if (GetProcessMemoryInfo(hProcess, (PROCESS_MEMORY_COUNTERS *)&pmc, sizeof(pmc)))
+	{
+		totalMemory = pmc.WorkingSetSize; // RSS equivalent on Windows
+	}
+
+	// Get handle count (file descriptors equivalent)
+	DWORD handleCount = 0;
+	GetProcessHandleCount(hProcess, &handleCount);
+	totalFileDescriptors = handleCount;
+
+	// Build process tree string (simplified version)
+	pstreeStr = buildProcessTreeString(this->getpid());
+	leafPid = findLeafProcess(this->getpid());
+
+	// CPU usage calculation
+	cpuUsage = calculateCpuUsage(hProcess);
+
+	CloseHandle(hProcess);
+	return std::make_tuple(true, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr, leafPid);
+}
+#else
 std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)
 {
 	auto tree = os::pstree(this->getpid(), ptree);
@@ -502,10 +672,17 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 	m_lastSysCpuTime = curSysCpuTime;
 	return std::make_tuple(true, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr, leafPid);
 }
+#endif
 
 AttachProcess::AttachProcess(pid_t pid)
 {
+#if defined(WIN32)
+	process_info_.hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
+	if (process_info_.hProcess)
+		process_info_.dwProcessId = pid;
+#else
 	child_id_ = pid;
+#endif
 }
 
 AttachProcess::~AttachProcess()

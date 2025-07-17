@@ -130,6 +130,12 @@ public:
 	/// - pid_t: leaf process id
 	/// </returns>
 	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> getProcessDetails(void *ptree = nullptr);
+#if defined(WIN32)
+	float AppProcess::calculateCpuUsage(HANDLE hProcess);
+	std::string AppProcess::buildProcessTreeString(DWORD pid);
+	std::vector<DWORD> AppProcess::getChildProcesses(DWORD parentPid);
+	pid_t AppProcess::findLeafProcess(DWORD pid);
+#endif
 
 	/// <summary>
 	/// Attach a existing pid to AppProcess to manage
@@ -231,6 +237,9 @@ private:
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;
+#if defined(WIN32)
+	std::atomic<ACE_HANDLE> m_jobHandler;
+#endif
 
 	mutable std::recursive_mutex m_cpuMutex;
 	uint64_t m_lastProcCpuTime;

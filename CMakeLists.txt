@@ -10,7 +10,9 @@ project(appmesh LANGUAGES CXX VERSION 2.1.2)
 ##########################################################################
 # C++ flag
 ##########################################################################
-set(CMAKE_CXX_STANDARD 14)
+if(NOT WIN32)
+    set(CMAKE_CXX_STANDARD 14)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -81,10 +83,7 @@ endif()
 ##########################################################################
 # MessagePack    https://msgpack.org/
 ##########################################################################
-if (NOT WIN32)
-    find_package(msgpack-cxx REQUIRED)
-endif()
-# Windows use local installed C:\local\include\msgpack
+find_package(msgpack-cxx REQUIRED)
 
 ##########################################################################
 # libcurl
@@ -141,6 +140,15 @@ if (OPENSSL_FOUND)
 else()
     message(FATAL_ERROR "openssl library not found")
 endif()
+if (WIN32)
+    find_package(cryptopp REQUIRED)
+endif()
+
+##########################################################################
+# ACE
+##########################################################################
+find_library(ACE_LIBRARY ACE REQUIRED)
+find_library(ACE_SSL_LIBRARY ACE_SSL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
