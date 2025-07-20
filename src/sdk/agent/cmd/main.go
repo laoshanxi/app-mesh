@@ -123,7 +123,7 @@ func main() {
 
 	// HMAC initialization
 	if hmac, err := cloud.NewHMACVerify(); err != nil {
-		logger.Errorf("HMAC Verifier initialization failed: %v", err)
+		logger.Fatalf("HMAC Verifier initialization failed: %v", err)
 	} else {
 		cloud.HMAC = hmac
 	}

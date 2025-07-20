@@ -821,7 +821,7 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 	restApp[JSON_KEY_APP_behavior] = std::move(objBehavior);
 
 	nlohmann::json objEnvs = nlohmann::json::object();
-	objEnvs[PSK_SHM_ENV] = shmName;
+	objEnvs[ENV_PSK_SHM] = shmName;
 	restApp[JSON_KEY_APP_env] = std::move(objEnvs);
 
 	return restApp;

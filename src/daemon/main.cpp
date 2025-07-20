@@ -41,7 +41,7 @@
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
 #include "security/TokenBlacklist.h"
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(WIN32)
 #include "../common/Valgrind.h"
 #endif
 
@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
 	const static char fname[] = "main() ";
 	PRINT_VERSION();
 	std::cout << fname << "App Mesh server starting." << std::endl;
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(WIN32)
 	VALGRIND_ENTRYPOINT_ONE_TIME(argv); // enable valgrind in debug mode
 #endif
 
@@ -175,7 +175,12 @@ int main(int argc, char *argv[])
 				bool psk = HMACVerifierSingleton::instance()->writePSKToSHM();
 				Configuration::instance()->addApp(config->getAgentAppJson(HMACVerifierSingleton::instance()->getShmName()), nullptr, false)->execute();
 				if (psk)
-					HMACVerifierSingleton::instance()->waitPSKRead();
+				{
+					if (!HMACVerifierSingleton::instance()->waitPSKRead())
+					{
+						throw std::runtime_error("Failed to wait for PSK read from agent process");
+					}
+				}
 			}
 			// reg prometheus
 			config->registerPrometheus();
