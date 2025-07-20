@@ -175,7 +175,12 @@ int main(int argc, char *argv[])
 				bool psk = HMACVerifierSingleton::instance()->writePSKToSHM();
 				Configuration::instance()->addApp(config->getAgentAppJson(HMACVerifierSingleton::instance()->getShmName()), nullptr, false)->execute();
 				if (psk)
-					HMACVerifierSingleton::instance()->waitPSKRead();
+				{
+					if (!HMACVerifierSingleton::instance()->waitPSKRead())
+					{
+						throw std::runtime_error("Failed to wait for PSK read from agent process");
+					}
+				}
 			}
 			// reg prometheus
 			config->registerPrometheus();

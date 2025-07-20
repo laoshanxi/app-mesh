@@ -6,14 +6,9 @@
 #include <ace/Singleton.h>
 
 #define HMAC_HTTP_HEADER "X-Request-HMAC"
-#define PSK_LENGTH 32
 #define PSK_SHM_ENV "SHM_NAME"
-#define PSK_FLAG_OFFSET (PSK_LENGTH + 1)
-#define PSK_SHM_TOTAL_SIZE (PSK_LENGTH + 2) // PSK + null terminator + flag
 
-#ifdef _WIN32
-class ACE_Shared_Memory_MM; // Forward declaration
-#endif
+class SharedMemoryFlag;
 
 /*
 Hash-based Message Authentication Code
@@ -30,21 +25,15 @@ public:
     // Pre-Shared-Key operations
     bool writePSKToSHM();
     bool waitPSKRead();
-    const std::string &getShmName() const noexcept;
-    bool cleanupSharedMemory();
+    const std::string getShmName();
 
 private:
     static std::string bytesToHex(const unsigned char *data, size_t len);
 
 private:
-    const std::string m_shmName;
     const std::string m_psk;
 
-    void *m_shmPtr;
-
-#ifdef _WIN32
-    ACE_Shared_Memory_MM *m_aceShm;
-#endif
+    std::shared_ptr<SharedMemoryFlag> m_shmPtr;
 
     HMACVerifier(const HMACVerifier &) = delete;
     HMACVerifier &operator=(const HMACVerifier &) = delete;
