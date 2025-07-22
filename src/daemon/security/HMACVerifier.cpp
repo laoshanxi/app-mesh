@@ -19,12 +19,8 @@
 #include "HMACVerifier.h"
 #include "SharedMemory.hpp"
 
-#define PSK_LENGTH 32
-#define PSK_FLAG_OFFSET (PSK_LENGTH + 1)
-#define PSK_SHM_TOTAL_SIZE (PSK_LENGTH + 2) // PSK + null terminator + flag
-
 HMACVerifier::HMACVerifier()
-    : m_psk(generatePassword(PSK_LENGTH, true, true, true, true))
+    : m_psk(generatePassword(PSK_MSG_LENGTH, true, true, true, true))
 {
 }
 
@@ -53,11 +49,11 @@ bool HMACVerifier::writePSKToSHM()
 {
     const static char fname[] = "HMACVerifier::writePSKToSHM() ";
 
-    m_shmPtr = std::make_shared<SharedMemoryFlag>(PSK_SHM_TOTAL_SIZE, PSK_FLAG_OFFSET);
+    m_shmPtr = std::make_shared<SharedMemory>();
     if (m_shmPtr->create())
     {
-        m_shmPtr->writeData(m_psk.data(), PSK_LENGTH + 1); // +1 for null terminator
-        m_shmPtr->exportEnv(PSK_SHM_ENV);
+        m_shmPtr->writeData(m_psk.data());
+        m_shmPtr->exportEnv(ENV_PSK_SHM);
         LOG_INF << fname << "PSK prepared in shared memory successfully";
         return true;
     }

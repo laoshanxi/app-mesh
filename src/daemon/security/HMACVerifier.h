@@ -6,9 +6,9 @@
 #include <ace/Singleton.h>
 
 #define HMAC_HTTP_HEADER "X-Request-HMAC"
-#define PSK_SHM_ENV "SHM_NAME"
+#define ENV_PSK_SHM "PSK_SHM_NAME"
 
-class SharedMemoryFlag;
+class SharedMemory;
 
 /*
 Hash-based Message Authentication Code
@@ -33,7 +33,7 @@ private:
 private:
     const std::string m_psk;
 
-    std::shared_ptr<SharedMemoryFlag> m_shmPtr;
+    std::shared_ptr<SharedMemory> m_shmPtr;
 
     HMACVerifier(const HMACVerifier &) = delete;
     HMACVerifier &operator=(const HMACVerifier &) = delete;

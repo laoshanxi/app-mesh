@@ -280,14 +280,13 @@ add_custom_target(pack
 # Golang agent build
 ##########################################################################
 set(AGENT_BIN ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/agent${CMAKE_EXECUTABLE_SUFFIX})
-add_custom_command(
-    OUTPUT ${AGENT_BIN}
+
+add_custom_target(agent ALL
     COMMAND go build -buildvcs=false -o ${AGENT_BIN} ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/agent/cmd
     COMMENT "Golang build agent"
     VERBATIM
 )
-add_custom_target(agent ALL DEPENDS ${AGENT_BIN})
 
 ##########################################################################
 # cppcheck
