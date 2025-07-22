@@ -26,11 +26,6 @@ std::chrono::system_clock::time_point AppTimer::nextTime(const std::chrono::syst
     {
         return EPOCH_ZERO_TIME;
     }
-    if (nextTime == now)
-    {
-        // TODO: avoid frequency start, need check any negative performance impact
-        nextTime += std::chrono::seconds(1);
-    }
     return nextTime;
 }
 

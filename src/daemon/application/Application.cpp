@@ -1060,6 +1060,13 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 
 	auto next = m_timer->nextTime(now);
 
+	// avoid frequency issue
+	auto distanceSeconds = std::abs(std::chrono::duration_cast<std::chrono::seconds>(next - (m_procStartTime ? *m_procStartTime : AppTimer::EPOCH_ZERO_TIME)).count());
+	if (distanceSeconds < 1)
+	{
+		next += std::chrono::seconds(1); // avoid next time is same as now
+	}
+
 	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
 	nextLaunchTime(next);
 

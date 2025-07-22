@@ -147,23 +147,14 @@ const std::string Utility::getExecutablePath()
 	const static char fname[] = "Utility::getExecutablePath() ";
 #if defined(WIN32)
 	char buf[MAX_PATH] = {0};
-	if (::GetModuleFileNameA(NULL, buf, MAX_PATH) == 0)
+	DWORD len = ::GetModuleFileNameA(NULL, buf, MAX_PATH);
+	if (len == 0 || len >= MAX_PATH)
 	{
 		LOG_ERR << fname << "Failed to retrieve executable path: " << ::GetLastError();
 		return "";
 	}
 
-	// Remove ".exe" extension if present
-	std::size_t idx = 0;
-	while (buf[idx] != '\0')
-	{
-		if (buf[idx] == '.' && buf[idx + 1] == 'e' && buf[idx + 2] == 'x' && buf[idx + 3] == 'e')
-		{
-			buf[idx] = '\0';
-			break;
-		}
-	}
-	return buf;
+	return boost::filesystem::path(buf).string();
 
 #elif defined(__linux__)
 	char buf[PATH_MAX] = {0};
@@ -232,8 +223,9 @@ const std::string Utility::getBinaryName()
 	// Windows implementation without filesystem
 	char buffer[MAX_PATH];
 	DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
-	if (length == 0) {
-		return "unknown";
+	if (length == 0)
+	{
+		return "";
 	}
 
 	std::string fullPath(buffer);
@@ -839,26 +831,26 @@ std::vector<std::string> Utility::splitString(const std::string &source, const s
 	return result;
 }
 
-bool Utility::startWith(const std::string &big, const std::string &small)
+bool Utility::startWith(const std::string &str, const std::string &prefix)
 {
 	// https://luodaoyi.com/p/cpp-std-startwith-endwith.html
-	if (&big == &small)
+	if (&str == &prefix)
 		return true;
-	const std::string::size_type big_size = big.size();
-	const std::string::size_type small_size = small.size();
+	const std::string::size_type big_size = str.size();
+	const std::string::size_type small_size = prefix.size();
 	const bool valid_ = (big_size >= small_size);
-	const bool starts_with_ = (big.compare(0, small_size, small) == 0);
+	const bool starts_with_ = (str.compare(0, small_size, prefix) == 0);
 	return valid_ && starts_with_;
 }
 
-bool Utility::endWith(const std::string &big, const std::string &small)
+bool Utility::endWith(const std::string &str, const std::string &postfix)
 {
-	if (&big == &small)
+	if (&str == &postfix)
 		return true;
-	const std::string::size_type big_size = big.size();
-	const std::string::size_type small_size = small.size();
+	const std::string::size_type big_size = str.size();
+	const std::string::size_type small_size = postfix.size();
 	const bool valid_ = (big_size >= small_size);
-	const bool ends_with_ = (big.compare(big_size - small_size, small_size, small) == 0);
+	const bool ends_with_ = (str.compare(big_size - small_size, small_size, postfix) == 0);
 	return valid_ && ends_with_;
 }
 
