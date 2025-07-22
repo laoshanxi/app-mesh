@@ -422,7 +422,12 @@ void Application::execute(void *ptree)
 	}
 
 	refresh(ptree);
-	if (m_return != INVALID_RETURN_CODE && m_procExitTime && m_procStartTime && *m_procExitTime > *m_procStartTime && nextRunTime == nullptr && getStatus() == STATUS::ENABLED)
+
+	// Check if the process exited abnormally and handle errors.
+	// Note: m_procExitTime and m_procStartTime may not have a guaranteed order due to asynchronous execution.
+	//   - m_procExitTime is set in Application::onExitUpdate (by terminate).
+	//   - m_procStartTime is set in Application::onTimerSpawn (by scheduleNext).
+	if (m_return != INVALID_RETURN_CODE && m_procExitTime && m_procStartTime && ((*m_procExitTime - *m_procStartTime) > std::chrono::seconds(1)) && nextRunTime == nullptr && getStatus() == STATUS::ENABLED)
 	{
 		// error handling
 		handleError();
@@ -433,6 +438,7 @@ bool Application::onTimerSpawn()
 {
 	const static char fname[] = "Application::onTimerSpawn() ";
 
+	m_nextStartTimerIdEvent.wait();
 	auto timerId = m_nextStartTimerId.exchange(INVALID_TIMER_ID);
 	if (!IS_VALID_TIMER_ID(timerId))
 	{
@@ -479,11 +485,12 @@ bool Application::onTimerSpawn()
 			m_metricStartCount->metric().Increment();
 	}
 
-	// 4. schedule next run for period run
-	if (this->isEnabled() && m_startInterval > 0)
+	// 4. schedule next run for period run (if next have not scheduled)
+	if (this->isEnabled() && m_startInterval > 0 && m_nextStartTimerId == INVALID_TIMER_ID)
 	{
 		// note: timer lock can hold app lock, app lock should not hold timer lock
-		this->scheduleNext();
+		// make sure next run start from next second (while current start already begin)
+		this->scheduleNext(std::chrono::system_clock::now() + std::chrono::seconds(1));
 	}
 
 	// 5. registerCheckStdoutTimer() outside of m_appMutex
@@ -1042,7 +1049,9 @@ void Application::handleError()
 	case AppBehavior::Action::KEEPALIVE:
 		// keep alive always, used for period run
 		nextLaunchTime(std::chrono::system_clock::now());
-		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::onTimerSpawn, this), fname);
+		m_nextStartTimerIdEvent.reset();
+		m_nextStartTimerId = this->registerTimer(0, 0, std::bind(&Application::onTimerSpawn, this), fname);
+		m_nextStartTimerIdEvent.signal();
 		LOG_DBG << fname << "Next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -1054,17 +1063,17 @@ void Application::handleError()
 	}
 }
 
-boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext(std::chrono::system_clock::time_point now)
+boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNext(std::chrono::system_clock::time_point startFrom)
 {
 	const static char fname[] = "Application::scheduleNext() ";
 
-	auto next = m_timer->nextTime(now);
+	auto next = m_timer->nextTime(startFrom);
 
 	// avoid frequency issue
 	auto distanceSeconds = std::abs(std::chrono::duration_cast<std::chrono::seconds>(next - (m_procStartTime ? *m_procStartTime : AppTimer::EPOCH_ZERO_TIME)).count());
 	if (distanceSeconds < 1)
 	{
-		next += std::chrono::seconds(1); // avoid next time is same as now
+		next += std::chrono::milliseconds(500); // add 0.5s buffer if target start is now
 	}
 
 	// 1. update m_nextLaunchTime before register timer, spawn will check m_nextLaunchTime
@@ -1074,7 +1083,9 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 	{
 		// 2. register timer
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
+		m_nextStartTimerIdEvent.reset();
 		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::onTimerSpawn, this), fname);
+		m_nextStartTimerIdEvent.signal();
 		LOG_DBG << fname << "Next start for <" << m_name << "> is " << DateTime::formatLocalTime(next) << " start timer ID <" << m_nextStartTimerId << ">";
 	}
 
