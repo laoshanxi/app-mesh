@@ -80,8 +80,16 @@ func readPSKFromSHM() ([]byte, error) {
 	}
 
 	// Read PSK data first, but ensure we don't read null-terminated string beyond PSK_MSG_LENGTH
-	psk := make([]byte, PSK_MSG_LENGTH)
-	copy(psk, mmap[:PSK_MSG_LENGTH])
+	// Find actual string length (if null-terminated)
+	actualLen := 0
+	for i := 0; i < min(len(mmap), PSK_MSG_LENGTH); i++ {
+		if mmap[i] == 0 {
+			break
+		}
+		actualLen++
+	}
+	psk := make([]byte, actualLen)
+	copy(psk, mmap[:actualLen])
 
 	// Atomic flag check and set using proper alignment
 	flagPtr := (*uint32)(unsafe.Pointer(&mmap[PSK_FLAG_OFFSET]))
