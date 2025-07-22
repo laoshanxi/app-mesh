@@ -7,6 +7,7 @@
 #include <string>
 #include <tuple>
 
+#include <ace/Event.h>
 #include <boost/smart_ptr/shared_ptr.hpp>
 #include <boost/thread/synchronized_value.hpp>
 #include <nlohmann/json.hpp>
@@ -133,7 +134,9 @@ protected:
 	int m_bufferTime;
 	bool m_startIntervalValueIsCronExpr;
 	std::shared_ptr<AppProcess> m_bufferProcess;
-	std::atomic_long m_nextStartTimerId;
+
+	std::atomic_long m_nextStartTimerId; // use together with m_nextStartTimerIdEvent
+	ACE_Event m_nextStartTimerIdEvent;	 // use together with m_nextStartTimerId
 
 	std::chrono::system_clock::time_point m_regTime;
 	std::string m_healthCheckCmd;

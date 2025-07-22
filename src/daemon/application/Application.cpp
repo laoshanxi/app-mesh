@@ -433,6 +433,7 @@ bool Application::onTimerSpawn()
 {
 	const static char fname[] = "Application::onTimerSpawn() ";
 
+	m_nextStartTimerIdEvent.wait();
 	auto timerId = m_nextStartTimerId.exchange(INVALID_TIMER_ID);
 	if (!IS_VALID_TIMER_ID(timerId))
 	{
@@ -1042,7 +1043,9 @@ void Application::handleError()
 	case AppBehavior::Action::KEEPALIVE:
 		// keep alive always, used for period run
 		nextLaunchTime(std::chrono::system_clock::now());
-		m_nextStartTimerId = this->registerTimer(10L, 0, std::bind(&Application::onTimerSpawn, this), fname);
+		m_nextStartTimerIdEvent.reset();
+		m_nextStartTimerId = this->registerTimer(0, 0, std::bind(&Application::onTimerSpawn, this), fname);
+		m_nextStartTimerIdEvent.signal();
 		LOG_DBG << fname << "Next action for <" << m_name << "> is KEEPALIVE";
 		break;
 	case AppBehavior::Action::REMOVE:
@@ -1074,7 +1077,9 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 	{
 		// 2. register timer
 		auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(next - std::chrono::system_clock::now()).count();
+		m_nextStartTimerIdEvent.reset();
 		m_nextStartTimerId = this->registerTimer(delay, 0, std::bind(&Application::onTimerSpawn, this), fname);
+		m_nextStartTimerIdEvent.signal();
 		LOG_DBG << fname << "Next start for <" << m_name << "> is " << DateTime::formatLocalTime(next) << " start timer ID <" << m_nextStartTimerId << ">";
 	}
 
