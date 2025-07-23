@@ -405,8 +405,12 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		*/
 		if (m_stdoutFileName.length())
 		{
-			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC, 0666);
+			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler;
+			if (m_stdoutHandler == ACE_INVALID_HANDLE)
+			{
+				LOG_ERR << fname << "Failed to open file: <" << m_stdoutFileName << "> with error: " << ACE_OS::last_error();
+			}
 		}
 		else
 		{

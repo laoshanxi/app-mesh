@@ -79,14 +79,15 @@ copy_configuration_files() {
 
     # Copy script files
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml" "${PACKAGE_HOME}/script/"
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{setup.sh,entrypoint.sh,app*.sh,prom*.yml,docker*.yaml,*.html} "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{setup.sh,entrypoint.sh,app*.sh,*.html} "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/docker/"{prom*.yml,docker*.yaml} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 
     # Copy binary support files
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py" "${PACKAGE_HOME}/bin/"
 
     # Copy SSL files
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/generate_ssl_cert.sh" /usr/local/bin/{cfssl,cfssljson} "${PACKAGE_HOME}/ssl/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/ssl/generate_ssl_cert.sh" /usr/local/bin/{cfssl,cfssljson} "${PACKAGE_HOME}/ssl/"
 
     # Copy app configs
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/apps/"*.yaml "${PACKAGE_HOME}/apps/"
@@ -159,7 +160,7 @@ handle_macos_specifics() {
 }
 
 build_packages() {
-    envsubst <"${CMAKE_CURRENT_SOURCE_DIR}/script/nfpm.yaml" >"${CMAKE_BINARY_DIR}/nfpm_config.yaml"
+    envsubst <"${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/nfpm.yaml" >"${CMAKE_BINARY_DIR}/nfpm_config.yaml"
     if grep -q '\${[^}]*}' "${CMAKE_BINARY_DIR}/nfpm_config.yaml"; then
         die "Some variables were not substituted in nfpm.yaml."
     fi

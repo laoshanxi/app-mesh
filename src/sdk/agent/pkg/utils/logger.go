@@ -75,7 +75,13 @@ func GetLogger() *zap.SugaredLogger {
 
 	// Initialize with default configuration if not already initialized
 	if err := InitLogger(DefaultConfig()); err != nil {
-		l, _ := zap.NewProduction()
+		fmt.Fprintf(os.Stderr, "Failed to init logger: %v\n", err)
+
+		// Optional: fallback to console logger
+		l, fallbackErr := zap.NewProduction()
+		if fallbackErr != nil {
+			panic(fmt.Sprintf("Failed to create fallback logger: %v", fallbackErr))
+		}
 		logger.Store(l.Sugar())
 	}
 	return logger.Load()

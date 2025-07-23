@@ -28,7 +28,7 @@ REST:
 
   # Address for REST API access.
   # Use "localhost" for local access only, or "0.0.0.0" to allow external access.
-  RestListenAddress: localhost
+  RestListenAddress: 127.0.0.1
 
   # HTTP port for the REST API.
   RestListenPort: 6060

@@ -157,6 +157,11 @@ ClientSSLConfig::ClientSSLConfig()
 	{
 		m_ssl_version = CURL_SSLVERSION_TLSv1_3;
 	}
+
+#if defined(WIN32)
+	// Force TLS 1.2 on Windows to avoid compatibility issues
+	m_ssl_version = CURL_SSLVERSION_TLSv1_2;
+#endif
 }
 
 void ClientSSLConfig::ResolveAbsolutePaths(std::string workingHome)
@@ -170,7 +175,7 @@ std::string ClientSSLConfig::ResolveAbsolutePath(const std::string &workingHome,
 {
 	if (!workingHome.empty())
 	{
-		return (fs::path(workingHome) / filePath).string();
+		return (fs::path(workingHome) / filePath).lexically_normal().string();
 	}
 	return filePath;
 }
@@ -433,13 +438,21 @@ void RestClient::setSslConfig(CURL *curl)
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, m_sslConfig.m_verify_server ? 2L : 0L);
 	curl_easy_setopt(curl, CURLOPT_SSLVERSION, m_sslConfig.m_ssl_version);
 
+#if defined(WIN32)
+	// Disable Windows certificate store
+	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NO_REVOKE);
+#endif
+
 	// Client certificate configuration
 	if (m_sslConfig.m_verify_client &&
 		!m_sslConfig.m_certificate.empty() &&
 		!m_sslConfig.m_private_key.empty())
 	{
 		curl_easy_setopt(curl, CURLOPT_SSLCERT, m_sslConfig.m_certificate.c_str());
+		curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
 		curl_easy_setopt(curl, CURLOPT_SSLKEY, m_sslConfig.m_private_key.c_str());
+		curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
 
 		if (!m_sslConfig.m_private_key_passwd.empty())
 		{

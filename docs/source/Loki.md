@@ -17,7 +17,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 ### Start Loki, Grafana, Promtail，AppMesh
 
 ```
-cd app-mesh/script
+cd app-mesh/script/docker
 docker-compose -f docker-compose-all-in-one.yaml up -d
 ```
 
@@ -31,7 +31,7 @@ docker-compose -f docker-compose-all-in-one.yaml up -d
 ### Stop and clean
 
 ```
-cd app-mesh/script
+cd app-mesh/script/docker
 docker-compose -f docker-compose-all-in-one.yaml stop
 docker-compose -f docker-compose-all-in-one.yaml rm -f
 ```

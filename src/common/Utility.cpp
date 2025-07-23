@@ -727,43 +727,77 @@ bool Utility::createPidFile()
 {
 	const static char fname[] = "Utility::createPidFile() ";
 
-	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
 	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
 	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
-	auto fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
+
+#if !defined(WIN32)
+	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
-		std::cout << fname << "Failed to create PID file:" << pidFile << " with error: " << std::strerror(errno) << std::endl;
+		std::cerr << fname << "Failed to create PID file [" << pidFile << "]: " << std::strerror(errno) << std::endl;
 		return false;
 	}
-#if !defined(WIN32)
+
 	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
 	{
-		std::cout << fname << "New process running";
-		auto pid = std::to_string(getpid());
-		return write(fd, pid.c_str(), pid.length() + 1) > 0;
-	}
-	else
-	{
-		if (EWOULDBLOCK == errno)
-			std::cerr << fname << "process already running";
-		else
-			std::cerr << fname << "Failed with error: " << std::strerror(errno);
-	}
-#else
-	// Windows does not support flock, so we just write the PID
-	auto pid = std::to_string(ACE_OS::getpid());
-	if (write(fd, pid.c_str(), pid.length() + 1) > 0)
-	{
-		std::cout << fname << "New process running";
+		std::cout << fname << "New process running. PID file locked: " << pidFile << std::endl;
+		std::string pid = std::to_string(getpid());
+		if (write(fd, pid.c_str(), pid.length()) <= 0)
+		{
+			std::cerr << fname << "Failed to write PID to file [" << pidFile << "]: " << std::strerror(errno) << std::endl;
+			close(fd);
+			return false;
+		}
 		return true;
 	}
 	else
 	{
-		std::cerr << fname << "Failed to write PID to file with error: " << std::strerror(errno);
+		if (errno == EWOULDBLOCK)
+		{
+			std::cerr << fname << "Process already running. PID file locked: " << pidFile << std::endl;
+		}
+		else
+		{
+			std::cerr << fname << "Failed to lock PID file [" << pidFile << "]: " << std::strerror(errno) << std::endl;
+		}
+		close(fd);
+		return false;
 	}
+
+#else
+	// Windows implementation using file locking
+	HANDLE hFile = CreateFileA(pidFile.c_str(), GENERIC_READ | GENERIC_WRITE,
+							   0, // not shared, self-owned
+							   NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		DWORD error = GetLastError();
+		if (error == ERROR_SHARING_VIOLATION)
+		{
+			std::cerr << fname << "Process already running. PID file locked: " << pidFile << std::endl;
+		}
+		else
+		{
+			std::cerr << fname << "Failed to create PID file <" << pidFile << "> with error " << error << std::endl;
+		}
+		return false;
+	}
+
+	std::string pid = std::to_string(ACE_OS::getpid());
+	DWORD bytesWritten;
+	if (!WriteFile(hFile, pid.c_str(), static_cast<DWORD>(pid.length()), &bytesWritten, NULL))
+	{
+		std::cerr << fname << "Failed to write PID to file <" << pidFile << "> with error " << GetLastError() << std::endl;
+		CloseHandle(hFile);
+		return false;
+	}
+
+	std::cout << fname << "New process running. PID file locked: " << pidFile << std::endl;
+	// Keep handle open to maintain lock
+	return true;
 #endif
-	return false;
 }
 
 void Utility::appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key)
@@ -1191,7 +1225,11 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 {
 	// https://stackoverflow.com/questions/1511797/convert-string-to-argv-in-c
 	// backup: https://stackoverflow.com/questions/1706551/parse-string-into-argv-argc
+#if defined(WIN32)
+	return boost::program_options::split_winmain(commandLine);
+#else
 	return boost::program_options::split_unix(commandLine);
+#endif
 }
 
 bool Utility::containsSpecialCharacters(const std::string &str)

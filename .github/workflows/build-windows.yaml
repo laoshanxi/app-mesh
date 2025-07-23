@@ -13,7 +13,7 @@ env:
   APPMESH_VERSION: "2.1.2"
 
 jobs:
-  setup-build-env:
+  build:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -37,3 +37,53 @@ jobs:
           cmake --build . --config Release --target agent
           cmake --build . --config Release --target appc
           cmake --build . --config Release --target appsvc
+
+      - name: Build package
+        shell: pwsh
+        run: |
+          pwsh -File script\packaging\build_package.ps1
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ github.sha }}
+          path: build/appmesh_*.exe
+
+  test:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-${{ github.sha }}
+
+      - name: Install 7-Zip with Chocolatey
+        run: choco install 7zip -y
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          ls
+          7z x .\appmesh_2.1.2_windows_setup.exe -oC:\local\appmesh
+          ls "C:\local\appmesh"
+          C:\local\appmesh\bin\nssm.exe install AppMeshService "C:\local\appmesh\bin\appsvc.exe"
+          C:\local\appmesh\bin\nssm.exe set AppMeshService Start SERVICE_AUTO_START
+          C:\local\appmesh\bin\nssm.exe start AppMeshService
+          sleep 10
+          ls "C:\local\appmesh"
+          cat "C:\local\appmesh\work\server.log"
+          cat "C:\local\appmesh\work\stdout\appmesh.agent.out"
+          C:\local\appmesh\bin\appc -V
+          try { & "C:\local\appmesh\bin\appc.exe" ls } catch {}
+          try { & "C:\local\appmesh\bin\appc.exe" resource } catch {}
+        continue-on-error: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "SDK & Security enhancement"
+          tag_name: ${{ env.APPMESH_VERSION }}
+          fail_on_unmatched_files: false
+          token: ${{ secrets.PUBLISH_RELEASE }}
+          files: appmesh_*.exe

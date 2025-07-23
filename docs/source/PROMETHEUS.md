@@ -19,7 +19,7 @@ Prometheus, a Cloud Native Computing Foundation project, is a systems and servic
 
 ```shell
 git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
-cd app-mesh/script
+cd app-mesh/script/docker
 docker-compose -f docker-compose-all-in-one.yaml up -d
 ```
 

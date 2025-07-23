@@ -13,8 +13,8 @@
 #include <boost/regex.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
-#include <readline/history.h>
 #if !defined(WIN32)
+#include <readline/history.h>
 #include <readline/readline.h>
 #endif
 

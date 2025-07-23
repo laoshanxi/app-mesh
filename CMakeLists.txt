@@ -269,12 +269,24 @@ endif()
 ##########################################################################
 # package [make pack]
 ##########################################################################
+if(WIN32)
+    set(PACKAGING_COMMAND powershell -ExecutionPolicy Bypass -NoProfile -File ${CMAKE_SOURCE_DIR}/script/packaging/build_package.ps1)
+else()
+    set(PACKAGING_COMMAND bash ${CMAKE_SOURCE_DIR}/script/packaging/build_package.sh)
+endif()
+
 add_custom_target(pack
     COMMENT "Packing ${CMAKE_CURRENT_BINARY_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E env PROJECT_NAME=${PROJECT_NAME} PROJECT_VERSION=${PROJECT_VERSION} CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR} bash ${CMAKE_SOURCE_DIR}/script/build_package.sh
+    COMMAND ${CMAKE_COMMAND} -E env 
+        PROJECT_NAME=${PROJECT_NAME} 
+        PROJECT_VERSION=${PROJECT_VERSION} 
+        CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} 
+        CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR} 
+        ${PACKAGING_COMMAND}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS appc appsvc agent
 )
+
 
 ##########################################################################
 # Golang agent build
@@ -302,7 +314,7 @@ add_custom_target(cppcheck
 #   create venv under home and use pip install appmesh
 ##########################################################################
 add_custom_target(sbom
-    COMMENT "Generate SBOM dependency list from ${CMAKE_BINARY_DIR}/nfpm_home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml"
-    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/script/syft_dpkg_generate.sh
-    COMMAND syft ${CMAKE_BINARY_DIR}/nfpm_home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
+    COMMENT "Generate SBOM dependency list from ${CMAKE_BINARY_DIR}/nfpm_home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/syft/syft.yaml"
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/script/syft/syft_dpkg_generate.sh
+    COMMAND syft ${CMAKE_BINARY_DIR}/nfpm_home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/syft/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
 )
