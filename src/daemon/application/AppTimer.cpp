@@ -18,9 +18,9 @@ AppTimer::AppTimer(const std::chrono::system_clock::time_point &startTime, const
 {
 }
 
-std::chrono::system_clock::time_point AppTimer::nextTime(const std::chrono::system_clock::time_point &now)
+std::chrono::system_clock::time_point AppTimer::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    auto nextTime = checkStartTime(now);
+    auto nextTime = checkStartTime(startFrom);
     // check end
     if (nextTime > m_endTime)
     {
@@ -129,35 +129,26 @@ AppTimerPeriod::AppTimerPeriod(const std::chrono::system_clock::time_point &star
 {
 }
 
-std::chrono::system_clock::time_point AppTimerPeriod::nextTime(const std::chrono::system_clock::time_point &now)
+std::chrono::system_clock::time_point AppTimerPeriod::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    auto nextTime = checkStartTime(now);
-    // check end
-    if (nextTime < m_endTime)
-    {
-        auto distanceSeconds = std::abs(std::chrono::duration_cast<std::chrono::seconds>(m_startTime - nextTime).count());
-        if (distanceSeconds <= 1)
-        {
-            // startTime == nowTime
-            // nextTime = now;
-        }
-        else if (m_startTime > nextTime)
-        {
-            // startTime > nowTime
-            nextTime = m_startTime;
-        }
-        else
-        {
-            // startTime < nowTime
-            auto offsetSeconds = m_intervalSeconds - (distanceSeconds % m_intervalSeconds);
-            nextTime += std::chrono::seconds(offsetSeconds);
-        }
+    // 1. check start time
+    auto startTime = checkStartTime(startFrom);
 
-        // again, make sure the target is in daily range
-        nextTime = adjustDailyTimeRange(nextTime);
-        if (nextTime <= m_endTime)
+    // 2. calculate next time based on interval gap
+    if (startTime > m_startTime)
+    {
+        int nextGapSeconds = m_intervalSeconds - (std::chrono::duration_cast<std::chrono::seconds>(startTime - m_startTime).count() % m_intervalSeconds);
+        startTime += std::chrono::seconds(nextGapSeconds);
+    }
+
+    // 3. check end time
+    if (startTime < m_endTime)
+    {
+        // make sure the target is in daily range
+        startTime = adjustDailyTimeRange(startTime);
+        if (startTime <= m_endTime)
         {
-            return nextTime;
+            return startTime;
         }
     }
     return EPOCH_ZERO_TIME;
@@ -173,9 +164,9 @@ AppTimerCron::AppTimerCron(const std::chrono::system_clock::time_point &startTim
     m_cron = cron::make_cron(m_cronExpr);
 }
 
-std::chrono::system_clock::time_point AppTimerCron::nextTime(const std::chrono::system_clock::time_point &now)
+std::chrono::system_clock::time_point AppTimerCron::nextTime(const std::chrono::system_clock::time_point &startFrom)
 {
-    auto nextTime = checkStartTime(now);
+    auto nextTime = checkStartTime(startFrom);
     // check end
     if (nextTime < m_endTime)
     {

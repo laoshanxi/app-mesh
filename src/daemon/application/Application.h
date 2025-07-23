@@ -71,7 +71,7 @@ public:
 	void destroy();
 
 	// behavior
-	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point now = std::chrono::system_clock::now());
+	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point startFrom = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
 	bool onTimerAppRemove();
 	void handleError();
