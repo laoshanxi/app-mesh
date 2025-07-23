@@ -115,7 +115,7 @@ function Install-VisualStudioBuildTools {
 
 function Install-DevelopmentTools {
     Write-Host "Installing development tools (CMake, Git, Wget, 7zip)..." -ForegroundColor Cyan
-    $tools = @('cmake', 'git', 'wget', '7zip')
+    $tools = @('cmake', 'git', 'wget', '7zip', 'openssl', 'nsis', 'nssm')
     
     foreach ($tool in $tools) {
         choco install -y $tool
@@ -307,8 +307,7 @@ function Install-GoTools {
     
     $goTools = @(
         'github.com/cloudflare/cfssl/cmd/cfssl@latest',
-        'github.com/cloudflare/cfssl/cmd/cfssljson@latest',
-        'github.com/goreleaser/nfpm/v2/cmd/nfpm@latest'
+        'github.com/cloudflare/cfssl/cmd/cfssljson@latest'
     )
     
     foreach ($tool in $goTools) {
@@ -322,6 +321,23 @@ function Install-GoTools {
 function Build-NativeLibraries {
     Write-Host "Building native libraries..." -ForegroundColor Cyan
     Write-Host "Native library compilation completed" -ForegroundColor Green
+}
+
+function Install-NsisPlugin {
+    # https://nsis.sourceforge.io/EnVar_plug-in
+    Write-Host "Installing NSIS EnVar plugin..." -ForegroundColor Cyan
+    
+    $pluginUrl = "https://nsis.sourceforge.io/mediawiki/images/7/7f/EnVar_plugin.zip"
+    $downloadPath = "$env:TEMP\EnVar_plugin.zip" # Download to a temporary location
+    $nsisPath = "C:\Program Files (x86)\NSIS" # CHANGE THIS IF YOUR NSIS PATH IS DIFFERENT
+    
+    Save-File $pluginUrl $downloadPath
+    Expand-File $downloadPath $nsisPath
+    
+    # Optional: Clean up the downloaded zip file
+    Remove-Item -Path $downloadPath -Force -ErrorAction SilentlyContinue
+    
+    Write-Host "EnVar plugin downloaded and extracted to $nsisPath" -ForegroundColor Green
 }
 
 function Set-EnvironmentVariables {
@@ -452,6 +468,7 @@ try {
     Install-HeaderOnlyLibraries
     Install-Go
     Install-GoTools
+    Install-NsisPlugin
     Build-NativeLibraries
     Set-EnvironmentVariables
     New-CMakeToolchain

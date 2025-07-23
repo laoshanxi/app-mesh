@@ -74,13 +74,16 @@ int main(int argc, char *argv[])
 		// init ACE reactor: ACE_TP_Reactor support thread pool-based event dispatching
 		ACE_Reactor::instance(new ACE_Reactor(new ACE_TP_Reactor(), true));
 		ACE_Reactor::instance()->open(ACE::max_handles());
+#if !defined(WIN32)
 		if (!ACE_Reactor::instance()->initialized())
 		{
 			std::cerr << "Init reactor failed with error " << std::strerror(errno);
 			return -1;
 		}
+#endif
 
 		// Initialize logging. IMPORTANT: Do not use logger before this point
+		fs::create_directories(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR); // create first for logging
 		Utility::initLogging("server");
 		LOG_INF << fname << "Build: " << __MICRO_VAR__(BUILD_TAG);
 		LOG_INF << fname << "Entered working directory: " << fs::current_path().string();

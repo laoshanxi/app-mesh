@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
@@ -124,13 +125,18 @@ func GetAppMeshHomeDir() string {
 	if IsAgentProdEnv() {
 		return utils.GetParentDir(utils.GetCurrentAbPath())
 	}
+	if runtime.GOOS == "windows" {
+		return "C:\\local\\appmesh"
+	}
 	return "/opt/appmesh"
 }
 
 // IsAgentProdEnv checks if the current environment is production
 func IsAgentProdEnv() bool {
 	exePath, _ := os.Executable()
-	return filepath.Base(exePath) == "agent"
+	baseName := filepath.Base(exePath)
+	baseName = strings.TrimSuffix(baseName, ".exe") // Remove .exe postfix
+	return filepath.Base(baseName) == "agent"
 }
 
 func ResolveAbsolutePath(path string) string {

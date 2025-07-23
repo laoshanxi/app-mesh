@@ -24,7 +24,7 @@ cd app-mesh
 ### Deploy all in one YAML
 
 ```shell
-cd app-mesh/script
+cd app-mesh/script/docker
 $ docker-compose -f docker-compose-all-in-one.yaml up -d
 Creating script_prometheus_1    ... done
 Creating script_loki_1          ... done
@@ -93,7 +93,7 @@ docker stop script_node_exporter_1
 ### Clean docker compose started containers
 
 ```shell
-cd app-mesh/script
+cd app-mesh/script/docker
 docker-compose -f docker-compose-all-in-one.yaml stop
 docker-compose -f docker-compose-all-in-one.yaml rm -f
 ```

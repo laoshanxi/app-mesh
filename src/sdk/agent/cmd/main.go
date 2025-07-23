@@ -109,7 +109,7 @@ func main() {
 	//go func() {
 	//    log.Println(http.ListenAndServe("localhost:7070", nil))
 	//}()
-
+	logger.Info("Starting agent with PID:", os.Getpid())
 	cwd, _ := os.Getwd()
 	logger.Info("Current working directory:", cwd)
 
