@@ -115,7 +115,7 @@ function Install-VisualStudioBuildTools {
 
 function Install-DevelopmentTools {
     Write-Host "Installing development tools (CMake, Git, Wget, 7zip)..." -ForegroundColor Cyan
-    $tools = @('cmake', 'git', 'wget', '7zip')
+    $tools = @('cmake', 'git', 'wget', '7zip', 'openssl', 'nsis', 'nssm')
     
     foreach ($tool in $tools) {
         choco install -y $tool
@@ -307,8 +307,7 @@ function Install-GoTools {
     
     $goTools = @(
         'github.com/cloudflare/cfssl/cmd/cfssl@latest',
-        'github.com/cloudflare/cfssl/cmd/cfssljson@latest',
-        'github.com/goreleaser/nfpm/v2/cmd/nfpm@latest'
+        'github.com/cloudflare/cfssl/cmd/cfssljson@latest'
     )
     
     foreach ($tool in $goTools) {

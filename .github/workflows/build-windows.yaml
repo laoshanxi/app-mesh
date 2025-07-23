@@ -37,3 +37,17 @@ jobs:
           cmake --build . --config Release --target agent
           cmake --build . --config Release --target appc
           cmake --build . --config Release --target appsvc
+
+      - name: Build package
+        shell: pwsh
+        run: |
+          pwsh -File script\packaging\build_package.ps1
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "SDK & Security enhancement"
+          tag_name: ${{ env.APPMESH_VERSION }}
+          fail_on_unmatched_files: false
+          token: ${{ secrets.PUBLISH_RELEASE }}
+          files: build/appmesh_*.exe

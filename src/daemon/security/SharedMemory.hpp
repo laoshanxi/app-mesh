@@ -57,8 +57,7 @@ public:
         // Linux: Use tmpfs-based shared memory for fast in-memory access
         shmName = (boost::filesystem::path("/dev/shm/") / shmName).string();
 #elif defined(WIN32)
-        // Windows: Use Global namespace for cross-session sharing
-        shmName = "Global\\" + shmName;
+        shmName = (boost::filesystem::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR / shmName).string();
 #endif
 
         m_aceShm = std::make_shared<ACE_Shared_Memory_MM>();
@@ -75,6 +74,7 @@ public:
             m_aceShm = nullptr;
             return false;
         }
+        LOG_INF << fname << "Shared memory created successfully: " << shmName;
 
         m_shmPtr = static_cast<psk_shared_memory_t *>(m_aceShm->malloc());
         if (!m_shmPtr)
