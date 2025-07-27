@@ -72,13 +72,15 @@ jobs:
           C:\local\appmesh\bin\nssm.exe start AppMeshService
           sleep 10
           ls "C:\local\appmesh"
+
           cat "C:\local\appmesh\work\server.log"
           cat "C:\local\appmesh\work\stdout\appmesh.agent.out"
+
           C:\local\appmesh\bin\appc -V
           Test-NetConnection -ComputerName 127.0.0.1 -Port 6059
-          try { & "C:\local\appmesh\bin\appc.exe" ls } catch {}
-          try { & "C:\local\appmesh\bin\appc.exe" resource } catch {}
-        continue-on-error: true
+
+          & "C:\local\appmesh\bin\appc.exe" ls
+          & "C:\local\appmesh\bin\appc.exe" resource
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
