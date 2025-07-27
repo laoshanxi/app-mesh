@@ -6,13 +6,7 @@
 #include <atomic>
 #include <boost/filesystem.hpp>
 #include <chrono>
-#include <iostream>
 #include <thread>
-#if defined(WIN32)
-#include <windows.h>
-#else
-#include <sys/mman.h>
-#endif
 
 #include "../../common/Utility.h"
 

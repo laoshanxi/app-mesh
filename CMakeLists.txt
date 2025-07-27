@@ -270,9 +270,11 @@ endif()
 # package [make pack]
 ##########################################################################
 if(WIN32)
-    set(PACKAGING_COMMAND powershell -ExecutionPolicy Bypass -NoProfile -File ${CMAKE_SOURCE_DIR}/script/packaging/build_package.ps1)
+    set(PACKAGING_COMMAND powershell -ExecutionPolicy Bypass -NoProfile -File ${CMAKE_SOURCE_DIR}/script/pack/build_package.ps1)
+    set(BUILD_TYPE_ENV $<CONFIG>)
 else()
-    set(PACKAGING_COMMAND bash ${CMAKE_SOURCE_DIR}/script/packaging/build_package.sh)
+    set(PACKAGING_COMMAND bash ${CMAKE_SOURCE_DIR}/script/pack/build_package.sh)
+    set(BUILD_TYPE_ENV ${CMAKE_BUILD_TYPE})
 endif()
 
 add_custom_target(pack
@@ -282,6 +284,7 @@ add_custom_target(pack
         PROJECT_VERSION=${PROJECT_VERSION} 
         CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} 
         CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR} 
+        BUILD_TYPE=${BUILD_TYPE_ENV}
         ${PACKAGING_COMMAND}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS appc appsvc agent

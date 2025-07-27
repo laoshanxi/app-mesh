@@ -1,18 +1,6 @@
 #include <chrono>
 #include <openssl/hmac.h>
 #include <sstream>
-#include <string>
-#include <thread>
-
-#ifndef _WIN32
-#include <fcntl.h>    //  shm_open  fcntl
-#include <sys/mman.h> //  mmap munmap shm_unlink
-#include <unistd.h>
-#endif
-
-#include <ace/OS_NS_string.h>
-#include <ace/OS_NS_unistd.h>
-#include <ace/Shared_Memory_MM.h>
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"

@@ -75,11 +75,12 @@ copy_configuration_files() {
     [[ "$OSTYPE" == "darwin"* ]] && service_file="appmesh.launchd.plist"
 
     # Copy service file
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/$service_file" "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/pack/$service_file" "${PACKAGE_HOME}/script/"
 
     # Copy script files
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/appc.sh" "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml" "${PACKAGE_HOME}/script/"
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/"{setup.sh,entrypoint.sh,app*.sh,*.html} "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/pack/"{setup.sh,entrypoint.sh,appmesh*.sh,*.html} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/docker/"{prom*.yml,docker*.yaml} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 
@@ -160,7 +161,7 @@ handle_macos_specifics() {
 }
 
 build_packages() {
-    envsubst <"${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/nfpm.yaml" >"${CMAKE_BINARY_DIR}/nfpm_config.yaml"
+    envsubst <"${CMAKE_CURRENT_SOURCE_DIR}/script/pack/nfpm.yaml" >"${CMAKE_BINARY_DIR}/nfpm_config.yaml"
     if grep -q '\${[^}]*}' "${CMAKE_BINARY_DIR}/nfpm_config.yaml"; then
         die "Some variables were not substituted in nfpm.yaml."
     fi
@@ -189,9 +190,9 @@ build_packages() {
 
         info "Building for macOS (Version: $MACOS_VERSION, Clang: $CLANG_VERSION, ARCH: $GOARCH)"
         mkdir -p "${CMAKE_BINARY_DIR}/pkg_scripts"
-        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_install.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postinstall"
-        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/pre_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/preuninstall"
-        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/post_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postuninstall"
+        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/pack/post_install.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postinstall"
+        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/pack/pre_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/preuninstall"
+        cp "${CMAKE_CURRENT_SOURCE_DIR}/script/pack/post_uninstall.sh" "${CMAKE_BINARY_DIR}/pkg_scripts/postuninstall"
         chmod +x ${CMAKE_BINARY_DIR}/pkg_scripts/*
         pkgbuild --root "${PACKAGE_HOME}" --scripts "${CMAKE_BINARY_DIR}/pkg_scripts" --identifier "com.laoshanxi.appmesh" --version "${PROJECT_VERSION}" --install-location /opt/appmesh "${PACKAGE_FILE_NAME}"
     else
