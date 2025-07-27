@@ -75,11 +75,11 @@ copy_configuration_files() {
     [[ "$OSTYPE" == "darwin"* ]] && service_file="appmesh.launchd.plist"
 
     # Copy service file
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/$service_file" "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/$service_file" "${PACKAGE_HOME}/script/"
 
     # Copy script files
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml" "${PACKAGE_HOME}/script/"
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/"{setup.sh,entrypoint.sh,app*.sh,*.html} "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/script/packaging/"{setup.sh,entrypoint.sh,app*.sh,*.html} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/docker/"{prom*.yml,docker*.yaml} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 

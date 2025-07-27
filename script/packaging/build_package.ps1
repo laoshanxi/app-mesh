@@ -49,7 +49,7 @@ catch {
 Pop-Location
 
 # Copy scripts and configs
-Copy-Item -Path "src\daemon\rest\openapi.yaml", "script\grafana_infinity.html" -Destination (Join-Path $PackageDir "script")
+Copy-Item -Path "src\daemon\rest\openapi.yaml", "script\packaging\grafana_infinity.html" -Destination (Join-Path $PackageDir "script")
 Copy-Item -Path "src\daemon\config.yaml", "src\daemon\security\security.yaml", "src\daemon\security\oauth2.yaml", "src\sdk\agent\pkg\cloud\consul.yaml" -Destination $PackageDir
 Copy-Item -Path "script\apps\*.yaml" -Destination (Join-Path $PackageDir "apps")
 Remove-Item -Path (Join-Path $PackageDir "apps\backup.yaml") -Force -ErrorAction SilentlyContinue
