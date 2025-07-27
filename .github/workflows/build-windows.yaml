@@ -41,7 +41,7 @@ jobs:
       - name: Build package
         shell: pwsh
         run: |
-          pwsh -File script\packaging\build_package.ps1
+          pwsh -File script\pack\build_package.ps1
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -65,7 +65,7 @@ jobs:
         shell: pwsh
         run: |
           ls
-          7z x .\appmesh_2.1.2_windows_setup.exe -oC:\local\appmesh
+          7z x .\appmesh_2.1.2_windows_x64.exe -oC:\local\appmesh
           ls "C:\local\appmesh"
           C:\local\appmesh\bin\nssm.exe install AppMeshService "C:\local\appmesh\bin\appsvc.exe"
           C:\local\appmesh\bin\nssm.exe set AppMeshService Start SERVICE_AUTO_START

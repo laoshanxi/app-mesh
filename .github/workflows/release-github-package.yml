@@ -139,6 +139,7 @@ jobs:
           echo "11. OAuth2 authentication" >> CHANGELOG.txt
           echo "12. Enable key encryption by default" >> CHANGELOG.txt
           echo "13. Cookie token and CSRF token" >> CHANGELOG.txt
+          echo "14. Windows64 package" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency

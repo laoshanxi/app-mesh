@@ -4,7 +4,7 @@
 !define INSTALL_DIR "C:\local\${APP_NAME}"
 
 Name "${APP_NAME} ${APP_VERSION}"
-OutFile "..\..\build\${APP_NAME}_${APP_VERSION}_windows_setup.exe"
+OutFile "..\..\build\${APP_NAME}_${APP_VERSION}_windows_x64.exe"
 InstallDir "${INSTALL_DIR}"
 RequestExecutionLevel admin
 SetCompressor lzma

@@ -3,8 +3,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # Visual Studio build type
-$BuildType = "Release"  # Options: Debug, Release, RelWithDebInfo, MinSizeRel
-$Version = "2.1.2"
+$BuildType = $env:BUILD_TYPE  # Options: Debug, Release, RelWithDebInfo, MinSizeRel
+if (-not $BuildType) {
+    $BuildType = "Release"  # fallback default
+}
+Write-Host "Detected Build Type: $BuildType"
 
 # Resolve paths
 $ProjectRoot = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
@@ -49,7 +52,7 @@ catch {
 Pop-Location
 
 # Copy scripts and configs
-Copy-Item -Path "src\daemon\rest\openapi.yaml", "script\packaging\grafana_infinity.html" -Destination (Join-Path $PackageDir "script")
+Copy-Item -Path "src\daemon\rest\openapi.yaml", "script\pack\grafana_infinity.html" -Destination (Join-Path $PackageDir "script")
 Copy-Item -Path "src\daemon\config.yaml", "src\daemon\security\security.yaml", "src\daemon\security\oauth2.yaml", "src\sdk\agent\pkg\cloud\consul.yaml" -Destination $PackageDir
 Copy-Item -Path "script\apps\*.yaml" -Destination (Join-Path $PackageDir "apps")
 Remove-Item -Path (Join-Path $PackageDir "apps\backup.yaml") -Force -ErrorAction SilentlyContinue
@@ -59,11 +62,11 @@ Remove-Item -Path (Join-Path $PackageDir "apps\backup.yaml") -Force -ErrorAction
 # Optional: Create installer using NSIS
 Copy-Item "$env:ChocolateyInstall\lib\nssm\tools\nssm.exe" "$BinDest"
 
-$NSISScript = Join-Path $ProjectRoot "script\packaging\installer.nsi"
+$NSISScript = Join-Path $ProjectRoot "script\pack\installer.nsi"
 $NSISExe = "C:\Program Files (x86)\NSIS\makensis.exe"
 if (Test-Path $NSISScript) {
     & $NSISExe $NSISScript
-    Write-Host "Install package created at build\appmesh_${Version}_windows_setup.exe"
+    Write-Host "Install package created"
 }
 else {
     Write-Warning "NSIS not found or installer.nsi missing."
