@@ -1,4 +1,4 @@
-name: Publish JAR SDK to GitHub Packages
+name: publish-jar-package
 
 # https://docs.github.com/en/actions/publishing-packages/publishing-java-packages-with-maven
 

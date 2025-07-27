@@ -1,4 +1,4 @@
-name: "Release macOS Package"
+name: "release-macos-package"
 
 on:
   workflow_dispatch:

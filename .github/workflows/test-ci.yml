@@ -1,4 +1,4 @@
-name: "CI Test"
+name: "ci-test"
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     paths:
       - .github/workflows/test-ci.yml
   workflow_run:
-    workflows: ["Release AppMesh Package"]
+    workflows: ["release-linux-package"]
     types: [completed]
 
 env:

@@ -1,4 +1,4 @@
-name: "Coverity Scan"
+name: "security-coverity-scan"
 
 on:
   workflow_dispatch:

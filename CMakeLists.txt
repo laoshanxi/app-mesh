@@ -270,9 +270,11 @@ endif()
 # package [make pack]
 ##########################################################################
 if(WIN32)
-    set(PACKAGING_COMMAND powershell -ExecutionPolicy Bypass -NoProfile -File ${CMAKE_SOURCE_DIR}/script/packaging/build_package.ps1)
+    set(PACKAGING_COMMAND powershell -ExecutionPolicy Bypass -NoProfile -File ${CMAKE_SOURCE_DIR}/script/pack/build_package.ps1)
+    set(BUILD_TYPE_ENV $<CONFIG>)
 else()
-    set(PACKAGING_COMMAND bash ${CMAKE_SOURCE_DIR}/script/packaging/build_package.sh)
+    set(PACKAGING_COMMAND bash ${CMAKE_SOURCE_DIR}/script/pack/build_package.sh)
+    set(BUILD_TYPE_ENV ${CMAKE_BUILD_TYPE})
 endif()
 
 add_custom_target(pack
@@ -282,6 +284,7 @@ add_custom_target(pack
         PROJECT_VERSION=${PROJECT_VERSION} 
         CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} 
         CMAKE_BINARY_DIR=${CMAKE_BINARY_DIR} 
+        BUILD_TYPE=${BUILD_TYPE_ENV}
         ${PACKAGING_COMMAND}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS appc appsvc agent
@@ -314,7 +317,7 @@ add_custom_target(cppcheck
 #   create venv under home and use pip install appmesh
 ##########################################################################
 add_custom_target(sbom
-    COMMENT "Generate SBOM dependency list from ${CMAKE_BINARY_DIR}/nfpm_home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/syft/syft.yaml"
-    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/script/syft/syft_dpkg_generate.sh
-    COMMAND syft ${CMAKE_BINARY_DIR}/nfpm_home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/syft/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
+    COMMENT "Generate SBOM dependency list from ${CMAKE_BINARY_DIR}/nfpm_home/ with configuration file: ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml"
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft_dpkg_generate.sh
+    COMMAND syft ${CMAKE_BINARY_DIR}/nfpm_home/ -c ${CMAKE_CURRENT_SOURCE_DIR}/script/sbom/syft.yaml --source-name ${PROJECT_NAME} --source-version ${PROJECT_VERSION}
 )

@@ -1,4 +1,4 @@
-name: "Build Ubuntu 22 Build Image"
+name: "ci-docker-ubuntu-22"
 
 on:
   workflow_dispatch:
