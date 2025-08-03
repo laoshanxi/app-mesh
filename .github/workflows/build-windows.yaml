@@ -1,4 +1,4 @@
-name: "Release Windows Package"
+name: "release-windows-package"
 
 on:
   workflow_dispatch:

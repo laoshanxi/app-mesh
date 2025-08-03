@@ -1,4 +1,4 @@
-name: "Release Container Agent Image"
+name: "release-k8s-container-agent-image"
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
       - docker/Dockerfile.container_agent
       - .github/workflows/release-container-agent-image.yml
   workflow_run:
-    workflows: ["Publish PyPI SDK package"]
+    workflows: ["publish-pypi-package"]
     types:
       - completed
 

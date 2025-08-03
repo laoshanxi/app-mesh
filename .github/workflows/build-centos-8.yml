@@ -1,4 +1,4 @@
-name: "Build Centos 8 Build Image"
+name: "ci-docker-centos-8"
 
 on:
   workflow_dispatch:

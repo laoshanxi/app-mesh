@@ -1,4 +1,4 @@
-name: "Release AppMesh Package"
+name: "release-linux-package"
 
 on:
   workflow_dispatch:

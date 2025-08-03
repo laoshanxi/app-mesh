@@ -1,4 +1,4 @@
-name: Publish PyPI SDK package
+name: publish-pypi-package
 
 on:
   workflow_dispatch:

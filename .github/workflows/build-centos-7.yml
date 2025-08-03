@@ -1,4 +1,4 @@
-name: "Build CentOS 7 Build Image"
+name: "ci-docker-centos-7"
 
 on:
   workflow_dispatch:

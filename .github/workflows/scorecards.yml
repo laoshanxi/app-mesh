@@ -1,4 +1,4 @@
-name: "Scorecards Security"
+name: "security-scorecards-analysis"
 on:
   # Only the default branch is supported.
   branch_protection_rule:

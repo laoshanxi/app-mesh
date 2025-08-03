@@ -1,4 +1,4 @@
-name: "Release AppMesh Container Image"
+name: "release-appmesh-image"
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
       - Dockerfile
       - .github/workflows/release-appmesh-image.yml
   workflow_run:
-    workflows: ["Release AppMesh Package"]
+    workflows: ["release-linux-package]"]
     types:
       - completed
 
@@ -105,7 +105,7 @@ jobs:
           TOKEN=$(curl -s -X POST -H "Content-Type: application/json" \
             -d '{"username": "'${{ secrets.DOCKERHUB_USERNAME }}'", "password": "'${{ secrets.DOCKERHUB_TOKEN }}'"}' \
             https://hub.docker.com/v2/users/login/ | jq -r .token)
-          
+
           for arch in amd64 arm64; do
             IMAGE_URL="https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${{ env.APPMESH_VERSION }}-${arch}/"
             curl -X DELETE -H "Authorization: Bearer ${TOKEN}" ${IMAGE_URL} || echo "Failed to delete ${arch} tag"
