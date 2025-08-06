@@ -69,7 +69,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: ${{ matrix.os }}-${{ github.sha }}
 
@@ -113,12 +113,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Download macos-14 packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: macos-14-${{ github.sha }}
 
       - name: Download macos-15 packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: macos-15-${{ github.sha }}
 
