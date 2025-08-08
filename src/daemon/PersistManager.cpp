@@ -1,9 +1,7 @@
 #include <chrono>
 #include <fstream>
 
-#if !defined(WIN32)
 #include "../common/os/linux.hpp"
-#endif
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"
@@ -36,11 +34,6 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 
 		auto pid = app->getpid();
 		auto snapAppIter = m_persistedSnapshot->m_apps.find(app->getName());
-#if defined(WIN32)
-		snap->m_apps.insert(std::pair<std::string, AppSnap>(
-			app->getName(),
-			AppSnap(snapAppIter->second.m_pid, snapAppIter->second.m_startTime)));
-#else
 		if (snapAppIter != m_persistedSnapshot->m_apps.end() && snapAppIter->second.m_pid == pid)
 		{
 			// if application does not changed pid, do not need call stat
@@ -59,7 +52,6 @@ std::shared_ptr<Snapshot> PersistManager::captureSnapshot()
 					AppSnap(pid, std::chrono::system_clock::to_time_t(stat->get_starttime()))));
 			}
 		}
-#endif
 	}
 	snap->m_tokenBlackList = TOKEN_BLACK_LIST::instance()->getTokens();
 	return snap;

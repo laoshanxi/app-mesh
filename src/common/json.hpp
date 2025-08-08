@@ -15,6 +15,53 @@ struct JSONErrorContext
 class JSONValidator
 {
 public:
+    // Validate UTF-8 sequence for overlong encodings and invalid code points
+    static bool isValidUTF8Sequence(const unsigned char *bytes, size_t length) noexcept
+    {
+        if (length == 0 || length > 4)
+            return false;
+
+        uint32_t codePoint = 0;
+
+        // Validate based on sequence length
+        switch (length)
+        {
+        case 1:
+            // ASCII (0x00-0x7F)
+            return bytes[0] <= 0x7F;
+
+        case 2:
+            // 2-byte sequence: 110xxxxx 10xxxxxx
+            if ((bytes[0] & 0xE0) != 0xC0 || (bytes[1] & 0xC0) != 0x80)
+                return false;
+            codePoint = ((bytes[0] & 0x1F) << 6) | (bytes[1] & 0x3F);
+            // Check for overlong encoding (must be >= 0x80)
+            return codePoint >= 0x80 && codePoint <= 0x7FF;
+
+        case 3:
+            // 3-byte sequence: 1110xxxx 10xxxxxx 10xxxxxx
+            if ((bytes[0] & 0xF0) != 0xE0 || (bytes[1] & 0xC0) != 0x80 || (bytes[2] & 0xC0) != 0x80)
+                return false;
+            codePoint = ((bytes[0] & 0x0F) << 12) | ((bytes[1] & 0x3F) << 6) | (bytes[2] & 0x3F);
+            // Check for overlong encoding and surrogates (U+D800-U+DFFF are invalid)
+            return codePoint >= 0x800 && codePoint <= 0xFFFF &&
+                   (codePoint < 0xD800 || codePoint > 0xDFFF);
+
+        case 4:
+            // 4-byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+            if ((bytes[0] & 0xF8) != 0xF0 || (bytes[1] & 0xC0) != 0x80 ||
+                (bytes[2] & 0xC0) != 0x80 || (bytes[3] & 0xC0) != 0x80)
+                return false;
+            codePoint = ((bytes[0] & 0x07) << 18) | ((bytes[1] & 0x3F) << 12) |
+                        ((bytes[2] & 0x3F) << 6) | (bytes[3] & 0x3F);
+            // Check for overlong encoding and maximum valid Unicode (U+10FFFF)
+            return codePoint >= 0x10000 && codePoint <= 0x10FFFF;
+
+        default:
+            return false;
+        }
+    }
+
     // Find and log errors in the JSON object
     static void findErrors(const nlohmann::json &j, std::vector<JSONErrorContext> &errors, const std::string &path = "") noexcept
     {
@@ -39,7 +86,7 @@ public:
         }
         catch (const std::exception &e)
         {
-            errors.emplace_back(JSONErrorContext{path, j.dump(), e.what()});
+            errors.emplace_back(JSONErrorContext{path, "", std::string("Validation error: ") + e.what()});
         }
     }
 
@@ -48,22 +95,14 @@ public:
     {
         if (!errors.empty())
         {
-            LOG_ERR << "Found the following issue:";
-            try
+            LOG_ERR << "Found JSON validation issues:";
+            for (const auto &error : errors)
             {
-                const auto &error = *(errors.begin());
-                LOG_ERR << "Path: " << (error.path.empty() ? "<root>" : error.path);
-                LOG_ERR << "Value: " << (error.value.empty() ? "<empty>" : error.value);
-                LOG_ERR << "Details: " << (error.details.empty() ? "No details available" : error.details);
+                LOG_ERR << "  Path: " << (error.path.empty() ? "<root>" : error.path);
+                if (!error.value.empty())
+                    LOG_ERR << "  Value: " << error.value;
+                LOG_ERR << "  Details: " << error.details;
             }
-            catch (...)
-            {
-                LOG_ERR << "Error while reporting issue";
-            }
-        }
-        else
-        {
-            LOG_ERR << "No specific issues found during validation. The error might be in the overall structure.";
         }
     }
 
@@ -101,50 +140,58 @@ private:
         }
     }
 
-    // Validate JSON string
+    // Validate JSON string with comprehensive UTF-8 validation
     static void validateString(const nlohmann::json &j, std::vector<JSONErrorContext> &errors, const std::string &path) noexcept
     {
         try
-        { // Adding try-catch block to ensure noexcept semantics
+        {
             const std::string &value = j.get<std::string>();
-            // Check for UTF-8 validity
             const unsigned char *bytes = reinterpret_cast<const unsigned char *>(value.data());
             size_t len = value.length();
 
-            for (size_t i = 0; i < len; i++)
+            for (size_t i = 0; i < len;)
             {
+                // ASCII characters
                 if (bytes[i] <= 0x7F)
+                {
+                    i++;
                     continue;
+                }
 
-                size_t extraBytes = 0;
+                // Multi-byte UTF-8 sequence
+                size_t sequenceLen = 0;
                 if ((bytes[i] & 0xE0) == 0xC0)
-                    extraBytes = 1;
+                    sequenceLen = 2;
                 else if ((bytes[i] & 0xF0) == 0xE0)
-                    extraBytes = 2;
+                    sequenceLen = 3;
                 else if ((bytes[i] & 0xF8) == 0xF0)
-                    extraBytes = 3;
+                    sequenceLen = 4;
                 else
                 {
-                    // Invalid UTF-8 leading byte
-                    errors.emplace_back(JSONErrorContext{path, value, "Invalid UTF-8 leading byte at position " + std::to_string(i)});
-                    break;
+                    errors.emplace_back(JSONErrorContext{path, "", "Invalid UTF-8 leading byte at position " + std::to_string(i)});
+                    return;
                 }
 
-                for (size_t j = 1; j <= extraBytes; j++)
+                // Check bounds
+                if (i + sequenceLen > len)
                 {
-                    if ((bytes[i + j] & 0xC0) != 0x80)
-                    {
-                        errors.emplace_back(JSONErrorContext{path, value, "Invalid UTF-8 continuation byte at position " + std::to_string(i + j)});
-                        i = len; // Break outer loop
-                        break;
-                    }
+                    errors.emplace_back(JSONErrorContext{path, "", "Incomplete UTF-8 sequence at position " + std::to_string(i)});
+                    return;
                 }
-                i += extraBytes;
+
+                // Validate the complete sequence using the comprehensive validator
+                if (!isValidUTF8Sequence(bytes + i, sequenceLen))
+                {
+                    errors.emplace_back(JSONErrorContext{path, "", "Invalid UTF-8 sequence at position " + std::to_string(i)});
+                    return;
+                }
+
+                i += sequenceLen;
             }
         }
         catch (const std::exception &e)
         {
-            errors.emplace_back(JSONErrorContext{path, j.dump(), std::string("Error validating string: ") + e.what()});
+            errors.emplace_back(JSONErrorContext{path, "", std::string("String validation error: ") + e.what()});
         }
     }
 
@@ -158,29 +205,13 @@ private:
                 double value = j.get<double>();
                 if (std::isinf(value) || std::isnan(value))
                 {
-                    std::string valueStr;
-                    try
-                    {
-                        valueStr = j.dump();
-                    }
-                    catch (...)
-                    {
-                        valueStr = "[unprintable value]";
-                    }
-                    errors.emplace_back(JSONErrorContext{path, std::move(valueStr), "Invalid floating-point value (inf or nan)"});
+                    errors.emplace_back(JSONErrorContext{path, j.dump(), "Invalid floating-point value (inf or nan)"});
                 }
             }
         }
         catch (const std::exception &e)
         {
-            try
-            {
-                errors.emplace_back(JSONErrorContext{path, j.dump(), e.what()});
-            }
-            catch (...)
-            {
-                errors.emplace_back(JSONErrorContext{path, "[unprintable value]", e.what()});
-            }
+            errors.emplace_back(JSONErrorContext{path, "", std::string("Number validation error: ") + e.what()});
         }
     }
 };
@@ -188,36 +219,50 @@ private:
 class JSON
 {
 public:
-    // Wrapper for nlohmann::json::dump to catch exceptions and log error information
-    static std::string dump(const nlohmann::json &j, int indent = -1)
+    // Wrapper for nlohmann::json::dump with UTF-8 handling
+    static std::string dump(const nlohmann::json &j, int indent = -1, bool sanitizeUTF8 = true)
     {
         try
         {
-            // Attempt to dump the JSON object
-            return j.dump(indent);
+            // Use error_handler::replace to handle invalid UTF-8 sequences
+            if (sanitizeUTF8)
+            {
+                return j.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
+            }
+            else
+            {
+                return j.dump(indent);
+            }
         }
         catch (const nlohmann::json::exception &e)
         {
-            LOG_ERR << "JSON exception during dump: " << e.what();
-            try
+            LOG_ERR << "JSON dump failed: " << e.what() << " (id: " << e.id << ")";
+
+            // Attempt validation to identify specific issues
+            std::vector<JSONErrorContext> errors;
+            JSONValidator::findErrors(j, errors);
+            JSONValidator::reportErrors(errors);
+
+            // Try fallback with replacement
+            if (!sanitizeUTF8)
             {
-                handleJsonDumpException(j, e);
+                try
+                {
+                    LOG_ERR << "Retrying with UTF-8 sanitization...";
+                    return j.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
+                }
+                catch (...)
+                {
+                    LOG_ERR << "Fallback also failed, returning empty JSON";
+                    return "{}";
+                }
             }
-            catch (...)
-            {
-                LOG_ERR << "Exception occurred during error handling";
-            }
-            throw;
-        }
-        catch (const std::exception &e)
-        {
-            LOG_ERR << "Unexpected error during dump: " << e.what();
             throw;
         }
     }
 
-    // Wrapper for nlohmann::json::parse to catch exceptions and log error information
-    static nlohmann::json parse(const std::string &input)
+    // Wrapper for nlohmann::json::parse with error reporting
+    static nlohmann::json parse(const std::string &input, bool allowExceptions = true)
     {
         try
         {
@@ -225,144 +270,123 @@ public:
         }
         catch (const nlohmann::json::parse_error &e)
         {
-            LOG_ERR << "JSON parse error: " << e.what();
-            handleJsonParseException(input, e);
-            throw;
+            LOG_ERR << "JSON parse error at byte " << e.byte << ": " << e.what();
+            logParseError(input, e);
+
+            if (allowExceptions)
+                throw;
+
+            return nlohmann::json();
         }
-        catch (const std::exception &e)
+    }
+
+    // Parse with iterator range
+    template <typename IteratorType>
+    static nlohmann::json parse(IteratorType first, IteratorType last, bool allowExceptions = true)
+    {
+        try
         {
-            LOG_ERR << "Unexpected error during parse: " << e.what();
-            throw;
+            return nlohmann::json::parse(first, last);
+        }
+        catch (const nlohmann::json::parse_error &e)
+        {
+            std::string context(first, std::min(first + 100, last));
+            LOG_ERR << "JSON parse error: " << e.what();
+            LOG_ERR << "Context: " << context;
+
+            if (allowExceptions)
+                throw;
+
+            return nlohmann::json();
         }
     }
 
 private:
-    // Handle JSON dump exceptions
-    static void handleJsonDumpException(const nlohmann::json &j, const nlohmann::json::exception &e) noexcept
+    // Log parse error with context
+    static void logParseError(const std::string &input, const nlohmann::json::parse_error &e) noexcept
     {
-        std::vector<JSONErrorContext> errors;
-        try
-        {
-            JSONValidator::findErrors(j, errors);
-            JSONValidator::reportErrors(errors);
-
-            if (j.is_object() && j.empty())
-            {
-                LOG_ERR << "Warning: Empty JSON object";
-            }
-            if (j.is_array() && j.empty())
-            {
-                LOG_ERR << "Warning: Empty JSON array";
-            }
-        }
-        catch (const std::exception &validationError)
-        {
-            LOG_ERR << "Error during validation: " << validationError.what();
-        }
-
-        logSpecificErrorType(e.id);
-    }
-
-    // Handle JSON parse exceptions
-    static void handleJsonParseException(const std::string &input, const nlohmann::json::parse_error &e) noexcept
-    {
-        LOG_ERR << "Error details:";
-        LOG_ERR << " Message: " << e.what();
-        LOG_ERR << " Exception id: " << e.id;
-        LOG_ERR << " Byte position of error: " << e.byte;
-
-        try
-        {
-            // Ensure e.byte is within valid range
-            if (e.byte > input.length())
-            {
-                LOG_ERR << "Warning: Error position exceeds input length";
-                return;
-            }
-
-            // Calculate error context
-            size_t contextStart = e.byte > 20 ? e.byte - 20 : 0;
-            size_t contextEnd = std::min(e.byte + 20, input.length());
-            std::string errorContext = input.substr(contextStart, contextEnd - contextStart);
-
-            LOG_ERR << "Error context:";
-            LOG_ERR << " " << errorContext;
-            LOG_ERR << " " << std::string(e.byte - contextStart, ' ') << "^";
-
-            // Try to parse partially and validate
-            std::vector<JSONErrorContext> errors;
-            try
-            {
-                nlohmann::json partialJson = nlohmann::json::parse(input, nullptr, false);
-                if (!partialJson.is_discarded())
-                {
-                    JSONValidator::findErrors(partialJson, errors);
-                    JSONValidator::reportErrors(errors);
-                }
-                else
-                {
-                    LOG_ERR << "The JSON could not be partially parsed for validation.";
-                }
-            }
-            catch (const std::exception &validationError)
-            {
-                LOG_ERR << "Error during validation: " << validationError.what();
-            }
-
-            logSpecificErrorType(e.id);
-        }
-        catch (const std::exception &ex)
-        {
-            LOG_ERR << "Error while generating error context: " << ex.what();
-        }
-    }
-
-    // Log specific JSON error types
-    static void logSpecificErrorType(int errorId) noexcept
-    {
-        switch (errorId)
+        // Log error type
+        switch (e.id)
         {
         case 101:
-            LOG_ERR << "Parse error: unexpected end of input";
+            LOG_ERR << "Error type: Unexpected end of input";
             break;
         case 102:
-            LOG_ERR << "Parse error: unexpected token";
+            LOG_ERR << "Error type: Unexpected token";
             break;
         case 103:
-            LOG_ERR << "Parse error: invalid literal";
+            LOG_ERR << "Error type: Invalid literal";
             break;
         case 104:
-            LOG_ERR << "Parse error: value separator expected";
+            LOG_ERR << "Error type: Value separator expected";
             break;
         case 105:
-            LOG_ERR << "Parse error: object separator expected";
+            LOG_ERR << "Error type: Object separator expected";
             break;
         case 106:
-            LOG_ERR << "Parse error: expected value";
+            LOG_ERR << "Error type: Expected value";
             break;
         case 107:
-            LOG_ERR << "Parse error: expected end of input";
+            LOG_ERR << "Error type: Expected end of input";
             break;
         case 108:
-            LOG_ERR << "Parse error: unexpected character";
+            LOG_ERR << "Error type: Unexpected character";
             break;
         case 109:
-            LOG_ERR << "Parse error: number overflow";
+            LOG_ERR << "Error type: Number overflow";
             break;
         case 110:
-            LOG_ERR << "Parse error: invalid number";
+            LOG_ERR << "Error type: Invalid number";
             break;
         case 111:
-            LOG_ERR << "Parse error: invalid unicode escape";
+            LOG_ERR << "Error type: Invalid unicode escape";
             break;
         case 112:
-            LOG_ERR << "Parse error: invalid UTF-8 string";
+            LOG_ERR << "Error type: Invalid UTF-8 string";
             break;
         case 113:
-            LOG_ERR << "Parse error: unescaped control character";
+            LOG_ERR << "Error type: Unescaped control character";
+            break;
+        case 316:
+            LOG_ERR << "Error type: Invalid UTF-8 byte sequence";
             break;
         default:
-            LOG_ERR << "Unexpected JSON error type: " << errorId;
+            LOG_ERR << "Error type: Unknown (id: " << e.id << ")";
+            break;
+        }
+
+        // Show error context if possible
+        if (e.byte <= input.length())
+        {
+            size_t contextStart = (e.byte > 30) ? e.byte - 30 : 0;
+            size_t contextEnd = std::min(e.byte + 30, input.length());
+
+            if (contextStart < contextEnd)
+            {
+                std::string context = input.substr(contextStart, contextEnd - contextStart);
+                LOG_ERR << "Context: \"" << context << "\"";
+                LOG_ERR << "         " << std::string(e.byte - contextStart, ' ') << "^-- error here";
+            }
+        }
+
+        // Try partial parse for additional validation
+        try
+        {
+            auto partialJson = nlohmann::json::parse(input, nullptr, false);
+            if (!partialJson.is_discarded())
+            {
+                std::vector<JSONErrorContext> errors;
+                JSONValidator::findErrors(partialJson, errors);
+                if (!errors.empty())
+                {
+                    LOG_ERR << "Additional validation issues found:";
+                    JSONValidator::reportErrors(errors);
+                }
+            }
+        }
+        catch (...)
+        {
+            // Ignore errors in partial parse attempt
         }
     }
 };

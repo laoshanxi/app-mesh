@@ -7,8 +7,8 @@
 #include "../common/Utility.h"
 #if !defined(WIN32)
 #include "../common/os/net.hpp"
-#include "../common/os/pstree.hpp"
 #endif
+#include "../common/os/pstree.hpp"
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "process/LinuxCgroup.h"
@@ -41,12 +41,26 @@ const std::string ResourceCollection::getHostName(bool refresh)
 
 const HostResource &ResourceCollection::getHostResource()
 {
-#if !defined(WIN32)
-	auto nets = net::getNetworkLinks();
 	bool isDocker = Utility::runningInContainer();
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_resources.m_ipaddress.clear();
+
+#if !defined(WIN32)
+	auto nets = net::getNetworkLinks();
+	// Net
+	for (auto &net : nets)
+	{
+		// do not need show lo
+		if (net.address != "127.0.0.1" && net.name != "lo" && net.address != "::1")
+		{
+			HostNetInterface inet;
+			inet.address = net.address;
+			inet.ipv6 = net.ipv6;
+			inet.name = net.name;
+			m_resources.m_ipaddress.push_back(std::move(inet));
+		}
+	}
 
 	// CPU
 	if (isDocker)
@@ -54,6 +68,7 @@ const HostResource &ResourceCollection::getHostResource()
 		static auto cpus = LinuxCgroup(0, 0, 100).readHostCpuSet();
 		m_resources.m_cores = m_resources.m_sockets = m_resources.m_processors = cpus;
 	}
+#endif
 	if (m_resources.m_cores == 0)
 	{
 		// Get CPU topology information
@@ -107,20 +122,6 @@ const HostResource &ResourceCollection::getHostResource()
 		}
 	}
 
-	// Net
-	for (auto &net : nets)
-	{
-		// do not need show lo
-		if (net.address != "127.0.0.1" && net.name != "lo" && net.address != "::1")
-		{
-			HostNetInterface inet;
-			inet.address = net.address;
-			inet.ipv6 = net.ipv6;
-			inet.name = net.name;
-			m_resources.m_ipaddress.push_back(std::move(inet));
-		}
-	}
-#endif
 	return m_resources;
 }
 
@@ -137,9 +138,7 @@ void ResourceCollection::dump()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
 	LOG_DBG << fname << "host_name:" << getHostName();
-#if !defined(WIN32)
-	LOG_DBG << fname << "os_user:" << Utility::getUsernameByUid();
-#endif
+	LOG_DBG << fname << "os_user:" << os::getUsernameByUid();
 	for (auto &pair : m_resources.m_ipaddress)
 	{
 		LOG_DBG << fname << "m_ipaddress: " << pair.name << "," << pair.ipv6 << "," << pair.address;
@@ -164,8 +163,7 @@ nlohmann::json ResourceCollection::AsJson()
 	nlohmann::json result = nlohmann::json::object();
 	result[("host_name")] = std::string((getHostName()));
 	result[("host_description")] = std::string(Configuration::instance()->getDescription());
-#if !defined(WIN32)
-	static const auto osUser = Utility::getUsernameByUid();
+	static const auto osUser = os::getUsernameByUid();
 	result[("os_user")] = osUser;
 	auto arr = nlohmann::json::array();
 	std::for_each(res.m_ipaddress.begin(), res.m_ipaddress.end(), [&arr](const HostNetInterface &pair)
@@ -221,7 +219,6 @@ nlohmann::json ResourceCollection::AsJson()
 	result[("pid")] = (getPid());
 	result[("home")] = (Utility::getHomeDir());
 	result[("fd")] = (os::pstree()->totalFileDescriptors());
-#endif
 	LOG_DBG << fname << "Exit";
 	return result;
 }

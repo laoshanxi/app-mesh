@@ -2,7 +2,6 @@
 
 #include <list>
 #include <set>
-#include <unistd.h>
 
 #include "../../common/Utility.h"
 #include "linux.hpp"
@@ -32,7 +31,8 @@ namespace os
 				children.push_back(*(tree.get()));
 			}
 		}
-		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p) { return p.pid == pid; });
+		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p)
+									   { return p.pid == pid; });
 		if (iter != processes.end())
 			return std::make_shared<ProcessTree>(ProcessTree(*iter, children));
 
@@ -51,7 +51,7 @@ namespace os
 
 		if (ptree)
 		{
-			return pstree(pid, *(std::list<Process>*)(ptree));
+			return pstree(pid, *(std::list<Process> *)(ptree));
 		}
 
 		const std::list<Process> processList = os::processes();
@@ -74,9 +74,8 @@ namespace os
 		{
 			// First, check if the pid is already connected to one of the
 			// process trees we've constructed.
-			bool disconnected = !std::any_of(trees.begin(), trees.end(), [pid](const ProcessTree &tree) {
-				return tree.contains(pid);
-			});
+			bool disconnected = !std::any_of(trees.begin(), trees.end(), [pid](const ProcessTree &tree)
+											 { return tree.contains(pid); });
 
 			if (disconnected)
 			{

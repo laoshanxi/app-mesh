@@ -23,9 +23,7 @@
 #include "../common/Password.h"
 #include "../common/RestClient.h"
 #include "../common/Utility.h"
-#if !defined(WIN32)
 #include "../common/os/linux.hpp"
-#endif
 #include "ArgumentParser.h"
 #include "cmd_args.h"
 
@@ -1134,7 +1132,7 @@ int ArgumentParser::processShell()
 	// Get appmesh user
 	auto appmeshUser = getAuthenUser();
 	// Get current user name
-	auto osUser = Utility::getUsernameByUid();
+	auto osUser = os::getUsernameByUid();
 	// Unique session id as appname
 	APPC_EXEC_APP_NAME = appmeshUser + "_" + osUser + "_" + std::to_string(bashId);
 
@@ -1329,12 +1327,10 @@ void ArgumentParser::processFileUpload()
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	if (m_commandLineVariables.count(COPY_ATTR))
 	{
-#if !defined(WIN32)
 		auto fileInfo = os::fileStat(local);
 		header.insert({HTTP_HEADER_KEY_file_mode, std::to_string(std::get<0>(fileInfo))});
 		header.insert({HTTP_HEADER_KEY_file_user, std::to_string(std::get<1>(fileInfo))});
 		header.insert({HTTP_HEADER_KEY_file_group, std::to_string(std::get<2>(fileInfo))});
-#endif
 	}
 
 	auto response = RestClient::upload(m_currentUrl, restPath, local, header);
@@ -2097,7 +2093,7 @@ void ArgumentParser::printApps(const nlohmann::json &json, bool reduce)
 
 	// Step 3: Determine terminal width and adjust column display
 	size_t terminalWidth = 80; // Default fallback width
-#ifdef _WIN32
+#if defined(WIN32)
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi))
 	{

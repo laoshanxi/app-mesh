@@ -7,6 +7,7 @@
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
+#include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 #include "Security.h"
 #include "User.h"
@@ -376,10 +377,8 @@ const std::string User::getExecUserOverride() const
 			executeUser = Configuration::instance()->getDefaultExecUser();
 		}
 	}
-#if !defined(WIN32)
 	if (executeUser.empty())
-		executeUser = Utility::getUsernameByUid();
-#endif
+		executeUser = os::getUsernameByUid();
 	return executeUser;
 }
 
