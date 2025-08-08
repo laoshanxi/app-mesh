@@ -8,7 +8,21 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+
+// Platform-specific headers
+#if defined(WIN32)
+#include <io.h>
+#include <process.h>
+#include <psapi.h>
+#include <tlhelp32.h>
+#include <windows.h>
+#else
+#include <cerrno>
+#include <cstring>
+#include <sys/stat.h>
 #include <sys/types.h> // For pid_t.
+#include <unistd.h>
+#endif
 
 // macOS-specific headers
 #if defined(__APPLE__)
@@ -22,12 +36,140 @@
 
 namespace os
 {
-	// https://stackoverflow.com/questions/6583158/finding-open-file-descriptors-for-a-process-linux-c-code
-	// https://stackoverflow.com/questions/4470121/how-to-use-lsoflist-opened-files-in-a-c-c-application
-	// get process open file descriptors
-	inline size_t fileDescriptors(pid_t pid = ::getpid())
+#if defined(WIN32)
+	// RAII wrapper for Windows HANDLE
+	class HandleRAII
 	{
-		const static char fname[] = "os::fileDescriptors() ";
+	private:
+		HANDLE handle_;
+
+	public:
+		explicit HandleRAII(HANDLE handle = INVALID_HANDLE_VALUE) : handle_(handle) {}
+
+		~HandleRAII()
+		{
+			if (handle_ != INVALID_HANDLE_VALUE && handle_ != NULL)
+			{
+				CloseHandle(handle_);
+			}
+		}
+
+		// Non-copyable
+		HandleRAII(const HandleRAII &) = delete;
+		HandleRAII &operator=(const HandleRAII &) = delete;
+
+		// Movable
+		HandleRAII(HandleRAII &&other) noexcept : handle_(other.handle_)
+		{
+			other.handle_ = INVALID_HANDLE_VALUE;
+		}
+
+		HandleRAII &operator=(HandleRAII &&other) noexcept
+		{
+			if (this != &other)
+			{
+				reset();
+				handle_ = other.handle_;
+				other.handle_ = INVALID_HANDLE_VALUE;
+			}
+			return *this;
+		}
+
+		HANDLE get() const { return handle_; }
+		HANDLE release()
+		{
+			HANDLE temp = handle_;
+			handle_ = INVALID_HANDLE_VALUE;
+			return temp;
+		}
+
+		void reset(HANDLE newHandle = INVALID_HANDLE_VALUE)
+		{
+			if (handle_ != INVALID_HANDLE_VALUE && handle_ != NULL)
+			{
+				CloseHandle(handle_);
+			}
+			handle_ = newHandle;
+		}
+
+		bool valid() const
+		{
+			return handle_ != INVALID_HANDLE_VALUE && handle_ != NULL;
+		}
+
+		// Allow implicit conversion to HANDLE for API calls
+		operator HANDLE() const { return handle_; }
+	};
+#endif
+
+	// RAII wrapper for malloc'd memory
+	template <typename T>
+	class MallocRAII
+	{
+	private:
+		T *ptr_;
+
+	public:
+		explicit MallocRAII(T *ptr = nullptr) : ptr_(ptr) {}
+
+		~MallocRAII()
+		{
+			if (ptr_)
+			{
+				free(ptr_);
+			}
+		}
+
+		// Non-copyable
+		MallocRAII(const MallocRAII &) = delete;
+		MallocRAII &operator=(const MallocRAII &) = delete;
+
+		// Movable
+		MallocRAII(MallocRAII &&other) noexcept : ptr_(other.ptr_)
+		{
+			other.ptr_ = nullptr;
+		}
+
+		MallocRAII &operator=(MallocRAII &&other) noexcept
+		{
+			if (this != &other)
+			{
+				reset();
+				ptr_ = other.ptr_;
+				other.ptr_ = nullptr;
+			}
+			return *this;
+		}
+
+		T *get() const { return ptr_; }
+		T *release()
+		{
+			T *temp = ptr_;
+			ptr_ = nullptr;
+			return temp;
+		}
+
+		void reset(T *newPtr = nullptr)
+		{
+			if (ptr_)
+			{
+				free(ptr_);
+			}
+			ptr_ = newPtr;
+		}
+
+		bool valid() const { return ptr_ != nullptr; }
+
+		// Allow pointer-like operations
+		T &operator*() const { return *ptr_; }
+		T *operator->() const { return ptr_; }
+		operator T *() const { return ptr_; }
+	};
+
+	// Returns the number of open file descriptors for the specified process.
+	inline size_t getOpenFileDescriptorCount(pid_t pid = ::getpid())
+	{
+		const static char fname[] = "os::getOpenFileDescriptorCount() ";
 		size_t result = 0;
 
 		// Check if the pid is valid.
@@ -37,19 +179,51 @@ namespace os
 			return result;
 		}
 
-#if defined(__APPLE__)
-		// Get file descriptors count
-		proc_fdinfo fdinfo[PROC_PIDLISTFD_SIZE];
-		int num_fds = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo, PROC_PIDLISTFD_SIZE);
-
-		if (num_fds <= 0)
+#if defined(WIN32)
+		// Windows implementation using RAII
+		HandleRAII hProcess(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
+		if (!hProcess.valid())
 		{
-			LOG_WAR << fname << "Failed to get file descriptors info for pid " << pid
-					<< ", error: " << strerror(errno);
+			LOG_WAR << fname << "Failed to open process " << pid << ", error: " << GetLastError();
+			return result;
+		}
+
+		// Get handle count (approximate file descriptors)
+		DWORD handleCount = 0;
+		if (GetProcessHandleCount(hProcess.get(), &handleCount))
+		{
+			result = handleCount;
+			LOG_DBG << fname << "Found " << result << " handles for process " << pid;
 		}
 		else
 		{
-			result += num_fds / PROC_PIDLISTFD_SIZE;
+			LOG_WAR << fname << "Failed to get handle count for process " << pid << ", error: " << GetLastError();
+		}
+
+#elif defined(__APPLE__)
+		// macOS implementation - Fixed buffer size calculation
+		constexpr size_t MAX_FDS = 4096; // Reasonable maximum
+		std::vector<proc_fdinfo> fdinfo(MAX_FDS);
+
+		int bytes_returned = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, fdinfo.data(),
+										  fdinfo.size() * sizeof(proc_fdinfo));
+
+		if (bytes_returned <= 0)
+		{
+			if (errno == ESRCH)
+			{
+				LOG_WAR << fname << "Process " << pid << " does not exist";
+			}
+			else
+			{
+				LOG_WAR << fname << "Failed to get file descriptors info for pid " << pid
+						<< ", error: " << strerror(errno);
+			}
+		}
+		else
+		{
+			// Calculate actual number of file descriptors
+			result = bytes_returned / sizeof(proc_fdinfo);
 			LOG_DBG << fname << "Found " << result << " file descriptors";
 		}
 
@@ -75,25 +249,38 @@ namespace os
 		}
 
 #else
+		// Linux implementation
 		// 1. /proc/pid/fd/
-		const auto procFdPath = fs::path("/proc") / std::to_string(pid) / "fd";
-		if (fs::exists(procFdPath.string()) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
+		const auto procFdPath = std::string("/proc/") + std::to_string(pid) + "/fd";
+		try
 		{
-			result += std::distance(boost::filesystem::directory_iterator(procFdPath),
-									boost::filesystem::directory_iterator());
+			if (boost::filesystem::exists(procFdPath) && ACE_OS::access(procFdPath.c_str(), R_OK) == 0)
+			{
+				result += std::distance(boost::filesystem::directory_iterator(procFdPath),
+										boost::filesystem::directory_iterator());
+			}
+			else
+			{
+				LOG_WAR << fname << "no such path or no permission: " << procFdPath;
+			}
 		}
-		else
+		catch (const std::exception &e)
 		{
-			LOG_WAR << fname << "no such path or no permission: " << procFdPath;
+			LOG_WAR << fname << "Error accessing " << procFdPath << ": " << e.what();
 		}
+
 		// 2. /proc/pid/maps
-		const auto procMapsPath = fs::path("/proc") / std::to_string(pid) / "maps";
-		std::ifstream maps(procMapsPath.string(), std::ifstream::in);
+		const auto procMapsPath = std::string("/proc/") + std::to_string(pid) + "/maps";
+		std::ifstream maps(procMapsPath, std::ifstream::in);
 		if (maps.is_open())
 		{
 			std::string line;
-			for (; std::getline(maps, line); result++)
-				;
+			size_t mapCount = 0;
+			while (std::getline(maps, line))
+			{
+				mapCount++;
+			}
+			result += mapCount;
 		}
 		else
 		{
@@ -190,8 +377,8 @@ namespace os
 		{
 			uint64_t result = std::accumulate(
 				children.begin(), children.end(),
-				os::fileDescriptors(process.pid),
-				[](const size_t &files, const ProcessTree &process)
+				static_cast<uint64_t>(os::getOpenFileDescriptorCount(process.pid)),
+				[](const uint64_t &files, const ProcessTree &process)
 				{ return files + process.totalFileDescriptors(); });
 			return result;
 		}
@@ -203,15 +390,17 @@ namespace os
 			//     total_cpu_time = process.utime + process.stime + process.cutime + process.cstime
 			// On macOS, the total CPU time for a process including all threads and child processes as:
 			//     total_cpu_time = task_info.pti_total_user + task_info.pti_total_system
+			// On Windows, we use the sum of user and kernel time
 #if defined(__APPLE__)
-			return this->process.cutime + this->process.cstime;
+			return static_cast<uint64_t>(this->process.cutime + this->process.cstime);
+#elif defined(WIN32)
+			return static_cast<uint64_t>(this->process.utime + this->process.stime);
 #else
-
 			uint64_t result = std::accumulate(
 				children.begin(), children.end(),
-				process.utime + process.stime + process.cutime + process.cstime,
-				[](const size_t &files, const ProcessTree &process)
-				{ return files + process.totalCpuTime(); });
+				static_cast<uint64_t>(process.utime + process.stime + process.cutime + process.cstime),
+				[](const uint64_t &time, const ProcessTree &process)
+				{ return time + process.totalCpuTime(); });
 			return result;
 #endif
 		}
@@ -220,9 +409,10 @@ namespace os
 		{
 			std::list<os::Process> result;
 			result.push_back(this->process);
-			for (auto tree : children)
+			for (const auto &tree : children)
 			{
-				result.merge(tree.getProcesses());
+				auto childProcesses = tree.getProcesses();
+				result.splice(result.end(), childProcesses);
 			}
 			return result;
 		}
@@ -235,7 +425,7 @@ namespace os
 				return child.findLeafPid();
 			}
 
-			// no child
+			// no child - this is a leaf
 			return this->process.pid;
 		}
 
@@ -339,9 +529,71 @@ namespace os
 			return std::numeric_limits<uid_t>::max();
 		}
 
-#ifdef __linux__
+#if defined(WIN32)
+		// Windows implementation using RAII
+		HandleRAII hProcess(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
+		if (!hProcess.valid())
+		{
+			DWORD error = GetLastError();
+			if (error == ERROR_INVALID_PARAMETER)
+			{
+				LOG_WAR << fname << "Process " << pid << " does not exist";
+			}
+			else
+			{
+				LOG_WAR << fname << "Failed to open process " << pid << ", error: " << error;
+			}
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		HandleRAII hToken;
+		HANDLE tempToken = NULL;
+		if (!OpenProcessToken(hProcess.get(), TOKEN_QUERY, &tempToken))
+		{
+			LOG_WAR << fname << "Failed to open process token for PID " << pid << ", error: " << GetLastError();
+			return std::numeric_limits<uid_t>::max();
+		}
+		hToken.reset(tempToken);
+
+		DWORD tokenLength = 0;
+		// First call to get required buffer size
+		GetTokenInformation(hToken.get(), TokenUser, NULL, 0, &tokenLength);
+		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+		{
+			LOG_WAR << fname << "Failed to get token information size for PID " << pid << ", error: " << GetLastError();
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		MallocRAII<TOKEN_USER> tokenUser(static_cast<TOKEN_USER *>(malloc(tokenLength)));
+		if (!tokenUser.valid())
+		{
+			LOG_WAR << fname << "Failed to allocate memory for token user";
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		if (!GetTokenInformation(hToken.get(), TokenUser, tokenUser.get(), tokenLength, &tokenLength))
+		{
+			LOG_WAR << fname << "Failed to get token information for PID " << pid << ", error: " << GetLastError();
+			return std::numeric_limits<uid_t>::max();
+		}
+
+		// Convert SID to a simple numeric representation
+		// In Windows, we'll use the relative identifier (RID) as the UID equivalent
+		PSID_IDENTIFIER_AUTHORITY pIdentifierAuthority = GetSidIdentifierAuthority(tokenUser->User.Sid);
+		DWORD subAuthorityCount = *GetSidSubAuthorityCount(tokenUser->User.Sid);
+		uid_t uid = 0;
+
+		if (subAuthorityCount > 0)
+		{
+			uid = *GetSidSubAuthority(tokenUser->User.Sid, subAuthorityCount - 1);
+		}
+
+		LOG_DBG << fname << "UID equivalent for process " << pid << " is " << uid;
+		return uid;
+
+#elif defined(__linux__)
 		// Linux implementation using /proc
-		fs::path procPath = fs::path("/proc") / std::to_string(pid);
+		std::string procPath = std::string("/proc/") + std::to_string(pid);
 		struct stat statBuf;
 
 		// Get the stat information for the /proc/[pid] directory
@@ -370,7 +622,7 @@ namespace os
 		LOG_DBG << fname << "UID for process " << pid << " is " << statBuf.st_uid;
 		return statBuf.st_uid;
 
-#elif __APPLE__
+#elif defined(__APPLE__)
 		// macOS implementation using proc_pidinfo
 		struct proc_bsdinfo procInfo;
 		if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &procInfo, sizeof(procInfo)) <= 0)

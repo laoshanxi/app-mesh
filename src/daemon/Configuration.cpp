@@ -21,9 +21,7 @@
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
-#if !defined(WIN32)
 #include "../common/os/pstree.hpp"
-#endif
 
 extern char **environ; // unistd.h
 
@@ -235,11 +233,7 @@ nlohmann::json Configuration::serializeApplication(bool returnRuntimeInfo, const
 	// Build Json
 	if (returnRuntimeInfo)
 	{
-#if defined(WIN32)
-		void *ptree = nullptr;
-#else
 		std::list<os::Process> ptree = os::processes();
-#endif
 		for (std::size_t i = 0; i < apps.size(); ++i)
 		{
 			result.push_back(apps[i]->AsJson(returnRuntimeInfo, (void *)(&ptree)));
@@ -886,7 +880,7 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 
 #if !defined(WIN32)
 	unsigned int gid, uid;
-	if (!config->m_defaultExecUser.empty() && !Utility::getUid(config->m_defaultExecUser, uid, gid))
+	if (!config->m_defaultExecUser.empty() && !os::getUidByName(config->m_defaultExecUser, uid, gid))
 	{
 		LOG_ERR << "No such OS user: " << config->m_defaultExecUser;
 		throw std::invalid_argument("No such OS user for default execution");

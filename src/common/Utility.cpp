@@ -35,10 +35,7 @@
 #include "DateTime.h"
 #include "Password.h"
 #include "Utility.h"
-#if !defined(WIN32)
 #include "os/chown.hpp"
-#include "os/linux.hpp"
-#endif
 
 const char *GET_STATUS_STR(unsigned int status)
 {
@@ -219,7 +216,7 @@ const std::string Utility::getBinaryName()
 {
 #if defined(__APPLE__)
 	return getprogname(); // macOS-specific function
-#elif defined(_WIN32)
+#elif defined(WIN32)
 	// Windows implementation without filesystem
 	char buffer[MAX_PATH];
 	DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
@@ -1002,76 +999,7 @@ std::string Utility::humanReadableDuration(const std::chrono::system_clock::time
 
 	return result;
 }
-#if !defined(WIN32)
-bool Utility::getUid(const std::string &userName, unsigned int &uid, unsigned int &groupid)
-{
-	const static char fname[] = "Utility::getUid() ";
 
-	if (userName.empty())
-	{
-		LOG_ERR << fname << "Empty username provided";
-		return false;
-	}
-
-	bool rt = false;
-	struct passwd pwd;
-	struct passwd *result = NULL;
-	static auto bufsize = ACE_OS::sysconf(_SC_GETPW_R_SIZE_MAX);
-	if (bufsize == -1)
-		bufsize = 16384;
-	std::shared_ptr<char> buff(new char[bufsize], std::default_delete<char[]>());
-	ACE_OS::getpwnam_r(userName.c_str(), &pwd, buff.get(), bufsize, &result);
-	if (result)
-	{
-		uid = pwd.pw_uid;
-		groupid = pwd.pw_gid;
-		rt = true;
-	}
-	else
-	{
-		LOG_ERR << "User does not exist: <" << userName << ">.";
-	}
-	return rt;
-}
-
-std::string Utility::getUsernameByUid(uid_t uid)
-{
-	const static char fname[] = "Utility::getUsernameByUid() ";
-
-	if (uid == std::numeric_limits<uid_t>::max())
-	{
-		LOG_WAR << fname << "Invalid UID provided";
-		return "";
-	}
-
-	long bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
-	if (bufsize == -1)
-		bufsize = 16384;
-
-	std::vector<char> buffer(bufsize);
-	struct passwd pwd;
-	struct passwd *result = nullptr;
-
-	int ret = getpwuid_r(uid, &pwd, buffer.data(), buffer.size(), &result);
-
-	if (ret == 0 && result != nullptr)
-	{
-		LOG_DBG << fname << "User name for " << uid << " is " << pwd.pw_name;
-		return std::string(pwd.pw_name);
-	}
-
-	if (ret == 0)
-	{
-		LOG_WAR << fname << "User not found for UID: " << uid;
-	}
-	else
-	{
-		LOG_WAR << fname << "Failed to get username for UID: " << uid << " with error: " << std::strerror(ret);
-	}
-
-	return "";
-}
-#endif
 void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs)
 {
 	// get env size
@@ -1096,7 +1024,6 @@ void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMa
 
 void Utility::applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers)
 {
-#if !defined(WIN32)
 	if (Utility::isFileExist(file))
 	{
 		if (headers.count(HTTP_HEADER_KEY_file_mode))
@@ -1106,7 +1033,6 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second));
 	}
-#endif
 }
 
 std::string Utility::prettyJson(const std::string &jsonStr)
@@ -1452,7 +1378,7 @@ namespace web
 #undef DAT
 
 // This is necessary for Linux because of a bug in GCC 4.7
-#ifndef _WIN32
+#if !defined(WIN32)
 #define _PHRASES
 #define DAT(a, b, c) const status_code status_codes::a;
 #include "http_constants.dat"

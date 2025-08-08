@@ -25,7 +25,7 @@ public:
     virtual bool encryptKey() { return false; };
 
     // Global singleton instance management
-    static void init(const std::string &interface);
+    static void init(const std::string &plugin);
     static std::shared_ptr<Security> instance();
     static void instance(std::shared_ptr<Security> instance);
 

@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
+#include "../../src/common/json.hpp"
 #include <ace/Init_ACE.h>
 #include <ace/Map_Manager.h>
 #include <ace/Message_Block.h>
@@ -217,4 +218,19 @@ TEST_CASE("JSON", "[nlohmann json]")
 	REQUIRE(b["abc"]["def"].get<int>() == 123);
 	// s = b["abc"].dump();
 	// LOG_INF << b.at("abc") << " and string is: " << s;
+
+	nlohmann::json test;
+	test["chinese"] = "新加卷";
+	test["english"] = "test";
+	test["mixed"] = "test新加卷test";
+
+	LOG_INF << "====== Unicode Debug ======";
+	LOG_INF << "Raw output: " << test;
+	LOG_INF << "Dumped: " << test.dump();
+	LOG_INF << "Safe dump: " << JSON::dump(test);
+
+	// Check string lengths
+	std::string chinese = "新加卷";
+	LOG_INF << "Chinese string byte length: " << chinese.length();
+	LOG_INF << "Chinese string content: " << chinese;
 }

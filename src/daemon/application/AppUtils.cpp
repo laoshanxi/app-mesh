@@ -4,10 +4,8 @@
 #include <memory>
 
 #include "../../common/Utility.h"
-#if !defined(WIN32)
 #include "../../common/os/chown.hpp"
 #include "../../common/os/linux.hpp"
-#endif
 #include "../Configuration.h"
 
 ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin, const std::string &workingDir)
@@ -46,7 +44,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	}
 
 	// Get current user
-	static const auto osUser = Utility::getUsernameByUid();
+	static const auto osUser = os::getUsernameByUid();
 
 	// Change file ownership if necessary
 	if (!execUser.empty() && osUser != execUser)

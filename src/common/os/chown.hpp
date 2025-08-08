@@ -1,12 +1,15 @@
 #pragma once
 
+#if !defined(WIN32)
 #include <fts.h>
 #include <grp.h>
+#include <unistd.h>
+#endif
+
 #include <string>
 #include <sys/types.h>
-#include <unistd.h>
 
-#include "../../common/Utility.h"
+#include "../../common/os/linux.hpp"
 
 namespace os
 {
@@ -22,11 +25,18 @@ namespace os
 	inline bool chown(const std::string &path, uid_t uid, gid_t gid, bool recursive = false)
 	{
 		constexpr char fname[] = "os::chown() ";
-
+#if !defined(WIN32)
 		// Input validation
 		if (path.empty() || !fs::exists(path))
 		{
 			LOG_ERR << fname << "Path does not exist: " << path;
+			return false;
+		}
+		constexpr uid_t INVALID_UID = static_cast<uid_t>(-1);
+		constexpr gid_t INVALID_GID = static_cast<gid_t>(-1);
+		if (uid == INVALID_UID || gid == INVALID_GID)
+		{
+			LOG_ERR << fname << "Invalid UID or GID provided";
 			return false;
 		}
 
@@ -83,6 +93,7 @@ namespace os
 		}
 
 		LOG_DBG << fname << "Successfully changed ownership" << (recursive ? " recursively" : "") << " for " << path;
+#endif
 		return true;
 	}
 
@@ -97,7 +108,7 @@ namespace os
 	inline bool chown(const std::string &path, std::string user, std::string group = "", bool recursive = false)
 	{
 		constexpr char fname[] = "os::chown() ";
-
+#if !defined(WIN32)
 		// Input validation
 		if (path.empty())
 		{
@@ -127,7 +138,7 @@ namespace os
 		// Update uid if user is specified
 		if (!user.empty())
 		{
-			if (!Utility::getUid(user, uid, gid))
+			if (!os::getUidByName(user, uid, gid))
 			{
 				LOG_ERR << fname << "Failed to get user information for '" << user << "'";
 				return false;
@@ -174,6 +185,10 @@ namespace os
 
 		// Attempt to change ownership
 		return chown(path, uid, gid, recursive);
+#else
+		LOG_DBG << fname << "Skipping ownership change on Windows for path: " << path;
+		return true; // No-op on Windows
+#endif
 	}
 
 } // namespace os {

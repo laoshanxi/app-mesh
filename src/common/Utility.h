@@ -208,8 +208,6 @@ public:
 
 	// OS related
 	static unsigned long long getThreadId();
-	static bool getUid(const std::string &userName, unsigned int &uid, unsigned int &groupid);
-	static std::string getUsernameByUid(uid_t uid = ACE_OS::getuid());
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 	static void applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers);
 
@@ -241,7 +239,7 @@ public:
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 #elif defined(__APPLE__)
 #define ENV_LD_LIBRARY_PATH "DYLD_LIBRARY_PATH"
-#elif defined(_WIN32) || defined(_WIN64)
+#elif defined(WIN32)
 #define ENV_LD_LIBRARY_PATH "PATH"
 #else
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH" // Default to Linux style for other platforms

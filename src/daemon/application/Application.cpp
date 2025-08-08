@@ -9,9 +9,7 @@
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
-#if !defined(WIN32)
 #include "../../common/os/linux.hpp"
-#endif
 #include "../../common/os/process.hpp"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
@@ -612,7 +610,7 @@ const std::string Application::getExecUser() const
 	}
 	if (executeUser.empty())
 	{
-		static const auto osUser = Utility::getUsernameByUid();
+		static const auto osUser = os::getUsernameByUid();
 		executeUser = osUser;
 	}
 	return executeUser;
@@ -766,9 +764,8 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 			result[JSON_KEY_APP_return] = m_return.load();
 		if (m_process && m_process->running())
 		{
-#if !defined(WIN32)
 			result[JSON_KEY_APP_pid] = m_pid.load();
-			result[JSON_KEY_APP_pid_user] = Utility::getUsernameByUid(os::getProcessUid(m_pid.load()));
+			result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(m_pid.load()));
 
 			auto usage = m_process->getProcessDetails(ptree);
 			if (std::get<0>(usage))
@@ -779,12 +776,11 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 				result[JSON_KEY_APP_pstree] = std::string(std::get<4>(usage));
 				if (m_shellAppFile)
 				{
-					auto leafProcessUser = Utility::getUsernameByUid(os::getProcessUid(std::get<5>(usage)));
+					auto leafProcessUser = os::getUsernameByUid(os::getProcessUid(std::get<5>(usage)));
 					if (leafProcessUser.length())
 						result[JSON_KEY_APP_pid_user] = leafProcessUser;
 				}
 			}
-#endif
 		}
 		if (m_procStartTime && std::chrono::time_point_cast<std::chrono::hours>(*m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
 			result[JSON_KEY_APP_last_start] = std::chrono::duration_cast<std::chrono::seconds>((*m_procStartTime).time_since_epoch()).count();

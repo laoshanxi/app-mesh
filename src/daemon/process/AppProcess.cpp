@@ -18,9 +18,8 @@
 #include <windows.h>
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "pdh.lib")
-#else
-#include "../../common/os/pstree.hpp"
 #endif
+#include "../../common/os/pstree.hpp"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../application/Application.h"
@@ -357,7 +356,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
-		if (Utility::getUid(user, uid, gid))
+		if (os::getUidByName(user, uid, gid))
 		{
 			option.seteuid(uid);
 			option.setruid(uid);
@@ -463,11 +462,16 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 
 pid_t AppProcess::spawn(ACE_Process_Options &option)
 {
+	const static char fname[] = "AppProcess::spawn() ";
+
 	auto pid = Process_Manager::instance()->spawn(option);
 	m_pid = pid;
 	if (pid != ACE_INVALID_PID)
 	{
-		Process_Manager::instance()->register_handler(this, pid);
+		if (Process_Manager::instance()->register_handler(this, pid) == -1)
+		{
+			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << std::strerror(errno);
+		}
 #if defined(WIN32)
 		// Windows Job Object Setup
 		m_jobHandler = CreateJobObject(NULL, NULL);
