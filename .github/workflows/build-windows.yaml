@@ -51,7 +51,7 @@ jobs:
 
   test:
     needs: build
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Download packages
         uses: actions/download-artifact@v5
@@ -78,9 +78,12 @@ jobs:
 
           C:\local\appmesh\bin\appc -V
           Test-NetConnection -ComputerName 127.0.0.1 -Port 6059
+          Test-NetConnection -ComputerName 127.0.0.1 -Port 6060
 
           & "C:\local\appmesh\bin\appc.exe" ls
           & "C:\local\appmesh\bin\appc.exe" resource
+
+          cat "C:\local\appmesh\work\stdout\appmesh.agent.out"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
