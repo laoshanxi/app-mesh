@@ -15,7 +15,7 @@
 #include <ace/OS.h>
 #include <ace/Process_Manager.h>
 #include <ace/Reactor.h>
-#if defined(WIN32)
+#if defined(_WIN32)
 #include <ace/WFMO_Reactor.h>
 #include <windows.h>
 #else
@@ -51,7 +51,7 @@
 #include "security/HMACVerifier.h"
 #include "security/Security.h"
 #include "security/TokenBlacklist.h"
-#if !defined(NDEBUG) && !defined(WIN32)
+#if !defined(NDEBUG) && !defined(_WIN32)
 #include "../common/Valgrind.h"
 #endif
 
@@ -123,7 +123,7 @@ private:
 static std::unique_ptr<AppMeshDaemon> g_daemon;
 static constexpr int MAX_TCP_ERROR_COUNT = 30;
 
-#if defined(WIN32)
+#if defined(_WIN32)
 static BOOL WINAPI ConsoleCtrlHandlerRoutine(DWORD ctrlType)
 {
 	switch (ctrlType)
@@ -150,7 +150,7 @@ int main(int argc, char *argv[])
 
 	PRINT_VERSION();
 	std::cout << fname << "App Mesh server starting." << std::endl;
-#if !defined(NDEBUG) && !defined(WIN32)
+#if !defined(NDEBUG) && !defined(_WIN32)
 	VALGRIND_ENTRYPOINT_ONE_TIME(argv); // enable valgrind in debug mode
 #endif
 
@@ -216,7 +216,7 @@ void AppMeshDaemon::initializeACE()
 {
 	const static char fname[] = "AppMeshDaemon::initializeACE() ";
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	// On Windows WFMO_Reactor: use a single reactor thread (WFMO waits on handles).
 	LOG_INF << fname << "Initializing ACE WFMO_Reactor (Windows)";
 	ACE_Reactor::instance(new ACE_Reactor(new ACE_WFMO_Reactor(), true));
@@ -311,7 +311,7 @@ void AppMeshDaemon::initializeDirectories()
 	// Set ownership if default exec user is specified
 	if (!config->getDefaultExecUser().empty())
 	{
-#if !defined(WIN32)
+#if !defined(_WIN32)
 		LOG_INF << fname << "Setting directory ownership to user <" << config->getDefaultExecUser() << ">";
 		for (const auto &dir : dirs)
 		{
@@ -327,7 +327,7 @@ void AppMeshDaemon::setupSignalHandlers()
 {
 	const static char fname[] = "AppMeshDaemon::setupSignalHandlers() ";
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	// On Windows, register native console handler and do NOT rely on ACE_Reactor SIG handlers.
 	SetConsoleCtrlHandler(ConsoleCtrlHandlerRoutine, TRUE);
 #else
@@ -363,7 +363,7 @@ void AppMeshDaemon::startReactorThreads(ACE_Reactor *reactor, size_t threadCount
 		throw std::invalid_argument("Null reactor provided");
 	}
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	threadCount = 1; // WFMO_Reactor requires single thread
 #endif
 
@@ -431,7 +431,7 @@ void AppMeshDaemon::initializeRestService()
 	// Initialize SSL
 	TcpHandler::initTcpSSL(ACE_SSL_Context::instance());
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	// On POSIX, start additional reactor thread for REST
 	startReactorThreads(ACE_Reactor::instance(), 1);
 #endif
@@ -641,7 +641,7 @@ void AppMeshDaemon::executeApplications()
 
 		try
 		{
-			app->execute(static_cast<void *>(m_ptree.empty() ? nullptr : &m_ptree));
+			app->execute(static_cast<void *>(&m_ptree));
 		}
 		catch (const std::exception &ex)
 		{

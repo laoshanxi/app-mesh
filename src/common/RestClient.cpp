@@ -158,7 +158,7 @@ ClientSSLConfig::ClientSSLConfig()
 		m_ssl_version = CURL_SSLVERSION_TLSv1_3;
 	}
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	// Force TLS 1.2 on Windows to avoid compatibility issues
 	m_ssl_version = CURL_SSLVERSION_TLSv1_2;
 #endif
@@ -438,7 +438,7 @@ void RestClient::setSslConfig(CURL *curl)
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, m_sslConfig.m_verify_server ? 2L : 0L);
 	curl_easy_setopt(curl, CURLOPT_SSLVERSION, m_sslConfig.m_ssl_version);
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	// Disable Windows certificate store
 	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
 	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NO_REVOKE);

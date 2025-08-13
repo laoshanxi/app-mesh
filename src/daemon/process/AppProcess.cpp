@@ -10,7 +10,8 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
-#if defined(WIN32)
+#include "../../common/json.hpp"
+#if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
 #include "../../common/os/pstree.hpp"
@@ -27,7 +28,7 @@ constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 AppProcess::AppProcess(void *owner)
 	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
-#if defined(WIN32)
+#if defined(_WIN32)
 	  m_job(nullptr, ::CloseHandle),
 #endif
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID()),
@@ -185,7 +186,7 @@ void AppProcess::terminate()
 		LOG_INF << fname << "kill process <" << pid << ">.";
 
 		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
-#if defined(WIN32)
+#if defined(_WIN32)
 		if (os::kill_job(m_job))
 #else
 		if (ACE_OS::kill(-pid, SIGKILL) == 0)
@@ -346,7 +347,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	// option.avoid_zombies(1);
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
@@ -372,7 +373,15 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	{
 		workDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	}
-	option.working_directory(workDir.c_str());
+	if (fs::exists(workDir))
+	{
+		option.working_directory(workDir.c_str());
+	}
+	else
+	{
+		startError(Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str()));
+		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, use default";
+	}
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
 				  {
 					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
@@ -466,7 +475,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 		{
 			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << std::strerror(errno);
 		}
-#if defined(WIN32)
+#if defined(_WIN32)
 		// This creates a named job object in the Windows kernel.
 		// This handle must remain in scope (and open) until a running process is assigned to it.
 		m_job = os::create_job(os::name_job(pid));
@@ -479,7 +488,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	return Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine);
+	return JSON::localEncodingToUtf8(Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine));
 }
 
 void AppProcess::startError(const std::string &err)
@@ -528,7 +537,7 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 
 AttachProcess::AttachProcess(pid_t pid)
 {
-#if defined(WIN32)
+#if defined(_WIN32)
 	process_info_.hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
 	if (process_info_.hProcess)
 		process_info_.dwProcessId = pid;

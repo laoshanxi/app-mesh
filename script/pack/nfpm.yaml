@@ -45,11 +45,9 @@ overrides:
     depends:
       - openssl
       - procps
-      - libreadline-dev
       - libldap-dev
   rpm:
     depends:
       - openssl
       - procps
-      - readline-devel
       # openldap-devel

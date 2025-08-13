@@ -5,9 +5,10 @@
 
 #include "../common/DateTime.h"
 #include "../common/Utility.h"
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include "../common/os/net.hpp"
 #endif
+#include "../common/json.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
 #include "ResourceCollection.h"
@@ -30,7 +31,7 @@ std::unique_ptr<ResourceCollection> &ResourceCollection::instance()
 
 const std::string ResourceCollection::getHostName(bool refresh)
 {
-#if defined(WIN32)
+#if defined(_WIN32)
 	boost::asio::io_context io;
 	boost::asio::ip::tcp::resolver resolver(io);
 	return boost::asio::ip::host_name();
@@ -46,7 +47,7 @@ const HostResource &ResourceCollection::getHostResource()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_resources.m_ipaddress.clear();
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	auto nets = net::getNetworkLinks();
 	// Net
 	for (auto &net : nets)
@@ -208,7 +209,7 @@ nlohmann::json ResourceCollection::AsJson()
 						  fs["size"] = (usage->totalSize);
 						  fs["used"] = (usage->usedSize);
 						  fs["usage"] = (usage->usagePercentage);
-						  fs["device"] = std::string(pair.second);
+						  fs["device"] = JSON::localEncodingToUtf8(pair.second);
 						  fs["mount_point"] = std::string(pair.first);
 						  fsArr.push_back(fs);
 					  } });

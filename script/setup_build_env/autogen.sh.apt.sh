@@ -40,7 +40,6 @@ apt install -y git
 apt install -y liblog4cpp5-dev
 apt install -y libboost-all-dev
 apt install -y libcrypto++-dev
-apt install -y libreadline-dev patchelf
 
 # build ACE
 apt install -y libace-dev libace-ssl-dev
@@ -105,6 +104,10 @@ cat <<EOF >/usr/local/include/prometheus/detail/core_export.h
 #define PROMETHEUS_CPP_CORE_EXPORT
 #endif
 EOF
+
+git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
+sed -i -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_required(VERSION 3.20)/' linenoise-ng/CMakeLists.txt
+cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target linenoise && cmake --install .
 
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/
