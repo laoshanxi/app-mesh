@@ -8,6 +8,7 @@
 #if !defined(WIN32)
 #include "../common/os/net.hpp"
 #endif
+#include "../common/json.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
 #include "ResourceCollection.h"
@@ -208,7 +209,7 @@ nlohmann::json ResourceCollection::AsJson()
 						  fs["size"] = (usage->totalSize);
 						  fs["used"] = (usage->usedSize);
 						  fs["usage"] = (usage->usagePercentage);
-						  fs["device"] = std::string(pair.second);
+						  fs["device"] = JSON::ansiToUtf8(pair.second);
 						  fs["mount_point"] = std::string(pair.first);
 						  fsArr.push_back(fs);
 					  } });

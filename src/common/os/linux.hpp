@@ -1769,11 +1769,54 @@ namespace os
 		return rt;
 	}
 
-	inline std::string getUsernameByUid(uid_t uid = ACE_OS::getuid())
+	// Get uid for Windows and Linux
+	inline uid_t get_uid()
+	{
+#if defined(_WIN32)
+		HandleRAII hToken;
+		HANDLE tempToken = NULL;
+		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &tempToken))
+			return {};
+		hToken.reset(tempToken);
+
+		DWORD size = 0;
+		GetTokenInformation(hToken.get(), TokenUser, nullptr, 0, &size);
+		if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+		{
+			return {};
+		}
+
+		TOKEN_USER *user = reinterpret_cast<TOKEN_USER *>(new BYTE[size]);
+		if (!GetTokenInformation(hToken.get(), TokenUser, user, size, &size))
+		{
+			delete[] reinterpret_cast<BYTE *>(user);
+			return {};
+		}
+
+		LPSTR sid_str = nullptr;
+		std::string sid_result;
+		if (ConvertSidToStringSidA(user->User.Sid, &sid_str))
+		{
+			sid_result = sid_str;
+			LocalFree(sid_str);
+		}
+
+		delete[] reinterpret_cast<BYTE *>(user);
+
+		// Simple hash function to convert SID string to UID
+		std::hash<std::string> hasher;
+		return static_cast<unsigned int>(hasher(std::string(sid_result)) & 0x7FFFFFFF);
+
+#else
+		return ACE_OS::getuid();
+#endif
+	}
+
+	inline std::string getUsernameByUid(uid_t uid = get_uid())
 	{
 		const static char fname[] = "os::getUsernameByUid() ";
 
-		if (uid == std::numeric_limits<uid_t>::max())
+		if (uid < 0 || uid == std::numeric_limits<uid_t>::max())
 		{
 			LOG_WAR << fname << "Invalid UID provided";
 			return "";

@@ -13,7 +13,10 @@
 #include <boost/regex.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
-#if !defined(WIN32)
+#if defined(WIN32)
+#include <windows.h>
+#include <tlhelp32.h>
+#else
 #include <readline/history.h>
 #include <readline/readline.h>
 #endif
@@ -1013,12 +1016,16 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 void SIGINT_Handler(int signo)
 {
 	std::cout << std::endl;
-	// make sure we only process SIGINT here
-	// SIGINT 	ctrl - c
-	assert(signo == SIGINT);
+
+	// Make sure it's SIGINT
+	if (signo != SIGINT)
+		return;
+
 	SIGINIT_BREAKING = true;
+
 	const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
 	WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
+
 #if !defined(WIN32)
 	if (READING_LINE.load())
 	{
@@ -1028,6 +1035,19 @@ void SIGINT_Handler(int signo)
 	}
 #endif
 }
+
+#if defined(WIN32)
+// Windows console control handler
+BOOL WINAPI ConsoleCtrlHandler(DWORD ctrlType)
+{
+	if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
+	{
+		SIGINT_Handler(SIGINT); // simulate POSIX behavior
+		return TRUE;
+	}
+	return FALSE;
+}
+#endif
 
 std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
 {
@@ -1056,15 +1076,36 @@ std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &re
 
 void ArgumentParser::regSignal()
 {
+#if defined(_WIN32)
+	// On Windows console control handler
+    SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+#else
+	// On POSIX, use ACE_Sig_Action
 	m_sigAction = std::make_unique<ACE_Sig_Action>();
 	m_sigAction->handler(SIGINT_Handler);
 	m_sigAction->register_action(SIGINT);
+#endif
 }
 
 void ArgumentParser::unregSignal()
 {
 	if (m_sigAction)
 		m_sigAction = nullptr;
+}
+
+static bool is_shell_process(const std::string &exeNameLower)
+{
+	// Accept common shells across platforms
+	static const char *shells[] = {
+		"bash", "sh", "dash",
+		"cmd.exe", "powershell.exe", "pwsh.exe",
+		"bash.exe", "sh.exe"};
+	for (auto &shell : shells)
+	{
+		if (exeNameLower == shell)
+			return true;
+	}
+	return false;
 }
 
 pid_t get_bash_pid()
@@ -1080,21 +1121,61 @@ pid_t get_bash_pid()
 		return pid;
 	}
 
-	pid_t ppid = ACE_OS::getppid();
+#if defined(_WIN32)
 
-	while (ppid != 1) // 1 is the init process
+	pid_t ppid = ACE_OS::getppid();
+	while (ppid != 0 && ppid != 4) // 4 is "System"
+	{
+		HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+		if (hSnap == INVALID_HANDLE_VALUE)
+			return pid;
+
+		PROCESSENTRY32 pe;
+		pe.dwSize = sizeof(pe);
+		pid_t next_ppid = 0;
+		bool found = false;
+
+		if (Process32First(hSnap, &pe))
+		{
+			do
+			{
+				if (pe.th32ProcessID == (DWORD)ppid)
+				{
+					std::string exeName = pe.szExeFile;
+					if (is_shell_process(Utility::strTolower(exeName)))
+					{
+						CloseHandle(hSnap);
+						return ppid;
+					}
+					next_ppid = pe.th32ParentProcessID;
+					found = true;
+					break;
+				}
+			} while (Process32Next(hSnap, &pe));
+		}
+
+		CloseHandle(hSnap);
+		if (!found)
+			break;
+		ppid = next_ppid;
+	}
+	return pid;
+
+#else // Linux / Unix
+
+	pid_t ppid = ACE_OS::getppid();
+	while (ppid != 1) // 1 is init
 	{
 		std::string proc_path = "/proc/" + std::to_string(ppid) + "/comm";
 		std::ifstream comm_file(proc_path);
 		std::string comm;
 		std::getline(comm_file, comm);
 
-		if (comm == "bash")
+		if (is_shell_process(Utility::strTolower(comm)))
 			return ppid;
 
-		// Move up the process tree
-		pid = ppid;
-		proc_path = "/proc/" + std::to_string(pid) + "/stat";
+		// Move up process tree
+		proc_path = "/proc/" + std::to_string(ppid) + "/stat";
 		std::ifstream stat_file(proc_path);
 		std::string stat_line;
 		std::getline(stat_file, stat_line);
@@ -1102,11 +1183,17 @@ pid_t get_bash_pid()
 		// Extract parent PID from stat file
 		size_t pos = stat_line.find(')');
 		if (pos != std::string::npos)
-			sscanf(stat_line.c_str() + pos + 2, "%*c %d", &ppid);
+		{
+			int parent_pid = 0;
+			sscanf(stat_line.c_str() + pos + 2, "%*c %d", &parent_pid);
+			ppid = parent_pid;
+		}
 		else
-			return ppid; // Error
+			return ppid; // Error reading
 	}
-	return ppid; // No bash found in the process tree
+	return ppid;
+
+#endif
 }
 
 int ArgumentParser::processShell()
@@ -1126,7 +1213,7 @@ int ArgumentParser::processShell()
 
 	bool retry = m_commandLineVariables.count(RETRY);
 	int returnCode = 0;
-#if !defined(WIN32)
+
 	// Get current session id (bash pid)
 	auto bashId = get_bash_pid();
 	// Get appmesh user
@@ -1194,14 +1281,26 @@ int ArgumentParser::processShell()
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
 		std::ofstream(m_shellHistoryFile, std::ios::trunc).close();
+#if !defined(WIN32)
 		using_history();
 		read_history(m_shellHistoryFile.c_str());
+#endif
 		const static char *prompt = "appmesh> ";
 		while (true)
 		{
+#if !defined(WIN32)
 			READING_LINE.store(true);
 			char *input = readline(prompt);
 			READING_LINE.store(false);
+#else
+			std::cout << prompt;
+			std::string line;
+			if (!std::getline(std::cin, line))
+			{
+				continue;
+			}
+			char *input = strdup(line.c_str());
+#endif
 			if (input == nullptr)
 			{
 				std::cout << "End of input (Ctrl+D pressed)" << std::endl;
@@ -1212,6 +1311,7 @@ int ArgumentParser::processShell()
 			cmd = Utility::stdStringTrim(cmd);
 			if (cmd.length())
 			{
+#if !defined(WIN32)
 				static std::string lastCmd;
 				if (lastCmd != cmd)
 				{
@@ -1219,6 +1319,7 @@ int ArgumentParser::processShell()
 					add_history(cmd.c_str());
 					saveUserCmdHistory(cmd.c_str());
 				}
+#endif
 
 				SIGINIT_BREAKING = false; // reset breaking to normal after read a input
 				if (cmd == "exit" || cmd == "q")
@@ -1233,7 +1334,7 @@ int ArgumentParser::processShell()
 			}
 		}
 	}
-#endif
+
 	return returnCode;
 }
 

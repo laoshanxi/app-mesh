@@ -641,7 +641,7 @@ void AppMeshDaemon::executeApplications()
 
 		try
 		{
-			app->execute(static_cast<void *>(m_ptree.empty() ? nullptr : &m_ptree));
+			app->execute(static_cast<void *>(&m_ptree));
 		}
 		catch (const std::exception &ex)
 		{

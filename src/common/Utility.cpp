@@ -35,6 +35,7 @@
 #include "DateTime.h"
 #include "Password.h"
 #include "Utility.h"
+#include "json.hpp"
 #include "os/chown.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)
@@ -1037,7 +1038,7 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 
 std::string Utility::prettyJson(const std::string &jsonStr)
 {
-	return nlohmann::json::parse(jsonStr).dump(2, ' ');
+	return JSON::dumpToLocalCP(nlohmann::json::parse(jsonStr), 2);
 }
 
 std::string Utility::hash(const std::string &str)
