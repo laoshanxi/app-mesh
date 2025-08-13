@@ -256,7 +256,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	{
 		bodyContent = body->dump();
 		LOG_DBG << fname << path << "\n"
-				<< Utility::prettyJson(bodyContent);
+				<< body->dump(2);
 	}
 
 	std::string errorMsg = std::string("exception caught: ").append(path);

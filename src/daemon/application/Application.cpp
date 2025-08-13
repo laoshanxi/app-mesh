@@ -16,7 +16,7 @@
 #include "../ResourceCollection.h"
 #include "../ResourceLimitation.h"
 #include "../process/AppProcess.h"
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include "../process/DockerApiProcess.h"
 #include "../process/DockerProcess.h"
 #endif
@@ -359,7 +359,7 @@ bool Application::attach(int pid)
 		m_process->attach(pid, m_stdoutFile);
 		m_pid = m_process->getpid();
 		m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-#if defined(WIN32)
+#if defined(_WIN32)
 		// TODO: For Windows, implement process status check
 #else
 		auto stat = os::status(m_pid.load());
@@ -595,7 +595,7 @@ const std::string Application::getExecUser() const
 	if (m_name == SEPARATE_AGENT_APP_NAME)
 		return "";
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	return "";
 #else
 	if (m_owner)
@@ -940,7 +940,7 @@ std::shared_ptr<AppProcess> Application::allocProcess(bool monitorProcess, const
 	// alloc process object
 	if (dockerImage.length())
 	{
-#if !defined(WIN32)
+#if !defined(_WIN32)
 		if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
 		{
 			process.reset(new DockerApiProcess(appName, dockerImage));
