@@ -1,9 +1,21 @@
 #pragma once
-#include <iomanip>
-#include <nlohmann/json.hpp>
-#include <sstream>
+
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 #include "Utility.h"
+
+// --- Small note ---
+// This file extends the existing JSON helpers to add robust UTF-8 <-> wide
+// string conversions and a convenience dump that returns either UTF-8,
+// a wide string (UTF-16 on Windows), or a string converted to the current
+// ANSI code page (useful when writing to legacy Windows consoles/loggers).
 
 struct JSONErrorContext
 {
@@ -18,7 +30,7 @@ public:
     // Validate UTF-8 sequence for overlong encodings and invalid code points
     static bool isValidUTF8Sequence(const unsigned char *bytes, size_t length) noexcept
     {
-        if (length == 0 || length > 4)
+        if (!bytes || length == 0 || length > 4)
             return false;
 
         uint32_t codePoint = 0;
@@ -37,23 +49,18 @@ public:
             codePoint = ((bytes[0] & 0x1F) << 6) | (bytes[1] & 0x3F);
             // Check for overlong encoding (must be >= 0x80)
             return codePoint >= 0x80 && codePoint <= 0x7FF;
-
         case 3:
             // 3-byte sequence: 1110xxxx 10xxxxxx 10xxxxxx
             if ((bytes[0] & 0xF0) != 0xE0 || (bytes[1] & 0xC0) != 0x80 || (bytes[2] & 0xC0) != 0x80)
                 return false;
             codePoint = ((bytes[0] & 0x0F) << 12) | ((bytes[1] & 0x3F) << 6) | (bytes[2] & 0x3F);
             // Check for overlong encoding and surrogates (U+D800-U+DFFF are invalid)
-            return codePoint >= 0x800 && codePoint <= 0xFFFF &&
-                   (codePoint < 0xD800 || codePoint > 0xDFFF);
-
+            return codePoint >= 0x800 && codePoint <= 0xFFFF && (codePoint < 0xD800 || codePoint > 0xDFFF);
         case 4:
             // 4-byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
-            if ((bytes[0] & 0xF8) != 0xF0 || (bytes[1] & 0xC0) != 0x80 ||
-                (bytes[2] & 0xC0) != 0x80 || (bytes[3] & 0xC0) != 0x80)
+            if ((bytes[0] & 0xF8) != 0xF0 || (bytes[1] & 0xC0) != 0x80 || (bytes[2] & 0xC0) != 0x80 || (bytes[3] & 0xC0) != 0x80)
                 return false;
-            codePoint = ((bytes[0] & 0x07) << 18) | ((bytes[1] & 0x3F) << 12) |
-                        ((bytes[2] & 0x3F) << 6) | (bytes[3] & 0x3F);
+            codePoint = ((bytes[0] & 0x07) << 18) | ((bytes[1] & 0x3F) << 12) | ((bytes[2] & 0x3F) << 6) | (bytes[3] & 0x3F);
             // Check for overlong encoding and maximum valid Unicode (U+10FFFF)
             return codePoint >= 0x10000 && codePoint <= 0x10FFFF;
 
@@ -219,8 +226,8 @@ private:
 class JSON
 {
 public:
-    // Wrapper for nlohmann::json::dump with UTF-8 handling
-    static std::string dump(const nlohmann::json &j, int indent = -1, bool sanitizeUTF8 = true)
+    // Original dump returning UTF-8 std::string (nlohmann::json stores strings as UTF-8)
+    static std::string dump(const nlohmann::json &j, int indent = -1, bool sanitizeUTF8 = false)
     {
         try
         {
@@ -243,7 +250,7 @@ public:
             JSONValidator::findErrors(j, errors);
             JSONValidator::reportErrors(errors);
 
-            // Try fallback with replacement
+            // If caller didn't ask for sanitization try again with replacement
             if (!sanitizeUTF8)
             {
                 try
@@ -261,7 +268,16 @@ public:
         }
     }
 
-    // Wrapper for nlohmann::json::parse with error reporting
+    // Return a string converted to the current ANSI code page on Windows (CP_ACP).
+    // For POSIX platforms this returns the UTF-8 string unchanged. This is
+    // intended for legacy consoles / loggers which don't interpret UTF-8.
+    static std::string dumpToLocalEncoding(const nlohmann::json &j, int indent = -1)
+    {
+        const std::string utf8Str = j.dump(indent, ' ');
+        return utf8ToLocalEncoding(utf8Str);
+    }
+
+    // Parsing helpers (unchanged behavior) — note: these forward to nlohmann::json::parse
     static nlohmann::json parse(const std::string &input, bool allowExceptions = true)
     {
         try
@@ -290,7 +306,15 @@ public:
         }
         catch (const nlohmann::json::parse_error &e)
         {
-            std::string context(first, std::min(first + 100, last));
+            std::string context;
+            try
+            {
+                auto distance = std::distance(first, last);
+                context = std::string(first, (distance > 100 ? first + 100 : last));
+            }
+            catch (...)
+            { /* best-effort */
+            }
             LOG_ERR << "JSON parse error: " << e.what();
             LOG_ERR << "Context: " << context;
 
@@ -365,7 +389,10 @@ private:
             {
                 std::string context = input.substr(contextStart, contextEnd - contextStart);
                 LOG_ERR << "Context: \"" << context << "\"";
-                LOG_ERR << "         " << std::string(e.byte - contextStart, ' ') << "^-- error here";
+                if (e.byte >= contextStart)
+                {
+                    LOG_ERR << " " << std::string(e.byte - contextStart, ' ') << "^-- error here";
+                }
             }
         }
 
@@ -385,8 +412,92 @@ private:
             }
         }
         catch (...)
-        {
-            // Ignore errors in partial parse attempt
+        { /* ignore */
         }
+    }
+
+public:
+    // --- Conversions ---
+    static std::string localEncodingToUtf8(const std::string &ansi)
+    {
+#if defined(_WIN32)
+        // Windows: ANSI → UTF-8
+        if (ansi.empty())
+            return {};
+
+        int wideLen = MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), nullptr, 0);
+        if (wideLen <= 0)
+            return {};
+
+        std::wstring wideStr(wideLen, L'\0');
+        MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), wideStr.data(), wideLen);
+
+        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, nullptr, 0, nullptr, nullptr);
+        if (utf8Len <= 0)
+            return {};
+
+        std::string utf8Str(utf8Len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, utf8Str.data(), utf8Len, nullptr, nullptr);
+
+        return utf8Str;
+#else
+        // POSIX: already UTF-8
+        return ansi;
+#endif
+    }
+
+    static std::string utf8ToLocalEncoding(const std::string &utf8Str)
+    {
+#if defined(_WIN32)
+        if (utf8Str.empty())
+            return std::string();
+
+        // Check for oversized input
+        if (utf8Str.size() > static_cast<size_t>(INT_MAX))
+            return utf8Str; // fallback for very large strings
+
+        const int utf8Size = static_cast<int>(utf8Str.size());
+
+        // UTF-8 -> UTF-16: Get required buffer size
+        int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), utf8Size, nullptr, 0);
+        if (wideLen <= 0)
+            return utf8Str;
+
+        // Convert to UTF-16
+        std::wstring wideStr(wideLen, L'\0');
+        int actualWideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), utf8Size,
+                                                wideStr.data(), wideLen);
+        if (actualWideLen <= 0 || actualWideLen > wideLen)
+            return utf8Str;
+
+        // Resize to actual length (in case of discrepancy)
+        wideStr.resize(actualWideLen);
+
+        // Determine target code page
+        UINT cp = GetConsoleOutputCP();
+        if (cp == 0)       // GetConsoleOutputCP returns 0 if no console or on error
+            cp = GetACP(); // Use GetACP() instead of CP_ACP constant
+
+        // UTF-16 -> target encoding: Get required buffer size
+        int ansiLen = WideCharToMultiByte(cp, 0, wideStr.data(), actualWideLen,
+                                          nullptr, 0, nullptr, nullptr);
+        if (ansiLen <= 0)
+            return utf8Str;
+
+        // Convert to target encoding
+        std::string ansiStr(ansiLen, '\0');
+        int actualAnsiLen = WideCharToMultiByte(cp, 0, wideStr.data(), actualWideLen,
+                                                ansiStr.data(), ansiLen, nullptr, nullptr);
+        if (actualAnsiLen <= 0 || actualAnsiLen > ansiLen)
+            return utf8Str;
+
+        // Resize to actual length and return
+        ansiStr.resize(actualAnsiLen);
+        return ansiStr;
+
+#else
+        // POSIX: modern systems use UTF-8 by default
+        return utf8Str;
+#endif
     }
 };

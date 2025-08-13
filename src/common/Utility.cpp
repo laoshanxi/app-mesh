@@ -3,14 +3,14 @@
 #include <fstream>
 #include <list>
 #include <string>
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <sys/file.h>
 #endif
 #include <thread>
 #if defined(__APPLE__)
 #include <crt_externs.h> // For getprogname
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
-#elif defined(WIN32)
+#elif defined(_WIN32)
 #include <windows.h>
 #endif
 
@@ -35,6 +35,7 @@
 #include "DateTime.h"
 #include "Password.h"
 #include "Utility.h"
+#include "json.hpp"
 #include "os/chown.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)
@@ -142,7 +143,7 @@ std::string Utility::stdStringTrim(const std::string &str, const std::string &tr
 const std::string Utility::getExecutablePath()
 {
 	const static char fname[] = "Utility::getExecutablePath() ";
-#if defined(WIN32)
+#if defined(_WIN32)
 	char buf[MAX_PATH] = {0};
 	DWORD len = ::GetModuleFileNameA(NULL, buf, MAX_PATH);
 	if (len == 0 || len >= MAX_PATH)
@@ -216,7 +217,7 @@ const std::string Utility::getBinaryName()
 {
 #if defined(__APPLE__)
 	return getprogname(); // macOS-specific function
-#elif defined(WIN32)
+#elif defined(_WIN32)
 	// Windows implementation without filesystem
 	char buffer[MAX_PATH];
 	DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
@@ -728,7 +729,7 @@ bool Utility::createPidFile()
 	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
 	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
@@ -1035,11 +1036,6 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 	}
 }
 
-std::string Utility::prettyJson(const std::string &jsonStr)
-{
-	return nlohmann::json::parse(jsonStr).dump(2, ' ');
-}
-
 std::string Utility::hash(const std::string &str)
 {
 	// FNV-1a hash algorithm - cross platform
@@ -1151,7 +1147,7 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 {
 	// https://stackoverflow.com/questions/1511797/convert-string-to-argv-in-c
 	// backup: https://stackoverflow.com/questions/1706551/parse-string-into-argv-argc
-#if defined(WIN32)
+#if defined(_WIN32)
 	return boost::program_options::split_winmain(commandLine);
 #else
 	return boost::program_options::split_unix(commandLine);
@@ -1378,7 +1374,7 @@ namespace web
 #undef DAT
 
 // This is necessary for Linux because of a bug in GCC 4.7
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #define _PHRASES
 #define DAT(a, b, c) const status_code status_codes::a;
 #include "http_constants.dat"

@@ -91,6 +91,12 @@ sudo tee /usr/local/include/prometheus/detail/core_export.h <<EOF
 #endif
 EOF
 
+echo "Installing linenoise-ng..."
+cd ${TMP_DIR}
+git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
+sed -i '' -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_required(VERSION 3.20)/' linenoise-ng/CMakeLists.txt
+cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make linenoise && sudo make install
+
 echo "Installing jwt-cpp..."
 cd ${TMP_DIR}
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
