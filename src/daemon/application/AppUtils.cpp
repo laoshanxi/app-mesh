@@ -12,7 +12,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	: m_usingSudo(false)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
-#if defined(WIN32)
+#if defined(_WIN32)
 	// TODO: For Windows, implement bat solution
 	m_shellCmd = cmd;
 #else

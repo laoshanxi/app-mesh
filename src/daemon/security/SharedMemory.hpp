@@ -50,13 +50,13 @@ public:
 #elif defined(__linux__)
         // Linux: Use tmpfs-based shared memory for fast in-memory access
         shmName = (boost::filesystem::path("/dev/shm/") / shmName).string();
-#elif defined(WIN32)
+#elif defined(_WIN32)
         shmName = (boost::filesystem::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR / shmName).string();
 #endif
 
         m_aceShm = std::make_shared<ACE_Shared_Memory_MM>();
 
-#if defined(WIN32)
+#if defined(_WIN32)
         // Windows: ACE_Shared_Memory_MM uses CreateFileMapping internally
         if (m_aceShm->open(shmName.c_str(), PSK_SHM_TOTAL_SIZE, O_CREAT | O_RDWR) == -1)
 #else

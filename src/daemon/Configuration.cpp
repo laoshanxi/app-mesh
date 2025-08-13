@@ -1,5 +1,5 @@
 #include <set>
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <unistd.h> //environ
 #endif
 
@@ -431,7 +431,7 @@ void Configuration::dump()
 	const static char fname[] = "Configuration::dump() ";
 
 	LOG_DBG << fname << '\n'
-			<< Utility::prettyJson(this->AsJson().dump());
+			<< this->AsJson().dump(2);
 
 	auto apps = getApps();
 	for (auto &app : apps)
@@ -798,7 +798,7 @@ const nlohmann::json Configuration::getAgentAppJson(const std::string &shmName) 
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	auto cmd = (fs::path(Utility::getBinDir()) / "agent.exe").string();
 #else
 	auto cmd = (fs::path(Utility::getBinDir()) / "agent").string();
@@ -878,7 +878,7 @@ std::shared_ptr<Configuration::BaseConfig> Configuration::BaseConfig::FromJson(c
 	config->m_logLevel = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_LogLevel);
 	config->m_posixTimezone = GET_JSON_STR_INT_TEXT(jsonValue, JSON_KEY_PosixTimezone);
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	unsigned int gid, uid;
 	if (!config->m_defaultExecUser.empty() && !os::getUidByName(config->m_defaultExecUser, uid, gid))
 	{

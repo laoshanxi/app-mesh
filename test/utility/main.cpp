@@ -227,7 +227,6 @@ TEST_CASE("JSON", "[nlohmann json]")
 	LOG_INF << "====== Unicode Debug ======";
 	LOG_INF << "Raw output: " << test;
 	LOG_INF << "Dumped: " << test.dump();
-	LOG_INF << "Safe dump: " << JSON::dump(test);
 
 	// Check string lengths
 	std::string chinese = "新加卷";

@@ -243,13 +243,30 @@ function Install-HeaderOnlyLibraries {
     # wildcards
     git clone --depth=1 https://github.com/laoshanxi/wildcards.git
     Copy-Item -Recurse "wildcards\single_include" "C:\local\include\wildcards" -Force
-    
+
     # prometheus-cpp
     git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
     New-Item -ItemType Directory -Force -Path "C:\local\src\prometheus" | Out-Null
     Copy-Item -Recurse "prometheus-cpp\core\src\*" "C:\local\src\prometheus\" -Force
     Copy-Item -Recurse "prometheus-cpp\core\include\prometheus" "C:\local\include\" -Force
-    
+
+    # linenoise-ng
+    git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
+    Set-Location linenoise-ng
+    New-Item -ItemType Directory -Force -Path "build" | Out-Null
+    Set-Location build
+    # Patch CMakeLists.txt
+    $cmakeFile = "..\CMakeLists.txt"
+    if (Test-Path $cmakeFile) {
+        $lines = Get-Content $cmakeFile
+        $lines = $lines -replace '^\s*cmake_minimum_required\s*\(.*\)', 'cmake_minimum_required(VERSION 4.0)'
+        Set-Content $cmakeFile $lines
+    }
+    cmake .. -Wno-dev -G "Visual Studio 17 2022" -A x64 -DCMAKE_INSTALL_PREFIX="C:/local"
+    cmake --build . --config Release --target linenoise
+    cmake --install . --config Release
+    Set-Location $ROOTDIR
+
     # Create prometheus export header
     @"
 #ifndef PROMETHEUS_CPP_CORE_EXPORT

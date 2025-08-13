@@ -1,28 +1,37 @@
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <thread>
-#if !defined(WIN32)
-#include <termios.h>
-#include <unistd.h>
-#endif
 
 #include <ace/Signal.h>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <cstring>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
 #include <boost/regex.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
-#if !defined(WIN32)
-#include <readline/history.h>
-#include <readline/readline.h>
+#if defined(_WIN32)
+#include <tlhelp32.h>
+#include <windows.h>
+#include <direct.h>
+#else
+#include <termios.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
 #endif
+#include <linenoise.h>
 
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Password.h"
 #include "../common/RestClient.h"
 #include "../common/Utility.h"
+#include "../common/json.hpp"
 #include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
 #include "cmd_args.h"
@@ -80,8 +89,7 @@ const static std::string m_shellHistoryFile = std::string(ACE_OS::getenv("HOME")
 extern char **environ;
 
 // Global variable for appc exec
-static bool SIGINIT_BREAKING = false;
-static std::atomic_bool READING_LINE(false);
+static std::atomic_bool g_interrupt(false);
 static std::string APPC_EXEC_APP_NAME;
 static ArgumentParser *WORK_PARSE = nullptr;
 // command line help width
@@ -98,7 +106,7 @@ void ArgumentParser::initArgs()
 {
 	WORK_PARSE = this;
 	m_defaultUrl = this->getAppMeshUrl();
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	static std::atomic_flag flag = ATOMIC_FLAG_INIT;
 	if (!flag.test_and_set(std::memory_order_acquire) && getuid() == 0 && getenv("SUDO_USER") && getpwnam(getenv("SUDO_USER")))
 	{
@@ -426,7 +434,7 @@ void ArgumentParser::processAppAdd()
 	(SECURITY_ENV_ARGS, po::value<std::vector<std::string>>(), "Encrypted environment variables in server side with application owner's cipher")
 	(STOP_TIMEOUT_ARGS, po::value<std::string>(), "Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')")
 	(EXIT_ARGS, po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Exit behavior [restart|standby|keepalive|remove]")
-	(CONTROL_ARGS, po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default exit)")
+	(CONTROL_ARGS, po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default value 0:standby)")
 	(STDIN_ARGS, po::value<std::string>(), "Read YAML from stdin ('std') or file");
 	OTHER_OPTIONS;
 	other.add_options()
@@ -486,7 +494,7 @@ void ArgumentParser::processAppAdd()
 
 	if (isAppExist(appName))
 	{
-		if (m_commandLineVariables.count(FORCE) == 0 && (m_commandLineVariables.count(STDIN) == 0 || m_commandLineVariables["stdin"].as<std::string>() != "std"))
+		if (m_commandLineVariables.count(FORCE) == 0 && (m_commandLineVariables.count(STDIN) == 0 || m_commandLineVariables[STDIN].as<std::string>() != "std"))
 		{
 			std::cout << "Application already exist, are you sure you want to update the application <" << appName << ">?" << std::endl;
 			if (!confirmInput("[y/n]:"))
@@ -586,9 +594,9 @@ void ArgumentParser::processAppAdd()
 	if (m_commandLineVariables.count(DOCKER_IMAGE))
 		jsonObj[JSON_KEY_APP_docker_image] = std::string(m_commandLineVariables[DOCKER_IMAGE].as<std::string>());
 	if (m_commandLineVariables.count(BEGIN_TIME))
-		jsonObj[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["begin-time"].as<std::string>()).time_since_epoch()).count());
+		jsonObj[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables[BEGIN_TIME].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count(END_TIME))
-		jsonObj[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["end-time"].as<std::string>()).time_since_epoch()).count());
+		jsonObj[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables[END_TIME].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count(INTERVAL))
 	{
 		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_commandLineVariables[INTERVAL].as<std::string>());
@@ -633,6 +641,10 @@ void ArgumentParser::processAppAdd()
 					auto key = Utility::stdStringTrim(env.substr(0, find));
 					auto val = Utility::stdStringTrim(env.substr(find + 1));
 					objEnvs[key] = std::string(val);
+				}
+				else
+				{
+					throw std::invalid_argument(Utility::stringFormat("Invalid environment variable format: %s", env.c_str()));
 				}
 			}
 			jsonObj[JSON_KEY_APP_env] = objEnvs;
@@ -692,14 +704,13 @@ void ArgumentParser::processAppDel()
 			if (m_commandLineVariables.count(FORCE) == 0)
 			{
 				std::string msg = std::string("Are you sure you want to remove the application <") + appName + "> ? [y/n]";
-				if (!confirmInput(msg.c_str()))
+				if (confirmInput(msg.c_str()))
 				{
-					return;
+					std::string restPath = std::string("/appmesh/app/") + appName;
+					auto response = requestHttp(true, web::http::methods::DEL, restPath);
+					std::cout << parseOutputMessage(response) << std::endl;
 				}
 			}
-			std::string restPath = std::string("/appmesh/app/") + appName;
-			auto response = requestHttp(true, web::http::methods::DEL, restPath);
-			std::cout << parseOutputMessage(response) << std::endl;
 		}
 		else
 		{
@@ -748,8 +759,8 @@ void ArgumentParser::processAppView()
 			else
 			{
 				Utility::addExtraAppTimeReferStr(resp);
-				if (m_commandLineVariables.count(JSON))
-					std::cout << Utility::prettyJson(resp.dump()) << std::endl;
+				if (m_commandLineVariables.count(JJSON))
+					std::cout << JSON::dumpToLocalEncoding(resp, 2) << std::endl;
 				else
 					std::cout << Utility::jsonToYaml(resp) << std::endl;
 			}
@@ -800,7 +811,7 @@ void ArgumentParser::processResource()
 
 	std::string restPath = "/appmesh/resources";
 	auto resp = requestHttp(true, web::http::methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp->text) << std::endl;
+	std::cout << JSON::dumpToLocalEncoding(nlohmann::json::parse(resp->text), 2) << std::endl;
 }
 
 void ArgumentParser::processAppControl(bool start)
@@ -847,7 +858,7 @@ void ArgumentParser::processAppControl(bool start)
 	}
 	for (auto &app : appList)
 	{
-		std::string restPath = std::string("/appmesh/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
+		std::string restPath = std::string("/appmesh/app/") + app + "/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(true, web::http::methods::POST, restPath);
 		std::cout << parseOutputMessage(response) << std::endl;
 	}
@@ -994,7 +1005,7 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1); // wait max 1 second in server side
 			response = requestHttp(false, web::http::methods::GET, restPath, nullptr, {}, query);
-			std::cout << response->text << std::flush;
+			std::cout << JSON::utf8ToLocalEncoding(response->text) << std::flush;
 			outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
 			returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 
@@ -1010,27 +1021,12 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 	return returnCode;
 }
 
-void SIGINT_Handler(int signo)
-{
-	std::cout << std::endl;
-	// make sure we only process SIGINT here
-	// SIGINT 	ctrl - c
-	assert(signo == SIGINT);
-	SIGINIT_BREAKING = true;
-	const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
-	WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
-#if !defined(WIN32)
-	if (READING_LINE.load())
-	{
-		rl_replace_line("", 0); // Clean up after the signal and redraw the prompt
-		rl_on_new_line();		// Notify readline that we're on a new line
-		rl_redisplay();			// Redisplay the prompt
-	}
-#endif
-}
-
 std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
 {
+	if (!resp)
+	{
+		return std::string();
+	}
 	try
 	{
 		auto output = resp->text;
@@ -1045,7 +1041,7 @@ std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &re
 		}
 		else
 		{
-			return Utility::prettyJson(resp->text);
+			return respJson.dump(2);
 		}
 	}
 	catch (...)
@@ -1054,17 +1050,63 @@ std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &re
 	return resp->text;
 }
 
+#if defined(_WIN32)
+BOOL WINAPI CrossPlatformSignalHandler(DWORD ctrlType)
+{
+	if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
+#else
+void CrossPlatformSignalHandler(int signo)
+{
+	if (signo == SIGINT)
+#endif
+	{
+		if (!g_interrupt.exchange(true))
+		{
+			g_interrupt = true;
+
+			const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
+			WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
+		}
+#if defined(_WIN32)
+		return TRUE;
+#endif
+	}
+#if defined(_WIN32)
+	return FALSE;
+#endif
+}
+
 void ArgumentParser::regSignal()
 {
-	m_sigAction = std::make_unique<ACE_Sig_Action>();
-	m_sigAction->handler(SIGINT_Handler);
-	m_sigAction->register_action(SIGINT);
+#if defined(_WIN32)
+	SetConsoleCtrlHandler(CrossPlatformSignalHandler, TRUE);
+#else
+	std::signal(SIGINT, CrossPlatformSignalHandler);
+#endif
 }
 
 void ArgumentParser::unregSignal()
 {
-	if (m_sigAction)
-		m_sigAction = nullptr;
+#if defined(_WIN32)
+	SetConsoleCtrlHandler(NULL, FALSE);
+#else
+	std::signal(SIGINT, SIG_DFL);
+#endif
+}
+
+static bool is_shell_process(const std::string &exeNameLower)
+{
+	// Accept common shells across platforms
+	static const char *shells[] = {
+		"bash", "sh", "dash",
+		"cmd.exe", "powershell.exe", "pwsh.exe",
+		"bash.exe", "sh.exe"};
+	for (auto &shell : shells)
+	{
+		if (exeNameLower == shell)
+			return true;
+	}
+	return false;
 }
 
 pid_t get_bash_pid()
@@ -1080,21 +1122,61 @@ pid_t get_bash_pid()
 		return pid;
 	}
 
-	pid_t ppid = ACE_OS::getppid();
+#if defined(_WIN32)
 
-	while (ppid != 1) // 1 is the init process
+	pid_t ppid = ACE_OS::getppid();
+	while (ppid != 0 && ppid != 4) // 4 is "System"
+	{
+		HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+		if (hSnap == INVALID_HANDLE_VALUE)
+			return pid;
+
+		PROCESSENTRY32 pe;
+		pe.dwSize = sizeof(pe);
+		pid_t next_ppid = 0;
+		bool found = false;
+
+		if (Process32First(hSnap, &pe))
+		{
+			do
+			{
+				if (pe.th32ProcessID == (DWORD)ppid)
+				{
+					std::string exeName = pe.szExeFile;
+					if (is_shell_process(Utility::strTolower(exeName)))
+					{
+						CloseHandle(hSnap);
+						return ppid;
+					}
+					next_ppid = pe.th32ParentProcessID;
+					found = true;
+					break;
+				}
+			} while (Process32Next(hSnap, &pe));
+		}
+
+		CloseHandle(hSnap);
+		if (!found)
+			break;
+		ppid = next_ppid;
+	}
+	return pid;
+
+#else // Linux / Unix
+
+	pid_t ppid = ACE_OS::getppid();
+	while (ppid != 1) // 1 is init
 	{
 		std::string proc_path = "/proc/" + std::to_string(ppid) + "/comm";
 		std::ifstream comm_file(proc_path);
 		std::string comm;
 		std::getline(comm_file, comm);
 
-		if (comm == "bash")
+		if (is_shell_process(Utility::strTolower(comm)))
 			return ppid;
 
-		// Move up the process tree
-		pid = ppid;
-		proc_path = "/proc/" + std::to_string(pid) + "/stat";
+		// Move up process tree
+		proc_path = "/proc/" + std::to_string(ppid) + "/stat";
 		std::ifstream stat_file(proc_path);
 		std::string stat_line;
 		std::getline(stat_file, stat_line);
@@ -1102,11 +1184,17 @@ pid_t get_bash_pid()
 		// Extract parent PID from stat file
 		size_t pos = stat_line.find(')');
 		if (pos != std::string::npos)
-			sscanf(stat_line.c_str() + pos + 2, "%*c %d", &ppid);
+		{
+			int parent_pid = 0;
+			sscanf(stat_line.c_str() + pos + 2, "%*c %d", &parent_pid);
+			ppid = parent_pid;
+		}
 		else
-			return ppid; // Error
+			return ppid; // Error reading
 	}
-	return ppid; // No bash found in the process tree
+	return ppid;
+
+#endif
 }
 
 int ArgumentParser::processShell()
@@ -1126,7 +1214,7 @@ int ArgumentParser::processShell()
 
 	bool retry = m_commandLineVariables.count(RETRY);
 	int returnCode = 0;
-#if !defined(WIN32)
+
 	// Get current session id (bash pid)
 	auto bashId = get_bash_pid();
 	// Get appmesh user
@@ -1174,8 +1262,8 @@ int ArgumentParser::processShell()
 
 	auto sleepSeconds = [](int sec) -> bool
 	{ACE_OS::sleep(sec);	return true; };
-	SIGINIT_BREAKING = false; // if ctrl + c is triggered, stop run and start read input from stdin
-	this->regSignal();		  // capture SIGINT
+	g_interrupt = false; // if ctrl + c is triggered, stop run and start read input from stdin
+	this->regSignal();	 // capture SIGINT
 	// clean
 	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	if (unrecognized.size())
@@ -1184,7 +1272,7 @@ int ArgumentParser::processShell()
 		do
 		{
 			returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
-		} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
+		} while (retry && returnCode != 0 && !g_interrupt.load() && sleepSeconds(1));
 	}
 	else
 	{
@@ -1193,19 +1281,18 @@ int ArgumentParser::processShell()
 		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
-		std::ofstream(m_shellHistoryFile, std::ios::trunc).close();
-		using_history();
-		read_history(m_shellHistoryFile.c_str());
+		linenoiseSetMultiLine(1);
+    	linenoiseHistoryLoad(m_shellHistoryFile.c_str());
+
 		const static char *prompt = "appmesh> ";
 		while (true)
 		{
-			READING_LINE.store(true);
-			char *input = readline(prompt);
-			READING_LINE.store(false);
+			char *input = linenoise(prompt);
 			if (input == nullptr)
 			{
+				// NULL means either EOF (Ctrl+D) or we got interrupted
 				std::cout << "End of input (Ctrl+D pressed)" << std::endl;
-				break;
+				continue;
 			}
 			std::string cmd(input);
 			free(input);
@@ -1216,40 +1303,31 @@ int ArgumentParser::processShell()
 				if (lastCmd != cmd)
 				{
 					lastCmd = cmd;
-					add_history(cmd.c_str());
-					saveUserCmdHistory(cmd.c_str());
+					linenoiseHistoryAdd(cmd.c_str());
+					linenoiseHistorySave(m_shellHistoryFile.c_str());
 				}
 
-				SIGINIT_BREAKING = false; // reset breaking to normal after read a input
 				if (cmd == "exit" || cmd == "q")
 				{
 					break;
 				}
+				if (cmd == "clear" || cmd == "cls")
+				{
+					// Clear screen command
+					linenoiseClearScreen();
+					continue;
+				}
+				g_interrupt = false;
 				jsonObj[JSON_KEY_APP_command] = cmd;
 				do
 				{
 					returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
-				} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
+				} while (retry && !g_interrupt && sleepSeconds(1));
 			}
 		}
 	}
-#endif
-	return returnCode;
-}
 
-void ArgumentParser::saveUserCmdHistory(const char *input)
-{
-	std::ofstream outfile;
-	outfile.open(m_shellHistoryFile, std::ios_base::app); // append instead of overwrite
-	if (outfile.is_open())
-	{
-		outfile << input << std::endl;
-		outfile.close();
-	}
-	else
-	{
-		std::cerr << "Unable to open history file: " << m_shellHistoryFile << std::endl;
-	}
+	return returnCode;
 }
 
 void ArgumentParser::processFileDownload()
@@ -1458,7 +1536,7 @@ void ArgumentParser::processConfigView()
 
 	std::string restPath = "/appmesh/config";
 	auto resp = requestHttp(true, web::http::methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp->text) << std::endl;
+	std::cout << JSON::dumpToLocalEncoding(nlohmann::json::parse(resp->text), 2) << std::endl;
 }
 
 void ArgumentParser::processUserChangePwd()
@@ -1507,7 +1585,7 @@ void ArgumentParser::processUserLock()
 	}
 
 	auto user = m_commandLineVariables[TARGET].as<std::string>();
-	auto lock = !m_commandLineVariables[LOCK].as<bool>();
+	auto lock = m_commandLineVariables[LOCK].as<bool>();
 
 	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
 	auto response = requestHttp(true, web::http::methods::POST, restPath);
@@ -1529,7 +1607,7 @@ void ArgumentParser::processUserManage()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (m_commandLineVariables.count(JSON) == 0)
+	if (m_commandLineVariables.count(JJSON) == 0)
 	{
 		// View user
 		std::string restPath = m_commandLineVariables.count(ALL) ? "/appmesh/users" : "/appmesh/user/self";
@@ -1539,7 +1617,7 @@ void ArgumentParser::processUserManage()
 	else
 	{
 		// Add user
-		auto fileName = m_commandLineVariables[JSON].as<std::string>();
+		auto fileName = m_commandLineVariables[JJSON].as<std::string>();
 		if (!Utility::isFileExist(fileName))
 		{
 			throw std::invalid_argument(Utility::stringFormat("input file %s does not exist", fileName.c_str()));
@@ -1921,10 +1999,10 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	std::ofstream ofs(m_tokenFile, std::ios::trunc);
 	if (ofs.is_open())
 	{
-		ofs << Utility::prettyJson(config.dump());
+		ofs << config.dump(2);
 		ofs.close();
 		// only owner to read and write for token file
-#if !defined(WIN32)
+#if !defined(_WIN32)
 		os::chmod(m_tokenFile, 600);
 #endif
 	}
@@ -2093,7 +2171,7 @@ void ArgumentParser::printApps(const nlohmann::json &json, bool reduce)
 
 	// Step 3: Determine terminal width and adjust column display
 	size_t terminalWidth = 80; // Default fallback width
-#if defined(WIN32)
+#if defined(_WIN32)
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi))
 	{
@@ -2249,7 +2327,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 
 	std::size_t idx = 0; /* index, number of chars in read   */
 	int c = 0;
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	struct termios old_kbd_mode; /* orig keyboard settings   */
 	struct termios new_kbd_mode;
 
@@ -2295,7 +2373,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 	}
 	(*pw)[idx] = 0; /* null-terminate   */
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	/* reset original keyboard  */
 	if (tcsetattr(0, TCSANOW, &old_kbd_mode))
 	{

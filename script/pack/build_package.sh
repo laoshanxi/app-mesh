@@ -6,7 +6,6 @@
 # Dependencies:
 #   - CMake build environment
 #   - nfpm (for Linux packaging)
-#   - patchelf (for Linux binary modifications)
 #   - go (for GOARCH detection)
 #   - Required development libraries
 ################################################################################
@@ -54,20 +53,6 @@ create_directory_structure() {
 
 copy_binaries() {
     cp "${CMAKE_BINARY_DIR}/gen/"{appc,appsvc,agent} "${PACKAGE_HOME}/bin/"
-}
-
-patch_linux_libraries() {
-    # Version compatibility for libreadline
-    if [[ "$OSTYPE" == "linux"* ]]; then
-        local LIB_READLINE_VER=$(ldd "${PACKAGE_HOME}/bin/appc" | awk '/libreadline.so/ {print $1}')
-        if [[ -n "$LIB_READLINE_VER" ]]; then
-            local LIB_READLINE=$(echo "$LIB_READLINE_VER" | sed 's/\.[0-9.]*$//')
-            for bin in appc appsvc; do
-                info "Patching readline for: ${bin}"
-                patchelf --replace-needed "$LIB_READLINE_VER" "$LIB_READLINE" "${PACKAGE_HOME}/bin/$bin"
-            done
-        fi
-    fi
 }
 
 copy_configuration_files() {
@@ -209,7 +194,6 @@ main() {
     setup_platform_specifics
     create_directory_structure
     copy_binaries
-    patch_linux_libraries
     copy_configuration_files
     copy_libraries
     handle_macos_specifics

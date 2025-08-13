@@ -49,7 +49,6 @@ if [ -f "/usr/bin/yum" ]; then
 	yum install -y wget which gettext unzip
 	yum install -y python3-pip
 	yum install -y zlib-devel #for libcurl
-	yum install -y readline-devel patchelf
 	#yum install -y boost169-devel boost169-static
 	#export BOOST_LIBRARYDIR=/usr/lib64/boost169
 	#export BOOST_INCLUDEDIR=/usr/include/boost169
@@ -67,7 +66,6 @@ elif [ -f "/usr/bin/apt" ]; then
 	apt install -y wget alien gettext unzip
 	apt install -y python3-pip
 	apt install -y zlib1g-dev #for libcurl
-	apt install -y libreadline-dev patchelf
 	#apt install -y libboost-all-dev libace-dev libace
 	#apt install -y liblog4cpp5-dev
 fi
@@ -244,6 +242,10 @@ cat << EOF > /usr/local/include/prometheus/detail/core_export.h
 #define PROMETHEUS_CPP_CORE_EXPORT
 #endif
 EOF
+
+git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
+sed -i -E 's/cmake_minimum_required\(VERSION[[:space:]]+[0-9.]+\)/cmake_minimum_required(VERSION 3.20)/' linenoise-ng/CMakeLists.txt
+cd linenoise-ng; mkdir build; cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target linenoise && cmake --install .
 
 git clone --depth=1 https://github.com/Thalhammer/jwt-cpp.git
 cp -rf jwt-cpp/include/jwt-cpp /usr/local/include/

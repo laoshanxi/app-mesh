@@ -49,17 +49,19 @@ namespace os
 			pid = getpid();
 		}
 
-		if (ptree)
+		if (ptree == nullptr)
 		{
-			return pstree(pid, *(std::list<Process> *)(ptree));
+			return pstree(pid, os::processes());
 		}
 
-		const std::list<Process> processList = os::processes();
-		if (processList.size() == 0)
+		auto processTree = static_cast<std::list<Process> *>(ptree);
+		if (processTree->empty())
 		{
-			return nullptr;
+			// make the cache
+			*processTree = os::processes();
 		}
-		return pstree(pid, processList);
+
+		return pstree(pid, *processTree);
 	}
 
 	// Returns the minimum list of process trees that include all of the

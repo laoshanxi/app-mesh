@@ -5,7 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <unistd.h>
 #endif
 

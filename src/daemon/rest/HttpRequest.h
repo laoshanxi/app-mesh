@@ -9,7 +9,7 @@
 #include "../../common/Utility.h"
 #include "protoc/ProtobufHelper.h"
 
-#define CONTENT_TYPE_APPLICATION_JSON "application/json"
+#define CONTENT_TYPE_APPLICATION_JSON "application/json; charset=utf-8"
 
 /// <summary>
 /// HttpRequest is wrapper of <web::http::http_request>,

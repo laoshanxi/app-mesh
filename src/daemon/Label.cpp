@@ -74,7 +74,7 @@ void Label::readDefaultLabel()
 	addLabel(DEFAULT_LABEL_HOST_NAME, MY_HOST_NAME);
 
 	// 2. arch
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	struct utsname buffer;
 	if (uname(&buffer) == 0)
 	{
