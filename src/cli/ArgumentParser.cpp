@@ -1,10 +1,7 @@
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <thread>
-#if !defined(WIN32)
-#include <termios.h>
-#include <unistd.h>
-#endif
 
 #include <ace/Signal.h>
 #include <boost/algorithm/string/join.hpp>
@@ -13,13 +10,14 @@
 #include <boost/regex.hpp>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <nlohmann/json.hpp>
-#if defined(WIN32)
-#include <windows.h>
+#if defined(_WIN32)
 #include <tlhelp32.h>
+#include <windows.h>
 #else
-#include <readline/history.h>
-#include <readline/readline.h>
+#include <termios.h>
+#include <unistd.h>
 #endif
+#include <linenoise.h>
 
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
@@ -83,8 +81,7 @@ const static std::string m_shellHistoryFile = std::string(ACE_OS::getenv("HOME")
 extern char **environ;
 
 // Global variable for appc exec
-static bool SIGINIT_BREAKING = false;
-static std::atomic_bool READING_LINE(false);
+static std::atomic_bool g_interrupt(false);
 static std::string APPC_EXEC_APP_NAME;
 static ArgumentParser *WORK_PARSE = nullptr;
 // command line help width
@@ -101,7 +98,7 @@ void ArgumentParser::initArgs()
 {
 	WORK_PARSE = this;
 	m_defaultUrl = this->getAppMeshUrl();
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	static std::atomic_flag flag = ATOMIC_FLAG_INIT;
 	if (!flag.test_and_set(std::memory_order_acquire) && getuid() == 0 && getenv("SUDO_USER") && getpwnam(getenv("SUDO_USER")))
 	{
@@ -1013,42 +1010,6 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 	return returnCode;
 }
 
-void SIGINT_Handler(int signo)
-{
-	std::cout << std::endl;
-
-	// Make sure it's SIGINT
-	if (signo != SIGINT)
-		return;
-
-	SIGINIT_BREAKING = true;
-
-	const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
-	WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
-
-#if !defined(WIN32)
-	if (READING_LINE.load())
-	{
-		rl_replace_line("", 0); // Clean up after the signal and redraw the prompt
-		rl_on_new_line();		// Notify readline that we're on a new line
-		rl_redisplay();			// Redisplay the prompt
-	}
-#endif
-}
-
-#if defined(WIN32)
-// Windows console control handler
-BOOL WINAPI ConsoleCtrlHandler(DWORD ctrlType)
-{
-	if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
-	{
-		SIGINT_Handler(SIGINT); // simulate POSIX behavior
-		return TRUE;
-	}
-	return FALSE;
-}
-#endif
-
 std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
 {
 	try
@@ -1074,23 +1035,48 @@ std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &re
 	return resp->text;
 }
 
+#if defined(_WIN32)
+BOOL WINAPI CrossPlatformSignalHandler(DWORD ctrlType)
+{
+	if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
+#else
+void CrossPlatformSignalHandler(int signo)
+{
+	if (signo == SIGINT)
+#endif
+	{
+		if (!g_interrupt.exchange(true))
+		{
+			g_interrupt = true;
+
+			const auto restPath = std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME);
+			WORK_PARSE->requestHttp(false, web::http::methods::DEL, restPath);
+		}
+#if defined(_WIN32)
+		return TRUE;
+#endif
+	}
+#if defined(_WIN32)
+	return FALSE;
+#endif
+}
+
 void ArgumentParser::regSignal()
 {
 #if defined(_WIN32)
-	// On Windows console control handler
-    SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+	SetConsoleCtrlHandler(CrossPlatformSignalHandler, TRUE);
 #else
-	// On POSIX, use ACE_Sig_Action
-	m_sigAction = std::make_unique<ACE_Sig_Action>();
-	m_sigAction->handler(SIGINT_Handler);
-	m_sigAction->register_action(SIGINT);
+	std::signal(SIGINT, CrossPlatformSignalHandler);
 #endif
 }
 
 void ArgumentParser::unregSignal()
 {
-	if (m_sigAction)
-		m_sigAction = nullptr;
+#if defined(_WIN32)
+	SetConsoleCtrlHandler(NULL, FALSE);
+#else
+	std::signal(SIGINT, SIG_DFL);
+#endif
 }
 
 static bool is_shell_process(const std::string &exeNameLower)
@@ -1261,8 +1247,8 @@ int ArgumentParser::processShell()
 
 	auto sleepSeconds = [](int sec) -> bool
 	{ACE_OS::sleep(sec);	return true; };
-	SIGINIT_BREAKING = false; // if ctrl + c is triggered, stop run and start read input from stdin
-	this->regSignal();		  // capture SIGINT
+	g_interrupt = false; // if ctrl + c is triggered, stop run and start read input from stdin
+	this->regSignal();	 // capture SIGINT
 	// clean
 	requestHttp(false, web::http::methods::DEL, std::string("/appmesh/app/").append(APPC_EXEC_APP_NAME));
 	if (unrecognized.size())
@@ -1271,7 +1257,7 @@ int ArgumentParser::processShell()
 		do
 		{
 			returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
-		} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
+		} while (retry && returnCode != 0 && !g_interrupt.load() && sleepSeconds(1));
 	}
 	else
 	{
@@ -1280,77 +1266,53 @@ int ArgumentParser::processShell()
 		auto execUser = nlohmann::json::parse(response->text)[JSON_KEY_USER_exec_user].get<std::string>();
 		std::cout << "Connected to <" << appmeshUser << "@" << m_currentUrl << "> as exec user <" << execUser << ">" << std::endl;
 
-		std::ofstream(m_shellHistoryFile, std::ios::trunc).close();
-#if !defined(WIN32)
-		using_history();
-		read_history(m_shellHistoryFile.c_str());
-#endif
+		linenoiseSetMultiLine(1);
+    	linenoiseHistoryLoad(m_shellHistoryFile.c_str());
+
 		const static char *prompt = "appmesh> ";
 		while (true)
 		{
-#if !defined(WIN32)
-			READING_LINE.store(true);
-			char *input = readline(prompt);
-			READING_LINE.store(false);
-#else
-			std::cout << prompt;
-			std::string line;
-			if (!std::getline(std::cin, line))
-			{
-				continue;
-			}
-			char *input = strdup(line.c_str());
-#endif
+			char *input = linenoise(prompt);
 			if (input == nullptr)
 			{
+				// NULL means either EOF (Ctrl+D) or we got interrupted
 				std::cout << "End of input (Ctrl+D pressed)" << std::endl;
-				break;
+				continue;
 			}
 			std::string cmd(input);
 			free(input);
 			cmd = Utility::stdStringTrim(cmd);
 			if (cmd.length())
 			{
-#if !defined(WIN32)
 				static std::string lastCmd;
 				if (lastCmd != cmd)
 				{
 					lastCmd = cmd;
-					add_history(cmd.c_str());
-					saveUserCmdHistory(cmd.c_str());
+					linenoiseHistoryAdd(cmd.c_str());
+					linenoiseHistorySave(m_shellHistoryFile.c_str());
 				}
-#endif
 
-				SIGINIT_BREAKING = false; // reset breaking to normal after read a input
 				if (cmd == "exit" || cmd == "q")
 				{
 					break;
 				}
+				if (cmd == "clear" || cmd == "cls")
+				{
+					// Clear screen command
+					linenoiseClearScreen();
+					continue;
+				}
+				g_interrupt = false;
 				jsonObj[JSON_KEY_APP_command] = cmd;
 				do
 				{
 					returnCode = runAsyncApp(jsonObj, timeout, lifecycle);
-				} while (retry && returnCode != 0 && !SIGINIT_BREAKING && sleepSeconds(1));
+				} while (retry && !g_interrupt && sleepSeconds(1));
 			}
 		}
 	}
 
 	return returnCode;
-}
-
-void ArgumentParser::saveUserCmdHistory(const char *input)
-{
-	std::ofstream outfile;
-	outfile.open(m_shellHistoryFile, std::ios_base::app); // append instead of overwrite
-	if (outfile.is_open())
-	{
-		outfile << input << std::endl;
-		outfile.close();
-	}
-	else
-	{
-		std::cerr << "Unable to open history file: " << m_shellHistoryFile << std::endl;
-	}
 }
 
 void ArgumentParser::processFileDownload()
@@ -2025,7 +1987,7 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 		ofs << Utility::prettyJson(config.dump());
 		ofs.close();
 		// only owner to read and write for token file
-#if !defined(WIN32)
+#if !defined(_WIN32)
 		os::chmod(m_tokenFile, 600);
 #endif
 	}
@@ -2194,7 +2156,7 @@ void ArgumentParser::printApps(const nlohmann::json &json, bool reduce)
 
 	// Step 3: Determine terminal width and adjust column display
 	size_t terminalWidth = 80; // Default fallback width
-#if defined(WIN32)
+#if defined(_WIN32)
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi))
 	{
@@ -2350,7 +2312,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 
 	std::size_t idx = 0; /* index, number of chars in read   */
 	int c = 0;
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	struct termios old_kbd_mode; /* orig keyboard settings   */
 	struct termios new_kbd_mode;
 
@@ -2396,7 +2358,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 	}
 	(*pw)[idx] = 0; /* null-terminate   */
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	/* reset original keyboard  */
 	if (tcsetattr(0, TCSANOW, &old_kbd_mode))
 	{

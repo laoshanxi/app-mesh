@@ -38,7 +38,6 @@ private:
 	void processAppControl(bool start);
 	int processAppRun();
 	int processShell();
-	void saveUserCmdHistory(const char *input);
 
 	void processFileDownload();
 	void processFileUpload();
@@ -94,7 +93,6 @@ private:
 	std::string m_currentUrl;
 	std::string m_username;
 	std::string m_userpwd;
-	std::unique_ptr<ACE_Sig_Action> m_sigAction;
 	std::string m_jwtToken;
 	std::string m_forwardTo;
 };

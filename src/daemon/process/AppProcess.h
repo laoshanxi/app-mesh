@@ -9,7 +9,7 @@
 
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
-#if defined(WIN32)
+#if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
 
@@ -234,7 +234,7 @@ private:
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;
-#if defined(WIN32)
+#if defined(_WIN32)
 	SharedHandle m_job;
 #endif
 

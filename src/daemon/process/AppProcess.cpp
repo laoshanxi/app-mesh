@@ -10,7 +10,7 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
-#if defined(WIN32)
+#if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
 #include "../../common/os/pstree.hpp"
@@ -27,7 +27,7 @@ constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 AppProcess::AppProcess(void *owner)
 	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
-#if defined(WIN32)
+#if defined(_WIN32)
 	  m_job(nullptr, ::CloseHandle),
 #endif
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID()),
@@ -185,7 +185,7 @@ void AppProcess::terminate()
 		LOG_INF << fname << "kill process <" << pid << ">.";
 
 		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
-#if defined(WIN32)
+#if defined(_WIN32)
 		if (os::kill_job(m_job))
 #else
 		if (ACE_OS::kill(-pid, SIGKILL) == 0)
@@ -346,7 +346,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	// option.avoid_zombies(1);
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	if (!user.empty() && user != "root")
 	{
 		unsigned int gid, uid;
@@ -466,7 +466,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 		{
 			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << std::strerror(errno);
 		}
-#if defined(WIN32)
+#if defined(_WIN32)
 		// This creates a named job object in the Windows kernel.
 		// This handle must remain in scope (and open) until a running process is assigned to it.
 		m_job = os::create_job(os::name_job(pid));
@@ -528,7 +528,7 @@ std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getP
 
 AttachProcess::AttachProcess(pid_t pid)
 {
-#if defined(WIN32)
+#if defined(_WIN32)
 	process_info_.hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
 	if (process_info_.hProcess)
 		process_info_.dwProcessId = pid;

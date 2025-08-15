@@ -1,7 +1,7 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/default.h>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <liboath/oath.h>
 #endif
 
@@ -245,7 +245,7 @@ const std::string User::totpGenerateKey()
 {
 	const static char fname[] = "User::totpGenerateKey() ";
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	char *secret = NULL;
 	char randomBuffer[32];
 	constexpr int mfaKeyLen = 16;
@@ -286,7 +286,7 @@ bool User::totpValidateCode(const std::string &totpCode)
 {
 	const static char fname[] = "User::totpValidateCode() ";
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	char *key = NULL;
 	size_t keyLen = 0;

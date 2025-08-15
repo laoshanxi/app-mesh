@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#if defined(WIN32)
+#if defined(_WIN32)
 #include <windows.h>
 #endif
 
@@ -274,7 +274,7 @@ public:
     static std::string dumpToLocalCP(const nlohmann::json &j, int indent = -1, bool ensure_ascii = false)
     {
         const std::string utf8Str = j.dump(indent, ' ', ensure_ascii);
-#if defined(WIN32)
+#if defined(_WIN32)
         // UTF-8 -> UTF-16 (explicit size, no trailing NUL in count)
         if (utf8Str.empty())
             return std::string();
@@ -451,7 +451,7 @@ public:
     // --- Conversions ---
     static std::string ansiToUtf8(const std::string &ansi)
     {
-#if defined(WIN32)
+#if defined(_WIN32)
         // Windows: ANSI → UTF-8
         if (ansi.empty())
             return {};

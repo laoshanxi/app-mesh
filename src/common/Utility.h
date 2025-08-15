@@ -51,7 +51,7 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 	}
 
 // make_unique implementation for C++11, C++14 already support
-#if (__cplusplus <= 201103L) && !defined(WIN32)
+#if (__cplusplus <= 201103L) && !defined(_WIN32)
 namespace std
 {
 	template <typename T, typename... Args>
@@ -239,7 +239,7 @@ public:
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 #elif defined(__APPLE__)
 #define ENV_LD_LIBRARY_PATH "DYLD_LIBRARY_PATH"
-#elif defined(WIN32)
+#elif defined(_WIN32)
 #define ENV_LD_LIBRARY_PATH "PATH"
 #else
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH" // Default to Linux style for other platforms

@@ -1,6 +1,6 @@
 #pragma once
 
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <fts.h>
 #include <grp.h>
 #include <unistd.h>
@@ -25,7 +25,7 @@ namespace os
 	inline bool chown(const std::string &path, uid_t uid, gid_t gid, bool recursive = false)
 	{
 		constexpr char fname[] = "os::chown() ";
-#if !defined(WIN32)
+#if !defined(_WIN32)
 		// Input validation
 		if (path.empty() || !fs::exists(path))
 		{
@@ -108,7 +108,7 @@ namespace os
 	inline bool chown(const std::string &path, std::string user, std::string group = "", bool recursive = false)
 	{
 		constexpr char fname[] = "os::chown() ";
-#if !defined(WIN32)
+#if !defined(_WIN32)
 		// Input validation
 		if (path.empty())
 		{

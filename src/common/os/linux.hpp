@@ -16,7 +16,7 @@
 #include <tuple>
 #include <vector>
 
-#if defined(WIN32)
+#if defined(_WIN32)
 // Windows headers
 #define WIN32_LEAN_AND_MEAN
 #include <direct.h>
@@ -210,7 +210,7 @@ namespace os
 		const static char fname[] = "os::ls() ";
 		std::vector<std::string> result;
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows implementation
 		std::string searchPath = directory + "\\*";
 		WIN32_FIND_DATAA findData;
@@ -311,7 +311,7 @@ namespace os
 		// get process start time
 		std::chrono::system_clock::time_point get_starttime() const
 		{
-#if defined(WIN32)
+#if defined(_WIN32)
 			// Windows: starttime is already a time_t
 			return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
 
@@ -368,7 +368,7 @@ namespace os
 	 */
 	inline int64_t cpuTotalTime()
 	{
-#if defined(WIN32)
+#if defined(_WIN32)
 		FILETIME idleTime, kernelTime, userTime;
 		if (GetSystemTimes(&idleTime, &kernelTime, &userTime))
 		{
@@ -438,7 +438,7 @@ namespace os
 			return nullptr;
 		}
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		HandleRAII hProcess(OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid));
 		if (!hProcess.valid())
 		{
@@ -687,7 +687,7 @@ namespace os
 	{
 		const static char fname[] = "proc::cmdline() ";
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		if (pid == 0)
 		{
 			// Get current process command line
@@ -788,7 +788,7 @@ namespace os
 		const static char fname[] = "proc::pids() ";
 		std::set<pid_t> pids;
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		HandleRAII hSnapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
 		if (!hSnapshot.valid())
 		{
@@ -902,7 +902,7 @@ namespace os
 	// Cross-platform page size
 	inline size_t pagesize()
 	{
-#if defined(WIN32)
+#if defined(_WIN32)
 		SYSTEM_INFO sysInfo;
 		GetSystemInfo(&sysInfo);
 		return static_cast<size_t>(sysInfo.dwPageSize);
@@ -955,7 +955,7 @@ namespace os
 	{
 		auto memory = std::make_shared<Memory>();
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		MEMORYSTATUSEX memStatus;
 		memStatus.dwLength = sizeof(memStatus);
 		if (GlobalMemoryStatusEx(&memStatus))
@@ -1096,7 +1096,7 @@ namespace os
 			// Second check after acquiring lock
 			if (!initialized.load(std::memory_order_relaxed))
 			{
-#if defined(WIN32)
+#if defined(_WIN32)
 				SYSTEM_INFO sysInfo;
 				GetSystemInfo(&sysInfo);
 
@@ -1266,7 +1266,7 @@ namespace os
 	{
 		const static char fname[] = "loadavg() ";
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows doesn't have load average, approximate with CPU usage
 		// This is a simplified implementation - a real implementation would
 		// need to maintain historical CPU usage data
@@ -1322,7 +1322,7 @@ namespace os
 	 * @return Shared pointer to FilesystemUsage containing size, used space, and usage.
 	 */
 	inline std::shared_ptr<FilesystemUsage> df(const std::string &path =
-#if defined(WIN32)
+#if defined(_WIN32)
 												   "C:\\"
 #else
 												   "/"
@@ -1332,7 +1332,7 @@ namespace os
 		const static char fname[] = "proc::df() ";
 		auto df = std::make_shared<FilesystemUsage>();
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		ULARGE_INTEGER freeBytesAvailable, totalNumberOfBytes, totalNumberOfFreeBytes;
 
 		if (GetDiskFreeSpaceExA(path.c_str(), &freeBytesAvailable, &totalNumberOfBytes, &totalNumberOfFreeBytes))
@@ -1403,7 +1403,7 @@ namespace os
 		const static char fname[] = "proc::getMountPoints() ";
 		std::map<std::string, std::string> mountPointsMap;
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows: Get logical drives
 		DWORD drives = GetLogicalDrives();
 		char driveLetter = 'A';
@@ -1582,7 +1582,7 @@ namespace os
 	{
 		const static char fname[] = "fileStat() ";
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows implementation
 		return std::make_tuple(-1, -1, -1);
 
@@ -1623,7 +1623,7 @@ namespace os
 			return false;
 		}
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows implementation
 		return false;
 
@@ -1686,7 +1686,7 @@ namespace os
 
 		bool rt = false;
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows implementation
 		PSID userSid = nullptr;
 		DWORD sidSize = 0;
@@ -1822,7 +1822,7 @@ namespace os
 			return "";
 		}
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows implementation
 		// Note: This is a simplified approach since Windows doesn't have direct UID->username mapping
 		// In a production system, you might want to maintain a cache/registry of UID mappings

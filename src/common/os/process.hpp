@@ -10,7 +10,7 @@
 #include <string>
 
 // Platform-specific headers
-#if defined(WIN32)
+#if defined(_WIN32)
 #include <io.h>
 #include <process.h>
 #include <psapi.h>
@@ -36,7 +36,7 @@
 
 namespace os
 {
-#if defined(WIN32)
+#if defined(_WIN32)
 	// RAII wrapper for Windows HANDLE
 	class HandleRAII
 	{
@@ -179,7 +179,7 @@ namespace os
 			return result;
 		}
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows implementation using RAII
 		HandleRAII hProcess(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
 		if (!hProcess.valid())
@@ -393,7 +393,7 @@ namespace os
 			// On Windows, we use the sum of user and kernel time
 #if defined(__APPLE__)
 			return static_cast<uint64_t>(this->process.cutime + this->process.cstime);
-#elif defined(WIN32)
+#elif defined(_WIN32)
 			return static_cast<uint64_t>(this->process.utime + this->process.stime);
 #else
 			uint64_t result = std::accumulate(
@@ -529,7 +529,7 @@ namespace os
 			return std::numeric_limits<uid_t>::max();
 		}
 
-#if defined(WIN32)
+#if defined(_WIN32)
 		// Windows implementation using RAII
 		HandleRAII hProcess(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
 		if (!hProcess.valid())
