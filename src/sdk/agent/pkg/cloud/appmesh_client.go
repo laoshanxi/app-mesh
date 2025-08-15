@@ -62,24 +62,21 @@ func NewAppMeshClient() *AppMesh {
 // GetHostResources retrieves cloud resources via a TCP request
 func (r *AppMesh) GetHostResources() (string, error) {
 	data := r.generateRequest()
-	data.HttpMethod = "GET"
-	data.RequestUri = "/appmesh/cloud/resources" // This URI rely on PSK (Pre-Shared Key) check instead of permission check
+	data.HttpMethod = http.MethodGet
+	data.RequestUri = "/appmesh/cloud/resources" // This URI relies on PSK (Pre-Shared Key) check instead of permission check
 
 	resp, err := r.request(data)
 	if err != nil {
 		return "", err
 	}
-	if resp == nil || resp.HttpStatus != http.StatusOK {
-		return "", fmt.Errorf("failed to retrieve cloud resource, status: %d", resp.HttpStatus)
+	if resp == nil {
+		return "", fmt.Errorf("no response received from cloud resource request")
+	}
+	if resp.HttpStatus != http.StatusOK {
+		return "", fmt.Errorf("failed to retrieve cloud resource, status: %d, body: %s", resp.HttpStatus, resp.Body)
 	}
 
-	// Pretty-print the JSON response body
-	body, jsonErr := appmesh.PrettyJSON(resp.Body)
-	if jsonErr != nil {
-		logger.Warnf("PrettyJSON failed with error: %v", jsonErr)
-		return "", jsonErr
-	}
-	return body, nil
+	return resp.Body, nil
 }
 
 // generateRequest creates and returns a new Request with a unique UUID

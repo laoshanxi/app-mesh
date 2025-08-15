@@ -4,6 +4,11 @@
 #include <thread>
 
 #include <ace/Signal.h>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <cstring>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
@@ -13,9 +18,11 @@
 #if defined(_WIN32)
 #include <tlhelp32.h>
 #include <windows.h>
+#include <direct.h>
 #else
 #include <termios.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #endif
 #include <linenoise.h>
 
@@ -24,6 +31,7 @@
 #include "../common/Password.h"
 #include "../common/RestClient.h"
 #include "../common/Utility.h"
+#include "../common/json.hpp"
 #include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
 #include "cmd_args.h"
@@ -426,7 +434,7 @@ void ArgumentParser::processAppAdd()
 	(SECURITY_ENV_ARGS, po::value<std::vector<std::string>>(), "Encrypted environment variables in server side with application owner's cipher")
 	(STOP_TIMEOUT_ARGS, po::value<std::string>(), "Process stop timeout (ISO8601 duration: 'P1Y2M3DT4H5M6S')")
 	(EXIT_ARGS, po::value<std::string>()->default_value(JSON_KEY_APP_behavior_standby), "Exit behavior [restart|standby|keepalive|remove]")
-	(CONTROL_ARGS, po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default exit)")
+	(CONTROL_ARGS, po::value<std::vector<std::string>>(), "Exit code behaviors (--control CODE:ACTION, overrides default value 0:standby)")
 	(STDIN_ARGS, po::value<std::string>(), "Read YAML from stdin ('std') or file");
 	OTHER_OPTIONS;
 	other.add_options()
@@ -486,7 +494,7 @@ void ArgumentParser::processAppAdd()
 
 	if (isAppExist(appName))
 	{
-		if (m_commandLineVariables.count(FORCE) == 0 && (m_commandLineVariables.count(STDIN) == 0 || m_commandLineVariables["stdin"].as<std::string>() != "std"))
+		if (m_commandLineVariables.count(FORCE) == 0 && (m_commandLineVariables.count(STDIN) == 0 || m_commandLineVariables[STDIN].as<std::string>() != "std"))
 		{
 			std::cout << "Application already exist, are you sure you want to update the application <" << appName << ">?" << std::endl;
 			if (!confirmInput("[y/n]:"))
@@ -586,9 +594,9 @@ void ArgumentParser::processAppAdd()
 	if (m_commandLineVariables.count(DOCKER_IMAGE))
 		jsonObj[JSON_KEY_APP_docker_image] = std::string(m_commandLineVariables[DOCKER_IMAGE].as<std::string>());
 	if (m_commandLineVariables.count(BEGIN_TIME))
-		jsonObj[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["begin-time"].as<std::string>()).time_since_epoch()).count());
+		jsonObj[JSON_KEY_SHORT_APP_start_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables[BEGIN_TIME].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count(END_TIME))
-		jsonObj[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables["end-time"].as<std::string>()).time_since_epoch()).count());
+		jsonObj[JSON_KEY_SHORT_APP_end_time] = (std::chrono::duration_cast<std::chrono::seconds>(DateTime::parseISO8601DateTime(m_commandLineVariables[END_TIME].as<std::string>()).time_since_epoch()).count());
 	if (m_commandLineVariables.count(INTERVAL))
 	{
 		jsonObj[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_commandLineVariables[INTERVAL].as<std::string>());
@@ -633,6 +641,10 @@ void ArgumentParser::processAppAdd()
 					auto key = Utility::stdStringTrim(env.substr(0, find));
 					auto val = Utility::stdStringTrim(env.substr(find + 1));
 					objEnvs[key] = std::string(val);
+				}
+				else
+				{
+					throw std::invalid_argument(Utility::stringFormat("Invalid environment variable format: %s", env.c_str()));
 				}
 			}
 			jsonObj[JSON_KEY_APP_env] = objEnvs;
@@ -692,14 +704,13 @@ void ArgumentParser::processAppDel()
 			if (m_commandLineVariables.count(FORCE) == 0)
 			{
 				std::string msg = std::string("Are you sure you want to remove the application <") + appName + "> ? [y/n]";
-				if (!confirmInput(msg.c_str()))
+				if (confirmInput(msg.c_str()))
 				{
-					return;
+					std::string restPath = std::string("/appmesh/app/") + appName;
+					auto response = requestHttp(true, web::http::methods::DEL, restPath);
+					std::cout << parseOutputMessage(response) << std::endl;
 				}
 			}
-			std::string restPath = std::string("/appmesh/app/") + appName;
-			auto response = requestHttp(true, web::http::methods::DEL, restPath);
-			std::cout << parseOutputMessage(response) << std::endl;
 		}
 		else
 		{
@@ -748,8 +759,8 @@ void ArgumentParser::processAppView()
 			else
 			{
 				Utility::addExtraAppTimeReferStr(resp);
-				if (m_commandLineVariables.count(JSON))
-					std::cout << Utility::prettyJson(resp.dump()) << std::endl;
+				if (m_commandLineVariables.count(JJSON))
+					std::cout << JSON::dumpToLocalCP(resp, 2) << std::endl;
 				else
 					std::cout << Utility::jsonToYaml(resp) << std::endl;
 			}
@@ -800,7 +811,7 @@ void ArgumentParser::processResource()
 
 	std::string restPath = "/appmesh/resources";
 	auto resp = requestHttp(true, web::http::methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp->text) << std::endl;
+	std::cout << JSON::dumpToLocalCP(nlohmann::json::parse(resp->text), 2) << std::endl;
 }
 
 void ArgumentParser::processAppControl(bool start)
@@ -847,7 +858,7 @@ void ArgumentParser::processAppControl(bool start)
 	}
 	for (auto &app : appList)
 	{
-		std::string restPath = std::string("/appmesh/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
+		std::string restPath = std::string("/appmesh/app/") + app + "/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(true, web::http::methods::POST, restPath);
 		std::cout << parseOutputMessage(response) << std::endl;
 	}
@@ -1012,6 +1023,10 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 
 std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
 {
+	if (!resp)
+	{
+		return std::string();
+	}
 	try
 	{
 		auto output = resp->text;
@@ -1026,7 +1041,7 @@ std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &re
 		}
 		else
 		{
-			return Utility::prettyJson(resp->text);
+			return respJson.dump(2);
 		}
 	}
 	catch (...)
@@ -1521,7 +1536,7 @@ void ArgumentParser::processConfigView()
 
 	std::string restPath = "/appmesh/config";
 	auto resp = requestHttp(true, web::http::methods::GET, restPath);
-	std::cout << Utility::prettyJson(resp->text) << std::endl;
+	std::cout << JSON::dumpToLocalCP(nlohmann::json::parse(resp->text), 2) << std::endl;
 }
 
 void ArgumentParser::processUserChangePwd()
@@ -1570,7 +1585,7 @@ void ArgumentParser::processUserLock()
 	}
 
 	auto user = m_commandLineVariables[TARGET].as<std::string>();
-	auto lock = !m_commandLineVariables[LOCK].as<bool>();
+	auto lock = m_commandLineVariables[LOCK].as<bool>();
 
 	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
 	auto response = requestHttp(true, web::http::methods::POST, restPath);
@@ -1592,7 +1607,7 @@ void ArgumentParser::processUserManage()
 	shiftCommandLineArgs(desc);
 	HELP_ARG_CHECK_WITH_RETURN;
 
-	if (m_commandLineVariables.count(JSON) == 0)
+	if (m_commandLineVariables.count(JJSON) == 0)
 	{
 		// View user
 		std::string restPath = m_commandLineVariables.count(ALL) ? "/appmesh/users" : "/appmesh/user/self";
@@ -1602,7 +1617,7 @@ void ArgumentParser::processUserManage()
 	else
 	{
 		// Add user
-		auto fileName = m_commandLineVariables[JSON].as<std::string>();
+		auto fileName = m_commandLineVariables[JJSON].as<std::string>();
 		if (!Utility::isFileExist(fileName))
 		{
 			throw std::invalid_argument(Utility::stringFormat("input file %s does not exist", fileName.c_str()));
@@ -1984,7 +1999,7 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	std::ofstream ofs(m_tokenFile, std::ios::trunc);
 	if (ofs.is_open())
 	{
-		ofs << Utility::prettyJson(config.dump());
+		ofs << config.dump(2);
 		ofs.close();
 		// only owner to read and write for token file
 #if !defined(_WIN32)

@@ -1,10 +1,8 @@
 package appmesh
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -247,42 +245,4 @@ func SetTcpNoDelay(conn net.Conn) error {
 	}
 
 	return tcpConn.SetNoDelay(true)
-}
-
-// PrettyJSON takes a JSON string as input and returns a formatted, indented JSON string.
-func PrettyJSON(input string) (string, error) {
-	// Check if the input string is empty
-	if len(input) == 0 {
-		return "", errors.New("input JSON string is empty")
-	}
-
-	// Create a buffer to store the formatted output
-	var out bytes.Buffer
-
-	// Create a new JSON decoder to parse the input string
-	decoder := json.NewDecoder(bytes.NewReader([]byte(input)))
-	// Create a new JSON encoder to write the formatted output
-	encoder := json.NewEncoder(&out)
-	// Set the indentation to two spaces
-	encoder.SetIndent("", "  ")
-
-	// Create a variable to hold the parsed JSON data
-	var jsonData interface{}
-	// Attempt to decode the input JSON
-	if err := decoder.Decode(&jsonData); err != nil {
-		return "", fmt.Errorf("invalid JSON: %v", err)
-	}
-
-	// Check if the parsed JSON data is nil (empty object or array)
-	if jsonData == nil {
-		return "", errors.New("parsed JSON data is empty")
-	}
-
-	// Encode the parsed JSON data with proper indentation
-	if err := encoder.Encode(jsonData); err != nil {
-		return "", fmt.Errorf("failed to format JSON: %v", err)
-	}
-
-	// Return the formatted JSON string
-	return out.String(), nil
 }

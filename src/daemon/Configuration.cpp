@@ -431,7 +431,7 @@ void Configuration::dump()
 	const static char fname[] = "Configuration::dump() ";
 
 	LOG_DBG << fname << '\n'
-			<< Utility::prettyJson(this->AsJson().dump());
+			<< this->AsJson().dump(2);
 
 	auto apps = getApps();
 	for (auto &app : apps)

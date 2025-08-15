@@ -161,10 +161,10 @@ func ListenAndServeREST() error {
 	router.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = "/appmesh/metrics" // Change the URL path to /appmesh/metrics
 		router.ServeHTTP(w, r)
-	}).Methods("GET")
+	}).Methods(http.MethodGet)
 
 	// Index & OPTIONS & HEAD
-	router.HandleFunc("/", utils.Cors(utils.DefaultCORSConfig)(HandleIndex)).Methods("GET")
+	router.HandleFunc("/", utils.Cors(utils.DefaultCORSConfig)(HandleIndex)).Methods(http.MethodGet)
 	router.HandleFunc("/{path:.*}", utils.Cors(utils.DefaultCORSConfig)(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // Options handler
 	})).Methods("OPTIONS", "HEAD")

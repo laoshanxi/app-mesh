@@ -271,9 +271,9 @@ public:
     // Return a string converted to the current ANSI code page on Windows (CP_ACP).
     // For POSIX platforms this returns the UTF-8 string unchanged. This is
     // intended for legacy consoles / loggers which don't interpret UTF-8.
-    static std::string dumpToLocalCP(const nlohmann::json &j, int indent = -1, bool ensure_ascii = false)
+    static std::string dumpToLocalCP(const nlohmann::json &j, int indent = -1)
     {
-        const std::string utf8Str = j.dump(indent, ' ', ensure_ascii);
+        const std::string utf8Str = j.dump(indent, ' ');
 #if defined(_WIN32)
         // UTF-8 -> UTF-16 (explicit size, no trailing NUL in count)
         if (utf8Str.empty())

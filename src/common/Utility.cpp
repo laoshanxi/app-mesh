@@ -1036,11 +1036,6 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 	}
 }
 
-std::string Utility::prettyJson(const std::string &jsonStr)
-{
-	return JSON::dumpToLocalCP(nlohmann::json::parse(jsonStr), 2);
-}
-
 std::string Utility::hash(const std::string &str)
 {
 	// FNV-1a hash algorithm - cross platform

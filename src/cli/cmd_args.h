@@ -37,7 +37,7 @@
 #define LOG_INDEX_ARGS "log-index,i"
 #define FOLLOW "follow"
 #define FOLLOW_ARGS "follow,f"
-#define JSON "json"
+#define JJSON "json"
 #define JSON_ARGS "json,j"
 
 #define ALL "all"
@@ -127,7 +127,5 @@
 #define TARGET_ARGS "target,t"
 #define LOCK "lock"
 #define LOCK_ARGS "lock,k"
-#define JSON "json"
-#define JSON_ARGS "json,j"
 
 #endif // APP_MESH_CLI_ARGUMENTS_H

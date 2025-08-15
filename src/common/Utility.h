@@ -190,7 +190,6 @@ public:
 	static std::string stringReplace(const std::string &strBase, const std::string &strSrc, const std::string &strDst, int startPos = 0);
 	static std::string humanReadableSize(long double bytesSize);
 	static std::string humanReadableDuration(const std::chrono::system_clock::time_point &startTime, const std::chrono::system_clock::time_point &endTime = std::chrono::system_clock::now());
-	static std::string prettyJson(const std::string &jsonStr);
 	static std::string hash(const std::string &str);
 	static std::string hashId();
 	static std::string stringFormat(const std::string fmt_str, ...);
