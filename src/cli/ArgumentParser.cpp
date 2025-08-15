@@ -4,6 +4,11 @@
 #include <thread>
 
 #include <ace/Signal.h>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <cstring>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/io/ios_state.hpp>
 #include <boost/program_options.hpp>
@@ -13,9 +18,11 @@
 #if defined(_WIN32)
 #include <tlhelp32.h>
 #include <windows.h>
+#include <direct.h>
 #else
 #include <termios.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #endif
 #include <linenoise.h>
 
@@ -486,7 +493,7 @@ void ArgumentParser::processAppAdd()
 
 	if (isAppExist(appName))
 	{
-		if (m_commandLineVariables.count(FORCE) == 0 && (m_commandLineVariables.count(STDIN) == 0 || m_commandLineVariables["stdin"].as<std::string>() != "std"))
+		if (m_commandLineVariables.count(FORCE) == 0 && (m_commandLineVariables.count(STDIN) == 0 || m_commandLineVariables[STDIN].as<std::string>() != "std"))
 		{
 			std::cout << "Application already exist, are you sure you want to update the application <" << appName << ">?" << std::endl;
 			if (!confirmInput("[y/n]:"))
@@ -847,7 +854,7 @@ void ArgumentParser::processAppControl(bool start)
 	}
 	for (auto &app : appList)
 	{
-		std::string restPath = std::string("/appmesh/app/") + app + +"/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
+		std::string restPath = std::string("/appmesh/app/") + app + "/" + (start ? HTTP_QUERY_KEY_action_start : HTTP_QUERY_KEY_action_stop);
 		auto response = requestHttp(true, web::http::methods::POST, restPath);
 		std::cout << parseOutputMessage(response) << std::endl;
 	}
@@ -1012,6 +1019,10 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 
 std::string ArgumentParser::parseOutputMessage(std::shared_ptr<CurlResponse> &resp)
 {
+	if (!resp)
+	{
+		return std::string();
+	}
 	try
 	{
 		auto output = resp->text;
@@ -1570,7 +1581,7 @@ void ArgumentParser::processUserLock()
 	}
 
 	auto user = m_commandLineVariables[TARGET].as<std::string>();
-	auto lock = !m_commandLineVariables[LOCK].as<bool>();
+	auto lock = m_commandLineVariables[LOCK].as<bool>();
 
 	std::string restPath = std::string("/appmesh/user/") + user + (lock ? "/lock" : "/unlock");
 	auto response = requestHttp(true, web::http::methods::POST, restPath);

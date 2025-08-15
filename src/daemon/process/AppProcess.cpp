@@ -372,7 +372,10 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	{
 		workDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	}
-	option.working_directory(workDir.c_str());
+	if (fs::exists(workDir))
+		option.working_directory(workDir.c_str());
+	else
+		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, use default";
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
 				  {
 					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
