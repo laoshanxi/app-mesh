@@ -21,6 +21,7 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 info() { log "INFO $@"; }
 error() { log "ERROR $@"; }
 die() { error "$@" && exit 1; }
+copy() { rm -f "$2/$(basename "$1")" && cp "$1" "$2/"; }
 
 validate_environment() {
     [[ -z "${CMAKE_BINARY_DIR:-}" ]] && die "CMAKE_BINARY_DIR is not set"
@@ -93,56 +94,122 @@ copy_configuration_files() {
     chmod +x "${PACKAGE_HOME}/script/"*.sh
 }
 
+copy_dependency_chain() {
+    # Usage: copy_dependency_chain <binary> <primary_pattern> <secondary_pattern> [mode]
+    # mode: "copy" (default) - copy found libs; "list" - print found primary libs to stdout
+    local binary="$1"
+    local primary_pattern="$2"
+    local secondary_pattern="$3"
+    local mode="${4:-copy}"
+
+    info "Resolving dependencies matching '$primary_pattern' from $binary (mode=$mode)"
+    local primary_libs
+    primary_libs=$($LIBRARY_INSPECTOR "$binary" | grep "$primary_pattern" | eval $LIBRARY_EXTRACTOR || true)
+
+    if [[ -z "$primary_libs" ]]; then
+        info "No dependencies matching '$primary_pattern' found in $binary"
+        return 0
+    fi
+
+    # If caller requested list mode, print the primary libs and return
+    if [[ "$mode" == "list" ]]; then
+        echo "$primary_libs" | while read -r lib; do
+            [[ -n "$lib" ]] && printf "%s\n" "$lib"
+        done
+        return 0
+    fi
+
+    # Default behaviour: copy primary libs and optional secondary libs
+    echo "$primary_libs" | while read -r lib; do
+        [[ -f "$lib" ]] || continue
+        info "Found primary dependency: $lib"
+        copy "$lib" "${PACKAGE_HOME}/lib64"
+
+        if [[ -n "$secondary_pattern" ]]; then
+            $LIBRARY_INSPECTOR "$lib" | grep "$secondary_pattern" | eval $LIBRARY_EXTRACTOR |
+                while read -r sec_lib; do
+                    [[ -f "$sec_lib" ]] || continue
+                    info "Found secondary dependency: $sec_lib"
+                    copy "$sec_lib" "${PACKAGE_HOME}/lib64"
+                done
+        fi
+    done
+}
+
+# get_dependencies: return direct dependencies (one level) of a binary matching pattern
+# Usage: get_dependencies <binary> <pattern>
+# Prints matching library paths, one per line. Does not copy.
+get_dependencies() {
+    # get_dependencies <binary> <pattern>
+    # Prints matching library paths (one per line). Caller can capture with
+    # readarray -t arr < <(get_dependencies ...)
+    local binary="$1"
+    local pattern="$2"
+    [[ -f "$binary" ]] || return 0
+    $LIBRARY_INSPECTOR "$binary" | grep "$pattern" | eval $LIBRARY_EXTRACTOR || true
+}
+
 copy_libraries() {
     local dependencies=(boost curl ACE libssl libcrypto log4cpp oath yaml)
+    local bin_path="${CMAKE_BINARY_DIR}/gen/appsvc"
     for dep in "${dependencies[@]}"; do
-        $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appsvc" | grep "$dep" | eval $LIBRARY_EXTRACTOR |
-            while read -r lib; do
-                [[ -f "$lib" ]] && cp "$lib" "${PACKAGE_HOME}/lib64/"
-            done
+        info "Scanning appsvc for dependency: $dep"
+        readarray -t deps_arr < <(get_dependencies "$bin_path" "$dep")
+        for lib in "${deps_arr[@]}"; do
+            copy "$lib" "${PACKAGE_HOME}/lib64"
+        done
     done
 }
 
 handle_macos_specifics() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        copy_if_not_exists() {
-            [[ -f "$1" ]] || return 0
-            if [[ -d "$2" ]]; then
-                local dest="$2/$(basename "$1")"
-            else
-                local dest="$2"
-            fi
-            [[ -f "$dest" ]] && echo "Skip $dest" || cp "$1" "$dest"
-        }
-        # Handle openldap dependency (required by curl)
-        $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appsvc" | grep curl | eval $LIBRARY_EXTRACTOR |
-            xargs $LIBRARY_INSPECTOR | grep "openldap" | eval $LIBRARY_EXTRACTOR |
-            while read -r lib; do
-                echo "Copying openldap dependency: $lib"
-                copy_if_not_exists "$lib" "${PACKAGE_HOME}/lib64/"
-            done
+    if [[ "$OSTYPE" != "darwin"* ]]; then
+        return 0
+    fi
 
-        # Handle libicu dependency (required by libboost_regex)
-        $LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_regex | eval $LIBRARY_EXTRACTOR |
-            xargs $LIBRARY_INSPECTOR | grep "libicu" | eval $LIBRARY_EXTRACTOR |
-            while read -r lib; do
-                echo "Copying libicu dependency: $lib"
-                copy_if_not_exists "$lib" "${PACKAGE_HOME}/lib64/"
-            done
+    info "Handling macOS specific dependency chains..."
 
-        # Handle boost_atomic dependency (required by libboost_filesystem)
-        local boost_filesystem=$($LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_filesystem | eval $LIBRARY_EXTRACTOR)
+    # 1) curl (from appsvc) -> openldap -> libsasl2
+    # Get curl-related libs from appsvc, then inspect them for openldap, then from libldap find libsasl2.
+    readarray -t curl_deps < <(get_dependencies "${CMAKE_BINARY_DIR}/gen/appsvc" "curl")
+    for curl_lib in "${curl_deps[@]}"; do
+        readarray -t ldap_deps < <(get_dependencies "$curl_lib" "openldap")
+        for ldap_lib in "${ldap_deps[@]}"; do
+            info "Copying openldap dependency: $ldap_lib"
+            copy "$ldap_lib" "${PACKAGE_HOME}/lib64"
+
+            readarray -t sasl_deps < <(get_dependencies "$ldap_lib" "libsasl2")
+            for sasl_lib in "${sasl_deps[@]}"; do
+                info "Copying sasl2 dependency: $sasl_lib"
+                copy "$sasl_lib" "${PACKAGE_HOME}/lib64"
+            done
+        done
+    done
+
+    # 2) boost_regex -> libicu (inspect libs referenced by appc's libboost_regex)
+    # find libboost_regex linked libs, copy them and then copy their libicu deps
+    readarray -t boost_regex_deps < <(get_dependencies "${CMAKE_BINARY_DIR}/gen/appc" "libboost_regex")
+    for boost_regex_lib in "${boost_regex_deps[@]}"; do
+        info "Copying libboost_regex dependency: $boost_regex_lib"
+        copy "$boost_regex_lib" "${PACKAGE_HOME}/lib64"
+        readarray -t icu_deps < <(get_dependencies "$boost_regex_lib" "libicu")
+        for icu_lib in "${icu_deps[@]}"; do
+            info "Copying libicu dependency: $icu_lib"
+            copy "$icu_lib" "${PACKAGE_HOME}/lib64"
+        done
+    done
+
+    # 3) boost_filesystem -> libboost_atomic (explicit sibling library)
+    local boost_filesystem=$($LIBRARY_INSPECTOR "${CMAKE_BINARY_DIR}/gen/appc" | grep libboost_filesystem | eval $LIBRARY_EXTRACTOR)
+    if [[ -n "$boost_filesystem" ]]; then
         local boost_atomic="$(dirname "$boost_filesystem")/libboost_atomic.dylib"
         if [[ -f "$boost_atomic" ]]; then
-            echo "Copying boost_atomic dependency: $boost_atomic"
-            copy_if_not_exists "$boost_atomic" "${PACKAGE_HOME}/lib64/"
+            info "Copying boost_atomic dependency: $boost_atomic"
+            copy "$boost_atomic" "${PACKAGE_HOME}/lib64"
         fi
-
-        # Modify ping arguments for macOS
-        sed -i '' 's/ -w / -t /g' "${PACKAGE_HOME}/apps/ping.yaml"
-        # Replace LD_LIBRARY_PATH to DYLD_LIBRARY_PATH for macOS
-        sed -i '' 's/LD_LIBRARY_PATH/DYLD_LIBRARY_PATH/g' "${PACKAGE_HOME}/script/"*
     fi
+
+    # Replace LD_LIBRARY_PATH to DYLD_LIBRARY_PATH for macOS
+    sed -i '' 's/LD_LIBRARY_PATH/DYLD_LIBRARY_PATH/g' "${PACKAGE_HOME}/script/"*
 }
 
 build_packages() {

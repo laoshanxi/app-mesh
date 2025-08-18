@@ -50,6 +50,7 @@ apt install -y libyaml-cpp-dev
 # json
 $WGET_A https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
 unzip -o include.zip
+rm -rf /usr/local/include/nlohmann
 mv include/nlohmann /usr/local/include/
 
 # syft for SBOM
@@ -57,7 +58,6 @@ curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -
 
 # Golang
 # apt install -y golang
-# go env -w GOPROXY=https://goproxy.io,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 if command -v go >/dev/null 2>&1; then
 	echo "Go is installed: $(go version)"
 else
@@ -67,12 +67,9 @@ else
 	rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 	rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 	go version
+	go env -w GOPROXY=https://goproxy.io,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 fi
 # Golang third party library
-export GO111MODULE=on
-#export GOPROXY=https://goproxy.io,direct
-# go binaries
-export GOBIN=/usr/local/bin
 go install github.com/cloudflare/cfssl/cmd/cfssl@latest
 go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
