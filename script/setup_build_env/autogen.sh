@@ -127,7 +127,7 @@ cd $ROOTDIR
 if [ true ]; then
 	BOOST_VER=76
 	# https://www.boost.org/users/download/
-	$WGET_A https://cytranet.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
+	$WGET_A https://zenlayer.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
 	tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
 	cd ./boost_1_${BOOST_VER}_0
 	./bootstrap.sh --without-libraries=context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
