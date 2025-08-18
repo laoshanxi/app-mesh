@@ -13,7 +13,7 @@ RUN bash -c 'git clone https://github.com/laoshanxi/app-mesh.git && \
     cmake -DOPENSSL_ROOT_DIR=/usr/local/ssl .. && \
     make -j"$(nproc)" && make pack'
 
-FROM python:3.13-slim
+FROM python:3.13.7-slim
 ARG AM_UID="482"
 ARG AM_GID="482"
 # not enable exec user in container
