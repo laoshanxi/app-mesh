@@ -29,7 +29,6 @@ BREW_PACKAGES=(
 	cmake
 	go
 	openssl@3
-	boost
 	log4cpp
 	openldap
 	cryptopp
@@ -49,9 +48,11 @@ if ! command -v brew &>/dev/null; then
 fi
 
 # Install curl and ace from custom formulas
-for formula in curl ace; do
-	wget "https://github.com/laoshanxi/homebrew-core/raw/refs/heads/master/Formula/${formula:0:1}/${formula}.rb"
-	HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew reinstall --build-from-source --verbose "./${formula}.rb"
+TAP_PATH="$(brew --repo)/Library/Taps/laoshanxi/homebrew-custom-core/Formula"
+mkdir -p "$TAP_PATH"
+for formula in curl ace boost; do
+    wget -q -O "${TAP_PATH}/${formula}.rb" "https://github.com/laoshanxi/homebrew-core/raw/refs/heads/master/Formula/${formula:0:1}/${formula}.rb"
+    HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew reinstall --build-from-source --verbose "laoshanxi/homebrew-custom-core/${formula}"
 done
 
 # Install Go tools
@@ -116,8 +117,9 @@ echo "Building and installing QR-Code-generator..."
 cd ${TMP_DIR}
 git clone --depth=1 https://github.com/nayuki/QR-Code-generator.git
 cd QR-Code-generator/cpp
-sudo cp qrcodegen.* /usr/local/include/
-make || ar -crs libqrcodegencpp.a qrcodegen.o
+sed -i '' 's/\$(AR) -crs $@ --/\$(AR) -crs $@/' Makefile
+make
+sudo cp qrcodegen.hpp /usr/local/include/
 sudo cp libqrcodegencpp.a /usr/local/lib/
 
 echo "Installing Catch2..."
