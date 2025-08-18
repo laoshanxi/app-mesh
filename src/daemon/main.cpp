@@ -194,7 +194,6 @@ int AppMeshDaemon::run(int argc, char *argv[])
 	catch (const std::exception &e)
 	{
 		LOG_ERR << fname << "Exception in main loop: " << e.what();
-		throw;
 	}
 
 	performShutdown();

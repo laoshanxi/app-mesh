@@ -114,25 +114,44 @@ function Install-VisualStudioBuildTools {
 }
 
 function Install-DevelopmentTools {
-    Write-Host "Installing development tools (CMake, Git, Wget, 7zip)..." -ForegroundColor Cyan
-    $tools = @('cmake', 'git', 'wget', '7zip', 'openssl', 'nsis', 'nssm')
-    
-    foreach ($tool in $tools) {
-        choco install -y $tool
+    Write-Host "Ensuring development tools (CMake, Git, Wget, 7zip, OpenSSL, NSIS, NSSM) are installed..." -ForegroundColor Cyan
+
+    # Map chocolatey package name -> command to test for
+    $toolMap = @{
+        'cmake'   = 'cmake'
+        'git'     = 'git'
+        'wget'    = 'wget'
+        '7zip'    = '7z'
+        'openssl' = 'openssl'
+        'nsis'    = 'makensis'
+        'nssm'    = 'nssm'
     }
-    
-    Write-Host "Refreshing environment variables..." -ForegroundColor Yellow
-    refreshenv
-    
-    # Verify installations
-    $toolCommands = @('cmake', 'git', 'wget', '7z')
-    foreach ($tool in $toolCommands) {
-        if (!(Get-Command $tool -ErrorAction SilentlyContinue)) {
-            Write-Warning "Tool $tool not found in PATH. Please ensure it is installed correctly."
+
+    # Ensure choco is available (Install-Chocolatey will set it up)
+    if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+        Write-Warning "Chocolatey not found. Installing Chocolatey first..."
+        Install-Chocolatey
+    }
+
+    $toInstall = @()
+    foreach ($pkg in $toolMap.Keys) {
+        $cmd = $toolMap[$pkg]
+        if (Get-Command $cmd -ErrorAction SilentlyContinue) {
+            Write-Host ("Skipping {0}: command '{1}' already available" -f $pkg, $cmd) -ForegroundColor Green
         }
         else {
-            Write-Host "Verified: $tool is available" -ForegroundColor Green
+            $toInstall += $pkg
         }
+    }
+
+    if ($toInstall.Count -gt 0) {
+        Write-Host "Installing missing packages: $($toInstall -join ', ')" -ForegroundColor Yellow
+        # Pass package list to choco in one call to reduce overhead
+        & choco install -y $toInstall
+        refreshenv
+    }
+    else {
+        Write-Host "All development tools already present; nothing to install." -ForegroundColor Green
     }
 }
 
@@ -151,8 +170,6 @@ function Install-Vcpkg {
 }
 
 function Install-VcpkgPackages {
-    Write-Host "Installing vcpkg packages..." -ForegroundColor Cyan
-    
     $packages = @(
         'openssl:x64-windows',
         'boost-atomic:x64-windows',
@@ -173,11 +190,13 @@ function Install-VcpkgPackages {
         'curl:x64-windows',
         'yaml-cpp:x64-windows'
     )
-    
-    foreach ($package in $packages) {
-        Write-Host "Installing $package..." -ForegroundColor Yellow
-        C:\vcpkg\vcpkg.exe install $package
-        Write-Host "$package installed successfully" -ForegroundColor Green
+
+    Write-Host "Installing packages: $($packages -join ', ')" -ForegroundColor Yellow
+    & "C:\vcpkg\vcpkg.exe" install @packages --recurse --clean-after-build
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "All packages installed successfully." -ForegroundColor Green
+    } else {
+        Write-Host "Some packages failed to install. Check the log above." -ForegroundColor Red
     }
 }
 
@@ -233,24 +252,29 @@ function Install-HeaderOnlyLibraries {
     Write-Host "Installing additional header-only libraries..." -ForegroundColor Yellow
     
     # hashidsxx
+    Remove-Item -Recurse -Force "hashidsxx" -ErrorAction Ignore
     git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
     Copy-Item -Recurse "hashidsxx" "C:\local\include\" -Force
     
     # croncpp
+    Remove-Item -Recurse -Force "croncpp" -ErrorAction Ignore
     git clone --depth=1 https://github.com/mariusbancila/croncpp.git
     Copy-Item "croncpp\include\croncpp.h" "C:\local\include\" -Force
     
     # wildcards
+    Remove-Item -Recurse -Force "wildcards" -ErrorAction Ignore
     git clone --depth=1 https://github.com/laoshanxi/wildcards.git
     Copy-Item -Recurse "wildcards\single_include" "C:\local\include\wildcards" -Force
 
     # prometheus-cpp
+    Remove-Item -Recurse -Force "prometheus-cpp" -ErrorAction Ignore
     git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
     New-Item -ItemType Directory -Force -Path "C:\local\src\prometheus" | Out-Null
     Copy-Item -Recurse "prometheus-cpp\core\src\*" "C:\local\src\prometheus\" -Force
     Copy-Item -Recurse "prometheus-cpp\core\include\prometheus" "C:\local\include\" -Force
 
     # linenoise-ng
+    Remove-Item -Recurse -Force "linenoise-ng" -ErrorAction Ignore
     git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
     Set-Location linenoise-ng
     New-Item -ItemType Directory -Force -Path "build" | Out-Null
@@ -259,7 +283,7 @@ function Install-HeaderOnlyLibraries {
     $cmakeFile = "..\CMakeLists.txt"
     if (Test-Path $cmakeFile) {
         $lines = Get-Content $cmakeFile
-        $lines = $lines -replace '^\s*cmake_minimum_required\s*\(.*\)', 'cmake_minimum_required(VERSION 4.0)'
+        $lines = $lines -replace '^\s*cmake_minimum_required\s*\(.*\)', 'cmake_minimum_required(VERSION 3.20)'
         Set-Content $cmakeFile $lines
     }
     cmake .. -Wno-dev -G "Visual Studio 17 2022" -A x64 -DCMAKE_INSTALL_PREFIX="C:/local"
@@ -460,7 +484,12 @@ function Show-Summary {
     Write-Host "To build your project, use:" -ForegroundColor Yellow
     Write-Host "  mkdir build && cd build" -ForegroundColor White
     Write-Host "  cmake .. -DCMAKE_TOOLCHAIN_FILE=C:\local\windows-toolchain.cmake -G `"Visual Studio 17 2022`" -A x64" -ForegroundColor White
-    Write-Host "  cmake --build ." -ForegroundColor White
+    Write-Host "  cmake --build . --config Release" -ForegroundColor White
+    Write-Host ""
+    Write-Host "To configure VSCode (Workspace Settings: .vscode/settings.json), add:" -ForegroundColor Yellow
+    Write-Host '  "cmake.configureSettings": {' -ForegroundColor White
+    Write-Host '      "CMAKE_TOOLCHAIN_FILE": "C:/local/windows-toolchain.cmake"' -ForegroundColor White
+    Write-Host '  }' -ForegroundColor White
     Write-Host ""
     Write-Host "Important paths:" -ForegroundColor Yellow
     Write-Host "  Libraries: C:\local\lib" -ForegroundColor White

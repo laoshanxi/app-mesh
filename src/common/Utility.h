@@ -244,7 +244,8 @@ public:
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH" // Default to Linux style for other platforms
 #endif
 #define PID_FILE "appmesh.pid"
-#define ENV_APPMESH_LAUNCH_TIME "APP_MANAGER_LAUNCH_TIME"
+#define ENV_APPMESH_LAUNCH_TIME "APP_MESH_LAUNCH_TIME"
+#define ENV_APPMESH_PROCESS_ID "APP_MESH_PROCESS_ID"
 #define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 #define ENV_APPMESH_PREFIX "APPMESH_"

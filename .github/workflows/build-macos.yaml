@@ -32,9 +32,6 @@ jobs:
           echo "Updating Homebrew..."
           brew update
 
-          echo "Installing required packages..."
-          brew install wget cmake go openssl@3 boost log4cpp openldap cryptopp oath-toolkit yaml-cpp nlohmann-json msgpack-cxx
-
           echo "Verifying installed packages..."
           brew list
 

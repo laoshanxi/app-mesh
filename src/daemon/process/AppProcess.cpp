@@ -37,9 +37,8 @@ AppProcess::AppProcess(void *owner)
 	const static char fname[] = "AppProcess::AppProcess() ";
 	LOG_DBG << fname << "Entered, ID: " << m_uuid;
 
-	const static auto inputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdin");
-	const auto fileName = Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str());
-	m_stdinFileName = (inputDir / fileName).string();
+	const auto inputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdin");
+	m_stdinFileName = (inputDir / Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str())).string();
 }
 
 AppProcess::~AppProcess()
@@ -52,6 +51,7 @@ AppProcess::~AppProcess()
 		terminate();
 	}
 
+	// Utility::removeFile(m_stdoutFileName);
 	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 }
 
@@ -329,16 +329,17 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (checkCmd && !Utility::isFileExist(cmdRoot))
 	{
 		LOG_WAR << fname << "command file <" << cmdRoot << "> does not exist";
-		startError(Utility::stringFormat("command file <%s> does not exist", cmdRoot.c_str()));
+		this->m_startError = Utility::stringFormat("command file <%s> does not exist", cmdRoot.c_str());
 		return ACE_INVALID_PID;
 	}
 	if (checkCmd && ACE_OS::access(cmdRoot.c_str(), X_OK) != 0)
 	{
 		LOG_WAR << fname << "command file <" << cmdRoot << "> does not have execution permission";
-		startError(Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str()));
+		this->m_startError = Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str());
 		return ACE_INVALID_PID;
 	}
 
+	envMap[ENV_APPMESH_PROCESS_ID] = getuuid();
 	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
 	int totalEnvSize = 0;
@@ -360,7 +361,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		}
 		else
 		{
-			startError(Utility::stringFormat("user <%s> does not exist", user.c_str()));
+			this->m_startError = Utility::stringFormat("user <%s> does not exist", user.c_str());
 			return ACE_INVALID_PID;
 		}
 	}
@@ -379,7 +380,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	else
 	{
-		startError(Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str()));
+		this->m_startError = Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str());
 		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, use default";
 	}
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
@@ -405,6 +406,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			755 rwxr-xr-x
 			777 rwxrwxrwx
 		*/
+
+		// STDOUT
 		if (m_stdoutFileName.length())
 		{
 			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
@@ -418,6 +421,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		{
 			m_stdoutHandler = ACE_OS::open("/dev/null", O_RDWR);
 		}
+
+		// STDIN
 		if (stdinFileContent != EMPTY_STR_JSON)
 		{
 			std::ofstream inputFile(m_stdinFileName, std::ios::trunc);
@@ -458,7 +463,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	else
 	{
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << std::strerror(errno);
-		startError(Utility::stringFormat("start failed with error <%s>", std::strerror(errno)));
+		this->m_startError = Utility::stringFormat("start failed with error <%s>", std::strerror(errno));
 	}
 	return m_pid;
 }
@@ -491,14 +496,9 @@ const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool rea
 	return JSON::localEncodingToUtf8(Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine));
 }
 
-void AppProcess::startError(const std::string &err)
-{
-	m_startError = err;
-}
-
 const std::string AppProcess::startError() const
 {
-	return m_startError;
+	return this->m_startError.get();
 }
 
 std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)

@@ -6,6 +6,7 @@
 
 #include <ace/Process.h>
 #include <ace/Process_Manager.h>
+#include <boost/thread/synchronized_value.hpp>
 
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
@@ -210,11 +211,6 @@ public:
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
 	/// <summary>
-	/// save last error
-	/// </summary>
-	/// <param name="err">error string</param>
-	void startError(const std::string &err);
-	/// <summary>
 	/// get last error
 	/// </summary>
 	/// <returns></returns>
@@ -244,7 +240,7 @@ private:
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	const std::string m_uuid;
-	std::string m_startError;
+	boost::synchronized_value<std::string> m_startError;
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_returnValue;
 };

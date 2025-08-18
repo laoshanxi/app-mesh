@@ -54,13 +54,17 @@ message(STATUS "${CMAKE_CXX_FLAGS_NAME}: ${CMAKE_CXX_FLAGS} ${${CMAKE_CXX_FLAGS_
 set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} /usr/local/lib64)
 
 ##########################################################################
-# boost
+# Boost - modern, formal, cross-platform
 ##########################################################################
-set(Boost_USE_STATIC_LIBS        OFF)
-set(Boost_USE_MULTITHREADED      ON)
-set(Boost_USE_STATIC_RUNTIME     OFF)
-set(BOOST_ALL_DYN_LINK           ON)
-find_package(Boost REQUIRED COMPONENTS
+# Minimal Boost options
+set(BOOST_USE_MULTITHREADED ON)
+set(BOOST_USE_STATIC_LIBS OFF)   # Use shared libraries
+# Optional: set BOOST_ROOT if installed in non-standard path (macOS Homebrew)
+if(APPLE)
+    set(BOOST_ROOT /opt/homebrew)
+endif()
+# Modern Boost CMake: use imported targets
+find_package(Boost 1.76 REQUIRED COMPONENTS
     system
     filesystem
     regex
@@ -68,15 +72,14 @@ find_package(Boost REQUIRED COMPONENTS
     program_options
     date_time
 )
-if (Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIR})
-    link_directories(${Boost_LIBRARY_DIRS})
-    message(STATUS "boost include dir: ${Boost_INCLUDE_DIRS}")
-    message(STATUS "boost library dir: ${Boost_LIBRARIES}")
-    message(STATUS "boost library ver: ${Boost_LIB_VERSION}.")
-else()
-    message(FATAL_ERROR "boost library not found")
+if(NOT Boost_FOUND)
+    message(FATAL_ERROR "Boost not found")
 endif()
+# Include Boost headers
+include_directories(${Boost_INCLUDE_DIRS})
+# Debug info
+message(STATUS "Boost version: ${Boost_VERSION}")
+message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
 
 ##########################################################################
 # MessagePack    https://msgpack.org/

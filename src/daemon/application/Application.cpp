@@ -383,51 +383,65 @@ bool Application::attach(int pid)
 void Application::execute(void *ptree)
 {
 	const static char fname[] = "Application::execute() ";
+
 	auto now = std::chrono::system_clock::now();
-	bool scheduleNextRun = false; // the first time to start the event chain
+	bool doSchedule = false; // Indicates if this is the first time to start the event chain
+
+	// [1]: An Application can only be <available> or <not available>
 	if (this->available(now))
 	{
+		// [1.1]: Check if current time is within the application's daily time range
 		auto inDailyRange = m_timer->isInDailyTimeRange(now);
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		if (m_process && m_process->running() && !inDailyRange)
 		{
-			// check run status and kill for invalid runs
-			LOG_INF << fname << "Application <" << m_name << "> was not in start time, startTime: " << DateTime::formatLocalTime(m_startTime) << " endTime: " << DateTime::formatLocalTime(m_endTime) << " now: " << DateTime::formatLocalTime(now);
+			// Terminate running process if it's outside the valid time range
+			LOG_INF << fname << "Application <" << m_name << "> is not in start time, startTime: " << DateTime::formatLocalTime(m_startTime) << " endTime: " << DateTime::formatLocalTime(m_endTime) << " now: " << DateTime::formatLocalTime(now);
 			terminate(m_process);
 			setInvalidError();
 			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
-		scheduleNextRun = (nextLaunchTime() == nullptr);
+		// [1.2]: If not scheduled yet, set flag to trigger the first run for a normal application
+		doSchedule = (nextLaunchTime() == nullptr);
 	}
-	else if (getStatus() != STATUS::NOTAVIALABLE)
+	else if (getStatus() != STATUS::NOTAVIALABLE) // Ignore NOTAVIALABLE status, which is used for runApp and destroying
 	{
-		// not available
+		// [1.3]: Terminate process for <not available> application
 		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 		if (m_process && m_process->running())
 		{
-			LOG_INF << fname << "Application <" << m_name << "> was not available";
+			LOG_INF << fname << "Application <" << m_name << "> is not available";
 			terminate(m_process);
 			setInvalidError();
 			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
 	}
 
-	boost::shared_ptr<std::chrono::system_clock::time_point> nextRunTime;
-	if (scheduleNextRun)
+	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleTime;
+	if (doSchedule)
 	{
-		// trigger first run without app lock
-		nextRunTime = scheduleNext(now);
+		// Trigger first run (without holding app lock)
+		scheduleTime = scheduleNext(now);
+
+		// For periodic applications, simulate a previous run so error handling logic can work
+		if (m_startInterval && scheduleTime && m_return == INVALID_RETURN_CODE && m_procExitTime == nullptr && m_procStartTime == nullptr)
+		{
+			m_return = 0; // Simulate a successful return code for periodic run
+			m_procExitTime = boost::make_shared<std::chrono::system_clock::time_point>(now);
+			m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(now - std::chrono::hours(1));
+			scheduleTime = nullptr;
+		}
 	}
 
 	refresh(ptree);
 
 	// Check if the process exited abnormally and handle errors.
-	// Note: m_procExitTime and m_procStartTime may not have a guaranteed order due to asynchronous execution.
+	// Note: m_procExitTime and m_procStartTime may not be set in a guaranteed order due to asynchronous execution.
 	//   - m_procExitTime is set in Application::onExitUpdate (by terminate).
 	//   - m_procStartTime is set in Application::onTimerSpawn (by scheduleNext).
-	if (m_return != INVALID_RETURN_CODE && m_procExitTime && m_procStartTime && ((*m_procExitTime - *m_procStartTime) > std::chrono::seconds(1)) && nextRunTime == nullptr && getStatus() == STATUS::ENABLED)
+	if (m_return != INVALID_RETURN_CODE && m_procExitTime && m_procStartTime && ((*m_procExitTime - *m_procStartTime) > std::chrono::seconds(1)) && scheduleTime == nullptr && getStatus() == STATUS::ENABLED)
 	{
-		// error handling
+		// Handle error if process exited unexpectedly
 		handleError();
 	}
 }
@@ -1003,6 +1017,8 @@ void Application::onExitUpdate(int code)
 	m_return.store(code);
 	if (code != 0 && m_process)
 		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, m_process->startError().c_str()));
+
+	// immediate error handling (compared with Application::execute)
 	// this->registerTimer(0, 0, std::bind(&Application::handleError, this), fname);
 }
 
