@@ -5,10 +5,8 @@
 
 #include "../common/DateTime.h"
 #include "../common/Utility.h"
-#if !defined(_WIN32)
-#include "../common/os/net.hpp"
-#endif
 #include "../common/json.hpp"
+#include "../common/os/net.hpp"
 #include "../common/os/pstree.hpp"
 #include "Configuration.h"
 #include "ResourceCollection.h"
@@ -47,7 +45,6 @@ const HostResource &ResourceCollection::getHostResource()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	m_resources.m_ipaddress.clear();
 
-#if !defined(_WIN32)
 	auto nets = net::getNetworkLinks();
 	// Net
 	for (auto &net : nets)
@@ -63,7 +60,8 @@ const HostResource &ResourceCollection::getHostResource()
 		}
 	}
 
-	// CPU
+// CPU
+#if !defined(_WIN32)
 	if (isDocker)
 	{
 		static auto cpus = LinuxCgroup(0, 0, 100).readHostCpuSet();
