@@ -120,6 +120,15 @@ handle_macos_specifics() {
             while read -r lib; do
                 echo "Copying openldap dependency: $lib"
                 copy_if_not_exists "$lib" "${PACKAGE_HOME}/lib64/"
+
+                # Check sasl2 dependency from libldap
+                if [[ "$lib" == *"libldap"* ]]; then
+                    $LIBRARY_INSPECTOR "$lib" | grep "libsasl2" | eval $LIBRARY_EXTRACTOR |
+                    while read -r sasl_lib; do
+                        echo "Copying sasl2 dependency: $sasl_lib"
+                        copy_if_not_exists "$sasl_lib" "${PACKAGE_HOME}/lib64/"
+                    done
+                fi
             done
 
         # Handle libicu dependency (required by libboost_regex)
