@@ -252,24 +252,29 @@ function Install-HeaderOnlyLibraries {
     Write-Host "Installing additional header-only libraries..." -ForegroundColor Yellow
     
     # hashidsxx
+    Remove-Item -Recurse -Force "hashidsxx" -ErrorAction Ignore
     git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
     Copy-Item -Recurse "hashidsxx" "C:\local\include\" -Force
     
     # croncpp
+    Remove-Item -Recurse -Force "croncpp" -ErrorAction Ignore
     git clone --depth=1 https://github.com/mariusbancila/croncpp.git
     Copy-Item "croncpp\include\croncpp.h" "C:\local\include\" -Force
     
     # wildcards
+    Remove-Item -Recurse -Force "wildcards" -ErrorAction Ignore
     git clone --depth=1 https://github.com/laoshanxi/wildcards.git
     Copy-Item -Recurse "wildcards\single_include" "C:\local\include\wildcards" -Force
 
     # prometheus-cpp
+    Remove-Item -Recurse -Force "prometheus-cpp" -ErrorAction Ignore
     git clone --depth=1 https://github.com/jupp0r/prometheus-cpp.git
     New-Item -ItemType Directory -Force -Path "C:\local\src\prometheus" | Out-Null
     Copy-Item -Recurse "prometheus-cpp\core\src\*" "C:\local\src\prometheus\" -Force
     Copy-Item -Recurse "prometheus-cpp\core\include\prometheus" "C:\local\include\" -Force
 
     # linenoise-ng
+    Remove-Item -Recurse -Force "linenoise-ng" -ErrorAction Ignore
     git clone --depth=1 https://github.com/arangodb/linenoise-ng.git
     Set-Location linenoise-ng
     New-Item -ItemType Directory -Force -Path "build" | Out-Null
@@ -479,7 +484,12 @@ function Show-Summary {
     Write-Host "To build your project, use:" -ForegroundColor Yellow
     Write-Host "  mkdir build && cd build" -ForegroundColor White
     Write-Host "  cmake .. -DCMAKE_TOOLCHAIN_FILE=C:\local\windows-toolchain.cmake -G `"Visual Studio 17 2022`" -A x64" -ForegroundColor White
-    Write-Host "  cmake --build ." -ForegroundColor White
+    Write-Host "  cmake --build . --config Release" -ForegroundColor White
+    Write-Host ""
+    Write-Host "To configure VSCode (Workspace Settings: .vscode/settings.json), add:" -ForegroundColor Yellow
+    Write-Host '  "cmake.configureSettings": {' -ForegroundColor White
+    Write-Host '      "CMAKE_TOOLCHAIN_FILE": "C:/local/windows-toolchain.cmake"' -ForegroundColor White
+    Write-Host '  }' -ForegroundColor White
     Write-Host ""
     Write-Host "Important paths:" -ForegroundColor Yellow
     Write-Host "  Libraries: C:\local\lib" -ForegroundColor White
