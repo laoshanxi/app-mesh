@@ -92,15 +92,15 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     {
         // this is REST handler service, defend XSS attach before enter to REST handler
         const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
-        if (message.m_body.length())
+        if (message.m_body->length())
         {
-            auto body = nlohmann::json::parse(message.m_body);
+            auto body = nlohmann::json::parse(*message.m_body);
             if (body.is_string())
             {
                 body = nlohmann::json::parse(body.get<std::string>());
             }
             // tranverseJsonTree(body);
-            const_cast<HttpRequest *>(&message)->m_body = body.dump();
+            *(const_cast<HttpRequest *>(&message)->m_body) = body.dump();
         }
 
         stdFunction(message);

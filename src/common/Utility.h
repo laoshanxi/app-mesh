@@ -244,6 +244,7 @@ public:
 #define ENV_LD_LIBRARY_PATH "LD_LIBRARY_PATH" // Default to Linux style for other platforms
 #endif
 #define PID_FILE "appmesh.pid"
+#define ENV_APPMESH_APPLICATION_NAME "APP_MESH_APPLICATION_NAME"
 #define ENV_APPMESH_LAUNCH_TIME "APP_MESH_LAUNCH_TIME"
 #define ENV_APPMESH_PROCESS_ID "APP_MESH_PROCESS_ID"
 #define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd

@@ -1058,7 +1058,7 @@ void RestHandler::apiRunSync(const HttpRequest &message)
 	auto appObj = parseAndRegRunApp(message);
 
 	// Use async reply here
-	HttpRequestWithAppRef *asyncRequest = new HttpRequestWithAppRef(message, appObj);
+	HttpRequestAutoCleanup *asyncRequest = new HttpRequestAutoCleanup(message, appObj);
 	appObj->runSyncrize(timeout, asyncRequest);
 }
 
