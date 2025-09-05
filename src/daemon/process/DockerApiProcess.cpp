@@ -97,7 +97,7 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	{
 		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.dump();
 		LOG_WAR << fname << msg;
-		this->startError(msg);
+		this->m_startError = msg;
 		return ACE_INVALID_PID;
 	}
 
@@ -164,21 +164,21 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 			else
 			{
 				const auto &errorMsg = resp->text;
-				this->startError(errorMsg);
+				this->m_startError = errorMsg;
 				LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 			}
 		}
 		else
 		{
 			const auto &errorMsg = resp->text;
-			this->startError(errorMsg);
+			this->m_startError = errorMsg;
 			LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 		}
 	}
 	else
 	{
 		const auto &errorMsg = resp->text;
-		this->startError(errorMsg);
+		this->m_startError = errorMsg;
 		LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
 	}
 
@@ -265,7 +265,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	{
 		auto resp = RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query);
 		if (resp->status_code != web::http::status_codes::OK)
-			this->startError(resp->text);
+			this->m_startError = resp->text;
 		return resp;
 	}
 	catch (const std::exception &ex)

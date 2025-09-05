@@ -240,7 +240,9 @@ private:
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	const std::string m_uuid;
-	boost::synchronized_value<std::string> m_startError;
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_returnValue;
+
+protected:
+	boost::synchronized_value<std::string> m_startError;
 };

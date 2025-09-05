@@ -86,7 +86,7 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 		{
 			LOG_WAR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
-			startError(Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str()));
+			m_startError = Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str());
 
 			// pull docker image
 			return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
@@ -165,14 +165,14 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 			startSuccess = (containerId.length() > 0);
 			if (!startSuccess)
 			{
-				startError(Utility::stringFormat("failed get docker container <%s> from output <%s>", dockerCommand.c_str(), outmsg.c_str()));
+				m_startError = Utility::stringFormat("failed get docker container <%s> from output <%s>", dockerCommand.c_str(), outmsg.c_str());
 			}
 		}
 		else
 		{
 			const auto outmsg = dockerProcess->getOutputMsg(0, 10240, false);
 			LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << outmsg;
-			startError(Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), outmsg.c_str()));
+			m_startError = Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), outmsg.c_str());
 		}
 		dockerProcess->terminate();
 		// set container id here for future clean
@@ -199,25 +199,25 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 					this->attach(pid);
 					this->containerId(containerId);
 					LOG_INF << fname << "started pid <" << pid << "> for container :" << containerId;
-					// startError("");
+					// m_startError = ("");
 					return this->getpid();
 				}
 				else
 				{
-					startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
+					m_startError = Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str());
 				}
 			}
 			else
 			{
 				LOG_WAR << fname << "can not get correct container pid :" << pidStr;
-				startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
+				m_startError = Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str());
 			}
 		}
 		else
 		{
 			const auto output = dockerProcess->getOutputMsg(0, 10240, false);
 			LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << output;
-			startError(Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), output.c_str()));
+			m_startError = Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), output.c_str());
 		}
 		dockerProcess->terminate();
 	}

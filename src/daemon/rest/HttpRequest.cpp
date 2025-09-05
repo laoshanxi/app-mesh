@@ -16,16 +16,16 @@
 
 APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
 
-HttpRequest::HttpRequest(const Request &request, int tcpHandlerId)
-	: m_tcpHanlerId(tcpHandlerId)
+HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
+	: m_uuid(std::move(request.uuid)),
+	  m_method(std::move(request.http_method)),
+	  m_relative_uri(std::move(request.request_uri)),
+	  m_remote_address(std::move(request.client_addr)),
+	  m_body(std::make_shared<std::string>(std::move(request.body))),
+	  m_querys(std::move(request.querys)),
+	  m_headers(std::move(request.headers)),
+	  m_tcpHanlerId(tcpHandlerId)
 {
-	this->m_uuid = request.uuid;
-	this->m_method = request.http_method;
-	this->m_relative_uri = request.request_uri;
-	this->m_remote_address = request.client_addr;
-	this->m_body = request.body;
-	this->m_querys = request.querys;
-	this->m_headers = request.headers;
 }
 
 HttpRequest::~HttpRequest()
@@ -34,7 +34,7 @@ HttpRequest::~HttpRequest()
 
 nlohmann::json HttpRequest::extractJson() const
 {
-	return nlohmann::json::parse(m_body);
+	return nlohmann::json::parse(*m_body);
 }
 
 void HttpRequest::reply(web::http::status_code status) const
@@ -70,7 +70,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inp
 	Request req;
 	if (req.deserialize(input, inputSize))
 	{
-		return std::make_shared<HttpRequest>(req, tcpHandlerId);
+		return std::make_shared<HttpRequest>(std::move(req), tcpHandlerId);
 	}
 	else
 	{
@@ -94,7 +94,7 @@ void HttpRequest::dump() const
 	LOG_DBG << fname << "m_method:" << m_method;
 	LOG_DBG << fname << "m_relative_uri:" << m_relative_uri;
 	LOG_DBG << fname << "m_remote_address:" << m_remote_address;
-	LOG_DBG << fname << "m_body:" << m_body;
+	LOG_DBG << fname << "m_body:" << *m_body;
 	for (const auto &q : m_querys)
 		LOG_DBG << fname << "m_querys:" << q.first << "=" << q.second;
 	// for (const auto &h : m_headers)
@@ -140,12 +140,12 @@ void HttpRequest::verifyHMAC() const
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequest with remove app from global map
 ////////////////////////////////////////////////////////////////////////////////
-HttpRequestWithAppRef::HttpRequestWithAppRef(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
+HttpRequestAutoCleanup::HttpRequestAutoCleanup(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
 	: HttpRequest(message), m_app(appObj)
 {
 }
 
-HttpRequestWithAppRef::~HttpRequestWithAppRef()
+HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 {
 	// avoid use Application lock access Configuration
 	if (m_app)

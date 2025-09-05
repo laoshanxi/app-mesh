@@ -5,10 +5,11 @@
 #include <string>
 #include <thread>
 
+#include <boost/thread/synchronized_value.hpp>
+
 #include "AppProcess.h"
 
-class ACE_Process_Options;
-class HttpRequestWithAppRef;
+class HttpRequest;
 /// <summary>
 /// Monitor process and reply http request when finished
 /// <summary>
@@ -27,6 +28,5 @@ public:
 	void replyAsyncRequest();
 
 private:
-	std::unique_ptr<HttpRequestWithAppRef> m_httpRequest;
-	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
+	boost::synchronized_value<std::shared_ptr<HttpRequest>> m_httpRequest;
 };

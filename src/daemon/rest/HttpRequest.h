@@ -25,7 +25,7 @@ public:
 	/// Construction for deserialize
 	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
 	/// </summary>
-	explicit HttpRequest(const Request &request, int tcpHandlerId);
+	explicit HttpRequest(Request &&request, int tcpHandlerId);
 
 	virtual ~HttpRequest();
 
@@ -95,7 +95,7 @@ public:
 	web::http::method m_method;
 	std::string m_relative_uri;
 	std::string m_remote_address;
-	std::string m_body;
+	std::shared_ptr<std::string> m_body; // use shared_ptr to avoid user string data copy
 	std::map<std::string, std::string> m_querys;
 	std::map<std::string, std::string> m_headers;
 
@@ -119,11 +119,11 @@ class Application;
 /// <summary>
 /// HttpRequest used to remove Application when finished reply
 /// </summary>
-class HttpRequestWithAppRef : public HttpRequest
+class HttpRequestAutoCleanup : public HttpRequest
 {
 public:
-	HttpRequestWithAppRef(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
-	virtual ~HttpRequestWithAppRef();
+	explicit HttpRequestAutoCleanup(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
+	virtual ~HttpRequestAutoCleanup();
 
 private:
 	std::shared_ptr<Application> m_app;
@@ -135,7 +135,7 @@ private:
 class HttpRequestOutputView : public TimerHandler, public HttpRequest
 {
 public:
-	HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
+	explicit HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
 	virtual ~HttpRequestOutputView();
 	void init();
 

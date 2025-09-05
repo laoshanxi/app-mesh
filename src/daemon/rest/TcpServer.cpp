@@ -224,7 +224,7 @@ void TcpHandler::handleTcpRest()
 			auto request = HttpRequest::deserialize(entity->m_data.get(), entity->m_dataSize, entity->m_tcpHanlerId);
 			msg->release();
 			msg = nullptr;
-			if (request != nullptr)
+			if (request)
 			{
 				const HttpRequest &message = *request;
 				LOG_DBG << fname << message.m_method << " from <"

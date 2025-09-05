@@ -24,32 +24,29 @@ void MonitoredProcess::onExit(int exitCode)
 
 void MonitoredProcess::setAsyncHttpRequest(void *httpRequest)
 {
-	m_httpRequestReplyFlag.clear();
-	m_httpRequest.reset(static_cast<HttpRequestWithAppRef *>(httpRequest));
+	auto locked = m_httpRequest.synchronize();
+	*locked = std::shared_ptr<HttpRequest>(static_cast<HttpRequest *>(httpRequest));
 }
 
 void MonitoredProcess::replyAsyncRequest()
 {
 	const static char fname[] = "MonitoredProcess::replyAsyncRequest() ";
-	if (!m_httpRequestReplyFlag.test_and_set())
+	try
 	{
-		try
+		std::shared_ptr<HttpRequest> request;
+		m_httpRequest.swap(request);
+		if (request)
 		{
-			if (m_httpRequest)
-			{
-				long position = 0;
-				auto body = this->getOutputMsg(&position);
-				std::map<std::string, std::string> headers;
-				headers[HTTP_HEADER_KEY_exit_code] = std::to_string(AppProcess::returnValue());
-				headers[HTTP_HEADER_KEY_output_pos] = std::to_string(position);
-				m_httpRequest->reply(web::http::status_codes::OK, body, headers);
-				// explicit release memory here
-				m_httpRequest = nullptr;
-			}
+			long position = 0;
+			auto body = this->getOutputMsg(&position);
+			std::map<std::string, std::string> headers;
+			headers[HTTP_HEADER_KEY_exit_code] = std::to_string(AppProcess::returnValue());
+			headers[HTTP_HEADER_KEY_output_pos] = std::to_string(position);
+			request->reply(web::http::status_codes::OK, body, headers);
 		}
-		catch (...)
-		{
-			LOG_ERR << fname << "message reply failed, maybe the http connection broken with error: " << std::strerror(errno);
-		}
+	}
+	catch (...)
+	{
+		LOG_ERR << fname << "message reply failed, maybe the http connection broken with error: " << std::strerror(errno);
 	}
 }
