@@ -18,6 +18,7 @@
 #if defined(_WIN32)
 #include <tlhelp32.h>
 #include <windows.h>
+#include <conio.h>
 #include <direct.h>
 #else
 #include <termios.h>
@@ -2175,7 +2176,7 @@ void ArgumentParser::printApps(const nlohmann::json &json, bool reduce)
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi))
 	{
-		terminalWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+		terminalWidth = csbi.srWindow.Right - csbi.srWindow.Left;
 	}
 #else
 	struct winsize w;
@@ -2326,8 +2327,65 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 	}
 
 	std::size_t idx = 0; /* index, number of chars in read   */
+
+#if defined(_WIN32)
+	/* Windows: use _getch() to read characters without echo */
+	int ch = 0;
+	while (true)
+	{
+		ch = _getch();
+		if (ch == 0 || ch == 224)
+		{
+			/* handle function/special keys: read and ignore the next code */
+			int next = _getch();
+			(void)next;
+			continue;
+		}
+		if (ch == 13 || ch == '\n') // Enter
+			break;
+		if ((ch == 3)) // Ctrl-C
+		{
+			/* emulate interruption: return 0 length */
+			idx = 0;
+			break;
+		}
+		if (ch == 8 || ch == 127) // Backspace / Delete
+		{
+			if (idx > 0)
+			{
+				if (31 < mask && mask < 127)
+				{
+					/* move cursor back, overwrite with space, move back */
+					fputc(0x8, stdout);
+					fputc(' ', stdout);
+					fputc(0x8, stdout);
+					fflush(stdout);
+				}
+				(*pw)[--idx] = 0;
+			}
+			continue;
+		}
+		/* regular character */
+		if (idx < sz - 1)
+		{
+			(*pw)[idx++] = static_cast<char>(ch);
+			if (31 < mask && mask < 127)
+			{
+				fputc(mask, stdout);
+				fflush(stdout);
+			}
+		}
+		else
+		{
+			/* if buffer full but user keeps typing, optionally ring bell */
+			fputc('\a', stdout);
+			fflush(stdout);
+		}
+	}
+	(*pw)[idx] = 0; /* null-terminate   */
+
+#else
 	int c = 0;
-#if !defined(_WIN32)
 	struct termios old_kbd_mode; /* orig keyboard settings   */
 	struct termios new_kbd_mode;
 
@@ -2348,7 +2406,7 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 		fprintf(stderr, "%s() error: tcsetattr failed.\n", __func__);
 		return -1;
 	}
-#endif
+
 	/* read chars from fp, mask if valid char specified */
 	while (((c = fgetc(fp)) != '\n' && c != EOF && idx < sz - 1) ||
 		   (idx == sz - 1 && c == 127))
@@ -2373,7 +2431,6 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 	}
 	(*pw)[idx] = 0; /* null-terminate   */
 
-#if !defined(_WIN32)
 	/* reset original keyboard  */
 	if (tcsetattr(0, TCSANOW, &old_kbd_mode))
 	{
@@ -2381,9 +2438,9 @@ std::size_t ArgumentParser::inputSecurePasswd(char **pw, std::size_t sz, int mas
 		return -1;
 	}
 #endif
-	if (idx == sz - 1 && c != '\n') /* warn if pw truncated */
-		fprintf(stderr, " (%s() warning: truncated at %zu chars.)\n",
-				__func__, sz - 1);
+
+	if (idx == sz - 1) /* warn if pw truncated */
+		fprintf(stderr, " (%s() warning: truncated at %zu chars.)\n", __func__, sz - 1);
 
 	return idx; /* number of chars in passwd    */
 }

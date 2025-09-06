@@ -24,7 +24,7 @@ public:
 	/// </summary>
 	virtual void onExit(int exitCode) override;
 
-	void setAsyncHttpRequest(void *httpRequest);
+	void setAsyncHttpRequest(std::shared_ptr<void> httpRequest);
 	void replyAsyncRequest();
 
 private:

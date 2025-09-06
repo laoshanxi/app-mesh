@@ -29,6 +29,7 @@ $BinDest = Join-Path $PackageDir "bin"
 if (Test-Path $BuildDir) {
     Copy-Item -Path "build\gen\agent.exe" -Destination $BinDest -Force
     Copy-Item -Path "$BuildDir\*" -Destination $BinDest -Recurse -Force
+    Copy-Item -Path (Join-Path $ProjectRoot "src\sdk\python\py_*.py") -Destination $BinDest -Force
     Remove-Item -Path "$BuildDir\*.pdb" -Force -ErrorAction SilentlyContinue
     Write-Host "Copied build output to $BinDest"
 }
@@ -55,8 +56,29 @@ Pop-Location
 Copy-Item -Path "src\daemon\rest\openapi.yaml", "script\pack\grafana_infinity.html" -Destination (Join-Path $PackageDir "script")
 Copy-Item -Path "src\daemon\config.yaml", "src\daemon\security\security.yaml", "src\daemon\security\oauth2.yaml", "src\sdk\agent\pkg\cloud\consul.yaml" -Destination $PackageDir
 Copy-Item -Path "script\apps\*.yaml" -Destination (Join-Path $PackageDir "apps")
-Remove-Item -Path (Join-Path $PackageDir "apps\backup.yaml") -Force -ErrorAction SilentlyContinue
 
+# Patch: replace 'python3' with 'python' in all .yaml files
+$AppYamlDir = (Join-Path $PackageDir "apps")
+if (Test-Path $AppYamlDir) {
+    Get-ChildItem -Path (Join-Path $AppYamlDir '*.yaml') -File | ForEach-Object {
+        $file = $_.FullName
+        try {
+            $content = Get-Content -Raw -Encoding UTF8 $file
+            $new = [regex]::Replace($content, '\bpython3\b', 'python')
+            if ($new -ne $content) {
+                Set-Content -Path $file -Value $new -Encoding UTF8
+                Write-Host "Patched: $file"
+            }
+        }
+        catch {
+            Write-Warning "Failed to patch ${file}: $($_.Exception.Message)"
+            Write-Host "Exception details: $($_ | Out-String)"
+        }
+    }
+}
+else {
+    Write-Warning "Target path not found: $AppYamlDir"
+}
 
 
 # Optional: Create installer using NSIS

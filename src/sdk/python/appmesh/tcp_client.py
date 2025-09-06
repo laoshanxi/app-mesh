@@ -1,5 +1,5 @@
 # TCP-based App Mesh Client
-# pylint: disable=line-too-long,broad-exception-raised,	,broad-exception-caught,import-outside-toplevel,protected-access
+# pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 import json
 import os
