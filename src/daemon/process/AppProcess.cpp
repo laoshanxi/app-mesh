@@ -224,6 +224,8 @@ void AppProcess::terminate()
 	cleanResource();
 	if (terminated)
 		ProcessExitHandler::terminate(pid);
+	auto locked = m_task.synchronize();
+	locked->terminate();
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
@@ -501,6 +503,32 @@ const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool rea
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
 	return JSON::localEncodingToUtf8(Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine));
+}
+
+void AppProcess::sendMessage(std::shared_ptr<void> asyncHttpRequest)
+{
+	auto locked = m_task.synchronize();
+	locked->sendMessage(asyncHttpRequest);
+}
+
+void AppProcess::getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
+{
+	if (processId != m_uuid)
+	{
+		throw std::invalid_argument("process id not match");
+	}
+	auto locked = m_task.synchronize();
+	locked->getMessage(asyncHttpRequest);
+}
+
+void AppProcess::respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
+{
+	if (processId != m_uuid)
+	{
+		throw std::invalid_argument("process id not match");
+	}
+	auto locked = m_task.synchronize();
+	locked->respMessage(asyncHttpRequest);
 }
 
 const std::string AppProcess::startError() const

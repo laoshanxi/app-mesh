@@ -13,6 +13,7 @@
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
+#include "../rest/HttpRequest.h"
 
 class LinuxCgroup;
 class ResourceLimitation;
@@ -210,6 +211,10 @@ public:
 	/// <returns></returns>
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
+	virtual void sendMessage(std::shared_ptr<void> asyncHttpRequest);
+	virtual void getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
+	virtual void respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
+
 	/// <summary>
 	/// get last error
 	/// </summary>
@@ -245,4 +250,7 @@ private:
 
 protected:
 	boost::synchronized_value<std::string> m_startError;
+
+private:
+	boost::synchronized_value<TaskRequest> m_task;
 };

@@ -99,7 +99,7 @@ public:
 	std::map<std::string, std::string> m_querys;
 	std::map<std::string, std::string> m_headers;
 
-private:
+protected:
 	/// <summary>
 	/// Response REST response to client
 	/// </summary>
@@ -109,7 +109,7 @@ private:
 	/// <param name="headers"></param>
 	/// <param name="status"></param>
 	/// <param name="bodyType"></param>
-	void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const;
+	virtual void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const;
 
 private:
 	const int m_tcpHanlerId;
@@ -130,6 +130,29 @@ private:
 };
 
 /// <summary>
+/// HttpRequest with timeout
+/// </summary>
+class HttpRequestWithTimeout : public HttpRequest, public TimerHandler
+{
+public:
+	using HttpRequest::reply;
+	explicit HttpRequestWithTimeout(const HttpRequest &message);
+	virtual ~HttpRequestWithTimeout() = default;
+
+	bool initTimer(int timeoutSeconds);
+	bool onTimerResponse();
+	bool replied() const;
+
+protected:
+	// called by timer or user
+	virtual void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const override;
+
+private:
+	mutable std::atomic_long m_timerResponseId;
+	mutable std::atomic<bool> m_httpRequestReplyFlag;
+};
+
+/// <summary>
 /// HttpRequest used to reply app output
 /// </summary>
 class HttpRequestOutputView : public TimerHandler, public HttpRequest
@@ -147,4 +170,30 @@ private:
 	pid_t m_pid;
 	std::shared_ptr<Application> m_app;
 	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
+};
+
+/// <summary>
+/// Used to handle message request from client and server
+/// </summary>
+class TaskRequest
+{
+public:
+	TaskRequest() = default;
+	virtual ~TaskRequest();
+
+	void terminate();
+
+	// TODO: timeout for request
+	void sendMessage(std::shared_ptr<void> asyncHttpRequest);
+	void getMessage(std::shared_ptr<void> asyncHttpRequest);
+	void respMessage(std::shared_ptr<void> asyncHttpRequest);
+
+private:
+	void terminate(std::shared_ptr<HttpRequestWithTimeout> &request);
+	void checkAvialable(std::shared_ptr<HttpRequestWithTimeout> &request);
+
+private:
+	std::shared_ptr<HttpRequestWithTimeout> m_sendMessage;
+	std::shared_ptr<HttpRequestWithTimeout> m_getMessage;
+	std::shared_ptr<HttpRequestWithTimeout> m_respMessage;
 };
