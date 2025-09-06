@@ -16,6 +16,17 @@ def main() -> None:
 
     # Authenticate with App Mesh using username and password
     if client.login("admin", "admin123"):
+
+        # Demonstrate remote task execution
+        count_in_server = "0"
+        for i in range(10):
+            # task data
+            task_data = f"print({count_in_server}+{i}, end='')"
+            # remote invoke and get result
+            count_in_server = client.run_task(app_name="pytask", data=task_data)
+            # print
+            print(count_in_server)
+
         # Define a new application with name, status, and command to execute
         myapp = App()
         myapp.name = "myapp"

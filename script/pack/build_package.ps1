@@ -29,6 +29,7 @@ $BinDest = Join-Path $PackageDir "bin"
 if (Test-Path $BuildDir) {
     Copy-Item -Path "build\gen\agent.exe" -Destination $BinDest -Force
     Copy-Item -Path "$BuildDir\*" -Destination $BinDest -Recurse -Force
+    Copy-Item -Path (Join-Path $ProjectRoot "src\sdk\python\py_*.py") -Destination $BinDest -Force
     Remove-Item -Path "$BuildDir\*.pdb" -Force -ErrorAction SilentlyContinue
     Write-Host "Copied build output to $BinDest"
 }
@@ -55,9 +56,6 @@ Pop-Location
 Copy-Item -Path "src\daemon\rest\openapi.yaml", "script\pack\grafana_infinity.html" -Destination (Join-Path $PackageDir "script")
 Copy-Item -Path "src\daemon\config.yaml", "src\daemon\security\security.yaml", "src\daemon\security\oauth2.yaml", "src\sdk\agent\pkg\cloud\consul.yaml" -Destination $PackageDir
 Copy-Item -Path "script\apps\*.yaml" -Destination (Join-Path $PackageDir "apps")
-Remove-Item -Path (Join-Path $PackageDir "apps\backup.yaml") -Force -ErrorAction SilentlyContinue
-
-
 
 # Optional: Create installer using NSIS
 Copy-Item "$env:ChocolateyInstall\lib\nssm\tools\nssm.exe" "$BinDest"

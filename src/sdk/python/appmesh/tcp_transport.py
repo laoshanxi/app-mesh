@@ -67,6 +67,7 @@ class TCPTransport:
             context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
         # Configure SSL verification
         if not self.ssl_verify:
+            context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
         else:
             context.verify_mode = ssl.CERT_REQUIRED  # Require certificate verification
@@ -94,7 +95,7 @@ class TCPTransport:
         # Create a TCP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(True)
-        sock.settimeout(30)  # Connection timeout set to 30 seconds
+        # sock.settimeout(30)  # Connection timeout set to 30 seconds
         try:
             # Wrap the socket with SSL/TLS
             ssl_socket = context.wrap_socket(sock, server_hostname=self.tcp_address[0])

@@ -202,13 +202,10 @@ int AppMeshDaemon::run(int argc, char *argv[])
 
 void AppMeshDaemon::initializeEnvironment()
 {
-	const static char fname[] = "AppMeshDaemon::initializeEnvironment() ";
-
+	// logging not available yet
 	ACE::init();
 	fs::current_path(Utility::getHomeDir());
 	Utility::createPidFile();
-
-	LOG_INF << fname << "Environment initialized";
 }
 
 void AppMeshDaemon::initializeACE()
@@ -552,6 +549,7 @@ void AppMeshDaemon::runMainLoop()
 	auto config = Configuration::instance();
 	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	fs::current_path(tmpDir);
+	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
 	int tcpErrorCounter = 0;
 	LOG_INF << fname << "Entering main application monitoring loop";

@@ -123,6 +123,7 @@ function Install-DevelopmentTools {
         'wget'    = 'wget'
         '7zip'    = '7z'
         'openssl' = 'openssl'
+        'python3' = 'python'
         'nsis'    = 'makensis'
         'nssm'    = 'nssm'
     }

@@ -43,7 +43,9 @@ AppMesh can manage user with groups, each group map to a LDAP organization unit 
             "passwd-change-user"
         ],
         "shell": [
-            "app-run-sync"
+            "app-run-async",
+            "app-run-sync",
+            "app-run-task"
         ],
         "view": [
             "config-view",

@@ -1,0 +1,9 @@
+---
+name: pytask
+description: execute Python code string from task input
+command: python3 ../../bin/py_task.py
+owner: mesh
+permission: 12
+behavior:
+  exit: keepalive
+status: 1

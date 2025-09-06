@@ -140,6 +140,7 @@ jobs:
           echo "12. Enable key encryption by default" >> CHANGELOG.txt
           echo "13. Cookie token and CSRF token" >> CHANGELOG.txt
           echo "14. Windows64/macOS package" >> CHANGELOG.txt
+          echo "15. Remote task invoke" >> CHANGELOG.txt
           ls -R
 
       - name: Install gpg dependency

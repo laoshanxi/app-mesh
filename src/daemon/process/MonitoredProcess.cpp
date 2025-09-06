@@ -22,10 +22,10 @@ void MonitoredProcess::onExit(int exitCode)
 	replyAsyncRequest();
 }
 
-void MonitoredProcess::setAsyncHttpRequest(void *httpRequest)
+void MonitoredProcess::setAsyncHttpRequest(std::shared_ptr<void> httpRequest)
 {
 	auto locked = m_httpRequest.synchronize();
-	*locked = std::shared_ptr<HttpRequest>(static_cast<HttpRequest *>(httpRequest));
+	*locked = std::static_pointer_cast<HttpRequest>(httpRequest);
 }
 
 void MonitoredProcess::replyAsyncRequest()
