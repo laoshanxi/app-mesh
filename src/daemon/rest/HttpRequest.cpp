@@ -154,6 +154,57 @@ HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// HttpRequest with timeout
+////////////////////////////////////////////////////////////////////////////////
+HttpRequestWithTimeout::HttpRequestWithTimeout(const HttpRequest &message)
+	: HttpRequest(message), m_timerResponseId(INVALID_TIMER_ID), m_httpRequestReplyFlag(false)
+{
+}
+
+bool HttpRequestWithTimeout::initTimer(int timeoutSeconds)
+{
+	const static char fname[] = "HttpRequestWithTimeout::initTimer() ";
+
+	if (timeoutSeconds <= 0)
+	{
+		return false;
+	}
+
+	m_timerResponseId = this->registerTimer(1000L * timeoutSeconds, 0, std::bind(&HttpRequestWithTimeout::onTimerResponse, this), fname);
+	LOG_DBG << fname << "registered timer " << m_timerResponseId << " for request " << this->m_uuid << " with timeout " << timeoutSeconds << " seconds";
+	return true;
+}
+
+bool HttpRequestWithTimeout::onTimerResponse()
+{
+	const static char fname[] = "HttpRequestWithTimeout::onTimerResponse() ";
+	LOG_DBG << fname;
+
+	CLEAR_TIMER_ID(m_timerResponseId);
+	HttpRequest::reply(web::http::status_codes::RequestTimeout);
+
+	return false;
+}
+
+bool HttpRequestWithTimeout::replied() const
+{
+	return m_httpRequestReplyFlag.load();
+}
+
+void HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
+								   const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
+{
+	const static char fname[] = "HttpRequestWithTimeout::reply() ";
+	LOG_DBG << fname;
+
+	const_cast<HttpRequestWithTimeout *>(this)->cancelTimer(m_timerResponseId);
+	if (!m_httpRequestReplyFlag.exchange(true))
+	{
+		HttpRequest::reply(requestUri, uuid, body, headers, status, bodyType);
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // HttpRequest used to handle view app output
 ////////////////////////////////////////////////////////////////////////////////
 HttpRequestOutputView::HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
@@ -254,4 +305,110 @@ bool HttpRequestOutputView::onTimerResponse()
 		m_app.reset();
 	}
 	return false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TaskRequest
+////////////////////////////////////////////////////////////////////////////////
+
+TaskRequest::~TaskRequest()
+{
+	terminate();
+}
+
+void TaskRequest::terminate()
+{
+	terminate(m_getMessage);
+	terminate(m_sendMessage);
+	terminate(m_respMessage);
+}
+
+void TaskRequest::sendMessage(std::shared_ptr<void> asyncHttpRequest)
+{
+	const static char fname[] = "TaskRequest::sendMessage() ";
+
+	terminate(m_sendMessage);
+	m_sendMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+
+	// make sure no response pending
+	terminate(m_respMessage);
+
+	// if get message request already here, respond it
+	checkAvialable(m_getMessage);
+	if (m_getMessage)
+	{
+		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
+		m_getMessage->reply(web::http::status_codes::OK, *m_sendMessage->m_body);
+		m_getMessage = nullptr;
+	}
+}
+
+void TaskRequest::getMessage(std::shared_ptr<void> asyncHttpRequest)
+{
+	const static char fname[] = "TaskRequest::getMessage() ";
+
+	terminate(m_getMessage);
+	m_getMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+
+	// make sure no response pending
+	terminate(m_respMessage);
+
+	// get message request may ahead or after send message request
+	// respond if send message already here
+	checkAvialable(m_sendMessage);
+	if (m_sendMessage)
+	{
+		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
+		m_getMessage->reply(web::http::status_codes::OK, *m_sendMessage->m_body);
+		m_getMessage = nullptr;
+		// TODO: allow get same data again?
+	}
+}
+
+void TaskRequest::respMessage(std::shared_ptr<void> asyncHttpRequest)
+{
+	const static char fname[] = "TaskRequest::respMessage() ";
+
+	terminate(m_respMessage);
+	m_respMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+
+	checkAvialable(m_sendMessage);
+	if (m_sendMessage)
+	{
+		LOG_WAR << fname << "no message request from client waiting for response";
+		m_respMessage->reply(web::http::status_codes::ExpectationFailed, "no message request from client waiting for response");
+		m_respMessage = nullptr;
+		return;
+	}
+
+	LOG_INF << fname << "respond: " << m_sendMessage->m_method << " " << m_sendMessage->m_relative_uri;
+
+	m_sendMessage->reply(web::http::status_codes::OK, *m_respMessage->m_body);
+	m_sendMessage = nullptr;
+
+	m_respMessage->reply(web::http::status_codes::OK);
+	m_respMessage = nullptr;
+}
+
+void TaskRequest::terminate(std::shared_ptr<HttpRequestWithTimeout> &request)
+{
+	const static char fname[] = "TaskRequest::terminate() ";
+
+	if (request)
+	{
+		LOG_DBG << fname << "terminate pending request: " << request->m_uuid << " " << request->m_method << " " << request->m_relative_uri;
+		request->reply(web::http::status_codes::ServiceUnavailable);
+		request = nullptr;
+	}
+}
+
+void TaskRequest::checkAvialable(std::shared_ptr<HttpRequestWithTimeout> &request)
+{
+	const static char fname[] = "TaskRequest::checkAvialable() ";
+
+	if (request && request->replied())
+	{
+		LOG_WAR << fname << "clean replied request: " << request->m_uuid << " " << request->m_method << " " << request->m_relative_uri;
+		request = nullptr;
+	}
 }

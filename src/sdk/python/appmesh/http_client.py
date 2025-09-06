@@ -34,10 +34,10 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - Install the App Mesh Python package:
             python3 -m pip install --upgrade appmesh
         - Import the client module:
-            from appmesh import appmesh_client
+            from appmesh import AppMeshClient
 
     Example:
-        client = appmesh_client.AppMeshClient()
+        client = AppMeshClient()
         client.login("your-name", "your-password")
         response = client.app_view(app_name='ping')
 
@@ -152,7 +152,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 which may be necessary in environments requiring specific CA chains that differ from the default system CAs.
                 To use both a custom CA and the system's default CAs, create a combined CA bundle by concatenating them into a single file. (e.g., `cat custom_ca.pem /etc/ssl/certs/ca-certificates.crt > combined_ca.pem`).
 
-            ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. Can be:
+            rest_ssl_client_cert (Union[str, Tuple[str, str]], optional): Path to the SSL client certificate and key. Can be:
                 - `str`: A path to a single PEM file containing both the client certificate and private key.
                 - `tuple`: A pair of paths (`cert_file`, `key_file`), where `cert_file` is the client certificate file path and `key_file` is the private key file path.
 
@@ -1209,6 +1209,32 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         else:
             raise TypeError(f"Invalid timeout type: {str(timeout)}")
 
+    def run_task(self, app_name: str, data: str, timeout: int = 300) -> str:
+        """Client send an invocation message to a running App Mesh application and wait for result.
+
+        This method posts the provided `data` to the App Mesh service which will
+        forward it to the specified running application instance.
+
+        Args:
+            app_name (str): Name of the target application (as registered in App Mesh).
+            data (str): Payload to deliver to the application. Typically a string.
+            timeout (int): Maximum time in seconds to wait for a response from the application. Defaults to 60 seconds.
+
+        Returns:
+            str: The HTTP response body returned by the remote application/service.
+        """
+        path = f"/appmesh/app/{app_name}/task"
+        resp = self._request_http(
+            AppMeshClient.Method.POST,
+            path=path,
+            body=data,
+            query={"timeout": str(timeout)},
+        )
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+
+        return resp.text
+
     def run_app_async(
         self,
         app: Union[App, str],
@@ -1302,7 +1328,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Args:
             app (Union[App, str]): An App instance or a shell command string.
                 If a string, an App instance is created as:
-                `appmesh_client.App({"command": "<command_string>", "shell": True})`
+                `appmesh.App({"command": "<command_string>", "shell": True})`
             stdout_print (bool, optional): If True, prints the remote stdout locally. Defaults to True.
             max_time_seconds (Union[int, str], optional): Maximum runtime for the remote process.
                 Supports ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to DEFAULT_RUN_APP_TIMEOUT_SECONDS.
@@ -1351,6 +1377,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         rest_url = parse.urljoin(self.auth_server_url, path)
 
+        # Prepare headers
         header = {} if header is None else header
         if self.jwt_token:
             token = self.jwt_token["access_token"] if isinstance(self.jwt_token, dict) and "access_token" in self.jwt_token else self.jwt_token
@@ -1362,6 +1389,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 header[self.HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to + ":" + str(parse.urlsplit(self.auth_server_url).port)
         header[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT
 
+        # Convert body to JSON string if it's a dict or list
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body)
+            header.setdefault("Content-Type", "application/json")
+
         try:
             if method is AppMeshClient.Method.GET:
                 return self.session.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
@@ -1370,7 +1402,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                     url=rest_url,
                     params=query,
                     headers=header,
-                    data=json.dumps(body) if type(body) in (dict, list) else body,
+                    data=body,
                     cert=self.ssl_client_cert,
                     verify=self.ssl_verify,
                     timeout=self.rest_timeout,
@@ -1380,7 +1412,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             elif method is AppMeshClient.Method.DELETE:
                 return self.session.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
             elif method is AppMeshClient.Method.PUT:
-                return self.session.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+                return self.session.put(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
             else:
                 raise Exception("Invalid http method", method)
         except requests.exceptions.RequestException as e:
