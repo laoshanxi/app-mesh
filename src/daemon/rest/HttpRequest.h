@@ -148,3 +148,28 @@ private:
 	std::shared_ptr<Application> m_app;
 	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
 };
+
+/// <summary>
+/// Used to handle message request from client and server
+/// </summary>
+class TaskRequest
+{
+public:
+	TaskRequest() = default;
+	virtual ~TaskRequest();
+
+	void terminate();
+
+	// TODO: timeout for request
+	void sendMessage(void *asyncHttpRequest);
+	void getMessage(void *asyncHttpRequest);
+	void respMessage(void *asyncHttpRequest);
+
+private:
+	void terminate(std::shared_ptr<HttpRequest> &m_sendMessage);
+
+private:
+	std::shared_ptr<HttpRequest> m_sendMessage;
+	std::shared_ptr<HttpRequest> m_getMessage;
+	std::shared_ptr<HttpRequest> m_respMessage;
+};

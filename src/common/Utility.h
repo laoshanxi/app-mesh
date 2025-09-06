@@ -459,6 +459,7 @@ public:
 #define PERMISSION_KEY_run_app_async "app-run-async"
 #define PERMISSION_KEY_run_app_sync "app-run-sync"
 #define PERMISSION_KEY_run_app_async_output "app-run-async-output"
+#define PERMISSION_KEY_run_task "app-run-task"
 #define PERMISSION_KEY_file_download "file-download"
 #define PERMISSION_KEY_file_upload "file-upload"
 #define PERMISSION_KEY_label_view "label-view"

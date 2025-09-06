@@ -255,3 +255,94 @@ bool HttpRequestOutputView::onTimerResponse()
 	}
 	return false;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// TaskRequest
+////////////////////////////////////////////////////////////////////////////////
+
+TaskRequest::~TaskRequest()
+{
+	terminate();
+}
+
+void TaskRequest::terminate()
+{
+	terminate(m_getMessage);
+	terminate(m_sendMessage);
+	terminate(m_respMessage);
+}
+
+void TaskRequest::sendMessage(void *asyncHttpRequest)
+{
+	const static char fname[] = "TaskRequest::sendMessage() ";
+
+	terminate(m_sendMessage);
+	m_sendMessage = std::shared_ptr<HttpRequest>(static_cast<HttpRequest *>(asyncHttpRequest));
+
+	// make sure no response pending
+	terminate(m_respMessage);
+
+	// if get message request already here, respond it
+	if (m_getMessage)
+	{
+		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
+		m_getMessage->reply(web::http::status_codes::OK, *m_sendMessage->m_body);
+		m_getMessage = nullptr;
+	}
+}
+
+void TaskRequest::getMessage(void *asyncHttpRequest)
+{
+	const static char fname[] = "TaskRequest::getMessage() ";
+
+	terminate(m_getMessage);
+	m_getMessage = std::shared_ptr<HttpRequest>(static_cast<HttpRequest *>(asyncHttpRequest));
+
+	// make sure no response pending
+	terminate(m_respMessage);
+
+	// get message request may ahead or after send message request
+	// respond if send message already here
+	if (m_sendMessage)
+	{
+		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
+		m_getMessage->reply(web::http::status_codes::OK, *m_sendMessage->m_body);
+		m_getMessage = nullptr;
+	}
+}
+
+void TaskRequest::respMessage(void *asyncHttpRequest)
+{
+	const static char fname[] = "TaskRequest::respMessage() ";
+
+	terminate(m_respMessage);
+	m_respMessage = std::shared_ptr<HttpRequest>(static_cast<HttpRequest *>(asyncHttpRequest));
+
+	if (m_sendMessage == nullptr)
+	{
+		LOG_WAR << fname << "no message request from client waiting for response";
+		m_respMessage->reply(web::http::status_codes::Forbidden, "no message request from client waiting for response");
+		m_respMessage = nullptr;
+		return;
+	}
+
+	LOG_INF << fname << "respond: " << m_sendMessage->m_method << " " << m_sendMessage->m_relative_uri;
+
+	m_sendMessage->reply(web::http::status_codes::OK, *m_respMessage->m_body);
+	m_sendMessage = nullptr;
+
+	m_respMessage->reply(web::http::status_codes::OK);
+	m_respMessage = nullptr;
+}
+
+void TaskRequest::terminate(std::shared_ptr<HttpRequest> &request)
+{
+	const static char fname[] = "TaskRequest::terminate() ";
+
+	if (request)
+	{
+		LOG_DBG << fname << "terminate pending request: " << request->m_uuid << " " << request->m_method << " " << request->m_relative_uri;
+		request->reply(web::http::status_codes::ServiceUnavailable);
+		request = nullptr;
+	}
+}

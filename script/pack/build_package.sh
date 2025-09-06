@@ -71,7 +71,7 @@ copy_configuration_files() {
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 
     # Copy binary support files
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py" "${PACKAGE_HOME}/bin/"
+    cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_*.py "${PACKAGE_HOME}/bin/"
 
     # Copy SSL files
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/ssl/generate_ssl_cert.sh" /usr/local/bin/{cfssl,cfssljson} "${PACKAGE_HOME}/ssl/"

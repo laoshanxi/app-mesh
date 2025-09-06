@@ -25,6 +25,7 @@ Welcome to AppMesh's documentation!
    USER_ROLE.md
    Coverity.md
    GrafanaDataSource.md
+   RemoteTask.md
 
 
 .. toctree::

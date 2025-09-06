@@ -43,6 +43,10 @@ protected:
 	void apiRunAsync(const HttpRequest &message);
 	void apiRunSync(const HttpRequest &message);
 
+	void apiSendMessage(const HttpRequest &message);		 // client send message and wait for response with async REST call
+	void apiGetMessage(const HttpRequest &message);			 // server get message with block and iterator REST call
+	void apiSendMessageResponse(const HttpRequest &message); // server send response (then server response to client apiSendMessage)
+
 	void apiCloudResourceView(const HttpRequest &message);
 
 	void apiResourceView(const HttpRequest &message);
