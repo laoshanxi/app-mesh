@@ -1209,6 +1209,73 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         else:
             raise TypeError(f"Invalid timeout type: {str(timeout)}")
 
+    def run_task(self, app_name: str, data: str) -> str:
+        """Client send an invocation message to a running App Mesh application and wait for result.
+
+        This method posts the provided `data` to the App Mesh service which will
+        forward it to the specified running application instance.
+
+        Args:
+            app_name (str): Name of the target application (as registered in App Mesh).
+            data (str): Payload to deliver to the application. Typically a string.
+
+        Returns:
+            str: The HTTP response body returned by the remote application/service.
+        """
+        resp = self._request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/task", body=data)
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+
+        return resp.text
+
+    def task_fetch(self) -> str:
+        """Fetch invocation data in the currently running App Mesh application process.
+
+        This helper is intended to be called by an application process running from App Mesh
+        to obtain the payload that a client pushed to it. It reads two required
+        environment variables set by the runtime:
+
+        - APP_MESH_PROCESS_ID: the process UUID for this invocation
+        - APP_MESH_APPLICATION_NAME: the application name
+
+        Returns:
+            str: The payload provided by the client as returned by the service.
+        """
+        process_uuid = os.environ["APP_MESH_PROCESS_ID"]
+        app_name = os.environ["APP_MESH_APPLICATION_NAME"]
+        while True:
+            resp = self._request_http(
+                AppMeshClient.Method.GET,
+                path=f"/appmesh/app/{app_name}/task",
+                query={"process_uuid": process_uuid},
+            )
+            if resp.status_code != HTTPStatus.OK:
+                time.sleep(0.1)
+                continue
+
+            return resp.text
+
+    def task_return(self, result: str) -> None:
+        """Return the result of a server-side invocation back to the original client.
+
+        The method posts the `result` associated with the current process UUID so
+        the invoking client can retrieve it. The same environment variables used by
+        `task_fetch` are required to identify the target process.
+
+        Args:
+            result (str): Result payload to be delivered back to the client.
+        """
+        process_uuid = os.environ["APP_MESH_PROCESS_ID"]
+        app_name = os.environ["APP_MESH_APPLICATION_NAME"]
+        resp = self._request_http(
+            AppMeshClient.Method.PUT,
+            path=f"/appmesh/app/{app_name}/task",
+            query={"process_uuid": process_uuid},
+            body=result,
+        )
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(resp.text)
+
     def run_app_async(
         self,
         app: Union[App, str],
@@ -1380,7 +1447,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             elif method is AppMeshClient.Method.DELETE:
                 return self.session.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
             elif method is AppMeshClient.Method.PUT:
-                return self.session.put(url=rest_url, params=query, headers=header, json=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+                return self.session.put(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
             else:
                 raise Exception("Invalid http method", method)
         except requests.exceptions.RequestException as e:

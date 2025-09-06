@@ -71,6 +71,7 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 | GUI               | √        | √          |
 | Virtual Network   |          | √          |
 | Monitor tools     | √        | √          |
+| Task invoke       | √        |            |
 
 ---
 

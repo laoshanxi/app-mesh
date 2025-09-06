@@ -16,6 +16,14 @@ def main() -> None:
 
     # Authenticate with App Mesh using username and password
     if client.login("admin", "admin123"):
+
+        compute_in_server = "0"
+        for i in range(10):
+            code_data = f"print({compute_in_server}+{i}, end='')"
+            print(code_data, end=" ===> ")
+            compute_in_server = client.run_task("pyrun", code_data)
+            print(compute_in_server)
+
         # Define a new application with name, status, and command to execute
         myapp = App()
         myapp.name = "myapp"

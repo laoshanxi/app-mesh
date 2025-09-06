@@ -5,5 +5,5 @@ command: python3 ../../bin/py_exec.py
 owner: mesh
 permission: 12
 behavior:
-  exit: standby
-status: 0
+  exit: keepalive
+status: 1
