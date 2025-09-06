@@ -260,7 +260,6 @@ public:
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
 #define SEPARATE_AGENT_APP_NAME "agent"
-#define SEPARATE_PYTHON_EXEC_APP_NAME "pyrun"
 #define REST_ROOT_TEXT_MESSAGE "<html>\n<head><title>App Mesh</title></head>\n<body>App Mesh</body>\n</html>\n"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 #define REST_TEXT_TOTP_CHALLENGE_JSON_KEY "totp_challenge"
@@ -459,6 +458,7 @@ public:
 #define PERMISSION_KEY_run_app_async "app-run-async"
 #define PERMISSION_KEY_run_app_sync "app-run-sync"
 #define PERMISSION_KEY_run_app_async_output "app-run-async-output"
+#define PERMISSION_KEY_run_task "app-run-task"
 #define PERMISSION_KEY_file_download "file-download"
 #define PERMISSION_KEY_file_upload "file-upload"
 #define PERMISSION_KEY_label_view "label-view"

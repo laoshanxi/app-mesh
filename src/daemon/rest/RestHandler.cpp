@@ -47,6 +47,7 @@ constexpr auto REST_PATH_APP_DELETE = R"(/appmesh/app/([^/\*]+))";
 // 5. Operate Application
 constexpr auto REST_PATH_APP_RUN_ASYNC = "/appmesh/app/run";
 constexpr auto REST_PATH_APP_RUN_SYNC = "/appmesh/app/syncrun";
+constexpr auto REST_PATH_APP_TASK = R"(/appmesh/app/([^/\*]+)/task)";
 
 // 6. File Management
 constexpr auto REST_PATH_FILE_DOWNLOAD = "/appmesh/file/download";
@@ -110,6 +111,9 @@ RestHandler::RestHandler() : PrometheusRest()
 	// 5. Operate Application
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_ASYNC, std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC, std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessage, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_APP_TASK, std::bind(&RestHandler::apiGetMessage, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessageResponse, this, std::placeholders::_1));
 
 	// 6. File Management
 	bindRestMethod(web::http::methods::GET, REST_PATH_FILE_DOWNLOAD, std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
@@ -1060,6 +1064,42 @@ void RestHandler::apiRunSync(const HttpRequest &message)
 	// Use async reply here
 	HttpRequestAutoCleanup *asyncRequest = new HttpRequestAutoCleanup(message, appObj);
 	appObj->runSyncrize(timeout, asyncRequest);
+}
+
+void RestHandler::apiSendMessage(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_run_task);
+
+	const auto path = (curlpp::unescape(message.m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK);
+
+	checkAppAccessPermission(message, appName, true);
+
+	auto app = Configuration::instance()->getApp(appName);
+	HttpRequest *asyncRequest = new HttpRequest(message);
+	app->sendMessage(asyncRequest);
+}
+
+void RestHandler::apiGetMessage(const HttpRequest &message)
+{
+	const std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
+	const auto path = (curlpp::unescape(message.m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK);
+	auto app = Configuration::instance()->getApp(appName);
+
+	HttpRequest *asyncRequest = new HttpRequest(message);
+	app->getMessage(processUuid, asyncRequest);
+}
+
+void RestHandler::apiSendMessageResponse(const HttpRequest &message)
+{
+	const std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
+	const auto path = (curlpp::unescape(message.m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK);
+
+	auto app = Configuration::instance()->getApp(appName);
+	HttpRequest *asyncRequest = new HttpRequest(message);
+	app->respMessage(processUuid, asyncRequest);
 }
 
 void RestHandler::apiAppOutputView(const HttpRequest &message)

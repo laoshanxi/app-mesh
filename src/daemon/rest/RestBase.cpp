@@ -58,7 +58,7 @@ void RestBase::handle_head(const HttpRequest &message)
 
 void RestBase::handleRest(const HttpRequest &message, const std::map<std::string, std::function<void(const HttpRequest &)>> &restFunctions)
 {
-    const static char fname[] = "RestHandler::handleRest() ";
+    const static char fname[] = "RestBase::handleRest() ";
     REST_INFO_PRINT;
     std::function<void(const HttpRequest &)> stdFunction;
     const auto path = Utility::stringReplace(message.m_relative_uri, "//", "/");
@@ -92,7 +92,8 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     {
         // this is REST handler service, defend XSS attach before enter to REST handler
         const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
-        if (message.m_body->length())
+        // task run use native string instead of json, skip it
+        if (message.m_body->length() && !Utility::endWith(message.m_relative_uri, "/task"))
         {
             auto body = nlohmann::json::parse(*message.m_body);
             if (body.is_string())
@@ -129,7 +130,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 
 void RestBase::bindRestMethod(const web::http::method &method, const std::string &path, std::function<void(const HttpRequest &)> func)
 {
-    const static char fname[] = "RestHandler::bindRest() ";
+    const static char fname[] = "RestBase::bindRest() ";
 
     LOG_DBG << fname << "bind " << method << " for " << path;
 

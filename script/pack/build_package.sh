@@ -71,7 +71,7 @@ copy_configuration_files() {
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
 
     # Copy binary support files
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_exec.py" "${PACKAGE_HOME}/bin/"
+    cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_*.py "${PACKAGE_HOME}/bin/"
 
     # Copy SSL files
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/ssl/generate_ssl_cert.sh" /usr/local/bin/{cfssl,cfssljson} "${PACKAGE_HOME}/ssl/"
@@ -178,6 +178,7 @@ handle_macos_specifics() {
 
             while IFS= read -r sasl_lib; do
                 [[ -n "$sasl_lib" ]] || continue
+				[[ -f "$sasl_lib" ]] || continue
                 info "Copying sasl2 dependency: $sasl_lib"
                 copy "$sasl_lib" "${PACKAGE_HOME}/lib64"
             done < <(get_dependencies "$ldap_lib" "libsasl2")
