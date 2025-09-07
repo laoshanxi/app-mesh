@@ -1209,7 +1209,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         else:
             raise TypeError(f"Invalid timeout type: {str(timeout)}")
 
-    def run_task(self, app_name: str, data: str) -> str:
+    def run_task(self, app_name: str, data: str, timeout: int = 300) -> str:
         """Client send an invocation message to a running App Mesh application and wait for result.
 
         This method posts the provided `data` to the App Mesh service which will
@@ -1218,11 +1218,18 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Args:
             app_name (str): Name of the target application (as registered in App Mesh).
             data (str): Payload to deliver to the application. Typically a string.
+            timeout (int): Maximum time in seconds to wait for a response from the application. Defaults to 60 seconds.
 
         Returns:
             str: The HTTP response body returned by the remote application/service.
         """
-        resp = self._request_http(AppMeshClient.Method.POST, path=f"/appmesh/app/{app_name}/task", body=data)
+        path = f"/appmesh/app/{app_name}/task"
+        resp = self._request_http(
+            AppMeshClient.Method.POST,
+            path=path,
+            body=data,
+            query={"timeout": str(timeout)},
+        )
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
 

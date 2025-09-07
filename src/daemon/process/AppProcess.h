@@ -211,9 +211,9 @@ public:
 	/// <returns></returns>
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
-	virtual void sendMessage(void *asyncHttpRequest);
-	virtual void getMessage(const std::string &processId, void *asyncHttpRequest);
-	virtual void respMessage(const std::string &processId, void *asyncHttpRequest);
+	virtual void sendMessage(std::shared_ptr<void> asyncHttpRequest);
+	virtual void getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
+	virtual void respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
 
 	/// <summary>
 	/// get last error

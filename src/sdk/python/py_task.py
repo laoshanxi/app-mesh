@@ -6,7 +6,7 @@ import traceback
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 
-from appmesh import AppMeshServer
+from appmesh import AppMeshServerTCP
 
 
 def exec_with_output(code_string, exec_globals=None):
@@ -25,11 +25,11 @@ def exec_with_output(code_string, exec_globals=None):
 
 if __name__ == "__main__":
     # Minimal server loop: fetch a payload, execute it, return the output.
-    mesh = AppMeshServer()
+    context = AppMeshServerTCP()
     while True:
         # Block fetch invocation payload.
-        payload = mesh.task_fetch()
+        payload = context.task_fetch()
         # Execute with payload and capture prints.
         output = exec_with_output(payload)
         # Return the result to the client
-        mesh.task_return(output)
+        context.task_return(output)

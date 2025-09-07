@@ -505,13 +505,13 @@ const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool rea
 	return JSON::localEncodingToUtf8(Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine));
 }
 
-void AppProcess::sendMessage(void *asyncHttpRequest)
+void AppProcess::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 {
 	auto locked = m_task.synchronize();
 	locked->sendMessage(asyncHttpRequest);
 }
 
-void AppProcess::getMessage(const std::string &processId, void *asyncHttpRequest)
+void AppProcess::getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
 {
 	if (processId != m_uuid)
 	{
@@ -521,7 +521,7 @@ void AppProcess::getMessage(const std::string &processId, void *asyncHttpRequest
 	locked->getMessage(asyncHttpRequest);
 }
 
-void AppProcess::respMessage(const std::string &processId, void *asyncHttpRequest)
+void AppProcess::respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
 {
 	if (processId != m_uuid)
 	{

@@ -551,7 +551,7 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 	return runApp(timeoutSeconds);
 }
 
-std::string Application::runSyncrize(int timeoutSeconds, void *asyncHttpRequest)
+std::string Application::runSyncrize(int timeoutSeconds, std::shared_ptr<void> asyncHttpRequest)
 {
 	const static char fname[] = "Application::runSyncrize() ";
 	LOG_DBG << fname << "Entered.";
@@ -601,7 +601,7 @@ std::string Application::runApp(int timeoutSeconds)
 	return m_process->getuuid();
 }
 
-void Application::sendMessage(void *asyncHttpRequest)
+void Application::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_process == nullptr)
@@ -609,7 +609,7 @@ void Application::sendMessage(void *asyncHttpRequest)
 	m_process->sendMessage(asyncHttpRequest);
 }
 
-void Application::getMessage(const std::string &processId, void *asyncHttpRequest)
+void Application::getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_process == nullptr)
@@ -617,7 +617,7 @@ void Application::getMessage(const std::string &processId, void *asyncHttpReques
 	m_process->getMessage(processId, asyncHttpRequest);
 }
 
-void Application::respMessage(const std::string &processId, void *asyncHttpRequest)
+void Application::respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_process == nullptr)

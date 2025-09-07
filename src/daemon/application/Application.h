@@ -79,12 +79,12 @@ public:
 	void terminate(std::shared_ptr<AppProcess> &process);
 
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
-	std::string runSyncrize(int timeoutSeconds, void *asyncHttpRequest) noexcept(false);
+	std::string runSyncrize(int timeoutSeconds, std::shared_ptr<void> asyncHttpRequest) noexcept(false);
 	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0, size_t timeout = 0);
 
-	void sendMessage(void *asyncHttpRequest);
-	void getMessage(const std::string &processId, void *asyncHttpRequest);
-	void respMessage(const std::string &processId, void *asyncHttpRequest);
+	void sendMessage(std::shared_ptr<void> asyncHttpRequest);
+	void getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
+	void respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
 
 	// prometheus
 	void initMetrics();
