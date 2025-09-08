@@ -1,6 +1,6 @@
 module github.com/laoshanxi/app-mesh
 
-go 1.23.8
+go 1.24.0
 
 require (
 	github.com/gorilla/mux v1.8.1
@@ -11,7 +11,7 @@ require (
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	go.uber.org/zap v1.27.0
 	golang.org/x/net v0.43.0
-	golang.org/x/sys v0.35.0
+	golang.org/x/sys v0.36.0
 )
 
 require (
