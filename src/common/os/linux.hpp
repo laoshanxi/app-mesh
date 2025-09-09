@@ -248,7 +248,7 @@ namespace os
 		if (!dir)
 		{
 			LOG_WAR << fname << "Failed to open directory: " << directory
-					<< " (errno=" << errno << ": " << std::strerror(errno) << ")";
+					<< " (errno=" << errno << ": " << ACE_OS::strerror(ACE_OS::last_error()) << ")";
 			return result;
 		}
 
@@ -268,7 +268,7 @@ namespace os
 		if (errno != 0)
 		{
 			LOG_WAR << fname << "Failed to read directory: " << directory
-					<< " (errno=" << errno << ": " << std::strerror(errno) << ")";
+					<< " (errno=" << errno << ": " << ACE_OS::strerror(ACE_OS::last_error()) << ")";
 			return {};
 		}
 #endif
@@ -729,7 +729,7 @@ namespace os
 			}
 			else
 			{
-				LOG_WAR << fname << "Failed to open <" << path << "> with error: " << std::strerror(errno);
+				LOG_WAR << fname << "Failed to open <" << path << "> with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			}
 			return "";
 		}
@@ -768,7 +768,7 @@ namespace os
 		// Get the process path
 		if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) <= 0)
 		{
-			LOG_WAR << fname << "Failed to retrieve path for PID=" << pid << " with error: " << std::strerror(errno);
+			LOG_WAR << fname << "Failed to retrieve path for PID=" << pid << " with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return "";
 		}
 
@@ -816,7 +816,7 @@ namespace os
 		auto entries = os::ls("/proc");
 		if (entries.empty())
 		{
-			LOG_ERR << fname << "Failed to list files in /proc. Error: " << std::strerror(errno);
+			LOG_ERR << fname << "Failed to list files in /proc. Error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return pids;
 		}
 
@@ -849,7 +849,7 @@ namespace os
 		// Get size of process list
 		if (sysctl(mib, 4, NULL, &size, NULL, 0) < 0)
 		{
-			LOG_ERR << fname << "Failed to query process list size with error: " << std::strerror(errno);
+			LOG_ERR << fname << "Failed to query process list size with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return pids;
 		}
 
@@ -865,7 +865,7 @@ namespace os
 		// Retrieve process list
 		if (sysctl(mib, 4, proc_list.get(), &size, NULL, 0) < 0)
 		{
-			LOG_ERR << fname << "Failed to retrieve process list with error: " << std::strerror(errno);
+			LOG_ERR << fname << "Failed to retrieve process list with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return pids;
 		}
 
@@ -1355,7 +1355,7 @@ namespace os
 		struct statvfs buf;
 		if (::statvfs(path.c_str(), &buf) != 0)
 		{
-			LOG_ERR << fname << "Failed to call statvfs for path: " << path << " Error: " << std::strerror(errno);
+			LOG_ERR << fname << "Failed to call statvfs for path: " << path << " Error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return nullptr;
 		}
 
@@ -1373,7 +1373,7 @@ namespace os
 		struct statfs buf;
 		if (::statfs(path.c_str(), &buf) != 0)
 		{
-			LOG_ERR << fname << "Failed to call statfs for path: " << path << " Error: " << std::strerror(errno);
+			LOG_ERR << fname << "Failed to call statfs for path: " << path << " Error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return nullptr;
 		}
 
@@ -1442,7 +1442,7 @@ namespace os
 			MountTableRAII fallbackFile("/etc/mtab", "r");
 			if (!fallbackFile.valid())
 			{
-				LOG_ERR << fname << "Failed to open both /proc/mounts and /etc/mtab: " << std::strerror(errno);
+				LOG_ERR << fname << "Failed to open both /proc/mounts and /etc/mtab: " << ACE_OS::strerror(ACE_OS::last_error());
 				return mountPointsMap;
 			}
 			LOG_WAR << fname << "Using fallback /etc/mtab";
@@ -1483,7 +1483,7 @@ namespace os
 			struct statvfs fileSystemStats;
 			if (::statvfs(mountDir, &fileSystemStats) != 0)
 			{
-				LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << std::strerror(errno);
+				LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << ACE_OS::strerror(ACE_OS::last_error());
 				continue;
 			}
 
@@ -1511,7 +1511,7 @@ namespace os
 		int totalMounts = getmntinfo(&mountEntries, MNT_NOWAIT);
 		if (totalMounts <= 0)
 		{
-			LOG_ERR << fname << "Failed to retrieve mount points using getmntinfo: " << strerror(errno);
+			LOG_ERR << fname << "Failed to retrieve mount points using getmntinfo: " << ACE_OS::strerror(ACE_OS::last_error());
 			return mountPointsMap;
 		}
 
@@ -1541,7 +1541,7 @@ namespace os
 				struct statfs fileSystemStats;
 				if (statfs(mountDir.c_str(), &fileSystemStats) != 0)
 				{
-					LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << strerror(errno);
+					LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << ACE_OS::strerror(ACE_OS::last_error());
 					continue;
 				}
 
@@ -1597,7 +1597,7 @@ namespace os
 		}
 		else
 		{
-			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << std::strerror(errno);
+			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return std::make_tuple(-1, -1, -1);
 		}
 #endif
@@ -1635,7 +1635,7 @@ namespace os
 		}
 		else
 		{
-			LOG_WAR << fname << "Failed chmod <" << path << "> with error: " << std::strerror(errno);
+			LOG_WAR << fname << "Failed chmod <" << path << "> with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return false;
 		}
 #endif

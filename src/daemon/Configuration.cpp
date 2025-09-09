@@ -524,7 +524,7 @@ void Configuration::saveConfigToDisk()
 			}
 			else
 			{
-				LOG_ERR << fname << "Failed to write configuration file <" << configFilePath << ">, error :" << std::strerror(errno);
+				LOG_ERR << fname << "Failed to write configuration file <" << configFilePath << ">, error :" << ACE_OS::strerror(ACE_OS::last_error());
 			}
 		}
 	}

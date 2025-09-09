@@ -81,7 +81,7 @@ long TimerManager::registerTimer(long delayMilliseconds, std::size_t intervalSec
 	if (timerId < 0)
 	{
 		timer->handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::TIMER_MASK); // Self-destruct
-		LOG_ERR << fname << from << " failed to register timer: " << std::strerror(errno);
+		LOG_ERR << fname << from << " failed to register timer: " << ACE_OS::strerror(ACE_OS::last_error());
 	}
 
 	return timerId;

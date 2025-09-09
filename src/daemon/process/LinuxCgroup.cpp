@@ -165,7 +165,7 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 	FILE *fp = fopen("/proc/mounts", "r");
 	if (nullptr == fp)
 	{
-		LOG_ERR << fname << "Get file stream failed with error : " << std::strerror(errno);
+		LOG_ERR << fname << "Get file stream failed with error : " << ACE_OS::strerror(ACE_OS::last_error());
 		return;
 	}
 #if defined(__linux__)
@@ -254,13 +254,13 @@ void LinuxCgroup::writeValue(const std::string &cgroupPath, long long value)
 		}
 		else
 		{
-			LOG_ERR << fname << "Write <" << value << "> to file <" << cgroupPath << "> failed with error :" << std::strerror(errno);
+			LOG_ERR << fname << "Write <" << value << "> to file <" << cgroupPath << "> failed with error :" << ACE_OS::strerror(ACE_OS::last_error());
 		}
 		fclose(fp);
 	}
 	else
 	{
-		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << std::strerror(errno);
+		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << ACE_OS::strerror(ACE_OS::last_error());
 	}
 }
 
@@ -278,13 +278,13 @@ long long LinuxCgroup::readValue(const std::string &cgroupPath)
 		}
 		else
 		{
-			LOG_ERR << fname << "read <" << value << "> from file <" << cgroupPath << "> failed with error :" << std::strerror(errno);
+			LOG_ERR << fname << "read <" << value << "> from file <" << cgroupPath << "> failed with error :" << ACE_OS::strerror(ACE_OS::last_error());
 		}
 		fclose(fp);
 	}
 	else
 	{
-		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << std::strerror(errno);
+		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << ACE_OS::strerror(ACE_OS::last_error());
 	}
 	return value;
 }

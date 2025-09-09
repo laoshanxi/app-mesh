@@ -35,6 +35,7 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 		fmt.Println("Error creating cookie jar:", err)
 	}
 
+	// TODO: use session management for better performance
 	return &http.Client{
 		Timeout: 2 * time.Minute, // Overall timeout for the entire request
 		Jar:     jar,             // Cookie jar for session management
@@ -111,8 +112,8 @@ func (r *ClientRequesterRest) DoRequest(method string, apiPath string, queries u
 		}
 	}
 	req.Header.Set(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
+	// req.Header.Set("Accept", "application/json")
+	// req.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
 		req.Header.Add(k, v)
 	}
@@ -128,4 +129,11 @@ func (r *ClientRequesterRest) DoRequest(method string, apiPath string, queries u
 	}
 	data, err := io.ReadAll(resp.Body)
 	return resp.StatusCode, data, resp.Header, err
+}
+
+// Close closes the HTTP client and its idle connections.
+func (r *ClientRequesterRest) Close() {
+	if r.httpClient != nil {
+		r.httpClient.CloseIdleConnections()
+	}
 }

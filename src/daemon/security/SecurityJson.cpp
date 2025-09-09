@@ -2,6 +2,7 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 
+#include <ace/OS.h>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -91,7 +92,7 @@ void SecurityJson::save()
         {
             if (ACE_OS::rename(tmpFile.c_str(), securityYamlFile.c_str()) != 0)
             {
-                throw std::runtime_error("Failed to rename temporary file: " + std::string(std::strerror(errno)));
+                throw std::runtime_error(std::string("Failed to rename temporary file: ") + ACE_OS::strerror(ACE_OS::last_error()));
             }
             LOG_DBG << fname << "local security saved";
         }

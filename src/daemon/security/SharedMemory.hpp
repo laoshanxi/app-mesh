@@ -64,7 +64,7 @@ public:
         if (m_aceShm->open(shmName.c_str(), PSK_SHM_TOTAL_SIZE, O_CREAT | O_RDWR, 0600) == -1)
 #endif
         {
-            LOG_WAR << fname << "Failed to create shared memory: " << ACE_OS::strerror(errno);
+            LOG_WAR << fname << "Failed to create shared memory: " << ACE_OS::strerror(ACE_OS::last_error());
             m_aceShm = nullptr;
             return false;
         }
@@ -233,7 +233,7 @@ public:
 
         if (ACE_OS::putenv(env_copy.data()) != 0)
         {
-            LOG_WAR << fname << "Failed to export environment variable: " << envName << ", error: " << ACE_OS::strerror(errno);
+            LOG_WAR << fname << "Failed to export environment variable: " << envName << ", error: " << ACE_OS::strerror(ACE_OS::last_error());
         }
         else
         {

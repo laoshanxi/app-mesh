@@ -1,3 +1,4 @@
+# app_output.py
 """Application output information"""
 
 from http import HTTPStatus
@@ -8,13 +9,13 @@ from typing import Optional
 
 class AppOutput(object):
     """
-    Represents the output information returned by the `app_output()` API, including the application's
-    stdout content, current read position, status code, and exit code.
+    Represents the output information returned by the `app_output()` API.
+    including the application's stdout , current read position, http status code, and process exit code.
     """
 
     def __init__(self, status_code: HTTPStatus, output: str, out_position: Optional[int], exit_code: Optional[int]) -> None:
         self.status_code = status_code
-        """HTTP status code from the `app_output()` API request, indicating the result status."""
+        """HTTP status code from the `app_output()` API request, indicating the http status."""
 
         self.output = output
         """Captured stdout content of the application as returned by the `app_output()` API."""

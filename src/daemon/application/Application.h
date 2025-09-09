@@ -24,6 +24,7 @@ class PrometheusRest;
 class AppProcess;
 class DailyLimitation;
 class ResourceLimitation;
+class HttpRequestWithTimeout;
 namespace prometheus
 {
 	class Counter;
@@ -165,6 +166,8 @@ protected:
 	boost::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	// error
 	boost::synchronized_value<std::string> m_lastError;
+	// task request <application level>, use std::atomic<std::shared_ptr<T>> after C++20
+	std::shared_ptr<HttpRequestWithTimeout> m_taskRequest;
 
 	// Prometheus
 	std::shared_ptr<CounterMetric> m_metricStartCount;

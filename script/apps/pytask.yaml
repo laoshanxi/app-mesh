@@ -7,3 +7,4 @@ permission: 12
 behavior:
   exit: keepalive
 status: 1
+stdout_cache_size: 2

@@ -102,7 +102,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	auto data = std::get<0>(result);
 	if (recvReturn <= 0)
 	{
-		LOG_DBG << fname << "read header length failed with error :" << std::strerror(errno);
+		LOG_DBG << fname << "read header length failed with error :" << ACE_OS::strerror(ACE_OS::last_error());
 		return -1;
 	}
 
@@ -139,21 +139,43 @@ const std::tuple<std::shared_ptr<char>, int> ProtobufHelper::readBytes(const ACE
 	// https://www.demo2s.com/c/c-if-errno-eintr-fiag.html
 	// https://programmerall.com/article/5562684780/#:~:text=When%20a%20certain%20signal%20is%20caught%2C%20the%20system,system%20calls%20that%20may%20block%20the%20process%20forever.
 	errno = 0;
-	size_t totalRecieved = 0;
-	recvReturn = socket.recv_n(bodyBuffer.get(), bufferSize, 0, &totalRecieved);
-	while (totalRecieved < bufferSize && errno == EINTR)
+	size_t totalReceived = 0;
+
+	while (totalReceived < bufferSize)
 	{
-		size_t transfered = 0;
-		recvReturn = socket.recv_n(bodyBuffer.get() + totalRecieved, bufferSize - totalRecieved, 0, &transfered);
-		totalRecieved += transfered;
+		size_t transferred = 0;
+		recvReturn = socket.recv_n(bodyBuffer.get() + totalReceived, bufferSize - totalReceived, 0, &transferred);
+
+		if (recvReturn <= 0)
+		{
+			int lastErr = ACE_OS::last_error();
+
+#if defined(_WIN32)
+			// Windows: WSAEWOULDBLOCK is transient
+			// 	- retry on WSAEWOULDBLOCK (10035) if the socket is non-blocking.
+			if (lastErr == WSAEWOULDBLOCK)
+			{
+				::Sleep(1); // tiny backoff to avoid busy loop
+				continue;
+			}
+#else
+			// Linux/Unix: retry on EINTR/EAGAIN
+			// 	- EINTR (signal interruption) and EAGAIN (non-blocking socket temporarily unavailable).
+			if (lastErr == EINTR || lastErr == EAGAIN)
+			{
+				continue;
+			}
+#endif
+			// Hard failure
+			LOG_WAR << fname << "read socket data failed with error(" << lastErr << "): " << ACE_OS::strerror(lastErr);
+			return std::make_tuple(nullptr, recvReturn);
+		}
+
+		totalReceived += transferred;
 	}
-	if (bufferSize == totalRecieved)
-		recvReturn = totalRecieved;
-	if (socket.get_handle() != ACE_INVALID_HANDLE && recvReturn <= 0)
-	{
-		LOG_WAR << fname << "read socket data failed with error: " << std::strerror(errno);
-		return std::make_tuple(nullptr, recvReturn);
-	}
+
+	recvReturn = static_cast<ssize_t>(totalReceived);
 	LOG_DBG << fname << "read message block data with length: " << bufferSize;
+
 	return std::make_tuple(bodyBuffer, recvReturn);
 }

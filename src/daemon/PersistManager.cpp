@@ -193,7 +193,7 @@ void Snapshot::persist()
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to create snapshot file <" << SNAPSHOT_FILE_NAME << ">, error :" << std::strerror(errno);
+			LOG_ERR << fname << "Failed to create snapshot file <" << SNAPSHOT_FILE_NAME << ">, error :" << ACE_OS::strerror(ACE_OS::last_error());
 		}
 	}
 	else

@@ -4,7 +4,7 @@ import msgpack
 
 
 class RequestMessage:
-    """HTTP request message"""
+    """TCP request message for HTTP-like communication"""
 
     uuid: str = ""
     request_uri: str = ""
@@ -24,7 +24,7 @@ class RequestMessage:
 
 
 class ResponseMessage:
-    """HTTP response message"""
+    """TCP response message for HTTP-like communication"""
 
     uuid: str = ""
     request_uri: str = ""
@@ -33,7 +33,7 @@ class ResponseMessage:
     body: str = ""
     headers: dict = {}
 
-    def desirialize(self, buf: bytes):
+    def deserialize(self, buf: bytes):
         """Deserialize response message"""
         dic = msgpack.unpackb(buf)
         for k, v in dic.items():

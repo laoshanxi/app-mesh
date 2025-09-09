@@ -1,3 +1,4 @@
+# app.py
 """Application definition"""
 
 import json
@@ -10,9 +11,9 @@ from enum import Enum, unique
 # pylint: disable=line-too-long
 
 
-class App(object):
+class App:
     """
-    Represents an application in App Mesh, including configuration, resource limitations, behaviors, and permissions.
+    An application in App Mesh, include all the process attributes, resource limitations, behaviors, and permissions.
     """
 
     @staticmethod
@@ -23,17 +24,24 @@ class App(object):
     @staticmethod
     def _get_int_item(data: dict, key: str) -> Optional[int]:
         """Retrieve an integer value from a dictionary by key, if it exists and is a valid integer."""
-        return int(data[key]) if (data and key in data and data[key] and isinstance(data[key], int)) else None
+        if data and key in data and data[key] is not None:
+            if isinstance(data[key], int):
+                return data[key]
+            elif isinstance(data[key], str) and data[key].isdigit():
+                return int(data[key])
+        return None
 
     @staticmethod
     def _get_bool_item(data: dict, key: str) -> Optional[bool]:
         """Retrieve a boolean value from a dictionary by key, if it exists and is boolean-like."""
-        return bool(data[key]) if (data and key in data and data[key]) else None
+        if data and key in data and data[key] is not None:
+            return bool(data[key])
+        return None
 
     @staticmethod
     def _get_native_item(data: dict, key: str) -> Optional[object]:
         """Retrieve a deep copy of a value from a dictionary by key, if it exists."""
-        return copy.deepcopy(data[key]) if (data and key in data and data[key]) else None
+        return copy.deepcopy(data[key]) if (data and key in data and data[key] is not None) else None
 
     @unique
     class Permission(Enum):
@@ -43,7 +51,7 @@ class App(object):
         READ = "2"
         WRITE = "3"
 
-    class Behavior(object):
+    class Behavior:
         """
         Manages application error handling behavior, including exit and control behaviors.
         """
@@ -67,15 +75,15 @@ class App(object):
             self.control = App._get_native_item(data, "control") or {}
             """Exit code specific behavior (e.g, --control 0:restart --control 1:standby), higher priority than default exit behavior"""
 
-        def set_exit_behavior(self, action: Action) -> None:
+        def set_exit_behavior(self, action: "App.Behavior.Action") -> None:
             """Set default behavior for application exit."""
             self.exit = action.value
 
-        def set_control_behavior(self, control_code: int, action: Action) -> None:
+        def set_control_behavior(self, control_code: int, action: "App.Behavior.Action") -> None:
             """Define behavior for specific exit codes."""
             self.control[str(control_code)] = action.value
 
-    class DailyLimitation(object):
+    class DailyLimitation:
         """
         Defines application availability within a daily time range.
         """
@@ -88,14 +96,14 @@ class App(object):
             """Start time for application availability (e.g., 09:00:00+08)."""
 
             self.daily_end = App._get_int_item(data, "daily_end")
-            """End time for application availability (e.g., 20:00:00+08)."""
+            """End time for application availability (e.g., 09:00:00+08)."""
 
         def set_daily_range(self, start: datetime, end: datetime) -> None:
             """Set the valid daily start and end times."""
             self.daily_start = int(start.timestamp())
             self.daily_end = int(end.timestamp())
 
-    class ResourceLimitation(object):
+    class ResourceLimitation:
         """
         Defines application resource limits, such as CPU and memory usage.
         """
@@ -217,7 +225,7 @@ class App(object):
             keys_to_delete = []
             for key, value in data.items():
                 if isinstance(value, dict) and key != "metadata":
-                    clean_empty(value)  # Recursive call (without check user metadata)
+                    clean_empty(value)  # Recursive call (without checking user metadata)
                 if data[key] in [None, "", {}]:
                     keys_to_delete.append(key)  # Mark keys for deletion
 

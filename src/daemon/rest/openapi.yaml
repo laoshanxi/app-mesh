@@ -528,6 +528,117 @@ paths:
         "400":
           description: Invalid request.
 
+  /appmesh/app/{app_name}/task:
+    post:
+      summary: Send a task to a running application and wait for result
+      description: |
+        Client sends an invocation message to a running App Mesh application and waits for the result.
+        The data is forwarded to the specified application which processes it and returns a response.
+      tags: [TaskRun]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: app_name
+          in: path
+          required: true
+          schema:
+            type: string
+            default: "pytask"
+          description: Name of the target application registered in App Mesh.
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 60
+          description: Maximum time in seconds to wait for a response from the application.
+      requestBody:
+        description: Payload to deliver to the application.
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              default: "import sys;print(sys.version_info)"
+      responses:
+        "200":
+          description: Task executed successfully. Returns the result from the remote application.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Invalid request.
+        "500":
+          description: Internal server error.
+
+    get:
+      summary: Fetch task data for the current application process
+      description: |
+        Used by the App Mesh application process to retrieve the payload sent by a client.
+        Requires valid process UUID to identify the correct task.
+      tags: [TaskRun]
+      parameters:
+        - name: app_name
+          in: path
+          required: true
+          schema:
+            type: string
+            default: "pytask"
+          description: Name of the current application registered in App Mesh.
+        - name: process_uuid
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the running application process.
+      responses:
+        "200":
+          description: Task data retrieved successfully.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Invalid request or missing process UUID.
+        "404":
+          description: No pending task found for this process.
+
+    put:
+      summary: Return the result of a task to the original client
+      description: |
+        Used by the App Mesh application process to return the result of the processed task back to the client.
+        Requires the process UUID to correlate with the original task.
+      tags: [TaskRun]
+      parameters:
+        - name: app_name
+          in: path
+          required: true
+          schema:
+            type: string
+            default: "pytask"
+          description: Name of the current application registered in App Mesh.
+        - name: process_uuid
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the running application process.
+      requestBody:
+        description: Result payload to be returned to the client.
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: Task result successfully returned.
+        "400":
+          description: Invalid request or missing process UUID.
+        "500":
+          description: Internal server error.
+
   /appmesh/file/download:
     get:
       summary: Download File

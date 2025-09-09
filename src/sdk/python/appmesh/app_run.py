@@ -1,11 +1,12 @@
-"""Application run object"""
+# app_run.py
+"""Application run object for remote application execution."""
 
 from contextlib import contextmanager
 
 # pylint: disable=line-too-long
 
 
-class AppRun(object):
+class AppRun:
     """
     Represents an application run object initiated by `run_async()` for monitoring and retrieving
     the result of a remote application run.
@@ -26,7 +27,14 @@ class AppRun(object):
 
     @contextmanager
     def forward_to(self):
-        """Context manager to override the `forward_to` for the duration of the run."""
+        """Context manager to temporarily override the client's `forward_to` setting.
+
+        This ensures that operations during this run use the correct target server,
+        then restores the original setting when done.
+
+        Yields:
+            None: Context for the overridden forward_to setting.
+        """
         original_value = self._client.forward_to
         self._client.forward_to = self._forward_to
         try:
@@ -38,11 +46,12 @@ class AppRun(object):
         """Wait for the asynchronous run to complete.
 
         Args:
-            stdout_print (bool, optional): If `True`, prints remote stdout to local. Defaults to `True`.
-            timeout (int, optional): Maximum time to wait in seconds. If `0`, waits until completion. Defaults to `0`.
+            stdout_print: If `True`, prints remote stdout to local console. Defaults to `True`.
+            timeout: Maximum time to wait in seconds. If `0`, waits indefinitely until completion.
+                    Defaults to `0`.
 
         Returns:
-            int: Exit code if the process finishes successfully. Returns `None` on timeout or exception.
+            Exit code if the process finishes successfully, or `None` on timeout or exception.
         """
         with self.forward_to():
             return self._client.wait_for_async_run(self, stdout_print, timeout)

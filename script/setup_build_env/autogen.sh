@@ -74,7 +74,7 @@ python3 -m pip install --upgrade pip || python3 -m pip install --break-system-pa
 # yum install -y golang
 # apt install -y golang
 GO_ARCH=$architecture
-GO_VER=1.23.8
+GO_VER=1.24.7
 $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go

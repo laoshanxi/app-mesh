@@ -201,7 +201,7 @@ void AppProcess::terminate()
 		}
 		else
 		{
-			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << std::strerror(errno);
+			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			// use Process_Manager terminate and wait
 			if (Process_Manager::instance()->terminate(pid) == 0)
 			{
@@ -224,8 +224,7 @@ void AppProcess::terminate()
 	cleanResource();
 	if (terminated)
 		ProcessExitHandler::terminate(pid);
-	auto locked = m_task.synchronize();
-	locked->terminate();
+	m_task.terminate();
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
@@ -304,7 +303,7 @@ bool AppProcess::onTimerCheckStdout()
 			}
 			else
 			{
-				LOG_ERR << fname << "fstat failed with error : " << std::strerror(errno);
+				LOG_ERR << fname << "fstat failed with error : " << ACE_OS::strerror(ACE_OS::last_error());
 				CLOSE_ACE_HANDLER(m_stdoutHandler);
 				auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
 				m_stdoutHandler = ACE_OS::open(stdOut.c_str(), O_RDWR);
@@ -471,8 +470,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	else
 	{
-		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << std::strerror(errno);
-		this->m_startError = Utility::stringFormat("start failed with error <%s>", std::strerror(errno));
+		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << ACE_OS::strerror(ACE_OS::last_error());
+		this->m_startError = Utility::stringFormat("start failed with error <%s>", ACE_OS::strerror(ACE_OS::last_error()));
 	}
 	return m_pid;
 }
@@ -487,7 +486,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 	{
 		if (Process_Manager::instance()->register_handler(this, pid) == -1)
 		{
-			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << std::strerror(errno);
+			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << ACE_OS::strerror(ACE_OS::last_error());
 		}
 #if defined(_WIN32)
 		// This creates a named job object in the Windows kernel.
@@ -507,28 +506,21 @@ const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool rea
 
 void AppProcess::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 {
-	auto locked = m_task.synchronize();
-	locked->sendMessage(asyncHttpRequest);
+	m_task.sendMessage(asyncHttpRequest);
 }
 
-void AppProcess::getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
+void AppProcess::getMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
 {
 	if (processId != m_uuid)
-	{
 		throw std::invalid_argument("process id not match");
-	}
-	auto locked = m_task.synchronize();
-	locked->getMessage(asyncHttpRequest);
+	m_task.getMessage(serverRequest, msgRequest);
 }
 
-void AppProcess::respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
+void AppProcess::respMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
 {
 	if (processId != m_uuid)
-	{
 		throw std::invalid_argument("process id not match");
-	}
-	auto locked = m_task.synchronize();
-	locked->respMessage(asyncHttpRequest);
+	m_task.respMessage(serverRequest, msgRequest);
 }
 
 const std::string AppProcess::startError() const
