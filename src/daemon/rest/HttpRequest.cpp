@@ -161,6 +161,18 @@ HttpRequestWithTimeout::HttpRequestWithTimeout(const HttpRequest &message)
 {
 }
 
+HttpRequestWithTimeout::~HttpRequestWithTimeout()
+{
+	const static char fname[] = "HttpRequestWithTimeout::~HttpRequestWithTimeout() ";
+
+	// avoid request leak (both help for C++ and Golang side)
+	if (!m_httpRequestReplyFlag.exchange(true))
+	{
+		LOG_WAR << fname << "destruct pending request: " << this->m_uuid << " " << this->m_method << " " << this->m_relative_uri;
+		HttpRequest::reply(web::http::status_codes::ServiceUnavailable);
+	}
+}
+
 bool HttpRequestWithTimeout::initTimer(int timeoutSeconds)
 {
 	const static char fname[] = "HttpRequestWithTimeout::initTimer() ";
@@ -313,28 +325,25 @@ bool HttpRequestOutputView::onTimerResponse()
 
 TaskRequest::~TaskRequest()
 {
-	terminate();
 }
 
 void TaskRequest::terminate()
 {
-	terminate(m_getMessage);
-	terminate(m_sendMessage);
-	terminate(m_respMessage);
+	m_sendMessage.reset();
+	m_getMessage.reset();
+	m_respMessage.reset();
 }
 
 void TaskRequest::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 {
 	const static char fname[] = "TaskRequest::sendMessage() ";
 
-	terminate(m_sendMessage);
 	m_sendMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
 
 	// make sure no response pending
-	terminate(m_respMessage);
+	m_respMessage.reset();
 
 	// if get message request already here, respond it
-	checkAvialable(m_getMessage);
 	if (m_getMessage)
 	{
 		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
@@ -347,15 +356,14 @@ void TaskRequest::getMessage(std::shared_ptr<void> asyncHttpRequest)
 {
 	const static char fname[] = "TaskRequest::getMessage() ";
 
-	terminate(m_getMessage);
 	m_getMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
 
 	// make sure no response pending
-	terminate(m_respMessage);
+	m_respMessage.reset();
 
 	// get message request may ahead or after send message request
 	// respond if send message already here
-	checkAvialable(m_sendMessage);
+	cleanupRepliedRequest(m_sendMessage);
 	if (m_sendMessage)
 	{
 		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
@@ -369,10 +377,9 @@ void TaskRequest::respMessage(std::shared_ptr<void> asyncHttpRequest)
 {
 	const static char fname[] = "TaskRequest::respMessage() ";
 
-	terminate(m_respMessage);
 	m_respMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
 
-	checkAvialable(m_sendMessage);
+	cleanupRepliedRequest(m_sendMessage);
 	if (m_sendMessage == nullptr)
 	{
 		LOG_WAR << fname << "no message request from client waiting for response";
@@ -390,21 +397,9 @@ void TaskRequest::respMessage(std::shared_ptr<void> asyncHttpRequest)
 	m_respMessage = nullptr;
 }
 
-void TaskRequest::terminate(std::shared_ptr<HttpRequestWithTimeout> &request)
+void TaskRequest::cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request)
 {
-	const static char fname[] = "TaskRequest::terminate() ";
-
-	if (request)
-	{
-		LOG_DBG << fname << "terminate pending request: " << request->m_uuid << " " << request->m_method << " " << request->m_relative_uri;
-		request->reply(web::http::status_codes::ServiceUnavailable);
-		request = nullptr;
-	}
-}
-
-void TaskRequest::checkAvialable(std::shared_ptr<HttpRequestWithTimeout> &request)
-{
-	const static char fname[] = "TaskRequest::checkAvialable() ";
+	const static char fname[] = "TaskRequest::cleanupRepliedRequest() ";
 
 	if (request && request->replied())
 	{

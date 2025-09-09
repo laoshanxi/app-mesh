@@ -57,6 +57,29 @@ Copy-Item -Path "src\daemon\rest\openapi.yaml", "script\pack\grafana_infinity.ht
 Copy-Item -Path "src\daemon\config.yaml", "src\daemon\security\security.yaml", "src\daemon\security\oauth2.yaml", "src\sdk\agent\pkg\cloud\consul.yaml" -Destination $PackageDir
 Copy-Item -Path "script\apps\*.yaml" -Destination (Join-Path $PackageDir "apps")
 
+# Patch: replace 'python3' with 'python' in all .yaml files
+$AppYamlDir = (Join-Path $PackageDir "apps")
+if (Test-Path $AppYamlDir) {
+    Get-ChildItem -Path (Join-Path $AppYamlDir '*.yaml') -File | ForEach-Object {
+        $file = $_.FullName
+        try {
+            $content = Get-Content -Raw -Encoding UTF8 $file
+            $new = [regex]::Replace($content, '\bpython3\b', 'python.exe')
+            if ($new -ne $content) {
+                Set-Content -Path $file -Value $new -Encoding UTF8
+                Write-Host "Patched: $file"
+            }
+        }
+        catch {
+            Write-Warning "Failed to patch ${file}: $($_.Exception.Message)"
+            Write-Host "Exception details: $($_ | Out-String)"
+        }
+    }
+}
+else {
+    Write-Warning "Target path not found: $AppYamlDir"
+}
+
 # Optional: Create installer using NSIS
 Copy-Item "$env:ChocolateyInstall\lib\nssm\tools\nssm.exe" "$BinDest"
 

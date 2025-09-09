@@ -6,7 +6,7 @@ import os
 import socket
 import uuid
 import requests
-from .appmesh_client import AppMeshClient
+from .http_client import AppMeshClient
 from .tcp_transport import TCPTransport
 from .tcp_messages import RequestMessage, ResponseMessage
 
@@ -28,10 +28,10 @@ class AppMeshClientTCP(AppMeshClient):
 
     Usage:
         - Import the client module:
-            from appmesh import appmesh_client
+            from appmesh import AppMeshClientTCP
 
     Example:
-        client = appmesh_client.AppMeshClientTCP()
+        client = AppMeshClientTCP()
         client.login("your-name", "your-password")
         client.file_download("/tmp/os-release", "os-release")
 
