@@ -137,7 +137,7 @@ class HttpRequestWithTimeout : public HttpRequest, public TimerHandler
 public:
 	using HttpRequest::reply;
 	explicit HttpRequestWithTimeout(const HttpRequest &message);
-	virtual ~HttpRequestWithTimeout() = default;
+	virtual ~HttpRequestWithTimeout();
 
 	bool initTimer(int timeoutSeconds);
 	bool onTimerResponse();
@@ -189,8 +189,7 @@ public:
 	void respMessage(std::shared_ptr<void> asyncHttpRequest);
 
 private:
-	void terminate(std::shared_ptr<HttpRequestWithTimeout> &request);
-	void checkAvialable(std::shared_ptr<HttpRequestWithTimeout> &request);
+	void cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request);
 
 private:
 	std::shared_ptr<HttpRequestWithTimeout> m_sendMessage;

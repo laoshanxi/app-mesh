@@ -42,6 +42,12 @@ function Initialize-BuildEnvironment {
 
 function Save-File {
     param($url, $output)
+    # Simple check: if the target file already exists, skip downloading to avoid redundancy
+    if (Test-Path $output) {
+        Write-Host "File $output already exists. Skipping download of $url." -ForegroundColor Green
+        return
+    }
+
     Write-Host "Downloading $url..." -ForegroundColor Yellow
     try {
         Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
@@ -196,7 +202,8 @@ function Install-VcpkgPackages {
     & "C:\vcpkg\vcpkg.exe" install @packages --recurse --clean-after-build
     if ($LASTEXITCODE -eq 0) {
         Write-Host "All packages installed successfully." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "Some packages failed to install. Check the log above." -ForegroundColor Red
     }
 }
@@ -319,11 +326,109 @@ function Install-HeaderOnlyLibraries {
     Write-Host "Header-only libraries installed successfully" -ForegroundColor Green
 }
 
+function Install-Python {
+    param (
+        [string]$Version = "3.13.7",
+        [string]$InstallDir = "C:\Python313",
+        [ValidateSet("amd64", "arm64")]
+        [string]$Arch = $(if ($env:PROCESSOR_ARCHITECTURE -match "ARM") { "arm64" } else { "amd64" })
+    )
+
+    Write-Host "Installing Python programming language..." -ForegroundColor Cyan
+
+    # Auto-detect architecture if not specified
+    if (-not $Arch) {
+        $Arch = if ($env:PROCESSOR_ARCHITECTURE -match "ARM|arm") { "arm64" } else { "amd64" }
+    }
+
+    $pythonExe = Join-Path $InstallDir "python.exe"
+
+    # Check if Python is already installed
+    $existingVersion = $null
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        try {
+            $out = & python --version 2>&1
+            if ($null -ne $out) {
+                # join possible array output and trim safely
+                $existingVersion = ($out -join "`n").Trim()
+            }
+            else {
+                $existingVersion = $null
+            }
+        }
+        catch {
+            # If invoking python fails for any reason, treat as not installed
+            $existingVersion = $null
+        }
+    }
+    elseif (Test-Path $pythonExe) {
+        try {
+            $out = & $pythonExe --version 2>&1
+            if ($null -ne $out) {
+                $existingVersion = ($out -join "`n").Trim()
+            }
+            else {
+                $existingVersion = $null
+            }
+        }
+        catch {
+            $existingVersion = $null
+        }
+    }
+    if ($existingVersion -and $existingVersion -like "Python $Version*") {
+        Write-Host "Python $Version is already installed" -ForegroundColor Green
+        return
+    }
+    elseif ($existingVersion) {
+        Write-Host "Found $existingVersion, will install Python $Version..." -ForegroundColor Yellow
+    }
+
+    Write-Host "Preparing to install Python $Version ($Arch) to $InstallDir..." -ForegroundColor Cyan
+
+    $installerName = "python-$Version-$Arch.exe"
+    $installerUrl = "https://www.python.org/ftp/python/$Version/$installerName"
+
+    # Download installer
+    Save-File $installerUrl $installerName
+
+    Write-Host "Running installer (quiet mode)..." -ForegroundColor Yellow
+    $installerArgs = @(
+        "/quiet",
+        "InstallAllUsers=1",
+        "PrependPath=1",
+        "TargetDir=$InstallDir",
+        "Include_doc=0",
+        "Include_test=0"
+    )
+    $proc = Start-Process -FilePath $installerName -ArgumentList $installerArgs -Wait -NoNewWindow -PassThru
+    if ($proc.ExitCode -ne 0) {
+        throw "Python installer failed with exit code $($proc.ExitCode)"
+    }
+
+    # Verify installation
+    if (-not (Test-Path $pythonExe)) {
+        throw "Installation completed but python.exe not found at $pythonExe"
+    }
+
+    # Upgrade pip and essential packages
+    Write-Host "Upgrading pip, setuptools, and wheel..." -ForegroundColor Yellow
+    try {
+        & $pythonExe -m pip install --upgrade pip setuptools wheel --quiet
+        Write-Host "To install the appmesh package into this Python environment, run:" -ForegroundColor Yellow
+        Write-Host "  $pythonExe -m pip install --upgrade appmesh" -ForegroundColor Yellow
+    }
+    catch {
+        Write-Host "Warning: Failed to upgrade pip packages: $_" -ForegroundColor Yellow
+    }
+
+    Write-Host "Python $Version installed successfully" -ForegroundColor Green
+}
+
 function Install-Go {
     Write-Host "Installing Go programming language..." -ForegroundColor Cyan
     
     if (!(Get-Command go -ErrorAction SilentlyContinue)) {
-        $goVersion = "1.23.8"
+        $goVersion = "1.24.7"
         $goArch = if ($architecture -eq "arm64") { "arm64" } else { "amd64" }
         $goUrl = "https://go.dev/dl/go$goVersion.windows-$goArch.zip"
         Save-File $goUrl "go.zip"
@@ -513,6 +618,7 @@ try {
     Install-Vcpkg
     Install-VcpkgPackages
     Install-HeaderOnlyLibraries
+    #Install-Python
     Install-Go
     Install-GoTools
     Install-NsisPlugin

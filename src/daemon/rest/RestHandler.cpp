@@ -1084,27 +1084,25 @@ void RestHandler::apiSendMessage(const HttpRequest &message)
 
 void RestHandler::apiGetMessage(const HttpRequest &message)
 {
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	const std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 	auto app = Configuration::instance()->getApp(appName);
 
+	// no need setup timer for service side request, process terminate will take care cleanup
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
-	asyncRequest->initTimer(timeout);
 	app->getMessage(processUuid, asyncRequest);
 }
 
 void RestHandler::apiSendMessageResponse(const HttpRequest &message)
 {
-	int timeout = getHttpQueryValue(message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_APP_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
 	const std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
 	auto app = Configuration::instance()->getApp(appName);
+	// no need setup timer for service side request, process terminate will take care cleanup
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
-	asyncRequest->initTimer(timeout);
 	app->respMessage(processUuid, asyncRequest);
 }
 
