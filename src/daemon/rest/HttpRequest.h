@@ -189,11 +189,11 @@ public:
 	void respMessage(std::shared_ptr<void> asyncHttpRequest);
 
 private:
-	void terminate(std::shared_ptr<HttpRequestWithTimeout> &request);
-	void checkAvialable(std::shared_ptr<HttpRequestWithTimeout> &request);
+	void terminate(std::shared_ptr<HttpRequest> &request);
+	void cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request);
 
 private:
 	std::shared_ptr<HttpRequestWithTimeout> m_sendMessage;
-	std::shared_ptr<HttpRequestWithTimeout> m_getMessage;
-	std::shared_ptr<HttpRequestWithTimeout> m_respMessage;
+	std::shared_ptr<HttpRequest> m_getMessage;
+	std::shared_ptr<HttpRequest> m_respMessage;
 };

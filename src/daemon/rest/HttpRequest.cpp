@@ -318,8 +318,8 @@ TaskRequest::~TaskRequest()
 
 void TaskRequest::terminate()
 {
+	terminate(reinterpret_cast<std::shared_ptr<HttpRequest> &>(m_sendMessage));
 	terminate(m_getMessage);
-	terminate(m_sendMessage);
 	terminate(m_respMessage);
 }
 
@@ -327,14 +327,13 @@ void TaskRequest::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 {
 	const static char fname[] = "TaskRequest::sendMessage() ";
 
-	terminate(m_sendMessage);
+	terminate(reinterpret_cast<std::shared_ptr<HttpRequest> &>(m_sendMessage));
 	m_sendMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
 
 	// make sure no response pending
 	terminate(m_respMessage);
 
 	// if get message request already here, respond it
-	checkAvialable(m_getMessage);
 	if (m_getMessage)
 	{
 		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
@@ -348,14 +347,14 @@ void TaskRequest::getMessage(std::shared_ptr<void> asyncHttpRequest)
 	const static char fname[] = "TaskRequest::getMessage() ";
 
 	terminate(m_getMessage);
-	m_getMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+	m_getMessage = std::static_pointer_cast<HttpRequest>(asyncHttpRequest);
 
 	// make sure no response pending
 	terminate(m_respMessage);
 
 	// get message request may ahead or after send message request
 	// respond if send message already here
-	checkAvialable(m_sendMessage);
+	cleanupRepliedRequest(m_sendMessage);
 	if (m_sendMessage)
 	{
 		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
@@ -370,9 +369,9 @@ void TaskRequest::respMessage(std::shared_ptr<void> asyncHttpRequest)
 	const static char fname[] = "TaskRequest::respMessage() ";
 
 	terminate(m_respMessage);
-	m_respMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+	m_respMessage = std::static_pointer_cast<HttpRequest>(asyncHttpRequest);
 
-	checkAvialable(m_sendMessage);
+	cleanupRepliedRequest(m_sendMessage);
 	if (m_sendMessage == nullptr)
 	{
 		LOG_WAR << fname << "no message request from client waiting for response";
@@ -390,7 +389,7 @@ void TaskRequest::respMessage(std::shared_ptr<void> asyncHttpRequest)
 	m_respMessage = nullptr;
 }
 
-void TaskRequest::terminate(std::shared_ptr<HttpRequestWithTimeout> &request)
+void TaskRequest::terminate(std::shared_ptr<HttpRequest> &request)
 {
 	const static char fname[] = "TaskRequest::terminate() ";
 
@@ -402,9 +401,9 @@ void TaskRequest::terminate(std::shared_ptr<HttpRequestWithTimeout> &request)
 	}
 }
 
-void TaskRequest::checkAvialable(std::shared_ptr<HttpRequestWithTimeout> &request)
+void TaskRequest::cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request)
 {
-	const static char fname[] = "TaskRequest::checkAvialable() ";
+	const static char fname[] = "TaskRequest::cleanupRepliedRequest() ";
 
 	if (request && request->replied())
 	{

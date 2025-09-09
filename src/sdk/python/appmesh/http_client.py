@@ -1398,9 +1398,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         try:
             if method is AppMeshClient.Method.GET:
-                return self.session.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+                resp = self.session.get(url=rest_url, params=query, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
             elif method is AppMeshClient.Method.POST:
-                return self.session.post(
+                resp = self.session.post(
                     url=rest_url,
                     params=query,
                     headers=header,
@@ -1410,12 +1410,21 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                     timeout=self.rest_timeout,
                 )
             elif method is AppMeshClient.Method.POST_STREAM:
-                return self.session.post(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
+                resp = self.session.post(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, stream=True, timeout=self.rest_timeout)
             elif method is AppMeshClient.Method.DELETE:
-                return self.session.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+                resp = self.session.delete(url=rest_url, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
             elif method is AppMeshClient.Method.PUT:
-                return self.session.put(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
+                resp = self.session.put(url=rest_url, params=query, headers=header, data=body, cert=self.ssl_client_cert, verify=self.ssl_verify, timeout=self.rest_timeout)
             else:
                 raise Exception("Invalid http method", method)
+
+            # Ensure response text decoding uses UTF-8 by default
+            try:
+                resp.encoding = "utf-8"
+            except Exception:
+                # If setting encoding fails for any reason, ignore and return the response as-is
+                pass
+
+            return resp
         except requests.exceptions.RequestException as e:
             raise Exception(f"HTTP request failed: {str(e)}")
