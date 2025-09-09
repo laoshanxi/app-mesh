@@ -80,7 +80,6 @@ else {
     Write-Warning "Target path not found: $AppYamlDir"
 }
 
-
 # Optional: Create installer using NSIS
 Copy-Item "$env:ChocolateyInstall\lib\nssm\tools\nssm.exe" "$BinDest"
 
