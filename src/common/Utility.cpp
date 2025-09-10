@@ -159,7 +159,7 @@ const std::string Utility::getExecutablePath()
 	auto count = ACE_OS::readlink("/proc/self/exe", buf, PATH_MAX);
 	if (count < 0 || count >= PATH_MAX)
 	{
-		LOG_ERR << fname << "Failed to read /proc/self/exe: " << strerror(errno);
+		LOG_ERR << fname << "Failed to read /proc/self/exe: " << ACE_OS::strerror(ACE_OS::last_error());
 		return "";
 	}
 	buf[count] = '\0';
@@ -178,7 +178,7 @@ const std::string Utility::getExecutablePath()
 	char realPath[PATH_MAX] = {0};
 	if (realpath(buf.data(), realPath) == nullptr)
 	{
-		LOG_ERR << fname << "Failed to resolve real path: " << strerror(errno);
+		LOG_ERR << fname << "Failed to resolve real path: " << ACE_OS::strerror(ACE_OS::last_error());
 		return "";
 	}
 	return realPath;
@@ -257,7 +257,7 @@ bool Utility::createDirectory(const std::string &path, fs::perms perms)
 		const fs::path directoryPath = fs::path(path);
 		if (!fs::create_directories(directoryPath))
 		{
-			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << std::strerror(errno);
+			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return false;
 		}
 		// os::chown(getuid(), getgid(), path, false);
@@ -276,7 +276,7 @@ bool Utility::createRecursiveDirectory(const std::string &path, fs::perms perms)
 		const fs::path directoryPath = fs::path(path);
 		if (!fs::create_directories(directoryPath))
 		{
-			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << std::strerror(errno);
+			LOG_ERR << fname << "Create directory <" << path << "> failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return false;
 		}
 		fs::permissions(directoryPath, perms);
@@ -318,7 +318,7 @@ void Utility::removeFile(const std::string &path)
 		}
 		else
 		{
-			LOG_WAR << fname << "removed file <" << path << "> failed with error: " << std::strerror(errno);
+			LOG_WAR << fname << "removed file <" << path << "> failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 		}
 	}
 }
@@ -488,7 +488,7 @@ std::string Utility::readFile(const std::string &path)
 	if (nullptr == file)
 	{
 		if (!startWith(path, "/proc/"))
-			LOG_WAR << fname << "Get file <" << path << "> failed with error : " << std::strerror(errno);
+			LOG_WAR << fname << "Get file <" << path << "> failed with error : " << ACE_OS::strerror(ACE_OS::last_error());
 		return "";
 	}
 
@@ -509,7 +509,7 @@ std::string Utility::readFile(const std::string &path)
 		{
 			// NOTE: ferror() will not modify errno if the stream
 			// is valid, which is the case here since it is open.
-			LOG_ERR << fname << "fread failed with error : " << std::strerror(errno);
+			LOG_ERR << fname << "fread failed with error : " << ACE_OS::strerror(ACE_OS::last_error());
 			delete[] buffer;
 			::fclose(file);
 			return "";
@@ -733,7 +733,7 @@ bool Utility::createPidFile()
 	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
 	if (fd < 0)
 	{
-		std::cerr << fname << "Failed to create PID file [" << pidFile << "]: " << std::strerror(errno) << std::endl;
+		std::cerr << fname << "Failed to create PID file [" << pidFile << "]: " << ACE_OS::strerror(ACE_OS::last_error()) << std::endl;
 		return false;
 	}
 
@@ -743,7 +743,7 @@ bool Utility::createPidFile()
 		std::string pid = std::to_string(getpid());
 		if (write(fd, pid.c_str(), pid.length()) <= 0)
 		{
-			std::cerr << fname << "Failed to write PID to file [" << pidFile << "]: " << std::strerror(errno) << std::endl;
+			std::cerr << fname << "Failed to write PID to file [" << pidFile << "]: " << ACE_OS::strerror(ACE_OS::last_error()) << std::endl;
 			close(fd);
 			return false;
 		}
@@ -751,13 +751,13 @@ bool Utility::createPidFile()
 	}
 	else
 	{
-		if (errno == EWOULDBLOCK)
+		if (ACE_OS::last_error() == EWOULDBLOCK)
 		{
 			std::cerr << fname << "Process already running. PID file locked: " << pidFile << std::endl;
 		}
 		else
 		{
-			std::cerr << fname << "Failed to lock PID file [" << pidFile << "]: " << std::strerror(errno) << std::endl;
+			std::cerr << fname << "Failed to lock PID file [" << pidFile << "]: " << ACE_OS::strerror(ACE_OS::last_error()) << std::endl;
 		}
 		close(fd);
 		return false;

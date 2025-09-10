@@ -39,7 +39,7 @@ bool TcpClient::connect(const ACE_INET_Addr &addr)
 	}
 	else
 	{
-		LOG_ERR << fname << "Connect to TCP server failed with error: " << std::strerror(errno);
+		LOG_ERR << fname << "Connect to TCP server failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 		m_sslStream.reset(); // Reset stream on connection failure
 		return false;
 	}
@@ -72,7 +72,7 @@ bool TcpClient::testConnection(int timeoutSeconds)
 
 	m_sslStream->close();
 	m_sslStream.reset();
-	LOG_ERR << fname << "Test read failed with return " << recvReturn << " error: " << std::strerror(errno);
+	LOG_ERR << fname << "Test read failed with return " << recvReturn << " error: " << ACE_OS::strerror(ACE_OS::last_error());
 	return false;
 }
 

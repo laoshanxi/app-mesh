@@ -109,7 +109,7 @@ void AppLogFile::increaseIndex()
 		Utility::removeFile(newFile);
 	if (Utility::isFileExist(oldFile) && 0 != ACE_OS::rename(oldFile.c_str(), newFile.c_str()))
 	{
-		LOG_ERR << fname << "Rename file <" << oldFile << "> failed with error: " << std::strerror(errno);
+		LOG_ERR << fname << "Rename file <" << oldFile << "> failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 	}
 	else
 	{

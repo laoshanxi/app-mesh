@@ -108,7 +108,7 @@ class TCPTransport:
             self._socket = ssl_socket
         except (socket.error, ssl.SSLError) as e:
             sock.close()
-            raise RuntimeError(f"Failed to connect to {self.tcp_address}: {e}")
+            raise RuntimeError(f"Failed to connect to {self.tcp_address}: {e}") from e
 
     def close(self) -> None:
         """Close socket connection"""
@@ -137,7 +137,7 @@ class TCPTransport:
                 self._socket.sendall(data)
         except (socket.error, ssl.SSLError) as e:
             self.close()
-            raise RuntimeError(f"Error sending message: {e}")
+            raise RuntimeError(f"Error sending message: {e}") from e
 
     def receive_message(self) -> Optional[bytearray]:
         """Receive a message with a prefixed header indicating its length and validate it"""
@@ -156,39 +156,46 @@ class TCPTransport:
             return None
         except (socket.error, ssl.SSLError) as e:
             self.close()
-            raise RuntimeError(f"Error receiving message: {e}")
+            raise RuntimeError(f"Error receiving message: {e}") from e
 
-    def _recvall(self, length: int) -> bytearray:
-        """socket recv data with fixed length
+    def _recvall(self, length: int) -> bytes:
+        """Receive exactly `length` bytes from the socket.
            https://stackoverflow.com/questions/64466530/using-a-custom-socket-recvall-function-works-only-if-thread-is-put-to-sleep
+
         Args:
-            length (int): data length to be received
+            length (int): Number of bytes to receive.
 
         Returns:
-            bytearray: Received data
+            bytes: Received data.
 
         Raises:
-            EOFError: If connection closes prematurely
-            ValueError: If length is invalid
+            EOFError: If connection closes before receiving all data.
+            ValueError: If length is not positive.
+            socket.timeout: If socket operation times out.
         """
         if length <= 0:
             raise ValueError(f"Invalid length: {length}")
 
-        # Pre-allocate buffer of exact size needed
+        # Pre-allocate buffer
         buffer = bytearray(length)
-        view = memoryview(buffer)
+        mv = memoryview(buffer)
         bytes_received = 0
 
         while bytes_received < length:
-            # Use recv_into to read directly into our buffer
             try:
-                chunk_size = self._socket.recv_into(view[bytes_received:], length - bytes_received)
+                # Receive directly into buffer
+                remaining = length - bytes_received
+                chunk_size = self._socket.recv_into(mv, remaining)
 
                 if chunk_size == 0:
                     raise EOFError("Connection closed by peer")
 
+                mv = mv[chunk_size:]  # advance memoryview
                 bytes_received += chunk_size
-            except socket.timeout:
-                raise socket.timeout(f"Socket operation timed out after receiving {bytes_received}/{length} bytes")
 
-        return buffer
+            except InterruptedError:
+                continue
+            except socket.timeout as e:
+                raise socket.timeout(f"Socket operation timed out after receiving {bytes_received}/{length} bytes") from e
+
+        return bytes(buffer)  # safer than bytearray

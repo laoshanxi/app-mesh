@@ -435,11 +435,17 @@ void Application::execute(void *ptree)
 
 	refresh(ptree);
 
+	bool isRunning = false;
+	{
+		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		isRunning = m_process && m_process->running();
+	}
 	// Check if the process exited abnormally and handle errors.
 	// Note: m_procExitTime and m_procStartTime may not be set in a guaranteed order due to asynchronous execution.
 	//   - m_procExitTime is set in Application::onExitUpdate (by terminate).
 	//   - m_procStartTime is set in Application::onTimerSpawn (by scheduleNext).
-	if (m_return != INVALID_RETURN_CODE && m_procExitTime && m_procStartTime && ((*m_procExitTime - *m_procStartTime) > std::chrono::seconds(1)) && scheduleTime == nullptr && getStatus() == STATUS::ENABLED)
+	//	 - so: m_procStartTime might delay small time, add 1 second buffer to check
+	if (!isRunning && m_return != INVALID_RETURN_CODE && m_procExitTime && m_procStartTime && (now > (*m_procStartTime + std::chrono::seconds(1))) && scheduleTime == nullptr && getStatus() == STATUS::ENABLED)
 	{
 		// Handle error if process exited unexpectedly
 		handleError();
@@ -606,7 +612,10 @@ void Application::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_process == nullptr)
 		throw std::invalid_argument("No process running");
-	m_process->sendMessage(asyncHttpRequest);
+
+	// save task request in application level
+	m_taskRequest = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+	m_process->sendMessage(m_taskRequest);
 }
 
 void Application::getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
@@ -614,7 +623,7 @@ void Application::getMessage(const std::string &processId, std::shared_ptr<void>
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_process == nullptr)
 		throw std::invalid_argument("No process running");
-	m_process->getMessage(processId, asyncHttpRequest);
+	m_process->getMessage(processId, asyncHttpRequest, m_taskRequest);
 }
 
 void Application::respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
@@ -622,7 +631,7 @@ void Application::respMessage(const std::string &processId, std::shared_ptr<void
 	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (m_process == nullptr)
 		throw std::invalid_argument("No process running");
-	return m_process->respMessage(processId, asyncHttpRequest);
+	return m_process->respMessage(processId, asyncHttpRequest, m_taskRequest);
 }
 
 const std::string Application::getExecUser() const

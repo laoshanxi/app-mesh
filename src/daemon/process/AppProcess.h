@@ -212,8 +212,8 @@ public:
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
 	virtual void sendMessage(std::shared_ptr<void> asyncHttpRequest);
-	virtual void getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
-	virtual void respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
+	virtual void getMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
+	virtual void respMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
 
 	/// <summary>
 	/// get last error
@@ -252,5 +252,5 @@ protected:
 	boost::synchronized_value<std::string> m_startError;
 
 private:
-	boost::synchronized_value<TaskRequest> m_task;
+	TaskRequest m_task; // already have mutex (Application::m_appMutex) when call sendMessage/getMessage/respMessage
 };

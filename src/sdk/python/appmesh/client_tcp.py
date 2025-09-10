@@ -1,4 +1,4 @@
-# TCP-based App Mesh Client
+# client_tcp.py
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 import json
@@ -6,7 +6,7 @@ import os
 import socket
 import uuid
 import requests
-from .http_client import AppMeshClient
+from .client_http import AppMeshClient
 from .tcp_transport import TCPTransport
 from .tcp_messages import RequestMessage, ResponseMessage
 
@@ -83,20 +83,34 @@ class AppMeshClientTCP(AppMeshClient):
         self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=rest_ssl_verify, ssl_client_cert=rest_ssl_client_cert)
         super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, jwt_token=jwt_token)
 
+    def close(self):
+        """Close the connection and release resources."""
+        if hasattr(self, "tcp_transport") and self.tcp_transport:
+            self.tcp_transport.close()
+            self.tcp_transport = None
+        return super().close()
+
+    def __del__(self):
+        """Ensure resources are properly released when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass  # Never raise in __del__
+        super().__del__()
+
     def _request_http(self, method: AppMeshClient.Method, path: str, query: dict = None, header: dict = None, body=None) -> requests.Response:
-        """TCP API
+        """Send HTTP request over TCP transport.
 
         Args:
-            method (Method): AppMeshClient.Method.
-            path (str): URI patch str.
-            query (dict, optional): HTTP query parameters.
+            method (Method): HTTP method.
+            path (str): URI path.
+            query (dict, optional): Query parameters.
             header (dict, optional): HTTP headers.
-            body (_type_, optional): object to send in the body of the :class:`Request`.
+            body: Request body.
 
         Returns:
-            requests.Response: HTTP response
+            requests.Response: Simulated HTTP response.
         """
-
         if not self.tcp_transport.connected():
             self.tcp_transport.connect()
 
@@ -110,8 +124,9 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_request.http_method = method.value
         appmesh_request.request_uri = path
         appmesh_request.client_addr = socket.gethostname()
+
         if body:
-            if isinstance(body, dict) or isinstance(body, list):
+            if isinstance(body, (dict, list)):
                 appmesh_request.body = bytes(json.dumps(body, indent=2), self.ENCODING_UTF8)
             elif isinstance(body, str):
                 appmesh_request.body = bytes(body, self.ENCODING_UTF8)
@@ -119,20 +134,23 @@ class AppMeshClientTCP(AppMeshClient):
                 appmesh_request.body = body
             else:
                 raise Exception(f"UnSupported body type: {type(body)}")
+
         if header:
             for k, v in header.items():
                 appmesh_request.headers[k] = v
         if query:
             for k, v in query.items():
                 appmesh_request.querys[k] = v
+
         data = appmesh_request.serialize()
         self.tcp_transport.send_message(data)
 
         resp_data = self.tcp_transport.receive_message()
-        if resp_data is None or len(resp_data) == 0:
+        if not resp_data:  # Covers None and empty bytes
             self.tcp_transport.close()
             raise Exception("socket connection broken")
-        appmesh_resp = ResponseMessage().desirialize(resp_data)
+
+        appmesh_resp = ResponseMessage().deserialize(resp_data)
         response = requests.Response()
         response.status_code = appmesh_resp.http_status
         response.encoding = self.ENCODING_UTF8
@@ -140,24 +158,27 @@ class AppMeshClientTCP(AppMeshClient):
         response.headers = appmesh_resp.headers
         if appmesh_resp.body_msg_type:
             response.headers["Content-Type"] = appmesh_resp.body_msg_type
+
         return response
 
     ########################################
     # File management
     ########################################
     def download_file(self, remote_file: str, local_file: str, apply_file_attributes: bool = True) -> None:
-        """Copy a remote file to local, the local file will have the same permission as the remote file
+        """Copy a remote file to local, preserving file attributes if requested.
 
         Args:
-            remote_file (str): the remote file path.
-            local_file (str): the local file path to be downloaded.
-            apply_file_attributes (bool): whether to apply file attributes (permissions, owner, group) to the local file.
+            remote_file (str): Remote file path.
+            local_file (str): Local destination path.
+            apply_file_attributes (bool): Apply remote file permissions/ownership locally.
         """
-        header = {AppMeshClient.HTTP_HEADER_KEY_X_FILE_PATH: remote_file}
-        header[self.HTTP_HEADER_KEY_X_RECV_FILE_SOCKET] = "true"
+        header = {
+            AppMeshClient.HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
+            self.HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: "true",
+        }
         resp = self._request_http(AppMeshClient.Method.GET, path="/appmesh/file/download", header=header)
-
         resp.raise_for_status()
+
         if self.HTTP_HEADER_KEY_X_RECV_FILE_SOCKET not in resp.headers:
             raise ValueError(f"Server did not respond with socket transfer option: {self.HTTP_HEADER_KEY_X_RECV_FILE_SOCKET}")
 
@@ -180,23 +201,22 @@ class AppMeshClientTCP(AppMeshClient):
                     print(f"Warning: Unable to change owner/group of {local_file}. Operation requires elevated privileges.")
 
     def upload_file(self, local_file: str, remote_file: str, apply_file_attributes: bool = True) -> None:
-        """Upload a local file to the remote server, the remote file will have the same permission as the local file
-
-        Dependency:
-            sudo apt install python3-pip
-            pip3 install requests_toolbelt
+        """Upload a local file to remote server, preserving file attributes if requested.
 
         Args:
-            local_file (str): the local file path.
-            remote_file (str): the target remote file to be uploaded.
-            apply_file_attributes (bool): whether to upload file attributes (permissions, owner, group) along with the file.
+            local_file (str): Local file path.
+            remote_file (str): Remote destination path.
+            apply_file_attributes (bool): Upload file permissions/ownership metadata.
         """
         if not os.path.exists(local_file):
             raise FileNotFoundError(f"Local file not found: {local_file}")
 
         with open(file=local_file, mode="rb") as fp:
-            header = {AppMeshClient.HTTP_HEADER_KEY_X_FILE_PATH: remote_file, "Content-Type": "text/plain"}
-            header[self.HTTP_HEADER_KEY_X_SEND_FILE_SOCKET] = "true"
+            header = {
+                AppMeshClient.HTTP_HEADER_KEY_X_FILE_PATH: remote_file,
+                "Content-Type": "text/plain",
+                self.HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: "true",
+            }
 
             if apply_file_attributes:
                 file_stat = os.stat(local_file)
@@ -205,8 +225,8 @@ class AppMeshClientTCP(AppMeshClient):
                 header["X-File-Group"] = str(file_stat.st_gid)
 
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/file/upload", header=header)
-
             resp.raise_for_status()
+
             if self.HTTP_HEADER_KEY_X_SEND_FILE_SOCKET not in resp.headers:
                 raise ValueError(f"Server did not respond with socket transfer option: {self.HTTP_HEADER_KEY_X_SEND_FILE_SOCKET}")
 
@@ -214,6 +234,6 @@ class AppMeshClientTCP(AppMeshClient):
             while True:
                 chunk_data = fp.read(chunk_size)
                 if not chunk_data:
-                    self.tcp_transport.send_message([])
+                    self.tcp_transport.send_message([])  # EOF signal
                     break
                 self.tcp_transport.send_message(chunk_data)

@@ -183,16 +183,14 @@ public:
 
 	void terminate();
 
-	// TODO: timeout for request
-	void sendMessage(std::shared_ptr<void> asyncHttpRequest);
-	void getMessage(std::shared_ptr<void> asyncHttpRequest);
-	void respMessage(std::shared_ptr<void> asyncHttpRequest);
+	void sendMessage(std::shared_ptr<void> taskRequest);
+	void getMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
+	void respMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
 
 private:
 	void cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request);
 
 private:
-	std::shared_ptr<HttpRequestWithTimeout> m_sendMessage;
 	std::shared_ptr<HttpRequestWithTimeout> m_getMessage;
 	std::shared_ptr<HttpRequestWithTimeout> m_respMessage;
 };

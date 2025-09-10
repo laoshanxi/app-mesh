@@ -217,7 +217,7 @@ namespace os
 			else
 			{
 				LOG_WAR << fname << "Failed to get file descriptors info for pid " << pid
-						<< ", error: " << strerror(errno);
+						<< ", error: " << ACE_OS::strerror(ACE_OS::last_error());
 			}
 		}
 		else
@@ -232,14 +232,14 @@ namespace os
 		if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) <= 0)
 		{
 			LOG_WAR << fname << "Failed to get process path for pid " << pid
-					<< ", error: " << strerror(errno);
+					<< ", error: " << ACE_OS::strerror(ACE_OS::last_error());
 		}
 
 		proc_taskallinfo task_info;
 		if (proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &task_info, sizeof(task_info)) <= 0)
 		{
 			LOG_WAR << fname << "Failed to get task info for pid " << pid
-					<< ", error: " << strerror(errno);
+					<< ", error: " << ACE_OS::strerror(ACE_OS::last_error());
 		}
 		else
 		{
@@ -607,7 +607,7 @@ namespace os
 			}
 			else
 			{
-				LOG_WAR << fname << "Failed to stat " << procPath << ": " << std::strerror(errno);
+				LOG_WAR << fname << "Failed to stat " << procPath << ": " << ACE_OS::strerror(ACE_OS::last_error());
 			}
 			return std::numeric_limits<uid_t>::max();
 		}
@@ -633,7 +633,7 @@ namespace os
 			}
 			else
 			{
-				LOG_WAR << fname << "Failed to get process info for PID " << pid << ": " << std::strerror(errno);
+				LOG_WAR << fname << "Failed to get process info for PID " << pid << ": " << ACE_OS::strerror(ACE_OS::last_error());
 			}
 			return std::numeric_limits<uid_t>::max();
 		}

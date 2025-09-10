@@ -411,17 +411,39 @@ function Install-Python {
     }
 
     # Upgrade pip and essential packages
-    Write-Host "Upgrading pip, setuptools, and wheel..." -ForegroundColor Yellow
-    try {
-        & $pythonExe -m pip install --upgrade pip setuptools wheel --quiet
-        Write-Host "To install the appmesh package into this Python environment, run:" -ForegroundColor Yellow
-        Write-Host "  $pythonExe -m pip install --upgrade appmesh" -ForegroundColor Yellow
-    }
-    catch {
-        Write-Host "Warning: Failed to upgrade pip packages: $_" -ForegroundColor Yellow
-    }
+    Install-PythonPackages -PythonExe $pythonExe
 
     Write-Host "Python $Version installed successfully" -ForegroundColor Green
+}
+
+function Install-PythonPackages {
+    param (
+        [string]$PythonExe = "python"
+    )
+
+    Write-Host "Installing Python packages..." -ForegroundColor Cyan
+
+    $packages = @(
+        "pip",
+        "setuptools",
+        "requests",
+        "urllib3",
+        "wheel"
+    )
+
+    foreach ($pkg in $packages) {
+        Write-Host "Installing $pkg..." -ForegroundColor Yellow
+        try {
+            & $PythonExe -m pip install --upgrade $pkg --quiet
+            Write-Host "$pkg installed successfully" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "Warning: Failed to install $pkg : $_" -ForegroundColor Yellow
+        }
+    }
+
+    Write-Host "Python packages installed successfully" -ForegroundColor Green
+
 }
 
 function Install-Go {
@@ -619,6 +641,7 @@ try {
     Install-VcpkgPackages
     Install-HeaderOnlyLibraries
     #Install-Python
+    Install-PythonPackages
     Install-Go
     Install-GoTools
     Install-NsisPlugin

@@ -1,4 +1,4 @@
-# TCP-based App Mesh Server
+# server_http.py
 # pylint: disable=line-too-long,broad-exception-raised,broad-exception-caught,import-outside-toplevel,protected-access
 
 import abc
@@ -7,7 +7,7 @@ import os
 import time
 from typing import Optional, Tuple
 from http import HTTPStatus
-from .http_client import AppMeshClient
+from .client_http import AppMeshClient
 
 logger = logging.getLogger(__name__)
 

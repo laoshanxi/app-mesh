@@ -357,6 +357,15 @@ func (r *AppMeshClient) AddApp(app Application) (*Application, error) {
 	return nil, err
 }
 
+// RunTask runs a task.
+func (r *AppMeshClient) RunTask(appName string, payload string) (string, error) {
+	code, raw, _, err := r.post(fmt.Sprintf("/appmesh/app/%s/task", appName), nil, nil, nil)
+	if code != http.StatusOK {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // RunAppSync runs an application synchronously.
 func (r *AppMeshClient) RunAppSync(app Application, maxTimeoutSeconds int) (*int, string, error) {
 	appJson, err := json.Marshal(app)

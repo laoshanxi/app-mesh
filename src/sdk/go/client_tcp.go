@@ -203,6 +203,13 @@ func (r *ClientRequesterTcp) DoRequest(method, apiPath string, queries url.Value
 	return resp.HttpStatus, []byte(resp.Body), respHeaders, err
 }
 
+// Close closes the TCP connection.
+func (r *ClientRequesterTcp) Close() {
+	if r.TCPConnection != nil {
+		r.TCPConnection.Close()
+	}
+}
+
 // request sends a request over TCP.
 func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 	data := new(Request)

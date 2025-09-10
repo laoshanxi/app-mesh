@@ -1,4 +1,4 @@
-# HTTP-based App Mesh Client
+# client_http.py
 # pylint: disable=broad-exception-raised,line-too-long,broad-exception-caught,too-many-lines, import-outside-toplevel, protected-access
 import abc
 import base64
@@ -325,7 +325,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         try:
             self.close()
         except Exception:
-            pass  # Avoid exceptions during garbage collection
+            pass  # Never raise in __del__
 
     @property
     def jwt_token(self) -> str:

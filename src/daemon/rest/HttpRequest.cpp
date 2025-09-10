@@ -323,16 +323,13 @@ TaskRequest::~TaskRequest()
 
 void TaskRequest::terminate()
 {
-	m_sendMessage.reset();
 	m_getMessage.reset();
 	m_respMessage.reset();
 }
 
-void TaskRequest::sendMessage(std::shared_ptr<void> asyncHttpRequest)
+void TaskRequest::sendMessage(std::shared_ptr<void> taskRequest)
 {
 	const static char fname[] = "TaskRequest::sendMessage() ";
-
-	m_sendMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
 
 	// make sure no response pending
 	m_respMessage.reset();
@@ -341,54 +338,55 @@ void TaskRequest::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 	if (m_getMessage)
 	{
 		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
-		m_getMessage->reply(web::http::status_codes::OK, *m_sendMessage->m_body);
-		m_getMessage = nullptr;
+		auto task = std::static_pointer_cast<HttpRequestWithTimeout>(taskRequest);
+		m_getMessage->reply(web::http::status_codes::OK, *task->m_body);
+		m_getMessage.reset();
 	}
 }
 
-void TaskRequest::getMessage(std::shared_ptr<void> asyncHttpRequest)
+void TaskRequest::getMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 {
 	const static char fname[] = "TaskRequest::getMessage() ";
 
-	m_getMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+	m_getMessage = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 
 	// make sure no response pending
 	m_respMessage.reset();
 
 	// get message request may ahead or after send message request
 	// respond if send message already here
-	cleanupRepliedRequest(m_sendMessage);
-	if (m_sendMessage)
+	cleanupRepliedRequest(taskRequest);
+	if (taskRequest)
 	{
 		LOG_INF << fname << "respond: " << m_getMessage->m_method << " " << m_getMessage->m_relative_uri;
-		m_getMessage->reply(web::http::status_codes::OK, *m_sendMessage->m_body);
-		m_getMessage = nullptr;
-		// TODO: allow get same data again?
+		m_getMessage->reply(web::http::status_codes::OK, *taskRequest->m_body);
+		m_getMessage.reset();
+		// allow fetch for multiple times in case of process restarted
 	}
 }
 
-void TaskRequest::respMessage(std::shared_ptr<void> asyncHttpRequest)
+void TaskRequest::respMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 {
 	const static char fname[] = "TaskRequest::respMessage() ";
 
-	m_respMessage = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+	m_respMessage = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 
-	cleanupRepliedRequest(m_sendMessage);
-	if (m_sendMessage == nullptr)
+	cleanupRepliedRequest(taskRequest);
+	if (taskRequest == nullptr)
 	{
 		LOG_WAR << fname << "no message request from client waiting for response";
 		m_respMessage->reply(web::http::status_codes::ExpectationFailed, "no message request from client waiting for response");
-		m_respMessage = nullptr;
+		m_respMessage.reset();
 		return;
 	}
 
-	LOG_INF << fname << "respond: " << m_sendMessage->m_method << " " << m_sendMessage->m_relative_uri;
+	LOG_INF << fname << "respond: " << taskRequest->m_method << " " << taskRequest->m_relative_uri;
 
-	m_sendMessage->reply(web::http::status_codes::OK, *m_respMessage->m_body);
-	m_sendMessage = nullptr;
+	taskRequest->reply(web::http::status_codes::OK, *m_respMessage->m_body);
+	taskRequest.reset();
 
 	m_respMessage->reply(web::http::status_codes::OK);
-	m_respMessage = nullptr;
+	m_respMessage.reset();
 }
 
 void TaskRequest::cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request)

@@ -106,11 +106,11 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	// Handle errors
 	if (errno == EWOULDBLOCK)
 	{
-		LOG_WAR << fname << "Socket buffer full: " << std::strerror(errno) << ", closing connection with <" << m_clientHostName << ">";
+		LOG_WAR << fname << "Socket buffer full: " << ACE_OS::strerror(ACE_OS::last_error()) << ", closing connection with <" << m_clientHostName << ">";
 		return -1; // No partial reads supported
 	}
 
-	LOG_WAR << fname << "Receive error from <" << m_clientHostName << ">: " << std::strerror(errno) << ", closing connection";
+	LOG_WAR << fname << "Receive error from <" << m_clientHostName << ">: " << ACE_OS::strerror(ACE_OS::last_error()) << ", closing connection";
 	return -1;
 }
 
@@ -120,7 +120,7 @@ int TcpHandler::testStream()
 	ACE_Handle_Set handleSet;
 	handleSet.set_bit(this->peer().get_handle());
 
-	// Use a zero timeout for immediate return
+	// Zero timeout for immediate return
 	ACE_Time_Value timeout(ACE_Time_Value::zero);
 
 	// Use select to check if data is available for reading
@@ -132,22 +132,28 @@ int TcpHandler::testStream()
 
 	if (ret == -1)
 	{
-		if (errno == EINTR)
-		{
-			return 0; // Interrupted, try again later
-		}
-		else
-		{
-			return -1; // Error occurred
-		}
+		int lastErr = ACE_OS::last_error();
+
+#if defined(_WIN32)
+		// Windows: retry if interrupted
+		if (lastErr == WSAEINTR)
+			return 0; // retry select
+#else
+		// Linux/Unix: retry if interrupted
+		if (lastErr == EINTR)
+			return 0; // retry select
+#endif
+		// Hard error
+		LOG_WAR << "testStream(): select() failed with error(" << lastErr << "): " << ACE_OS::strerror(lastErr);
+		return -1;
 	}
 	else if (ret == 0)
 	{
-		// No data available
-		return 0; // No data, but no error
+		// No data available, immediate return
+		return 0;
 	}
 
-	// Data is available, proceed with reading
+	// Data is available
 	return ret;
 }
 
@@ -200,7 +206,7 @@ int TcpHandler::open(void *)
 			int flag = 1;
 			if (this->peer().set_option(ACE_IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) == -1)
 			{
-				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << std::strerror(errno);
+				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			}
 
 			// if (this->peer().disable(ACE_NONBLOCK) == -1) // Disable non-blocking mode already controled by ACE_NONBLOCK_FLAG
@@ -311,7 +317,7 @@ bool TcpHandler::reply(const Response &resp)
 		std::lock_guard<std::mutex> guard(m_socketLock);
 		if (!sendHeader(length) || !sendBytes(buffer, length))
 		{
-			LOG_ERR << fname << "send response failed with error: " << std::strerror(errno);
+			LOG_ERR << fname << "send response failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 			return false;
 		}
 	}
@@ -344,7 +350,7 @@ bool TcpHandler::reply(const Response &resp)
 				sentSize += readSize;
 				if (!sendHeader(readSize) || !sendBytes(buffer.get(), readSize))
 				{
-					LOG_ERR << fname << "send chunk failed with error: " << std::strerror(errno);
+					LOG_ERR << fname << "send chunk failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
 					return false;
 				}
 			}
@@ -381,26 +387,26 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 	// Load server certificate and private key; log error if loading fails
 	if (context->certificate(cert.c_str(), SSL_FILETYPE_PEM) != 0)
 	{
-		LOG_ERR << fname << "Failed to load certificate: " << std::strerror(errno);
+		LOG_ERR << fname << "Failed to load certificate: " << ACE_OS::strerror(ACE_OS::last_error());
 		return nullptr;
 	}
 	if (context->private_key(key.c_str(), SSL_FILETYPE_PEM) != 0)
 	{
-		LOG_ERR << fname << "Failed to load private key: " << std::strerror(errno);
+		LOG_ERR << fname << "Failed to load private key: " << ACE_OS::strerror(ACE_OS::last_error());
 		return nullptr;
 	}
 
 	// Enable forward secrecy by using ECDH; logging error if setting fails
 	if (!SSL_CTX_set_ecdh_auto(context->context(), 1))
 	{
-		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << std::strerror(errno);
+		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << ACE_OS::strerror(ACE_OS::last_error());
 	}
 
 	// Configure cipher suites to prioritize security, explicitly excluding weak ciphers
 	const char *ciphers = "HIGH:!aNULL:!MD5:!RC4"; // More secure and modern cipher suite selection
 	if (!SSL_CTX_set_cipher_list(context->context(), ciphers))
 	{
-		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << std::strerror(errno);
+		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << ACE_OS::strerror(ACE_OS::last_error());
 	}
 
 	// Disable unsafe legacy renegotiation, which could be a security risk
@@ -461,24 +467,24 @@ bool TcpHandler::sendBytes(const char *data, size_t length, int timeoutSeconds)
 		//		<< " Total length remaining: " << (length - totalSent)
 		//		<< ", Sent length: " << sendSize
 		//		<< ", Send result: " << sendReturn
-		//		<< ", Error: " << (errno ? std::strerror(errno) : "None");
+		//		<< ", Error: " << (errno ? ACE_OS::strerror(ACE_OS::last_error()) : "None");
 
 		// Handle send_n result
 		if (sendReturn <= 0) // `0` or negative indicates failure
 		{
 			if (errno == EINTR) // Interrupted by a signal
 			{
-				LOG_WAR << fname << m_clientHostName << " Send interrupted, retrying. Error: " << std::strerror(errno);
+				LOG_WAR << fname << m_clientHostName << " Send interrupted, retrying. Error: " << ACE_OS::strerror(ACE_OS::last_error());
 				continue; // Retry sending
 			}
 			else if (errno == EWOULDBLOCK || errno == ETIMEDOUT) // Timeout occurred
 			{
-				LOG_ERR << fname << m_clientHostName << " Send operation timed out. Error: " << std::strerror(errno);
+				LOG_ERR << fname << m_clientHostName << " Send operation timed out. Error: " << ACE_OS::strerror(ACE_OS::last_error());
 				return false; // Timeout is a failure condition
 			}
 			else // Other errors
 			{
-				LOG_ERR << fname << m_clientHostName << " Send failed. Error: " << std::strerror(errno);
+				LOG_ERR << fname << m_clientHostName << " Send failed. Error: " << ACE_OS::strerror(ACE_OS::last_error());
 				return false;
 			}
 		}
