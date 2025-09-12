@@ -249,9 +249,9 @@ namespace net
 		{
 #if defined(_WIN32)
 			// On Windows, gai_strerrorA is available via ws2tcpip.h
-			LOG_ERR << fname << "getnameinfo failed: " << (rc == EAI_SYSTEM ? ACE_OS::strerror(ACE_OS::last_error()) : gai_strerrorA(rc));
+			LOG_ERR << fname << "getnameinfo failed: " << (rc == EAI_SYSTEM ? last_error_msg() : gai_strerrorA(rc));
 #else
-			LOG_ERR << fname << "getnameinfo failed: " << (rc == EAI_SYSTEM ? ACE_OS::strerror(ACE_OS::last_error()) : gai_strerror(rc));
+			LOG_ERR << fname << "getnameinfo failed: " << (rc == EAI_SYSTEM ? last_error_msg() : gai_strerror(rc));
 #endif
 			return {};
 		}
@@ -286,7 +286,7 @@ namespace net
 		if (ACE_OS::access(virtNetPath, R_OK) != 0)
 		{
 			LOG_ERR << fname << "No read permission for directory: " << virtNetPath
-					<< " (errno=" << errno << ": " << ACE_OS::strerror(ACE_OS::last_error()) << ")";
+					<< " (errno=" << errno << ": " << last_error_msg() << ")";
 			return result;
 		}
 		try
@@ -312,7 +312,7 @@ namespace net
 			struct ifaddrs *ifaddr = nullptr;
 			if (getifaddrs(&ifaddr) == -1)
 			{
-				LOG_ERR << fname << "Failed to get interface addresses (errno=" << errno << ": " << ACE_OS::strerror(ACE_OS::last_error()) << ")";
+				LOG_ERR << fname << "Failed to get interface addresses (errno=" << errno << ": " << last_error_msg() << ")";
 				return result;
 			}
 
@@ -409,7 +409,7 @@ namespace net
 		struct ifaddrs *ifaddr = nullptr;
 		if (getifaddrs(&ifaddr) == -1)
 		{
-			LOG_ERR << fname << "getifaddrs failed, error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "getifaddrs failed, error: " << last_error_msg();
 			return interfaces;
 		}
 		std::unique_ptr<struct ifaddrs, decltype(&freeifaddrs)> guard(ifaddr, freeifaddrs);

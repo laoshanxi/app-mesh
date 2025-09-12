@@ -22,7 +22,6 @@
 #include "AppProcess.h"
 #include "LinuxCgroup.h"
 
-extern APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
 constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
 AppProcess::AppProcess(void *owner)
@@ -201,7 +200,7 @@ void AppProcess::terminate()
 		}
 		else
 		{
-			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << last_error_msg();
 			// use Process_Manager terminate and wait
 			if (Process_Manager::instance()->terminate(pid) == 0)
 			{
@@ -303,7 +302,7 @@ bool AppProcess::onTimerCheckStdout()
 			}
 			else
 			{
-				LOG_ERR << fname << "fstat failed with error : " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_ERR << fname << "fstat failed with error : " << last_error_msg();
 				CLOSE_ACE_HANDLER(m_stdoutHandler);
 				auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
 				m_stdoutHandler = ACE_OS::open(stdOut.c_str(), O_RDWR);
@@ -330,13 +329,13 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	if (checkCmd && !Utility::isFileExist(cmdRoot))
 	{
 		LOG_WAR << fname << "command file <" << cmdRoot << "> does not exist";
-		this->m_startError = Utility::stringFormat("command file <%s> does not exist", cmdRoot.c_str());
+		startError(Utility::stringFormat("command file <%s> does not exist", cmdRoot.c_str()));
 		return ACE_INVALID_PID;
 	}
 	if (checkCmd && ACE_OS::access(cmdRoot.c_str(), X_OK) != 0)
 	{
 		LOG_WAR << fname << "command file <" << cmdRoot << "> does not have execution permission";
-		this->m_startError = Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str());
+		startError(Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str()));
 		return ACE_INVALID_PID;
 	}
 
@@ -369,7 +368,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		}
 		else
 		{
-			this->m_startError = Utility::stringFormat("user <%s> does not exist", user.c_str());
+			startError(Utility::stringFormat("user <%s> does not exist", user.c_str()));
 			return ACE_INVALID_PID;
 		}
 	}
@@ -388,7 +387,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	else
 	{
-		this->m_startError = Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str());
+		startError(Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str()));
 		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, use default";
 	}
 	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
@@ -470,8 +469,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 	else
 	{
-		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << ACE_OS::strerror(ACE_OS::last_error());
-		this->m_startError = Utility::stringFormat("start failed with error <%s>", ACE_OS::strerror(ACE_OS::last_error()));
+		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << last_error_msg();
+		startError(Utility::stringFormat("start failed with error <%s>", last_error_msg()));
 	}
 	return m_pid;
 }
@@ -486,7 +485,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 	{
 		if (Process_Manager::instance()->register_handler(this, pid) == -1)
 		{
-			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << last_error_msg();
 		}
 #if defined(_WIN32)
 		// This creates a named job object in the Windows kernel.
@@ -512,20 +511,26 @@ void AppProcess::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 void AppProcess::getMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
 {
 	if (processId != m_uuid)
-		throw std::invalid_argument("process id not match");
+		throw std::invalid_argument("Process ID mismatch: Illegal request.");
 	m_task.getMessage(serverRequest, msgRequest);
 }
 
 void AppProcess::respMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
 {
 	if (processId != m_uuid)
-		throw std::invalid_argument("process id not match");
+		throw std::invalid_argument("Process ID mismatch: Illegal request.");
 	m_task.respMessage(serverRequest, msgRequest);
 }
 
 const std::string AppProcess::startError() const
 {
-	return this->m_startError.get();
+	auto ptr = this->m_startError.load();
+	return ptr ? *ptr : std::string();
+}
+
+void AppProcess::startError(const std::string &err)
+{
+	m_startError.store(boost::shared_ptr<std::string>(new std::string(err)));
 }
 
 std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)
@@ -604,8 +609,7 @@ ProcessExitHandler::~ProcessExitHandler()
 int ProcessExitHandler::handle_exit(ACE_Process *process)
 {
 	const static char fname[] = "ProcessExitHandler::handle_exit() ";
-	LOG_INF << fname << "Process <" << process->getpid() << "> exited with code <" << process->return_value() << ">"
-			<< (APP_OUT_VIEW_MAP.current_size() > 0 ? " APP_OUT_VIEW_MAP size: " + std::to_string(APP_OUT_VIEW_MAP.current_size()) : "");
+	LOG_INF << fname << "Process <" << process->getpid() << "> exited with code <" << process->return_value() << ">";
 
 	// NOTE: here hold the lock: Process_Manager::instance(), avoid access app lock
 
@@ -639,18 +643,7 @@ bool ProcessExitHandler::onProcessExit()
 		LOG_ERR << fname << "cast ProcessExitHandler to AppProcess failed";
 
 	// response standby request
-	ACE_Unbounded_Set<std::shared_ptr<HttpRequestOutputView>> requests, empty;
-	{
-		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(APP_OUT_VIEW_MAP.mutex());
-		APP_OUT_VIEW_MAP.rebind(m_exitPid, empty, requests);
-		APP_OUT_VIEW_MAP.unbind(m_exitPid);
-	}
-	if (requests.size() > 0)
-	{
-		LOG_DBG << fname << "pid <" << m_exitPid << "> exit and response output to clients: " << requests.size();
-		for (auto &req : requests)
-			req->response();
-	}
+	HttpRequestOutputView::onProcessExitResponse(m_exitPid);
 
 	return false;
 }

@@ -49,7 +49,7 @@ namespace os
 
 		if (tree == nullptr)
 		{
-			LOG_ERR << fname << "Failed to open path: " << path << ", error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to open path: " << path << ", error: " << last_error_msg();
 			return false;
 		}
 
@@ -71,7 +71,7 @@ namespace os
 			{ // Symbolic link without target
 				if (::lchown(node->fts_path, uid, gid) < 0)
 				{
-					LOG_ERR << fname << "Failed to change ownership of " << node->fts_path << ", error: " << ACE_OS::strerror(ACE_OS::last_error());
+					LOG_ERR << fname << "Failed to change ownership of " << node->fts_path << ", error: " << last_error_msg();
 					return false;
 				}
 				LOG_DBG << fname << "Changed ownership of " << node->fts_path << " to uid=" << uid << " gid=" << gid;
@@ -127,7 +127,7 @@ namespace os
 		struct stat st;
 		if (::lstat(path.c_str(), &st) != 0)
 		{
-			LOG_ERR << fname << "Failed to get file stats for " << path << ": " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to get file stats for " << path << ": " << last_error_msg();
 			return false;
 		}
 

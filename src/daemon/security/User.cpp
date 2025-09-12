@@ -252,12 +252,12 @@ const std::string User::totpGenerateKey()
 	int fd = open("/dev/urandom", O_RDONLY);
 	if (fd < 0)
 	{
-		throw std::runtime_error(Utility::stringFormat("Failed to open /dev/urandom: %s", ACE_OS::strerror(ACE_OS::last_error())));
+		throw std::runtime_error(Utility::stringFormat("Failed to open /dev/urandom: %s", last_error_msg()));
 	}
 	if (read(fd, randomBuffer, sizeof(randomBuffer)) != sizeof(randomBuffer))
 	{
 		close(fd);
-		throw std::runtime_error(Utility::stringFormat("Failed to read /dev/urandom: %s", ACE_OS::strerror(ACE_OS::last_error())));
+		throw std::runtime_error(Utility::stringFormat("Failed to read /dev/urandom: %s", last_error_msg()));
 	}
 	close(fd);
 

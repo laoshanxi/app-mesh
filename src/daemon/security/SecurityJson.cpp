@@ -92,7 +92,7 @@ void SecurityJson::save()
         {
             if (ACE_OS::rename(tmpFile.c_str(), securityYamlFile.c_str()) != 0)
             {
-                throw std::runtime_error(std::string("Failed to rename temporary file: ") + ACE_OS::strerror(ACE_OS::last_error()));
+                throw std::runtime_error(std::string("Failed to rename temporary file: ") + last_error_msg());
             }
             LOG_DBG << fname << "local security saved";
         }

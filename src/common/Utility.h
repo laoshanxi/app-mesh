@@ -69,7 +69,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 }
 
 #define PROCESS_MAP_TYPE ACE_Map_Manager<pid_t, AppProcess *, ACE_Recursive_Thread_Mutex>
-#define APP_OUT_MULTI_MAP_TYPE ACE_Hash_Multi_Map_Manager<pid_t, std::shared_ptr<HttpRequestOutputView>, ACE_Hash<pid_t>, ACE_Equal_To<pid_t>, ACE_Recursive_Thread_Mutex>
 #define MY_HOST_NAME ResourceCollection::instance()->getHostName()
 
 // Get attribute from json Object
@@ -553,3 +552,6 @@ public:
 	explicit NotFoundException(const char *) noexcept;
 	explicit NotFoundException(const std::string &) noexcept;
 };
+
+// cross-platform and safe last error
+const char *last_error_msg();
