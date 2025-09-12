@@ -8,7 +8,9 @@
 #include <tuple>
 
 #include <ace/Event.h>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <boost/smart_ptr/shared_ptr.hpp>
+#include <boost/thread/recursive_mutex.hpp>
 #include <boost/thread/synchronized_value.hpp>
 #include <nlohmann/json.hpp>
 
@@ -29,6 +31,7 @@ namespace prometheus
 {
 	class Counter;
 };
+using AppMeshProcess = boost::synchronized_value<std::shared_ptr<AppProcess>, boost::recursive_mutex>;
 
 //////////////////////////////////////////////////////////////////////////
 /// An Application is used to define and manage a process job.
@@ -52,7 +55,6 @@ public:
 	void setUnPersistable();
 
 	void nextLaunchTime(const std::chrono::system_clock::time_point &time);
-	const boost::shared_ptr<std::chrono::system_clock::time_point> nextLaunchTime();
 
 	bool available(const std::chrono::system_clock::time_point &now = std::chrono::system_clock::now());
 	bool isEnabled() const;
@@ -109,7 +111,6 @@ protected:
 	std::map<std::string, std::string> getMergedEnvMap() const;
 
 protected:
-	mutable std::recursive_mutex m_appMutex;
 	std::shared_ptr<AppTimer> m_timer;
 	bool m_persistAble;
 
@@ -156,14 +157,14 @@ protected:
 	std::string m_dockerImage;
 
 	// runtime dynamic variables (which will also be read by API)
-	std::shared_ptr<AppProcess> m_process;
+	AppMeshProcess m_process;
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_return; // the exit code of last instance
 	std::atomic_bool m_health;
 	std::atomic<STATUS> m_status;
-	boost::shared_ptr<std::chrono::system_clock::time_point> m_procStartTime;
-	boost::shared_ptr<std::chrono::system_clock::time_point> m_procExitTime;
-	boost::shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
+	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procStartTime;
+	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procExitTime;
+	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
 	// error
 	boost::synchronized_value<std::string> m_lastError;
 	// task request <application level>, use std::atomic<std::shared_ptr<T>> after C++20

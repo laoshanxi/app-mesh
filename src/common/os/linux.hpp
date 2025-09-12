@@ -10,10 +10,13 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #if defined(_WIN32)
@@ -21,6 +24,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <direct.h>
 #include <io.h>
+#include <ntstatus.h>
 #include <pdh.h>
 #include <pdhmsg.h>
 #include <process.h>
@@ -30,6 +34,7 @@
 #include <tlhelp32.h>
 #include <windows.h>
 #include <winioctl.h>
+#include <winternl.h>
 
 #include <lmcons.h>
 #include <memory>
@@ -43,6 +48,8 @@
 // Windows type definitions to match Unix types
 typedef unsigned long long uint64_t;
 
+// Windows type declare for NtQuerySystemInformation
+typedef NTSTATUS(NTAPI *NtQuerySystemInformation_t)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
 #else
 // Unix/Linux/macOS headers
 #include <dirent.h> // Directory operations
@@ -248,7 +255,7 @@ namespace os
 		if (!dir)
 		{
 			LOG_WAR << fname << "Failed to open directory: " << directory
-					<< " (errno=" << errno << ": " << ACE_OS::strerror(ACE_OS::last_error()) << ")";
+					<< " (errno=" << errno << ": " << last_error_msg() << ")";
 			return result;
 		}
 
@@ -268,7 +275,7 @@ namespace os
 		if (errno != 0)
 		{
 			LOG_WAR << fname << "Failed to read directory: " << directory
-					<< " (errno=" << errno << ": " << ACE_OS::strerror(ACE_OS::last_error()) << ")";
+					<< " (errno=" << errno << ": " << last_error_msg() << ")";
 			return {};
 		}
 #endif
@@ -533,7 +540,13 @@ namespace os
 		// Linux implementation
 		const std::string path = "/proc/" + std::to_string(pid) + "/stat";
 
-		std::string content = Utility::readFile(path);
+		std::ifstream statFile(path);
+		if (!statFile.is_open())
+			return nullptr;
+
+		std::string content;
+		content.reserve(512); // typical size < 512 bytes
+		content.assign(std::istreambuf_iterator<char>(statFile), std::istreambuf_iterator<char>());
 		if (content.empty())
 		{
 			LOG_DBG << fname << "Process does not exist or file is empty: " << path;
@@ -729,7 +742,7 @@ namespace os
 			}
 			else
 			{
-				LOG_WAR << fname << "Failed to open <" << path << "> with error: " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_WAR << fname << "Failed to open <" << path << "> with error: " << last_error_msg();
 			}
 			return "";
 		}
@@ -768,13 +781,129 @@ namespace os
 		// Get the process path
 		if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) <= 0)
 		{
-			LOG_WAR << fname << "Failed to retrieve path for PID=" << pid << " with error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_WAR << fname << "Failed to retrieve path for PID=" << pid << " with error: " << last_error_msg();
 			return "";
 		}
 
 		return std::string(pathbuf);
 #endif
 	}
+
+#if defined(_WIN32)
+
+#ifndef STATUS_INFO_LENGTH_MISMATCH
+#define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004L)
+#endif
+
+	typedef NTSTATUS(NTAPI *NtQuerySystemInformation_t)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
+
+#pragma pack(push, 1)
+	// Minimal struct, only needed fields
+	typedef struct _SYSTEM_PROCESS_INFORMATION_MIN
+	{
+		ULONG NextEntryOffset;
+		ULONG NumberOfThreads;
+		LARGE_INTEGER Reserved[3];
+		LARGE_INTEGER CreateTime;
+		LARGE_INTEGER UserTime;
+		LARGE_INTEGER KernelTime;
+		UNICODE_STRING ImageName; // optional, but keep alignment
+		KPRIORITY BasePriority;
+		HANDLE UniqueProcessId;
+		HANDLE InheritedFromUniqueProcessId;
+		// fields beyond here ignored
+	} SYSTEM_PROCESS_INFORMATION_MIN, *PSYSTEM_PROCESS_INFORMATION_MIN;
+#pragma pack(pop)
+
+	inline std::unordered_set<pid_t> child_pids(pid_t rootPid = ACE_OS::getpid())
+	{
+		const static char fname[] = "proc::child_pids() ";
+		std::unordered_set<pid_t> pids;
+		pids.insert(rootPid); // add root pid to result
+
+		HMODULE hNtDll = GetModuleHandleW(L"ntdll.dll");
+		if (!hNtDll)
+		{
+			LOG_ERR << fname << "Failed to get handle to ntdll.dll";
+			return pids;
+		}
+
+		auto NtQuerySystemInformation = (NtQuerySystemInformation_t)GetProcAddress(hNtDll, "NtQuerySystemInformation");
+		if (!NtQuerySystemInformation)
+		{
+			LOG_ERR << fname << "Failed to get NtQuerySystemInformation address";
+			return pids;
+		}
+
+		ULONG bufferSize = 1 << 16; // start 64 KB
+		ULONG returnLength = 0;
+		NTSTATUS status;
+		std::vector<BYTE> buffer(bufferSize);
+
+		// Retry with exponential growth
+		const ULONG maxSize = 16 << 20; // 16 MB cap
+		while ((status = NtQuerySystemInformation(SystemProcessInformation,
+												  buffer.data(), bufferSize,
+												  &returnLength)) == STATUS_INFO_LENGTH_MISMATCH)
+		{
+			if (bufferSize >= maxSize)
+			{
+				LOG_ERR << fname << "Exceeded max buffer size for NtQuerySystemInformation";
+				return pids;
+			}
+			bufferSize *= 2;
+			buffer.resize(bufferSize);
+		}
+
+		if (status < 0)
+		{
+			LOG_ERR << fname << "NtQuerySystemInformation failed, status=" << status;
+			return pids;
+		}
+
+		// Build parent → children map
+		std::unordered_map<pid_t, std::vector<pid_t>> tree;
+		tree.reserve(1024);
+
+		BYTE *ptr = buffer.data();
+		while (true)
+		{
+			auto spi = reinterpret_cast<PSYSTEM_PROCESS_INFORMATION_MIN>(ptr);
+
+			pid_t pid = static_cast<pid_t>(reinterpret_cast<ULONG_PTR>(spi->UniqueProcessId));
+			pid_t ppid = static_cast<pid_t>(reinterpret_cast<ULONG_PTR>(spi->InheritedFromUniqueProcessId));
+
+			if (pid != 0 && pid != 4) // skip idle and system
+				tree[ppid].push_back(pid);
+
+			if (spi->NextEntryOffset == 0)
+				break;
+			ptr += spi->NextEntryOffset;
+		}
+
+		// BFS to collect descendants
+		std::queue<pid_t> q;
+		q.push(rootPid);
+
+		while (!q.empty())
+		{
+			pid_t parent = q.front();
+			q.pop();
+
+			auto it = tree.find(parent);
+			if (it != tree.end())
+			{
+				for (pid_t child : it->second)
+				{
+					if (pids.insert(child).second) // new entry
+						q.push(child);
+				}
+			}
+		}
+
+		return pids;
+	}
+#endif
 
 	/**
 	 * @brief Get a list of all running process IDs.
@@ -783,40 +912,21 @@ namespace os
 	 *
 	 * @return A set containing the PIDs of all running processes.
 	 */
-	inline std::set<pid_t> pids()
+	inline std::unordered_set<pid_t> pids()
 	{
 		const static char fname[] = "proc::pids() ";
-		std::set<pid_t> pids;
+		std::unordered_set<pid_t> pids;
 
 #if defined(_WIN32)
-		HandleRAII hSnapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
-		if (!hSnapshot.valid())
-		{
-			LOG_ERR << fname << "Failed to create process snapshot. Error: " << GetLastError();
-			return pids;
-		}
+		return child_pids();
 
-		PROCESSENTRY32 pe32;
-		pe32.dwSize = sizeof(PROCESSENTRY32);
-
-		if (Process32First(hSnapshot.get(), &pe32))
-		{
-			do
-			{
-				pids.insert(pe32.th32ProcessID);
-			} while (Process32Next(hSnapshot.get(), &pe32));
-		}
-		else
-		{
-			LOG_ERR << fname << "Failed to enumerate processes. Error: " << GetLastError();
-		}
-
+		// TODO: Linux need similar windows high-performance filter sub-tree implementation
 #elif defined(__linux__)
 		// Linux implementation
 		auto entries = os::ls("/proc");
 		if (entries.empty())
 		{
-			LOG_ERR << fname << "Failed to list files in /proc. Error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to list files in /proc. Error: " << last_error_msg();
 			return pids;
 		}
 
@@ -849,7 +959,7 @@ namespace os
 		// Get size of process list
 		if (sysctl(mib, 4, NULL, &size, NULL, 0) < 0)
 		{
-			LOG_ERR << fname << "Failed to query process list size with error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to query process list size with error: " << last_error_msg();
 			return pids;
 		}
 
@@ -865,7 +975,7 @@ namespace os
 		// Retrieve process list
 		if (sysctl(mib, 4, proc_list.get(), &size, NULL, 0) < 0)
 		{
-			LOG_ERR << fname << "Failed to retrieve process list with error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to retrieve process list with error: " << last_error_msg();
 			return pids;
 		}
 
@@ -1025,7 +1135,7 @@ namespace os
 
 	inline std::list<Process> processes()
 	{
-		const std::set<pid_t> pidList = os::pids();
+		const auto pidList = os::pids();
 
 		std::list<Process> result;
 		for (pid_t pid : pidList)
@@ -1355,7 +1465,7 @@ namespace os
 		struct statvfs buf;
 		if (::statvfs(path.c_str(), &buf) != 0)
 		{
-			LOG_ERR << fname << "Failed to call statvfs for path: " << path << " Error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to call statvfs for path: " << path << " Error: " << last_error_msg();
 			return nullptr;
 		}
 
@@ -1373,7 +1483,7 @@ namespace os
 		struct statfs buf;
 		if (::statfs(path.c_str(), &buf) != 0)
 		{
-			LOG_ERR << fname << "Failed to call statfs for path: " << path << " Error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to call statfs for path: " << path << " Error: " << last_error_msg();
 			return nullptr;
 		}
 
@@ -1442,7 +1552,7 @@ namespace os
 			MountTableRAII fallbackFile("/etc/mtab", "r");
 			if (!fallbackFile.valid())
 			{
-				LOG_ERR << fname << "Failed to open both /proc/mounts and /etc/mtab: " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_ERR << fname << "Failed to open both /proc/mounts and /etc/mtab: " << last_error_msg();
 				return mountPointsMap;
 			}
 			LOG_WAR << fname << "Using fallback /etc/mtab";
@@ -1483,7 +1593,7 @@ namespace os
 			struct statvfs fileSystemStats;
 			if (::statvfs(mountDir, &fileSystemStats) != 0)
 			{
-				LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << last_error_msg();
 				continue;
 			}
 
@@ -1511,7 +1621,7 @@ namespace os
 		int totalMounts = getmntinfo(&mountEntries, MNT_NOWAIT);
 		if (totalMounts <= 0)
 		{
-			LOG_ERR << fname << "Failed to retrieve mount points using getmntinfo: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to retrieve mount points using getmntinfo: " << last_error_msg();
 			return mountPointsMap;
 		}
 
@@ -1541,7 +1651,7 @@ namespace os
 				struct statfs fileSystemStats;
 				if (statfs(mountDir.c_str(), &fileSystemStats) != 0)
 				{
-					LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << ACE_OS::strerror(ACE_OS::last_error());
+					LOG_WAR << fname << "Failed to get filesystem stats for " << mountDir << ": " << last_error_msg();
 					continue;
 				}
 
@@ -1597,7 +1707,7 @@ namespace os
 		}
 		else
 		{
-			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_WAR << fname << "Failed stat <" << path << "> with error: " << last_error_msg();
 			return std::make_tuple(-1, -1, -1);
 		}
 #endif
@@ -1635,7 +1745,7 @@ namespace os
 		}
 		else
 		{
-			LOG_WAR << fname << "Failed chmod <" << path << "> with error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_WAR << fname << "Failed chmod <" << path << "> with error: " << last_error_msg();
 			return false;
 		}
 #endif

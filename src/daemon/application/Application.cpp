@@ -49,12 +49,11 @@ Application::~Application()
 	LOG_DBG << fname << "Entered. Application: " << m_name;
 	// #include <boost/stacktrace.hpp>
 	// std::cout << boost::stacktrace::stacktrace();
+	Utility::removeFile(m_stdoutFile);
 }
 
 bool Application::operator==(const std::shared_ptr<Application> &app)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-
 	if (app->m_dailyLimit != nullptr && !app->m_dailyLimit->operator==(this->m_dailyLimit))
 		return false;
 	if (this->m_dailyLimit != nullptr && !this->m_dailyLimit->operator==(app->m_dailyLimit))
@@ -141,25 +140,14 @@ void Application::setUnPersistable()
 
 void Application::nextLaunchTime(const std::chrono::system_clock::time_point &time)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	if (time == AppTimer::EPOCH_ZERO_TIME)
-		m_nextLaunchTime.reset();
+		m_nextLaunchTime = nullptr;
 	else
 		m_nextLaunchTime = boost::make_shared<std::chrono::system_clock::time_point>(time);
 }
 
-const boost::shared_ptr<std::chrono::system_clock::time_point> Application::nextLaunchTime()
-{
-	// boost::shared_ptr is not thread-safe, so return copy here
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (!m_nextLaunchTime)
-		return nullptr; // Return null if m_nextLaunchTime is not set
-	return boost::make_shared<std::chrono::system_clock::time_point>(*m_nextLaunchTime);
-}
-
 bool Application::available(const std::chrono::system_clock::time_point &now)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// check expired
 	if (m_endTime != AppTimer::EPOCH_ZERO_TIME && m_endTime != std::chrono::system_clock::time_point::max() && now >= m_endTime)
 	{
@@ -321,7 +309,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 void Application::refresh(void *ptree)
 {
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		auto lock = m_process.synchronize();
 		if (m_bufferProcess && !m_bufferProcess->running())
 			m_bufferProcess = nullptr;
 	}
@@ -332,10 +320,10 @@ void Application::refresh(void *ptree)
 	// 4. Prometheus
 	if (Configuration::instance()->prometheusEnabled() && RESTHANDLER::instance()->collected())
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		if (m_metricMemory && m_process)
+		auto process = m_process.get();
+		if (m_metricMemory && process)
 		{
-			auto usage = m_process->getProcessDetails(ptree);
+			auto usage = process->getProcessDetails(ptree);
 			m_metricMemory->metric().Set(std::get<1>(usage));
 			m_metricCpu->metric().Set(std::get<2>(usage));
 			if (m_metricFileDesc)
@@ -353,12 +341,12 @@ bool Application::attach(int pid)
 	std::shared_ptr<AppProcess> checkProcStdoutFile;
 	if (pid > 1)
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		this->terminate(m_process);
-		m_process = allocProcess(false, m_dockerImage, m_name);
-		m_process->attach(pid, m_stdoutFile);
-		m_pid = m_process->getpid();
-		m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
+		auto processLock = m_process.synchronize();
+		this->terminate(*processLock);
+		(*processLock) = allocProcess(false, m_dockerImage, m_name);
+		(*processLock)->attach(pid, m_stdoutFile);
+		m_pid = (*processLock)->getpid();
+		auto procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
 #if defined(_WIN32)
 		// TODO: For Windows, implement process status check
 #else
@@ -366,13 +354,14 @@ bool Application::attach(int pid)
 		if (stat)
 		{
 			// recover m_nextLaunchTime to avoid restart
-			m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(stat->get_starttime());
+			procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(stat->get_starttime());
 			nextLaunchTime(stat->get_starttime());
 		}
 #endif
-		LOG_INF << fname << "Attached pid <" << pid << "> to application " << m_name << ", last start on: " << DateTime::formatLocalTime(*m_procStartTime);
-		if (m_process->running())
-			checkProcStdoutFile = m_process;
+		m_procStartTime = procStartTime;
+		LOG_INF << fname << "Attached pid <" << pid << "> to application " << m_name << ", last start on: " << DateTime::formatLocalTime(*procStartTime);
+		if ((*processLock)->running())
+			checkProcStdoutFile = (*processLock);
 	}
 	// registerCheckStdoutTimer() outside of m_appMutex
 	if (checkProcStdoutFile)
@@ -392,26 +381,26 @@ void Application::execute(void *ptree)
 	{
 		// [1.1]: Check if current time is within the application's daily time range
 		auto inDailyRange = m_timer->isInDailyTimeRange(now);
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		if (m_process && m_process->running() && !inDailyRange)
+		auto processLock = m_process.synchronize();
+		if ((*processLock) && (*processLock)->running() && !inDailyRange)
 		{
 			// Terminate running process if it's outside the valid time range
 			LOG_INF << fname << "Application <" << m_name << "> is not in start time, startTime: " << DateTime::formatLocalTime(m_startTime) << " endTime: " << DateTime::formatLocalTime(m_endTime) << " now: " << DateTime::formatLocalTime(now);
-			terminate(m_process);
+			terminate(*processLock);
 			setInvalidError();
 			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
 		// [1.2]: If not scheduled yet, set flag to trigger the first run for a normal application
-		doSchedule = (nextLaunchTime() == nullptr);
+		doSchedule = (m_nextLaunchTime.load() == nullptr);
 	}
 	else if (getStatus() != STATUS::NOTAVIALABLE) // Ignore NOTAVIALABLE status, which is used for runApp and destroying
 	{
 		// [1.3]: Terminate process for <not available> application
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		if (m_process && m_process->running())
+		auto processLock = m_process.synchronize();
+		if ((*processLock) && (*processLock)->running())
 		{
 			LOG_INF << fname << "Application <" << m_name << "> is not available";
-			terminate(m_process);
+			terminate(*processLock);
 			setInvalidError();
 			nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 		}
@@ -424,7 +413,7 @@ void Application::execute(void *ptree)
 		scheduleTime = scheduleNext(now);
 
 		// For periodic applications, simulate a previous run so error handling logic can work
-		if (m_startInterval && scheduleTime && m_return == INVALID_RETURN_CODE && m_procExitTime == nullptr && m_procStartTime == nullptr)
+		if (m_startInterval && scheduleTime && m_return == INVALID_RETURN_CODE && m_procExitTime.load() == nullptr && m_procStartTime.load() == nullptr)
 		{
 			m_return = 0; // Simulate a successful return code for periodic run
 			m_procExitTime = boost::make_shared<std::chrono::system_clock::time_point>(now);
@@ -435,17 +424,16 @@ void Application::execute(void *ptree)
 
 	refresh(ptree);
 
-	bool isRunning = false;
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		isRunning = m_process && m_process->running();
-	}
+	auto process = m_process.get();
+	bool isRunning = process && process->running();
 	// Check if the process exited abnormally and handle errors.
 	// Note: m_procExitTime and m_procStartTime may not be set in a guaranteed order due to asynchronous execution.
 	//   - m_procExitTime is set in Application::onExitUpdate (by terminate).
 	//   - m_procStartTime is set in Application::onTimerSpawn (by scheduleNext).
 	//	 - so: m_procStartTime might delay small time, add 1 second buffer to check
-	if (!isRunning && m_return != INVALID_RETURN_CODE && m_procExitTime && m_procStartTime && (now > (*m_procStartTime + std::chrono::seconds(1))) && scheduleTime == nullptr && getStatus() == STATUS::ENABLED)
+	auto exitTime = m_procExitTime.load();
+	auto startTime = m_procStartTime.load();
+	if (!isRunning && m_return != INVALID_RETURN_CODE && exitTime && startTime && (now > (*startTime + std::chrono::seconds(1))) && scheduleTime == nullptr && getStatus() == STATUS::ENABLED)
 	{
 		// Handle error if process exited unexpectedly
 		handleError();
@@ -467,38 +455,38 @@ bool Application::onTimerSpawn()
 	std::shared_ptr<AppProcess> checkProcStdoutFile;
 	if (this->isEnabled())
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+		auto processLock = m_process.synchronize();
 
 		// 1. clean old process
-		if (m_process && m_process->running())
+		if ((*processLock) && (*processLock)->running())
 		{
 			if (m_bufferTime > 0)
 			{
 				// give some time for buffer process
-				m_bufferProcess = m_process;
+				m_bufferProcess = (*processLock);
 				m_bufferProcess->delayKill(m_bufferTime, __FUNCTION__);
 			}
 			else
 			{
 				// direct kill old process
-				terminate(m_process);
+				terminate(*processLock);
 			}
 		}
 
 		// 2. start new process
-		m_process.reset();
-		m_process = allocProcess(false, m_dockerImage, m_name);
+		(*processLock).reset();
+		(*processLock) = allocProcess(false, m_dockerImage, m_name);
 
 		m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
 		const auto execUser = (m_shellAppFile && m_shellAppFile->isUsingSudo()) ? std::string() : getExecUser();
 		LOG_INF << fname << "Starting application <" << m_name << "> with user: " << execUser;
 
-		m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+		m_pid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 		if (m_pid.load() > 0)
-			checkProcStdoutFile = m_process;
+			checkProcStdoutFile = (*processLock);
 
 		// 3. post process
-		setLastError(m_process->startError());
+		setLastError((*processLock)->startError());
 		if (m_metricStartCount)
 			m_metricStartCount->metric().Increment();
 	}
@@ -525,14 +513,13 @@ void Application::disable()
 	// clean old timer
 	this->cancelTimer(m_nextStartTimerId);
 
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	auto enabled = STATUS::ENABLED;
 	if (m_status.compare_exchange_strong(enabled, STATUS::DISABLED))
 	{
 		LOG_INF << fname << "Application <" << m_name << "> disabled.";
 	}
 	// kill process
-	terminate(m_process);
+	terminate(*m_process.synchronize());
 	nextLaunchTime(AppTimer::EPOCH_ZERO_TIME);
 
 	save();
@@ -551,9 +538,9 @@ std::string Application::runAsyncrize(int timeoutSeconds)
 	const static char fname[] = "Application::runAsyncrize() ";
 	LOG_DBG << fname << "Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	m_process.reset(); // m_process->terminate();
-	m_process = allocProcess(false, m_dockerImage, m_name);
+	auto processLock = m_process.synchronize();
+	(*processLock).reset(); // m_process->terminate();
+	(*processLock) = allocProcess(false, m_dockerImage, m_name);
 	return runApp(timeoutSeconds);
 }
 
@@ -562,10 +549,10 @@ std::string Application::runSyncrize(int timeoutSeconds, std::shared_ptr<void> a
 	const static char fname[] = "Application::runSyncrize() ";
 	LOG_DBG << fname << "Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	m_process.reset(); // m_process->terminate();
-	m_process = allocProcess(true, m_dockerImage, m_name);
-	auto monitorProc = std::dynamic_pointer_cast<MonitoredProcess>(m_process);
+	auto processLock = m_process.synchronize();
+	(*processLock).reset(); // m_process->terminate();
+	(*processLock) = allocProcess(true, m_dockerImage, m_name);
+	auto monitorProc = std::dynamic_pointer_cast<MonitoredProcess>(*processLock);
 	assert(monitorProc != nullptr);
 	monitorProc->setAsyncHttpRequest(asyncHttpRequest);
 
@@ -577,7 +564,7 @@ std::string Application::runApp(int timeoutSeconds)
 	const static char fname[] = "Application::runApp() ";
 	LOG_DBG << fname << "Entered.";
 
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	auto processLock = m_process.synchronize();
 	if (m_dockerImage.length())
 	{
 		throw std::invalid_argument("Docker application does not support this API");
@@ -587,9 +574,9 @@ std::string Application::runApp(int timeoutSeconds)
 	const auto execUser = getExecUser();
 	LOG_INF << fname << "Running application <" << m_name << "> with timeout <" << timeoutSeconds << "> seconds";
 	m_procStartTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-	m_pid = m_process->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+	m_pid = (*processLock)->spawnProcess(getCmdLine(), execUser, m_workdir, getMergedEnvMap(), m_resourceLimit, m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
 	// TODO: run app does not call registerCheckStdoutTimer() for now
-	setLastError(m_process->startError());
+	setLastError((*processLock)->startError());
 	if (m_metricStartCount)
 		m_metricStartCount->metric().Increment();
 
@@ -597,41 +584,41 @@ std::string Application::runApp(int timeoutSeconds)
 	{
 		m_health = true;
 		if (timeoutSeconds > 0)
-			m_process->delayKill(timeoutSeconds, fname);
+			(*processLock)->delayKill(timeoutSeconds, fname);
 	}
 	else
 	{
 		throw std::invalid_argument("Start process failed");
 	}
 
-	return m_process->getuuid();
+	return (*processLock)->getuuid();
 }
 
 void Application::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (m_process == nullptr)
+	auto processLock = m_process.synchronize();
+	if ((*processLock) == nullptr)
 		throw std::invalid_argument("No process running");
 
 	// save task request in application level
 	m_taskRequest = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
-	m_process->sendMessage(m_taskRequest);
+	(*processLock)->sendMessage(m_taskRequest);
 }
 
 void Application::getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (m_process == nullptr)
+	auto processLock = m_process.synchronize();
+	if ((*processLock) == nullptr)
 		throw std::invalid_argument("No process running");
-	m_process->getMessage(processId, asyncHttpRequest, m_taskRequest);
+	(*processLock)->getMessage(processId, asyncHttpRequest, m_taskRequest);
 }
 
 void Application::respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-	if (m_process == nullptr)
+	auto processLock = m_process.synchronize();
+	if ((*processLock) == nullptr)
 		throw std::invalid_argument("No process running");
-	return m_process->respMessage(processId, asyncHttpRequest, m_taskRequest);
+	return (*processLock)->respMessage(processId, asyncHttpRequest, m_taskRequest);
 }
 
 const std::string Application::getExecUser() const
@@ -684,36 +671,31 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 {
 	const static char fname[] = "Application::getOutput() ";
 
-	std::shared_ptr<AppProcess> process;
-	{
-		std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-		process = m_process;
-	}
+	auto process = m_process.get();
 	if (process != nullptr && index == 0 && process->getuuid() == processUuid && process->running() && timeout > 0)
 	{
 		// TODO: timeout > 0 already now work, will remove related code in future.
 		process->wait(ACE_Time_Value(timeout));
 	}
 
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	bool finished = false;
 	int exitCode = 0;
-	if (m_process && index == 0)
+	if (process && index == 0)
 	{
-		if (processUuid.length() && m_process->getuuid() != processUuid)
+		if (processUuid.length() && process->getuuid() != processUuid)
 		{
 			throw NotFoundException("No corresponding process running or the given process uuid is wrong");
 		}
-		if (m_process->getuuid() == processUuid)
+		if (process->getuuid() == processUuid)
 		{
-			if (!m_process->running())
+			if (!process->running())
 			{
-				exitCode = m_process->returnValue();
+				exitCode = process->returnValue();
 				finished = true;
 				LOG_DBG << fname << "process:" << processUuid << " finished with exit code: " << exitCode;
 			}
 		}
-		auto output = m_process->getOutputMsg(&position, maxSize);
+		auto output = process->getOutputMsg(&position, maxSize);
 		return std::make_tuple(output, finished, exitCode);
 	}
 	auto file = m_stdoutFileQueue->getFileName(index);
@@ -722,7 +704,7 @@ std::tuple<std::string, bool, int> Application::getOutput(long &position, long m
 
 void Application::initMetrics()
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	auto lock = m_process.synchronize();
 	// must clean first, otherwise the duplicate one will create
 	m_metricStartCount = nullptr;
 	m_metricAppPid = nullptr;
@@ -754,7 +736,7 @@ void Application::initMetrics()
 
 void Application::initMetrics(std::shared_ptr<Application> fromApp)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
+	auto lock = m_process.synchronize();
 	// must clean first, otherwise the duplicate one will create
 	m_metricStartCount = nullptr;
 	m_metricAppPid = nullptr;
@@ -781,7 +763,6 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 
 	nlohmann::json result = nlohmann::json::object();
 
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	LOG_DBG << fname << "Application: " << m_name;
 	result[JSON_KEY_APP_name] = std::string(m_name);
 	if (m_owner)
@@ -809,12 +790,13 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	{
 		if (m_return != INVALID_RETURN_CODE)
 			result[JSON_KEY_APP_return] = m_return.load();
-		if (m_process && m_process->running())
+		auto process = m_process.get();
+		if (process && process->running())
 		{
 			result[JSON_KEY_APP_pid] = m_pid.load();
 			result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(m_pid.load()));
 
-			auto usage = m_process->getProcessDetails(ptree);
+			auto usage = process->getProcessDetails(ptree);
 			if (std::get<0>(usage))
 			{
 				result[JSON_KEY_APP_memory] = (std::get<1>(usage));
@@ -829,13 +811,15 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 				}
 			}
 		}
-		if (m_procStartTime && std::chrono::time_point_cast<std::chrono::hours>(*m_procStartTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
-			result[JSON_KEY_APP_last_start] = std::chrono::duration_cast<std::chrono::seconds>((*m_procStartTime).time_since_epoch()).count();
-		if (m_procExitTime && std::chrono::time_point_cast<std::chrono::hours>(*m_procExitTime).time_since_epoch().count() > 24)
-			result[JSON_KEY_APP_last_exit] = std::chrono::duration_cast<std::chrono::seconds>((*m_procExitTime).time_since_epoch()).count();
-		if (m_process && !m_process->containerId().empty())
+		auto startTime = m_procStartTime.load();
+		if (startTime && std::chrono::time_point_cast<std::chrono::hours>(*startTime).time_since_epoch().count() > 24) // avoid print 1970-01-01 08:00:00
+			result[JSON_KEY_APP_last_start] = std::chrono::duration_cast<std::chrono::seconds>((*startTime).time_since_epoch()).count();
+		auto exitTime = m_procExitTime.load();
+		if (exitTime && std::chrono::time_point_cast<std::chrono::hours>(*exitTime).time_since_epoch().count() > 24)
+			result[JSON_KEY_APP_last_exit] = std::chrono::duration_cast<std::chrono::seconds>((*exitTime).time_since_epoch()).count();
+		if (process && !process->containerId().empty())
 		{
-			result[JSON_KEY_APP_container_id] = std::string((m_process->containerId()));
+			result[JSON_KEY_APP_container_id] = std::string((process->containerId()));
 		}
 		result[JSON_KEY_APP_health] = (this->health());
 		if (m_stdoutFileQueue->size())
@@ -894,9 +878,10 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	{
 		result[JSON_KEY_SHORT_APP_start_interval_seconds] = std::string(m_startIntervalValue);
 	}
-	if (returnRuntimeInfo && m_nextLaunchTime)
+	auto nextLaunchTime = m_nextLaunchTime.load();
+	if (returnRuntimeInfo && nextLaunchTime)
 	{
-		result[JSON_KEY_SHORT_APP_next_start_time] = std::chrono::duration_cast<std::chrono::seconds>((*m_nextLaunchTime).time_since_epoch()).count();
+		result[JSON_KEY_SHORT_APP_next_start_time] = std::chrono::duration_cast<std::chrono::seconds>((*nextLaunchTime).time_since_epoch()).count();
 	}
 
 	Utility::addExtraAppTimeReferStr(result);
@@ -936,8 +921,6 @@ void Application::dump()
 {
 	const static char fname[] = "Application::dump() ";
 
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
-
 	LOG_DBG << fname << "m_name:" << m_name;
 	LOG_DBG << fname << "m_commandLine:" << m_commandLine;
 	LOG_DBG << fname << "m_description:" << m_description;
@@ -963,8 +946,9 @@ void Application::dump()
 
 	LOG_DBG << fname << "m_startInterval:" << m_startInterval;
 	LOG_DBG << fname << "m_bufferTime:" << m_bufferTime;
-	if (m_nextLaunchTime)
-		LOG_DBG << fname << "m_nextLaunchTime:" << DateTime::formatLocalTime(*m_nextLaunchTime);
+	auto nextLaunchTime = m_nextLaunchTime.load();
+	if (nextLaunchTime)
+		LOG_DBG << fname << "m_nextLaunchTime:" << DateTime::formatLocalTime(*nextLaunchTime);
 	if (m_dailyLimit != nullptr)
 		m_dailyLimit->dump();
 	if (m_resourceLimit != nullptr)
@@ -1042,32 +1026,32 @@ bool Application::onTimerAppRemove()
 
 void Application::onExitUpdate(int code)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// update exit information
-	if (m_process == nullptr || !m_process->running()) // avoid update pid when m_bufferProcess exit
+	auto process = m_process.get();
+	if (process == nullptr || !process->running()) // avoid update pid when m_bufferProcess exit
 		m_pid = ACE_INVALID_PID;
 	m_procExitTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
 	m_return.store(code);
-	if (code != 0 && m_process)
-		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, m_process->startError().c_str()));
+	if (code != 0 && process)
+		setLastError(Utility::stringFormat("exited with return code: %d, msg: %s", code, process->startError().c_str()));
 
 	// immediate error handling (compared with Application::execute)
 	// this->registerTimer(0, 0, std::bind(&Application::handleError, this), fname);
 }
 
-void Application::terminate(std::shared_ptr<AppProcess> &process)
+void Application::terminate(std::shared_ptr<AppProcess> &p)
 {
-	std::lock_guard<std::recursive_mutex> guard(m_appMutex);
 	// terminate
-	if (process)
-		process->terminate();
+	if (p)
+		p->terminate();
 
 	// update exit information
-	if (m_process == nullptr || !m_process->running()) // avoid update pid when m_bufferProcess exit
+	auto process = m_process.get();
+	if (process == nullptr || !process->running()) // avoid update pid when m_bufferProcess exit
 		m_pid = ACE_INVALID_PID;
 	m_return = 9;
 	m_procExitTime = boost::make_shared<std::chrono::system_clock::time_point>(std::chrono::system_clock::now());
-	process.reset();
+	p.reset();
 }
 
 void Application::handleError()
@@ -1115,7 +1099,8 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 	auto next = m_timer->nextTime(startFrom);
 
 	// avoid frequency issue
-	auto distanceSeconds = std::abs(std::chrono::duration_cast<std::chrono::seconds>(next - (m_procStartTime ? *m_procStartTime : AppTimer::EPOCH_ZERO_TIME)).count());
+	auto startTime = m_procStartTime.load();
+	auto distanceSeconds = std::abs(std::chrono::duration_cast<std::chrono::seconds>(next - (startTime ? *startTime : AppTimer::EPOCH_ZERO_TIME)).count());
 	if (distanceSeconds < 1)
 	{
 		next += std::chrono::milliseconds(500); // add 0.5s buffer if target start is now
@@ -1134,7 +1119,7 @@ boost::shared_ptr<std::chrono::system_clock::time_point> Application::scheduleNe
 		LOG_DBG << fname << "Next start for <" << m_name << "> is " << DateTime::formatLocalTime(next) << " start timer ID <" << m_nextStartTimerId << ">";
 	}
 
-	return nextLaunchTime();
+	return m_nextLaunchTime.load();
 }
 
 void Application::regSuicideTimer(int timeoutSeconds)

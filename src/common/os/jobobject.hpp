@@ -55,7 +55,7 @@ namespace os
 
         if (job_handle.get_handle() == nullptr)
         {
-            LOG_ERR << fname << "Call to `OpenJobObject` failed for job: " << name << ", error: " << ACE_OS::strerror(ACE_OS::last_error());
+            LOG_ERR << fname << "Call to `OpenJobObject` failed for job: " << name << ", error: " << last_error_msg();
         }
 
         return job_handle;
@@ -79,7 +79,7 @@ namespace os
 
         if (job_handle.get_handle() == nullptr)
         {
-            throw std::runtime_error(Utility::stringFormat("os::create_job: Call to `CreateJobObject` failed for job: %s, error code: %s", name.c_str(), ACE_OS::strerror(ACE_OS::last_error())));
+            throw std::runtime_error(Utility::stringFormat("os::create_job: Call to `CreateJobObject` failed for job: %s, error code: %s", name.c_str(), last_error_msg()));
         }
 
         return job_handle;
@@ -109,14 +109,14 @@ namespace os
 
         if (process_handle.get_handle() == nullptr)
         {
-            throw std::runtime_error(Utility::stringFormat("os::assign_job: Call to `OpenProcess` failed for pid: %d, error code: %s", pid, ACE_OS::strerror(ACE_OS::last_error())));
+            throw std::runtime_error(Utility::stringFormat("os::assign_job: Call to `OpenProcess` failed for pid: %d, error code: %s", pid, last_error_msg()));
         }
 
         const BOOL result = ::AssignProcessToJobObject(job_handle.get_handle(), process_handle.get_handle());
 
         if (result == FALSE)
         {
-            LOG_WAR << fname << "Call to `AssignProcessToJobObject` failed for pid: " << pid << ", error: " << ACE_OS::strerror(ACE_OS::last_error());
+            LOG_WAR << fname << "Call to `AssignProcessToJobObject` failed for pid: " << pid << ", error: " << last_error_msg();
         }
 
         return result == TRUE;
@@ -142,7 +142,7 @@ namespace os
 
         if (result == FALSE)
         {
-            LOG_WAR << fname << "Call to `TerminateJobObject` failed, error: " << ACE_OS::strerror(ACE_OS::last_error());
+            LOG_WAR << fname << "Call to `TerminateJobObject` failed, error: " << last_error_msg();
         }
         return result == TRUE;
     }

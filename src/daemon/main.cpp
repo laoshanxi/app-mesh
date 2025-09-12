@@ -445,7 +445,7 @@ void AppMeshDaemon::initializeRestService()
 
 	if (m_acceptor->open(acceptorAddr, ACE_Reactor::instance(), FLAG_ACE_NONBLOCK, 1, FLAG_SO_REUSEADDR) == -1)
 	{
-		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getRestTcpPort()) + " with error: " + ACE_OS::strerror(ACE_OS::last_error()));
+		throw std::runtime_error("Failed to listen on port " + std::to_string(config->getRestTcpPort()) + " with error: " + last_error_msg());
 	}
 
 	// Setup client connection

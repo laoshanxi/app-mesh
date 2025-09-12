@@ -102,7 +102,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	auto data = std::get<0>(result);
 	if (recvReturn <= 0)
 	{
-		LOG_DBG << fname << "read header length failed with error :" << ACE_OS::strerror(ACE_OS::last_error());
+		LOG_DBG << fname << "read header length failed with error :" << last_error_msg();
 		return -1;
 	}
 

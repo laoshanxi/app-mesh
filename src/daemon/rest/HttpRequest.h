@@ -165,6 +165,9 @@ public:
 	void response();
 	bool onTimerResponse();
 
+	// response standby request
+	static void onProcessExitResponse(pid_t pid);
+
 private:
 	std::atomic_long m_timerResponseId;
 	pid_t m_pid;

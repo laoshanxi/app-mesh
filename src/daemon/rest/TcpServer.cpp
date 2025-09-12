@@ -106,11 +106,11 @@ int TcpHandler::handle_input(ACE_HANDLE)
 	// Handle errors
 	if (errno == EWOULDBLOCK)
 	{
-		LOG_WAR << fname << "Socket buffer full: " << ACE_OS::strerror(ACE_OS::last_error()) << ", closing connection with <" << m_clientHostName << ">";
+		LOG_WAR << fname << "Socket buffer full: " << last_error_msg() << ", closing connection with <" << m_clientHostName << ">";
 		return -1; // No partial reads supported
 	}
 
-	LOG_WAR << fname << "Receive error from <" << m_clientHostName << ">: " << ACE_OS::strerror(ACE_OS::last_error()) << ", closing connection";
+	LOG_WAR << fname << "Receive error from <" << m_clientHostName << ">: " << last_error_msg() << ", closing connection";
 	return -1;
 }
 
@@ -206,7 +206,7 @@ int TcpHandler::open(void *)
 			int flag = 1;
 			if (this->peer().set_option(ACE_IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) == -1)
 			{
-				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_ERR << fname << "Can't disable Nagle's algorithm with error: " << last_error_msg();
 			}
 
 			// if (this->peer().disable(ACE_NONBLOCK) == -1) // Disable non-blocking mode already controled by ACE_NONBLOCK_FLAG
@@ -317,7 +317,7 @@ bool TcpHandler::reply(const Response &resp)
 		std::lock_guard<std::mutex> guard(m_socketLock);
 		if (!sendHeader(length) || !sendBytes(buffer, length))
 		{
-			LOG_ERR << fname << "send response failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "send response failed with error: " << last_error_msg();
 			return false;
 		}
 	}
@@ -350,7 +350,7 @@ bool TcpHandler::reply(const Response &resp)
 				sentSize += readSize;
 				if (!sendHeader(readSize) || !sendBytes(buffer.get(), readSize))
 				{
-					LOG_ERR << fname << "send chunk failed with error: " << ACE_OS::strerror(ACE_OS::last_error());
+					LOG_ERR << fname << "send chunk failed with error: " << last_error_msg();
 					return false;
 				}
 			}
@@ -387,26 +387,26 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 	// Load server certificate and private key; log error if loading fails
 	if (context->certificate(cert.c_str(), SSL_FILETYPE_PEM) != 0)
 	{
-		LOG_ERR << fname << "Failed to load certificate: " << ACE_OS::strerror(ACE_OS::last_error());
+		LOG_ERR << fname << "Failed to load certificate: " << last_error_msg();
 		return nullptr;
 	}
 	if (context->private_key(key.c_str(), SSL_FILETYPE_PEM) != 0)
 	{
-		LOG_ERR << fname << "Failed to load private key: " << ACE_OS::strerror(ACE_OS::last_error());
+		LOG_ERR << fname << "Failed to load private key: " << last_error_msg();
 		return nullptr;
 	}
 
 	// Enable forward secrecy by using ECDH; logging error if setting fails
 	if (!SSL_CTX_set_ecdh_auto(context->context(), 1))
 	{
-		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << ACE_OS::strerror(ACE_OS::last_error());
+		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << last_error_msg();
 	}
 
 	// Configure cipher suites to prioritize security, explicitly excluding weak ciphers
 	const char *ciphers = "HIGH:!aNULL:!MD5:!RC4"; // More secure and modern cipher suite selection
 	if (!SSL_CTX_set_cipher_list(context->context(), ciphers))
 	{
-		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << ACE_OS::strerror(ACE_OS::last_error());
+		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << last_error_msg();
 	}
 
 	// Disable unsafe legacy renegotiation, which could be a security risk
@@ -467,24 +467,24 @@ bool TcpHandler::sendBytes(const char *data, size_t length, int timeoutSeconds)
 		//		<< " Total length remaining: " << (length - totalSent)
 		//		<< ", Sent length: " << sendSize
 		//		<< ", Send result: " << sendReturn
-		//		<< ", Error: " << (errno ? ACE_OS::strerror(ACE_OS::last_error()) : "None");
+		//		<< ", Error: " << (errno ? last_error_msg() : "None");
 
 		// Handle send_n result
 		if (sendReturn <= 0) // `0` or negative indicates failure
 		{
 			if (errno == EINTR) // Interrupted by a signal
 			{
-				LOG_WAR << fname << m_clientHostName << " Send interrupted, retrying. Error: " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_WAR << fname << m_clientHostName << " Send interrupted, retrying. Error: " << last_error_msg();
 				continue; // Retry sending
 			}
 			else if (errno == EWOULDBLOCK || errno == ETIMEDOUT) // Timeout occurred
 			{
-				LOG_ERR << fname << m_clientHostName << " Send operation timed out. Error: " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_ERR << fname << m_clientHostName << " Send operation timed out. Error: " << last_error_msg();
 				return false; // Timeout is a failure condition
 			}
 			else // Other errors
 			{
-				LOG_ERR << fname << m_clientHostName << " Send failed. Error: " << ACE_OS::strerror(ACE_OS::last_error());
+				LOG_ERR << fname << m_clientHostName << " Send failed. Error: " << last_error_msg();
 				return false;
 			}
 		}

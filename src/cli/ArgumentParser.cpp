@@ -85,8 +85,8 @@
 	m_currentUrl = m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>(); \
 	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
 // Each user should have its own token path
-static std::string m_tokenFile = std::string(ACE_OS::getenv("HOME") ? ACE_OS::getenv("HOME") : ".") + "/.appmesh.config";
-const static std::string m_shellHistoryFile = std::string(ACE_OS::getenv("HOME") ? ACE_OS::getenv("HOME") : ".") + "/.appmesh.shell.history";
+static std::string m_tokenFile = ArgumentParser::getAppConfigDir() + "/.appmesh.config";
+const static std::string m_shellHistoryFile = ArgumentParser::getAppConfigDir() + "/.appmesh.shell.history";
 extern char **environ;
 
 // Global variable for appc exec
@@ -2518,4 +2518,41 @@ const std::string ArgumentParser::parseUrlPort(const std::string &url)
 		port = std::string(what[3].first, what[3].second);
 	}
 	return port;
+}
+
+std::string ArgumentParser::getAppConfigDir()
+{
+	boost::filesystem::path dir;
+#ifdef _WIN32
+	const char *appData = std::getenv("APPDATA");			// e.g. C:\Users\<User>\AppData\Roaming
+	const char *localAppData = std::getenv("LOCALAPPDATA"); // e.g. C:\Users\<User>\AppData\Local
+
+	std::string base = appData ? appData : (localAppData ? localAppData : ".");
+	dir = boost::filesystem::path(base) / "AppMesh";
+#else
+	const char *xdgConfig = std::getenv("XDG_CONFIG_HOME");
+	const char *home = std::getenv("HOME");
+
+	std::string base;
+	if (xdgConfig)
+		base = xdgConfig;
+	else if (home)
+		base = std::string(home) + "/.config";
+	else
+		base = ".";
+
+	dir = boost::filesystem::path(base) / "appmesh";
+#endif
+
+	try
+	{
+		if (!boost::filesystem::exists(dir))
+			boost::filesystem::create_directories(dir);
+	}
+	catch (const boost::filesystem::filesystem_error &)
+	{
+		return ".";
+	}
+
+	return dir.string();
 }

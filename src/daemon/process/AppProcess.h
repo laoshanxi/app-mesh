@@ -6,6 +6,7 @@
 
 #include <ace/Process.h>
 #include <ace/Process_Manager.h>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <boost/thread/synchronized_value.hpp>
 
 #include "../../common/TimerHandler.h"
@@ -220,6 +221,7 @@ public:
 	/// </summary>
 	/// <returns></returns>
 	const std::string startError() const;
+	void startError(const std::string &err);
 
 protected:
 	const void *m_owner;
@@ -249,8 +251,8 @@ private:
 	std::atomic<int> m_returnValue;
 
 protected:
-	boost::synchronized_value<std::string> m_startError;
+	boost::atomic_shared_ptr<std::string> m_startError;
 
 private:
-	TaskRequest m_task; // already have mutex (Application::m_appMutex) when call sendMessage/getMessage/respMessage
+	TaskRequest m_task; // already have mutex (Application::m_process.synchronize())
 };
