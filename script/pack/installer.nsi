@@ -107,4 +107,12 @@ Section "Uninstall"
     ; delete files and directories
     Delete "$INSTDIR\Uninstall.exe"
     RMDir /r "$INSTDIR"
+
+    ; --- check if /PURGE flag is passed then delete confir dir ---
+    StrCpy $CMDLINE "$CMDLINE" ; system var has full cmdline
+    ${GetOptions} $CMDLINE "/PURGE" $0
+    ${IfNot} $0 == ""
+        RMDir /r "$APPDATA\AppMesh"
+        RMDir /r "$LOCALAPPDATA\AppMesh"
+    ${EndIf}
 SectionEnd

@@ -232,14 +232,14 @@ paths:
         "401":
           description: Unauthorized access.
 
-  /appmesh/totp/{user}/disable:
+  /appmesh/totp/{user_name}/disable:
     post:
       summary: Disable TOTP for user.
       tags: [TwoFactor]
       security:
         - BearerAuth: []
       parameters:
-        - name: user
+        - name: user_name
           in: path
           required: true
           schema:
@@ -250,14 +250,14 @@ paths:
         "401":
           description: Unauthorized access.
 
-  /appmesh/app/{name}/output:
+  /appmesh/app/{app_name}/output:
     get:
       summary: Retrieve application output.
       tags: [ApplicationMonitor]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: app_name
           in: path
           required: true
           schema:
@@ -303,12 +303,12 @@ paths:
         "200":
           description: List of applications retrieved successfully.
 
-  /appmesh/app/{name}/health:
+  /appmesh/app/{app_name}/health:
     get:
       summary: Check application health status.
       tags: [ApplicationMonitor]
       parameters:
-        - name: name
+        - name: app_name
           in: path
           required: true
           schema:
@@ -319,14 +319,14 @@ paths:
         "404":
           description: Application not found.
 
-  /appmesh/app/{name}/disable:
+  /appmesh/app/{app_name}/disable:
     post:
       summary: Disable Application
       tags: [ApplicationManagement]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: app_name
           in: path
           required: true
           schema:
@@ -338,14 +338,14 @@ paths:
         "404":
           description: Application not found.
 
-  /appmesh/app/{name}:
+  /appmesh/app/{app_name}:
     get:
       summary: View Application
       tags: [ApplicationManagement]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: app_name
           in: path
           required: true
           schema:
@@ -362,7 +362,7 @@ paths:
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: app_name
           in: path
           required: true
           schema:
@@ -415,7 +415,7 @@ paths:
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: app_name
           in: path
           required: true
           schema:
@@ -427,14 +427,14 @@ paths:
         "404":
           description: Application not found.
 
-  /appmesh/app/{name}/enable:
+  /appmesh/app/{app_name}/enable:
     post:
       summary: Enable Application
       tags: [ApplicationManagement]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: app_name
           in: path
           required: true
           schema:
@@ -697,14 +697,14 @@ paths:
         "200":
           description: List of labels.
 
-  /appmesh/label/{name}:
+  /appmesh/label/{label_name}:
     put:
       summary: Add Label
       tags: [Configuration]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: label_name
           in: path
           required: true
           schema:
@@ -728,7 +728,7 @@ paths:
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: label_name
           in: path
           required: true
           schema:
@@ -768,12 +768,19 @@ paths:
         "400":
           description: Bad request.
 
-  /appmesh/user/{name}/passwd:
+  /appmesh/user/{user_name}/passwd:
     post:
       summary: Change User Password
       tags: [UserManagement]
       security:
         - BearerAuth: []
+      parameters:
+        - name: user_name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User name.
       requestBody:
         description: New password definition. The password must be base64 encoded.
         required: true
@@ -799,14 +806,14 @@ paths:
         "404":
           description: User not found.
 
-  /appmesh/user/{name}/lock:
+  /appmesh/user/{user_name}/lock:
     post:
       summary: Lock User
       tags: [UserManagement]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: user_name
           in: path
           required: true
           schema:
@@ -818,14 +825,14 @@ paths:
         "404":
           description: User not found.
 
-  /appmesh/user/{name}/unlock:
+  /appmesh/user/{user_name}/unlock:
     post:
       summary: Unlock User
       tags: [UserManagement]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: user_name
           in: path
           required: true
           schema:
@@ -837,14 +844,14 @@ paths:
         "404":
           description: User not found.
 
-  /appmesh/user/{name}:
+  /appmesh/user/{user_name}:
     put:
       summary: Add User
       tags: [UserManagement]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: user_name
           in: path
           required: true
           schema:
@@ -888,7 +895,7 @@ paths:
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: user_name
           in: path
           required: true
           schema:
@@ -930,14 +937,14 @@ paths:
         "200":
           description: List of roles.
 
-  /appmesh/role/{name}:
+  /appmesh/role/{role_name}:
     post:
       summary: Update Role
       tags: [Authorization]
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: role_name
           in: path
           required: true
           schema:
@@ -964,7 +971,7 @@ paths:
       security:
         - BearerAuth: []
       parameters:
-        - name: name
+        - name: role_name
           in: path
           required: true
           schema:

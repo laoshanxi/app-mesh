@@ -63,6 +63,7 @@ public:
 	std::string readPersistLastHost(const std::string &defaultAddress);
 	void persistAuthToken(const std::string &hostName, const std::string &token);
 	std::string login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience);
+	static std::string getAppConfigDir();
 
 private:
 	bool isAppExist(const std::string &appName);

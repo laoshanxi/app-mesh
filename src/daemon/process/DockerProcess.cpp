@@ -1,9 +1,8 @@
-
-#include "DockerProcess.h"
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
 #include "../../common/os/pstree.hpp"
 #include "../ResourceLimitation.h"
+#include "DockerProcess.h"
 #include "LinuxCgroup.h"
 
 static const char *const CONTAINER_DOCKER = "docker";
@@ -46,9 +45,9 @@ void DockerProcess::terminate()
 		}
 	}
 
-	if (m_imagePullProc != nullptr && m_imagePullProc->running())
+	if (m_imagePull != nullptr && m_imagePull->running())
 	{
-		m_imagePullProc->terminate();
+		m_imagePull->terminate();
 	}
 	// detach manually
 	this->detach();
@@ -80,13 +79,13 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 		dockerProcess->delayKill(dockerCliTimeoutSec, fname);
 		dockerProcess->wait();
 		dockerProcess->terminate();
-		m_imagePullProc.reset();
+		m_imagePull.reset();
 		auto imageSizeStr = Utility::stdStringTrim(dockerProcess->getOutputMsg(0, 10240, true));
 		dockerProcess.reset();
 		if (!Utility::isNumber(imageSizeStr) || std::stoi(imageSizeStr) < 1)
 		{
 			LOG_WAR << fname << "docker image <" << m_dockerImage << "> not exist, try to pull.";
-			m_startError = Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str());
+			startError(Utility::stringFormat("docker image <%s> not exist, try to pull.", m_dockerImage.c_str()));
 
 			// pull docker image
 			return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
@@ -165,14 +164,14 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 			startSuccess = (containerId.length() > 0);
 			if (!startSuccess)
 			{
-				m_startError = Utility::stringFormat("failed get docker container <%s> from output <%s>", dockerCommand.c_str(), outmsg.c_str());
+				startError(Utility::stringFormat("failed get docker container <%s> from output <%s>", dockerCommand.c_str(), outmsg.c_str()));
 			}
 		}
 		else
 		{
 			const auto outmsg = dockerProcess->getOutputMsg(0, 10240, false);
 			LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << outmsg;
-			m_startError = Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), outmsg.c_str());
+			startError(Utility::stringFormat("started docker container <%s> failed with error <%s>", dockerCommand.c_str(), outmsg.c_str()));
 		}
 		dockerProcess->terminate();
 		// set container id here for future clean
@@ -204,20 +203,20 @@ int DockerProcess::syncSpawnProcess(std::string cmd, std::string execUser, std::
 				}
 				else
 				{
-					m_startError = Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str());
+					startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
 				}
 			}
 			else
 			{
 				LOG_WAR << fname << "can not get correct container pid :" << pidStr;
-				m_startError = Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str());
+				startError(Utility::stringFormat("failed get docker container pid <%s> from output <%s>", dockerCommand.c_str(), pidStr.c_str()));
 			}
 		}
 		else
 		{
 			const auto output = dockerProcess->getOutputMsg(0, 10240, false);
 			LOG_WAR << fname << "started container <" << dockerCommand << "failed :" << output;
-			m_startError = Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), output.c_str());
+			startError(Utility::stringFormat("start docker container <%s> failed <%s>", dockerCommand.c_str(), output.c_str()));
 		}
 		dockerProcess->terminate();
 	}
@@ -242,10 +241,10 @@ int DockerProcess::execPullDockerImage(std::map<std::string, std::string> &envMa
 	{
 		LOG_WAR << fname << "use default APP_MANAGER_DOCKER_IMG_PULL_TIMEOUT <" << pullTimeout << ">";
 	}
-	m_imagePullProc = std::make_shared<AppProcess>(nullptr);
-	m_imagePullProc->spawnProcess(m_containerEngine + " pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
-	m_imagePullProc->delayKill(pullTimeout, fname);
-	this->attach(m_imagePullProc->getpid());
+	m_imagePull = std::make_shared<AppProcess>(nullptr);
+	m_imagePull->spawnProcess(m_containerEngine + " pull " + dockerImage, "root", workDir, {}, nullptr, stdoutFile, EMPTY_STR_JSON, 0);
+	m_imagePull->delayKill(pullTimeout, fname);
+	this->attach(m_imagePull->getpid());
 	return this->getpid();
 }
 

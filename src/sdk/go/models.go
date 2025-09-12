@@ -4,16 +4,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"runtime"
 
 	"github.com/vmihailenco/msgpack/v5"
 )
 
 const (
-	DEFAULT_HTTP_URI             = "https://localhost:6060"
-	DEFAULT_TCP_URI              = "localhost:6059"
-	DEFAULT_CLIENT_CERT_FILE     = "/opt/appmesh/ssl/client.pem"
-	DEFAULT_CLIENT_CERT_KEY_FILE = "/opt/appmesh/ssl/client-key.pem"
-	DEFAULT_CA_FILE              = "/opt/appmesh/ssl/ca.pem"
+	DEFAULT_HTTP_URI = "https://localhost:6060"
+	DEFAULT_TCP_URI  = "localhost:6059"
 
 	HTTP_USER_AGENT_HEADER_NAME        = "User-Agent"
 	HTTP_USER_AGENT                    = "appmesh/golang"
@@ -26,6 +25,26 @@ const (
 
 	DEFAULT_JWT_AUDIENCE = "appmesh-service"
 )
+
+var (
+	// Platform-aware default SSL paths
+	_DEFAULT_SSL_DIR              string
+	DEFAULT_CLIENT_CERT_FILE     string
+	DEFAULT_CLIENT_CERT_KEY_FILE string
+	DEFAULT_CA_FILE              string
+)
+
+func init() {
+	if runtime.GOOS == "windows" {
+		_DEFAULT_SSL_DIR = "c:/local/appmesh/ssl"
+	} else {
+		_DEFAULT_SSL_DIR = "/opt/appmesh/ssl"
+	}
+
+	DEFAULT_CLIENT_CERT_FILE = filepath.Join(_DEFAULT_SSL_DIR, "client.pem")
+	DEFAULT_CLIENT_CERT_KEY_FILE = filepath.Join(_DEFAULT_SSL_DIR, "client-key.pem")
+	DEFAULT_CA_FILE = filepath.Join(_DEFAULT_SSL_DIR, "ca.pem")
+}
 
 // ClientRequester defines the interface for making HTTP requests.
 type ClientRequester interface {

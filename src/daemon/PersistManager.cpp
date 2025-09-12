@@ -193,7 +193,7 @@ void Snapshot::persist()
 		}
 		else
 		{
-			LOG_ERR << fname << "Failed to create snapshot file <" << SNAPSHOT_FILE_NAME << ">, error :" << ACE_OS::strerror(ACE_OS::last_error());
+			LOG_ERR << fname << "Failed to create snapshot file <" << SNAPSHOT_FILE_NAME << ">, error :" << last_error_msg();
 		}
 	}
 	else

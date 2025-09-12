@@ -14,8 +14,6 @@
 #include "TcpServer.h"
 #include "protoc/ProtobufHelper.h"
 
-APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
-
 HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	: m_uuid(std::move(request.uuid)),
 	  m_method(std::move(request.http_method)),
@@ -213,6 +211,9 @@ void HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequest used to handle view app output
 ////////////////////////////////////////////////////////////////////////////////
+using APP_OUT_MULTI_MAP_TYPE = ACE_Hash_Multi_Map_Manager<pid_t, std::shared_ptr<HttpRequestOutputView>, ACE_Hash<pid_t>, ACE_Equal_To<pid_t>, ACE_Recursive_Thread_Mutex>;
+static APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
+
 HttpRequestOutputView::HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
 	: HttpRequest(message), m_timerResponseId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_app(appObj)
 {
@@ -230,7 +231,7 @@ void HttpRequestOutputView::init()
 
 	if (AppProcess::running(m_pid) && timeout > 0)
 	{
-		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(TimerHandler::shared_from_this()));
+		APP_OUT_VIEW_MAP.bind(m_pid, std::static_pointer_cast<HttpRequestOutputView>(this->shared_from_this()));
 		m_timerResponseId = this->registerTimer(1000L * timeout, 0, std::bind(&HttpRequestOutputView::onTimerResponse, this), fname);
 
 		LOG_DBG << fname << "app <" << m_app->getName() << "> view output with pid <" << m_pid << ">, APP_OUT_VIEW_MAP size = " << APP_OUT_VIEW_MAP.current_size();
@@ -311,6 +312,26 @@ bool HttpRequestOutputView::onTimerResponse()
 		m_app.reset();
 	}
 	return false;
+}
+
+void HttpRequestOutputView::onProcessExitResponse(pid_t pid)
+{
+	const static char fname[] = "HttpRequestOutputView::onProcessExitResponse() ";
+	LOG_DBG << fname << (APP_OUT_VIEW_MAP.current_size() > 0 ? " APP_OUT_VIEW_MAP size: " + std::to_string(APP_OUT_VIEW_MAP.current_size()) : "");
+
+	ACE_Unbounded_Set<std::shared_ptr<HttpRequestOutputView>> requests, empty;
+	{
+		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(APP_OUT_VIEW_MAP.mutex());
+		APP_OUT_VIEW_MAP.rebind(pid, empty, requests);
+		APP_OUT_VIEW_MAP.unbind(pid);
+	}
+
+	if (requests.size() > 0)
+	{
+		LOG_DBG << fname << "pid <" << pid << "> exit and response output to clients: " << requests.size();
+		for (auto &req : requests)
+			req->response();
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
