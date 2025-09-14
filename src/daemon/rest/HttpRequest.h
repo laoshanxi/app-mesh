@@ -9,8 +9,6 @@
 #include "../../common/Utility.h"
 #include "protoc/ProtobufHelper.h"
 
-#define CONTENT_TYPE_APPLICATION_JSON "application/json; charset=utf-8"
-
 /// <summary>
 /// HttpRequest is wrapper of <web::http::http_request>,
 ///    - used for REST server forward request to TCP server and wait TCP result then response REST client
@@ -72,7 +70,7 @@ public:
 	/// </remarks>
 	void reply(web::http::status_code status,
 			   std::string &body_data,
-			   const std::string &content_type = "text/plain; charset=utf-8") const;
+			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -84,7 +82,7 @@ public:
 	void reply(web::http::status_code status,
 			   const std::string &body_data,
 			   const std::map<std::string, std::string> &headers,
-			   const std::string &content_type = "text/plain") const;
+			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
 	static std::shared_ptr<HttpRequest> deserialize(const char *input, int inputSize, int tcpHandlerId);
 	static const nlohmann::json emptyJson();

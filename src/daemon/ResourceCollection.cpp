@@ -207,7 +207,7 @@ nlohmann::json ResourceCollection::AsJson()
 						  fs["size"] = (usage->totalSize);
 						  fs["used"] = (usage->usedSize);
 						  fs["usage"] = (usage->usagePercentage);
-						  fs["device"] = JSON::localEncodingToUtf8(pair.second);
+						  fs["device"] = Utility::localEncodingToUtf8(pair.second);
 						  fs["mount_point"] = std::string(pair.first);
 						  fsArr.push_back(fs);
 					  } });

@@ -4,7 +4,6 @@
 #include <mutex>
 #include <openssl/ssl.h>
 
-#include "FileWrapper.hpp"
 #include "RestClient.h"
 #include "Utility.h"
 
@@ -369,7 +368,12 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	}
 
 	// Open the file for writing
-	FileWrapper output_file(localFile, "wb");
+	std::unique_ptr<FILE, void (*)(FILE *)> output_file(fopen(localFile.c_str(), "wb"), [](FILE *fp)
+														{ if (fp) fclose(fp); });
+	if (!output_file)
+	{
+		throw std::invalid_argument("failed to open file for writing.");
+	}
 
 	// Setup headers
 	CurlHeaderList headers;

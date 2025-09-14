@@ -274,7 +274,7 @@ public:
     static std::string dumpToLocalEncoding(const nlohmann::json &j, int indent = -1)
     {
         const std::string utf8Str = j.dump(indent, ' ');
-        return utf8ToLocalEncoding(utf8Str);
+        return Utility::utf8ToLocalEncoding(utf8Str);
     }
 
     // Parsing helpers (unchanged behavior) — note: these forward to nlohmann::json::parse
@@ -414,90 +414,5 @@ private:
         catch (...)
         { /* ignore */
         }
-    }
-
-public:
-    // --- Conversions ---
-    static std::string localEncodingToUtf8(const std::string &ansi)
-    {
-#if defined(_WIN32)
-        // Windows: ANSI → UTF-8
-        if (ansi.empty())
-            return {};
-
-        int wideLen = MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), nullptr, 0);
-        if (wideLen <= 0)
-            return {};
-
-        std::wstring wideStr(wideLen, L'\0');
-        MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), wideStr.data(), wideLen);
-
-        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, nullptr, 0, nullptr, nullptr);
-        if (utf8Len <= 0)
-            return {};
-
-        std::string utf8Str(utf8Len, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, utf8Str.data(), utf8Len, nullptr, nullptr);
-
-        return utf8Str;
-#else
-        // POSIX: already UTF-8
-        return ansi;
-#endif
-    }
-
-    static std::string utf8ToLocalEncoding(const std::string &utf8Str)
-    {
-#if defined(_WIN32)
-        if (utf8Str.empty())
-            return std::string();
-
-        // Check for oversized input
-        if (utf8Str.size() > static_cast<size_t>(INT_MAX))
-            return utf8Str; // fallback for very large strings
-
-        const int utf8Size = static_cast<int>(utf8Str.size());
-
-        // UTF-8 -> UTF-16: Get required buffer size
-        int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), utf8Size, nullptr, 0);
-        if (wideLen <= 0)
-            return utf8Str;
-
-        // Convert to UTF-16
-        std::wstring wideStr(wideLen, L'\0');
-        int actualWideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), utf8Size,
-                                                wideStr.data(), wideLen);
-        if (actualWideLen <= 0 || actualWideLen > wideLen)
-            return utf8Str;
-
-        // Resize to actual length (in case of discrepancy)
-        wideStr.resize(actualWideLen);
-
-        // Determine target code page
-        UINT cp = GetConsoleOutputCP();
-        if (cp == 0)       // GetConsoleOutputCP returns 0 if no console or on error
-            cp = GetACP(); // Use GetACP() instead of CP_ACP constant
-
-        // UTF-16 -> target encoding: Get required buffer size
-        int ansiLen = WideCharToMultiByte(cp, 0, wideStr.data(), actualWideLen,
-                                          nullptr, 0, nullptr, nullptr);
-        if (ansiLen <= 0)
-            return utf8Str;
-
-        // Convert to target encoding
-        std::string ansiStr(ansiLen, '\0');
-        int actualAnsiLen = WideCharToMultiByte(cp, 0, wideStr.data(), actualWideLen,
-                                                ansiStr.data(), ansiLen, nullptr, nullptr);
-        if (actualAnsiLen <= 0 || actualAnsiLen > ansiLen)
-            return utf8Str;
-
-        // Resize to actual length and return
-        ansiStr.resize(actualAnsiLen);
-        return ansiStr;
-
-#else
-        // POSIX: modern systems use UTF-8 by default
-        return utf8Str;
-#endif
     }
 };

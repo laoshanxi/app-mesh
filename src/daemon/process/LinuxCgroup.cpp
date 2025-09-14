@@ -162,8 +162,9 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 	const static char fname[] = "LinuxCgroup::retrieveCgroupHeirarchy() ";
 
 	// mount -t cgroup
-	FILE *fp = fopen("/proc/mounts", "r");
-	if (nullptr == fp)
+	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen("/proc/mounts", "r"), [](FILE *fp)
+											   { if (fp) fclose(fp); });
+	if (!fp)
 	{
 		LOG_ERR << fname << "Get file stream failed with error : " << last_error_msg();
 		return;
@@ -172,7 +173,7 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 	struct mntent *entPtr = nullptr;
 	struct mntent entObj;
 	char buffer[4094] = {0};
-	while (nullptr != (entPtr = getmntent_r(fp, &entObj, buffer, sizeof(buffer))))
+	while (nullptr != (entPtr = getmntent_r(fp.get(), &entObj, buffer, sizeof(buffer))))
 	{
 		if (std::string("cgroup") != entObj.mnt_type)
 		{
@@ -209,8 +210,6 @@ void LinuxCgroup::retrieveCgroupHeirarchy()
 			LOG_DBG << fname << "Get cpu hierarchy dir : " << CGROUP_CPU_ROOT_DIR;
 		}
 	}
-	if (fp)
-		fclose(fp);
 #endif
 }
 
@@ -245,10 +244,11 @@ void LinuxCgroup::writeValue(const std::string &cgroupPath, long long value)
 {
 	const static char fname[] = "LinuxCgroup::writeValue() ";
 
-	FILE *fp = fopen(cgroupPath.c_str(), "w+");
+	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen(cgroupPath.c_str(), "w+"), [](FILE *fp)
+											   { if (fp) fclose(fp); });
 	if (fp)
 	{
-		if (fprintf(fp, "%lld", value))
+		if (fprintf(fp.get(), "%lld", value))
 		{
 			LOG_DBG << fname << "Write <" << value << "> to file <" << cgroupPath << "> success.";
 		}
@@ -256,7 +256,6 @@ void LinuxCgroup::writeValue(const std::string &cgroupPath, long long value)
 		{
 			LOG_ERR << fname << "Write <" << value << "> to file <" << cgroupPath << "> failed with error :" << last_error_msg();
 		}
-		fclose(fp);
 	}
 	else
 	{
@@ -269,10 +268,11 @@ long long LinuxCgroup::readValue(const std::string &cgroupPath)
 	const static char fname[] = "LinuxCgroup::readValue() ";
 
 	long long value = 0;
-	FILE *fp = fopen(cgroupPath.c_str(), "r");
+	std::unique_ptr<FILE, void (*)(FILE *)> fp(fopen(cgroupPath.c_str(), "r"), [](FILE *fp)
+											   { if (fp) fclose(fp); });
 	if (fp)
 	{
-		if (fscanf(fp, "%lld", &value))
+		if (fscanf(fp.get(), "%lld", &value))
 		{
 			LOG_DBG << fname << "read <" << value << "> from file <" << cgroupPath << "> success.";
 		}
@@ -280,7 +280,6 @@ long long LinuxCgroup::readValue(const std::string &cgroupPath)
 		{
 			LOG_ERR << fname << "read <" << value << "> from file <" << cgroupPath << "> failed with error :" << last_error_msg();
 		}
-		fclose(fp);
 	}
 	else
 	{

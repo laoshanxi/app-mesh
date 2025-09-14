@@ -42,12 +42,12 @@ void HttpRequest::reply(web::http::status_code status) const
 
 void HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data) const
 {
-	reply(m_relative_uri, m_uuid, body_data.dump(), {}, status, CONTENT_TYPE_APPLICATION_JSON);
+	reply(m_relative_uri, m_uuid, body_data.dump(), {}, status, web::http::mime_types::application_json);
 }
 
 void HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
 {
-	reply(m_relative_uri, m_uuid, body_data.dump(), headers, status, CONTENT_TYPE_APPLICATION_JSON);
+	reply(m_relative_uri, m_uuid, body_data.dump(), headers, status, web::http::mime_types::application_json);
 }
 
 void HttpRequest::reply(web::http::status_code status, std::string &body_data, const std::string &content_type) const

@@ -2,7 +2,9 @@
 #include <errno.h>
 #include <fstream>
 #include <list>
+#include <locale>
 #include <string>
+#include <vector>
 #if !defined(_WIN32)
 #include <sys/file.h>
 #endif
@@ -11,6 +13,7 @@
 #include <crt_externs.h> // For getprogname
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
 #elif defined(_WIN32)
+#include <codecvt>
 #include <windows.h>
 #endif
 
@@ -550,6 +553,137 @@ std::string Utility::readFileCpp(const std::string &path)
 	return str;
 }
 
+std::string Utility::localEncodingToUtf8(const std::string &ansi)
+{
+#if defined(_WIN32)
+	// Windows: ANSI → UTF-8
+	if (ansi.empty())
+		return {};
+
+	int wideLen = MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), nullptr, 0);
+	if (wideLen <= 0)
+		return {};
+
+	std::wstring wideStr(wideLen, L'\0');
+	MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), wideStr.data(), wideLen);
+
+	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, nullptr, 0, nullptr, nullptr);
+	if (utf8Len <= 0)
+		return {};
+
+	std::string utf8Str(utf8Len, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, utf8Str.data(), utf8Len, nullptr, nullptr);
+
+	return utf8Str;
+#else
+	// POSIX: already UTF-8
+	return ansi;
+#endif
+}
+
+std::string Utility::utf8ToLocalEncoding(const std::string &input)
+{
+#if defined(_WIN32)
+	if (input.empty())
+	{
+		return input;
+	}
+
+	try
+	{
+		// Get the current system locale
+		std::locale loc("");
+
+		// Create UTF-8 to wchar_t converter
+		std::wstring_convert<std::codecvt_utf8<wchar_t>> utf8_conv;
+
+		// Convert UTF-8 to wide string
+		std::wstring wide_str = utf8_conv.from_bytes(input);
+
+		// Use locale's codecvt facet to convert to local encoding
+		const std::codecvt<wchar_t, char, std::mbstate_t> &codecvt_facet =
+			std::use_facet<std::codecvt<wchar_t, char, std::mbstate_t>>(loc);
+
+		std::mbstate_t state = std::mbstate_t();
+		std::string result(wide_str.length() * codecvt_facet.max_length(), '\0');
+
+		const wchar_t *from_next;
+		char *to_next;
+
+		std::codecvt_base::result conv_result = codecvt_facet.out(
+			state,
+			wide_str.data(), wide_str.data() + wide_str.length(), from_next,
+			&result[0], &result[0] + result.length(), to_next);
+
+		if (conv_result == std::codecvt_base::ok ||
+			conv_result == std::codecvt_base::noconv)
+		{
+			result.resize(to_next - &result[0]);
+			return result;
+		}
+
+		// If conversion failed, return original string
+		return input;
+	}
+	catch (...)
+	{
+		// If any exception occurs (locale not available, etc.),
+		// return original string
+		return input;
+	}
+
+#else
+	// POSIX: assume UTF-8 environment
+	return input;
+#endif
+}
+
+std::string Utility::fileBytesToUtf8(const std::string &input)
+{
+#ifdef _WIN32
+	if (input.size() >= 3 &&
+		static_cast<unsigned char>(input[0]) == 0xEF &&
+		static_cast<unsigned char>(input[1]) == 0xBB &&
+		static_cast<unsigned char>(input[2]) == 0xBF)
+	{
+		// UTF-8 BOM → strip
+		return input.substr(3);
+	}
+	else if (input.size() >= 2 &&
+			 static_cast<unsigned char>(input[0]) == 0xFF &&
+			 static_cast<unsigned char>(input[1]) == 0xFE)
+	{
+		// UTF-16 LE
+		std::u16string u16(reinterpret_cast<const char16_t *>(input.data() + 2),
+						   (input.size() - 2) / 2);
+		std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> conv;
+		return conv.to_bytes(u16);
+	}
+	else if (input.size() >= 2 &&
+			 static_cast<unsigned char>(input[0]) == 0xFE &&
+			 static_cast<unsigned char>(input[1]) == 0xFF)
+	{
+		// UTF-16 BE
+		std::u16string u16;
+		u16.resize((input.size() - 2) / 2);
+		for (size_t i = 0; i < u16.size(); ++i)
+		{
+			u16[i] = static_cast<char16_t>(
+				(static_cast<unsigned char>(input[2 + i * 2]) << 8) |
+				static_cast<unsigned char>(input[2 + i * 2 + 1]));
+		}
+		std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> conv;
+		return conv.to_bytes(u16);
+	}
+	else
+	{
+		// Assume UTF-8 without BOM
+		return input;
+	}
+#endif
+	return input;
+}
+
 std::string Utility::readFileCpp(const std::string &path, long *position, long maxSize, bool readLine)
 {
 	const static char fname[] = "Utility::readFileCPP() ";
@@ -713,7 +847,7 @@ std::string Utility::readFileCpp(const std::string &path, long *position, long m
 		}
 	}
 
-	return result;
+	return fileBytesToUtf8(result);
 }
 
 std::string Utility::createUUID()

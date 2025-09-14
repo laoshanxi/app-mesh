@@ -221,6 +221,11 @@ public:
 	static std::string readFileCpp(const std::string &path);
 	static std::string readFileCpp(const std::string &path, long *position, long maxSize, bool readLine = false);
 
+	// Locale encoding
+	static std::string fileBytesToUtf8(const std::string &input);	  // Used for read text file on windows
+	static std::string localEncodingToUtf8(const std::string &input); // Used for read windows system attributes
+	static std::string utf8ToLocalEncoding(const std::string &input); // Used for CLI correct display
+
 	static std::string createUUID();
 	static bool createPidFile();
 	static void appendStrTimeAttr(nlohmann::json &jsonObj, const std::string &key);

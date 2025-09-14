@@ -1006,7 +1006,7 @@ int ArgumentParser::runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int
 			query[HTTP_QUERY_KEY_stdout_position] = std::to_string(outputPosition);
 			query[HTTP_QUERY_KEY_stdout_timeout] = std::to_string(1); // wait max 1 second in server side
 			response = requestHttp(false, web::http::methods::GET, restPath, nullptr, {}, query);
-			std::cout << JSON::utf8ToLocalEncoding(response->text) << std::flush;
+			std::cout << response->text << std::flush;
 			outputPosition = response->header.count(HTTP_HEADER_KEY_output_pos) ? std::atol(response->header.find(HTTP_HEADER_KEY_output_pos)->second.c_str()) : outputPosition;
 			returnCode = response->header.count(HTTP_HEADER_KEY_exit_code) ? std::atoi(response->header.find(HTTP_HEADER_KEY_exit_code)->second.c_str()) : returnCode;
 
@@ -1824,10 +1824,13 @@ bool ArgumentParser::confirmInput(const char *msg)
 
 std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
+	// token
 	if (m_jwtToken.empty())
 	{
 		m_jwtToken = getAuthenToken();
 	}
+
+	// header
 	header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken;
 	if (m_forwardTo.length())
 	{
@@ -1836,12 +1839,26 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, cons
 		else
 			header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
 	}
+
+	// body
 	std::string bodyContent = body ? body->dump() : std::string();
+
+	// request
 	auto resp = RestClient::request(m_currentUrl, mtd, path, bodyContent, header, query);
+
+	// check return
 	if (shouldThrow && resp->status_code != web::http::status_codes::OK)
 	{
 		throw std::invalid_argument(parseOutputMessage(resp));
 	}
+
+	// locale
+	if (resp->status_code == web::http::status_codes::OK &&
+		resp->header[web::http::header_names::content_type] == web::http::mime_types::text_plain_utf8)
+	{
+		resp->text = Utility::utf8ToLocalEncoding(resp->text);
+	}
+
 	return resp;
 }
 
