@@ -20,7 +20,6 @@
 #include <cerrno>
 #include <cstring>
 #include <sys/stat.h>
-#include <sys/types.h> // For pid_t.
 #include <unistd.h>
 #endif
 
@@ -32,139 +31,13 @@
 #include <ace/OS.h>
 #include <boost/filesystem.hpp> // directory_iterator
 
-#include "../../common/Utility.h"
+#include "../Utility.h"
+#include "handler.hpp"
+#include "malloc.hpp"
+#include "models.h"
 
 namespace os
 {
-#if defined(_WIN32)
-	// RAII wrapper for Windows HANDLE
-	class HandleRAII
-	{
-	private:
-		HANDLE handle_;
-
-	public:
-		explicit HandleRAII(HANDLE handle = INVALID_HANDLE_VALUE) : handle_(handle) {}
-
-		~HandleRAII()
-		{
-			if (handle_ != INVALID_HANDLE_VALUE && handle_ != NULL)
-			{
-				CloseHandle(handle_);
-			}
-		}
-
-		// Non-copyable
-		HandleRAII(const HandleRAII &) = delete;
-		HandleRAII &operator=(const HandleRAII &) = delete;
-
-		// Movable
-		HandleRAII(HandleRAII &&other) noexcept : handle_(other.handle_)
-		{
-			other.handle_ = INVALID_HANDLE_VALUE;
-		}
-
-		HandleRAII &operator=(HandleRAII &&other) noexcept
-		{
-			if (this != &other)
-			{
-				reset();
-				handle_ = other.handle_;
-				other.handle_ = INVALID_HANDLE_VALUE;
-			}
-			return *this;
-		}
-
-		HANDLE get() const { return handle_; }
-		HANDLE release()
-		{
-			HANDLE temp = handle_;
-			handle_ = INVALID_HANDLE_VALUE;
-			return temp;
-		}
-
-		void reset(HANDLE newHandle = INVALID_HANDLE_VALUE)
-		{
-			if (handle_ != INVALID_HANDLE_VALUE && handle_ != NULL)
-			{
-				CloseHandle(handle_);
-			}
-			handle_ = newHandle;
-		}
-
-		bool valid() const
-		{
-			return handle_ != INVALID_HANDLE_VALUE && handle_ != NULL;
-		}
-
-		// Allow implicit conversion to HANDLE for API calls
-		operator HANDLE() const { return handle_; }
-	};
-#endif
-
-	// RAII wrapper for malloc'd memory
-	template <typename T>
-	class MallocRAII
-	{
-	private:
-		T *ptr_;
-
-	public:
-		explicit MallocRAII(T *ptr = nullptr) : ptr_(ptr) {}
-
-		~MallocRAII()
-		{
-			if (ptr_)
-			{
-				free(ptr_);
-			}
-		}
-
-		// Non-copyable
-		MallocRAII(const MallocRAII &) = delete;
-		MallocRAII &operator=(const MallocRAII &) = delete;
-
-		// Movable
-		MallocRAII(MallocRAII &&other) noexcept : ptr_(other.ptr_)
-		{
-			other.ptr_ = nullptr;
-		}
-
-		MallocRAII &operator=(MallocRAII &&other) noexcept
-		{
-			if (this != &other)
-			{
-				reset();
-				ptr_ = other.ptr_;
-				other.ptr_ = nullptr;
-			}
-			return *this;
-		}
-
-		T *get() const { return ptr_; }
-		T *release()
-		{
-			T *temp = ptr_;
-			ptr_ = nullptr;
-			return temp;
-		}
-
-		void reset(T *newPtr = nullptr)
-		{
-			if (ptr_)
-			{
-				free(ptr_);
-			}
-			ptr_ = newPtr;
-		}
-
-		bool valid() const { return ptr_ != nullptr; }
-
-		// Allow pointer-like operations
-		T &operator*() const { return *ptr_; }
-		T *operator->() const { return ptr_; }
-		operator T *() const { return ptr_; }
-	};
 
 	// Returns the number of open file descriptors for the specified process.
 	inline size_t getOpenFileDescriptorCount(pid_t pid = ::getpid())
@@ -289,52 +162,6 @@ namespace os
 #endif
 
 		return result;
-	};
-
-	struct Process
-	{
-		Process(pid_t _pid,
-				pid_t _parent,
-				pid_t _group,
-				const pid_t &_session,
-				const uint64_t &_rss_bytes,
-				const unsigned long &_utime,
-				const unsigned long &_stime,
-				const unsigned long &_cutime,
-				const unsigned long &_cstime,
-				const std::string &_command,
-				bool _zombie)
-			: pid(_pid),
-			  parent(_parent),
-			  group(_group),
-			  session(_session),
-			  rss_bytes(_rss_bytes),
-			  utime(_utime),
-			  stime(_stime),
-			  cutime(_cutime),
-			  cstime(_cstime),
-			  command(_command),
-			  zombie(_zombie) {}
-
-		const pid_t pid;
-		const pid_t parent;
-		const pid_t group;
-		const pid_t session;
-		// Resident Set Size
-		const uint64_t rss_bytes;
-		const unsigned long utime;
-		const unsigned long stime;
-		const unsigned long cutime;
-		const unsigned long cstime;
-		const std::string command;
-		const bool zombie;
-
-		bool operator<(const Process &p) const { return pid < p.pid; }
-		bool operator<=(const Process &p) const { return pid <= p.pid; }
-		bool operator>(const Process &p) const { return pid > p.pid; }
-		bool operator>=(const Process &p) const { return pid >= p.pid; }
-		bool operator==(const Process &p) const { return pid == p.pid; }
-		bool operator!=(const Process &p) const { return pid != p.pid; }
 	};
 
 	class ProcessTree

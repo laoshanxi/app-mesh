@@ -10,7 +10,7 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
-#include "../../common/json.hpp"
+#include "../../common/json.h"
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
@@ -500,7 +500,7 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool readLine)
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
-	return JSON::localEncodingToUtf8(Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine));
+	return Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine);
 }
 
 void AppProcess::sendMessage(std::shared_ptr<void> asyncHttpRequest)
