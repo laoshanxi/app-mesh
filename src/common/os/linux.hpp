@@ -48,8 +48,9 @@
 // Windows type definitions to match Unix types
 typedef unsigned long long uint64_t;
 
-// Windows type declare for NtQuerySystemInformation
+// Windows type declare
 typedef NTSTATUS(NTAPI *NtQuerySystemInformation_t)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
+typedef NTSTATUS(NTAPI *NtQueryInformationProcess_t)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
 #else
 // Unix/Linux/macOS headers
 #include <dirent.h> // Directory operations
@@ -90,63 +91,14 @@ typedef NTSTATUS(NTAPI *NtQuerySystemInformation_t)(SYSTEM_INFORMATION_CLASS Sys
 
 namespace os
 {
-	// RAII wrapper for FILE*
-	class FileRAII
+
+#if defined(_WIN32)
+	inline HMODULE GetNtdll()
 	{
-	private:
-		FILE *file_;
-
-	public:
-		explicit FileRAII(FILE *file = nullptr) : file_(file) {}
-
-		~FileRAII()
-		{
-			if (file_)
-			{
-				fclose(file_);
-			}
-		}
-
-		// Non-copyable
-		FileRAII(const FileRAII &) = delete;
-		FileRAII &operator=(const FileRAII &) = delete;
-
-		// Movable
-		FileRAII(FileRAII &&other) noexcept : file_(other.file_)
-		{
-			other.file_ = nullptr;
-		}
-
-		FileRAII &operator=(FileRAII &&other) noexcept
-		{
-			if (this != &other)
-			{
-				reset();
-				file_ = other.file_;
-				other.file_ = nullptr;
-			}
-			return *this;
-		}
-
-		FILE *get() const { return file_; }
-		FILE *release()
-		{
-			FILE *temp = file_;
-			file_ = nullptr;
-			return temp;
-		}
-
-		void reset(FILE *newFile = nullptr)
-		{
-			if (file_)
-			{
-				fclose(file_);
-			}
-			file_ = newFile;
-		}
-
-		bool valid() const { return file_ != nullptr; }
-	};
+		static HMODULE h = GetModuleHandleW(L"ntdll.dll");
+		return h;
+	}
+#endif
 
 #ifdef __linux__
 	// RAII wrapper for mount table operations
@@ -225,9 +177,7 @@ namespace os
 
 		if (!hFind.valid())
 		{
-			DWORD error = GetLastError();
-			LOG_WAR << fname << "Failed to open directory: " << directory
-					<< " (error=" << error << ")";
+			LOG_WAR << fname << "Failed to open directory: " << directory << " with error: " << last_error_msg();
 			return result;
 		}
 
@@ -243,8 +193,7 @@ namespace os
 		DWORD error = GetLastError();
 		if (error != ERROR_NO_MORE_FILES)
 		{
-			LOG_WAR << fname << "Failed to read directory: " << directory
-					<< " (error=" << error << ")";
+			LOG_WAR << fname << "Failed to read directory: " << directory << " with error: " << last_error_msg();
 		}
 
 #else
@@ -254,8 +203,7 @@ namespace os
 												  { if (d) closedir(d); });
 		if (!dir)
 		{
-			LOG_WAR << fname << "Failed to open directory: " << directory
-					<< " (errno=" << errno << ": " << last_error_msg() << ")";
+			LOG_WAR << fname << "Failed to open directory: " << directory << " with error: " << last_error_msg();
 			return result;
 		}
 
@@ -274,8 +222,7 @@ namespace os
 
 		if (errno != 0)
 		{
-			LOG_WAR << fname << "Failed to read directory: " << directory
-					<< " (errno=" << errno << ": " << last_error_msg() << ")";
+			LOG_WAR << fname << "Failed to read directory: " << directory << " with error: " << last_error_msg();
 			return {};
 		}
 #endif
@@ -553,9 +500,8 @@ namespace os
 			return nullptr;
 		}
 
-		std::istringstream data(content);
-
-		// Define variables to parse /proc/[pid]/stat fields
+		// Parse /proc/[pid]/stat file format: pid (command) state ppid ...
+		// The command field is enclosed in parentheses and can contain spaces
 		std::string comm;
 		char state;
 		pid_t ppid;
@@ -591,37 +537,42 @@ namespace os
 		unsigned long nswap;
 		unsigned long cnswap;
 
-		// NOTE: The following are unused for now.
-		// int exit_signal;
-		// int processor;
-		// unsigned int rt_priority;
-		// unsigned int policy;
-		// unsigned long long delayacct_blkio_ticks;
-		// unsigned long guest_time;
-		// unsigned int cguest_time;
-
-		std::string _; // For ignoring fields.
-
-		// Parse all fields from stat.
-		data >> _ >> comm >> state >> ppid >> pgrp >> session >> tty_nr >> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >> stime >> cutime >> cstime >> priority >> nice >> num_threads >> itrealvalue >> starttime >> vsize >> rss >> rsslim >> startcode >> endcode >> startstack >> kstkeip >> signal >> blocked >> sigcatch >> wchan >> nswap >> cnswap;
-
-		// Check for parsing errors
-		if (data.fail())
+		// Find the last ')' to handle command names with spaces/parentheses
+		size_t lastParenPos = content.find_last_of(')');
+		if (lastParenPos == std::string::npos)
 		{
-			LOG_WAR << fname << "Failed to parse content for PID: " << pid << " at " << path;
+			LOG_DBG << fname << "Malformed stat file: " << path;
 			return nullptr;
 		}
 
-		// Validate the length of the command string
-		if (comm.size() > MAX_COMMAND_LINE_LENGTH)
+		// Parse PID from the beginning
+		pid_t parsedPid;
+		if (sscanf(content.c_str(), "%d", &parsedPid) != 1)
 		{
-			LOG_WAR << fname << "Command length invalid for PID: " << pid;
+			LOG_WAR << fname << "Failed to parse PID from stat file: " << path;
 			return nullptr;
 		}
 
-		// Clean up parentheses around the command name
-		comm = Utility::stdStringTrim(comm, '(', true, false);
-		comm = Utility::stdStringTrim(comm, ')', false, true);
+		// Extract command name (between first '(' and last ')')
+		size_t firstParenPos = content.find('(');
+		if (firstParenPos == std::string::npos || firstParenPos >= lastParenPos)
+		{
+			LOG_WAR << fname << "Malformed command name in stat file: " << path;
+			return nullptr;
+		}
+		comm = content.substr(firstParenPos + 1, lastParenPos - firstParenPos - 1);
+
+		// Parse all fields after the last ')'
+		const char *afterParen = content.c_str() + lastParenPos + 1;
+		if (sscanf(afterParen, " %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %llu %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu",
+				   &state, &ppid, &pgrp, &session, &tty_nr, &tpgid, &flags, &minflt, &cminflt, &majflt, &cmajflt,
+				   &utime, &stime, &cutime, &cstime, &priority, &nice, &num_threads, &itrealvalue, &starttime,
+				   &vsize, &rss, &rsslim, &startcode, &endcode, &startstack, &kstkeip, &signal, &blocked,
+				   &sigcatch, &wchan, &nswap, &cnswap) != 33)
+		{
+			LOG_WAR << fname << "Failed to parse all fields from stat file: " << path;
+			return nullptr;
+		}
 
 		return std::make_shared<ProcessStatus>(
 			pid, comm, state, ppid, pgrp, session, utime, stime, cutime, cstime, starttime, vsize, rss);
@@ -715,15 +666,44 @@ namespace os
 			return "";
 		}
 
-		// Get process image name as fallback
-		char processPath[MAX_PATH] = {};
-		DWORD pathSize = MAX_PATH;
-		if (QueryFullProcessImageNameA(hProcess.get(), 0, processPath, &pathSize))
+		auto hNtdll = GetNtdll();
+		auto NtQueryInformationProcess = (NtQueryInformationProcess_t)GetProcAddress(hNtdll, "NtQueryInformationProcess");
+		if (!NtQueryInformationProcess)
 		{
-			return std::string(processPath);
+			LOG_WAR << fname << "Failed to get NtQueryInformationProcess address";
+			return "";
 		}
 
-		return "";
+		// Query the PEB address
+		PROCESS_BASIC_INFORMATION pbi;
+		ULONG len;
+		NTSTATUS status = NtQueryInformationProcess(hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), &len);
+		if (status != 0)
+			return "";
+
+		// Step 1: Read PEB
+		PEB peb;
+		if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, &peb, sizeof(peb), nullptr))
+			return "";
+
+		// Step 2: Read RTL_USER_PROCESS_PARAMETERS
+		RTL_USER_PROCESS_PARAMETERS upp;
+		if (!ReadProcessMemory(hProcess, peb.ProcessParameters, &upp, sizeof(upp), nullptr))
+			return "";
+
+		// Step 3: Allocate buffer for the command line
+		std::wstring cmd(upp.CommandLine.Length / sizeof(wchar_t), L'\0');
+
+		// Step 4: Read the actual command line string from the remote process
+		if (!ReadProcessMemory(hProcess, upp.CommandLine.Buffer, cmd.data(), upp.CommandLine.Length, nullptr))
+			return "";
+
+		// Step 5: Convert to UTF-8
+		int size_needed = WideCharToMultiByte(CP_UTF8, 0, cmd.c_str(), (int)cmd.size(), nullptr, 0, nullptr, nullptr);
+		std::string cmdline(size_needed, 0);
+		WideCharToMultiByte(CP_UTF8, 0, cmd.c_str(), (int)cmd.size(), cmdline.data(), size_needed, nullptr, nullptr);
+
+		return cmdline;
 
 #elif defined(__linux__)
 		// Linux implementation
@@ -795,63 +775,72 @@ namespace os
 #define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004L)
 #endif
 
-	typedef NTSTATUS(NTAPI *NtQuerySystemInformation_t)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
-
-#pragma pack(push, 1)
-	// Minimal struct, only needed fields
-	typedef struct _SYSTEM_PROCESS_INFORMATION_MIN
+	// TODO: need check windows 32 bit definition
+	// Ensure we have the correct structure definition
+	typedef struct _SYSTEM_PROCESS_INFORMATION
 	{
 		ULONG NextEntryOffset;
 		ULONG NumberOfThreads;
-		LARGE_INTEGER Reserved[3];
+		LARGE_INTEGER WorkingSetPrivateSize;
+		ULONG HardFaultCount;
+		ULONG NumberOfThreadsHighWatermark;
+		ULONGLONG CycleTime;
 		LARGE_INTEGER CreateTime;
 		LARGE_INTEGER UserTime;
 		LARGE_INTEGER KernelTime;
-		UNICODE_STRING ImageName; // optional, but keep alignment
+		UNICODE_STRING ImageName;
 		KPRIORITY BasePriority;
 		HANDLE UniqueProcessId;
 		HANDLE InheritedFromUniqueProcessId;
-		// fields beyond here ignored
-	} SYSTEM_PROCESS_INFORMATION_MIN, *PSYSTEM_PROCESS_INFORMATION_MIN;
-#pragma pack(pop)
+		ULONG HandleCount;
+		ULONG SessionId;
+		ULONG_PTR UniqueProcessKey;
+		SIZE_T PeakVirtualSize;
+		SIZE_T VirtualSize;
+		ULONG PageFaultCount;
+		SIZE_T PeakWorkingSetSize;
+		SIZE_T WorkingSetSize;
+		SIZE_T QuotaPeakPagedPoolUsage;
+		SIZE_T QuotaPagedPoolUsage;
+		SIZE_T QuotaPeakNonPagedPoolUsage;
+		SIZE_T QuotaNonPagedPoolUsage;
+		SIZE_T PagefileUsage;
+		SIZE_T PeakPagefileUsage;
+		SIZE_T PrivatePageCount;
+		LARGE_INTEGER ReadOperationCount;
+		LARGE_INTEGER WriteOperationCount;
+		LARGE_INTEGER OtherOperationCount;
+		LARGE_INTEGER ReadTransferCount;
+		LARGE_INTEGER WriteTransferCount;
+		LARGE_INTEGER OtherTransferCount;
+	} SYSTEM_PROCESS_INFORMATION, *PSYSTEM_PROCESS_INFORMATION;
 
-	inline std::unordered_set<pid_t> child_pids(pid_t rootPid = ACE_OS::getpid())
+	inline std::unordered_set<pid_t> child_pids(pid_t rootPid)
 	{
 		const static char fname[] = "proc::child_pids() ";
 		std::unordered_set<pid_t> pids;
-		pids.insert(rootPid); // add root pid to result
 
-		HMODULE hNtDll = GetModuleHandleW(L"ntdll.dll");
-		if (!hNtDll)
-		{
-			LOG_ERR << fname << "Failed to get handle to ntdll.dll";
-			return pids;
-		}
-
-		auto NtQuerySystemInformation = (NtQuerySystemInformation_t)GetProcAddress(hNtDll, "NtQuerySystemInformation");
+		auto hNtdll = GetNtdll();
+		auto NtQuerySystemInformation = (NtQuerySystemInformation_t)GetProcAddress(hNtdll, "NtQuerySystemInformation");
 		if (!NtQuerySystemInformation)
 		{
 			LOG_ERR << fname << "Failed to get NtQuerySystemInformation address";
 			return pids;
 		}
 
-		ULONG bufferSize = 1 << 16; // start 64 KB
+		// Start with a reasonable size - 256KB is usually sufficient
+		ULONG bufferSize = 256 * 1024; // 256KB
+		std::vector<BYTE> buffer(bufferSize);
 		ULONG returnLength = 0;
 		NTSTATUS status;
-		std::vector<BYTE> buffer(bufferSize);
 
-		// Retry with exponential growth
-		const ULONG maxSize = 16 << 20; // 16 MB cap
+		// Retry until buffer is large enough
 		while ((status = NtQuerySystemInformation(SystemProcessInformation,
 												  buffer.data(), bufferSize,
 												  &returnLength)) == STATUS_INFO_LENGTH_MISMATCH)
 		{
-			if (bufferSize >= maxSize)
-			{
-				LOG_ERR << fname << "Exceeded max buffer size for NtQuerySystemInformation";
-				return pids;
-			}
-			bufferSize *= 2;
+			// Use the returned length plus some padding
+			bufferSize = returnLength + 16 * 1024; // Add 16KB padding
 			buffer.resize(bufferSize);
 		}
 
@@ -861,41 +850,166 @@ namespace os
 			return pids;
 		}
 
-		// Build parent → children map
-		std::unordered_map<pid_t, std::vector<pid_t>> tree;
-		tree.reserve(1024);
+		// Build process tree using InheritedFromUniqueProcessId
+		std::unordered_map<DWORD, std::vector<DWORD>> tree;
+		std::unordered_set<DWORD> validPids;
 
 		BYTE *ptr = buffer.data();
 		while (true)
 		{
-			auto spi = reinterpret_cast<PSYSTEM_PROCESS_INFORMATION_MIN>(ptr);
+			auto spi = reinterpret_cast<SYSTEM_PROCESS_INFORMATION *>(ptr);
+			DWORD pid = static_cast<DWORD>(reinterpret_cast<ULONG_PTR>(spi->UniqueProcessId));
+			DWORD ppid = static_cast<DWORD>(reinterpret_cast<ULONG_PTR>(spi->InheritedFromUniqueProcessId));
 
-			pid_t pid = static_cast<pid_t>(reinterpret_cast<ULONG_PTR>(spi->UniqueProcessId));
-			pid_t ppid = static_cast<pid_t>(reinterpret_cast<ULONG_PTR>(spi->InheritedFromUniqueProcessId));
-
-			if (pid != 0 && pid != 4) // skip idle and system
+			// Validate PID (skip System process and Idle process)
+			if (pid != 0 && pid != 4)
+			{
+				validPids.insert(pid);
 				tree[ppid].push_back(pid);
+			}
 
 			if (spi->NextEntryOffset == 0)
 				break;
+
 			ptr += spi->NextEntryOffset;
 		}
 
-		// BFS to collect descendants
-		std::queue<pid_t> q;
+		// BFS to collect all descendants
+		std::queue<DWORD> q;
 		q.push(rootPid);
 
 		while (!q.empty())
 		{
-			pid_t parent = q.front();
+			DWORD parent = q.front();
 			q.pop();
 
 			auto it = tree.find(parent);
 			if (it != tree.end())
 			{
+				for (DWORD child : it->second)
+				{
+					if (pids.insert(child).second)
+					{
+						q.push(child);
+					}
+				}
+			}
+		}
+
+		return pids;
+	}
+#elif defined(__linux__)
+	inline std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	{
+		std::unordered_set<pid_t> pids;
+
+		// Step 1: build parent -> children map
+		std::unordered_map<pid_t, std::vector<pid_t>> children;
+		std::unique_ptr<DIR, decltype(&closedir)> dir(opendir("/proc"), &closedir);
+		if (!dir)
+			return pids;
+
+		struct dirent *entry;
+		while ((entry = readdir(dir.get())) != nullptr)
+		{
+			char *end;
+			long pid = strtol(entry->d_name, &end, 10);
+			if (*end != '\0' || pid <= 0)
+				continue;
+
+			char statPath[64];
+			snprintf(statPath, sizeof(statPath), "/proc/%ld/stat", pid);
+
+			// RAII for FILE*
+			std::unique_ptr<FILE, int (*)(FILE *)> f(fopen(statPath, "r"), fclose);
+			if (!f)
+				continue;
+
+			pid_t curPid, ppid;
+			char line[1024];
+			if (fgets(line, sizeof(line), f.get()) != nullptr)
+			{
+				// Find the last ')' to handle command names with spaces/parentheses
+				char *lastParen = strrchr(line, ')');
+				if (lastParen != nullptr)
+				{
+					char state;
+					if (sscanf(line, "%d", &curPid) == 1 &&
+						sscanf(lastParen + 1, " %c %d", &state, &ppid) == 2)
+					{
+						children[ppid].push_back(curPid);
+					}
+				}
+			}
+		}
+
+		// Step 2: BFS to collect descendants
+		std::queue<pid_t> q;
+		q.push(rootPid);
+
+		while (!q.empty())
+		{
+			pid_t p = q.front();
+			q.pop();
+
+			auto it = children.find(p);
+			if (it != children.end())
+			{
 				for (pid_t child : it->second)
 				{
-					if (pids.insert(child).second) // new entry
+					if (pids.insert(child).second)
+						q.push(child);
+				}
+			}
+		}
+
+		return pids;
+	}
+#elif defined(__APPLE__)
+	inline std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	{
+		std::unordered_set<pid_t> pids;
+
+		std::unordered_map<pid_t, std::vector<pid_t>> children;
+
+		// Step 1: get all processes using sysctl
+		int mib[3] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL};
+		size_t size = 0;
+		if (sysctl(mib, 3, nullptr, &size, nullptr, 0) != 0)
+			return pids;
+
+		// Allocate buffer with some extra space in case process list grows
+		size += sizeof(struct kinfo_proc) * 10;
+		std::unique_ptr<char[]> buf(new char[size]);
+		if (sysctl(mib, 3, buf.get(), &size, nullptr, 0) != 0)
+			return pids;
+
+		size_t nproc = size / sizeof(struct kinfo_proc);
+		struct kinfo_proc *procs = reinterpret_cast<struct kinfo_proc *>(buf.get());
+
+		// Step 2: build parent -> children map
+		for (size_t i = 0; i < nproc; ++i)
+		{
+			pid_t pid = procs[i].kp_proc.p_pid;
+			pid_t ppid = procs[i].kp_eproc.e_ppid;
+			children[ppid].push_back(pid);
+		}
+
+		// Step 3: BFS from rootPid
+		std::queue<pid_t> q;
+		q.push(rootPid);
+
+		while (!q.empty())
+		{
+			pid_t p = q.front();
+			q.pop();
+
+			auto it = children.find(p);
+			if (it != children.end())
+			{
+				for (pid_t child : it->second)
+				{
+					if (pids.insert(child).second)
 						q.push(child);
 				}
 			}
@@ -906,89 +1020,18 @@ namespace os
 #endif
 
 	/**
-	 * @brief Get a list of all running process IDs.
+	 * @brief Get the set of process IDs for the given process and its descendants.
 	 *
-	 * Cross-platform process enumeration.
+	 * Cross-platform utility for enumerating a process tree.
 	 *
-	 * @return A set containing the PIDs of all running processes.
+	 * @param rootPid The root process ID to start from (defaults to the current process).
+	 * @return An unordered_set containing the root PID and all of its descendant PIDs.
 	 */
-	inline std::unordered_set<pid_t> pids()
+	inline std::unordered_set<pid_t> pids(pid_t rootPid = ACE_OS::getpid())
 	{
-		const static char fname[] = "proc::pids() ";
-		std::unordered_set<pid_t> pids;
-
-#if defined(_WIN32)
-		return child_pids();
-
-		// TODO: Linux need similar windows high-performance filter sub-tree implementation
-#elif defined(__linux__)
-		// Linux implementation
-		auto entries = os::ls("/proc");
-		if (entries.empty())
-		{
-			LOG_ERR << fname << "Failed to list files in /proc. Error: " << last_error_msg();
-			return pids;
-		}
-
-		// Filter numeric entries (representing PIDs)
-		for (const std::string &entry : entries)
-		{
-			if (Utility::isNumber(entry))
-			{
-				try
-				{
-					pids.insert(std::stoi(entry));
-				}
-				catch (const std::exception &e)
-				{
-					LOG_ERR << fname << "Failed to convert entry '" << entry << "' to PID. Error: " << e.what();
-				}
-			}
-		}
-
-		if (pids.empty())
-		{
-			LOG_ERR << fname << "No PIDs found in /proc. This might indicate an unusual system state.";
-		}
-
-#elif defined(__APPLE__)
-		// macOS implementation
-		int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
-		size_t size;
-
-		// Get size of process list
-		if (sysctl(mib, 4, NULL, &size, NULL, 0) < 0)
-		{
-			LOG_ERR << fname << "Failed to query process list size with error: " << last_error_msg();
-			return pids;
-		}
-
-		// Allocate memory for process list
-		MallocRAII<kinfo_proc> proc_list(static_cast<kinfo_proc *>(malloc(size)));
-
-		if (!proc_list.valid())
-		{
-			LOG_ERR << fname << "Memory allocation failed for process list.";
-			return pids;
-		}
-
-		// Retrieve process list
-		if (sysctl(mib, 4, proc_list.get(), &size, NULL, 0) < 0)
-		{
-			LOG_ERR << fname << "Failed to retrieve process list with error: " << last_error_msg();
-			return pids;
-		}
-
-		size_t nprocs = size / sizeof(struct kinfo_proc);
-
-		// Extract PIDs from process list
-		for (size_t i = 0; i < nprocs; i++)
-		{
-			pids.insert(proc_list.get()[i].kp_proc.p_pid);
-		}
-#endif
-
-		return pids;
+		auto result = child_pids(rootPid);
+		result.insert(rootPid);
+		return result;
 	}
 
 	// Structure containing memory information
