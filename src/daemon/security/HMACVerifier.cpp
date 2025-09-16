@@ -5,7 +5,7 @@
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
 #include "HMACVerifier.h"
-#include "SharedMemory.hpp"
+#include "SharedMemory.h"
 
 HMACVerifier::HMACVerifier()
     : m_psk(generatePassword(PSK_MSG_LENGTH, true, true, true, true))

@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
 #include "../../src/common/Utility.h"
-#include "../../src/common/json.hpp"
+#include "../../src/common/json.h"
 #include <ace/Init_ACE.h>
 #include <ace/Map_Manager.h>
 #include <ace/Message_Block.h>

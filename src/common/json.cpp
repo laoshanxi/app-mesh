@@ -5,11 +5,8 @@
 #include <string>
 #include <vector>
 
-#if defined(_WIN32)
-#include <windows.h>
-#endif
-
 #include "Utility.h"
+#include "json.h"
 
 // --- Small note ---
 // This file extends the existing JSON helpers to add robust UTF-8 <-> wide
@@ -223,196 +220,191 @@ private:
     }
 };
 
-class JSON
+// Original dump returning UTF-8 std::string (nlohmann::json stores strings as UTF-8)
+std::string JSON::dump(const nlohmann::json &j, int indent, bool sanitizeUTF8)
 {
-public:
-    // Original dump returning UTF-8 std::string (nlohmann::json stores strings as UTF-8)
-    static std::string dump(const nlohmann::json &j, int indent = -1, bool sanitizeUTF8 = false)
+    try
     {
-        try
+        // Use error_handler::replace to handle invalid UTF-8 sequences
+        if (sanitizeUTF8)
         {
-            // Use error_handler::replace to handle invalid UTF-8 sequences
-            if (sanitizeUTF8)
-            {
-                return j.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
-            }
-            else
-            {
-                return j.dump(indent);
-            }
+            return j.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
         }
-        catch (const nlohmann::json::exception &e)
+        else
         {
-            LOG_ERR << "JSON dump failed: " << e.what() << " (id: " << e.id << ")";
-
-            // Attempt validation to identify specific issues
-            std::vector<JSONErrorContext> errors;
-            JSONValidator::findErrors(j, errors);
-            JSONValidator::reportErrors(errors);
-
-            // If caller didn't ask for sanitization try again with replacement
-            if (!sanitizeUTF8)
-            {
-                try
-                {
-                    LOG_ERR << "Retrying with UTF-8 sanitization...";
-                    return j.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
-                }
-                catch (...)
-                {
-                    LOG_ERR << "Fallback also failed, returning empty JSON";
-                    return "{}";
-                }
-            }
-            throw;
+            return j.dump(indent);
         }
     }
-
-    // Return a string converted to the current ANSI code page on Windows (CP_ACP).
-    // For POSIX platforms this returns the UTF-8 string unchanged. This is
-    // intended for legacy consoles / loggers which don't interpret UTF-8.
-    static std::string dumpToLocalEncoding(const nlohmann::json &j, int indent = -1)
+    catch (const nlohmann::json::exception &e)
     {
-        const std::string utf8Str = j.dump(indent, ' ');
-        return Utility::utf8ToLocalEncoding(utf8Str);
-    }
+        LOG_ERR << "JSON dump failed: " << e.what() << " (id: " << e.id << ")";
 
-    // Parsing helpers (unchanged behavior) — note: these forward to nlohmann::json::parse
-    static nlohmann::json parse(const std::string &input, bool allowExceptions = true)
-    {
-        try
-        {
-            return nlohmann::json::parse(input);
-        }
-        catch (const nlohmann::json::parse_error &e)
-        {
-            LOG_ERR << "JSON parse error at byte " << e.byte << ": " << e.what();
-            logParseError(input, e);
+        // Attempt validation to identify specific issues
+        std::vector<JSONErrorContext> errors;
+        JSONValidator::findErrors(j, errors);
+        JSONValidator::reportErrors(errors);
 
-            if (allowExceptions)
-                throw;
-
-            return nlohmann::json();
-        }
-    }
-
-    // Parse with iterator range
-    template <typename IteratorType>
-    static nlohmann::json parse(IteratorType first, IteratorType last, bool allowExceptions = true)
-    {
-        try
+        // If caller didn't ask for sanitization try again with replacement
+        if (!sanitizeUTF8)
         {
-            return nlohmann::json::parse(first, last);
-        }
-        catch (const nlohmann::json::parse_error &e)
-        {
-            std::string context;
             try
             {
-                auto distance = std::distance(first, last);
-                context = std::string(first, (distance > 100 ? first + 100 : last));
+                LOG_ERR << "Retrying with UTF-8 sanitization...";
+                return j.dump(indent, ' ', false, nlohmann::json::error_handler_t::replace);
             }
             catch (...)
-            { /* best-effort */
-            }
-            LOG_ERR << "JSON parse error: " << e.what();
-            LOG_ERR << "Context: " << context;
-
-            if (allowExceptions)
-                throw;
-
-            return nlohmann::json();
-        }
-    }
-
-private:
-    // Log parse error with context
-    static void logParseError(const std::string &input, const nlohmann::json::parse_error &e) noexcept
-    {
-        // Log error type
-        switch (e.id)
-        {
-        case 101:
-            LOG_ERR << "Error type: Unexpected end of input";
-            break;
-        case 102:
-            LOG_ERR << "Error type: Unexpected token";
-            break;
-        case 103:
-            LOG_ERR << "Error type: Invalid literal";
-            break;
-        case 104:
-            LOG_ERR << "Error type: Value separator expected";
-            break;
-        case 105:
-            LOG_ERR << "Error type: Object separator expected";
-            break;
-        case 106:
-            LOG_ERR << "Error type: Expected value";
-            break;
-        case 107:
-            LOG_ERR << "Error type: Expected end of input";
-            break;
-        case 108:
-            LOG_ERR << "Error type: Unexpected character";
-            break;
-        case 109:
-            LOG_ERR << "Error type: Number overflow";
-            break;
-        case 110:
-            LOG_ERR << "Error type: Invalid number";
-            break;
-        case 111:
-            LOG_ERR << "Error type: Invalid unicode escape";
-            break;
-        case 112:
-            LOG_ERR << "Error type: Invalid UTF-8 string";
-            break;
-        case 113:
-            LOG_ERR << "Error type: Unescaped control character";
-            break;
-        case 316:
-            LOG_ERR << "Error type: Invalid UTF-8 byte sequence";
-            break;
-        default:
-            LOG_ERR << "Error type: Unknown (id: " << e.id << ")";
-            break;
-        }
-
-        // Show error context if possible
-        if (e.byte <= input.length())
-        {
-            size_t contextStart = (e.byte > 30) ? e.byte - 30 : 0;
-            size_t contextEnd = std::min(e.byte + 30, input.length());
-
-            if (contextStart < contextEnd)
             {
-                std::string context = input.substr(contextStart, contextEnd - contextStart);
-                LOG_ERR << "Context: \"" << context << "\"";
-                if (e.byte >= contextStart)
-                {
-                    LOG_ERR << " " << std::string(e.byte - contextStart, ' ') << "^-- error here";
-                }
+                LOG_ERR << "Fallback also failed, returning empty JSON";
+                return "{}";
             }
         }
+        throw;
+    }
+}
 
-        // Try partial parse for additional validation
+// Return a string converted to the current ANSI code page on Windows (CP_ACP).
+// For POSIX platforms this returns the UTF-8 string unchanged. This is
+// intended for legacy consoles / loggers which don't interpret UTF-8.
+std::string JSON::dumpToLocalEncoding(const nlohmann::json &j, int indent)
+{
+    const std::string utf8Str = j.dump(indent, ' ');
+    return Utility::utf8ToLocalEncoding(utf8Str);
+}
+
+// Parsing helpers (unchanged behavior) — note: these forward to nlohmann::json::parse
+nlohmann::json JSON::parse(const std::string &input, bool allowExceptions)
+{
+    try
+    {
+        return nlohmann::json::parse(input);
+    }
+    catch (const nlohmann::json::parse_error &e)
+    {
+        LOG_ERR << "JSON parse error at byte " << e.byte << ": " << e.what();
+        logParseError(input, e);
+
+        if (allowExceptions)
+            throw;
+
+        return nlohmann::json();
+    }
+}
+
+// Parse with iterator range
+template <typename IteratorType>
+nlohmann::json JSON::parse(IteratorType first, IteratorType last, bool allowExceptions)
+{
+    try
+    {
+        return nlohmann::json::parse(first, last);
+    }
+    catch (const nlohmann::json::parse_error &e)
+    {
+        std::string context;
         try
         {
-            auto partialJson = nlohmann::json::parse(input, nullptr, false);
-            if (!partialJson.is_discarded())
-            {
-                std::vector<JSONErrorContext> errors;
-                JSONValidator::findErrors(partialJson, errors);
-                if (!errors.empty())
-                {
-                    LOG_ERR << "Additional validation issues found:";
-                    JSONValidator::reportErrors(errors);
-                }
-            }
+            auto distance = std::distance(first, last);
+            context = std::string(first, (distance > 100 ? first + 100 : last));
         }
         catch (...)
-        { /* ignore */
+        { /* best-effort */
+        }
+        LOG_ERR << "JSON parse error: " << e.what();
+        LOG_ERR << "Context: " << context;
+
+        if (allowExceptions)
+            throw;
+
+        return nlohmann::json();
+    }
+}
+
+// Log parse error with context
+void JSON::logParseError(const std::string &input, const nlohmann::json::parse_error &e) noexcept
+{
+    // Log error type
+    switch (e.id)
+    {
+    case 101:
+        LOG_ERR << "Error type: Unexpected end of input";
+        break;
+    case 102:
+        LOG_ERR << "Error type: Unexpected token";
+        break;
+    case 103:
+        LOG_ERR << "Error type: Invalid literal";
+        break;
+    case 104:
+        LOG_ERR << "Error type: Value separator expected";
+        break;
+    case 105:
+        LOG_ERR << "Error type: Object separator expected";
+        break;
+    case 106:
+        LOG_ERR << "Error type: Expected value";
+        break;
+    case 107:
+        LOG_ERR << "Error type: Expected end of input";
+        break;
+    case 108:
+        LOG_ERR << "Error type: Unexpected character";
+        break;
+    case 109:
+        LOG_ERR << "Error type: Number overflow";
+        break;
+    case 110:
+        LOG_ERR << "Error type: Invalid number";
+        break;
+    case 111:
+        LOG_ERR << "Error type: Invalid unicode escape";
+        break;
+    case 112:
+        LOG_ERR << "Error type: Invalid UTF-8 string";
+        break;
+    case 113:
+        LOG_ERR << "Error type: Unescaped control character";
+        break;
+    case 316:
+        LOG_ERR << "Error type: Invalid UTF-8 byte sequence";
+        break;
+    default:
+        LOG_ERR << "Error type: Unknown (id: " << e.id << ")";
+        break;
+    }
+
+    // Show error context if possible
+    if (e.byte <= input.length())
+    {
+        size_t contextStart = (e.byte > 30) ? e.byte - 30 : 0;
+        size_t contextEnd = std::min(e.byte + 30, input.length());
+
+        if (contextStart < contextEnd)
+        {
+            std::string context = input.substr(contextStart, contextEnd - contextStart);
+            LOG_ERR << "Context: \"" << context << "\"";
+            if (e.byte >= contextStart)
+            {
+                LOG_ERR << " " << std::string(e.byte - contextStart, ' ') << "^-- error here";
+            }
         }
     }
-};
+
+    // Try partial parse for additional validation
+    try
+    {
+        auto partialJson = nlohmann::json::parse(input, nullptr, false);
+        if (!partialJson.is_discarded())
+        {
+            std::vector<JSONErrorContext> errors;
+            JSONValidator::findErrors(partialJson, errors);
+            if (!errors.empty())
+            {
+                LOG_ERR << "Additional validation issues found:";
+                JSONValidator::reportErrors(errors);
+            }
+        }
+    }
+    catch (...)
+    { /* ignore */
+    }
+}

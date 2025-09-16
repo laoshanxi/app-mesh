@@ -32,7 +32,7 @@
 #include "../common/Password.h"
 #include "../common/RestClient.h"
 #include "../common/Utility.h"
-#include "../common/json.hpp"
+#include "../common/json.h"
 #include "../common/os/linux.hpp"
 #include "ArgumentParser.h"
 #include "cmd_args.h"

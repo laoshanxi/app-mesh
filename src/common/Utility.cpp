@@ -38,7 +38,7 @@
 #include "DateTime.h"
 #include "Password.h"
 #include "Utility.h"
-#include "json.hpp"
+#include "json.h"
 #include "os/chown.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)

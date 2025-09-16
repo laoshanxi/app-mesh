@@ -10,7 +10,7 @@
 
 #include "../../common/DateTime.h"
 #include "../../common/Utility.h"
-#include "../../common/json.hpp"
+#include "../../common/json.h"
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif

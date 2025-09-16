@@ -4,7 +4,7 @@
 #include <ace/Hash_Multi_Map_Manager_T.h>
 
 #include "../../common/Utility.h"
-#include "../../common/json.hpp"
+#include "../../common/json.h"
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "../process/AppProcess.h"
