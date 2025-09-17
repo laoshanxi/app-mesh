@@ -21,7 +21,7 @@
 #include "../common/DateTime.h"
 #include "../common/DurationParse.h"
 #include "../common/Utility.h"
-#include "../common/os/pstree.hpp"
+#include "../common/os/pstree.h"
 
 extern char **environ; // unistd.h
 

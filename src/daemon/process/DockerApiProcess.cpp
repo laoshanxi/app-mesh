@@ -5,7 +5,7 @@
 #include "../../common/DateTime.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "../../common/os/pstree.hpp"
+#include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../security/HMACVerifier.h"
