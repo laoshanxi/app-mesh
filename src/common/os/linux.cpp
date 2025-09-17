@@ -1,6 +1,5 @@
-#pragma once
-
 // This file contains cross-platform OS utilities for Linux/macOS/Windows.
+#include "linux.h" // Include the header first
 
 // Common headers
 #include <atomic>
@@ -40,14 +39,11 @@
 #include <memory>
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
-
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "pdh.lib")
 #pragma comment(lib, "shlwapi.lib")
-
 // Windows type definitions to match Unix types
 typedef unsigned long long uint64_t;
-
 #else
 // Unix/Linux/macOS headers
 #include <dirent.h> // Directory operations
@@ -57,14 +53,12 @@ typedef unsigned long long uint64_t;
 #include <sys/stat.h>  // File status and permissions
 #include <sys/types.h> // For pid_t
 #include <unistd.h>	   // For sysconf
-
 #if defined(__linux__)
 #include <linux/version.h> // Linux kernel version
 #include <mntent.h>		   // Mount table entries
 #include <sys/statvfs.h>   // File system information
 #include <sys/sysinfo.h>   // System information
 #endif
-
 #if defined(__APPLE__)
 #include <libproc.h>			// Process information
 #include <mach/mach.h>			// Mach system calls
@@ -77,17 +71,15 @@ typedef unsigned long long uint64_t;
 #include <sys/proc_info.h>		// Process info
 #include <sys/sysctl.h>			// System control interface
 #endif
-
 #endif // Windows vs Unix
 
 #include <ace/OS.h>
 #include <assert.h>
 
-#include "../Utility.h"
-#include "handler.hpp"
-#include "malloc.hpp"
-#include "models.h"
-#include "proc.h"
+#include "../Utility.h" // for Utility::abc(), last_error_msg(), LOG_*
+#include "handler.hpp"	// for HandleRAII
+#include "malloc.hpp"	// for MallocRAII
+#include "models.h"		// for Process
 
 namespace os
 {
@@ -100,61 +92,6 @@ namespace os
 	}
 #endif
 
-#ifdef __linux__
-	// RAII wrapper for mount table operations
-	class MountTableRAII
-	{
-	private:
-		FILE *mountFile_;
-
-	public:
-		explicit MountTableRAII(const char *filename, const char *mode)
-			: mountFile_(setmntent(filename, mode)) {}
-
-		~MountTableRAII()
-		{
-			if (mountFile_)
-			{
-				endmntent(mountFile_);
-			}
-		}
-
-		// Non-copyable
-		MountTableRAII(const MountTableRAII &) = delete;
-		MountTableRAII &operator=(const MountTableRAII &) = delete;
-
-		// Movable
-		MountTableRAII(MountTableRAII &&other) noexcept : mountFile_(other.mountFile_)
-		{
-			other.mountFile_ = nullptr;
-		}
-
-		MountTableRAII &operator=(MountTableRAII &&other) noexcept
-		{
-			if (this != &other)
-			{
-				reset();
-				mountFile_ = other.mountFile_;
-				other.mountFile_ = nullptr;
-			}
-			return *this;
-		}
-
-		FILE *get() const { return mountFile_; }
-		bool valid() const { return mountFile_ != nullptr; }
-
-	private:
-		void reset()
-		{
-			if (mountFile_)
-			{
-				endmntent(mountFile_);
-				mountFile_ = nullptr;
-			}
-		}
-	};
-#endif
-
 	/**
 	 * @brief List files in a directory.
 	 *
@@ -164,7 +101,7 @@ namespace os
 	 * @param directory Path to the directory.
 	 * @return A vector of file and directory names within the specified directory.
 	 */
-	inline std::vector<std::string> ls(const std::string &directory)
+	std::vector<std::string> ls(const std::string &directory)
 	{
 		const static char fname[] = "os::ls() ";
 		std::vector<std::string> result;
@@ -229,88 +166,66 @@ namespace os
 	}
 
 	// Snapshot of a process (cross-platform process status).
-	struct ProcessStatus
+	ProcessStatus::ProcessStatus(
+		pid_t _pid,
+		const std::string &_comm,
+		char _state,
+		pid_t _ppid,
+		pid_t _pgrp,
+		pid_t _session,
+		unsigned long _utime,
+		unsigned long _stime,
+		long _cutime,
+		long _cstime,
+		unsigned long long _starttime,
+		unsigned long _vsize,
+		long _rss)
+		: pid(_pid),
+		  comm(_comm),
+		  state(_state),
+		  ppid(_ppid),
+		  pgrp(_pgrp),
+		  session(_session),
+		  utime(_utime),
+		  stime(_stime),
+		  cutime(_cutime),
+		  cstime(_cstime),
+		  starttime(_starttime),
+		  vsize(_vsize),
+		  rss(_rss)
 	{
-		ProcessStatus(
-			pid_t _pid,
-			const std::string &_comm,
-			char _state,
-			pid_t _ppid,
-			pid_t _pgrp,
-			pid_t _session,
-			unsigned long _utime,
-			unsigned long _stime,
-			long _cutime,
-			long _cstime,
-			unsigned long long _starttime,
-			unsigned long _vsize,
-			long _rss)
-			: pid(_pid),
-			  comm(_comm),
-			  state(_state),
-			  ppid(_ppid),
-			  pgrp(_pgrp),
-			  session(_session),
-			  utime(_utime),
-			  stime(_stime),
-			  cutime(_cutime),
-			  cstime(_cstime),
-			  starttime(_starttime),
-			  vsize(_vsize),
-			  rss(_rss)
-		{
-		}
+	}
 
-		// get process start time
-		std::chrono::system_clock::time_point get_starttime() const
-		{
+	// get process start time
+	std::chrono::system_clock::time_point ProcessStatus::get_starttime() const
+	{
 #if defined(_WIN32)
-			// Windows: starttime is already a time_t
-			return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
-
+		// Windows: starttime is already a time_t
+		return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
 #elif defined(__linux__)
-			static const long ticks_per_second = sysconf(_SC_CLK_TCK);
-			// Read system uptime from /proc/uptime
-			static std::atomic<double> uptime_seconds{0.0};
-			static std::once_flag init_flag;
-			std::call_once(init_flag, []()
-						   {
-				std::ifstream uptime_file("/proc/uptime");
-				if (uptime_file)
-				 {
-					double temp_uptime = 0.0;
-					uptime_file >> temp_uptime;
-					uptime_seconds.store(temp_uptime);
-				} });
-
-			// Calculate system boot time in seconds
-			time_t system_boot_time = time(nullptr) - static_cast<time_t>(uptime_seconds.load());
-			// Calculate start time since system boot in seconds + boot time
-			double start_time_seconds = system_boot_time + (static_cast<double>(starttime) / ticks_per_second);
-
-			// Convert start time
-			return std::chrono::system_clock::from_time_t(static_cast<time_t>(start_time_seconds));
-
+		static const long ticks_per_second = sysconf(_SC_CLK_TCK);
+		// Read system uptime from /proc/uptime
+		static std::atomic<double> uptime_seconds{0.0};
+		static std::once_flag init_flag;
+		std::call_once(init_flag, []()
+					   {
+                std::ifstream uptime_file("/proc/uptime");
+                if (uptime_file)
+                 {
+                    double temp_uptime = 0.0;
+                    uptime_file >> temp_uptime;
+                    uptime_seconds.store(temp_uptime);
+                } });
+		// Calculate system boot time in seconds
+		time_t system_boot_time = time(nullptr) - static_cast<time_t>(uptime_seconds.load());
+		// Calculate start time since system boot in seconds + boot time
+		double start_time_seconds = system_boot_time + (static_cast<double>(starttime) / ticks_per_second);
+		// Convert start time
+		return std::chrono::system_clock::from_time_t(static_cast<time_t>(start_time_seconds));
 #elif defined(__APPLE__)
-			return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
+		return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
 #endif
-		}
-
-		const pid_t pid;
-		const std::string comm;
-		const char state;
-		const pid_t ppid;
-		const pid_t pgrp;
-		const pid_t session;
-
-		const unsigned long utime;
-		const unsigned long stime;
-		const long cutime;
-		const long cstime;
-		const unsigned long long starttime;
-		const unsigned long vsize;
-		const long rss;
-	};
+	}
 
 	/**
 	 * @brief Get total system CPU time.
@@ -319,7 +234,7 @@ namespace os
 	 *
 	 * @return Total system CPU time in appropriate units, or 0 on error.
 	 */
-	inline int64_t cpuTotalTime()
+	int64_t cpuTotalTime()
 	{
 #if defined(_WIN32)
 		FILETIME idleTime, kernelTime, userTime;
@@ -382,7 +297,7 @@ namespace os
 	 * @param pid Process ID.
 	 * @return A shared pointer to a `ProcessStatus` object, or `nullptr` if the process does not exist or an error occurs.
 	 */
-	inline std::shared_ptr<ProcessStatus> status(pid_t pid)
+	std::shared_ptr<ProcessStatus> status(pid_t pid)
 	{
 		const static char fname[] = "proc::status() ";
 
@@ -646,7 +561,7 @@ namespace os
 	 * @param pid Process ID (default is 0, which represents the current process).
 	 * @return A string containing the command line of the specified process.
 	 */
-	inline std::string cmdline(pid_t pid = 0)
+	std::string cmdline(pid_t pid /* = 0 */)
 	{
 		const static char fname[] = "proc::cmdline() ";
 
@@ -875,7 +790,7 @@ namespace os
 		LARGE_INTEGER OtherTransferCount;
 	} SYSTEM_PROCESS_INFORMATION, *PSYSTEM_PROCESS_INFORMATION;
 
-	inline std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	std::unordered_set<pid_t> child_pids(pid_t rootPid)
 	{
 		const static char fname[] = "proc::child_pids() ";
 		std::unordered_set<pid_t> result;
@@ -950,7 +865,7 @@ namespace os
 	}
 
 #elif defined(__linux__)
-	inline std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	std::unordered_set<pid_t> child_pids(pid_t rootPid)
 	{
 		std::unordered_set<pid_t> result;
 		// Step 1: build parent -> children map
@@ -1017,7 +932,7 @@ namespace os
 	}
 
 #elif defined(__APPLE__)
-	inline std::unordered_set<pid_t> child_pids(pid_t rootPid)
+	std::unordered_set<pid_t> child_pids(pid_t rootPid)
 	{
 		std::unordered_set<pid_t> result;
 		std::unordered_map<pid_t, std::vector<pid_t>> children;
@@ -1063,7 +978,7 @@ namespace os
 		return result;
 	}
 #else
-	inline std::unordered_set<pid_t> child_pids(pid_t)
+	std::unordered_set<pid_t> child_pids(pid_t)
 	{
 		return {};
 	}
@@ -1072,9 +987,10 @@ namespace os
 	/**
 	 * @brief Get the set of process IDs for the given process and its descendants.
 	 *
-	 * @return A set containing the PIDs of all running processes.
+	 * @param rootPid The root process ID (defaults to current process).
+	 * @return A set containing the PIDs of the process and its descendants.
 	 */
-	inline std::unordered_set<pid_t> pids(pid_t rootPid = ACE_OS::getpid())
+	std::unordered_set<pid_t> pids(pid_t rootPid /* = ACE_OS::getpid() */)
 	{
 		auto result = child_pids(rootPid);
 		result.insert(rootPid);
@@ -1082,16 +998,9 @@ namespace os
 	}
 
 	// Structure containing memory information
-	struct Memory
-	{
-		Memory() : total_bytes(0), free_bytes(0), totalSwap_bytes(0), freeSwap_bytes(0) {}
-		uint64_t total_bytes;
-		uint64_t free_bytes;
-		uint64_t totalSwap_bytes;
-		uint64_t freeSwap_bytes;
-	};
+	Memory::Memory() : total_bytes(0), free_bytes(0), totalSwap_bytes(0), freeSwap_bytes(0) {}
 
-	inline std::ostream &operator<<(std::ostream &stream, const Memory &mem)
+	std::ostream &operator<<(std::ostream &stream, const Memory &mem)
 	{
 		return stream << "Memory [total_bytes <" << mem.total_bytes << "> "
 					  << "free_bytes <" << mem.free_bytes << "> "
@@ -1100,7 +1009,7 @@ namespace os
 	}
 
 	// Cross-platform page size
-	inline size_t pagesize()
+	size_t pagesize()
 	{
 #if defined(_WIN32)
 		SYSTEM_INFO sysInfo;
@@ -1121,7 +1030,7 @@ namespace os
 	 * @param pid Process ID of the target process.
 	 * @return Shared pointer to a Process struct containing the process details.
 	 */
-	inline std::shared_ptr<Process> process(pid_t pid)
+	std::shared_ptr<Process> process(pid_t pid)
 	{
 		// Page size, used for memory accounting.
 		static const size_t pageSize = os::pagesize();
@@ -1150,8 +1059,24 @@ namespace os
 			processStatus->state == 'Z');
 	}
 
+	/**
+	 * @brief Get process information for a given PID from a pre-fetched list.
+	 *
+	 * @param pid Process ID of the target process.
+	 * @param processes A list of pre-fetched Process objects.
+	 * @return Shared pointer to a Process struct if found, otherwise nullptr.
+	 */
+	std::shared_ptr<Process> process(pid_t pid, const std::list<Process> &processes)
+	{
+		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p)
+									   { return p.pid == pid; });
+		if (iter != processes.end())
+			return std::make_shared<Process>(*iter);
+		return nullptr;
+	}
+
 	// Returns the total size of main and free memory.
-	inline std::shared_ptr<Memory> memory()
+	std::shared_ptr<Memory> memory()
 	{
 		auto memory = std::make_shared<Memory>();
 
@@ -1223,7 +1148,7 @@ namespace os
 		return memory;
 	}
 
-	inline std::list<Process> processes()
+	std::list<Process> processes()
 	{
 		const auto pidList = os::pids();
 
@@ -1241,31 +1166,12 @@ namespace os
 		return result;
 	}
 
-	inline std::shared_ptr<Process> process(
-		pid_t pid,
-		const std::list<Process> &processes)
-	{
-		const auto iter = std::find_if(processes.begin(), processes.end(), [&pid](const Process &p)
-									   { return p.pid == pid; });
-		if (iter != processes.end())
-			return std::make_shared<Process>(*iter);
-		return nullptr;
-	}
-
 	//************************CPU****************************************
 	// Representation of a processor (cross-platform)
-	struct CPU
-	{
-		CPU(unsigned int _id, unsigned int _core, unsigned int _socket)
-			: id(_id), core(_core), socket(_socket) {}
+	CPU::CPU(unsigned int _id, unsigned int _core, unsigned int _socket)
+		: id(_id), core(_core), socket(_socket) {}
 
-		// These are non-const because we need the default assignment operator.
-		unsigned int id;	 // "processor"
-		unsigned int core;	 // "core id"
-		unsigned int socket; // "physical id"
-	};
-
-	inline std::ostream &operator<<(std::ostream &stream, const CPU &cpu)
+	std::ostream &operator<<(std::ostream &stream, const CPU &cpu)
 	{
 		return stream << "CPU [id <" << cpu.id << "> "
 					  << "core <" << cpu.core << "> "
@@ -1280,7 +1186,7 @@ namespace os
 	 *
 	 * @return List of CPU objects containing processor ID, core ID and socket ID.
 	 */
-	inline std::list<CPU> cpus()
+	std::list<CPU> cpus()
 	{
 		const static char fname[] = "proc::cpus() ";
 
@@ -1404,9 +1310,8 @@ namespace os
 				{
 					results.push_back(CPU(
 						it.first,
-						it.second.first >= 0 ? it.second.first : 0,	 // Default core ID to 0 if not found
-						it.second.second >= 0 ? it.second.second : 0 // Default socket ID to 0 if not found
-						));
+						it.second.first >= 0 ? it.second.first : 0,		// Default core ID to 0 if not found
+						it.second.second >= 0 ? it.second.second : 0)); // Default socket ID to 0 if not found
 				}
 
 #elif defined(__APPLE__)
@@ -1442,16 +1347,11 @@ namespace os
 
 		return results;
 	}
-	//************************CPU****************************************
 
+	//************************CPU****************************************
 	// Structure returned by loadavg(). Encodes system load average
 	// for the last 1, 5 and 15 minutes.
-	struct Load
-	{
-		double one;
-		double five;
-		double fifteen;
-	};
+	// struct Load { ... }; // Definition stays in .h
 
 	/**
 	 * @brief Get system load averages for the last 1, 5, and 15 minutes.
@@ -1462,7 +1362,7 @@ namespace os
 	 *
 	 * @return Shared pointer to Load struct with the average loads for the last 1, 5, and 15 minutes.
 	 */
-	inline std::shared_ptr<Load> loadavg()
+	std::shared_ptr<Load> loadavg()
 	{
 		const static char fname[] = "loadavg() ";
 
@@ -1506,12 +1406,7 @@ namespace os
 #endif
 	}
 
-	struct FilesystemUsage
-	{
-		uint64_t totalSize = 0;		  // Total size in bytes
-		uint64_t usedSize = 0;		  // Used size in bytes
-		double usagePercentage = 0.0; // Usage as a percentage (0.0 to 1.0)
-	};
+	// struct FilesystemUsage { ... }; // Definition stays in .h
 
 	/**
 	 * @brief Get filesystem usage statistics.
@@ -1521,13 +1416,7 @@ namespace os
 	 * @param path Directory path (default is "/" on Unix, "C:\\" on Windows).
 	 * @return Shared pointer to FilesystemUsage containing size, used space, and usage.
 	 */
-	inline std::shared_ptr<FilesystemUsage> df(const std::string &path =
-#if defined(_WIN32)
-												   "C:\\"
-#else
-												   "/"
-#endif
-	)
+	std::shared_ptr<FilesystemUsage> df(const std::string &path)
 	{
 		const static char fname[] = "proc::df() ";
 		auto df = std::make_shared<FilesystemUsage>();
@@ -1598,7 +1487,7 @@ namespace os
 	 *
 	 * @return Map of mount points and devices.
 	 */
-	inline std::map<std::string, std::string> getMountPoints()
+	std::map<std::string, std::string> getMountPoints()
 	{
 		const static char fname[] = "proc::getMountPoints() ";
 		std::map<std::string, std::string> mountPointsMap;
@@ -1635,12 +1524,14 @@ namespace os
 
 #elif defined(__linux__)
 		// Linux implementation with RAII
-		MountTableRAII mountsFile("/proc/mounts", "r");
-		if (!mountsFile.valid())
+		std::unique_ptr<FILE, void (*)(FILE *)> mountsFile(setmntent("/proc/mounts", "r"), [](FILE *fp)
+														   { if (fp) endmntent(fp); });
+		if (!mountsFile.get())
 		{
 			// Fallback to /etc/mtab
-			MountTableRAII fallbackFile("/etc/mtab", "r");
-			if (!fallbackFile.valid())
+			std::unique_ptr<FILE, void (*)(FILE *)> fallbackFile(setmntent("/etc/mtab", "r"), [](FILE *fp)
+																 { if (fp) endmntent(fp); });
+			if (!fallbackFile.get())
 			{
 				LOG_ERR << fname << "Failed to open both /proc/mounts and /etc/mtab: " << last_error_msg();
 				return mountPointsMap;
@@ -1778,7 +1669,7 @@ namespace os
 	 * @param path File path.
 	 * @return Tuple containing file mode (permissions), user ID, and group ID. Returns (-1, -1, -1) on failure.
 	 */
-	inline std::tuple<int, int, int> fileStat(const std::string &path)
+	std::tuple<int, int, int> fileStat(const std::string &path)
 	{
 		const static char fname[] = "fileStat() ";
 
@@ -1811,7 +1702,7 @@ namespace os
 	 * @param mode Permissions mode in octal (e.g., 0755).
 	 * @return True if successful, false otherwise.
 	 */
-	inline bool fileChmod(const std::string &path, uint16_t mode)
+	bool fileChmod(const std::string &path, uint16_t mode)
 	{
 		const static char fname[] = "fileChmod() ";
 
@@ -1849,7 +1740,7 @@ namespace os
 	 * @param mode Shorthand permissions mode (e.g., 755).
 	 * @return True if successful, false otherwise.
 	 */
-	inline bool chmod(const std::string &path, uint16_t mode)
+	bool chmod(const std::string &path, uint16_t mode)
 	{
 		const static char fname[] = "chmod() ";
 
@@ -1875,7 +1766,7 @@ namespace os
 	}
 
 	// SID to UID conversion for Windows simulation
-	inline unsigned int hashSidToUid(const std::string &sidString)
+	unsigned int hashSidToUid(const std::string &sidString)
 	{
 		// Use FNV-1a hash for better distribution
 		constexpr uint32_t FNV_OFFSET_BASIS = 2166136261U;
@@ -1892,7 +1783,7 @@ namespace os
 		return (hash & 0x7FFFFFFF) % 1000000 + 1000; // Range: 1000-1000999
 	}
 
-	inline bool getUidByName(const std::string &userName, unsigned int &uid, unsigned int &groupid)
+	bool getUidByName(const std::string &userName, unsigned int &uid, unsigned int &groupid)
 	{
 		const static char fname[] = "os::getUidByName() ";
 
@@ -1973,7 +1864,7 @@ namespace os
 	}
 
 	// Get uid for Windows and Linux
-	inline uid_t get_uid()
+	uid_t get_uid()
 	{
 #if defined(_WIN32)
 		HandleRAII hToken;
@@ -2017,7 +1908,7 @@ namespace os
 #endif
 	}
 
-	inline std::string getUsernameByUid(uid_t uid = get_uid())
+	std::string getUsernameByUid(uid_t uid /* = get_uid() */)
 	{
 		const static char fname[] = "os::getUsernameByUid() ";
 

@@ -6,7 +6,7 @@
 #include "../../common/DurationParse.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "../../common/os/linux.hpp"
+#include "../../common/os/linux.h"
 #include "../Configuration.h"
 #include "../Label.h"
 #include "../ResourceCollection.h"

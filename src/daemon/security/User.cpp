@@ -7,7 +7,7 @@
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
-#include "../../common/os/linux.hpp"
+#include "../../common/os/linux.h"
 #include "../Configuration.h"
 #include "Security.h"
 #include "User.h"

@@ -5,7 +5,7 @@
 
 #include "../../common/Utility.h"
 #include "../../common/os/chown.h"
-#include "../../common/os/linux.hpp"
+#include "../../common/os/linux.h"
 #include "../Configuration.h"
 
 ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin, const std::string &workingDir)

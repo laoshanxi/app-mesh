@@ -8,8 +8,9 @@
 #include <vector>
 #endif
 
+#include "../Utility.h"
 #include "chown.h"
-#include "linux.hpp"
+#include "linux.h"
 
 namespace os
 {
