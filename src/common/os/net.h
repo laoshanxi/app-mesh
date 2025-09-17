@@ -7,10 +7,7 @@
 
 namespace net
 {
-	/**
-	 * @struct NetworkInterfaceInfo
-	 * @brief Represents a network interface with its properties
-	 */
+	// Network interface with its properties
 	struct NetworkInterfaceInfo
 	{
 		std::string name;	 ///< Name of the network interface (ifname on POSIX, FriendlyName on Windows)
@@ -18,30 +15,16 @@ namespace net
 		std::string address; ///< IP address as string (numeric form)
 	};
 
-	/**
-	 * @brief Gets the Fully Qualified Domain Name (FQDN) of the host
-	 * @return Host's FQDN, or short hostname if FQDN lookup fails
-	 */
+	// Fully Qualified Domain Name (FQDN) of the host
 	std::string hostname();
 
-	/**
-	 * @brief Converts a sockaddr structure to a string representation of the address
-	 *
-	 * @param storage Pointer to sockaddr structure containing the address
-	 * @return String representation of the address, empty string on error
-	 */
+	// Converts a sockaddr structure to a string
 	std::string sockaddrToString(const struct sockaddr *storage);
 
-	/**
-	 * @brief Returns the names of all virtual network devices
-	 * @return Set of virtual network device names
-	 */
+	// Get all virtual network devices name in the system
 	std::set<std::string> getVirtualNetworkDevices();
 
-	/**
-	 * @brief Retrieves the network link devices (excluding virtual ones) in the system
-	 * @return A list of NetworkInterfaceInfo objects representing the system's network devices
-	 */
+	// Retrieves the network link devices in the system
 	std::list<NetworkInterfaceInfo> getNetworkLinks();
 
 } // namespace net
