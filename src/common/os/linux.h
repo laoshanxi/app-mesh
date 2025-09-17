@@ -19,7 +19,8 @@
 #include <ace/OS.h>           // for ACE_OS::abc()
 #include <ace/OS_NS_unistd.h> // for uid_t, pid_t
 
-#include "models.h" // for Process
+#include "models.h"     // for Process
+#include "procstat.hpp" // for ProcessStatus
 
 namespace os
 {
@@ -34,42 +35,6 @@ namespace os
      * @return A vector of file and directory names within the specified directory.
      */
     std::vector<std::string> ls(const std::string &directory);
-
-    // Snapshot of a process (cross-platform process status).
-    struct ProcessStatus
-    {
-        ProcessStatus(
-            pid_t _pid,
-            const std::string &_comm,
-            char _state,
-            pid_t _ppid,
-            pid_t _pgrp,
-            pid_t _session,
-            unsigned long _utime,
-            unsigned long _stime,
-            long _cutime,
-            long _cstime,
-            unsigned long long _starttime,
-            unsigned long _vsize,
-            long _rss);
-
-        // get process start time
-        std::chrono::system_clock::time_point get_starttime() const;
-
-        const pid_t pid;
-        const std::string comm;
-        const char state;
-        const pid_t ppid;
-        const pid_t pgrp;
-        const pid_t session;
-        const unsigned long utime;
-        const unsigned long stime;
-        const long cutime;
-        const long cstime;
-        const unsigned long long starttime;
-        const unsigned long vsize;
-        const long rss;
-    };
 
     /**
      * @brief Get total system CPU time.

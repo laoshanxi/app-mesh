@@ -165,68 +165,6 @@ namespace os
 		return result;
 	}
 
-	// Snapshot of a process (cross-platform process status).
-	ProcessStatus::ProcessStatus(
-		pid_t _pid,
-		const std::string &_comm,
-		char _state,
-		pid_t _ppid,
-		pid_t _pgrp,
-		pid_t _session,
-		unsigned long _utime,
-		unsigned long _stime,
-		long _cutime,
-		long _cstime,
-		unsigned long long _starttime,
-		unsigned long _vsize,
-		long _rss)
-		: pid(_pid),
-		  comm(_comm),
-		  state(_state),
-		  ppid(_ppid),
-		  pgrp(_pgrp),
-		  session(_session),
-		  utime(_utime),
-		  stime(_stime),
-		  cutime(_cutime),
-		  cstime(_cstime),
-		  starttime(_starttime),
-		  vsize(_vsize),
-		  rss(_rss)
-	{
-	}
-
-	// get process start time
-	std::chrono::system_clock::time_point ProcessStatus::get_starttime() const
-	{
-#if defined(_WIN32)
-		// Windows: starttime is already a time_t
-		return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
-#elif defined(__linux__)
-		static const long ticks_per_second = sysconf(_SC_CLK_TCK);
-		// Read system uptime from /proc/uptime
-		static std::atomic<double> uptime_seconds{0.0};
-		static std::once_flag init_flag;
-		std::call_once(init_flag, []()
-					   {
-                std::ifstream uptime_file("/proc/uptime");
-                if (uptime_file)
-                 {
-                    double temp_uptime = 0.0;
-                    uptime_file >> temp_uptime;
-                    uptime_seconds.store(temp_uptime);
-                } });
-		// Calculate system boot time in seconds
-		time_t system_boot_time = time(nullptr) - static_cast<time_t>(uptime_seconds.load());
-		// Calculate start time since system boot in seconds + boot time
-		double start_time_seconds = system_boot_time + (static_cast<double>(starttime) / ticks_per_second);
-		// Convert start time
-		return std::chrono::system_clock::from_time_t(static_cast<time_t>(start_time_seconds));
-#elif defined(__APPLE__)
-		return std::chrono::system_clock::from_time_t(static_cast<time_t>(starttime));
-#endif
-	}
-
 	/**
 	 * @brief Get total system CPU time.
 	 *
