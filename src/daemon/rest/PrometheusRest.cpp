@@ -6,7 +6,7 @@
 
 #include "../../common/Utility.h"
 #include "../../common/os/process.hpp"
-#include "../../common/os/pstree.hpp"
+#include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "PrometheusRest.h"

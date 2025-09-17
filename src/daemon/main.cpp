@@ -38,7 +38,7 @@
 #include "../common/TimerHandler.h"
 #include "../common/Utility.h"
 #include "../common/os/chown.hpp"
-#include "../common/os/pstree.hpp"
+#include "../common/os/pstree.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
 #include "PersistManager.h"

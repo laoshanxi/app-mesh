@@ -14,7 +14,7 @@
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
-#include "../../common/os/pstree.hpp"
+#include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
 #include "../application/Application.h"
