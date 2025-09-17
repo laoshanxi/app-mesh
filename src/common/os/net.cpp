@@ -1,12 +1,6 @@
-#pragma once
-
 // Common C++/POSIX
 #include <cerrno>  // errno
 #include <cstring> // strerror, strcmp
-#include <list>	   // std::list
-#include <memory>  // std::unique_ptr
-#include <set>	   // std::set
-#include <string>  // std::string
 #include <utility> // std::move
 
 // Sockets & name resolution
@@ -24,9 +18,9 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <iphlpapi.h> // GetAdaptersAddresses
 #include <winsock2.h>
 #include <ws2tcpip.h> // getnameinfo, NI_MAXHOST
+#include <iphlpapi.h> // GetAdaptersAddresses
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Iphlpapi.lib")
 // POSIX-like defines used in code paths
@@ -39,7 +33,8 @@
 
 #include <boost/asio.hpp>
 
-#include "../../common/Utility.h"
+#include "../Utility.h"
+#include "net.h"
 
 namespace net
 {
@@ -149,30 +144,11 @@ namespace net
 
 #endif // _WIN32
 
-	// -----------------------------
-	// Types
-	// -----------------------------
-
-	/**
-	 * @struct NetworkInterfaceInfo
-	 * @brief Represents a network interface with its properties
-	 */
-	struct NetworkInterfaceInfo
-	{
-		std::string name;	 ///< Name of the network interface (ifname on POSIX, FriendlyName on Windows)
-		bool ipv6;			 ///< True if IPv6, false if IPv4
-		std::string address; ///< IP address as string (numeric form)
-	};
-
-	// -----------------------------
-	// API
-	// -----------------------------
-
 	/**
 	 * @brief Gets the Fully Qualified Domain Name (FQDN) of the host
 	 * @return Host's FQDN, or short hostname if FQDN lookup fails
 	 */
-	inline std::string hostname()
+	std::string hostname()
 	{
 		static const auto cached = []() -> std::string
 		{
@@ -215,7 +191,7 @@ namespace net
 	 * @param storage Pointer to sockaddr structure containing the address
 	 * @return String representation of the address, empty string on error
 	 */
-	inline std::string sockaddrToString(const struct sockaddr *storage)
+	std::string sockaddrToString(const struct sockaddr *storage)
 	{
 		static const char fname[] = "net::sockaddrToString() ";
 
@@ -271,7 +247,7 @@ namespace net
 	 * @brief Returns the names of all virtual network devices
 	 * @return Set of virtual network device names
 	 */
-	inline std::set<std::string> getVirtualNetworkDevices()
+	std::set<std::string> getVirtualNetworkDevices()
 	{
 		static const char fname[] = "net::getVirtualNetworkDevices() ";
 		std::set<std::string> result;
@@ -399,7 +375,7 @@ namespace net
 	 * @brief Retrieves the network link devices (excluding virtual ones) in the system
 	 * @return A list of NetworkInterfaceInfo objects representing the system's network devices
 	 */
-	inline std::list<NetworkInterfaceInfo> getNetworkLinks()
+	std::list<NetworkInterfaceInfo> getNetworkLinks()
 	{
 		static const char fname[] = "net::getNetworkLinks() ";
 

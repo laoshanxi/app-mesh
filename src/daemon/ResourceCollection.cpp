@@ -6,7 +6,7 @@
 #include "../common/DateTime.h"
 #include "../common/Utility.h"
 #include "../common/json.h"
-#include "../common/os/net.hpp"
+#include "../common/os/net.h"
 #include "../common/os/pstree.h"
 #include "Configuration.h"
 #include "ResourceCollection.h"
