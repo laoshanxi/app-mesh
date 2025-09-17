@@ -1,28 +1,20 @@
-#pragma once
-
 #if !defined(_WIN32)
+#include <cstring>
 #include <fts.h>
 #include <grp.h>
+#include <memory>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 #endif
 
-#include <string>
-#include <sys/types.h>
-
-#include "../../common/os/linux.hpp"
+#include "chown.h"
+#include "linux.hpp"
 
 namespace os
 {
 
-	/**
-	 * @brief Changes owner and group of a file or directory
-	 * @param path Path to the file or directory
-	 * @param uid User id of the new owner
-	 * @param gid Group id of the new group
-	 * @param recursive If true, applies changes recursively for directories
-	 * @return true if successful, false otherwise
-	 */
-	inline bool chown(const std::string &path, uid_t uid, gid_t gid, bool recursive = false)
+	bool chown(const std::string &path, uid_t uid, gid_t gid, bool recursive)
 	{
 		constexpr char fname[] = "os::chown() ";
 #if !defined(_WIN32)
@@ -64,11 +56,11 @@ namespace os
 
 			switch (node->fts_info)
 			{
-			case FTS_D:	 // Preorder directory
-			case FTS_F:	 // Regular file
-			case FTS_SL: // Symbolic link
-			case FTS_SLNONE:
-			{ // Symbolic link without target
+			case FTS_D:		 // Preorder directory
+			case FTS_F:		 // Regular file
+			case FTS_SL:	 // Symbolic link
+			case FTS_SLNONE: // Symbolic link without target
+			{
 				if (::lchown(node->fts_path, uid, gid) < 0)
 				{
 					LOG_ERR << fname << "Failed to change ownership of " << node->fts_path << ", error: " << last_error_msg();
@@ -81,8 +73,8 @@ namespace os
 			case FTS_DNR: // Unreadable directory
 			case FTS_ERR: // Error; errno is set
 			case FTS_DC:  // Directory that causes cycles
-			case FTS_NS:
-			{ // stat(2) failed
+			case FTS_NS:  // stat(2) failed
+			{
 				LOG_ERR << fname << "Failed to process " << node->fts_path << ", error type: " << node->fts_info << ", error: " << std::strerror(node->fts_errno);
 				return false;
 			}
@@ -97,15 +89,7 @@ namespace os
 		return true;
 	}
 
-	/**
-	 * @brief Changes owner and group of a file or directory
-	 * @param path Path to the file or directory
-	 * @param user Username of the new owner (can be empty to keep current)
-	 * @param group Group name of the new group (can be empty to keep current)
-	 * @param recursive If true, applies changes recursively for directories
-	 * @return true if successful, false otherwise
-	 */
-	inline bool chown(const std::string &path, std::string user, std::string group = "", bool recursive = false)
+	bool chown(const std::string &path, std::string user, std::string group, bool recursive)
 	{
 		constexpr char fname[] = "os::chown() ";
 #if !defined(_WIN32)
@@ -191,4 +175,4 @@ namespace os
 #endif
 	}
 
-} // namespace os {
+} // namespace os

@@ -39,7 +39,8 @@
 #include "Password.h"
 #include "Utility.h"
 #include "json.h"
-#include "os/chown.hpp"
+#include "os/chown.h"
+#include "os/linux.hpp"
 
 const char *GET_STATUS_STR(unsigned int status)
 {
