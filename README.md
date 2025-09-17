@@ -11,6 +11,7 @@
 
 App Mesh is an open-source, multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
 
+<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/whatis.gif" align=center /></div>
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
 ## Features
@@ -23,7 +24,7 @@ Cloud native | Schedule cloud-level applications to run on multiple hosts with r
 Micro service application | 🧱 [Consul micro-service cluster management](https://app-mesh.readthedocs.io/en/latest/CONSUL.html)
 Extra Features | Collect host/app resource usage <br> Remote shell command execution <br> File upload/download interface <br> Hot-update support `systemctl reload appmesh` <br> Bash completion <br> Reverse proxy <br> 🌐[Web GUI](https://github.com/laoshanxi/app-mesh-ui)
 Platform support | X86_64 <br> ARM32 <br> ARM64
-SDK | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh_client.html) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/appmesh_client.go) <br> [JavaScript](https://www.npmjs.com/package/appmesh) <br> [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) <br> [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
+SDK | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) <br> [Golang](https://github.com/laoshanxi/app-mesh/blob/main/src/sdk/go/client_http.go) <br> [JavaScript](https://www.npmjs.com/package/appmesh) <br> [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) <br> [Swagger OpenAPI Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)
 
 ## Getting started
 
@@ -85,7 +86,6 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 
 - [Build a powerful monitor system with Grafana/Prometheus/Loki](https://app-mesh.readthedocs.io/en/latest/success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.html)
 - [Customize application start behavior](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)
-- [Manage cluster-level microservice applications](https://app-mesh.readthedocs.io/en/latest/success/manage_cluster_level_microservice_applications.html)
 - [Open service broker support local PV for Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
 - [Promote native application to microservice application](https://app-mesh.readthedocs.io/en/latest/success/promote_native_app_to_microservice_app.html)
 - [Secure REST file server](https://app-mesh.readthedocs.io/en/latest/success/secure_REST_file_server.html)

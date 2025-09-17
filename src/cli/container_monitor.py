@@ -1,33 +1,55 @@
-#!/usr/bin/env python
+# container_monitor.py
+#!/usr/bin/env python3
+"""Monitor a Docker container and clean up the corresponding App Mesh applications when it exits."""
+
 import sys
 
-# python3 -m pip install --upgrade appmesh
-from appmesh import appmesh_client
+# python3 -m pip install --upgrade appmesh docker
+from appmesh import AppMeshClient
 import docker
 
-# input
-#  - arg[1] as container name and shadow application name
-#  - arg[2] as self monitor application name
-args = sys.argv
-del args[0]
-container_name = args[0]
+# Configuration
+DEFAULT_USERNAME = "admin"
+DEFAULT_PASSWORD = "admin123"
 
-# login appmesh
-appmesh = appmesh_client.AppMeshClient()
-appmesh.login("admin", "admin123")
 
-# wait docker finish and ignore container not exist error
-# https://docker-py.readthedocs.io/en/stable/containers.html#docker.models.containers.Container.wait
-client = docker.APIClient(base_url="unix://var/run/docker.sock")
-try:
-    print(client.wait(container_name))
-except Exception as e:
-    print(e)
-else:
-    pass
+def main():
+    """Main function to monitor container and cleanup applications."""
+    # Validate command line arguments
+    if len(sys.argv) < 2:
+        print("Usage: script.py <container_name> [app_names...]")
+        sys.exit(1)
 
-# remove related applications
-for app_name in args:
-    appmesh.app_delete(app_name)
+    container_name = sys.argv[1]
+    app_names = sys.argv[1:]  # Include container name and any additional app names
 
-print("Finished")
+    # Initialize Docker client
+    docker_client = docker.APIClient(base_url="unix://var/run/docker.sock")
+
+    # Wait for container to finish
+    print(f"Monitoring container: {container_name}")
+    try:
+        # https://docker-py.readthedocs.io/en/stable/containers.html#docker.models.containers.Container.wait
+        result = docker_client.wait(container_name)
+        print(f"Container exited with status: {result}")
+    except Exception as error:
+        print(f"Error waiting for container: {error}")
+
+    # Clean up App Mesh applications
+    try:
+        appmesh_client = AppMeshClient()
+        appmesh_client.login(DEFAULT_USERNAME, DEFAULT_PASSWORD)
+
+        for app in app_names:
+            print(f"Deleting App Mesh application: {app}")
+            appmesh_client.delete_app(app_name=app)
+
+    except Exception as error:
+        print(f"Error cleaning up App Mesh applications: {error}")
+        sys.exit(1)
+
+    print("Cleanup completed successfully")
+
+
+if __name__ == "__main__":
+    main()

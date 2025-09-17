@@ -17,7 +17,9 @@ AppMesh is a native app manager, provide REST API which can used to manage appli
 This Docker image `laoshanxi/appmesh:container_agent` is used to forward container start command to AppMesh, The image was already built and pushed to `docker.io` and built by [Dockerfile](https://github.com/laoshanxi/app-mesh/tree/main/docker/Dockerfile.container_agent).
 
 ## Test run native command in docker container
+
 ```shell
+sudo python3 -m pip install docker --break-system-packages
 docker run --net=host --cidfile=/tmp/container.id -v /tmp/container.id:/tmp/container.id -v /opt/appmesh/ssl/:/opt/appmesh/ssl/ laoshanxi/appmesh:container_agent docker ps
 ```
 
@@ -40,11 +42,11 @@ spec:
       - name: native-cmd-test
         image: laoshanxi/appmesh:container_agent
         args: ["docker ps"]
-		volumeMounts:
+    volumeMounts:
         - name: appmesh-volume
           mountPath: /opt/appmesh/ssl
       restartPolicy: Never
-	  hostNetwork: true
+    hostNetwork: true
       volumes:
       - name: appmesh-volume
         hostPath:

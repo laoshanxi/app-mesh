@@ -68,7 +68,7 @@ copy_configuration_files() {
     cp "${CMAKE_CURRENT_SOURCE_DIR}/src/daemon/rest/openapi.yaml" "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/pack/"{setup.sh,entrypoint.sh,appmesh*.sh,*.html} "${PACKAGE_HOME}/script/"
     cp "${CMAKE_CURRENT_SOURCE_DIR}/script/docker/"{prom*.yml,docker*.yaml} "${PACKAGE_HOME}/script/"
-    cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_arm.py} "${PACKAGE_HOME}/script/"
+    cp "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/"{bash_completion.sh,container_monitor.py,appmesh_agent.py} "${PACKAGE_HOME}/script/"
 
     # Copy binary support files
     cp ${CMAKE_CURRENT_SOURCE_DIR}/src/sdk/python/py_*.py "${PACKAGE_HOME}/bin/"

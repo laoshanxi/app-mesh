@@ -450,7 +450,7 @@ function Install-Go {
     Write-Host "Installing Go programming language..." -ForegroundColor Cyan
     
     if (!(Get-Command go -ErrorAction SilentlyContinue)) {
-        $goVersion = "1.24.7"
+        $goVersion = "1.25.1"
         $goArch = if ($architecture -eq "arm64") { "arm64" } else { "amd64" }
         $goUrl = "https://go.dev/dl/go$goVersion.windows-$goArch.zip"
         Save-File $goUrl "go.zip"

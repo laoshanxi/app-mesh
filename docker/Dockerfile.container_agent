@@ -15,7 +15,7 @@ RUN apt-get update && \
 # Install Python dependencies
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir appmesh && \
-    wget --no-check-certificate https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/cli/appmesh_arm.py -P /appmesh/
+    wget --no-check-certificate https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/cli/appmesh_agent.py -P /appmesh/
 
 FROM python:3.13.7-slim-bookworm
 
@@ -25,7 +25,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Copy virtual environment from the build stage
 COPY --from=build_stage /opt/venv /opt/venv
-COPY --from=build_stage /appmesh/appmesh_arm.py /appmesh/
+COPY --from=build_stage /appmesh/appmesh_agent.py /appmesh/
 
 # Set PATH to include Python venv binary
 ENV PATH="/opt/venv/bin:$PATH"
@@ -34,4 +34,4 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /appmesh
 
 # Run your application
-ENTRYPOINT ["python3", "appmesh_arm.py"]
+ENTRYPOINT ["python3", "appmesh_agent.py"]
