@@ -1,7 +1,7 @@
 #include <chrono>
 #include <fstream>
 
-#include "../common/os/linux.hpp"
+#include "../common/os/linux.h"
 #include "Configuration.h"
 #include "PersistManager.h"
 #include "application/Application.h"

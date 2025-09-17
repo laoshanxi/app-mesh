@@ -7,7 +7,7 @@
 #include "../../common/PerfLog.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
-#include "../../common/os/linux.hpp"
+#include "../../common/os/linux.h"
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"

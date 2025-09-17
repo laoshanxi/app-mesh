@@ -40,7 +40,7 @@
 #include "Utility.h"
 #include "json.h"
 #include "os/chown.h"
-#include "os/linux.hpp"
+#include "os/linux.h"
 
 const char *GET_STATUS_STR(unsigned int status)
 {

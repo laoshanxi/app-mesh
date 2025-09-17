@@ -33,7 +33,7 @@
 #include "../common/RestClient.h"
 #include "../common/Utility.h"
 #include "../common/json.h"
-#include "../common/os/linux.hpp"
+#include "../common/os/linux.h"
 #include "ArgumentParser.h"
 #include "cmd_args.h"
 

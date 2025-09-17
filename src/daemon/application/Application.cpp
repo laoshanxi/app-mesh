@@ -9,7 +9,7 @@
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
-#include "../../common/os/linux.hpp"
+#include "../../common/os/linux.h"
 #include "../../common/os/proc.h"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"

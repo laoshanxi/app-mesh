@@ -6,7 +6,7 @@
 #include <set>
 
 #include "../Utility.h"
-#include "linux.hpp"
+#include "linux.h"
 #include "proc.h"
 
 namespace os
