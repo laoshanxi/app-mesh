@@ -278,7 +278,6 @@ venv
 *.egg-info
 *.whl
 dist
-src/sdk/python/appmesh_client.py
 
 node_modules/
 coverage/
