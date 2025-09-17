@@ -5,7 +5,7 @@
 #include <prometheus/text_serializer.h>
 
 #include "../../common/Utility.h"
-#include "../../common/os/process.hpp"
+#include "../../common/os/proc.h"
 #include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceCollection.h"
