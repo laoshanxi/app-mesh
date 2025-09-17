@@ -4,7 +4,7 @@
 #include <memory>
 
 #include "../../common/Utility.h"
-#include "../../common/os/chown.hpp"
+#include "../../common/os/chown.h"
 #include "../../common/os/linux.hpp"
 #include "../Configuration.h"
 

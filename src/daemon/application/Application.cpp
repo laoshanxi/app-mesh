@@ -10,7 +10,7 @@
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
 #include "../../common/os/linux.hpp"
-#include "../../common/os/process.hpp"
+#include "../../common/os/proc.h"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
 #include "../ResourceCollection.h"

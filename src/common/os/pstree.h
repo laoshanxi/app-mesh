@@ -7,7 +7,7 @@
 
 #include "../Utility.h"
 #include "linux.hpp"
-#include "process.hpp"
+#include "proc.h"
 
 namespace os
 {

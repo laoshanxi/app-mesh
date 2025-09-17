@@ -84,7 +84,10 @@ typedef unsigned long long uint64_t;
 #include <assert.h>
 
 #include "../Utility.h"
-#include "process.hpp"
+#include "handler.hpp"
+#include "malloc.hpp"
+#include "models.h"
+#include "proc.h"
 
 namespace os
 {

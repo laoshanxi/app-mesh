@@ -1,4 +1,3 @@
-#pragma once
 
 #include <chrono>
 #include <fstream>
@@ -11,11 +10,12 @@
 
 // Platform-specific headers
 #if defined(_WIN32)
+#include <windows.h>
+
 #include <io.h>
 #include <process.h>
 #include <psapi.h>
 #include <tlhelp32.h>
-#include <windows.h>
 #else
 #include <cerrno>
 #include <cstring>
@@ -35,12 +35,13 @@
 #include "handler.hpp"
 #include "malloc.hpp"
 #include "models.h"
+#include "proc.h"
 
 namespace os
 {
 
 	// Returns the number of open file descriptors for the specified process.
-	inline size_t getOpenFileDescriptorCount(pid_t pid = ::getpid())
+	size_t getOpenFileDescriptorCount(pid_t pid)
 	{
 		const static char fname[] = "os::getOpenFileDescriptorCount() ";
 		size_t result = 0;
@@ -162,9 +163,9 @@ namespace os
 #endif
 
 		return result;
-	};
+	}
 
-	inline uid_t getProcessUid(pid_t pid)
+	uid_t getProcessUid(pid_t pid)
 	{
 		const static char fname[] = "os::getProcessUid() ";
 
