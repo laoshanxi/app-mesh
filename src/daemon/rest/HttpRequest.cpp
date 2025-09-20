@@ -19,8 +19,8 @@ HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	  m_method(std::move(request.http_method)),
 	  m_relative_uri(std::move(request.request_uri)),
 	  m_remote_address(std::move(request.client_addr)),
-	  m_body(std::make_shared<std::string>(std::move(request.body))),
-	  m_querys(std::move(request.querys)),
+	  m_body(std::make_shared<std::vector<uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the smart_ptr
+	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
 	  m_tcpHanlerId(tcpHandlerId)
 {
@@ -35,29 +35,37 @@ nlohmann::json HttpRequest::extractJson() const
 	return nlohmann::json::parse(*m_body);
 }
 
-void HttpRequest::reply(web::http::status_code status) const
+bool HttpRequest::reply(web::http::status_code status) const
 {
-	reply(m_relative_uri, m_uuid, "", {}, status, "");
+	return reply(m_relative_uri, m_uuid, {}, {}, status, "");
 }
 
-void HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data) const
+bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data) const
 {
-	reply(m_relative_uri, m_uuid, body_data.dump(), {}, status, web::http::mime_types::application_json);
+	return reply(status, body_data, {});
 }
 
-void HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
+bool HttpRequest::reply(web::http::status_code status, const std::vector<uint8_t> &body_data) const
 {
-	reply(m_relative_uri, m_uuid, body_data.dump(), headers, status, web::http::mime_types::application_json);
+	return reply(m_relative_uri, m_uuid, body_data, {}, status, web::http::mime_types::application_octetstream);
 }
 
-void HttpRequest::reply(web::http::status_code status, std::string &body_data, const std::string &content_type) const
+bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
 {
-	reply(m_relative_uri, m_uuid, body_data, {}, status, content_type);
+	const auto body = body_data.dump();
+	const auto bodyBytes = std::vector<uint8_t>(body.begin(), body.end());
+	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, web::http::mime_types::application_json);
 }
 
-void HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
+bool HttpRequest::reply(web::http::status_code status, std::string &body_data, const std::string &content_type) const
 {
-	reply(m_relative_uri, m_uuid, body_data, headers, status, content_type);
+	return reply(status, body_data, {}, content_type);
+}
+
+bool HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
+{
+	const auto bodyBytes = std::vector<uint8_t>(body_data.begin(), body_data.end());
+	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
 std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inputSize, int tcpHandlerId)
@@ -92,14 +100,14 @@ void HttpRequest::dump() const
 	LOG_DBG << fname << "m_method:" << m_method;
 	LOG_DBG << fname << "m_relative_uri:" << m_relative_uri;
 	LOG_DBG << fname << "m_remote_address:" << m_remote_address;
-	LOG_DBG << fname << "m_body:" << *m_body;
-	for (const auto &q : m_querys)
-		LOG_DBG << fname << "m_querys:" << q.first << "=" << q.second;
+	// LOG_DBG << fname << "m_body:" << *m_body;
+	for (const auto &q : m_query)
+		LOG_DBG << fname << "m_query:" << q.first << "=" << q.second;
 	// for (const auto &h : m_headers)
 	//	LOG_DBG << fname << "m_headers:" << h.first << "=" << h.second;
 }
 
-void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
+bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
 						const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
@@ -118,8 +126,10 @@ void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 
 	if (m_tcpHanlerId > 0)
 	{
-		TcpHandler::replyTcp(m_tcpHanlerId, response);
+		return TcpHandler::replyTcp(m_tcpHanlerId, response);
 	}
+
+	return false;
 }
 
 void HttpRequest::verifyHMAC() const
@@ -195,7 +205,12 @@ bool HttpRequestWithTimeout::replied() const
 	return m_httpRequestReplyFlag.load();
 }
 
-void HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
+bool HttpRequestWithTimeout::interrupt()
+{
+	return HttpRequest::reply(web::http::status_codes::ExpectationFailed);
+}
+
+bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
 								   const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequestWithTimeout::reply() ";
@@ -204,8 +219,9 @@ void HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 	const_cast<HttpRequestWithTimeout *>(this)->cancelTimer(m_timerResponseId);
 	if (!m_httpRequestReplyFlag.exchange(true))
 	{
-		HttpRequest::reply(requestUri, uuid, body, headers, status, bodyType);
+		return HttpRequest::reply(requestUri, uuid, body, headers, status, bodyType);
 	}
+	return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

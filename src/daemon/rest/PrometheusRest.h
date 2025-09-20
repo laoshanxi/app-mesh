@@ -150,6 +150,9 @@ public:
 	static void instance(std::shared_ptr<PrometheusRest> instance) { m_instance = instance; };
 };
 
+constexpr auto METRIC_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
+constexpr auto METRIC_PATH = "/metrics";
+
 #define PROM_COUNTER_INCREASE(counter)     \
 	{                                      \
 		if (counter)                       \

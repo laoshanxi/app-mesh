@@ -3,8 +3,10 @@
 import abc
 import base64
 import json
+import locale
 import logging
 import os
+import sys
 import time
 from datetime import datetime
 from enum import Enum, unique
@@ -18,6 +20,64 @@ import requests
 from .app import App
 from .app_run import AppRun
 from .app_output import AppOutput
+
+
+class EncodingResponse:
+    """Wrapper for requests.Response that handles encoding conversion on Windows."""
+
+    def __init__(self, response: requests.Response):
+        self._response = response
+        self._converted_text = None
+        self._should_convert = False
+
+        # Check if we need to convert encoding on Windows
+        if sys.platform == "win32":
+            content_type = response.headers.get("Content-Type", "").lower()
+            if response.status_code == HTTPStatus.OK and "text/plain" in content_type and "utf-8" in content_type:
+                try:
+                    local_encoding = locale.getpreferredencoding()
+
+                    if local_encoding.lower() not in ["utf-8", "utf8"]:
+                        # Ensure response is decoded as UTF-8 first
+                        response.encoding = "utf-8"
+                        utf8_text = response.text  # This gives us proper Unicode string
+
+                        # Convert Unicode to local encoding, then back to Unicode
+                        # This simulates how text would appear in local encoding
+                        try:
+                            local_bytes = utf8_text.encode(local_encoding, errors="replace")
+                            self._converted_text = local_bytes.decode(local_encoding)
+                            self._should_convert = True
+                        except (UnicodeEncodeError, LookupError):
+                            # If local encoding can't handle the characters, fall back to UTF-8
+                            self._converted_text = utf8_text
+                            self._should_convert = True
+
+                except (UnicodeError, LookupError):
+                    # If any conversion fails, keep original UTF-8
+                    response.encoding = "utf-8"
+
+    @property
+    def text(self):
+        """Return converted text if needed, otherwise original text."""
+        if self._should_convert and self._converted_text is not None:
+            return self._converted_text
+        # return the original text from _response without modification
+        return self._response.text
+
+    def __getattr__(self, name):
+        """Dynamically delegate attribute access to the original response"""
+        return getattr(self._response, name)
+
+    def __dir__(self):
+        """Optional: allow dir() to show attributes of both wrapper and response"""
+        return list(set(dir(self._response) + list(self.__dict__.keys())))
+
+    @property
+    def __class__(self):
+        """Optional: allow isinstance checks for requests.Response"""
+        # Pretend to be a requests.Response for isinstance checks
+        return requests.Response
 
 
 class AppMeshClient(metaclass=abc.ABCMeta):
@@ -107,7 +167,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     DURATION_ONE_WEEK_ISO = "P1W"
     DURATION_TWO_DAYS_ISO = "P2D"
     DURATION_TWO_DAYS_HALF_ISO = "P2DT12H"
-    TOKEN_REFRESH_INTERVAL = 60
+    TOKEN_REFRESH_INTERVAL = 300  # 5 min to refresh token
+    TOKEN_REFRESH_OFFSET = 30  # 30s before token expire to refresh token
 
     # Platform-aware default SSL paths
     _DEFAULT_SSL_DIR = "c:/local/appmesh/ssl" if os.name == "nt" else "/opt/appmesh/ssl"
@@ -140,7 +201,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         rest_ssl_client_cert=(DEFAULT_SSL_CLIENT_CERT_PATH, DEFAULT_SSL_CLIENT_KEY_PATH) if os.path.exists(DEFAULT_SSL_CLIENT_CERT_PATH) else None,
         rest_timeout=(60, 300),
         jwt_token=None,
-        oauth2=None,
         auto_refresh_token=False,
     ):
         """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
@@ -163,15 +223,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 The default is `(60, 300)`, where `60` seconds is the maximum time to establish a connection and `300` seconds for the maximum read duration.
 
             jwt_token (str, optional): JWT token for API authentication, used in headers to authorize requests where required.
-
-            oauth2 (Dict[str, Any], optional): Keycloak configuration for oauth2 authentication:
-                - server_url: Keycloak server URL (e.g. "https://keycloak.example.com/auth/")
-                - realm: Keycloak realm
-                - client_id: Keycloak client ID
-                - client_secret: Keycloak client secret (optional)
-                Using this parameter enables Keycloak integration for authentication. The 'python-keycloak' package
-                will be imported on-demand only when this parameter is, make sure package is installed (pip3 install python-keycloak).
-
             auto_refresh_token (bool, optional): Enable automatic token refresh before expiration.
                 When enabled, a background timer will monitor token expiration and attempt to refresh
                 the token before it expires. This works with both native App Mesh tokens and Keycloak tokens.
@@ -185,35 +236,19 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         self.rest_timeout = rest_timeout
         self._forward_to = None
 
-        # Keycloak integration
-        self._keycloak_openid = None
-        if oauth2:
-            try:
-                from keycloak import KeycloakOpenID
-
-                self._keycloak_openid = KeycloakOpenID(
-                    server_url=oauth2.get("auth_server_url"),
-                    client_id=oauth2.get("client_id"),
-                    realm_name=oauth2.get("realm"),
-                    client_secret_key=oauth2.get("client_secret"),
-                    verify=self.ssl_verify,
-                    timeout=rest_timeout,
-                )
-            except ImportError:
-                logging.error("Keycloak package not installed. Install with: pip install python-keycloak")
-                raise Exception("Keycloak integration requested but python-keycloak package is not installed")
-
         # Token auto-refresh
         self._token_refresh_timer = None
         self._auto_refresh_token = auto_refresh_token
-        if auto_refresh_token and jwt_token:
-            self._schedule_token_refresh()
+        self.jwt_token = jwt_token  # Set property last after all dependencies are initialized
 
     @staticmethod
     def _ensure_logging_configured():
         """Ensure logging is configured. If no handlers are configured, add a default console handler."""
         if not logging.root.handlers:
             logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    def _get_access_token(self) -> str:
+        return self.jwt_token
 
     def _check_and_refresh_token(self):
         """Check and refresh token if needed, then schedule next check.
@@ -232,12 +267,12 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         # Check token expiration directly from JWT
         try:
-            decoded_token = jwt.decode(self.jwt_token if isinstance(self.jwt_token, str) else self.jwt_token.get("access_token", ""), options={"verify_signature": False})
+            decoded_token = jwt.decode(self._get_access_token(), options={"verify_signature": False})
             expiry = decoded_token.get("exp", 0)
             current_time = time.time()
             time_to_expiry = expiry - current_time
             # Refresh if token expires within 5 minutes
-            needs_refresh = time_to_expiry < 300
+            needs_refresh = time_to_expiry < self.TOKEN_REFRESH_OFFSET
         except Exception as e:
             logging.debug("Failed to parse JWT token for expiration check: %s", str(e))
 
@@ -277,11 +312,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
             # Calculate more precise check time if expiry is known
             if time_to_expiry is not None:
-                if time_to_expiry <= 300:  # Expires within 5 minutes
+                if time_to_expiry <= self.TOKEN_REFRESH_OFFSET:  # Expires within 5 minutes
                     check_interval = 1  # Almost immediate refresh
                 else:
                     # Check at earlier of 5 minutes before expiry or regular interval
-                    check_interval = min(time_to_expiry - 300, self.TOKEN_REFRESH_INTERVAL)
+                    check_interval = min(time_to_expiry - self.TOKEN_REFRESH_OFFSET, self.TOKEN_REFRESH_INTERVAL)
 
             # Create timer to execute refresh check
             self._token_refresh_timer = threading.Timer(check_interval, self._check_and_refresh_token)
@@ -303,14 +338,9 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             self.session.close()
             self.session = None
 
-        # Logout from Keycloak if needed
-        if hasattr(self, "_keycloak_openid") and self._keycloak_openid and hasattr(self, "_jwt_token") and self._jwt_token and isinstance(self._jwt_token, dict) and "refresh_token" in self._jwt_token:
-            try:
-                self._keycloak_openid.logout(self._jwt_token.get("refresh_token"))
-            except Exception as e:
-                logging.warning("Failed to logout from Keycloak: %s", str(e))
-            finally:
-                self._keycloak_openid = None
+        # Clean token
+        if hasattr(self, "_jwt_token") and self._jwt_token:
+            self._jwt_token = None
 
     def __enter__(self):
         """Support for context manager protocol."""
@@ -370,6 +400,13 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         """
         self._jwt_token = token
 
+        # handle refresh
+        if self._jwt_token and self._auto_refresh_token:
+            self._schedule_token_refresh()
+        elif self._token_refresh_timer:
+            self._token_refresh_timer.cancel()
+            self._token_refresh_timer = None
+
     @property
     def forward_to(self) -> str:
         """Get the target host address for request forwarding in a cluster setup.
@@ -419,7 +456,14 @@ class AppMeshClient(metaclass=abc.ABCMeta):
     ########################################
     # Security
     ########################################
-    def login(self, user_name: str, user_pwd: str, totp_code: Optional[str] = "", timeout_seconds: Union[str, int] = DURATION_ONE_WEEK_ISO, audience: Optional[str] = None) -> str:
+    def login(
+        self,
+        user_name: str,
+        user_pwd: str,
+        totp_code: Optional[str] = "",
+        timeout_seconds: Union[str, int] = DURATION_ONE_WEEK_ISO,
+        audience: Optional[str] = None,
+    ) -> str:
         """Login with user name and password
 
         Args:
@@ -432,20 +476,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             str: JWT token.
         """
-        # Keycloak authentication if configured
-        if self._keycloak_openid:
-            self.jwt_token = self._keycloak_openid.token(
-                username=user_name,
-                password=user_pwd,
-                totp=totp_code if totp_code else None,
-                grant_type="password",  # grant type for token request: "password" / "client_credentials" / "refresh_token"
-                scope="openid",  # what information to include in the token, such as "openid profile email"
-            )
-
-            if self._auto_refresh_token:
-                self._schedule_token_refresh()
-            return self.jwt_token
-
         # Standard App Mesh authentication
         self.jwt_token = None
         resp = self._request_http(
@@ -467,8 +497,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         else:
             raise Exception(resp.text)
 
-        if self._auto_refresh_token:
-            self._schedule_token_refresh()
         return self.jwt_token
 
     def validate_totp(self, username: str, challenge: str, code: str, timeout: Union[int, str] = DURATION_ONE_WEEK_ISO) -> str:
@@ -510,23 +538,11 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             bool: logoff success or failure.
         """
         result = False
-        # Handle Keycloak logout if configured
-        if self._keycloak_openid and self.jwt_token and isinstance(self.jwt_token, dict) and "refresh_token" in self.jwt_token:
-            refresh_token = self.jwt_token.get("refresh_token")
-            self._keycloak_openid.logout(refresh_token)
-            self.jwt_token = None
-            result = True
-
         # Standard App Mesh logout
         if self.jwt_token and isinstance(self.jwt_token, str):
             resp = self._request_http(AppMeshClient.Method.POST, path="/appmesh/self/logoff")
             self.jwt_token = None
             result = resp.status_code == HTTPStatus.OK
-
-        # Cancel token refresh timer
-        if self._token_refresh_timer:
-            self._token_refresh_timer.cancel()
-            self._token_refresh_timer = None
 
         return result
 
@@ -577,13 +593,8 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception("No token to renew")
 
         try:
-            # Handle Keycloak token (dictionary format)
-            if self._keycloak_openid and isinstance(self.jwt_token, dict) and "refresh_token" in self.jwt_token:
-                new_token = self._keycloak_openid.refresh_token(self.jwt_token.get("refresh_token"))
-                self.jwt_token = new_token
-
             # Handle App Mesh token (string format)
-            elif isinstance(self.jwt_token, str):
+            if isinstance(self.jwt_token, str):
                 resp = self._request_http(
                     AppMeshClient.Method.POST,
                     path="/appmesh/token/renew",
@@ -986,9 +997,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         Returns:
             dict: user definition.
         """
-        if self._keycloak_openid and isinstance(self.jwt_token, dict) and "access_token" in self.jwt_token:
-            return self._keycloak_openid.userinfo(self.jwt_token.get("access_token"))
-
         resp = self._request_http(method=AppMeshClient.Method.GET, path="/appmesh/user/self")
         if resp.status_code != HTTPStatus.OK:
             raise Exception(resp.text)
@@ -1238,6 +1246,22 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.text
 
+    def cancle_task(self, app_name: str) -> bool:
+        """Client cancle a running task to a App Mesh application.
+
+        Args:
+            app_name (str): Name of the target application (as registered in App Mesh).
+
+        Returns:
+            bool: Task exist and cancled status.
+        """
+        path = f"/appmesh/app/{app_name}/task"
+        resp = self._request_http(
+            AppMeshClient.Method.DELETE,
+            path=path,
+        )
+        return resp.status_code == HTTPStatus.OK
+
     def run_app_async(
         self,
         app: Union[App, str],
@@ -1383,7 +1407,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         # Prepare headers
         header = {} if header is None else header
         if self.jwt_token:
-            token = self.jwt_token["access_token"] if isinstance(self.jwt_token, dict) and "access_token" in self.jwt_token else self.jwt_token
+            token = self._get_access_token()
             header["Authorization"] = "Bearer " + token
         if self.forward_to and len(self.forward_to) > 0:
             if ":" in self.forward_to:
@@ -1419,13 +1443,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             else:
                 raise Exception("Invalid http method", method)
 
-            # Ensure response text decoding uses UTF-8 by default
-            try:
-                resp.encoding = "utf-8"
-            except Exception:
-                # If setting encoding fails for any reason, ignore and return the response as-is
-                pass
-
-            return resp
+            # Wrap the response for encoding handling
+            return EncodingResponse(resp)
         except requests.exceptions.RequestException as e:
             raise Exception(f"HTTP request failed: {str(e)}")

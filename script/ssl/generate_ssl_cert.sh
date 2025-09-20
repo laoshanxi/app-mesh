@@ -33,11 +33,11 @@ setup_ca_config() {
 {
     "signing": {
         "default": {
-            "expiry": "438000h"
+            "expiry": "87600h"
         },
         "profiles": {
             "client": {
-                "expiry": "438000h",
+                "expiry": "87600h",
                 "usages": [
                     "signing",
                     "key encipherment",
@@ -45,7 +45,7 @@ setup_ca_config() {
                 ]
             },
             "server": {
-                "expiry": "438000h",
+                "expiry": "87600h",
                 "usages": [
                     "signing",
                     "key encipherment",
@@ -113,6 +113,10 @@ create_certificates() {
 
     log "Generating server certificate..."
     echo '{"CN":"'"$hostname_short"'","hosts":[""],"key":{"algo":"ecdsa","size":256}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config="$CA_CONFIG" -profile=server -hostname="$hosts" - | cfssljson -bare server
+
+    # Combine fullchain for multiple level (not include root CA)
+    # log "Generating server fullchain certificate..."
+    # cat server.pem ca.pem > server_fullchain.pem
 
     log "Generating client certificate..."
     echo '{"CN":"appmesh-client","hosts":[""],"key":{"algo":"ecdsa","size":256}}' | cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config="$CA_CONFIG" -profile=client -hostname="$hosts" - | cfssljson -bare client

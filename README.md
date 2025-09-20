@@ -9,9 +9,9 @@
 
 # App Mesh: Advanced Application Management Platform
 
+<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/whatis.gif" align=center /></div>
 App Mesh is an open-source, multi-tenant application management platform designed for cloud-native environments. It efficiently manages, schedules, and monitors both microservices and traditional applications, offering a lightweight alternative to Kubernetes. App Mesh bridges the gap between simple process managers and complex container orchestration systems, making it ideal for organizations seeking to modernize their infrastructure without adopting full container-native complexity. Supporting both containerized and native applications, it provides a versatile solution for diverse enterprise needs.
 
-<div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/whatis.gif" align=center /></div>
 <div align=center><img src="https://github.com/laoshanxi/picture/raw/master/appmesh/diagram.png" align=center /></div>
 
 ## Features

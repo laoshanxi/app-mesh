@@ -6,7 +6,7 @@ import os
 import socket
 import uuid
 import requests
-from .client_http import AppMeshClient
+from .client_http import AppMeshClient, EncodingResponse
 from .tcp_transport import TCPTransport
 from .tcp_messages import RequestMessage, ResponseMessage
 
@@ -140,7 +140,7 @@ class AppMeshClientTCP(AppMeshClient):
                 appmesh_request.headers[k] = v
         if query:
             for k, v in query.items():
-                appmesh_request.querys[k] = v
+                appmesh_request.query[k] = v
 
         data = appmesh_request.serialize()
         self.tcp_transport.send_message(data)
@@ -153,13 +153,13 @@ class AppMeshClientTCP(AppMeshClient):
         appmesh_resp = ResponseMessage().deserialize(resp_data)
         response = requests.Response()
         response.status_code = appmesh_resp.http_status
-        response.encoding = self.ENCODING_UTF8
-        response._content = appmesh_resp.body.encode(self.ENCODING_UTF8)
+        # response.encoding = self.ENCODING_UTF8 # only need when charset not in appmesh_resp.body_msg_type
+        response._content = appmesh_resp.body if isinstance(appmesh_resp.body, bytes) else str(appmesh_resp.body).encode(self.ENCODING_UTF8)
         response.headers = appmesh_resp.headers
         if appmesh_resp.body_msg_type:
             response.headers["Content-Type"] = appmesh_resp.body_msg_type
 
-        return response
+        return EncodingResponse(response)
 
     ########################################
     # File management

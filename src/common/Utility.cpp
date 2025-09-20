@@ -639,50 +639,189 @@ std::string Utility::utf8ToLocalEncoding(const std::string &input)
 #endif
 }
 
+// TODO: use ICU for detectAndConvertToUTF8
+/*
+#include <unicode/ucsdet.h>
+#include <unicode/ucnv.h>
+
+std::string detectAndConvertToUTF8(const std::string& input) {
+	UErrorCode status = U_ZERO_ERROR;
+	UCharsetDetector* detector = ucsdet_open(&status);
+
+	ucsdet_setText(detector, input.c_str(), input.length(), &status);
+	const UCharsetMatch* match = ucsdet_detect(detector, &status);
+
+	if (match) {
+		const char* encoding = ucsdet_getName(match, &status);
+		// Convert using ICU converter
+		UConverter* conv = ucnv_open(encoding, &status);
+		// ... conversion code
+	}
+
+	ucsdet_close(detector);
+	return result;
+}
+*/
 std::string Utility::fileBytesToUtf8(const std::string &input)
 {
 #ifdef _WIN32
+	if (input.empty())
+		return input;
+
+	// Check for UTF-8 BOM
 	if (input.size() >= 3 &&
 		static_cast<unsigned char>(input[0]) == 0xEF &&
 		static_cast<unsigned char>(input[1]) == 0xBB &&
 		static_cast<unsigned char>(input[2]) == 0xBF)
 	{
-		// UTF-8 BOM → strip
 		return input.substr(3);
 	}
-	else if (input.size() >= 2 &&
-			 static_cast<unsigned char>(input[0]) == 0xFF &&
-			 static_cast<unsigned char>(input[1]) == 0xFE)
+
+	// Check for UTF-16 LE BOM
+	if (input.size() >= 2 &&
+		static_cast<unsigned char>(input[0]) == 0xFF &&
+		static_cast<unsigned char>(input[1]) == 0xFE)
 	{
-		// UTF-16 LE
-		std::u16string u16(reinterpret_cast<const char16_t *>(input.data() + 2),
-						   (input.size() - 2) / 2);
-		std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> conv;
-		return conv.to_bytes(u16);
+		const wchar_t *wstr = reinterpret_cast<const wchar_t *>(input.data() + 2);
+		int len = (input.size() - 2) / 2;
+
+		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, len, nullptr, 0, nullptr, nullptr);
+		if (utf8Len == 0)
+			return input;
+
+		std::string result(utf8Len, 0);
+		WideCharToMultiByte(CP_UTF8, 0, wstr, len, &result[0], utf8Len, nullptr, nullptr);
+		return result;
 	}
-	else if (input.size() >= 2 &&
-			 static_cast<unsigned char>(input[0]) == 0xFE &&
-			 static_cast<unsigned char>(input[1]) == 0xFF)
+
+	// Check for UTF-16 BE BOM
+	if (input.size() >= 2 &&
+		static_cast<unsigned char>(input[0]) == 0xFE &&
+		static_cast<unsigned char>(input[1]) == 0xFF)
 	{
-		// UTF-16 BE
-		std::u16string u16;
-		u16.resize((input.size() - 2) / 2);
-		for (size_t i = 0; i < u16.size(); ++i)
+		std::wstring wstr;
+		wstr.resize((input.size() - 2) / 2);
+		for (size_t i = 0; i < wstr.size(); ++i)
 		{
-			u16[i] = static_cast<char16_t>(
+			wstr[i] = static_cast<wchar_t>(
 				(static_cast<unsigned char>(input[2 + i * 2]) << 8) |
 				static_cast<unsigned char>(input[2 + i * 2 + 1]));
 		}
-		std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> conv;
-		return conv.to_bytes(u16);
+
+		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), nullptr, 0, nullptr, nullptr);
+		if (utf8Len == 0)
+			return input;
+
+		std::string result(utf8Len, 0);
+		WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), &result[0], utf8Len, nullptr, nullptr);
+		return result;
 	}
-	else
+
+	// Try to detect and convert from various encodings
+	// First, try to validate if it's already valid UTF-8
+	if (isValidUTF8(input))
 	{
-		// Assume UTF-8 without BOM
 		return input;
 	}
-#endif
+
+	// Try common Windows codepages in order of likelihood
+	std::vector<UINT> codepages = {
+		936,   // GBK/GB2312 (Simplified Chinese)
+		950,   // Big5 (Traditional Chinese)
+		932,   // Shift-JIS (Japanese)
+		949,   // EUC-KR (Korean)
+		1252,  // Windows-1252 (Western European)
+		1251,  // Windows-1251 (Cyrillic)
+		CP_ACP // System default ANSI codepage
+	};
+
+	for (UINT codepage : codepages)
+	{
+		std::string result = convertToUTF8(input, codepage);
+		if (!result.empty())
+		{
+			return result;
+		}
+	}
+
+	// If all else fails, return original
 	return input;
+#else
+	return input;
+#endif
+}
+
+// Helper function to validate UTF-8
+bool Utility::isValidUTF8(const std::string &str)
+{
+	const unsigned char *bytes = reinterpret_cast<const unsigned char *>(str.c_str());
+	size_t len = str.length();
+
+	for (size_t i = 0; i < len;)
+	{
+		if (bytes[i] < 0x80)
+		{
+			i++;
+		}
+		else if ((bytes[i] & 0xE0) == 0xC0)
+		{
+			if (i + 1 >= len || (bytes[i + 1] & 0xC0) != 0x80)
+				return false;
+			i += 2;
+		}
+		else if ((bytes[i] & 0xF0) == 0xE0)
+		{
+			if (i + 2 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80)
+				return false;
+			i += 3;
+		}
+		else if ((bytes[i] & 0xF8) == 0xF0)
+		{
+			if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80 || (bytes[i + 3] & 0xC0) != 0x80)
+				return false;
+			i += 4;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+// Helper function to convert from specific codepage to UTF-8
+std::string Utility::convertToUTF8(const std::string &input, unsigned int codepage)
+{
+#ifdef _WIN32
+	if (input.empty())
+		return "";
+
+	// Convert from codepage to wide string
+	int wideLen = MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), nullptr, 0);
+	if (wideLen == 0)
+		return "";
+
+	std::wstring wideStr(wideLen, 0);
+	if (MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), &wideStr[0], wideLen) == 0)
+	{
+		return "";
+	}
+
+	// Convert from wide string to UTF-8
+	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), nullptr, 0, nullptr, nullptr);
+	if (utf8Len == 0)
+		return "";
+
+	std::string result(utf8Len, 0);
+	if (WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), &result[0], utf8Len, nullptr, nullptr) == 0)
+	{
+		return "";
+	}
+
+	return result;
+#else
+	return "";
+#endif
 }
 
 std::string Utility::readFileCpp(const std::string &path, long *position, long maxSize, bool readLine)

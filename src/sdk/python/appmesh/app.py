@@ -5,7 +5,7 @@ import json
 import copy
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 from enum import Enum, unique
 
 # pylint: disable=line-too-long
@@ -39,7 +39,7 @@ class App:
         return None
 
     @staticmethod
-    def _get_native_item(data: dict, key: str) -> Optional[object]:
+    def _get_native_item(data: dict, key: str) -> Optional[Any]:
         """Retrieve a deep copy of a value from a dictionary by key, if it exists."""
         return copy.deepcopy(data[key]) if (data and key in data and data[key] is not None) else None
 

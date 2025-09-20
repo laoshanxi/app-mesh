@@ -1,9 +1,7 @@
 package agent
 
 import (
-	"bytes"
 	"errors"
-	"html"
 	"io"
 	"net/http"
 
@@ -25,7 +23,7 @@ func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 		RequestUri:    req.URL.Path,
 		ClientAddress: req.RemoteAddr,
 		Headers:       make(map[string]string, len(req.Header)),
-		Queries:       make(map[string]string, len(req.URL.Query())),
+		Query:         make(map[string]string, len(req.URL.Query())),
 	}
 
 	// Copy headers and query parameters
@@ -36,7 +34,7 @@ func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 	}
 	for key, values := range req.URL.Query() {
 		if len(values) > 0 {
-			data.Queries[key] = values[0]
+			data.Query[key] = values[0]
 		}
 	}
 
@@ -49,14 +47,17 @@ func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 		if len(bodyBytes) >= maxBodySize {
 			return nil, errors.New("request body too large")
 		}
-		// Optimize HTML entity check
-		if len(bodyBytes) > 0 {
-			if bytes.ContainsAny(bodyBytes, "&<>\"'") {
-				data.Body = html.UnescapeString(string(bodyBytes))
-			} else {
-				data.Body = string(bodyBytes)
+		data.Body = bodyBytes
+		// TODO: Optimize HTML entity check
+		/*
+			if len(bodyBytes) > 0 {
+				if bytes.ContainsAny(bodyBytes, "&<>\"'") {
+					data.Body = html.UnescapeString(string(bodyBytes))
+				} else {
+					data.Body = string(bodyBytes)
+				}
 			}
-		}
+		*/
 		// Reset the request body to allow subsequent reads
 		// req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}

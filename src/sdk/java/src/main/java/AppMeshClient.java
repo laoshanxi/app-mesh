@@ -415,14 +415,14 @@ public class AppMeshClient {
     public AppOutput getAppOutput(String appName, long stdoutPosition, int stdoutIndex, int stdoutMaxsize, String processUuid, int timeout)
             throws IOException {
 
-        Map<String, String> querys = new HashMap<>();
-        querys.put("stdout_position", String.valueOf(stdoutPosition));
-        querys.put("stdout_index", String.valueOf(stdoutIndex));
-        querys.put("stdout_maxsize", String.valueOf(stdoutMaxsize));
-        querys.put("process_uuid", processUuid);
-        querys.put("timeout", String.valueOf(timeout));
+        Map<String, String> query = new HashMap<>();
+        query.put("stdout_position", String.valueOf(stdoutPosition));
+        query.put("stdout_index", String.valueOf(stdoutIndex));
+        query.put("stdout_maxsize", String.valueOf(stdoutMaxsize));
+        query.put("process_uuid", processUuid);
+        query.put("timeout", String.valueOf(timeout));
 
-        HttpURLConnection conn = request("GET", "/appmesh/app/" + appName + "/output", null, null, querys);
+        HttpURLConnection conn = request("GET", "/appmesh/app/" + appName + "/output", null, null, query);
 
         AppOutput response = new AppOutput();
         response.httpSuccess = conn.getResponseCode() == HttpURLConnection.HTTP_OK;

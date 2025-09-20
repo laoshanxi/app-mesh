@@ -13,8 +13,6 @@
 #include "RestBase.h"
 
 std::shared_ptr<PrometheusRest> PrometheusRest::m_instance;
-constexpr auto CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
-constexpr auto METRIC_PATH = "/metrics";
 
 PrometheusRest::PrometheusRest()
 	: RestBase(), m_scrapeCounter(0)
@@ -119,7 +117,7 @@ void PrometheusRest::apiMetrics(const HttpRequest &message)
 		m_appmeshFileDesc->metric().Set(os::pstree()->totalFileDescriptors());
 	}
 	auto body = collectData();
-	message.reply(web::http::status_codes::OK, body, CONTENT_TYPE);
+	message.reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
 }
 
 CounterMetric::CounterMetric(std::shared_ptr<prometheus::Registry> registry, const std::string &name, const std::string &help, std::map<std::string, std::string> label)

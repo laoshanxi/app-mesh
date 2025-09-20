@@ -1,5 +1,6 @@
 #pragma once
 #include <tuple>
+#include <vector>
 
 #include <msgpack.hpp>
 
@@ -26,7 +27,7 @@ public:
 	std::string request_uri;
 	int http_status;
 	std::string body_msg_type;
-	std::string body;
+	std::vector<uint8_t> body;
 	std::map<std::string, std::string> headers;
 	std::map<std::string, std::string> file_upload_request_headers;
 
@@ -46,11 +47,11 @@ public:
 	std::string request_uri;
 	std::string http_method;
 	std::string client_addr;
-	std::string body;
+	std::vector<uint8_t> body;
 	std::map<std::string, std::string> headers;
-	std::map<std::string, std::string> querys;
+	std::map<std::string, std::string> query;
 
-	MSGPACK_DEFINE_MAP(uuid, request_uri, http_method, http_method, client_addr, body, headers, querys);
+	MSGPACK_DEFINE_MAP(uuid, request_uri, http_method, http_method, client_addr, body, headers, query);
 };
 
 /// <summary>

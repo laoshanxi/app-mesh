@@ -69,7 +69,7 @@ REST:
     # Path to the Certificate Authority (CA) certificate.
     SSLCaPath: ssl/ca.pem
 
-    # Server certificate and private key file paths.
+    # Server certificate (chain) and private key file paths.
     SSLCertificateFile: ssl/server.pem
     SSLCertificateKeyFile: ssl/server-key.pem
 

@@ -112,6 +112,7 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_ASYNC, std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC, std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessage, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_TASK, std::bind(&RestHandler::apiRemoveMessage, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_APP_TASK, std::bind(&RestHandler::apiGetMessage, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessageResponse, this, std::placeholders::_1));
 
@@ -172,7 +173,7 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 {
 	// const static char fname[] = "RestHandler::getHttpQueryValue() ";
 
-	auto querymap = message.m_querys;
+	auto querymap = message.m_query;
 	long rt = defaultValue;
 	if (querymap.find((key)) != querymap.end())
 	{
@@ -193,7 +194,7 @@ std::string RestHandler::getHttpQueryString(const HttpRequest &message, const st
 {
 	const static char fname[] = "RestHandler::getHttpQueryString() ";
 
-	auto querymap = message.m_querys;
+	auto querymap = message.m_query;
 	std::string rt;
 	if (querymap.find((key)) != querymap.end())
 	{
@@ -390,7 +391,7 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto labelKey = regexSearch(path, REST_PATH_LABEL_ADD);
 
-	auto querymap = message.m_querys;
+	auto querymap = message.m_query;
 	if (querymap.find((HTTP_QUERY_KEY_label_value)) != querymap.end())
 	{
 		const auto &value = (querymap.find((HTTP_QUERY_KEY_label_value))->second);
@@ -678,7 +679,7 @@ void RestHandler::apiHealth(const HttpRequest &message)
 void RestHandler::apiRestMetrics(const HttpRequest &message)
 {
 	auto body = this->collectData();
-	message.reply(web::http::status_codes::OK, body, "text/plain; version=0.0.4");
+	message.reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
 }
 
 nlohmann::json RestHandler::createJwtResponse(const HttpRequest &message, const std::string &uname, int timeoutSeconds, const std::string &ugroup, const std::string &audience, const std::string *token)
@@ -1080,6 +1081,20 @@ void RestHandler::apiSendMessage(const HttpRequest &message)
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
 	asyncRequest->initTimer(timeout);
 	app->sendMessage(asyncRequest);
+}
+
+void RestHandler::apiRemoveMessage(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_run_task);
+
+	const auto path = (curlpp::unescape(message.m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK);
+
+	checkAppAccessPermission(message, appName, true);
+
+	auto app = Configuration::instance()->getApp(appName);
+	bool removed = app->removeMessage();
+	message.reply(removed ? web::http::status_codes::OK : web::http::status_codes::AlreadyReported);
 }
 
 void RestHandler::apiGetMessage(const HttpRequest &message)

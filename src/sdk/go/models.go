@@ -28,7 +28,7 @@ const (
 
 var (
 	// Platform-aware default SSL paths
-	_DEFAULT_SSL_DIR              string
+	_DEFAULT_SSL_DIR             string
 	DEFAULT_CLIENT_CERT_FILE     string
 	DEFAULT_CLIENT_CERT_KEY_FILE string
 	DEFAULT_CA_FILE              string
@@ -170,13 +170,13 @@ type SSLConfig struct {
 
 // Request represents the message sent over TCP.
 type Request struct {
-	Uuid          string            `msg:"uuid" msgpack:"uuid"`
-	RequestUri    string            `msg:"request_uri" msgpack:"request_uri"`
-	HttpMethod    string            `msg:"http_method" msgpack:"http_method"`
-	ClientAddress string            `msg:"client_addr" msgpack:"client_addr"`
-	Body          string            `msg:"body" msgpack:"body"`
-	Headers       map[string]string `msg:"headers" msgpack:"headers"`
-	Queries       map[string]string `msg:"querys" msgpack:"querys"`
+	Uuid          string            `msgpack:"uuid"`
+	RequestUri    string            `msgpack:"request_uri"`
+	HttpMethod    string            `msgpack:"http_method"`
+	ClientAddress string            `msgpack:"client_addr"`
+	Body          []byte            `msgpack:"body"`
+	Headers       map[string]string `msgpack:"headers"`
+	Query         map[string]string `msgpack:"query"`
 }
 
 // Serialize serializes the Request into a byte slice.
@@ -186,12 +186,12 @@ func (r *Request) Serialize() ([]byte, error) {
 
 // Response represents the message received over TCP.
 type Response struct {
-	Uuid        string            `msg:"uuid" msgpack:"uuid"`
-	RequestUri  string            `msg:"request_uri" msgpack:"request_uri"`
-	HttpStatus  int               `msg:"http_status" msgpack:"http_status"`
-	BodyMsgType string            `msg:"body_msg_type" msgpack:"body_msg_type"`
-	Body        string            `msg:"body" msgpack:"body"`
-	Headers     map[string]string `msg:"headers" msgpack:"headers"`
+	Uuid        string            `msgpack:"uuid"`
+	RequestUri  string            `msgpack:"request_uri"`
+	HttpStatus  int               `msgpack:"http_status"`
+	BodyMsgType string            `msgpack:"body_msg_type"`
+	Body        []byte            `msgpack:"body"`
+	Headers     map[string]string `msgpack:"headers"`
 }
 
 // Deserialize deserializes the byte slice into a Response.

@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -60,23 +61,30 @@ func NewAppMeshClient() *AppMesh {
 }
 
 // GetHostResources retrieves cloud resources via a TCP request
-func (r *AppMesh) GetHostResources() (string, error) {
+func (r *AppMesh) GetHostResources() (map[string]interface{}, error) {
 	data := r.generateRequest()
 	data.HttpMethod = http.MethodGet
 	data.RequestUri = "/appmesh/cloud/resources" // This URI relies on PSK (Pre-Shared Key) check instead of permission check
 
 	resp, err := r.request(data)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	if resp == nil {
-		return "", fmt.Errorf("no response received from cloud resource request")
+		return nil, fmt.Errorf("no response received from cloud resource request")
 	}
 	if resp.HttpStatus != http.StatusOK {
-		return "", fmt.Errorf("failed to retrieve cloud resource, status: %d, body: %s", resp.HttpStatus, resp.Body)
+		return nil, fmt.Errorf("failed to retrieve cloud resource, status: %d", resp.HttpStatus)
+	}
+	if len(resp.Body) == 0 {
+		return nil, fmt.Errorf("empty response body from cloud resource request")
 	}
 
-	return resp.Body, nil
+	var m map[string]interface{}
+	if err := json.Unmarshal(resp.Body, &m); err != nil {
+		return nil, fmt.Errorf("failed to parse cloud resource response: %w", err)
+	}
+	return m, nil
 }
 
 // generateRequest creates and returns a new Request with a unique UUID
@@ -85,7 +93,7 @@ func (r *AppMesh) generateRequest() *Request {
 		Request: appmesh.Request{
 			Uuid:    xid.New().String(),
 			Headers: make(map[string]string),
-			Queries: make(map[string]string),
+			Query:   make(map[string]string),
 		},
 	}
 }
