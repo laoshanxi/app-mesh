@@ -86,8 +86,10 @@ public:
 	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0, size_t timeout = 0);
 
 	void sendMessage(std::shared_ptr<void> asyncHttpRequest);
+	bool removeMessage();
 	void getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
 	void respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
+	bool isTaskPending();
 
 	// prometheus
 	void initMetrics();

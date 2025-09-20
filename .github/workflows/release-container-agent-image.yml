@@ -17,6 +17,7 @@ env:
   DOCKER_REGISTRY: docker.io
   DOCKER_IMAGE: laoshanxi/appmesh
   IMAGE_TAG: container_agent
+  APPMESH_VERSION: "2.1.2"
 
 permissions: # added using https://github.com/step-security/secure-workflows
   contents: read
@@ -77,8 +78,21 @@ jobs:
           no-cache: true
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
+          load: true
           tags: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: test
+        run: |
+          DEB_ARCH=$(arch)
+          IMG_NAME="${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}"
+          wget --quiet --no-check-certificate "https://github.com/laoshanxi/app-mesh/releases/download/${{ env.APPMESH_VERSION }}/appmesh_${{ env.APPMESH_VERSION }}_gcc_13_glibc_2.39_${DEB_ARCH}.deb"
+          sudo apt update
+          sudo apt install -y ./appmesh_*.deb
+          sudo /opt/appmesh/script/appmesh.initd.sh start
+          sleep 3
+          sudo python3 -m pip install docker --break-system-packages
+          sudo docker run --net=host -v /opt/appmesh/ssl/:/opt/appmesh/ssl/ "${IMG_NAME}" ps -ef
 
   merge-and-push:
     name: Merge and Push Multi-arch Image

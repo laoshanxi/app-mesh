@@ -569,6 +569,35 @@ paths:
                 type: string
         "400":
           description: Invalid request.
+        "408":
+          description: Task timeout.
+        "417":
+          description: Task interrupt.
+        "500":
+          description: Internal server error.
+
+    delete:
+      summary: Remove a submitted task
+      description: |
+        Client delete a submitted message which is under processing for an application.
+      tags: [TaskRun]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: app_name
+          in: path
+          required: true
+          schema:
+            type: string
+            default: "pytask"
+          description: Name of the target application registered in App Mesh.
+      responses:
+        "200":
+          description: Task exist and removed successfully.
+        "208":
+          description: Task not exist.
+        "400":
+          description: Invalid request.
         "500":
           description: Internal server error.
 

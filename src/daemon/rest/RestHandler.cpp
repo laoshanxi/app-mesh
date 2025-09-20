@@ -112,6 +112,7 @@ RestHandler::RestHandler() : PrometheusRest()
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_ASYNC, std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC, std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessage, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_TASK, std::bind(&RestHandler::apiRemoveMessage, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_APP_TASK, std::bind(&RestHandler::apiGetMessage, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::PUT, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessageResponse, this, std::placeholders::_1));
 
@@ -1080,6 +1081,20 @@ void RestHandler::apiSendMessage(const HttpRequest &message)
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
 	asyncRequest->initTimer(timeout);
 	app->sendMessage(asyncRequest);
+}
+
+void RestHandler::apiRemoveMessage(const HttpRequest &message)
+{
+	permissionCheck(message, PERMISSION_KEY_run_task);
+
+	const auto path = (curlpp::unescape(message.m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK);
+
+	checkAppAccessPermission(message, appName, true);
+
+	auto app = Configuration::instance()->getApp(appName);
+	bool removed = app->removeMessage();
+	message.reply(removed ? web::http::status_codes::OK : web::http::status_codes::AlreadyReported);
 }
 
 void RestHandler::apiGetMessage(const HttpRequest &message)

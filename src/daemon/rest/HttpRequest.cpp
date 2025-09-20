@@ -35,29 +35,29 @@ nlohmann::json HttpRequest::extractJson() const
 	return nlohmann::json::parse(*m_body);
 }
 
-void HttpRequest::reply(web::http::status_code status) const
+bool HttpRequest::reply(web::http::status_code status) const
 {
-	reply(m_relative_uri, m_uuid, "", {}, status, "");
+	return reply(m_relative_uri, m_uuid, "", {}, status, "");
 }
 
-void HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data) const
+bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data) const
 {
-	reply(m_relative_uri, m_uuid, body_data.dump(), {}, status, web::http::mime_types::application_json);
+	return reply(m_relative_uri, m_uuid, body_data.dump(), {}, status, web::http::mime_types::application_json);
 }
 
-void HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
+bool HttpRequest::reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const
 {
-	reply(m_relative_uri, m_uuid, body_data.dump(), headers, status, web::http::mime_types::application_json);
+	return reply(m_relative_uri, m_uuid, body_data.dump(), headers, status, web::http::mime_types::application_json);
 }
 
-void HttpRequest::reply(web::http::status_code status, std::string &body_data, const std::string &content_type) const
+bool HttpRequest::reply(web::http::status_code status, std::string &body_data, const std::string &content_type) const
 {
-	reply(m_relative_uri, m_uuid, body_data, {}, status, content_type);
+	return reply(m_relative_uri, m_uuid, body_data, {}, status, content_type);
 }
 
-void HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
+bool HttpRequest::reply(web::http::status_code status, const std::string &body_data, const std::map<std::string, std::string> &headers, const std::string &content_type) const
 {
-	reply(m_relative_uri, m_uuid, body_data, headers, status, content_type);
+	return reply(m_relative_uri, m_uuid, body_data, headers, status, content_type);
 }
 
 std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inputSize, int tcpHandlerId)
@@ -99,7 +99,7 @@ void HttpRequest::dump() const
 	//	LOG_DBG << fname << "m_headers:" << h.first << "=" << h.second;
 }
 
-void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
+bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
 						const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequest::reply() ";
@@ -118,8 +118,10 @@ void HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 
 	if (m_tcpHanlerId > 0)
 	{
-		TcpHandler::replyTcp(m_tcpHanlerId, response);
+		return TcpHandler::replyTcp(m_tcpHanlerId, response);
 	}
+
+	return false;
 }
 
 void HttpRequest::verifyHMAC() const
@@ -195,7 +197,12 @@ bool HttpRequestWithTimeout::replied() const
 	return m_httpRequestReplyFlag.load();
 }
 
-void HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
+bool HttpRequestWithTimeout::interrupt()
+{
+	return HttpRequest::reply(web::http::status_codes::ExpectationFailed);
+}
+
+bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::string &body,
 								   const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const
 {
 	const static char fname[] = "HttpRequestWithTimeout::reply() ";
@@ -204,8 +211,9 @@ void HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 	const_cast<HttpRequestWithTimeout *>(this)->cancelTimer(m_timerResponseId);
 	if (!m_httpRequestReplyFlag.exchange(true))
 	{
-		HttpRequest::reply(requestUri, uuid, body, headers, status, bodyType);
+		return HttpRequest::reply(requestUri, uuid, body, headers, status, bodyType);
 	}
+	return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

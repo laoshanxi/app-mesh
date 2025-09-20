@@ -363,6 +363,7 @@ public:
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
+#define JSON_KEY_APP_task_status "task_status"
 
 #define JSON_KEY_APP_retention "retention" // extra timeout seconds for stopping current process
 #define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
