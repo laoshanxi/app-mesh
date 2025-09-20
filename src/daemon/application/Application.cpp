@@ -605,6 +605,19 @@ void Application::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 	(*processLock)->sendMessage(m_taskRequest);
 }
 
+bool Application::removeMessage()
+{
+	bool result = false;
+	auto processLock = m_process.synchronize();
+	if (m_taskRequest)
+	{
+		result = m_taskRequest->interrupt();
+		m_taskRequest.reset();
+	}
+
+	return result;
+}
+
 void Application::getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest)
 {
 	auto processLock = m_process.synchronize();
@@ -619,6 +632,12 @@ void Application::respMessage(const std::string &processId, std::shared_ptr<void
 	if ((*processLock) == nullptr)
 		throw std::invalid_argument("No process running");
 	return (*processLock)->respMessage(processId, asyncHttpRequest, m_taskRequest);
+}
+
+bool Application::isTaskPending()
+{
+	auto processLock = m_process.synchronize();
+	return m_taskRequest ? true : false;
 }
 
 const std::string Application::getExecUser() const
@@ -793,6 +812,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		auto process = m_process.get();
 		if (process && process->running())
 		{
+			result[JSON_KEY_APP_task_status] = isTaskPending();
 			result[JSON_KEY_APP_pid] = m_pid.load();
 			result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(m_pid.load()));
 

@@ -5,7 +5,7 @@ import abc
 import logging
 import os
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from http import HTTPStatus
 from .client_http import AppMeshClient
 
@@ -66,7 +66,7 @@ class AppMeshServer(metaclass=abc.ABCMeta):
             raise Exception("Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.")
         return process_id, app_name
 
-    def task_fetch(self) -> str:
+    def task_fetch(self) -> Union[str, bytes]:
         """Fetch task data in the currently running App Mesh application process.
 
         Used by App Mesh application process to obtain the payload from App Mesh service
@@ -74,7 +74,7 @@ class AppMeshServer(metaclass=abc.ABCMeta):
 
 
         Returns:
-            str: The payload provided by the client as returned by the service.
+            Union[str, bytes]: The payload provided by the client as returned by the service.
         """
         process_id, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
@@ -91,16 +91,16 @@ class AppMeshServer(metaclass=abc.ABCMeta):
                 time.sleep(0.1)
                 continue
 
-            return resp.text
+            return resp.content
 
-    def task_return(self, result: str) -> None:
+    def task_return(self, result: Union[str, bytes]) -> None:
         """Return the result of a server-side invocation back to the original client.
 
         Used by App Mesh application process to posts the `result` to App Mesh service
         after processed payload data so the invoking client can retrieve it.
 
         Args:
-            result (str): Result payload to be delivered back to the client.
+            result (Union[str, bytes]): Result payload to be delivered back to the client.
         """
         process_id, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"

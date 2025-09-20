@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -126,7 +127,14 @@ func (r *Cloud) updateHostResourcesInConsul(kvPath string) {
 		return
 	}
 
-	kvPair := &api.KVPair{Key: kvPath, Value: []byte(resources)}
+	// Serialize resources to JSON
+	data, err := json.Marshal(resources)
+	if err != nil {
+		logManager.Log(fmt.Sprintf("Failed to marshal resources: %v", err))
+		return
+	}
+
+	kvPair := &api.KVPair{Key: kvPath, Value: data}
 	if _, err := consul.KV().Put(kvPair, nil); err != nil {
 		logManager.Log(fmt.Sprintf("Failed to report resources: %v", err))
 	} else {

@@ -44,6 +44,7 @@ protected:
 	void apiRunSync(const HttpRequest &message);
 
 	void apiSendMessage(const HttpRequest &message);		 // client send message and wait for response with async REST call
+	void apiRemoveMessage(const HttpRequest &message);		 // client remove message
 	void apiGetMessage(const HttpRequest &message);			 // server get message with block and iterator REST call
 	void apiSendMessageResponse(const HttpRequest &message); // server send response (then server response to client apiSendMessage)
 

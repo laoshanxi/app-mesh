@@ -25,9 +25,6 @@ func EstablishConnection(targetHost string, verifyServer bool, allowError bool) 
 		return conn.(*Connection), nil
 	}
 
-	// Logging the connection attempt
-	logger.Infof("Attempting to connect to: %s", targetHost)
-
 	// Initialize the connection and SSL configuration
 	sConn := &Connection{TCPConnection: appmesh.NewTCPConnection()}
 	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
@@ -36,6 +33,8 @@ func EstablishConnection(targetHost string, verifyServer bool, allowError bool) 
 	if !verifyServer {
 		caPath = ""
 	}
+
+	logger.Infof("Attempting to connect to: %s using caPath %s clientCert %s clientCertKey %s", targetHost, caPath, clientCert, clientCertKey)
 
 	// Try to establish the connection
 	if err := sConn.Connect(targetHost, clientCert, clientCertKey, caPath); err != nil {

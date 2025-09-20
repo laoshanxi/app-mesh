@@ -5,4 +5,6 @@
 # AppMeshClient, App, and AppOutput classes. The updated implementation can be found
 # in client_http.py, where these classes are now primarily maintained.
 
-from .client_http import AppMeshClient, App, AppOutput
+from .client_http import AppMeshClient
+from .app import App
+from .app_output import AppOutput

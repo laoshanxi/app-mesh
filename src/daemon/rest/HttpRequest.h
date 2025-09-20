@@ -38,7 +38,7 @@ public:
 	/// </summary>
 	/// <param name="status">Response status code.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(web::http::status_code status) const;
+	bool reply(web::http::status_code status) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -46,7 +46,15 @@ public:
 	/// <param name="status">Response status code.</param>
 	/// <param name="body_data">Json value to use in the response body.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(web::http::status_code status, const nlohmann::json &body_data) const;
+	bool reply(web::http::status_code status, const nlohmann::json &body_data) const;
+
+	/// <summary>
+	/// Responds to this HTTP request.
+	/// </summary>
+	/// <param name="status">Response status code.</param>
+	/// <param name="body_data">Raw bytes value to use in the response body.</param>
+	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
+	bool reply(web::http::status_code status, const std::vector<uint8_t> &body_data) const;
 
 	/// <summary>
 	/// Responds to this HTTP request.
@@ -55,7 +63,7 @@ public:
 	/// <param name="body_data">Json value to use in the response body.</param>
 	/// <param name="headers">Headers value in the response header.</param>
 	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	void reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const;
+	bool reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const;
 
 	/// Responds to this HTTP request with a string.
 	/// Assumes the character encoding of the string is UTF-8.
@@ -68,7 +76,7 @@ public:
 	//  Callers of this function do NOT need to block waiting for the response to be
 	/// sent to before the body data is destroyed or goes out of scope.
 	/// </remarks>
-	void reply(web::http::status_code status,
+	bool reply(web::http::status_code status,
 			   std::string &body_data,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
@@ -79,7 +87,7 @@ public:
 	/// <param name="content_type">A string holding the MIME type of the message body.</param>
 	/// <param name="body">An asynchronous stream representing the body data.</param>
 	/// <returns>A task that is completed once a response from the request is received.</returns>
-	void reply(web::http::status_code status,
+	bool reply(web::http::status_code status,
 			   const std::string &body_data,
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
@@ -93,8 +101,8 @@ public:
 	web::http::method m_method;
 	std::string m_relative_uri;
 	std::string m_remote_address;
-	std::shared_ptr<std::string> m_body; // use shared_ptr to avoid user string data copy
-	std::map<std::string, std::string> m_querys;
+	std::shared_ptr<std::vector<uint8_t>> m_body; // use shared_ptr to avoid user string data copy
+	std::map<std::string, std::string> m_query;
 	std::map<std::string, std::string> m_headers;
 
 protected:
@@ -107,7 +115,7 @@ protected:
 	/// <param name="headers"></param>
 	/// <param name="status"></param>
 	/// <param name="bodyType"></param>
-	virtual void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const;
+	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const;
 
 private:
 	const int m_tcpHanlerId;
@@ -140,10 +148,11 @@ public:
 	bool initTimer(int timeoutSeconds);
 	bool onTimerResponse();
 	bool replied() const;
+	bool interrupt();
 
 protected:
 	// called by timer or user
-	virtual void reply(const std::string &requestUri, const std::string &uuid, const std::string &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const override;
+	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const override;
 
 private:
 	mutable std::atomic_long m_timerResponseId;

@@ -92,6 +92,8 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
     {
         // this is REST handler service, defend XSS attach before enter to REST handler
         const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
+        /*
+        * TODO:
         // task run use native string instead of json, skip it
         if (message.m_body->length() && !Utility::endWith(message.m_relative_uri, "/task"))
         {
@@ -103,7 +105,7 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
             // tranverseJsonTree(body);
             *(const_cast<HttpRequest *>(&message)->m_body) = body.dump();
         }
-
+        */
         stdFunction(message);
     }
     catch (const NotFoundException &e)

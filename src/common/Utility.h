@@ -62,6 +62,13 @@ namespace std
 } // namespace std
 #endif
 
+// GCC / Clang
+#if defined(__GNUC__)
+#if (__GNUC__ < 4) || (__GNUC__ == 4 && __GNUC_MINOR__ < 8) || (__GNUC__ == 4 && __GNUC_MINOR__ == 8 && __GNUC_PATCHLEVEL__ <= 5)
+#define COMPILER_LOWER_EQUAL_485
+#endif
+#endif
+
 template <typename T>
 std::shared_ptr<T> make_shared_array(size_t size)
 {
@@ -225,6 +232,8 @@ public:
 	static std::string fileBytesToUtf8(const std::string &input);	  // Used for read text file on windows
 	static std::string localEncodingToUtf8(const std::string &input); // Used for read windows system attributes
 	static std::string utf8ToLocalEncoding(const std::string &input); // Used for CLI correct display
+	static bool isValidUTF8(const std::string &str);
+	static std::string convertToUTF8(const std::string &input, unsigned int codepage);
 
 	static std::string createUUID();
 	static bool createPidFile();
@@ -363,6 +372,7 @@ public:
 #define JSON_KEY_APP_container_id "container_id"
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
+#define JSON_KEY_APP_task_status "task_status"
 
 #define JSON_KEY_APP_retention "retention" // extra timeout seconds for stopping current process
 #define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"

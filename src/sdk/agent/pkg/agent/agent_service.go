@@ -445,7 +445,7 @@ func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) erro
 	case r.Method == http.MethodPost && r.URL.Path == REST_PATH_UPLOAD && data.HttpStatus == http.StatusOK:
 		return HandleUpload(w, r, data, filePath)
 	default:
-		return fmt.Errorf(data.Body)
+		return errors.New(string(data.Body))
 	}
 }
 

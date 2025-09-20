@@ -2,7 +2,6 @@ package appmesh
 
 import (
 	"errors"
-	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -223,18 +222,19 @@ func (r *ClientRequesterTcp) request(req *http.Request) (*Response, error) {
 			data.Headers[string(key)] = string(value)
 		}
 	}
-	data.Queries = make(map[string]string)
+	data.Query = make(map[string]string)
 	queryParams := req.URL.Query()
 	for key, values := range queryParams {
 		for _, value := range values {
-			data.Queries[string(key)] = string(value)
+			data.Query[string(key)] = string(value)
 		}
 	}
 
 	// Do not read body for file upload.
 	if !(data.HttpMethod != "POST" && data.RequestUri != "/appmesh/file/upload") {
 		if bodyBytes, err := io.ReadAll(req.Body); err == nil && len(bodyBytes) > 0 {
-			data.Body = html.UnescapeString(string(bodyBytes))
+			data.Body = bodyBytes
+			// TODO: data.Body = html.UnescapeString(string(bodyBytes))
 		}
 	}
 

@@ -135,7 +135,7 @@ func (r *Response) ApplyResponse(w http.ResponseWriter, req *http.Request, reque
 		w.WriteHeader(r.HttpStatus)
 
 		if len(r.Body) > 0 {
-			if _, err := w.Write([]byte(r.Body)); err != nil {
+			if _, err := w.Write(r.Body); err != nil {
 				logger.Warnf("Error writing response body for %s: %v", r.Uuid, err)
 			}
 		}

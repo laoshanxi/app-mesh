@@ -2,6 +2,7 @@
 """Application run object for remote application execution."""
 
 from contextlib import contextmanager
+from typing import Optional
 
 # pylint: disable=line-too-long
 
@@ -42,7 +43,7 @@ class AppRun:
         finally:
             self._client.forward_to = original_value
 
-    def wait(self, stdout_print: bool = True, timeout: int = 0) -> int:
+    def wait(self, stdout_print: bool = True, timeout: int = 0) -> Optional[int]:
         """Wait for the asynchronous run to complete.
 
         Args:

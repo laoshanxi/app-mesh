@@ -52,11 +52,11 @@ function New-CAConfig {
     $config = @{
         signing = @{
             default  = @{
-                expiry = "438000h"
+                expiry = "87600h"
             }
             profiles = @{
                 client = @{
-                    expiry = "438000h"
+                    expiry = "87600h"
                     usages = @(
                         "signing",
                         "key encipherment", 
@@ -64,7 +64,7 @@ function New-CAConfig {
                     )
                 }
                 server = @{
-                    expiry = "438000h"
+                    expiry = "87600h"
                     usages = @(
                         "signing",
                         "key encipherment",
@@ -149,7 +149,13 @@ function New-Certificates {
     [System.IO.File]::WriteAllText($serverCsrPath, $serverCSR, [System.Text.UTF8Encoding]::new($false))
     & cfssl gencert "-ca=ca.pem" "-ca-key=ca-key.pem" "-config=$CA_CONFIG" "-profile=server" "-hostname=$Hosts" $serverCsrPath | & cfssljson -bare server
 
-    
+    # Combine fullchain for multiple level (not include root CA)
+    # $serverPem = Join-Path $script:WorkingDir "server.pem"
+    # $caPem = Join-Path $script:WorkingDir "ca.pem"
+    # $fullchain = Join-Path $script:WorkingDir "server_fullchain.pem"
+    # Get-Content $serverPem, $caPem | Set-Content $fullchain -Encoding ascii
+    # Write-Log "Generated server full chain: $fullchain"
+
     Write-Log "Generating client certificate..."
     $clientCSR = @{
         CN    = "appmesh-client"
@@ -164,7 +170,7 @@ function New-Certificates {
     [System.IO.File]::WriteAllText($clientCsrPath, $clientCSR, [System.Text.UTF8Encoding]::new($false))
     & cfssl gencert "-ca=ca.pem" "-ca-key=ca-key.pem" "-config=$CA_CONFIG" "-profile=client" "-hostname=$Hosts" $clientCsrPath | & cfssljson -bare client
 
-    # Remove template file
+    # Remove template files
     Remove-Item -Path "$serverCsrPath", "$clientCsrPath" -ErrorAction SilentlyContinue
 }
 

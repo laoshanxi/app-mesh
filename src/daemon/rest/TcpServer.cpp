@@ -372,44 +372,58 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 {
 	const static char fname[] = "TcpHandler::initTcpSSL() ";
 
-	// Retrieve SSL configuration settings from the configuration instance
+	// Retrieve SSL configuration
 	const static std::string homeDir = Utility::getHomeDir();
 	bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());	 // Server certificate (should include intermediate certs)
-	auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key file path
-	auto ca = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());				 // CA path or file for client verification
+	auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());	 // Server certificate (PEM, include intermediates)
+	auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key
+	auto ca = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath());				 // CA file or directory
+
 	LOG_INF << fname << "Init SSL with CA <" << ca << "> server cert <" << cert << "> server private key <" << key << ">";
 
-	// Set SSL/TLS mode with support for TLS, explicitly excluding SSL versions for security
-	context->set_mode(ACE_SSL_Context::SSLv23_server);
-	context->filter_versions(TCP_SSL_VERSION_LIST); // Applies version filtering to allow only secure TLS versions
+	// Set server mode, allow TLSv1.2 and TLSv1.3 only
+	context->set_mode(ACE_SSL_Context::SSLv23_server); // SSLv23_server enables TLS negotiation
+	context->filter_versions(TCP_SSL_VERSION_LIST);	   // "tlsv1.2,tlsv1.3"
 
-	// Load server certificate and private key; log error if loading fails
+	// Load server certificate and private key
+#if defined(COMPILER_LOWER_EQUAL_485)
 	if (context->certificate(cert.c_str(), SSL_FILETYPE_PEM) != 0)
+#else
+	if (context->certificate_chain(cert.c_str(), SSL_FILETYPE_PEM) != 0)
+#endif
 	{
 		LOG_ERR << fname << "Failed to load certificate: " << last_error_msg();
 		return nullptr;
 	}
-	if (context->private_key(key.c_str(), SSL_FILETYPE_PEM) != 0)
+	if (context->private_key(key.c_str(), SSL_FILETYPE_PEM) != 0 || context->verify_private_key() != 0)
 	{
 		LOG_ERR << fname << "Failed to load private key: " << last_error_msg();
 		return nullptr;
 	}
 
-	// Enable forward secrecy by using ECDH; logging error if setting fails
+	// Enable forward secrecy for TLS1.2 (ECDH automatic selection)
 	if (!SSL_CTX_set_ecdh_auto(context->context(), 1))
 	{
 		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << last_error_msg();
 	}
 
-	// Configure cipher suites to prioritize security, explicitly excluding weak ciphers
-	const char *ciphers = "HIGH:!aNULL:!MD5:!RC4"; // More secure and modern cipher suite selection
-	if (!SSL_CTX_set_cipher_list(context->context(), ciphers))
+	// Set modern TLS cipher suites
+	const char *tls12Ciphers = "ECDHE-RSA-AESGCM:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA";
+	if (!SSL_CTX_set_cipher_list(context->context(), tls12Ciphers))
 	{
 		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << last_error_msg();
 	}
 
-	// Disable unsafe legacy renegotiation, which could be a security risk
+	// Set TLS1.3 ciphers separately
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+	const char *tls13Ciphers = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256";
+	if (!SSL_CTX_set_ciphersuites(context->context(), tls13Ciphers))
+	{
+		LOG_WAR << fname << "SSL_CTX_set_ciphersuites failed: " << last_error_msg();
+	}
+#endif
+
+	// Disable unsafe legacy renegotiation
 	SSL_CTX_clear_options(context->context(), SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
 
 	// Set client certificate verification if required

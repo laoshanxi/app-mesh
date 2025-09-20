@@ -29,7 +29,7 @@ from jwt.algorithms import RSAAlgorithm
 # For source code env:
 current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(current_directory))
-from appmesh import AppMeshClient
+from appmesh import AppMeshClientOAuth
 
 
 class KeycloakTokenVerifier:
@@ -118,7 +118,7 @@ def main():
     }
 
     # Create App Mesh client
-    client = AppMeshClient(rest_ssl_verify=False, oauth2=keycloak_config, auto_refresh_token=True)
+    client = AppMeshClientOAuth(rest_ssl_verify=False, oauth2=keycloak_config, auto_refresh_token=True)
 
     # Try to login and verify the token
     # Make sure "Required Actions" is disabled in "appmesh-realm" Authentication
