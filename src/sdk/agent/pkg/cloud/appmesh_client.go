@@ -11,7 +11,6 @@ import (
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/utils"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
-	"github.com/rs/xid"
 	"go.uber.org/zap"
 )
 
@@ -90,11 +89,7 @@ func (r *AppMesh) GetHostResources() (map[string]interface{}, error) {
 // generateRequest creates and returns a new Request with a unique UUID
 func (r *AppMesh) generateRequest() *Request {
 	return &Request{
-		Request: appmesh.Request{
-			Uuid:    xid.New().String(),
-			Headers: make(map[string]string),
-			Query:   make(map[string]string),
-		},
+		Request: *appmesh.NewRequest(),
 	}
 }
 

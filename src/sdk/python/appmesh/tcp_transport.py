@@ -36,7 +36,7 @@ class TCPTransport:
                 - `tuple`: A pair of paths (`cert_file`, `key_file`), where `cert_file` is the client certificate file path and `key_file` is the private key file path.
 
             tcp_address (Tuple[str, int], optional): Address and port for establishing a TCP connection to the server.
-                Defaults to `("localhost", 6059)`.
+                Defaults to `("127.0.0.1", 6059)`.
         """
         self.tcp_address = address
         self.ssl_verify = ssl_verify

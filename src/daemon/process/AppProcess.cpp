@@ -522,6 +522,11 @@ void AppProcess::respMessage(const std::string &processId, std::shared_ptr<void>
 	m_task.respMessage(serverRequest, msgRequest);
 }
 
+std::string AppProcess::taskStatus(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
+{
+	return m_task.taskStatus(taskRequest);
+}
+
 const std::string AppProcess::startError() const
 {
 	auto ptr = this->m_startError.load();

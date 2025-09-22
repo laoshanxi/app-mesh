@@ -1,10 +1,12 @@
-# Remote Task
+# Remote Task (in-memory compute)
 
-App Mesh supports both process-level remote calls and code/task-level remote calls without injecting user code.
+App Mesh supports both process-level and code/task-level remote calls without injecting user code. Task-level remote execution provides in-memory compute capability, delivering extreme performance for high-throughput workloads.
 
 ## Overview
 
-Remote tasks allow a client send a payload to App Mesh. App Mesh dispatches the payload to a running application process, which processes it and returns the result.
+Remote tasks allow a client to send a payload to App Mesh. App Mesh dispatches the payload to a running application process, which processes it and returns the result.
+
+With request forwarding, you can achieve cluster-level task execution.
 
 ### Client
 
@@ -63,4 +65,28 @@ $ python3 sample.py
 28
 36
 45
+
+$ appc ls -a pytask | grep task_status
+task_status: busy
 ```
+
+### Task status
+
+The task status is represented by application runtime attributes. Possible values include:
+
+- `idle`: the service is ready and waiting for a task
+- `busy`: a task has been dispatched and is currently processing
+- `error`/`unknown`: error occurred
+- "" (empty): the service is not requesting task handling
+
+### API
+
+Client:
+
+- run_task()
+- cancle_task()
+
+Server:
+
+- task_fetch()
+- task_return()

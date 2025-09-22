@@ -1,9 +1,9 @@
-#!/usr/bin/python3
 """Test Python SDK"""
 import sys
 import os
 import json
 import unittest
+import tempfile
 from unittest import TestCase
 from pyotp import TOTP
 
@@ -18,6 +18,35 @@ from appmesh import AppMeshClient, AppMeshClientTCP, App
 # python3 -m unittest test_appmesh_client.TestAppMeshClient.test_user
 
 
+def get_test_paths():
+    """return platform specific paths"""
+    tmpdir = tempfile.gettempdir()
+    if sys.platform == "win32":  # Windows
+        return {
+            "server_log": r"C:\local\appmesh\work\server.log",
+            "tmp_file": os.path.join(tmpdir, "2.log"),
+            "tmp_file2": os.path.join(tmpdir, "3.log"),
+            "etc_file": r"C:\Windows\System32\drivers\etc\hosts",
+            "etc_copy": os.path.join(tmpdir, "hosts-copy"),
+        }
+    else:  # Linux
+        return {
+            "server_log": "/opt/appmesh/work/server.log",
+            "tmp_file": "/tmp/2.log",
+            "tmp_file2": "/tmp/3.log",
+            "etc_file": "/etc/os-release",
+            "etc_copy": "/tmp/os-release-1",
+        }
+
+
+def get_ping_command():
+    """return platform specific ping command"""
+    if sys.platform == "win32":
+        return "ping github.com -n 2 -w 2000"
+    else:
+        return "ping github.com -w 5"
+
+
 class TestAppMeshClient(TestCase):
     """
     unit test for AppMeshClient
@@ -27,68 +56,65 @@ class TestAppMeshClient(TestCase):
         """test app run"""
         client = AppMeshClient()
         client.login("admin", "admin123")
-        client.forward_to = "localhost"
-        metadata = {
-            "subject": "subject",
-            "message": "msg",
-        }
+        client.forward_to = "127.0.0.1"
+        metadata = {"subject": "subject", "message": "msg"}
+
         app_data = {"name": "ping", "metadata": json.dumps(metadata)}
         app = App(app_data)
         app.behavior.set_exit_behavior(App.Behavior.Action.REMOVE)
-        self.assertEqual(9, client.run_app_sync(app=app, max_time_seconds=3, life_cycle_seconds=4)[0])
+        self.assertEqual(
+            9,
+            client.run_app_sync(app=app, max_time_seconds=3, life_cycle_seconds=4)[0],
+        )
 
         app_data = {"name": "whoami", "command": "whoami", "metadata": json.dumps(metadata)}
-        self.assertEqual(0, client.run_app_sync(app=App(app_data), max_time_seconds=5, life_cycle_seconds=6)[0])
+        self.assertEqual(
+            0,
+            client.run_app_sync(app=App(app_data), max_time_seconds=5, life_cycle_seconds=6)[0],
+        )
 
-        self.assertEqual(9, client.run_app_sync(App({"command": "ping github.com -w 5", "shell": True}), max_time_seconds=4)[0])
-        run = client.run_app_async(App({"command": "ping github.com -w 4", "shell": True}), max_time_seconds=6)
+        self.assertEqual(
+            9,
+            client.run_app_sync(
+                App({"command": get_ping_command(), "shell": True}),
+                max_time_seconds=4,
+            )[0],
+        )
+        run = client.run_app_async(
+            App({"command": get_ping_command(), "shell": True}),
+            max_time_seconds=6,
+        )
         run.wait()
 
     def test_file(self):
         """test file"""
+        paths = get_test_paths()
         client = AppMeshClientTCP()
         client.login("admin", "admin123")
         # client.forward_to = "127.0.0.1:6059" # only for REST client, not for TCP client
         if os.path.exists("1.log"):
             os.remove("1.log")
-        self.assertIsNone(client.download_file("/opt/appmesh/work/server.log", "1.log"))
+        self.assertIsNone(client.download_file(paths["server_log"], "1.log"))
         self.assertTrue(os.path.exists("1.log"))
 
-        self.assertEqual(
-            0,
-            client.run_app_sync(
-                App(
-                    {
-                        "name": "pyrun",
-                        "metadata": "import os; [os.remove('/tmp/2.log') if os.path.exists('/tmp/2.log') else None]",
-                    }
-                )
-            )[0],
-        )
-        self.assertIsNone(client.upload_file(local_file="1.log", remote_file="/tmp/2.log"))
-        self.assertIsNone(client.download_file(remote_file="/tmp/2.log", local_file="/tmp/3.log"))
-        self.assertTrue(os.path.exists("/tmp/3.log"))
+        # remove file if exists
+        metadata = f"import os; [os.remove(r'{paths['tmp_file']}') if os.path.exists(r'{paths['tmp_file']}') else None]"
+        self.assertEqual(0, client.run_app_sync(App({"name": "pyrun", "metadata": metadata}))[0])
+
+        self.assertIsNone(client.upload_file(local_file="1.log", remote_file=paths["tmp_file"]))
+        self.assertIsNone(client.download_file(remote_file=paths["tmp_file"], local_file=paths["tmp_file2"]))
+        self.assertTrue(os.path.exists(paths["tmp_file2"]))
         os.remove("1.log")
 
-        self.assertEqual(
-            0,
-            client.run_app_sync(
-                App(
-                    {
-                        "name": "pyrun",
-                        "metadata": "import shutil;shutil.copy('/etc/os-release', '/tmp/os-release')",
-                    }
-                )
-            )[0],
-        )
-        self.assertIsNone(client.download_file("/tmp/os-release", "os-release"))
-        if os.path.exists("/tmp/os-release-1"):
-            os.remove("/tmp/os-release-1")
-        self.assertIsNone(client.download_file("/tmp/os-release", "/tmp/os-release-1"))
-        with open("/tmp/os-release-1", "r", encoding="utf-8") as etc:
-            with open("os-release", "r", encoding="utf-8") as local:
+        # copy etc file
+        metadata = f"import shutil;shutil.copy(r'{paths['etc_file']}', r'{paths['etc_copy']}')"
+        self.assertEqual(0, client.run_app_sync(App({"name": "pyrun", "metadata": metadata}))[0])
+
+        self.assertIsNone(client.download_file(paths["etc_file"], "etc-local"))
+        with open(paths["etc_copy"], "r", encoding="utf-8") as etc:
+            with open("etc-local", "r", encoding="utf-8") as local:
                 self.assertEqual(etc.read(), local.read())
-        os.remove("os-release")
+        os.remove("etc-local")
 
     def test_config(self):
         """test config"""
@@ -218,7 +244,4 @@ class TestAppMeshClient(TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestAppMeshClient)
-
-    runner = unittest.TextTestRunner()
-    runner.run(suite)
+    unittest.main()

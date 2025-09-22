@@ -85,7 +85,7 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inp
 	return nullptr;
 }
 
-const nlohmann::json HttpRequest::emptyJson()
+const nlohmann::json HttpRequest::emptyJsonMessage()
 {
 	nlohmann::json emptyBody;
 	emptyBody[REST_TEXT_MESSAGE_JSON_KEY] = std::string("");
@@ -412,7 +412,7 @@ void TaskRequest::respMessage(std::shared_ptr<void> &serverRequest, std::shared_
 	if (taskRequest == nullptr)
 	{
 		LOG_WAR << fname << "no message request from client waiting for response";
-		m_respMessage->reply(web::http::status_codes::ExpectationFailed, "no message request from client waiting for response");
+		m_respMessage->reply(web::http::status_codes::ExpectationFailed, Utility::text2json("no message request from client waiting for response"));
 		m_respMessage.reset();
 		return;
 	}
@@ -435,4 +435,19 @@ void TaskRequest::cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> 
 		LOG_WAR << fname << "clean replied request: " << request->m_uuid << " " << request->m_method << " " << request->m_relative_uri;
 		request = nullptr;
 	}
+}
+
+std::string TaskRequest::taskStatus(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
+{
+	cleanupRepliedRequest(taskRequest);
+
+	if (m_getMessage)
+	{
+		return "idle"; // service is ready and waiting for a task
+	}
+	if (taskRequest)
+	{
+		return "busy"; // a task has been dispatched and is still processing
+	}
+	return "unknown"; // no active message or task, state unavailable
 }

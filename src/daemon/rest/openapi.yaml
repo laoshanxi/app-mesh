@@ -4,6 +4,7 @@ info:
   title: App Mesh REST API
   description: API documentation for App Mesh.
   version: 2.1.2
+
 paths:
   /appmesh/login:
     post:
@@ -30,20 +31,22 @@ paths:
           required: false
           schema:
             type: string
-          default: "appmesh-service"
+            default: "appmesh-service"
           description: JWT audience.
         - name: X-Set-Cookie
           in: header
           required: false
           schema:
             type: boolean
-          default: false
+            default: false
           description: Optional to request cookie authentication.
       responses:
         "200":
-          $ref: "#/components/responses/GetTokenSuccess"
+          $ref: "#/components/responses/TokenResponse"
         "400":
-          $ref: "#/components/responses/BAD_REQUEST"
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "428":
           description: Two-factor authentication required.
           content:
@@ -89,7 +92,7 @@ paths:
           in: header
           schema:
             type: string
-          default: "appmesh-service"
+            default: "appmesh-service"
           description: JWT audience.
       responses:
         "200":
@@ -111,10 +114,12 @@ paths:
                   audience:
                     type: string
                     example: "appmesh-service"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
-          $ref: "#/components/responses/BAD_REQUEST"
+          $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/FORBIDDEN"
+          $ref: "#/components/responses/Forbidden"
 
   /appmesh/self/logoff:
     post:
@@ -126,7 +131,7 @@ paths:
         "200":
           description: User logged out successfully.
         "401":
-          $ref: "#/components/responses/BAD_REQUEST"
+          $ref: "#/components/responses/Unauthorized"
 
   /appmesh/token/renew:
     post:
@@ -144,9 +149,11 @@ paths:
           description: Optional token expiration time in seconds.
       responses:
         "200":
-          $ref: "#/components/responses/GetTokenSuccess"
+          $ref: "#/components/responses/TokenResponse"
         "400":
-          $ref: "#/components/responses/BAD_REQUEST"
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /appmesh/totp/secret:
     post:
@@ -167,7 +174,7 @@ paths:
                     format: base64
                     example: "base64-encoded-mfa-uri(otpauth://totp/admin?secret=secret&issuer=AppMesh)"
         "401":
-          description: Unauthorized access.
+          $ref: "#/components/responses/Unauthorized"
 
   /appmesh/totp/setup:
     post:
@@ -184,24 +191,30 @@ paths:
           description: 6-digit TOTP code.
       responses:
         "200":
-          $ref: "#/components/responses/GetTokenSuccess"
+          $ref: "#/components/responses/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
-          description: Unauthorized access.
+          $ref: "#/components/responses/Unauthorized"
 
   /appmesh/totp/validate:
     post:
       summary: Validate TOTP code and get token.
       tags: [TwoFactor]
+      parameters:
+        - name: X-Set-Cookie
+          in: header
+          schema:
+            type: boolean
+          default: true
+          description: Request to set cookie for authentication.
       requestBody:
         description: TOTP validation request.
         content:
           application/json:
             schema:
               type: object
-              required:
-                - user_name
-                - totp_challenge
-                - totp_code
+              required: [user_name, totp_challenge, totp_code]
               properties:
                 user_name:
                   type: string
@@ -219,18 +232,13 @@ paths:
                   type: integer
                   example: 3600
                   description: Optional token expiration time in seconds.
-        parameters:
-          - name: X-Set-Cookie
-            in: header
-            schema:
-              type: boolean
-            default: true
-            description: Request to set cookie for authentication.
       responses:
         "200":
-          $ref: "#/components/responses/GetTokenSuccess"
+          $ref: "#/components/responses/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
-          description: Unauthorized access.
+          $ref: "#/components/responses/Unauthorized"
 
   /appmesh/totp/{user_name}/disable:
     post:
@@ -248,7 +256,9 @@ paths:
         "200":
           description: TOTP disabled successfully.
         "401":
-          description: Unauthorized access.
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /appmesh/app/{app_name}/output:
     get:
@@ -290,8 +300,20 @@ paths:
       responses:
         "200":
           description: Application output retrieved successfully.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Application not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/applications:
     get:
@@ -302,6 +324,16 @@ paths:
       responses:
         "200":
           description: List of applications retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/app/{app_name}/health:
     get:
@@ -316,8 +348,14 @@ paths:
       responses:
         "200":
           description: Application health status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
         "404":
-          description: Application not found.
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/app/{app_name}/disable:
     post:
@@ -335,8 +373,16 @@ paths:
       responses:
         "200":
           description: Application disabled successfully.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Application not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/app/{app_name}:
     get:
@@ -354,8 +400,17 @@ paths:
       responses:
         "200":
           description: Application details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Application not found.
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
     put:
       summary: Add Application
       tags: [ApplicationManagement]
@@ -369,7 +424,7 @@ paths:
             type: string
           description: Application name.
       requestBody:
-        description: JSON definition for ping test
+        description: Application definition
         required: true
         content:
           application/json:
@@ -407,7 +462,13 @@ paths:
         "201":
           description: Application added successfully.
         "400":
-          description: Invalid request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Delete Application
@@ -424,8 +485,14 @@ paths:
       responses:
         "200":
           description: Application deleted successfully.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Application not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/app/{app_name}/enable:
     post:
@@ -443,8 +510,16 @@ paths:
       responses:
         "200":
           description: Application enabled successfully.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Application not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/app/run:
     post:
@@ -452,6 +527,19 @@ paths:
       tags: [ApplicationRun]
       security:
         - BearerAuth: []
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Maximum run time for the remote process, in seconds.
+        - name: lifecycle
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Maximum lifecycle time for the remote process, in seconds.
       requestBody:
         description: Application JSON definition.
         required: true
@@ -468,24 +556,21 @@ paths:
                   type: boolean
                 session_login:
                   type: boolean
-      parameters:
-        - name: timeout
-          in: query
-          required: false
-          schema:
-            type: int
-          description: Maximum run time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
-        - name: lifecycle
-          in: query
-          required: false
-          schema:
-            type: int
-          description: Maximum lifecycle time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
       responses:
         "200":
           description: Application running asynchronously.
+          content:
+            application/json:
+              schema:
+                type: object
         "400":
-          description: Invalid request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/app/syncrun:
     post:
@@ -493,6 +578,19 @@ paths:
       tags: [ApplicationRun]
       security:
         - BearerAuth: []
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Maximum run time for the remote process, in seconds.
+        - name: lifecycle
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Maximum lifecycle time for the remote process, in seconds.
       requestBody:
         description: Application JSON definition.
         required: true
@@ -509,31 +607,30 @@ paths:
                   type: boolean
                 session_login:
                   type: boolean
-      parameters:
-        - name: timeout
-          in: query
-          required: false
-          schema:
-            type: int
-          description: Maximum run time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
-        - name: lifecycle
-          in: query
-          required: false
-          schema:
-            type: int
-          description: Maximum lifecycle time for the remote process. Supports ISO 8601 durations (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
       responses:
         "200":
           description: Application running synchronously.
+          content:
+            application/json:
+              schema:
+                type: object
         "400":
-          description: Invalid request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/app/{app_name}/task:
     post:
-      summary: Send a task to a running application and wait for result
+      summary: Execute task on remote application and wait for result
       description: |
-        Client sends an invocation message to a running App Mesh application and waits for the result.
-        The data is forwarded to the specified application which processes it and returns a response.
+        Sends a task payload to a running App Mesh application and waits synchronously 
+        for the result. The target application must be running and capable of processing 
+        the task data. This is useful for request-response patterns where you need 
+        immediate feedback from the application.
       tags: [TaskRun]
       security:
         - BearerAuth: []
@@ -568,13 +665,25 @@ paths:
               schema:
                 type: string
         "400":
-          description: Invalid request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "408":
           description: Task timeout.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
         "417":
           description: Task interrupt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
-          description: Internal server error.
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Remove a submitted task
@@ -597,9 +706,11 @@ paths:
         "208":
           description: Task not exist.
         "400":
-          description: Invalid request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
-          description: Internal server error.
+          $ref: "#/components/responses/InternalServerError"
 
     get:
       summary: Fetch task data for the current application process
@@ -629,9 +740,11 @@ paths:
               schema:
                 type: string
         "400":
-          description: Invalid request or missing process UUID.
+          $ref: "#/components/responses/BadRequest"
         "404":
-          description: No pending task found for this process.
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     put:
       summary: Return the result of a task to the original client
@@ -664,9 +777,11 @@ paths:
         "200":
           description: Task result successfully returned.
         "400":
-          description: Invalid request or missing process UUID.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
-          description: Internal server error.
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/file/download:
     get:
@@ -684,8 +799,19 @@ paths:
       responses:
         "200":
           description: File downloaded.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: File not found.
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/file/upload:
     post:
@@ -714,7 +840,11 @@ paths:
         "200":
           description: File uploaded successfully.
         "400":
-          description: Bad request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/labels:
     get:
@@ -725,6 +855,14 @@ paths:
       responses:
         "200":
           description: List of labels.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/label/{label_name}:
     put:
@@ -749,7 +887,11 @@ paths:
         "201":
           description: Label added.
         "400":
-          description: Bad request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Delete Label
@@ -766,8 +908,12 @@ paths:
       responses:
         "200":
           description: Label deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Label not found.
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/config:
     get:
@@ -778,6 +924,14 @@ paths:
       responses:
         "200":
           description: Configuration details.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     post:
       summary: Set Config
@@ -795,7 +949,13 @@ paths:
         "200":
           description: Configuration set.
         "400":
-          description: Bad request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/user/{user_name}/passwd:
     post:
@@ -832,8 +992,16 @@ paths:
       responses:
         "200":
           description: Password changed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: User not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/user/{user_name}/lock:
     post:
@@ -851,8 +1019,14 @@ paths:
       responses:
         "200":
           description: User locked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: User not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/user/{user_name}/unlock:
     post:
@@ -870,8 +1044,14 @@ paths:
       responses:
         "200":
           description: User unlocked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: User not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/user/{user_name}:
     put:
@@ -916,7 +1096,13 @@ paths:
         "201":
           description: User added.
         "400":
-          description: Bad request.
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Delete User
@@ -933,8 +1119,14 @@ paths:
       responses:
         "200":
           description: User deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: User not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/user/self:
     get:
@@ -945,6 +1137,14 @@ paths:
       responses:
         "200":
           description: User details.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/users:
     get:
@@ -955,6 +1155,16 @@ paths:
       responses:
         "200":
           description: List of users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/roles:
     get:
@@ -965,6 +1175,14 @@ paths:
       responses:
         "200":
           description: List of roles.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/role/{role_name}:
     post:
@@ -987,12 +1205,22 @@ paths:
         content:
           application/json:
             schema:
-              type: object
+              type: array
+              items:
+                type: string
       responses:
         "200":
           description: Role updated.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Role not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
     delete:
       summary: Delete Role
@@ -1009,8 +1237,14 @@ paths:
       responses:
         "200":
           description: Role deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Role not found.
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/user/permissions:
     get:
@@ -1021,6 +1255,16 @@ paths:
       responses:
         "200":
           description: List of user permissions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/permissions:
     get:
@@ -1031,6 +1275,16 @@ paths:
       responses:
         "200":
           description: List of permissions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/user/groups:
     get:
@@ -1041,6 +1295,16 @@ paths:
       responses:
         "200":
           description: List of user groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/metrics:
     get:
@@ -1049,6 +1313,12 @@ paths:
       responses:
         "200":
           description: Prometheus text-based exposition format.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /appmesh/resources:
     get:
@@ -1059,6 +1329,14 @@ paths:
       responses:
         "200":
           description: Resource details in JSON format.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
 components:
   securitySchemes:
@@ -1066,16 +1344,91 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: |
+        JWT token obtained from /appmesh/login endpoint. 
+        Include in Authorization header as: Bearer <token>
     BasicAuth:
       type: http
       scheme: basic
+      description: |
+        Username and password for initial authentication.
+        Only used for login endpoint.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message text
+      required:
+        - message
+      example:
+        message: "Error message"
 
   responses:
-    BAD_REQUEST:
-      description: Invalid request.
-    FORBIDDEN:
-      description: Access denied due to authentication or permissions.
-    GetTokenSuccess:
+    BadRequest:
+      description: Invalid request parameters or malformed request body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            message: "Invalid parameter: id must be an integer"
+
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            message: "Unauthorized access, please provide valid credentials"
+
+    Forbidden:
+      description: Insufficient permissions for the requested operation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            message: "Forbidden: insufficient permissions"
+
+    NotFound:
+      description: Requested resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            message: "Path not found GET:/unknown/path"
+
+    PreconditionFailed:
+      description: Request could not be processed due to logical/semantic issues
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            message: "Precondition failed: runtime validation error"
+
+    InternalServerError:
+      description: Unexpected internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            known:
+              summary: Known exception
+              value:
+                message: "Internal server error"
+            unknown:
+              summary: Unknown exception
+              value:
+                message: "Unknown exception"
+
+    TokenResponse:
       description: Successful token generation.
       content:
         application/json:

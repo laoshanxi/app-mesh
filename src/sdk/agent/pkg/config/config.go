@@ -35,7 +35,7 @@ var logger *zap.SugaredLogger = utils.GetLogger()
 var ConfigData = Configuration{
 	REST: RESTConfig{
 		RestEnabled:                  true,
-		RestListenAddress:            "localhost",
+		RestListenAddress:            "127.0.0.1",
 		RestListenPort:               6060,
 		RestTcpPort:                  6059,
 		PrometheusExporterListenPort: 0,

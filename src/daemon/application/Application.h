@@ -89,7 +89,7 @@ public:
 	bool removeMessage();
 	void getMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
 	void respMessage(const std::string &processId, std::shared_ptr<void> asyncHttpRequest);
-	bool isTaskPending();
+	std::string taskStatus();
 
 	// prometheus
 	void initMetrics();

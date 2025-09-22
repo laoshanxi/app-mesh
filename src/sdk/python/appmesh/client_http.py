@@ -22,64 +22,6 @@ from .app_run import AppRun
 from .app_output import AppOutput
 
 
-class EncodingResponse:
-    """Wrapper for requests.Response that handles encoding conversion on Windows."""
-
-    def __init__(self, response: requests.Response):
-        self._response = response
-        self._converted_text = None
-        self._should_convert = False
-
-        # Check if we need to convert encoding on Windows
-        if sys.platform == "win32":
-            content_type = response.headers.get("Content-Type", "").lower()
-            if response.status_code == HTTPStatus.OK and "text/plain" in content_type and "utf-8" in content_type:
-                try:
-                    local_encoding = locale.getpreferredencoding()
-
-                    if local_encoding.lower() not in ["utf-8", "utf8"]:
-                        # Ensure response is decoded as UTF-8 first
-                        response.encoding = "utf-8"
-                        utf8_text = response.text  # This gives us proper Unicode string
-
-                        # Convert Unicode to local encoding, then back to Unicode
-                        # This simulates how text would appear in local encoding
-                        try:
-                            local_bytes = utf8_text.encode(local_encoding, errors="replace")
-                            self._converted_text = local_bytes.decode(local_encoding)
-                            self._should_convert = True
-                        except (UnicodeEncodeError, LookupError):
-                            # If local encoding can't handle the characters, fall back to UTF-8
-                            self._converted_text = utf8_text
-                            self._should_convert = True
-
-                except (UnicodeError, LookupError):
-                    # If any conversion fails, keep original UTF-8
-                    response.encoding = "utf-8"
-
-    @property
-    def text(self):
-        """Return converted text if needed, otherwise original text."""
-        if self._should_convert and self._converted_text is not None:
-            return self._converted_text
-        # return the original text from _response without modification
-        return self._response.text
-
-    def __getattr__(self, name):
-        """Dynamically delegate attribute access to the original response"""
-        return getattr(self._response, name)
-
-    def __dir__(self):
-        """Optional: allow dir() to show attributes of both wrapper and response"""
-        return list(set(dir(self._response) + list(self.__dict__.keys())))
-
-    @property
-    def __class__(self):
-        """Optional: allow isinstance checks for requests.Response"""
-        # Pretend to be a requests.Response for isinstance checks
-        return requests.Response
-
-
 class AppMeshClient(metaclass=abc.ABCMeta):
     """
     Client SDK for interacting with the App Mesh service via REST API.
@@ -132,6 +74,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - wait_for_async_run()
         - run_app_sync()
         - run_task()
+        - cancle_task()
 
         # System Management
         - forward_to
@@ -193,6 +136,53 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         POST = "POST"
         DELETE = "DELETE"
         POST_STREAM = "POST_STREAM"
+
+    class EncodingResponse(requests.Response):
+        """Response subclass that handles encoding conversion on Windows."""
+
+        def __init__(self, response: requests.Response):
+            super().__init__()
+
+            # copy essential fields from response
+            self.__dict__.update(response.__dict__)
+
+            self._converted_text = None
+            self._should_convert = False
+
+            # Check if we need to convert encoding on Windows
+            if sys.platform == "win32":
+                content_type = response.headers.get("Content-Type", "").lower()
+                if response.status_code == HTTPStatus.OK and "text/plain" in content_type and "utf-8" in content_type:
+                    try:
+                        local_encoding = locale.getpreferredencoding()
+
+                        if local_encoding.lower() not in ["utf-8", "utf8"]:
+                            # Ensure response is decoded as UTF-8 first
+                            self.encoding = "utf-8"
+                            utf8_text = self.text  # This gives us proper Unicode string
+
+                            # Convert Unicode to local encoding, then back to Unicode
+                            # This simulates how text would appear in local encoding
+                            try:
+                                local_bytes = utf8_text.encode(local_encoding, errors="replace")
+                                self._converted_text = local_bytes.decode(local_encoding)
+                                self._should_convert = True
+                            except (UnicodeEncodeError, LookupError):
+                                # If local encoding can't handle the characters, fall back to UTF-8
+                                self._converted_text = utf8_text
+                                self._should_convert = True
+
+                    except (UnicodeError, LookupError):
+                        # If any conversion fails, keep original UTF-8
+                        self.encoding = "utf-8"
+
+        @property
+        def text(self):
+            """Return converted text if needed, otherwise original text."""
+            if self._should_convert and self._converted_text is not None:
+                return self._converted_text
+            # return the original text from _response without modification
+            return super().text
 
     def __init__(
         self,
@@ -1160,7 +1150,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                     fp.write(chunk)
 
         # Apply file attributes (permissions, owner, group) if requested
-        if apply_file_attributes:
+        if apply_file_attributes and sys.platform != "win32":
             if "X-File-Mode" in resp.headers:
                 os.chmod(path=local_file, mode=int(resp.headers["X-File-Mode"]))
             if "X-File-User" in resp.headers and "X-File-Group" in resp.headers:
@@ -1444,6 +1434,6 @@ class AppMeshClient(metaclass=abc.ABCMeta):
                 raise Exception("Invalid http method", method)
 
             # Wrap the response for encoding handling
-            return EncodingResponse(resp)
+            return AppMeshClient.EncodingResponse(resp)
         except requests.exceptions.RequestException as e:
             raise Exception(f"HTTP request failed: {str(e)}")

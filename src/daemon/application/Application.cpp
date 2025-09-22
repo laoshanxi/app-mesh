@@ -634,10 +634,18 @@ void Application::respMessage(const std::string &processId, std::shared_ptr<void
 	return (*processLock)->respMessage(processId, asyncHttpRequest, m_taskRequest);
 }
 
-bool Application::isTaskPending()
+std::string Application::taskStatus()
 {
 	auto processLock = m_process.synchronize();
-	return m_taskRequest ? true : false;
+	if (*processLock)
+		return (*processLock)->taskStatus(m_taskRequest);
+	else
+	{
+		if (m_taskRequest)
+			return "error"; // task dispatched, but process not running
+		else
+			return ""; // no task, not running
+	}
 }
 
 const std::string Application::getExecUser() const
@@ -812,7 +820,7 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		auto process = m_process.get();
 		if (process && process->running())
 		{
-			result[JSON_KEY_APP_task_status] = isTaskPending();
+			result[JSON_KEY_APP_task_status] = taskStatus();
 			result[JSON_KEY_APP_pid] = m_pid.load();
 			result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(m_pid.load()));
 

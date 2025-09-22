@@ -51,7 +51,6 @@ func newHttpClient(clientCertFile string, clientCertKeyFile string, caFile strin
 			MaxIdleConnsPerHost:   20,               // Increased for better connection reuse
 			IdleConnTimeout:       90 * time.Second, // Standard timeout for idle connections
 			MaxConnsPerHost:       100,              // Balanced limit for concurrent connections
-			ResponseHeaderTimeout: 10 * time.Second, // Reasonable timeout for response headers
 
 			// Additional optimizations
 			ForceAttemptHTTP2:  true,  // Enable HTTP/2 support

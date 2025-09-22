@@ -77,7 +77,7 @@ public class AppMeshClient {
      * Used to build AppMeshClient constructor parameters.
      */
     public static class Builder {
-        private String baseURL = "https://localhost:6060";
+        private String baseURL = "https://127.0.0.1:6060";
         private String caCertFilePath;
         private String clientCertFilePath;
         private String clientCertKeyFilePath;

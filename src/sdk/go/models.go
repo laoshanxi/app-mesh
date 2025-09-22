@@ -7,23 +7,23 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/rs/xid"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
 const (
-	DEFAULT_HTTP_URI = "https://localhost:6060"
-	DEFAULT_TCP_URI  = "localhost:6059"
-
+	DEFAULT_HTTP_URI                   = "https://127.0.0.1:6060"
+	DEFAULT_TCP_URI                    = "127.0.0.1:6059"
+	DEFAULT_TOKEN_EXPIRE_SECONDS       = 7 * (60 * 60 * 24) // default 7 day(s)
+	DEFAULT_JWT_AUDIENCE               = "appmesh-service"
 	HTTP_USER_AGENT_HEADER_NAME        = "User-Agent"
 	HTTP_USER_AGENT                    = "appmesh/golang"
 	HTTP_USER_AGENT_TCP                = "appmesh/golang/tcp"
 	HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = "X-Send-File-Socket"
 	HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = "X-Recv-File-Socket"
 	HTTP_HEADER_KEY_File_Path          = "X-File-Path"
-
-	DEFAULT_TOKEN_EXPIRE_SECONDS = 7 * (60 * 60 * 24) // default 7 day(s)
-
-	DEFAULT_JWT_AUDIENCE = "appmesh-service"
+	TOKEN_REFRESH_INTERVAL_SECONDS     = 300 // 5 minutes
+	TOKEN_REFRESH_OFFSET_SECONDS       = 30  // 30 seconds before expiry
 )
 
 var (
@@ -108,6 +108,13 @@ type Application struct {
 	SecEnv        *Environments       `json:"sec_env"`
 }
 
+// AppRun represents the state of an asynchronous application run.
+type AppRun struct {
+	AppName   string
+	ProcUid   string
+	ForwardTo string
+}
+
 // Behavior represents the behavior configuration of an application.
 type Behavior struct {
 	Exit string `json:"exit"`
@@ -177,6 +184,19 @@ type Request struct {
 	Body          []byte            `msgpack:"body"`
 	Headers       map[string]string `msgpack:"headers"`
 	Query         map[string]string `msgpack:"query"`
+}
+
+// NewRequest creates a Request with all fields initialized.
+func NewRequest() *Request {
+	return &Request{
+		Uuid:          xid.New().String(),
+		RequestUri:    "",
+		HttpMethod:    "",
+		ClientAddress: "",
+		Body:          []byte{},
+		Headers:       map[string]string{},
+		Query:         map[string]string{},
+	}
 }
 
 // Serialize serializes the Request into a byte slice.

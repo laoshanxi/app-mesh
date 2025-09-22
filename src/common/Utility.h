@@ -155,7 +155,7 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
 #define SNAPSHOT_FILE_NAME ".snapshot"
-#define APPMESH_LOCAL_HOST_URL "https://localhost:6060"
+#define APPMESH_LOCAL_HOST_URL "https://127.0.0.1:6060"
 
 const char *GET_STATUS_STR(unsigned int status);
 const nlohmann::json EMPTY_STR_JSON(nullptr);
@@ -203,6 +203,7 @@ public:
 	static std::string strTolower(std::string s);
 	static std::string htmlEntitiesDecode(const std::string &str);
 	static std::vector<std::string> str2argv(const std::string &commandLine);
+	static nlohmann::json text2json(const std::string &str);
 	static bool containsSpecialCharacters(const std::string &str);
 	static std::string jsonToYaml(const nlohmann::json &j, std::shared_ptr<YAML::Emitter> out = nullptr);
 	static nlohmann::json yamlToJson(const YAML::Node &node);
