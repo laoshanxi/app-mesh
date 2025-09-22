@@ -2,6 +2,8 @@ package appmesh
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/rs/xid"
@@ -14,7 +16,7 @@ func TestAppmeshLogin(t *testing.T) {
 	emptyStr := ""
 	client := NewHttpClient(Option{SslTrustedCA: &emptyStr})
 
-	_, token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
+	token, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, "")
 	res, _ := client.ViewHostResources()
 	t.Log(res)
 	ret, err := client.Authenticate(token, "", DEFAULT_JWT_AUDIENCE)
@@ -31,35 +33,49 @@ func TestAppmeshLogin(t *testing.T) {
 	runApp := Application{}
 	cmd := "ping github.com -w 3"
 	runApp.Command = &cmd
-	client.RunAppSync(runApp, 5)
-	client.RunAppAsync(runApp, 5)
+	client.RunAppSync(runApp, true, 5, 10)
+	client.RunAppAsync(runApp, 5, 10)
 }
 
 func TestAppmeshFile(t *testing.T) {
-
 	client := NewHttpClient(Option{})
+
+	_, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
+	require.NoError(t, err)
+
+	var remotePath, localFile, tempFile string
+	if runtime.GOOS == "windows" {
+		remotePath = `C:\local\appmesh\bin\appsvc.exe`
+		localFile = "appsvc.exe"
+		tempFile = filepath.Join(os.TempDir(), "appsvc.exe")
+	} else {
+		remotePath = "/opt/appmesh/bin/appsvc"
+		localFile = "appsvc"
+		tempFile = "/tmp/appsvc"
+	}
+
+	_ = os.Remove(localFile)
+	_ = os.Remove(tempFile)
+	require.Nil(t, client.DownloadFile(remotePath, localFile, true))
+	require.Nil(t, client.UploadFile(localFile, tempFile, true))
+	_ = os.Remove(localFile)
+	_ = os.Remove(tempFile)
 	client.updateForwardTo("localhost:6059")
+	require.Nil(t, client.DownloadFile(remotePath, localFile, true))
+	require.Nil(t, client.UploadFile(localFile, tempFile, true))
 
-	success, _, _ := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
-	require.True(t, success)
-
-	os.Remove("appsvc")
-	os.Remove("/tmp/appsvc")
-
-	require.Nil(t, client.DownloadFile("/opt/appmesh/bin/appsvc", "appsvc", true))
-	require.Nil(t, client.UploadFile("appsvc", "/tmp/appsvc", true))
-	os.Remove("appsvc")
+	_ = os.Remove(localFile)
+	_ = os.Remove(tempFile)
 }
 
 func TestAppmeshTotp(t *testing.T) {
 
 	client := NewHttpClient(Option{})
 
-	success, token, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
-	require.True(t, success, "Login failed")
+	token, err := client.Login("admin", "admin123", "", DEFAULT_TOKEN_EXPIRE_SECONDS, DEFAULT_JWT_AUDIENCE)
 	require.NoError(t, err, "Login failed")
 
-	success, err = client.Authenticate(token, "", DEFAULT_JWT_AUDIENCE)
+	success, err := client.Authenticate(token, "", DEFAULT_JWT_AUDIENCE)
 	require.True(t, success, "Authentication failed")
 	require.NoError(t, err, "Authentication failed")
 

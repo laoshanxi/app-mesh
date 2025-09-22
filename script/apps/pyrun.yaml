@@ -1,5 +1,5 @@
 ---
-name: pyrun
+name: pyexec
 description: execute Python string script from metadata input
 command: python3 ../../bin/py_exec.py
 owner: mesh

@@ -20,7 +20,7 @@ class AppMeshServerTCP(AppMeshServer):
         self,
         rest_ssl_verify=AppMeshClient.DEFAULT_SSL_CA_CERT_PATH if os.path.exists(AppMeshClient.DEFAULT_SSL_CA_CERT_PATH) else False,
         rest_ssl_client_cert=None,
-        tcp_address: Tuple[str, int] = ("localhost", 6059),
+        tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
         *,
         logger_: Optional[logging.Logger] = None,
     ):

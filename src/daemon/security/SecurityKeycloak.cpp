@@ -67,12 +67,12 @@ const std::string SecurityKeycloak::extractCertificate(const std::string &keysJs
             }
         }
         LOG_WAR << fname << "Key ID not found: " << kid;
-        throw std::runtime_error(Utility::stringFormat("Key ID <%s> not found", kid.c_str()));
+        throw std::invalid_argument(Utility::stringFormat("Key ID <%s> not found", kid.c_str()));
     }
     catch (const nlohmann::json::exception &e)
     {
         LOG_ERR << fname << "JSON parsing error: " << e.what();
-        throw std::runtime_error(Utility::stringFormat("Failed to parse keys JSON: %s", e.what()));
+        throw std::invalid_argument(Utility::stringFormat("Failed to parse keys JSON: %s", e.what()));
     }
 }
 
@@ -184,7 +184,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
     else
     {
         LOG_WAR << fname << "No username found in token";
-        throw std::runtime_error("No username could be extracted from the token");
+        throw std::invalid_argument("No username could be extracted from the token");
     }
 
     // Extract groups - they can be in different claims based on Keycloak configuration
@@ -277,7 +277,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
         if (currentTime > expTime)
         {
             LOG_WAR << fname << "Token has expired";
-            throw std::runtime_error("Token has expired");
+            throw std::domain_error("Token has expired");
         }
 
         // Check if token is not yet valid (if nbf claim exists)
@@ -288,7 +288,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
             if (currentTime < nbfTime)
             {
                 LOG_WAR << fname << "Token not yet valid";
-                throw std::runtime_error("Token not yet valid");
+                throw std::domain_error("Token not yet valid");
             }
         }
 
@@ -299,6 +299,6 @@ const std::tuple<std::string, std::string, std::set<std::string>> SecurityKeyclo
     catch (const std::exception &e)
     {
         LOG_WAR << fname << "Token verification failed: " << e.what();
-        throw std::runtime_error(Utility::stringFormat("Token verification failed: %s", e.what()));
+        throw std::domain_error(Utility::stringFormat("Token verification failed: %s", e.what()));
     }
 }

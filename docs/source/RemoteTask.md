@@ -1,10 +1,12 @@
-# Remote Task
+# Remote Task (in-memory compute)
 
-App Mesh supports both process-level remote calls and code/task-level remote calls without injecting user code.
+App Mesh supports both process-level and code/task-level remote calls without injecting user code. Task-level remote execution provides in-memory compute capability, delivering extreme performance for high-throughput workloads.
 
 ## Overview
 
-Remote tasks allow a client send a payload to App Mesh. App Mesh dispatches the payload to a running application process, which processes it and returns the result.
+Remote tasks allow a client to send a payload to App Mesh. App Mesh dispatches the payload to a running application process, which processes it and returns the result.
+
+With request forwarding, you can achieve cluster-level task execution.
 
 ### Client
 
@@ -49,7 +51,7 @@ if __name__ == "__main__":
 ```shell
 $ appc ls
 ID  NAME    OWNER  STATUS   HEALTH  PID   USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   pyrun   mesh   enabled  OK      2833  root  29.1 MiB  0     -       44s  44s       1       "python3 ../../bin/py_t*"
+1   pytask   mesh   enabled  OK      2833  root  29.1 MiB  0     -       44s  44s       1       "python3 ../../bin/py_t*"
 2   ping    mesh   enabled  OK      2834  root  3.3 MiB   0     -       44s  44s       1       "ping github.com"
 
 $ python3 sample.py
@@ -63,4 +65,28 @@ $ python3 sample.py
 28
 36
 45
+
+$ appc ls -a pytask | grep task_status
+task_status: busy
 ```
+
+### Task status
+
+The task status is represented by application runtime attributes. Possible values include:
+
+- `idle`: the service is ready and waiting for a task
+- `busy`: a task has been dispatched and is currently processing
+- `error`/`unknown`: error occurred
+- "" (empty): the service is not requesting task handling
+
+### API
+
+Client:
+
+- run_task(): send an invocation message to a running App Mesh application and wait for result
+- cancle_task(): cancle a running task to a App Mesh application
+
+Server:
+
+- task_fetch(): retrieve a task data in the currently running App Mesh application process
+- task_return(): response the result of a server-side invocation back to the original client.

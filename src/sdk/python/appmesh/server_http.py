@@ -17,7 +17,7 @@ class AppMeshServer(metaclass=abc.ABCMeta):
     Server SDK for App Mesh application interacting with the local App Mesh REST service over HTTPS.
 
     Build-in runtime environment variables required:
-      - APP_MESH_PROCESS_ID
+      - APP_MESH_PROCESS_KEY
       - APP_MESH_APPLICATION_NAME
 
     Methods:
@@ -58,10 +58,10 @@ class AppMeshServer(metaclass=abc.ABCMeta):
     @staticmethod
     def _get_runtime_env() -> Tuple[str, str]:
         """Read and validate required runtime environment variables."""
-        process_id = os.getenv("APP_MESH_PROCESS_ID")
+        process_id = os.getenv("APP_MESH_PROCESS_KEY")
         app_name = os.getenv("APP_MESH_APPLICATION_NAME")
         if not process_id:
-            raise Exception("Missing environment variable: APP_MESH_PROCESS_ID. This must be set by App Mesh service.")
+            raise Exception("Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.")
         if not app_name:
             raise Exception("Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.")
         return process_id, app_name

@@ -14,6 +14,7 @@
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
+#include "../../common/Password.h"
 #include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
@@ -31,7 +32,7 @@ AppProcess::AppProcess(void *owner)
 	  m_job(nullptr, ::CloseHandle),
 #endif
 	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID()),
-	  m_pid(ACE_INVALID_PID), m_returnValue(-1)
+	  m_key(generatePassword(10, true, true, true, false)), m_pid(ACE_INVALID_PID), m_returnValue(-1)
 {
 	const static char fname[] = "AppProcess::AppProcess() ";
 	LOG_DBG << fname << "Entered, ID: " << m_uuid;
@@ -340,7 +341,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	}
 
 	// AppMesh build-in env
-	envMap[ENV_APPMESH_PROCESS_ID] = getuuid();
+	envMap[ENV_APPMESH_PROCESS_KEY] = m_key;
 	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
 	auto app = Configuration::instance()->getApp(m_owner);
 	if (app)
@@ -508,18 +509,23 @@ void AppProcess::sendMessage(std::shared_ptr<void> asyncHttpRequest)
 	m_task.sendMessage(asyncHttpRequest);
 }
 
-void AppProcess::getMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
+void AppProcess::getMessage(const std::string &processKey, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
 {
-	if (processId != m_uuid)
+	if (processKey != m_key)
 		throw std::invalid_argument("Process ID mismatch: Illegal request.");
 	m_task.getMessage(serverRequest, msgRequest);
 }
 
-void AppProcess::respMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
+void AppProcess::respMessage(const std::string &processKey, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
 {
-	if (processId != m_uuid)
+	if (processKey != m_key)
 		throw std::invalid_argument("Process ID mismatch: Illegal request.");
 	m_task.respMessage(serverRequest, msgRequest);
+}
+
+std::string AppProcess::taskStatus(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
+{
+	return m_task.taskStatus(taskRequest);
 }
 
 const std::string AppProcess::startError() const

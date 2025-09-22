@@ -55,7 +55,7 @@ Additional Information:
 ```text
 $ appc ls
 ID  NAME           OWNER STATUS   HEALTH PID     USER  MEMORY   %CPU RETURN AGE    DURATION STARTS COMMAND
-1   pyrun          mesh  disabled -      -       -     -        -    -      7m34s  -        0      "python3 ../bin/py_exec.py"
+1   pyexec         mesh  disabled -      -       -     -        -    -      7m34s  -        0      "python3 ../bin/py_exec.py"
 2   ping           mesh  enabled  OK     4894    lv    13.5 Mi  0    9      7m34s  N/A      2      "ping -w 300 -c 300 github.com"
 3   backup         admin enabled  -      -       -     -        -    -      7m34s  -        0      "mkdir -p /opt/appmesh/work/backup\ncd /*"
 ```

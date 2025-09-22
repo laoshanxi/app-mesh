@@ -7,7 +7,6 @@ import (
 
 	"github.com/laoshanxi/app-mesh/src/sdk/agent/pkg/cloud"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
-	"github.com/rs/xid"
 )
 
 const maxBodySize = 100 * 1024 * 1024 // 100 MB, adjust as needed
@@ -17,14 +16,10 @@ func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 	// Remove "Connection" header to avoid proxying it
 	req.Header.Del("Connection")
 
-	data := &appmesh.Request{
-		Uuid:          xid.New().String(),
-		HttpMethod:    req.Method,
-		RequestUri:    req.URL.Path,
-		ClientAddress: req.RemoteAddr,
-		Headers:       make(map[string]string, len(req.Header)),
-		Query:         make(map[string]string, len(req.URL.Query())),
-	}
+	data := appmesh.NewRequest()
+	data.HttpMethod = req.Method
+	data.RequestUri = req.URL.Path
+	data.ClientAddress = req.RemoteAddr
 
 	// Copy headers and query parameters
 	for key, values := range req.Header {
@@ -39,7 +34,7 @@ func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 	}
 
 	// Read body for non-file upload requests
-	if !(req.Method == http.MethodPost && req.URL.Path == REST_PATH_UPLOAD) && req.Body != nil {
+	if req.URL.Path != REST_PATH_UPLOAD && req.Body != nil {
 		bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, maxBodySize))
 		if err != nil {
 			return nil, errors.New("failed to read request body")
@@ -47,17 +42,11 @@ func NewAppMeshRequest(req *http.Request) (*appmesh.Request, error) {
 		if len(bodyBytes) >= maxBodySize {
 			return nil, errors.New("request body too large")
 		}
-		data.Body = bodyBytes
-		// TODO: Optimize HTML entity check
-		/*
-			if len(bodyBytes) > 0 {
-				if bytes.ContainsAny(bodyBytes, "&<>\"'") {
-					data.Body = html.UnescapeString(string(bodyBytes))
-				} else {
-					data.Body = string(bodyBytes)
-				}
-			}
-		*/
+		if matches := REST_PATH_TASK.FindStringSubmatch(req.URL.Path); len(matches) > 1 {
+			data.Body = bodyBytes // pass raw data for task request
+		} else {
+			data.Body = appmesh.HtmlUnescapeBytes(bodyBytes)
+		}
 		// Reset the request body to allow subsequent reads
 		// req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}

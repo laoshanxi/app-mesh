@@ -271,7 +271,7 @@ void RestHandler::apiAppEnable(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->enableApp(appName);
-	message.reply(web::http::status_codes::OK, convertText2Json(std::string("Enable <") + appName + "> success."));
+	message.reply(web::http::status_codes::OK, Utility::text2json(std::string("Enable <") + appName + "> success."));
 }
 
 void RestHandler::apiAppDisable(const HttpRequest &message)
@@ -283,7 +283,7 @@ void RestHandler::apiAppDisable(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	Configuration::instance()->disableApp(appName);
-	message.reply(web::http::status_codes::OK, convertText2Json(std::string("Disable <") + appName + "> success."));
+	message.reply(web::http::status_codes::OK, Utility::text2json(std::string("Disable <") + appName + "> success."));
 }
 
 void RestHandler::apiAppDelete(const HttpRequest &message)
@@ -308,7 +308,7 @@ void RestHandler::apiAppDelete(const HttpRequest &message)
 		checkAppAccessPermission(message, appName, true);
 
 		Configuration::instance()->removeApp(appName);
-		message.reply(web::http::status_codes::OK, convertText2Json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
+		message.reply(web::http::status_codes::OK, Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 	}
 }
 
@@ -319,13 +319,13 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_download);
 	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
-		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'X-File-Path' not found"));
+		message.reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
 		return;
 	}
 	const auto &file = (message.m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::isFileExist(file))
 	{
-		message.reply(web::http::status_codes::NotAcceptable, convertText2Json("file not found"));
+		message.reply(web::http::status_codes::NotAcceptable, Utility::text2json("file not found"));
 		return;
 	}
 
@@ -336,14 +336,14 @@ void RestHandler::apiFileDownload(const HttpRequest &message)
 	headers[HTTP_HEADER_KEY_file_mode] = std::to_string(std::get<0>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_user] = std::to_string(std::get<1>(fileInfo));
 	headers[HTTP_HEADER_KEY_file_group] = std::to_string(std::get<2>(fileInfo));
-	std::string body = HttpRequest::emptyJson().dump();
+	auto body = HttpRequest::emptyJsonMessage();
 	if (message.m_headers.count(HTTP_HEADER_KEY_X_Recv_File_Socket) && message.m_headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second == "true")
 	{
 		LOG_DBG << fname << "Download file from socket";
 		headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = Utility::encode64(file);
-		body = convertText2Json("Please recieve file from socket").dump();
+		body = Utility::text2json("Please recieve file from socket");
 	}
-	message.reply(web::http::status_codes::OK, body, headers, web::http::mime_types::application_octetstream);
+	message.reply(web::http::status_codes::OK, body, headers);
 }
 
 void RestHandler::apiFileUpload(const HttpRequest &message)
@@ -352,27 +352,27 @@ void RestHandler::apiFileUpload(const HttpRequest &message)
 	permissionCheck(message, PERMISSION_KEY_file_upload);
 	if (0 == message.m_headers.count(HTTP_HEADER_KEY_file_path))
 	{
-		message.reply(web::http::status_codes::BadRequest, convertText2Json("header 'X-File-Path' not found"));
+		message.reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
 		return;
 	}
 	const auto &file = message.m_headers.find(HTTP_HEADER_KEY_file_path)->second;
 	if (Utility::isFileExist(file))
 	{
-		message.reply(web::http::status_codes::Forbidden, convertText2Json("file already exist"));
+		message.reply(web::http::status_codes::Forbidden, Utility::text2json("file already exist"));
 		return;
 	}
 
 	LOG_DBG << fname << "Uploading file <" << file << ">";
 
 	std::map<std::string, std::string> headers;
-	std::string body = HttpRequest::emptyJson().dump();
+	auto body = HttpRequest::emptyJsonMessage();
 	if (message.m_headers.count(HTTP_HEADER_KEY_X_Send_File_Socket) && message.m_headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second == "true")
 	{
 		LOG_DBG << fname << "Upload file from socket";
 		headers[HTTP_HEADER_KEY_X_Send_File_Socket] = Utility::encode64(file);
-		body = convertText2Json("Please send file from socket").dump();
+		body = Utility::text2json("Please send file from socket");
 	}
-	message.reply(web::http::status_codes::OK, body, headers, web::http::mime_types::application_octetstream);
+	message.reply(web::http::status_codes::OK, body, headers);
 	// set permission
 	Utility::applyFilePermission(file, message.m_headers);
 }
@@ -400,12 +400,12 @@ void RestHandler::apiLabelAdd(const HttpRequest &message)
 		Configuration::instance()->saveConfigToDisk();
 
 		LOG_INF << fname << "User <" << tokenUser << "> added label <" << labelKey << ":" << value << ">";
-		message.reply(web::http::status_codes::OK, convertText2Json("Add label success"));
+		message.reply(web::http::status_codes::OK, Utility::text2json("Add label success"));
 	}
 	else
 	{
 		LOG_WAR << fname << "User <" << tokenUser << "> attempted to add label without value";
-		message.reply(web::http::status_codes::BadRequest, convertText2Json("query value required"));
+		message.reply(web::http::status_codes::BadRequest, Utility::text2json("query value required"));
 	}
 }
 
@@ -421,7 +421,7 @@ void RestHandler::apiLabelDel(const HttpRequest &message)
 	Configuration::instance()->saveConfigToDisk();
 
 	LOG_INF << fname << "User <" << tokenUser << "> deleted label <" << labelKey << ">";
-	message.reply(web::http::status_codes::OK, convertText2Json("Label delete success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("Label delete success"));
 }
 
 void RestHandler::apiUserPermissionsView(const HttpRequest &message)
@@ -507,7 +507,7 @@ void RestHandler::apiUserChangePwd(const HttpRequest &message)
 	Security::instance()->save();
 
 	LOG_INF << fname << "User <" << targetUser << "> changed password by <" << tokenUser << ">";
-	message.reply(web::http::status_codes::OK, convertText2Json("password changed success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("password changed success"));
 }
 
 void RestHandler::apiUserLock(const HttpRequest &message)
@@ -527,7 +527,7 @@ void RestHandler::apiUserLock(const HttpRequest &message)
 	Security::instance()->save();
 
 	LOG_INF << fname << "User <" << pathUserName << "> locked by " << tokenUser;
-	message.reply(web::http::status_codes::OK, convertText2Json("Lock user success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("Lock user success"));
 }
 
 void RestHandler::apiUserUnlock(const HttpRequest &message)
@@ -542,7 +542,7 @@ void RestHandler::apiUserUnlock(const HttpRequest &message)
 	Security::instance()->save();
 
 	LOG_INF << fname << "User <" << pathUserName << "> unlocked by " << tokenUser;
-	message.reply(web::http::status_codes::OK, convertText2Json("Unlock user success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("Unlock user success"));
 }
 
 void RestHandler::apiUserAdd(const HttpRequest &message)
@@ -557,7 +557,7 @@ void RestHandler::apiUserAdd(const HttpRequest &message)
 	Security::instance()->save();
 
 	LOG_INF << fname << "User <" << pathUserName << "> added by " << tokenUser;
-	message.reply(web::http::status_codes::OK, convertText2Json("User add success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("User add success"));
 }
 
 void RestHandler::apiUserView(const HttpRequest &message)
@@ -589,7 +589,7 @@ void RestHandler::apiUserDel(const HttpRequest &message)
 	Security::instance()->save();
 
 	LOG_INF << fname << "User <" << pathUserName << "> deleted by " << tokenUser;
-	message.reply(web::http::status_codes::OK, convertText2Json("User delete success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("User delete success"));
 }
 
 void RestHandler::apiUsersView(const HttpRequest &message)
@@ -624,7 +624,7 @@ void RestHandler::apiRoleUpdate(const HttpRequest &message)
 	Security::instance()->save();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> updated by " << tokenUser;
-	message.reply(web::http::status_codes::OK, convertText2Json("Role update success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("Role update success"));
 }
 
 void RestHandler::apiRoleDelete(const HttpRequest &message)
@@ -640,7 +640,7 @@ void RestHandler::apiRoleDelete(const HttpRequest &message)
 	Security::instance()->save();
 
 	LOG_INF << fname << "Role <" << pathRoleName << "> deleted by " << tokenUser;
-	message.reply(web::http::status_codes::OK, convertText2Json("Role delete success"));
+	message.reply(web::http::status_codes::OK, Utility::text2json("Role delete success"));
 }
 
 void RestHandler::apiUserGroupsView(const HttpRequest &message)
@@ -719,7 +719,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 
 	if (message.m_headers.count(HTTP_HEADER_JWT_Authorization) == 0)
 	{
-		message.reply(web::http::status_codes::NetworkAuthenticationRequired, convertText2Json("Username or Password missing"));
+		message.reply(web::http::status_codes::NetworkAuthenticationRequired, Utility::text2json("Username or Password missing"));
 	}
 	else if (auto keycloak = dynamic_pointer_cast_if<SecurityKeycloak>(Security::instance()))
 	{
@@ -733,7 +733,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 		if (!Security::instance()->verifyUserKey(uname, passwd))
 		{
 			// passwd failed
-			message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect user password"));
+			message.reply(web::http::status_codes::Unauthorized, Utility::text2json("Incorrect user password"));
 		}
 		else if (user && !user->mfaEnabled())
 		{
@@ -771,7 +771,7 @@ void RestHandler::apiUserLogin(const HttpRequest &message)
 				else
 				{
 					// totp failed
-					message.reply(web::http::status_codes::Unauthorized, convertText2Json("Incorrect totp key"));
+					message.reply(web::http::status_codes::Unauthorized, Utility::text2json("Incorrect totp key"));
 				}
 			}
 		}
@@ -939,7 +939,7 @@ void RestHandler::apiUserTotpDisable(const HttpRequest &message)
 			throw std::invalid_argument("Only administrator have permission to deactive MFA for others");
 		}
 		user->totpDeactive();
-		message.reply(web::http::status_codes::OK, convertText2Json("2FA deactive success"));
+		message.reply(web::http::status_codes::OK, Utility::text2json("2FA deactive success"));
 
 		// persist
 		Security::instance()->save();

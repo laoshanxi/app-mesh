@@ -297,13 +297,13 @@ bool User::totpValidateCode(const std::string &totpCode)
 	if (res != OATH_OK)
 	{
 		LOG_WAR << fname << "oath_base32_decode failed: " << oath_strerror(res);
-		throw std::runtime_error(Utility::stringFormat("Failed to oath_base32_decode: %s", oath_strerror(res)));
+		throw std::domain_error(Utility::stringFormat("Failed to oath_base32_decode: %s", oath_strerror(res)));
 	}
 	res = oath_totp_validate(key, keyLen, time(NULL), totp_time_duration_seconds, 0, 1, totpCode.c_str());
 	if (res < 0)
 	{
 		LOG_WAR << fname << "invalid token <" << totpCode << ">:" << oath_strerror(res);
-		throw std::runtime_error(Utility::stringFormat("%s", oath_strerror(res)));
+		throw std::domain_error(Utility::stringFormat("%s", oath_strerror(res)));
 	}
 #endif
 	LOG_INF << fname << "2FA validate success for user: " << m_name;

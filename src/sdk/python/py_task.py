@@ -1,4 +1,4 @@
-"""Python remote code string execution for application pyrun"""
+"""Python remote code string execution for application pyexec"""
 
 #!/usr/bin/env python
 

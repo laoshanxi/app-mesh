@@ -212,9 +212,10 @@ public:
 	/// <returns></returns>
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
-	virtual void sendMessage(std::shared_ptr<void> asyncHttpRequest);
-	virtual void getMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
-	virtual void respMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
+	void sendMessage(std::shared_ptr<void> asyncHttpRequest);
+	void getMessage(const std::string &processKey, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
+	void respMessage(const std::string &processKey, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
+	std::string taskStatus(std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
 
 	/// <summary>
 	/// get last error
@@ -247,6 +248,7 @@ private:
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	const std::string m_uuid;
+	const std::string m_key;
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_returnValue;
 

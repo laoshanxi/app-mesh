@@ -26,7 +26,8 @@ public class AppMeshClientTest {
     @BeforeEach
     public void setup() {
         LOGGER.info("setup");
-        client = new AppMeshClient.Builder().baseURL(BASE_URL).caCert(CA_FILE).clientCert(CLIENT_CERT_FILE, CLIENT_CERT_KET_FILE).build();
+        client = new AppMeshClient.Builder().baseURL(BASE_URL).caCert(CA_FILE)
+                .clientCert(CLIENT_CERT_FILE, CLIENT_CERT_KET_FILE).build();
         assertNotNull(client, "AppMeshClient should be initialized");
     }
 
@@ -128,8 +129,8 @@ public class AppMeshClientTest {
     public void testAppAddAndView() throws IOException {
         client.login(USERNAME, PASSWORD, null, "P1W", "");
 
-        JSONObject newAppConfig =
-                new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'").put("description", "Test application");
+        JSONObject newAppConfig = new JSONObject().put("name", "testApp").put("command", "echo 'Hello, AppMesh!'")
+                .put("description", "Test application");
 
         JSONObject addedApp = client.addApp("testApp", newAppConfig);
         assertNotNull(addedApp, "addApp should return a non-null JSONObject");
@@ -157,6 +158,6 @@ public class AppMeshClientTest {
         assertTrue(client.deleteTag("ABC"));
         assertTrue(!client.viewTags().containsKey("ABC"));
 
-        System.out.println(client.metrics());
+        System.out.println(client.getMetrics());
     }
 }

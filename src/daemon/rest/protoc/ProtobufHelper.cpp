@@ -38,44 +38,34 @@ bool Response::deserialize(const char *data, int dataSize)
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "failed with error :" << e.what();
+		LOG_ERR << fname << "failed with error: " << e.what();
 	}
 	return false;
 }
 
-Request::Request()
-{
-}
-
-Request::~Request()
-{
-}
-
 std::shared_ptr<msgpack::sbuffer> Request::serialize() const
 {
-	// pack
 	auto sbuf = std::make_shared<msgpack::sbuffer>();
 	msgpack::pack(*sbuf, *this);
 	return sbuf;
 }
 
-bool Request::deserialize(const char *data, int dataSize)
+bool Request::deserialize(const char *data, std::size_t dataSize)
 {
 	const static char fname[] = "Request::deserialize() ";
 	try
 	{
 		msgpack::unpacked result;
 		msgpack::unpack(result, data, dataSize);
+
 		msgpack::object obj = result.get();
-		Request rest = obj.as<Request>();
-		*this = rest;
-		// this->body = Utility::htmlEntitiesDecode(this->body);
-		// LOG_INF << fname << "verifyHMAC :" << this->verifyHMAC(); // on-demand
+		obj.convert(*this); // directly fill into *this
+
 		return true;
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "failed with error :" << e.what();
+		LOG_ERR << fname << "failed with error: " << e.what();
 	}
 	return false;
 }
@@ -102,7 +92,7 @@ int ProtobufHelper::readMsgHeader(const ACE_SSL_SOCK_Stream &socket, ssize_t &re
 	auto data = std::get<0>(result);
 	if (recvReturn <= 0)
 	{
-		LOG_DBG << fname << "read header length failed with error :" << last_error_msg();
+		LOG_DBG << fname << "read header length failed with error: " << last_error_msg();
 		return -1;
 	}
 

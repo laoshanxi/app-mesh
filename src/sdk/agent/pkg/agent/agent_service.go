@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,6 +54,7 @@ var (
 	logger         *zap.SugaredLogger = utils.GetLogger()
 	httpRequestMap sync.Map           // Cache for asynchronous responses
 
+	REST_PATH_TASK         = regexp.MustCompile(`/appmesh/app/([^/*]+)/task`)
 	localConnection        *Connection // TCP connection to the local server
 	remoteConnections      sync.Map    // TCP connections to remote servers
 	remoteConnectionsMutex sync.Mutex
@@ -354,9 +356,10 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	if targetConnection != localConnection {
 		request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_TCP
 		// File download & upload
-		if request.RequestUri == REST_PATH_DOWNLOAD {
+		switch request.RequestUri {
+		case REST_PATH_DOWNLOAD:
 			request.Headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = "true"
-		} else if request.RequestUri == REST_PATH_UPLOAD {
+		case REST_PATH_UPLOAD:
 			request.Headers[HTTP_HEADER_KEY_X_Send_File_Socket] = "true"
 		}
 	}

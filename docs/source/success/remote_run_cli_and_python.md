@@ -49,7 +49,7 @@ PING www.a.shifen.com (14.215.177.39) 56(84) bytes of data.
 Use metadata to input python script which would be executed on remote side:
 
 ```shell
-# appc run -n  pyrun -g "print(99); print(2+9)" -t -1
+# appc run -n  pyexec -g "print(99); print(2+9)" -t -1
 99
 11
 ```

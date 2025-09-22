@@ -19,13 +19,6 @@ RestBase::~RestBase()
 {
 }
 
-nlohmann::json RestBase::convertText2Json(const std::string &msg)
-{
-    nlohmann::json result;
-    result[REST_TEXT_MESSAGE_JSON_KEY] = std::string(msg);
-    return result;
-}
-
 void RestBase::handle_get(const HttpRequest &message)
 {
     handleRest(message, m_restGetFunctions);
@@ -60,73 +53,72 @@ void RestBase::handleRest(const HttpRequest &message, const std::map<std::string
 {
     const static char fname[] = "RestBase::handleRest() ";
     REST_INFO_PRINT;
-    std::function<void(const HttpRequest &)> stdFunction;
+
     const auto path = Utility::stringReplace(message.m_relative_uri, "//", "/");
 
+    // Root handler
     if (path == "/" || path.empty())
     {
-        static auto body = std::string(REST_ROOT_TEXT_MESSAGE);
-        static auto contentType = std::string("text/html; charset=utf-8");
+        static std::string body(REST_ROOT_TEXT_MESSAGE);
+        static std::string contentType("text/html; charset=utf-8");
         message.reply(web::http::status_codes::OK, body, contentType);
         return;
     }
 
-    bool findRest = false;
-    for (const auto &kvp : restFunctions)
-    {
-        if (path == kvp.first || boost::regex_match(path, boost::regex(kvp.first)))
+    // Find matching REST function
+    auto it = std::find_if(
+        restFunctions.begin(), restFunctions.end(),
+        [&](const std::pair<const std::string, std::function<void(const HttpRequest &)>> &kvp)
         {
-            findRest = true;
-            stdFunction = kvp.second;
-            break;
-        }
-    }
-    if (!findRest)
+            return path == kvp.first || boost::regex_match(path, boost::regex(kvp.first));
+        });
+
+    if (it == restFunctions.end())
     {
-        LOG_WAR << fname << "Path not found: " << message.m_method << ":" << path;
-        message.reply(web::http::status_codes::NotFound, convertText2Json(Utility::stringFormat("Path not found %s:%s", message.m_method.c_str(), path.c_str())));
+        LOG_WAR << fname << "404 NotFound " << message.m_method << ":" << path;
+        message.reply(web::http::status_codes::NotFound, Utility::text2json("Path not found " + message.m_method + ":" + path));
         return;
     }
 
+    // TODO: those exception are well designed for different usage that reflect Client result
     try
     {
-        // this is REST handler service, defend XSS attach before enter to REST handler
-        const_cast<HttpRequest *>(&message)->m_relative_uri = replaceXssRiskChars(message.m_relative_uri);
-        /*
-        * TODO:
-        // task run use native string instead of json, skip it
-        if (message.m_body->length() && !Utility::endWith(message.m_relative_uri, "/task"))
-        {
-            auto body = nlohmann::json::parse(*message.m_body);
-            if (body.is_string())
-            {
-                body = nlohmann::json::parse(body.get<std::string>());
-            }
-            // tranverseJsonTree(body);
-            *(const_cast<HttpRequest *>(&message)->m_body) = body.dump();
-        }
-        */
-        stdFunction(message);
+        it->second(message);
     }
     catch (const NotFoundException &e)
     {
-        LOG_WAR << fname << web::http::status_codes::NotFound << " : " << e.what();
-        message.reply(web::http::status_codes::NotFound, convertText2Json(e.what()));
+        LOG_WAR << fname << "404 NotFound " << message.m_method << ":" << path << " - " << e.what();
+        message.reply(web::http::status_codes::NotFound, Utility::text2json(e.what()));
     }
-    catch (const std::underflow_error &e)
+    catch (const std::domain_error &e)
     {
-        LOG_WAR << fname << "Authentication failed for path " << path << ": " << e.what();
-        message.reply(web::http::status_codes::Unauthorized, convertText2Json(e.what()));
+        // Security issue: domain_error -> 401
+        LOG_WAR << fname << "401 Unauthorized " << message.m_method << ":" << path << " - " << e.what();
+        message.reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()));
+    }
+    catch (const std::invalid_argument &e)
+    {
+        // Input issue: invalid_argument -> 400
+        LOG_WAR << fname << "400 BadRequest " << message.m_method << ":" << path << " - " << e.what();
+        message.reply(web::http::status_codes::BadRequest, Utility::text2json(e.what()));
+    }
+    catch (const std::runtime_error &e)
+    {
+        // Logic issue: runtime_error -> 412
+        LOG_WAR << fname << "412 RuntimeError " << message.m_method << ":" << path << " - " << e.what();
+        message.reply(web::http::status_codes::PreconditionFailed, Utility::text2json(e.what()));
     }
     catch (const std::exception &e)
     {
-        LOG_WAR << fname << "Request failed for path " << path << ": " << e.what();
-        message.reply(web::http::status_codes::BadRequest, convertText2Json(e.what()));
+        // Others: Server issue
+        LOG_ERR << fname << "500 InternalServerError " << message.m_method << ":" << path << " - " << e.what();
+        message.reply(web::http::status_codes::InternalError, Utility::text2json("Internal server error"));
     }
     catch (...)
     {
-        LOG_WAR << fname << "Unknown exception occurred for path " << path;
-        message.reply(web::http::status_codes::BadRequest, convertText2Json("unknown exception"));
+        // Others: Server issue
+        LOG_ERR << fname << "500 InternalServerError " << message.m_method << ":" << path << " - Unknown exception";
+        message.reply(web::http::status_codes::InternalError, Utility::text2json("Unknown exception"));
     }
 }
 
@@ -160,7 +152,7 @@ const std::string RestBase::getJwtToken(const HttpRequest &message)
     }
     else
     {
-        throw std::underflow_error("No authentication token provided");
+        throw std::domain_error("No authentication token provided");
     }
     return token;
 }
@@ -281,7 +273,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     if (TOKEN_BLACK_LIST::instance()->isTokenBlacklisted(token))
     {
         LOG_WAR << fname << "Token is blacklisted";
-        throw std::underflow_error("Token has been revoked");
+        throw std::domain_error("Token has been revoked");
     }
 
     const auto decodedToken = decodeJwtToken(token);
@@ -297,7 +289,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     if (!decodedToken.has_subject())
     {
         LOG_WAR << fname << "Token missing subject claim";
-        throw std::underflow_error("No user info in token");
+        throw std::domain_error("No user info in token");
     }
 
     // Extract user information
@@ -311,7 +303,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     if (userObj->locked())
     {
         LOG_WAR << fname << "User account is locked: " << userName;
-        throw std::underflow_error(Utility::stringFormat("User <%s> was locked", userName.c_str()));
+        throw std::domain_error(Utility::stringFormat("User <%s> was locked", userName.c_str()));
     }
 
     // Load crypto keys for verification (done once due to static variables)
@@ -346,7 +338,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
         else
         {
             LOG_ERR << fname << "Unsupported JWT algorithm: " << algo;
-            throw std::underflow_error("JWT algorithm not supported");
+            throw std::domain_error("JWT algorithm not supported");
         }
 
         // Perform verification
@@ -356,7 +348,7 @@ const std::tuple<std::string, std::string, std::set<std::string>> RestBase::veri
     catch (const std::exception &e)
     {
         LOG_WAR << fname << "User <" << userName << "> token verification failed: " << e.what();
-        throw std::underflow_error(Utility::stringFormat("Authentication failed: %s", e.what()));
+        throw std::domain_error(Utility::stringFormat("Authentication failed: %s", e.what()));
     }
 
     // Extract roles from resource_access

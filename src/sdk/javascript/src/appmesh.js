@@ -1,3 +1,4 @@
+// appmesh.js
 import axios from 'axios';
 import https from 'https';
 
@@ -12,6 +13,9 @@ const CONSTANTS = Object.freeze({
   DEFAULT_JWT_AUDIENCE: "appmesh-service",
   HTTP_HEADER_NAME_CSRF_TOKEN: "X-CSRF-Token",
   HTTP_COOKIE_NAME_CSRF_TOKEN: "appmesh_csrf_token",
+  HTTP_HEADER_KEY_AUTH: "Authorization",
+  HTTP_HEADER_KEY_X_TARGET_HOST: "X-Target-Host",
+  HTTP_HEADER_KEY_X_FILE_PATH: "X-File-Path",
 });
 
 // Environment detection
@@ -152,12 +156,11 @@ class AppMeshClient {
 
     // Host to forward requests to
     this.forwardingHost = null;
-    Object.defineProperty(this, 'forwardingHost', { writable: true, configurable: true });
 
     // Configure axios instance
     const axiosConfig = {
       baseURL,
-      timeout: 120000, // 120 seconds
+      timeout: 300000, // 5 minutes
       httpsAgent: ENV.isNode && (sslConfig ?
         new https.Agent({
           ...sslConfig,
@@ -216,7 +219,7 @@ class AppMeshClient {
 
     const auth = base64Utils.encode(`${username}:${password}`);
     const headers = {
-      "Authorization": `Basic ${auth}`,
+      [CONSTANTS.HTTP_HEADER_KEY_AUTH]: `Basic ${auth}`,
       "X-Set-Cookie": "true"
     };
     if (totpCode) headers["X-Totp-Code"] = totpCode;
@@ -253,7 +256,7 @@ class AppMeshClient {
       if (ENV.isNode && this._client.defaults.httpsAgent) {
         this._client.defaults.httpsAgent.destroy();
       }
-      
+
       // Remove CSRF token and cookies
       if (ENV.isNode) {
         this._client.defaults.headers.Cookie = null;
@@ -349,7 +352,7 @@ class AppMeshClient {
    */
   async check_app_health(name) {
     const response = await this._request("get", `/appmesh/app/${name}/health`);
-    return response.data === 0;
+    return parseInt(response.data) === 0;
   }
 
   /**
@@ -446,7 +449,7 @@ class AppMeshClient {
       stdout_index: stdout_index.toString(),
       stdout_maxsize: stdout_maxsize.toString(),
       process_uuid: process_uuid,
-      timeout: parseDuration(timeout)
+      timeout: parseDuration(timeout).toString()
     };
 
     const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
@@ -556,13 +559,37 @@ class AppMeshClient {
   }
 
   /**
+   * Send task to running application
+   * @param {string} appName - App name
+   * @param {string} data - Task data
+   * @param {number} [timeout=300] - Timeout in seconds
+   * @returns {Promise<string>} Response from app
+   */
+  async run_task(appName, data, timeout = 300) {
+    const response = await this._request("post", `/appmesh/app/${appName}/task`, data, {
+      params: { timeout: timeout.toString() }
+    });
+    return response.data;
+  }
+
+  /**
+   * Cancel running task
+   * @param {string} appName - App name
+   * @returns {Promise<boolean>} Success status
+   */
+  async cancel_task(appName) {
+    const response = await this._request("delete", `/appmesh/app/${appName}/task`);
+    return response.status === 200;
+  }
+
+  /**
    * Download remote file
    * @param {string} filePath - Remote file path
    * @param {string} localFile - Local file path
    * @param {boolean} [applyAttrs=true] - Apply file permissions
    */
   async download_file(filePath, localFile, applyAttrs = true) {
-    const headers = { "X-File-Path": encodeURIComponent(filePath) };
+    const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
     const response = await this._request("get", "/appmesh/file/download", null, {
       headers,
       config: {
@@ -580,7 +607,7 @@ class AppMeshClient {
       try {
         await fs.writeFile(localFile, Buffer.from(response.data));
 
-        if (applyAttrs) {
+        if (applyAttrs && process.platform !== 'win32') {
           const { headers } = response;
           // axios response header use lower case
           try {
@@ -595,7 +622,7 @@ class AppMeshClient {
               );
             }
           } catch (ex) {
-            console.warn("Failed to apply file attributes:", ex.message);
+            console.warn("Warning: Unable to change owner/group of", localFile, "Operation requires elevated privileges.");
           }
         }
       } catch (error) {
@@ -623,7 +650,7 @@ class AppMeshClient {
    * @param {boolean} [applyAttrs] - Copy file permissions
    */
   async upload_file(localFile, filePath, applyAttrs = true) {
-    const headers = { "X-File-Path": encodeURIComponent(filePath) };
+    const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
     let formData;
 
     if (ENV.isNode) {
@@ -647,7 +674,7 @@ class AppMeshClient {
 
       // Add file attributes
       if (applyAttrs) {
-        headers["X-File-Mode"] = stat.mode.toString();
+        headers["X-File-Mode"] = (stat.mode & 0o777).toString(); // Only permission bits
         headers["X-File-User"] = stat.uid.toString();
         headers["X-File-Group"] = stat.gid.toString();
       }
@@ -672,7 +699,7 @@ class AppMeshClient {
       formData.append("file", localFile);
     }
 
-    const response = await this._request("post", "/appmesh/file/upload", formData, {
+    await this._request("post", "/appmesh/file/upload", formData, {
       headers,
       config: {
         maxBodyLength: Infinity,
@@ -886,7 +913,9 @@ class AppMeshClient {
    * @returns {Promise<string>} Metrics text
    */
   async metrics() {
-    const response = await this._request("get", "/appmesh/metrics", { responseType: "text" });
+    const response = await this._request("get", "/appmesh/metrics", null, {
+      config: { responseType: "text" }
+    });
     return response.data;
   }
 
@@ -919,10 +948,10 @@ class AppMeshClient {
     // Add forwarding host if specified
     if (this.forwardingHost) {
       if (this.forwardingHost.includes(":")) {
-        headers["X-Target-Host"] = this.forwardingHost;
+        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost;
       } else {
         const parsedUrl = new URL(this.baseURL);
-        headers["X-Target-Host"] = `${this.forwardingHost}:${parsedUrl.port}`;
+        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = `${this.forwardingHost}:${parsedUrl.port}`;
       }
     }
     return headers;
@@ -972,6 +1001,7 @@ class AppMeshClient {
         // Join all cookies with semicolon separator
         this._client.defaults.headers.Cookie = cookies.join('; ');
       }
+
       return response;
     } catch (error) {
       if (error instanceof AppMeshError && error.statusCode === CONSTANTS.HTTP_STATUS_PRECONDITION_REQUIRED) {
@@ -1035,7 +1065,7 @@ class AppMeshClient {
    */
   onError(error) {
     console.log("AppMeshClient error:", error);
-    return error
+    return error instanceof AppMeshError ? error : new AppMeshError(error.message || 'Unknown error');
   }
 }
 
@@ -1112,5 +1142,5 @@ class AppRun {
 }
 
 // Export the main classes
-export { AppMeshClient, AppOutput, AppRun };
+export { AppMeshClient, AppOutput, AppRun, AppMeshError };
 export default AppMeshClient;

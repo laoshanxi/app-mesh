@@ -10,7 +10,7 @@ import (
 )
 
 // AppMeshServerHttpContext interacts with the App Mesh REST service over HTTPS for server-side applications.
-// Requires environment variables: APP_MESH_PROCESS_ID and APP_MESH_APPLICATION_NAME.
+// Requires environment variables: APP_MESH_PROCESS_KEY and APP_MESH_APPLICATION_NAME.
 type AppMeshServerHttpContext struct {
 	client *AppMeshClient
 }
@@ -23,11 +23,11 @@ func NewHttpContext(options Option) *AppMeshServerHttpContext {
 
 // getRuntimeEnv reads and validates required runtime environment variables.
 func (r *AppMeshServerHttpContext) getRuntimeEnv() (processID, appName string, err error) {
-	processID = os.Getenv("APP_MESH_PROCESS_ID")
+	processID = os.Getenv("APP_MESH_PROCESS_KEY")
 	appName = os.Getenv("APP_MESH_APPLICATION_NAME")
 
 	if processID == "" {
-		return "", "", errors.New("missing environment variable: APP_MESH_PROCESS_ID. This must be set by App Mesh service")
+		return "", "", errors.New("missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service")
 	}
 	if appName == "" {
 		return "", "", errors.New("missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service")

@@ -93,7 +93,7 @@ public:
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
 	static std::shared_ptr<HttpRequest> deserialize(const char *input, int inputSize, int tcpHandlerId);
-	static const nlohmann::json emptyJson();
+	static const nlohmann::json emptyJsonMessage();
 	void dump() const;
 	void verifyHMAC() const;
 
@@ -196,6 +196,7 @@ public:
 	void sendMessage(std::shared_ptr<void> taskRequest);
 	void getMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
 	void respMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
+	std::string taskStatus(std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
 
 private:
 	void cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request);
