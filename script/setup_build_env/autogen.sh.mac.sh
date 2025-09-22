@@ -32,7 +32,6 @@ BREW_PACKAGES=(
 	log4cpp
 	openldap
 	cryptopp
-	oath-toolkit
 	yaml-cpp
 	nlohmann-json
 	msgpack-cxx

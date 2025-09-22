@@ -37,21 +37,22 @@ public:
 class Request
 {
 public:
-	Request();
-	virtual ~Request();
+	Request() = default;
+	~Request() = default;
+
 	std::shared_ptr<msgpack::sbuffer> serialize() const;
-	bool deserialize(const char *data, int dataSize);
+	bool deserialize(const char *data, std::size_t dataSize);
 
 public:
 	std::string uuid;
 	std::string request_uri;
 	std::string http_method;
 	std::string client_addr;
-	std::vector<uint8_t> body;
+	std::vector<uint8_t> body; // raw binary
 	std::map<std::string, std::string> headers;
 	std::map<std::string, std::string> query;
 
-	MSGPACK_DEFINE_MAP(uuid, request_uri, http_method, http_method, client_addr, body, headers, query);
+	MSGPACK_DEFINE_MAP(uuid, request_uri, http_method, client_addr, body, headers, query);
 };
 
 /// <summary>

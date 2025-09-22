@@ -1913,4 +1913,117 @@ namespace os
 #endif
 	}
 
+	std::string createTmpFile(const std::string &fileName, const std::string &content)
+	{
+		const char *fname = "os::createTmpFile() ";
+
+		try
+		{
+			fs::path finalPath;
+
+#ifdef _WIN32
+			if (fileName.empty())
+			{
+				finalPath = fs::temp_directory_path() / fs::unique_path("appmesh-%%%%-%%%%.tmp");
+			}
+			else
+			{
+				finalPath = fs::absolute(fileName);
+			}
+
+			SECURITY_ATTRIBUTES sa{};
+			sa.nLength = sizeof(sa);
+			sa.bInheritHandle = FALSE;
+			sa.lpSecurityDescriptor = NULL;
+
+			HANDLE hFile = ::CreateFileA(
+				finalPath.string().c_str(),
+				GENERIC_WRITE,
+				0, // No sharing
+				&sa,
+				CREATE_ALWAYS,
+				FILE_ATTRIBUTE_TEMPORARY,
+				NULL);
+
+			if (hFile == INVALID_HANDLE_VALUE)
+			{
+				LOG_DBG << fname << "Failed to create file <" << finalPath.string() << "> with error " << ::GetLastError();
+				return {};
+			}
+
+			DWORD bytesWritten = 0;
+			if (!content.empty())
+			{
+				if (!::WriteFile(hFile, content.data(), static_cast<DWORD>(content.size()), &bytesWritten, NULL) ||
+					bytesWritten != content.size())
+				{
+					LOG_DBG << fname << "Failed to write to file <" << finalPath.string() << ">";
+					::CloseHandle(hFile);
+					return {};
+				}
+			}
+
+			::FlushFileBuffers(hFile);
+			::CloseHandle(hFile);
+
+#elif defined(__unix__) || defined(__APPLE__)
+			std::string tmpl;
+			if (fileName.empty())
+			{
+				tmpl = (fs::temp_directory_path() / "appmesh-XXXXXX").string();
+			}
+			else
+			{
+				tmpl = fs::absolute(fileName).string() + "-XXXXXX";
+			}
+
+			std::vector<char> buf(tmpl.begin(), tmpl.end());
+			buf.push_back('\0');
+
+			int fd = ::mkstemp(buf.data());
+			if (fd == -1)
+			{
+				LOG_DBG << fname << "Failed to create temp file from template <" << tmpl << ">";
+				return {};
+			}
+
+			if (::fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) == -1) // 0644
+			{
+				LOG_DBG << fname << "Failed to set permissions on file <" << buf.data() << ">";
+				::close(fd);
+				::unlink(buf.data());
+				LOG_DBG << fname << "file <" << buf.data() << "> removed";
+				return {};
+			}
+
+			if (!content.empty())
+			{
+				ssize_t written = ::write(fd, content.data(), content.size());
+				if (written == -1 || static_cast<size_t>(written) != content.size())
+				{
+					LOG_DBG << fname << "Failed to write content to file <" << buf.data() << ">";
+					::close(fd);
+					::unlink(buf.data());
+					LOG_DBG << fname << "file <" << buf.data() << "> removed";
+					return {};
+				}
+				::fsync(fd);
+			}
+
+			::close(fd);
+			finalPath = buf.data();
+
+#else
+#error "Unsupported platform"
+#endif
+
+			return finalPath.string();
+		}
+		catch (const std::exception &e)
+		{
+			LOG_DBG << fname << "Exception: " << e.what();
+			return {};
+		}
+	}
+
 } // namespace os

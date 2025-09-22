@@ -270,7 +270,7 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 				}
 				catch (const std::exception &e)
 				{
-					LOG_ERR << fname << "Failed load application file <" << path << ">, error :" << e.what();
+					LOG_ERR << fname << "Failed load application file <" << path << ">, error: " << e.what();
 				}
 			}
 		}
@@ -524,7 +524,7 @@ void Configuration::saveConfigToDisk()
 			}
 			else
 			{
-				LOG_ERR << fname << "Failed to write configuration file <" << configFilePath << ">, error :" << last_error_msg();
+				LOG_ERR << fname << "Failed to write configuration file <" << configFilePath << ">, error: " << last_error_msg();
 			}
 		}
 	}

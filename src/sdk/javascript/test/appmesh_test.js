@@ -54,7 +54,7 @@ async function test() {
 
     // File operations test
     await client.run_app_sync({
-      name: 'pyrun',
+      name: 'pyexec',
       metadata:
         "import os; [os.remove('/tmp/2.log') if os.path.exists('/tmp/2.log') else None]"
     })

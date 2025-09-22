@@ -254,12 +254,12 @@ void LinuxCgroup::writeValue(const std::string &cgroupPath, long long value)
 		}
 		else
 		{
-			LOG_ERR << fname << "Write <" << value << "> to file <" << cgroupPath << "> failed with error :" << last_error_msg();
+			LOG_ERR << fname << "Write <" << value << "> to file <" << cgroupPath << "> failed with error: " << last_error_msg();
 		}
 	}
 	else
 	{
-		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << last_error_msg();
+		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error: " << last_error_msg();
 	}
 }
 
@@ -278,12 +278,12 @@ long long LinuxCgroup::readValue(const std::string &cgroupPath)
 		}
 		else
 		{
-			LOG_ERR << fname << "read <" << value << "> from file <" << cgroupPath << "> failed with error :" << last_error_msg();
+			LOG_ERR << fname << "read <" << value << "> from file <" << cgroupPath << "> failed with error: " << last_error_msg();
 		}
 	}
 	else
 	{
-		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error :" << last_error_msg();
+		LOG_ERR << fname << "Failed open file <" << cgroupPath << ">, error: " << last_error_msg();
 	}
 	return value;
 }

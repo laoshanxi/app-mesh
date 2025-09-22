@@ -241,4 +241,13 @@ namespace os
 
     std::string getUsernameByUid(uid_t uid = get_uid());
 
+    /**
+     * @brief Creates a secure temporary file, writes given content, and returns its path.
+     *
+     * @param fileName   Base filename. If empty, a randomized name "appmesh-%%%%-%%%%.tmp" is used.
+     * @param content    String content to write into the file.
+     * @return Output the full path of the created file, or empty string on failure.
+     */
+    std::string createTmpFile(const std::string &fileName, const std::string &content);
+
 } // namespace os

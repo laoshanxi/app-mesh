@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"os"
 	"sync"
@@ -71,8 +72,8 @@ func (r *Connection) SendRequestData(request *appmesh.Request) error {
 	return r.SendMessage(bodyData)
 }
 
-// SendFileData uploads a file in chunks over the connection
-func (r *Connection) SendFileData(localFile string) error {
+// SendFileDataWithContext uploads a file in chunks over the connection with context support
+func (r *Connection) SendFileDataWithContext(ctx context.Context, localFile string) error {
 	file, err := os.Open(localFile)
 	if err != nil {
 		logger.Errorf("Error opening file: %v", err)
@@ -88,6 +89,12 @@ func (r *Connection) SendFileData(localFile string) error {
 	defer r.mu.Unlock()
 
 	for {
+		// Check if context is cancelled before each chunk
+		if err := ctx.Err(); err != nil {
+			logger.Errorf("File upload cancelled: %v", err)
+			return err
+		}
+
 		// Read a chunk from the file
 		n, err := reader.Read(buf)
 		if err != nil && err != io.EOF {
@@ -100,7 +107,6 @@ func (r *Connection) SendFileData(localFile string) error {
 		}
 
 		err = r.SendMessage(buf[:n])
-
 		if err != nil {
 			return err
 		}

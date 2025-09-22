@@ -79,6 +79,7 @@ $WGET_A https://go.dev/dl/go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/local/go && tar -C /usr/local -xzf go${GO_VER}.linux-${GO_ARCH}.tar.gz
 rm -rf /usr/bin/go && ln -s /usr/local/go/bin/go /usr/bin/go
 go version
+go env -w GOPROXY=https://goproxy.io,direct;go env -w GOBIN=/usr/local/bin;go env -w GO111MODULE=on
 
 # check libssl in case of setup_build_env/update_openssl.sh not executed
 if [ -f "/usr/local/ssl/include/openssl/ssl.h" ]; then

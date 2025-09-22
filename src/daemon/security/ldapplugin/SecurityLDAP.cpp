@@ -142,7 +142,7 @@ bool SecurityLDAP::verifyUserKey(const std::string &userName, const std::string 
     if (userName.empty() || userKey.empty())
     {
         LOG_WAR << fname << "Empty username or password";
-        throw std::invalid_argument("username and password cannot be empty");
+        throw std::domain_error("username and password cannot be empty");
     }
 
     auto ldap = connect();
@@ -160,12 +160,12 @@ bool SecurityLDAP::verifyUserKey(const std::string &userName, const std::string 
             // TODO: validate TOTP
         }
         LOG_WAR << fname << "Authentication failed for user: " << userName;
-        throw std::invalid_argument("verify user password failed");
+        throw std::domain_error("verify user password failed");
     }
     else
     {
         LOG_ERR << fname << "Failed to connect to LDAP server";
-        throw std::invalid_argument("failed to connect to LDAP server");
+        throw std::runtime_error("failed to connect to LDAP server");
     }
 }
 

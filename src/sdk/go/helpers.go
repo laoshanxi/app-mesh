@@ -1,10 +1,12 @@
 package appmesh
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/url"
@@ -245,4 +247,11 @@ func SetTcpNoDelay(conn net.Conn) error {
 	}
 
 	return tcpConn.SetNoDelay(true)
+}
+
+func HtmlUnescapeBytes(b []byte) []byte {
+	if !bytes.Contains(b, []byte{'&'}) {
+		return b
+	}
+	return []byte(html.UnescapeString(string(b)))
 }

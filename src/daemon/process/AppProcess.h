@@ -9,12 +9,12 @@
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <boost/thread/synchronized_value.hpp>
 
+#include "../../common/AtomicHandleGuard.hpp"
 #include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
-#include "../rest/HttpRequest.h"
 
 class LinuxCgroup;
 class ResourceLimitation;
@@ -109,7 +109,8 @@ public:
 	/// Process UUID
 	/// </summary>
 	/// <returns></returns>
-	const std::string getuuid() const;
+	const std::string &getuuid() const;
+	const std::string &getkey() const;
 
 	/// <summary>
 	/// Get Docker container ID
@@ -212,10 +213,6 @@ public:
 	/// <returns></returns>
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
 
-	virtual void sendMessage(std::shared_ptr<void> asyncHttpRequest);
-	virtual void getMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
-	virtual void respMessage(const std::string &processId, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest);
-
 	/// <summary>
 	/// get last error
 	/// </summary>
@@ -232,8 +229,8 @@ private:
 	off_t m_stdOutMaxSize;
 	mutable std::recursive_mutex m_processMutex; // onTimerCheckStdout, terminate, spawnProcess
 
-	std::atomic<ACE_HANDLE> m_stdinHandler;
-	std::atomic<ACE_HANDLE> m_stdoutHandler;
+	AtomicHandleGuard m_stdinHandler;
+	AtomicHandleGuard m_stdoutHandler;
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;
 	mutable std::recursive_mutex m_outFileMutex;
@@ -247,12 +244,10 @@ private:
 
 	std::unique_ptr<LinuxCgroup> m_cgroup;
 	const std::string m_uuid;
+	const std::string m_key;
 	std::atomic<pid_t> m_pid;
 	std::atomic<int> m_returnValue;
 
 protected:
 	boost::atomic_shared_ptr<std::string> m_startError;
-
-private:
-	TaskRequest m_task; // already have mutex (Application::m_process.synchronize())
 };

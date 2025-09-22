@@ -3,10 +3,11 @@
 
 import json
 import os
+import sys
 import socket
 import uuid
 import requests
-from .client_http import AppMeshClient, EncodingResponse
+from .client_http import AppMeshClient
 from .tcp_transport import TCPTransport
 from .tcp_messages import RequestMessage, ResponseMessage
 
@@ -56,7 +57,7 @@ class AppMeshClientTCP(AppMeshClient):
         rest_ssl_verify=AppMeshClient.DEFAULT_SSL_CA_CERT_PATH if os.path.exists(AppMeshClient.DEFAULT_SSL_CA_CERT_PATH) else False,
         rest_ssl_client_cert=None,
         jwt_token=None,
-        tcp_address=("localhost", 6059),
+        tcp_address=("127.0.0.1", 6059),
     ):
         """Construct an App Mesh client TCP object to communicate securely with an App Mesh server over TLS.
 
@@ -78,7 +79,7 @@ class AppMeshClientTCP(AppMeshClient):
             jwt_token (str, optional): JWT token for authentication. Used in methods requiring login and user authorization.
 
             tcp_address (Tuple[str, int], optional): Address and port for establishing a TCP connection to the server.
-                Defaults to `("localhost", 6059)`.
+                Defaults to `("127.0.0.1", 6059)`.
         """
         self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=rest_ssl_verify, ssl_client_cert=rest_ssl_client_cert)
         super().__init__(rest_ssl_verify=rest_ssl_verify, rest_ssl_client_cert=rest_ssl_client_cert, jwt_token=jwt_token)
@@ -115,8 +116,9 @@ class AppMeshClientTCP(AppMeshClient):
             self.tcp_transport.connect()
 
         appmesh_request = RequestMessage()
-        if super().jwt_token:
-            appmesh_request.headers["Authorization"] = "Bearer " + super().jwt_token
+        token = self._get_access_token()
+        if token:
+            appmesh_request.headers[self.HTTP_HEADER_KEY_AUTH] = token
         if super().forward_to and len(super().forward_to) > 0:
             raise Exception("Not support forward request in TCP mode")
         appmesh_request.headers[self.HTTP_HEADER_KEY_USER_AGENT] = self.HTTP_USER_AGENT_TCP
@@ -159,7 +161,7 @@ class AppMeshClientTCP(AppMeshClient):
         if appmesh_resp.body_msg_type:
             response.headers["Content-Type"] = appmesh_resp.body_msg_type
 
-        return EncodingResponse(response)
+        return AppMeshClient.EncodingResponse(response)
 
     ########################################
     # File management
@@ -189,7 +191,7 @@ class AppMeshClientTCP(AppMeshClient):
                     break
                 fp.write(chunk_data)
 
-        if apply_file_attributes:
+        if apply_file_attributes and sys.platform != "win32":
             if "X-File-Mode" in resp.headers:
                 os.chmod(path=local_file, mode=int(resp.headers["X-File-Mode"]))
             if "X-File-User" in resp.headers and "X-File-Group" in resp.headers:

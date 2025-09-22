@@ -93,5 +93,4 @@ For totally backend API integration, request side can implement Truncate algorit
 ## Reference
 
 - [Beginner's Guide to TOTP](https://jacob.jkrall.net/totp)
-- [OATH Toolkit](https://www.nongnu.org/oath-toolkit/liboath-api/liboath-oath.h.html)
 - [Two-factor authentication](https://vorbrodt.blog/2019/03/20/two-factor-authentication/)

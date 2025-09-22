@@ -1428,6 +1428,13 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 #endif
 }
 
+nlohmann::json Utility::text2json(const std::string &str)
+{
+	nlohmann::json result;
+	result[REST_TEXT_MESSAGE_JSON_KEY] = std::string(str);
+	return result;
+}
+
 bool Utility::containsSpecialCharacters(const std::string &str)
 {
 	for (const char &c : str)
