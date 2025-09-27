@@ -407,8 +407,8 @@ ACE_SSL_Context *TcpHandler::initTcpSSL(ACE_SSL_Context *context)
 		LOG_WAR << fname << "SSL_CTX_set_ecdh_auto failed: " << last_error_msg();
 	}
 
-	// Set modern TLS cipher suites
-	const char *tls12Ciphers = "ECDHE-RSA-AESGCM:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA";
+	// Configure cipher suites to prioritize security, explicitly excluding weak ciphers
+	const char *tls12Ciphers = "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5";
 	if (!SSL_CTX_set_cipher_list(context->context(), tls12Ciphers))
 	{
 		LOG_WAR << fname << "SSL_CTX_set_cipher_list failed: " << last_error_msg();
