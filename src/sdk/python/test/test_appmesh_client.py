@@ -1,4 +1,5 @@
 """Test Python SDK"""
+
 import sys
 import os
 import json
@@ -21,7 +22,7 @@ from appmesh import AppMeshClient, AppMeshClientTCP, App
 def get_test_paths():
     """return platform specific paths"""
     tmpdir = tempfile.gettempdir()
-    if sys.platform == "win32":  # Windows
+    if sys.platform == "win32":
         return {
             "server_log": r"C:\local\appmesh\work\server.log",
             "tmp_file": os.path.join(tmpdir, "2.log"),
@@ -29,7 +30,17 @@ def get_test_paths():
             "etc_file": r"C:\Windows\System32\drivers\etc\hosts",
             "etc_copy": os.path.join(tmpdir, "hosts-copy"),
         }
-    else:  # Linux
+    elif sys.platform.startswith("darwin"):
+        # macOS: use /etc/hosts for etc_file, and a temp copy place
+        return {
+            "server_log": "/opt/appmesh/work/server.log",
+            "tmp_file": os.path.join(tmpdir, "2.log"),
+            "tmp_file2": os.path.join(tmpdir, "3.log"),
+            "etc_file": "/etc/hosts",
+            "etc_copy": os.path.join(tmpdir, "hosts-copy"),
+        }
+    else:
+        # Linux or other
         return {
             "server_log": "/opt/appmesh/work/server.log",
             "tmp_file": "/tmp/2.log",
@@ -42,8 +53,13 @@ def get_test_paths():
 def get_ping_command():
     """return platform specific ping command"""
     if sys.platform == "win32":
-        return "ping github.com -n 2 -w 2000"
+        return "ping github.com -n 5 -w 2000"
+    elif sys.platform.startswith("darwin"):
+        # On macOS, -c count, -W wait (in ms) is not supported, use -c and maybe -t TTL
+        # Use `ping -c 5 github.com`
+        return "ping github.com -c 5"
     else:
+        # Linux
         return "ping github.com -w 5"
 
 
@@ -52,7 +68,7 @@ class TestAppMeshClient(TestCase):
     unit test for AppMeshClient
     """
 
-    def test_app_run(self):
+    def test_09_app_run(self):
         """test app run"""
         client = AppMeshClient()
         client.login("admin", "admin123")
@@ -73,20 +89,11 @@ class TestAppMeshClient(TestCase):
             client.run_app_sync(app=App(app_data), max_time_seconds=5, life_cycle_seconds=6)[0],
         )
 
-        self.assertEqual(
-            9,
-            client.run_app_sync(
-                App({"command": get_ping_command(), "shell": True}),
-                max_time_seconds=4,
-            )[0],
-        )
-        run = client.run_app_async(
-            App({"command": get_ping_command(), "shell": True}),
-            max_time_seconds=6,
-        )
+        self.assertEqual(9, client.run_app_sync(App({"command": get_ping_command(), "shell": True}), max_time_seconds=4)[0])
+        run = client.run_app_async(App({"command": get_ping_command(), "shell": True}), max_time_seconds=6)
         run.wait()
 
-    def test_file(self):
+    def test_08_file(self):
         """test file"""
         paths = get_test_paths()
         client = AppMeshClientTCP()
@@ -116,7 +123,7 @@ class TestAppMeshClient(TestCase):
                 self.assertEqual(etc.read(), local.read())
         os.remove("etc-local")
 
-    def test_config(self):
+    def test_04_config(self):
         """test config"""
         client = AppMeshClientTCP()
         client.login("admin", "admin123")
@@ -126,7 +133,7 @@ class TestAppMeshClient(TestCase):
         self.assertEqual(client.set_log_level("INFO"), "INFO")
         self.assertEqual(client.set_config({"REST": {"SSL": {"VerifyServer": True}}})["REST"]["SSL"]["VerifyServer"], True)
 
-    def test_tag(self):
+    def test_05_tag(self):
         """test tag"""
         client = AppMeshClient()
         client.login("admin", "admin123")
@@ -135,7 +142,7 @@ class TestAppMeshClient(TestCase):
         self.assertTrue(client.delete_tag("MyTag"))
         self.assertNotIn("MyTag", client.view_tags())
 
-    def test_app(self):
+    def test_06_app(self):
         """test application"""
         client = AppMeshClient()
         client.login("admin", "admin123")
@@ -147,7 +154,7 @@ class TestAppMeshClient(TestCase):
         self.assertEqual(client.check_app_health("ping"), True)
         client.get_app_output("ping")
 
-    def test_app_mgt(self):
+    def test_07_app_mgt(self):
         """test application management"""
         client = AppMeshClient()
         client.login("admin", "admin123")
@@ -159,7 +166,7 @@ class TestAppMeshClient(TestCase):
         self.assertTrue(client.disable_app("ping"))
         self.assertTrue(client.enable_app("ping"))
 
-    def test_auth(self):
+    def test_01_auth(self):
         """test authentication"""
         client = AppMeshClient()
         with self.assertRaises(Exception):
@@ -187,7 +194,7 @@ class TestAppMeshClient(TestCase):
         self.assertIsNotNone(client.login("admin", "admin123"))
         self.assertIsNotNone(client.view_all_apps())
 
-    def test_user(self):
+    def test_02_user(self):
         """test user"""
         client = AppMeshClient()
         self.assertIsNotNone(client.login("admin", "admin123"))
@@ -220,7 +227,7 @@ class TestAppMeshClient(TestCase):
         self.assertIn("mesh", client.view_users())
         self.assertEqual(client.view_self()["email"], "admin@appmesh.com")
 
-    def test_totp(self):
+    def test_03_totp(self):
         """test TOTP"""
         client = AppMeshClient()
         token = client.login("admin", "admin123")
@@ -228,6 +235,7 @@ class TestAppMeshClient(TestCase):
         self.assertEqual(token, client.jwt_token)
         # get totp secret
         totp_secret = client.get_totp_secret()
+        # print(f"TOTP Secret: {totp_secret!r}")
         self.assertIsNotNone(totp_secret)
         # generate totp code
         totp = TOTP(totp_secret)

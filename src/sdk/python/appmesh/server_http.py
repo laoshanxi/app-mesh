@@ -58,13 +58,13 @@ class AppMeshServer(metaclass=abc.ABCMeta):
     @staticmethod
     def _get_runtime_env() -> Tuple[str, str]:
         """Read and validate required runtime environment variables."""
-        process_id = os.getenv("APP_MESH_PROCESS_KEY")
+        process_key = os.getenv("APP_MESH_PROCESS_KEY")
         app_name = os.getenv("APP_MESH_APPLICATION_NAME")
-        if not process_id:
+        if not process_key:
             raise Exception("Missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service.")
         if not app_name:
             raise Exception("Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.")
-        return process_id, app_name
+        return process_key, app_name
 
     def task_fetch(self) -> Union[str, bytes]:
         """Fetch task data in the currently running App Mesh application process.
@@ -76,14 +76,14 @@ class AppMeshServer(metaclass=abc.ABCMeta):
         Returns:
             Union[str, bytes]: The payload provided by the client as returned by the service.
         """
-        process_id, app_name = self._get_runtime_env()
+        pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
 
         while True:
             resp = self._client._request_http(
                 AppMeshClient.Method.GET,
                 path=path,
-                query={"process_uuid": process_id},
+                query={"process_key": pkey},
             )
 
             if resp.status_code != HTTPStatus.OK:
@@ -102,13 +102,13 @@ class AppMeshServer(metaclass=abc.ABCMeta):
         Args:
             result (Union[str, bytes]): Result payload to be delivered back to the client.
         """
-        process_id, app_name = self._get_runtime_env()
+        pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
 
         resp = self._client._request_http(
             AppMeshClient.Method.PUT,
             path=path,
-            query={"process_uuid": process_id},
+            query={"process_key": pkey},
             body=result,
         )
 

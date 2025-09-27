@@ -50,9 +50,10 @@ if __name__ == "__main__":
 
 ```shell
 $ appc ls
-ID  NAME    OWNER  STATUS   HEALTH  PID   USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
-1   pytask   mesh   enabled  OK      2833  root  29.1 MiB  0     -       44s  44s       1       "python3 ../../bin/py_t*"
-2   ping    mesh   enabled  OK      2834  root  3.3 MiB   0     -       44s  44s       1       "ping github.com"
+ID  NAME    OWNER  STATUS    HEALTH  PID    USER  MEMORY    %CPU  RETURN  AGE  DURATION  STARTS  COMMAND
+1   pytask  mesh   enabled   OK      16412        32.7 MiB  0     1       8h             2       "python.exe ../../bi*"
+2   pyexec  mesh   disabled  -       -      -     -         -     -       8h   -         0       "python.exe ../../bi*"
+3   ping    mesh   enabled   OK      -      -     -         -     0       8h   -         1       "ping github.com"
 
 $ python3 sample.py
 0
@@ -66,7 +67,8 @@ $ python3 sample.py
 36
 45
 
-$ appc ls -a pytask | grep task_status
+$ appc ls -a pytask | grep task_
+task_id: 23
 task_status: busy
 ```
 
@@ -76,8 +78,6 @@ The task status is represented by application runtime attributes. Possible value
 
 - `idle`: the service is ready and waiting for a task
 - `busy`: a task has been dispatched and is currently processing
-- `error`/`unknown`: error occurred
-- "" (empty): the service is not requesting task handling
 
 ### API
 
@@ -85,6 +85,8 @@ Client:
 
 - run_task(): send an invocation message to a running App Mesh application and wait for result
 - cancle_task(): cancle a running task to a App Mesh application
+
+Note: Use AppMeshClient (HTTP) for short-lived requests and AppMeshClientTCP (TCP) for long-running workloads.
 
 Server:
 

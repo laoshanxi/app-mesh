@@ -17,7 +17,6 @@ from urllib import parse
 import aniso8601
 import jwt
 import requests
-from requests.auth import _basic_auth_str
 from .app import App
 from .app_run import AppRun
 from .app_output import AppOutput
@@ -474,7 +473,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             AppMeshClient.Method.POST,
             path="/appmesh/login",
             header={
-                self.HTTP_HEADER_KEY_AUTH: _basic_auth_str(user_name, user_pwd),
+                self.HTTP_HEADER_KEY_AUTH: "Basic " + base64.b64encode(f"{user_name}:{user_pwd}".encode()).decode(),
                 "X-Expire-Seconds": str(self._parse_duration(timeout_seconds)),
                 **({"X-Audience": audience} if audience else {}),
                 # **({"X-Totp-Code": totp_code} if totp_code else {}),
@@ -610,15 +609,17 @@ class AppMeshClient(metaclass=abc.ABCMeta):
             raise Exception(f"Token renewal failed: {str(e)}") from e
 
     def get_totp_secret(self) -> str:
-        """Generate TOTP secret for the current user and return MFA URI.
+        """
+        Generate TOTP secret for the current user and return a secret.
 
         Returns:
-            str: TOTP secret str
+            str: TOTP secret string
         """
         resp = self._request_http(method=AppMeshClient.Method.POST, path="/appmesh/totp/secret")
         if resp.status_code == HTTPStatus.OK:
             totp_uri = base64.b64decode(resp.json()["mfa_uri"]).decode()
             return self._parse_totp_uri(totp_uri).get("secret")
+
         raise Exception(resp.text)
 
     def setup_totp(self, totp_code: str) -> str:

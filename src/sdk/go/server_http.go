@@ -22,31 +22,31 @@ func NewHttpContext(options Option) *AppMeshServerHttpContext {
 }
 
 // getRuntimeEnv reads and validates required runtime environment variables.
-func (r *AppMeshServerHttpContext) getRuntimeEnv() (processID, appName string, err error) {
-	processID = os.Getenv("APP_MESH_PROCESS_KEY")
+func (r *AppMeshServerHttpContext) getRuntimeEnv() (key, appName string, err error) {
+	key = os.Getenv("APP_MESH_PROCESS_KEY")
 	appName = os.Getenv("APP_MESH_APPLICATION_NAME")
 
-	if processID == "" {
+	if key == "" {
 		return "", "", errors.New("missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service")
 	}
 	if appName == "" {
 		return "", "", errors.New("missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service")
 	}
-	return processID, appName, nil
+	return key, appName, nil
 }
 
 // TaskFetch fetches task data (payload) from the App Mesh service for the current running application process.
 // Retries indefinitely with 100ms backoff until successful.
 // Returns the payload string provided by the client.
 func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
-	processID, appName, err := r.getRuntimeEnv()
+	key, appName, err := r.getRuntimeEnv()
 	if err != nil {
 		return "", err
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
 	query := url.Values{}
-	query.Set("process_uuid", processID)
+	query.Set("process_key", key)
 
 	for {
 		status, body, _, err := r.client.get(path, query, nil)
@@ -69,14 +69,14 @@ func (r *AppMeshServerHttpContext) TaskFetch() (string, error) {
 // TaskReturn sends the result of a processed task back to the original invoking client via App Mesh service.
 // Returns error if the PUT request fails.
 func (r *AppMeshServerHttpContext) TaskReturn(result string) error {
-	processID, appName, err := r.getRuntimeEnv()
+	processKey, appName, err := r.getRuntimeEnv()
 	if err != nil {
 		return err
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
 	query := url.Values{}
-	query.Set("process_uuid", processID)
+	query.Set("process_key", processKey)
 	headers := map[string]string{"Content-Type": "text/plain"}
 
 	status, body, err := r.client.put(path, query, headers, []byte(result))

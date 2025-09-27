@@ -150,7 +150,7 @@ get_dependencies() {
 }
 
 copy_libraries() {
-    local dependencies=(boost curl ACE libssl libcrypto log4cpp oath yaml)
+    local dependencies=(boost curl ACE libssl libcrypto log4cpp yaml)
     local bin_path="${CMAKE_BINARY_DIR}/gen/appsvc"
     for dep in "${dependencies[@]}"; do
         info "Scanning appsvc for dependency: $dep"

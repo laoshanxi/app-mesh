@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../../common/TimerHandler.h"
+#include "../rest/HttpRequest.h"
 #include "AppBehavior.h"
 #include "AppUtils.h"
 
@@ -26,7 +27,7 @@ class PrometheusRest;
 class AppProcess;
 class DailyLimitation;
 class ResourceLimitation;
-class HttpRequestWithTimeout;
+class TaskRequest;
 namespace prometheus
 {
 	class Counter;
@@ -85,11 +86,11 @@ public:
 	std::string runSyncrize(int timeoutSeconds, std::shared_ptr<void> asyncHttpRequest) noexcept(false);
 	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0, size_t timeout = 0);
 
-	void sendMessage(std::shared_ptr<void> asyncHttpRequest);
-	bool removeMessage();
-	void getMessage(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
-	void respMessage(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
-	std::string taskStatus();
+	void sendTask(std::shared_ptr<void> asyncHttpRequest);
+	bool deleteTask();
+	void fetchTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
+	void replyTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
+	std::tuple<int, std::string> taskStatus();
 
 	// prometheus
 	void initMetrics();
@@ -170,7 +171,7 @@ protected:
 	// error
 	boost::synchronized_value<std::string> m_lastError;
 	// task request <application level>, use std::atomic<std::shared_ptr<T>> after C++20
-	std::shared_ptr<HttpRequestWithTimeout> m_taskRequest;
+	TaskRequest m_task;
 
 	// Prometheus
 	std::shared_ptr<CounterMetric> m_metricStartCount;

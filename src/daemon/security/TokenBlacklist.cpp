@@ -31,7 +31,7 @@ void TokenBlacklist::addToken(const std::string &token, const std::chrono::syste
     }
     // m_tokenSet.emplace(token, expiryTime);
     m_tokenSet[token] = expiryTime;
-    LOG_INF << fname << "token black list size: " << m_tokenSet.size();
+    LOG_DBG << fname << "token black list size: " << m_tokenSet.size();
 }
 
 bool TokenBlacklist::tryRemoveFromList(const std::string &token)

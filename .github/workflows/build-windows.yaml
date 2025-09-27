@@ -53,6 +53,8 @@ jobs:
     needs: build
     runs-on: windows-2022
     steps:
+      - uses: actions/checkout@v5
+
       - name: Download packages
         uses: actions/download-artifact@v5
         with:
@@ -84,6 +86,23 @@ jobs:
           & "C:\local\appmesh\bin\appc.exe" resource
 
           cat "C:\local\appmesh\work\stdout\appmesh.agent.out"
+
+          # ensure SYSTEMROOT on github action host
+          if (-not $env:SYSTEMROOT) {
+              try {
+                  $env:SYSTEMROOT = "C:\Windows"
+                  Write-Host "SYSTEMROOT was missing, set to C:\Windows"
+              }
+              catch {
+                  Write-Warning "Failed to set SYSTEMROOT: $_"
+              }
+          }
+          else {
+              Write-Host "SYSTEMROOT is already set to $env:SYSTEMROOT"
+          }
+          #python -m pip install --upgrade appmesh pyotp
+          #python src\sdk\python\test\test_appmesh_client.py
+          #python src\sdk\python\sample.py
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

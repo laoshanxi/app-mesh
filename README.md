@@ -114,7 +114,6 @@ Refer to the [Installation doc](https://app-mesh.readthedocs.io/en/latest/Instal
 - [log4cpp](http://log4cpp.sourceforge.net)
 - [Crypto++](https://www.cryptopp.com)
 - [ldap-cpp](https://github.com/AndreyBarmaley/ldap-cpp)
-- [OATH Toolkit](http://www.nongnu.org/oath-toolkit/liboath-api)
 
 [language.url]:   https://isocpp.org/
 [language.badge]: https://img.shields.io/badge/language-C++-blue.svg

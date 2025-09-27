@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -237,7 +238,7 @@ func StartHTTPSServer(restAgentAddr string, router *mux.Router) error {
 		WriteTimeout:      5 * time.Minute, // Increase to handle large file downloads
 		IdleTimeout:       2 * time.Minute, // Keep-alive timeout for idle connections
 		ReadHeaderTimeout: 1 * time.Minute, // Limit time to read headers for security
-		MaxHeaderBytes:    1 << 20,         // 1 MB (max header size)
+		MaxHeaderBytes:    64 << 10,        // 64 KB (max header size)
 	}
 
 	// Start HTTPS server
@@ -316,6 +317,10 @@ func HandleIndex(w http.ResponseWriter, r *http.Request) {
 func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	var targetConnection = localConnection
 
+	// Create context with timeout from request context
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute) // TODO: Adjust timeout as needed
+	defer cancel()
+
 	// Handle forward request
 	// In order to share JWT token in cluster, share JWTSalt & Issuer JWT configuration
 	forwardingHost := string(r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST))
@@ -365,25 +370,68 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a channel to accept Response
-	ch := make(chan *Response)
+	ch := make(chan *Response, 1) // Buffered channel to prevent goroutine leak
 	httpRequestMap.Store(request.Uuid, ch)
 
-	sendErr := targetConnection.SendRequestData(request)
-	if sendErr == nil {
-		// Wait for channel to get response
-		resp := <-ch
-		// Reply to client
-		resp.ApplyResponse(w, r, request)
-
-		// Handle file upload after response to client
-		if resp.TempUploadFilePath != "" {
-			sendErr = targetConnection.SendFileData(resp.TempUploadFilePath)
+	// Ensure cleanup of the request from map
+	defer func() {
+		httpRequestMap.Delete(request.Uuid)
+		// Drain channel if needed to prevent goroutine leak
+		select {
+		case <-ch:
+		default:
 		}
-	}
+	}()
 
+	sendErr := targetConnection.SendRequestData(request)
 	if sendErr != nil {
 		logger.Errorf("Failed to send request to server with error: %v", sendErr)
-		defer DeleteConnection(forwardingHost)
+		http.Error(w, sendErr.Error(), http.StatusInternalServerError)
+		// Only delete connection on send error
+		if targetConnection != localConnection {
+			DeleteConnection(forwardingHost)
+		}
+		return
+	}
+
+	// Wait for response with timeout and cancellation
+	var resp *Response
+	select {
+	case resp = <-ch:
+		// Successfully received response
+	case <-ctx.Done():
+		// Handle timeout or cancellation
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			logger.Errorf("Request timeout for UUID: %s", request.Uuid)
+			http.Error(w, "Request timeout", http.StatusGatewayTimeout)
+		case context.Canceled:
+			logger.Errorf("Request canceled for UUID: %s", request.Uuid)
+			http.Error(w, "Request canceled", http.StatusRequestTimeout)
+		}
+		// Note: We don't delete the connection on timeout/cancellation
+		// as the connection might still be healthy
+		return
+	}
+
+	// Reply to client
+	resp.ApplyResponse(w, r, request)
+
+	// Handle file upload after response to client
+	if resp.TempUploadFilePath != "" {
+		// Use context for file upload timeout as well
+		uploadCtx, uploadCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer uploadCancel()
+
+		sendErr = targetConnection.SendFileDataWithContext(uploadCtx, resp.TempUploadFilePath)
+		if sendErr != nil {
+			logger.Errorf("Failed to send file data: %v", sendErr)
+			// Only delete connection on file send error
+			if targetConnection != localConnection {
+				DeleteConnection(forwardingHost)
+			}
+			// Don't return error to client since response was already sent
+		}
 	}
 }
 

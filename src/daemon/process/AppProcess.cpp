@@ -15,6 +15,7 @@
 #include "../../common/os/jobobject.hpp"
 #endif
 #include "../../common/Password.h"
+#include "../../common/os/linux.h"
 #include "../../common/os/pstree.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
@@ -27,7 +28,7 @@ constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
 
 AppProcess::AppProcess(void *owner)
 	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID),
-	  m_stdOutMaxSize(0), m_stdinHandler(ACE_INVALID_HANDLE), m_stdoutHandler(ACE_INVALID_HANDLE),
+	  m_stdOutMaxSize(0),
 #if defined(_WIN32)
 	  m_job(nullptr, ::CloseHandle),
 #endif
@@ -60,10 +61,11 @@ void AppProcess::attach(int pid, const std::string &stdoutFile)
 	this->m_pid = pid;
 	m_stdoutFileName = stdoutFile;
 
-	CLOSE_ACE_HANDLER(m_stdoutHandler);
+#if !defined(_WIN32)
 	std::string stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
-	m_stdoutHandler = ACE_OS::open(stdOut.c_str(), O_RDWR);
+	m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
 	m_stdOutMaxSize = APP_STD_OUT_MAX_FILE_SIZE;
+#endif
 }
 
 void AppProcess::detach(void)
@@ -166,8 +168,8 @@ bool AppProcess::onTimerTerminate()
 
 void AppProcess::cleanResource()
 {
-	CLOSE_ACE_HANDLER(m_stdoutHandler);
-	CLOSE_ACE_HANDLER(m_stdinHandler);
+	m_stdoutHandler.reset();
+	m_stdinHandler.reset();
 	Utility::removeFile(m_stdinFileName);
 	this->cancelTimer(m_timerCheckStdoutId);
 	this->cancelTimer(m_timerTerminateId);
@@ -224,7 +226,6 @@ void AppProcess::terminate()
 	cleanResource();
 	if (terminated)
 		ProcessExitHandler::terminate(pid);
-	m_task.terminate();
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
@@ -237,9 +238,14 @@ void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
 	}
 }
 
-const std::string AppProcess::getuuid() const
+const std::string &AppProcess::getuuid() const
 {
 	return m_uuid;
+}
+
+const std::string &AppProcess::getkey() const
+{
+	return m_key;
 }
 
 void AppProcess::delayKill(std::size_t timeout, const std::string &from)
@@ -277,15 +283,15 @@ bool AppProcess::onTimerCheckStdout()
 
 	{
 		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-		if (m_stdoutHandler != ACE_INVALID_HANDLE && m_stdOutMaxSize)
+		if (m_stdoutHandler.valid() && m_stdOutMaxSize)
 		{
 			ACE_stat stat;
-			if (0 == ACE_OS::fstat(m_stdoutHandler, &stat))
+			if (0 == ACE_OS::fstat(m_stdoutHandler.get(), &stat))
 			{
 				if (stat.st_size > m_stdOutMaxSize)
 				{
 					// Acquire an exclusive lock on the file
-					ACE_File_Lock fileLock(m_stdoutHandler, false);
+					ACE_File_Lock fileLock(m_stdoutHandler.get(), false);
 					if (fileLock.acquire() == -1)
 					{
 						LOG_WAR << fname << "acquire exclusive lock on the stdout file failed: " << m_stdoutFileName;
@@ -294,7 +300,7 @@ bool AppProcess::onTimerCheckStdout()
 					// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
 					const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 					fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
-					ACE_OS::ftruncate(m_stdoutHandler, 0);
+					ACE_OS::ftruncate(m_stdoutHandler.get(), 0);
 
 					// Release the lock
 					fileLock.release();
@@ -304,9 +310,10 @@ bool AppProcess::onTimerCheckStdout()
 			else
 			{
 				LOG_ERR << fname << "fstat failed with error : " << last_error_msg();
-				CLOSE_ACE_HANDLER(m_stdoutHandler);
+#if !defined(_WIN32)
 				auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
-				m_stdoutHandler = ACE_OS::open(stdOut.c_str(), O_RDWR);
+				m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
+#endif
 			}
 		}
 	}
@@ -398,8 +405,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 				  });
 	option.release_handles();
 	// clean if necessary
-	CLOSE_ACE_HANDLER(m_stdoutHandler);
-	CLOSE_ACE_HANDLER(m_stdinHandler);
+	m_stdoutHandler.reset();
+	m_stdinHandler.reset();
 	m_stdoutFileName = stdoutFile;
 	if (m_stdoutFileName.length() || stdinFileContent != EMPTY_STR_JSON)
 	{
@@ -418,36 +425,36 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		// STDOUT
 		if (m_stdoutFileName.length())
 		{
-			m_stdoutHandler = ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC);
-			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler;
-			if (m_stdoutHandler == ACE_INVALID_HANDLE)
+			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC));
+			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
+			if (!m_stdoutHandler.valid())
 			{
 				LOG_ERR << fname << "Failed to open file: <" << m_stdoutFileName << "> with error: " << ACE_OS::last_error();
 			}
 		}
 		else
 		{
-			m_stdoutHandler = ACE_OS::open("/dev/null", O_RDWR);
+			m_stdoutHandler.reset(ACE_OS::open(DEV_NULL, O_RDWR));
 		}
 
 		// STDIN
 		if (stdinFileContent != EMPTY_STR_JSON)
 		{
-			std::ofstream inputFile(m_stdinFileName, std::ios::trunc);
-			if (stdinFileContent.is_string())
-				inputFile << stdinFileContent.get<std::string>();
-			else
-				inputFile << stdinFileContent.dump();
-			inputFile.close();
-			assert(Utility::isFileExist(m_stdinFileName));
-			m_stdinHandler = ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY, 0444);
-			LOG_DBG << fname << "std_in: " << m_stdinFileName << " : " << stdinFileContent;
+			const std::string content = stdinFileContent.is_string() ? stdinFileContent.get<std::string>() : stdinFileContent.dump();
+			m_stdinFileName = os::createTmpFile(m_stdinFileName, content);
+			m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY)); // open for reading by child process
+			if (!m_stdinHandler.valid())
+			{
+				startError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
+			}
+			option.handle_inheritance(1); // required on Windows
+			LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
 		}
 		else
 		{
-			m_stdinHandler = ACE_OS::open("/dev/null", O_RDWR);
+			m_stdinHandler.reset(ACE_OS::open(DEV_NULL, O_RDONLY));
 		}
-		option.set_handles(m_stdinHandler, m_stdoutHandler, m_stdoutHandler);
+		option.set_handles(m_stdinHandler.get(), m_stdoutHandler.get(), m_stdoutHandler.get());
 	}
 	// do not inherit LD_LIBRARY_PATH to child
 	static const std::string ldEnv = ACE_OS::getenv(ENV_LD_LIBRARY_PATH) ? ACE_OS::getenv(ENV_LD_LIBRARY_PATH) : "";
@@ -463,7 +470,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	{
 		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << m_pid << ">.";
 		this->setCgroup(limit);
-		if (m_stdoutHandler != ACE_INVALID_HANDLE && maxStdoutSize)
+		if (m_stdoutHandler.valid() && maxStdoutSize)
 		{
 			m_stdOutMaxSize = maxStdoutSize;
 		}
@@ -502,30 +509,6 @@ const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool rea
 {
 	std::lock_guard<std::recursive_mutex> guard(m_outFileMutex);
 	return Utility::readFileCpp(m_stdoutFileName, position, maxSize, readLine);
-}
-
-void AppProcess::sendMessage(std::shared_ptr<void> asyncHttpRequest)
-{
-	m_task.sendMessage(asyncHttpRequest);
-}
-
-void AppProcess::getMessage(const std::string &processKey, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
-{
-	if (processKey != m_key)
-		throw std::invalid_argument("Process ID mismatch: Illegal request.");
-	m_task.getMessage(serverRequest, msgRequest);
-}
-
-void AppProcess::respMessage(const std::string &processKey, std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &msgRequest)
-{
-	if (processKey != m_key)
-		throw std::invalid_argument("Process ID mismatch: Illegal request.");
-	m_task.respMessage(serverRequest, msgRequest);
-}
-
-std::string AppProcess::taskStatus(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
-{
-	return m_task.taskStatus(taskRequest);
 }
 
 const std::string AppProcess::startError() const

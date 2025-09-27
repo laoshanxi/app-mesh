@@ -21,7 +21,6 @@ if(APPLE)
     PRIVATE
       cryptopp
       ldapplugin
-      oath
 )
 elseif(WIN32)
   target_link_libraries(security
@@ -34,6 +33,5 @@ else()
       cryptopp
       rt
       ldapplugin
-      oath
   )
 endif()

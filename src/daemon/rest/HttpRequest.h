@@ -149,6 +149,8 @@ public:
 	bool onTimerResponse();
 	bool replied() const;
 	bool interrupt();
+	void id(int id);
+	int id();
 
 protected:
 	// called by timer or user
@@ -157,6 +159,7 @@ protected:
 private:
 	mutable std::atomic_long m_timerResponseId;
 	mutable std::atomic<bool> m_httpRequestReplyFlag;
+	mutable int m_id;
 };
 
 /// <summary>
@@ -189,19 +192,22 @@ class TaskRequest
 {
 public:
 	TaskRequest() = default;
-	virtual ~TaskRequest();
+	virtual ~TaskRequest() = default;
 
 	void terminate();
 
-	void sendMessage(std::shared_ptr<void> taskRequest);
-	void getMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
-	void respMessage(std::shared_ptr<void> &serverRequest, std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
-	std::string taskStatus(std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
+	void sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
+	bool deleteTask();
+	void fetchTask(std::shared_ptr<void> &serverRequest);
+	void replyTask(std::shared_ptr<void> &serverRequest);
+	std::tuple<int, std::string> taskStatus();
 
 private:
 	void cleanupRepliedRequest(std::shared_ptr<HttpRequestWithTimeout> &request);
 
 private:
-	std::shared_ptr<HttpRequestWithTimeout> m_getMessage;
-	std::shared_ptr<HttpRequestWithTimeout> m_respMessage;
+	std::shared_ptr<HttpRequestWithTimeout> m_taskRequest;
+	std::shared_ptr<HttpRequestWithTimeout> m_fetchTask;
+	std::shared_ptr<HttpRequestWithTimeout> m_replyTask;
+	std::atomic_int m_taskId{0};
 };

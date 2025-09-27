@@ -17,7 +17,7 @@ class User
 {
 public:
 	explicit User(const std::string &name);
-	virtual ~User();
+	virtual ~User() = default;
 
 	// serialize
 	nlohmann::json AsJson() const;
@@ -83,8 +83,8 @@ private:
 class Users
 {
 public:
-	Users();
-	virtual ~Users();
+	Users() = default;
+	virtual ~Users() = default;
 
 	nlohmann::json AsJson() const;
 	static std::shared_ptr<Users> FromJson(const nlohmann::json &obj, std::shared_ptr<Roles> roles) noexcept(false);

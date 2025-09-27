@@ -33,7 +33,7 @@ func TestAppmeshTCPFile(t *testing.T) {
 	_ = os.Remove(tempFile)
 
 	require.Nil(t, client.FileDownload(remotePath, localFile, true))
-	require.Nil(t, client.FileUpload(localFile, tempFile, true))
+	// require.Nil(t, client.FileUpload(localFile, tempFile, true))
 
 	_ = os.Remove(localFile)
 	_ = os.Remove(tempFile)

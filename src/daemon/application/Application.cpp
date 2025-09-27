@@ -594,58 +594,47 @@ std::string Application::runApp(int timeoutSeconds)
 	return (*processLock)->getuuid();
 }
 
-void Application::sendMessage(std::shared_ptr<void> asyncHttpRequest)
+void Application::sendTask(std::shared_ptr<void> asyncHttpRequest)
 {
 	auto processLock = m_process.synchronize();
 	if ((*processLock) == nullptr)
 		throw std::invalid_argument("No process running");
 
-	// save task request in application level
-	m_taskRequest = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
-	(*processLock)->sendMessage(m_taskRequest);
+	// TODO: if previous one not finished, discard current? restart process? pending in queue?
+	auto taskRequest = std::static_pointer_cast<HttpRequestWithTimeout>(asyncHttpRequest);
+	m_task.sendTask(taskRequest);
 }
 
-bool Application::removeMessage()
+bool Application::deleteTask()
 {
-	bool result = false;
 	auto processLock = m_process.synchronize();
-	if (m_taskRequest)
-	{
-		result = m_taskRequest->interrupt();
-		m_taskRequest.reset();
-	}
-
-	return result;
+	return m_task.deleteTask();
 }
 
-void Application::getMessage(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest)
+void Application::fetchTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest)
 {
 	auto processLock = m_process.synchronize();
-	if ((*processLock) == nullptr)
-		throw std::invalid_argument("No process running");
-	(*processLock)->getMessage(processKey, asyncHttpRequest, m_taskRequest);
+	if ((*processLock) == nullptr || !(*processLock)->running())
+		throw std::invalid_argument("Illegal request");
+	if (processKey != (*processLock)->getkey())
+		throw std::invalid_argument("Process key mismatch");
+	m_task.fetchTask(asyncHttpRequest);
 }
 
-void Application::respMessage(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest)
+void Application::replyTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest)
 {
 	auto processLock = m_process.synchronize();
-	if ((*processLock) == nullptr)
-		throw std::invalid_argument("No process running");
-	return (*processLock)->respMessage(processKey, asyncHttpRequest, m_taskRequest);
+	if ((*processLock) == nullptr || !(*processLock)->running())
+		throw std::invalid_argument("Illegal request");
+	if (processKey != (*processLock)->getkey())
+		throw std::invalid_argument("Process key mismatch");
+	m_task.replyTask(asyncHttpRequest);
 }
 
-std::string Application::taskStatus()
+std::tuple<int, std::string> Application::taskStatus()
 {
 	auto processLock = m_process.synchronize();
-	if (*processLock)
-		return (*processLock)->taskStatus(m_taskRequest);
-	else
-	{
-		if (m_taskRequest)
-			return "error"; // task dispatched, but process not running
-		else
-			return ""; // no task, not running
-	}
+	return m_task.taskStatus();
 }
 
 const std::string Application::getExecUser() const
@@ -820,7 +809,12 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		auto process = m_process.get();
 		if (process && process->running())
 		{
-			result[JSON_KEY_APP_task_status] = taskStatus();
+			{
+				auto processLock = m_process.synchronize();
+				auto status = m_task.taskStatus();
+				result[JSON_KEY_APP_task_id] = std::get<0>(status);
+				result[JSON_KEY_APP_task_status] = std::get<1>(status);
+			}
 			result[JSON_KEY_APP_pid] = m_pid.load();
 			result[JSON_KEY_APP_pid_user] = os::getUsernameByUid(os::getProcessUid(m_pid.load()));
 
@@ -1072,6 +1066,8 @@ void Application::terminate(std::shared_ptr<AppProcess> &p)
 	// terminate
 	if (p)
 		p->terminate();
+
+	m_task.terminate();
 
 	// update exit information
 	auto process = m_process.get();

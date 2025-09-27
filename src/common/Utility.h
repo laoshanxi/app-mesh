@@ -93,16 +93,6 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define HAS_JSON_FIELD(jsonObj, key) (jsonObj.contains(key) && !jsonObj.at(key).is_null())
 #define GET_JSON_STR_INT_TEXT(jsonObj, key) Utility::stdStringTrim(HAS_JSON_FIELD(jsonObj, key) ? (jsonObj.at(key).is_string() ? jsonObj.at(key).template get<std::string>() : std::to_string(jsonObj.at(key).template get<int64_t>())) : std::string(""))
 
-#define CLOSE_ACE_HANDLER(handler)                                \
-	do                                                            \
-	{                                                             \
-		ACE_HANDLE target = handler.exchange(ACE_INVALID_HANDLE); \
-		if (target != ACE_INVALID_HANDLE)                         \
-		{                                                         \
-			ACE_OS::close(target);                                \
-		}                                                         \
-	} while (false)
-
 #define CLOSE_STREAM(streamPtr)                           \
 	do                                                    \
 	{                                                     \
@@ -112,6 +102,12 @@ std::shared_ptr<T> make_shared_array(size_t size)
 			streamPtr = nullptr;                          \
 		}                                                 \
 	} while (false)
+
+#if defined(_WIN32)
+#define DEV_NULL "NUL"
+#else
+#define DEV_NULL "/dev/null"
+#endif
 
 #define GET_HTTP_HEADER(message, headerName) \
 	message.m_headers.count(headerName) > 0 ? message.m_headers.find(headerName)->second : std::string()
@@ -374,6 +370,7 @@ public:
 #define JSON_KEY_APP_health "health"
 #define JSON_KEY_APP_version "version"
 #define JSON_KEY_APP_task_status "task_status"
+#define JSON_KEY_APP_task_id "task_id"
 
 #define JSON_KEY_APP_retention "retention" // extra timeout seconds for stopping current process
 #define JSON_KEY_SHORT_APP_start_interval_seconds "start_interval_seconds"
@@ -454,6 +451,7 @@ public:
 #define HTTP_QUERY_KEY_stdout_maxsize "stdout_maxsize"
 #define HTTP_QUERY_KEY_stdout_timeout "timeout"
 #define HTTP_QUERY_KEY_process_uuid "process_uuid"
+#define HTTP_QUERY_KEY_process_key "process_key"
 #define HTTP_QUERY_KEY_html "html"
 #define HTTP_QUERY_KEY_json "json"
 #define HTTP_QUERY_KEY_timeout "timeout"

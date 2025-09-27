@@ -820,7 +820,10 @@ void RestHandler::apiUserTokenRenew(const HttpRequest &message)
 	// TODO: limit renew time, consider setup
 	const auto decodedToken = decodeJwtToken(token);
 	const auto expireTime = decodedToken.get_expires_at();
-	const auto audience = decodedToken.get_audience().empty() ? HTTP_HEADER_JWT_Audience_appmesh : decodedToken.get_audience().begin()->c_str();
+	const auto audiences = decodedToken.get_audience();
+	const auto audience = audiences.empty()
+							  ? HTTP_HEADER_JWT_Audience_appmesh
+							  : *audiences.begin(); // safe copy
 	// const auto issueTime = decodedToken.get_issued_at();
 	// const auto oneThirdTime = issueTime + (decodedToken.get_expires_at() - issueTime) / 3;
 	// if (oneThirdTime < std::chrono::system_clock::now())
@@ -828,11 +831,11 @@ void RestHandler::apiUserTokenRenew(const HttpRequest &message)
 	//	throw std::invalid_argument("The current time is still before the midpoint of the expire time");
 	//}
 
-	// retire current token
-	TOKEN_BLACK_LIST::instance()->addToken(token, expireTime);
-
 	// create new token
 	message.reply(web::http::status_codes::OK, createJwtResponse(message, uname, timeoutSeconds, userGroup, audience));
+
+	// retire current token
+	TOKEN_BLACK_LIST::instance()->addToken(token, expireTime);
 	LOG_DBG << fname << "User <" << uname << "> renew token success";
 }
 
@@ -1080,7 +1083,7 @@ void RestHandler::apiSendMessage(const HttpRequest &message)
 	auto app = Configuration::instance()->getApp(appName);
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
 	asyncRequest->initTimer(timeout);
-	app->sendMessage(asyncRequest);
+	app->sendTask(asyncRequest);
 }
 
 void RestHandler::apiRemoveMessage(const HttpRequest &message)
@@ -1093,32 +1096,32 @@ void RestHandler::apiRemoveMessage(const HttpRequest &message)
 	checkAppAccessPermission(message, appName, true);
 
 	auto app = Configuration::instance()->getApp(appName);
-	bool removed = app->removeMessage();
+	bool removed = app->deleteTask();
 	message.reply(removed ? web::http::status_codes::OK : web::http::status_codes::AlreadyReported);
 }
 
 void RestHandler::apiGetMessage(const HttpRequest &message)
 {
-	const std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
+	const std::string processKey = getHttpQueryString(message, HTTP_QUERY_KEY_process_key);
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 	auto app = Configuration::instance()->getApp(appName);
 
 	// no need setup timer for service side request, process terminate will take care cleanup
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
-	app->getMessage(processUuid, asyncRequest);
+	app->fetchTask(processKey, asyncRequest);
 }
 
 void RestHandler::apiSendMessageResponse(const HttpRequest &message)
 {
-	const std::string processUuid = getHttpQueryString(message, HTTP_QUERY_KEY_process_uuid);
+	const std::string processKey = getHttpQueryString(message, HTTP_QUERY_KEY_process_key);
 	const auto path = (curlpp::unescape(message.m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
 	auto app = Configuration::instance()->getApp(appName);
 	// no need setup timer for service side request, process terminate will take care cleanup
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
-	app->respMessage(processUuid, asyncRequest);
+	app->replyTask(processKey, asyncRequest);
 }
 
 void RestHandler::apiAppOutputView(const HttpRequest &message)

@@ -59,9 +59,8 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
-            cd /work/src/sdk/python/test/
-            # python3 -m unittest will face multiple case run issue, so use below to run one by one
-            python3 test_appmesh_client.py
+            python3 /work/src/sdk/python/test/test_appmesh_client.py
+            python3 /work/src/sdk/python/sample.py
 
       - name: test ubuntu:24
         uses: addnab/docker-run-action@v3
@@ -93,8 +92,8 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --break-system-packages --upgrade appmesh pyotp
-            cd /work/src/sdk/python/test/
-            python3 test_appmesh_client.py
+            python3 /work/src/sdk/python/test/test_appmesh_client.py
+            python3 /work/src/sdk/python/sample.py
 
       - name: test ubuntu:18
         uses: addnab/docker-run-action@v3
@@ -126,8 +125,8 @@ jobs:
             # test appmesh python sdk
             apt install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
-            cd /work/src/sdk/python/test/
-            python3 test_appmesh_client.py
+            python3 /work/src/sdk/python/test/test_appmesh_client.py
+            python3 /work/src/sdk/python/sample.py
 
       - name: test centos:7
         uses: addnab/docker-run-action@v3
@@ -163,5 +162,5 @@ jobs:
             # test appmesh python sdk
             yum install -y python3 python3-pip
             python3 -m pip install --upgrade appmesh pyotp
-            cd /work/src/sdk/python/test/
-            python3 test_appmesh_client.py
+            python3 /work/src/sdk/python/test/test_appmesh_client.py
+            python3 /work/src/sdk/python/sample.py

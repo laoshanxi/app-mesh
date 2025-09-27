@@ -1,9 +1,24 @@
+// Required headers
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <iomanip>
+#include <memory>
+#include <mutex>
+#include <random>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+// OpenSSL (TOTP)
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+
+// OpenSSL (Encrypt)
 #include <cryptopp/aes.h>
 #include <cryptopp/default.h>
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
-#if !defined(_WIN32)
-#include <liboath/oath.h>
-#endif
 
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
@@ -15,14 +30,6 @@
 //////////////////////////////////////////////////////////////////////
 /// Users
 //////////////////////////////////////////////////////////////////////
-Users::Users()
-{
-}
-
-Users::~Users()
-{
-}
-
 nlohmann::json Users::AsJson() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -131,10 +138,6 @@ User::User(const std::string &name) : m_locked(false), m_enableMfa(false), m_nam
 {
 }
 
-User::~User()
-{
-}
-
 nlohmann::json &User::clearConfidentialInfo(nlohmann::json &userJson)
 {
 	if (HAS_JSON_FIELD(userJson, JSON_KEY_USER_key))
@@ -240,45 +243,167 @@ void User::totpDeactive()
 	m_mfaKey.clear();
 	m_enableMfa = false;
 }
+constexpr char BASE32_ALPHABET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+// decode base32 (RFC 4648, uppercase, no padding required). Returns true on success, false on invalid char.
+bool base32Decode(const std::string &in, std::vector<uint8_t> &out)
+{
+	out.clear();
+	// Mapping table: ASCII -> value or 0xFF if invalid
+	static uint8_t map[256];
+	static bool init = false;
+	if (!init)
+	{
+		for (size_t i = 0; i < sizeof(map); ++i)
+			map[i] = 0xFF;
+		for (uint8_t i = 0; i < 32; ++i)
+		{
+			map[static_cast<unsigned char>(BASE32_ALPHABET[i])] = i;
+			// also accept lowercase
+			map[static_cast<unsigned char>(std::tolower(BASE32_ALPHABET[i]))] = i;
+		}
+		// optionally accept '=' as padding (map to 0xFE to skip)
+		map[static_cast<unsigned char>('=')] = 0xFE;
+		init = true;
+	}
+
+	uint32_t buffer = 0;
+	int bitsLeft = 0;
+	for (size_t i = 0; i < in.size(); ++i)
+	{
+		unsigned char ch = static_cast<unsigned char>(in[i]);
+		uint8_t val = map[ch];
+		if (val == 0xFF)
+		{
+			// ignore whitespace
+			if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')
+				continue;
+			return false; // invalid character
+		}
+		if (val == 0xFE)
+		{
+			// padding - stop processing further meaningful characters
+			break;
+		}
+
+		buffer = (buffer << 5) | val;
+		bitsLeft += 5;
+		if (bitsLeft >= 8)
+		{
+			bitsLeft -= 8;
+			uint8_t byte = static_cast<uint8_t>((buffer >> bitsLeft) & 0xFF);
+			out.push_back(byte);
+		}
+	}
+
+	return true;
+}
+
+// Generate HOTP per RFC 4226 (HMAC-SHA1) and return numeric code as integer
+// key: raw secret bytes
+// keyLen: length of secret bytes
+// counter: 64-bit moving factor
+// digits: number of digits (commonly 6)
+uint32_t hotp_truncate_and_digits(const uint8_t *key, size_t keyLen, uint64_t counter, unsigned digits = 6)
+{
+	// counter big-endian 8 bytes
+	uint8_t counterBytes[8];
+	for (int i = 7; i >= 0; --i)
+	{
+		counterBytes[i] = static_cast<uint8_t>(counter & 0xFF);
+		counter >>= 8;
+	}
+
+	unsigned int hmacLen = EVP_MAX_MD_SIZE;
+	uint8_t hmacResult[EVP_MAX_MD_SIZE];
+
+	// HMAC-SHA1
+	unsigned char *hres = HMAC(EVP_sha1(),
+							   key, static_cast<int>(keyLen),
+							   counterBytes, sizeof(counterBytes),
+							   hmacResult, &hmacLen);
+	if (!hres || hmacLen < 20)
+	{
+		// HMAC failed; treat as zero code (caller will treat as mismatch)
+		return UINT32_MAX; // sentinel indicating error
+	}
+
+	// dynamic truncation
+	int offset = hmacResult[hmacLen - 1] & 0x0F;
+	uint32_t binary =
+		((static_cast<uint32_t>(hmacResult[offset]) & 0x7F) << 24) |
+		((static_cast<uint32_t>(hmacResult[offset + 1]) & 0xFF) << 16) |
+		((static_cast<uint32_t>(hmacResult[offset + 2]) & 0xFF) << 8) |
+		((static_cast<uint32_t>(hmacResult[offset + 3]) & 0xFF));
+
+	uint32_t mod = 1;
+	for (unsigned i = 0; i < digits; ++i)
+		mod *= 10u;
+	return binary % mod;
+}
+
+// Convert integer to zero-padded string with width = digits
+std::string intToZeroPadded(uint32_t v, unsigned digits)
+{
+	std::ostringstream oss;
+	oss << std::setw(static_cast<int>(digits)) << std::setfill('0') << v;
+	return oss.str();
+}
 
 const std::string User::totpGenerateKey()
 {
 	const static char fname[] = "User::totpGenerateKey() ";
 
-#if !defined(_WIN32)
-	char *secret = NULL;
-	char randomBuffer[32];
-	constexpr int mfaKeyLen = 16;
-	int fd = open("/dev/urandom", O_RDONLY);
-	if (fd < 0)
+	// Generate 32 random bytes (256 bits entropy)
+	std::random_device rd;
+	std::uniform_int_distribution<unsigned int> dist(0, 255);
+	std::vector<uint8_t> randomBytes(32);
+	for (auto &b : randomBytes)
 	{
-		throw std::runtime_error(Utility::stringFormat("Failed to open /dev/urandom: %s", last_error_msg()));
+		b = static_cast<uint8_t>(dist(rd));
 	}
-	if (read(fd, randomBuffer, sizeof(randomBuffer)) != sizeof(randomBuffer))
-	{
-		close(fd);
-		throw std::runtime_error(Utility::stringFormat("Failed to read /dev/urandom: %s", last_error_msg()));
-	}
-	close(fd);
 
-	// oath_base32_encode(const char *in, size_t inlen, char **out, size_t *outlen);
-	auto res = oath_base32_encode(randomBuffer, sizeof(randomBuffer), &secret, NULL);
-	std::shared_ptr<char> autoDelete(secret);
-	if (res != OATH_OK)
+	// RFC 4648 Base32 alphabet (uppercase, no padding)
+	std::string base32Result;
+	base32Result.reserve(52); // max possible output from 32 bytes
+
+	const uint8_t *buffer = randomBytes.data();
+	size_t bufferSize = randomBytes.size();
+	size_t bits = 0;
+	uint32_t value = 0;
+
+	// Process input in 5-byte blocks (40 bits => 8 Base32 characters)
+	for (size_t i = 0; i < bufferSize; ++i)
 	{
-		throw std::runtime_error(Utility::stringFormat("Failed to oath_base32_encode: %s", oath_strerror(res)));
+		value = (value << 8) | buffer[i];
+		bits += 8;
+		while (bits >= 5)
+		{
+			bits -= 5;
+			base32Result.push_back(BASE32_ALPHABET[(value >> bits) & 0x1F]);
+		}
+	}
+	if (bits > 0)
+	{
+		base32Result.push_back(BASE32_ALPHABET[(value << (5 - bits)) & 0x1F]);
+	}
+
+	// Normalize length to 32 characters
+	constexpr size_t desiredLength = 32;
+	if (base32Result.size() > desiredLength)
+	{
+		base32Result.resize(desiredLength);
+	}
+	else if (base32Result.size() < desiredLength)
+	{
+		// Should not occur with 32 input bytes, but pad with 'A' (zero) if needed
+		base32Result.append(desiredLength - base32Result.size(), 'A');
 	}
 
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	m_mfaKey = secret;
-	if (m_mfaKey.length() > mfaKeyLen)
-	{
-		m_mfaKey = m_mfaKey.substr(0, mfaKeyLen);
-	}
-#else
-	m_mfaKey = generatePassword(16, true, true, true, false);
-#endif
-	LOG_INF << fname << "2FA secret generated for user: " << m_name;
+	m_mfaKey = base32Result;
+
+	LOG_INF << fname << "2FA TOTP secret generated for user: " << m_name;
 	return m_mfaKey;
 }
 
@@ -286,26 +411,58 @@ bool User::totpValidateCode(const std::string &totpCode)
 {
 	const static char fname[] = "User::totpValidateCode() ";
 
-#if !defined(_WIN32)
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
-	char *key = NULL;
-	size_t keyLen = 0;
+
+	// Decode base32 secret
+	std::vector<uint8_t> keyBytes;
+	if (!base32Decode(m_mfaKey, keyBytes))
+	{
+		LOG_WAR << fname << "base32 decode failed for key";
+		throw std::domain_error(Utility::stringFormat("Failed to base32 decode TOTP key"));
+	}
+	if (keyBytes.empty())
+	{
+		LOG_WAR << fname << "decoded key empty";
+		throw std::domain_error(Utility::stringFormat("Decoded TOTP key empty"));
+	}
+
 	constexpr int totp_time_duration_seconds = 30;
-	// int oath_base32_decode(const char *in, size_t inlen, char **out, size_t *outlen);
-	int res = oath_base32_decode(m_mfaKey.c_str(), m_mfaKey.length(), &key, &keyLen);
-	std::shared_ptr<char> autoDelete(key);
-	if (res != OATH_OK)
+	constexpr unsigned totp_digits = 6;
+	// Accept +/- 1 time-step (window = 1)
+	constexpr int window = 1;
+
+	std::time_t now = std::time(nullptr);
+	if (now < 0)
 	{
-		LOG_WAR << fname << "oath_base32_decode failed: " << oath_strerror(res);
-		throw std::domain_error(Utility::stringFormat("Failed to oath_base32_decode: %s", oath_strerror(res)));
+		LOG_WAR << fname << "time() failed";
+		throw std::domain_error(Utility::stringFormat("Failed to get current time"));
 	}
-	res = oath_totp_validate(key, keyLen, time(NULL), totp_time_duration_seconds, 0, 1, totpCode.c_str());
-	if (res < 0)
+
+	uint64_t t = static_cast<uint64_t>(now) / totp_time_duration_seconds;
+
+	bool matched = false;
+	for (int i = -window; i <= window && !matched; ++i)
 	{
-		LOG_WAR << fname << "invalid token <" << totpCode << ">:" << oath_strerror(res);
-		throw std::domain_error(Utility::stringFormat("%s", oath_strerror(res)));
+		uint64_t counter = static_cast<uint64_t>(static_cast<int64_t>(t) + i);
+		uint32_t code = hotp_truncate_and_digits(keyBytes.data(), keyBytes.size(), counter, totp_digits);
+		if (code == UINT32_MAX) // HMAC error
+		{
+			LOG_WAR << fname << "HMAC computation failed";
+			throw std::domain_error(Utility::stringFormat("HMAC computation failed during TOTP validation"));
+		}
+		std::string codeStr = intToZeroPadded(code, totp_digits);
+		if (codeStr == totpCode)
+		{
+			matched = true;
+		}
 	}
-#endif
+
+	if (!matched)
+	{
+		LOG_WAR << fname << "invalid token <" << totpCode << ">";
+		throw std::domain_error(Utility::stringFormat("Invalid TOTP token"));
+	}
+
 	LOG_INF << fname << "2FA validate success for user: " << m_name;
 	return true;
 }
