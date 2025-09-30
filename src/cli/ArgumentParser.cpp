@@ -99,7 +99,7 @@ static size_t BOOST_DESC_WIDTH = 130;
 ArgumentParser::ArgumentParser(int argc, char *argv[])
 	: m_argc(argc), m_argv(argv), m_tokenTimeoutSeconds(DEFAULT_TOKEN_EXPIRE_SECONDS)
 {
-	const std::string posixTimeZone = ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) ? ACE_OS::getenv(ENV_APPMESH_POSIX_TIMEZONE) : getPosixTimezone();
+	const std::string posixTimeZone = Utility::getenv(ENV_APPMESH_POSIX_TIMEZONE, getPosixTimezone());
 	Utility::initDateTimeZone(posixTimeZone, false);
 }
 
@@ -1118,7 +1118,7 @@ pid_t get_bash_pid()
 	// This shell process remains persistent across terminal sessions,
 	// meaning that the same Bash process is reused for all the commands executed in that terminal
 	// until you explicitly close the terminal or VSCode.
-	if (ACE_OS::getenv("VSCODE_PID"))
+	if (!Utility::getenv("VSCODE_PID").empty())
 	{
 		return pid;
 	}

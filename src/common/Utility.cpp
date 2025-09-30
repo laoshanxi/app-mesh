@@ -336,6 +336,42 @@ bool Utility::runningInContainer()
 	return isInContainer;
 }
 
+bool Utility::ensureSystemRoot()
+{
+	// https://github.com/pypa/hatch/issues/1598
+	// https://stackoverflow.com/questions/1554878/why-does-windows-not-allow-winsock-to-be-started-while-impersonating-another-use
+	// https://github.com/golang/go/issues/61452
+	// https://github.com/golang/go/issues/26457
+	// https://go-review.googlesource.com/c/go/+/124858
+#if defined(_WIN32)
+	std::string systemRoot = Utility::getenv("SYSTEMROOT");
+	if (systemRoot.empty())
+	{
+		char sysDir[MAX_PATH] = {0};
+		UINT sysLen = GetSystemWindowsDirectoryA(sysDir, MAX_PATH);
+		if (sysLen == 0 || sysLen >= MAX_PATH)
+		{
+			strcpy_s(sysDir, MAX_PATH, "C:\\Windows"); // fallback
+			std::cerr << "[Warning] GetSystemWindowsDirectoryA failed; using fallback: " << sysDir << std::endl;
+		}
+		systemRoot = sysDir;
+
+		if (ACE_OS::setenv("SYSTEMROOT", systemRoot.c_str(), 0) == -1)
+		{
+			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << last_error_msg() << ")" << std::endl;
+			return false;
+		}
+		std::cout << "[Info] SYSTEMROOT set to: " << systemRoot << std::endl;
+	}
+	else
+	{
+		std::cout << "[Info] SYSTEMROOT already set to: " << systemRoot << std::endl;
+	}
+
+#endif
+	return true;
+}
+
 void Utility::initLogging(const std::string &name)
 {
 	using namespace log4cpp;
@@ -369,8 +405,8 @@ void Utility::initLogging(const std::string &name)
 	root.addAppender(consoleAppender);
 
 	// Log level
-	auto levelEnv = getenv("LOG_LEVEL");
-	if (levelEnv != nullptr)
+	auto levelEnv = Utility::getenv("LOG_LEVEL");
+	if (levelEnv.empty())
 	{
 		setLogLevel(levelEnv);
 	}
@@ -1277,24 +1313,19 @@ std::string Utility::humanReadableDuration(const std::chrono::system_clock::time
 
 void Utility::getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs)
 {
-	// get env size
-	if (!envMap.empty())
+	totalEnvSize = 0;
+	totalEnvArgs = 0;
+
+	for (const auto &kv : envMap)
 	{
-		auto it = envMap.begin();
-		while (it != envMap.end())
-		{
-			totalEnvSize += (int)(it->first.length() + it->second.length() + 2); // add for = and terminator
-			totalEnvArgs++;
-			it++;
-		}
+		// length of "KEY=VALUE\0"
+		totalEnvSize += static_cast<int>(kv.first.length() + kv.second.length() + 2); // add 2 for = and terminator
+		totalEnvArgs++;
 	}
 
-	// initialize our environment size estimates
-	constexpr int numEntriesConst = 256;
-	constexpr int bufferSizeConst = 4 * 1024;
-
-	totalEnvArgs += numEntriesConst;
-	totalEnvSize += bufferSizeConst;
+	// Add safety margin: 20% more, min 256 entries and 4KB
+	totalEnvArgs += std::max(256, totalEnvArgs / 5);
+	totalEnvSize += std::max(4096, totalEnvSize / 5);
 }
 
 void Utility::applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers)
@@ -1308,6 +1339,51 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second));
 	}
+}
+
+std::string Utility::getenv(const std::string &envName, const std::string &defaultValue)
+{
+	const char *val = ACE_OS::getenv(envName.data());
+	if (val == nullptr || val[0] == '\0')
+		return defaultValue;
+
+	return val;
+}
+
+std::map<std::string, std::string> Utility::getenvs()
+{
+	std::map<std::string, std::string> env;
+
+#if defined(_WIN32)
+	LPCH envStrings = GetEnvironmentStringsA();
+	if (!envStrings)
+		return env;
+
+	for (LPCH var = envStrings; *var; var += std::strlen(var) + 1)
+	{
+		std::string entry(var);
+		auto pos = entry.find('=');
+		if (pos != std::string::npos)
+		{
+			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
+		}
+	}
+	FreeEnvironmentStringsA(envStrings);
+
+#else
+	extern char **environ;
+	for (char **current = environ; *current; ++current)
+	{
+		std::string entry(*current);
+		auto pos = entry.find('=');
+		if (pos != std::string::npos)
+		{
+			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
+		}
+	}
+#endif
+
+	return env;
 }
 
 std::string Utility::hash(const std::string &str)
