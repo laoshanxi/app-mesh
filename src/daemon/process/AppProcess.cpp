@@ -346,7 +346,13 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		startError(Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str()));
 		return ACE_INVALID_PID;
 	}
-
+#if defined(_WIN32)
+	// Windows: ACE setenv replaces env, so merge manually
+	static auto currentEnv = Utility::getenvs();
+	for (auto &kv : currentEnv)
+		if (!envMap.count(kv.first))
+			envMap[kv.first] = kv.second; // merge parent
+#endif
 	// AppMesh build-in env
 	envMap[ENV_APPMESH_PROCESS_KEY] = m_key;
 	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
@@ -360,7 +366,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	int totalEnvSize = 0;
 	int totalEnvArgs = 0;
 	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);
-	ACE_Process_Options option(1, cmdLength, totalEnvSize, totalEnvArgs);
+	bool inherit_environment = true;
+	ACE_Process_Options option(inherit_environment, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
 	// option.avoid_zombies(1);
 #if !defined(_WIN32)
@@ -381,8 +388,9 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		}
 	}
 	option.setgroup(0); // set group id with the process id, used to kill process group
-	option.inherit_environment(true);
 	option.handle_inheritance(0);
+#else
+	option.handle_inheritance(1);
 #endif
 
 	if (workDir.empty())
@@ -447,7 +455,6 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			{
 				startError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
 			}
-			option.handle_inheritance(1); // required on Windows
 			LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
 		}
 		else
@@ -456,8 +463,10 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		}
 		option.set_handles(m_stdinHandler.get(), m_stdoutHandler.get(), m_stdoutHandler.get());
 	}
+#if !defined(WIN32)
 	// do not inherit LD_LIBRARY_PATH to child
-	static const std::string ldEnv = ACE_OS::getenv(ENV_LD_LIBRARY_PATH) ? ACE_OS::getenv(ENV_LD_LIBRARY_PATH) : "";
+	// TODO: windows do not have lib64 dir
+	static const std::string ldEnv = Utility::getenv(ENV_LD_LIBRARY_PATH);
 	if (!ldEnv.empty() && !envMap.count(ENV_LD_LIBRARY_PATH))
 	{
 		std::string env = ldEnv;
@@ -466,6 +475,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		option.setenv(ENV_LD_LIBRARY_PATH, "%s", env.c_str());
 		LOG_DBG << fname << "replace LD_LIBRARY_PATH with " << env.c_str();
 	}
+#endif
 	if (this->spawn(option) >= 0)
 	{
 		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << m_pid << ">.";

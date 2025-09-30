@@ -178,6 +178,7 @@ public:
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();
+	static bool ensureSystemRoot();
 
 	// String functions
 	static bool isNumber(const std::string &str);
@@ -212,6 +213,8 @@ public:
 	static unsigned long long getThreadId();
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
 	static void applyFilePermission(const std::string &file, const std::map<std::string, std::string> &headers);
+	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
+	static std::map<std::string, std::string> getenvs();
 
 	// Base64
 	static std::string encode64(const std::string &val);

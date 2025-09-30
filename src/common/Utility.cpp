@@ -336,6 +336,122 @@ bool Utility::runningInContainer()
 	return isInContainer;
 }
 
+bool Utility::ensureSystemRoot()
+{
+	// https://github.com/pypa/hatch/issues/1598
+	// https://stackoverflow.com/questions/1554878/why-does-windows-not-allow-winsock-to-be-started-while-impersonating-another-use
+	// https://github.com/golang/go/issues/61452
+	// https://github.com/golang/go/issues/26457
+	// https://go-review.googlesource.com/c/go/+/124858
+#if defined(_WIN32)
+	std::string systemRoot = Utility::getenv("SYSTEMROOT");
+	if (systemRoot.empty())
+	{
+		char sysDir[MAX_PATH] = {0};
+		UINT sysLen = GetSystemWindowsDirectoryA(sysDir, MAX_PATH);
+		if (sysLen == 0 || sysLen >= MAX_PATH)
+		{
+			strcpy_s(sysDir, MAX_PATH, "C:\\Windows"); // fallback
+			std::cerr << "[Warning] GetSystemWindowsDirectoryA failed; using fallback: " << sysDir << std::endl;
+		}
+		systemRoot = sysDir;
+
+		if (!SetEnvironmentVariableA("SYSTEMROOT", systemRoot.c_str()))
+		{
+			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << GetLastError() << ")" << std::endl;
+			return false;
+		}
+		std::cout << "[Info] SYSTEMROOT set to: " << systemRoot << std::endl;
+	}
+	else
+	{
+		std::cout << "[Info] SYSTEMROOT already set to: " << systemRoot << std::endl;
+	}
+
+	// Ensure WINDIR matches SYSTEMROOT
+	if (Utility::getenv("WINDIR").empty())
+	{
+		if (!SetEnvironmentVariableA("WINDIR", systemRoot.c_str()))
+		{
+			std::cerr << "[Warning] Failed to set WINDIR to: " << systemRoot << " (Error " << GetLastError() << ")" << std::endl;
+		}
+		else
+		{
+			std::cout << "[Info] WINDIR set to: " << systemRoot << std::endl;
+		}
+	}
+
+	// Extend PATH with System32 if missing
+	std::string pathVar = Utility::getenv("PATH");
+	std::string system32Path = systemRoot + "\\System32";
+
+	auto pathParts = std::vector<std::string>();
+	size_t start = 0;
+	while (true)
+	{
+		size_t end = pathVar.find(';', start);
+		std::string part = pathVar.substr(start, end - start);
+		if (!part.empty())
+			pathParts.push_back(part);
+		if (end == std::string::npos)
+			break;
+		start = end + 1;
+	}
+
+	bool system32InPath = false;
+	for (const auto &part : pathParts)
+	{
+		if (_stricmp(part.c_str(), system32Path.c_str()) == 0)
+		{
+			system32InPath = true;
+			break;
+		}
+	}
+
+	if (!system32InPath)
+	{
+		pathVar += ";" + system32Path;
+		if (!SetEnvironmentVariableA("PATH", pathVar.c_str()))
+		{
+			std::cerr << "[Warning] Failed to update PATH with System32 (Error " << GetLastError() << ")" << std::endl;
+		}
+		else
+		{
+			std::cout << "[Info] PATH extended with: " << system32Path << std::endl;
+		}
+	}
+
+	// TEMP and TMP
+	std::string tempDir = fs::temp_directory_path().string();
+
+	if (Utility::getenv("TEMP").empty())
+	{
+		if (!SetEnvironmentVariableA("TEMP", tempDir.c_str()))
+		{
+			std::cerr << "[Warning] Failed to set TEMP to: " << tempDir << std::endl;
+		}
+		else
+		{
+			std::cout << "[Info] TEMP set to: " << tempDir << std::endl;
+		}
+	}
+
+	if (Utility::getenv("TMP").empty())
+	{
+		if (!SetEnvironmentVariableA("TMP", tempDir.c_str()))
+		{
+			std::cerr << "[Warning] Failed to set TMP to: " << tempDir << std::endl;
+		}
+		else
+		{
+			std::cout << "[Info] TMP set to: " << tempDir << std::endl;
+		}
+	}
+
+#endif
+	return true;
+}
+
 void Utility::initLogging(const std::string &name)
 {
 	using namespace log4cpp;
@@ -369,8 +485,8 @@ void Utility::initLogging(const std::string &name)
 	root.addAppender(consoleAppender);
 
 	// Log level
-	auto levelEnv = getenv("LOG_LEVEL");
-	if (levelEnv != nullptr)
+	auto levelEnv = Utility::getenv("LOG_LEVEL");
+	if (levelEnv.empty())
 	{
 		setLogLevel(levelEnv);
 	}
@@ -1308,6 +1424,51 @@ void Utility::applyFilePermission(const std::string &file, const std::map<std::s
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_user)->second),
 					  std::stoi(headers.find(HTTP_HEADER_KEY_file_group)->second));
 	}
+}
+
+std::string Utility::getenv(const std::string &envName, const std::string &defaultValue)
+{
+	const char *val = ACE_OS::getenv(envName.data());
+	if (val == nullptr || val[0] == '\0')
+		return defaultValue;
+
+	return val;
+}
+
+std::map<std::string, std::string> Utility::getenvs()
+{
+	std::map<std::string, std::string> env;
+
+#if defined(_WIN32)
+	LPCH envStrings = GetEnvironmentStringsA();
+	if (!envStrings)
+		return env;
+
+	for (LPCH var = envStrings; *var; var += std::strlen(var) + 1)
+	{
+		std::string entry(var);
+		auto pos = entry.find('=');
+		if (pos != std::string::npos)
+		{
+			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
+		}
+	}
+	FreeEnvironmentStringsA(envStrings);
+
+#else
+	extern char **environ;
+	for (char **current = environ; *current; ++current)
+	{
+		std::string entry(*current);
+		auto pos = entry.find('=');
+		if (pos != std::string::npos)
+		{
+			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
+		}
+	}
+#endif
+
+	return env;
 }
 
 std::string Utility::hash(const std::string &str)
