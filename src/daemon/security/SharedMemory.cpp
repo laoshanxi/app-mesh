@@ -187,7 +187,7 @@ void SharedMemory::cleanup()
     }
 }
 
-// Export the shared memory name to environment variable by parent process
+// Export the shared memory name to an environment variable
 void SharedMemory::exportEnv(const std::string &envName)
 {
     const static char fname[] = "SharedMemory::exportEnv() ";
@@ -198,24 +198,10 @@ void SharedMemory::exportEnv(const std::string &envName)
         return;
     }
 
-    // Use thread_local storage to avoid static memory issues in multi-threaded environments
-    thread_local std::string env_copy;
-    thread_local std::string last_value;
-
-    std::string current_value = envName + "=" + m_shmName;
-
-    // Avoid redundant putenv calls
-    if (current_value == last_value)
+    if (ACE_OS::setenv(envName.c_str(), m_shmName.c_str(), 1) != 0)
     {
-        return;
-    }
-
-    env_copy = current_value;
-    last_value = current_value;
-
-    if (ACE_OS::putenv(env_copy.data()) != 0)
-    {
-        LOG_WAR << fname << "Failed to export environment variable: " << envName << ", error: " << last_error_msg();
+        LOG_WAR << fname << "Failed to export environment variable: " << envName
+                << ", error: " << last_error_msg();
     }
     else
     {

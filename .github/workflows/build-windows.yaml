@@ -16,20 +16,17 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
       - name: Set PowerShell Execution Policy
         shell: pwsh
-        run: |
-          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+        run: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
       - name: Setup Build Environment
         shell: pwsh
-        run: |
-          pwsh -File script\setup_build_env\autogen.ps1
+        run: .\script\setup_build_env\autogen.ps1
 
-      - name: Build project
+      - name: Build binaries
         shell: pwsh
         run: |
           mkdir build && cd build
@@ -40,8 +37,7 @@ jobs:
 
       - name: Build package
         shell: pwsh
-        run: |
-          pwsh -File script\pack\build_package.ps1
+        run: .\script\pack\build_package.ps1
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -60,49 +56,36 @@ jobs:
         with:
           name: windows-${{ github.sha }}
 
-      - name: Install 7-Zip with Chocolatey
-        run: choco install 7zip -y
+      - run: choco install 7zip -y
+      - run: python -m pip install --upgrade --no-user appmesh pyotp
 
       - name: Run tests
         shell: pwsh
         run: |
-          ls
+          # Install package
           7z x .\appmesh_2.1.2_windows_x64.exe -oC:\local\appmesh
           ls "C:\local\appmesh"
+
+          # Start service
           C:\local\appmesh\bin\nssm.exe install AppMeshService "C:\local\appmesh\bin\appsvc.exe"
           C:\local\appmesh\bin\nssm.exe set AppMeshService Start SERVICE_AUTO_START
           C:\local\appmesh\bin\nssm.exe start AppMeshService
-          sleep 10
-          ls "C:\local\appmesh"
+          # Start-Process -FilePath "C:\local\appmesh\bin\appsvc.exe" -WindowStyle Hidden
 
+          sleep 3
+          ls "C:\local\appmesh"
           cat "C:\local\appmesh\work\server.log"
-          cat "C:\local\appmesh\work\stdout\appmesh.agent.out"
 
           C:\local\appmesh\bin\appc -V
-          Test-NetConnection -ComputerName 127.0.0.1 -Port 6059
-          Test-NetConnection -ComputerName 127.0.0.1 -Port 6060
-
           & "C:\local\appmesh\bin\appc.exe" ls
           & "C:\local\appmesh\bin\appc.exe" resource
 
-          cat "C:\local\appmesh\work\stdout\appmesh.agent.out"
+          ls "C:\local\appmesh\work\stdout"
+          cat "C:\local\appmesh\work\stdout\*.out"
 
-          # ensure SYSTEMROOT on github action host
-          if (-not $env:SYSTEMROOT) {
-              try {
-                  $env:SYSTEMROOT = "C:\Windows"
-                  Write-Host "SYSTEMROOT was missing, set to C:\Windows"
-              }
-              catch {
-                  Write-Warning "Failed to set SYSTEMROOT: $_"
-              }
-          }
-          else {
-              Write-Host "SYSTEMROOT is already set to $env:SYSTEMROOT"
-          }
-          #python -m pip install --upgrade appmesh pyotp
+          # TODO: ping not work on github action windows host, consider to use curl
           #python src\sdk\python\test\test_appmesh_client.py
-          #python src\sdk\python\sample.py
+          python src\sdk\python\sample.py
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

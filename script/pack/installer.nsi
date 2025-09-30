@@ -56,6 +56,7 @@ Section "Install"
     nsExec::ExecToLog '"$NSSM_PATH" install AppMeshService "$START_APPSVC"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppDirectory "$INSTDIR"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Start SERVICE_AUTO_START'
+    nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService DependOnService Dhcp Tcpip Netman'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService Description "App Mesh background service"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppStdout "$INSTDIR\install_stdout.log"'
     nsExec::ExecToLog '"$NSSM_PATH" set AppMeshService AppStderr "$INSTDIR\install_stderr.log"'

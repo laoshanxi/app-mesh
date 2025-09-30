@@ -206,6 +206,7 @@ void AppMeshDaemon::initializeEnvironment()
 	ACE::init();
 	fs::current_path(Utility::getHomeDir());
 	Utility::createPidFile();
+	Utility::ensureSystemRoot();
 }
 
 void AppMeshDaemon::initializeACE()
@@ -624,6 +625,7 @@ bool AppMeshDaemon::checkTcpConnection(int &errorCounter)
 	return true;
 }
 
+// TODO: health and dependency start
 void AppMeshDaemon::executeApplications()
 {
 	const static char fname[] = "AppMeshDaemon::executeApplications() ";

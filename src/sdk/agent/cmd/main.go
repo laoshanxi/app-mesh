@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -45,18 +44,6 @@ func monitorParentProcess(ctx context.Context) {
 			}
 			// Reset the timer with a longer interval
 			timer.Reset(parentCheckInterval)
-		}
-	}
-}
-
-// ensureSystemRoot sets the SYSTEMROOT environment variable if it is not already set.
-// https://github.com/golang/go/issues/61452
-// https://github.com/golang/go/issues/26457
-// https://go-review.googlesource.com/c/go/+/124858
-func ensureSystemRoot() {
-	if runtime.GOOS == "windows" && os.Getenv("SYSTEMROOT") == "" {
-		if err := os.Setenv("SYSTEMROOT", `C:\Windows`); err != nil {
-			logger.Warnf("Failed to set SYSTEMROOT: %v", err)
 		}
 	}
 }
@@ -118,7 +105,6 @@ func changeWorkDir(dir string) {
 
 func main() {
 
-	ensureSystemRoot()
 	//import _ "net/http/pprof"
 	//go func() {
 	//    log.Println(http.ListenAndServe("localhost:7070", nil))
