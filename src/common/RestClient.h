@@ -32,6 +32,34 @@ struct ClientSSLConfig
 	std::string m_ca_location;		  // trusted CA file or directory
 };
 
+/// @brief Session configuration for managing cookies
+struct SessionConfig
+{
+	bool enable_session = false;	// Enable session management
+	bool use_memory_cookies = true; // Use memory cookies (true) or file-based (false)
+	std::string cookie_file;		// Cookie file path (for file-based storage)
+
+	SessionConfig() = default;
+
+	// Factory methods for convenience
+	static SessionConfig MemorySession()
+	{
+		SessionConfig config;
+		config.enable_session = true;
+		config.use_memory_cookies = true;
+		return config;
+	}
+
+	static SessionConfig FileSession(const std::string &cookieFilePath)
+	{
+		SessionConfig config;
+		config.enable_session = true;
+		config.use_memory_cookies = false;
+		config.cookie_file = cookieFilePath;
+		return config;
+	}
+};
+
 class RestClient
 {
 public:
@@ -97,12 +125,36 @@ public:
 	 */
 	static void defaultSslConfiguration(const ClientSSLConfig &sslConfig);
 
+	/**
+	 * @brief Sets the session configuration for cookie management
+	 * @param sessionConfig Session configuration object
+	 */
+	static void setSessionConfiguration(const SessionConfig &sessionConfig);
+
+	/**
+	 * @brief Gets current session configuration
+	 * @return Current session configuration
+	 */
+	static SessionConfig getSessionConfiguration();
+
+	/**
+	 * @brief Clears all session cookies
+	 * @details Clears memory cookies or deletes cookie file depending on configuration
+	 */
+	static void clearSession();
+
 private:
 	/**
 	 * @brief Configures SSL parameters for a CURL handle
 	 * @param curl The CURL handle to configure
 	 */
 	static void setSslConfig(CURL *curl);
+
+	/**
+	 * @brief Configures session/cookie parameters for a CURL handle
+	 * @param curl The CURL handle to configure
+	 */
+	static void setSessionConfig(CURL *curl);
 
 	/**
 	 * @brief URL encodes a string value using CURL
@@ -114,6 +166,9 @@ private:
 
 private:
 	static ClientSSLConfig m_sslConfig;
+	static SessionConfig m_sessionConfig;
+	static std::mutex m_sessionMutex;
+	static std::string m_memoryCookies; // Store cookies in memory as string
 };
 
 namespace curlpp

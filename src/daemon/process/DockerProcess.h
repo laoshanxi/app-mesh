@@ -6,98 +6,45 @@
 
 #include "AppProcess.h"
 
-/// <summary>
-/// Docker command line process object
-/// </summary>
+// Docker command line process object
 class DockerProcess : public AppProcess, public ACE_Process
 {
 public:
-	/// <summary>
-	/// constructor
-	/// </summary>
-	/// <param name="dockerImage"></param>
-	/// <param name="containerName"></param>
 	DockerProcess(const std::string &containerName, const std::string &dockerImage);
-	virtual ~DockerProcess();
+	~DockerProcess();
 
-	/// <summary>
-	/// override with docker cli behavior
-	/// </summary>
-	virtual void terminate() override;
+	// Override with docker cli behavior
+	void terminate() override;
 
-	/// <summary>
-	/// override with docker cli behavior
-	/// </summary>
-	/// <param name="cmd"></param>
-	/// <param name="execUser"></param>
-	/// <param name="workDir"></param>
-	/// <param name="envMap"></param>
-	/// <param name="limit"></param>
-	/// <param name="stdoutFile"></param>
-	/// <param name="stdinFileContent"></param>
-	/// <param name="maxStdoutSize"></param>
-	/// <returns></returns>
-	virtual int spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON, const int maxStdoutSize = 0) override;
+	// Override with docker cli spawn behavior
+	int spawnProcess(std::string cmd, std::string execUser, std::string workDir,
+					 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+					 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
+					 int maxStdoutSize = 0) override;
 
-	/// <summary>
-	/// override with docker cli behavior
-	/// 1. return docker pull cli pid
-	/// 2. return docker container pid get from inspect
-	/// </summary>
-	/// <param name=""></param>
-	/// <returns></returns>
-	virtual pid_t getpid(void) const override;
+	// Returns docker container PID from inspect
+	pid_t getpid() const override;
 
-	/// <summary>
-	/// get container id
-	/// </summary>
-	/// <returns></returns>
-	virtual std::string containerId() const override;
-	/// <summary>
-	/// set container id
-	/// </summary>
-	/// <param name="containerId"></param>
-	virtual void containerId(const std::string &containerId) override;
+	// Get/set container ID
+	std::string containerId() const override;
+	void containerId(const std::string &containerId) override;
 
-	/// <summary>
-	/// get process exit code
-	/// </summary>
-	/// <param name=""></param>
-	/// <returns></returns>
-	virtual int returnValue(void) const override;
+	// Get process exit code from container inspect
+	int returnValue() const override;
 
-	/// <summary>
-	/// get all std out content from stdoutFile with given position
-	/// </summary>
-	/// <param name="position"></param>
-	/// <param name="maxSize"></param>
-	/// <param name="readLine"></param>
-	/// <returns></returns>
+	// Get stdout content from docker logs
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false) override;
 
 protected:
-	/// <summary>
-	/// run docker pull cli
-	/// </summary>
-	/// <param name="envMap"></param>
-	/// <param name="dockerImage"></param>
-	/// <param name="stdoutFile"></param>
-	/// <param name="workDir"></param>
-	/// <returns></returns>
-	int execPullDockerImage(std::map<std::string, std::string> &envMap, const std::string &dockerImage, const std::string &stdoutFile, const std::string &workDir);
+	// Run docker pull cli
+	int execPullDockerImage(std::map<std::string, std::string> &envMap, const std::string &dockerImage,
+							const std::string &stdoutFile, const std::string &workDir);
 
 private:
-	/// <summary>
-	/// synchronize run docker container start process
-	/// </summary>
-	/// <param name="cmd"></param>
-	/// <param name="execUser"></param>
-	/// <param name="workDir"></param>
-	/// <param name="envMap"></param>
-	/// <param name="limit"></param>
-	/// <param name="stdoutFile"></param>
-	/// <returns></returns>
-	virtual int syncSpawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, std::string stdoutFile) noexcept(false);
+	// Synchronously spawn docker container start process
+	virtual int syncSpawnProcess(std::string cmd, std::string execUser, std::string workDir,
+								 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+								 std::string stdoutFile) noexcept(false);
 
 protected:
 	const std::string m_containerName;

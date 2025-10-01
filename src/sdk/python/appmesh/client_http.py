@@ -74,7 +74,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
         - wait_for_async_run()
         - run_app_sync()
         - run_task()
-        - cancle_task()
+        - cancel_task()
 
         # System Management
         - forward_to
@@ -1239,7 +1239,7 @@ class AppMeshClient(metaclass=abc.ABCMeta):
 
         return resp.text
 
-    def cancle_task(self, app_name: str) -> bool:
+    def cancel_task(self, app_name: str) -> bool:
         """Client cancle a running task to a App Mesh application.
 
         Args:

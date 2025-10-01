@@ -484,10 +484,10 @@ void AppMeshDaemon::startAgentApplication()
 	{
 		LOG_INF << fname << "Starting agent application";
 
-		bool psk = HMACVerifierSingleton::instance()->writePSKToSHM();
-		config->addApp(config->getAgentAppJson(HMACVerifierSingleton::instance()->getShmName()), nullptr, false)->execute();
+		const auto shmName = HMACVerifierSingleton::instance()->writePSKToSHM();
+		config->addApp(config->getAgentAppJson(shmName), nullptr, false)->execute();
 
-		if (psk && !HMACVerifierSingleton::instance()->waitPSKRead())
+		if (!shmName.empty() && !HMACVerifierSingleton::instance()->waitPSKRead())
 		{
 			throw std::runtime_error("Failed to wait for PSK read from agent process");
 		}

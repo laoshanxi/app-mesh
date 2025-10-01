@@ -49,13 +49,25 @@ public:
 	 * @brief Registers a timer for this object.
 	 *
 	 * @param delayMilliseconds Initial delay before the timer starts, in milliseconds.
-	 * @param intervalSeconds Interval between timer triggers, in seconds. 0 means the timer triggers only once.
+	 * @param intervalSeconds Interval between timer triggers, in seconds.
+	 *                        Set to 0 for one-shot timer (triggers only once).
 	 * @param handler Callback function to handle the timer event.
+	 *                Return value for recurring timers (intervalSeconds > 0):
+	 *                  - true: continue the timer for the next interval
+	 *                  - false: stop the timer (will call handle_close())
+	 *                Return value is ignored for one-shot timers (always stop after execution).
 	 * @param from String indicating the source or context of the timer registration.
-	 * @return long Unique timer ID.
+	 * @return long Unique timer ID, or negative value if registration failed.
+	 *              Store the return value in std::atomic_long for thread-safe access and
+	 *              later use in timer cancellation operations.
 	 *
 	 * @note Timer IDs will be reused to maintain a compact range. Ensure to reset your timer ID variable
-	 *       in the TimerCallback to prevent cancellation mismatches.
+	 *       (e.g., timerId.store(-1)) in the TimerCallback to prevent cancellation mismatches.
+	 *
+	 * @example
+	 *   std::atomic_long timerId{-1};
+	 *   timerId = this->registerTimer(1000, 5, [&](){ ... }, "my_timer");
+	 *   this->cancelTimer(timerId);
 	 */
 	long registerTimer(long delayMilliseconds, std::size_t intervalSeconds, const TimerCallback &handler, const std::string from);
 

@@ -987,6 +987,9 @@ class AppMeshClient {
 
       const response = await this._client(requestConfig);
       if (response.status !== 200) {
+        if (path === "/appmesh/self/logoff") {
+          return response;  // Allow logoff to "fail" gracefully
+        }
         const errMsg = this._extractErrorMessage(response.data);
         throw new AppMeshError(errMsg, response.status, response.data);
       }

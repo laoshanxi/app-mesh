@@ -48,7 +48,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "428":
-          description: Two-factor authentication required.
+          description: Precondition Required - TOTP required.
           content:
             application/json:
               schema:
@@ -726,12 +726,12 @@ paths:
             type: string
             default: "pytask"
           description: Name of the current application registered in App Mesh.
-        - name: process_uuid
+        - name: process_key
           in: query
           required: true
           schema:
             type: string
-          description: Unique identifier of the running application process.
+          description: Credential of the running application process.
       responses:
         "200":
           description: Task data retrieved successfully.
@@ -760,12 +760,12 @@ paths:
             type: string
             default: "pytask"
           description: Name of the current application registered in App Mesh.
-        - name: process_uuid
+        - name: process_key
           in: query
           required: true
           schema:
             type: string
-          description: Unique identifier of the running application process.
+          description: Credential of the running application process.
       requestBody:
         description: Result payload to be returned to the client.
         required: true

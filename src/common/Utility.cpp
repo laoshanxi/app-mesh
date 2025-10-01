@@ -406,7 +406,7 @@ void Utility::initLogging(const std::string &name)
 
 	// Log level
 	auto levelEnv = Utility::getenv("LOG_LEVEL");
-	if (levelEnv.empty())
+	if (!levelEnv.empty())
 	{
 		setLogLevel(levelEnv);
 	}

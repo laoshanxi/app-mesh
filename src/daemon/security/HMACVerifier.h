@@ -24,7 +24,7 @@ public:
     bool verifyHMAC(const std::string &message, const std::string &receivedHmac) const;
 
     // Pre-Shared-Key operations
-    bool writePSKToSHM();
+    std::string writePSKToSHM();
     bool waitPSKRead();
     const std::string getShmName();
 

@@ -84,7 +84,7 @@ The task status is represented by application runtime attributes. Possible value
 Client:
 
 - run_task(): send an invocation message to a running App Mesh application and wait for result
-- cancle_task(): cancle a running task to a App Mesh application
+- cancel_task(): cancle a running task to a App Mesh application
 
 Note: Use AppMeshClient (HTTP) for short-lived requests and AppMeshClientTCP (TCP) for long-running workloads.
 
