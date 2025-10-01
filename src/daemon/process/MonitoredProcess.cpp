@@ -18,7 +18,10 @@ MonitoredProcess::~MonitoredProcess()
 
 void MonitoredProcess::onExit(int exitCode)
 {
+	// Call parent class exit handler first
 	AppProcess::onExit(exitCode);
+
+	// Reply to any pending async HTTP request
 	replyAsyncRequest();
 }
 
@@ -31,17 +34,22 @@ void MonitoredProcess::setAsyncHttpRequest(std::shared_ptr<void> httpRequest)
 void MonitoredProcess::replyAsyncRequest()
 {
 	const static char fname[] = "MonitoredProcess::replyAsyncRequest() ";
+
 	try
 	{
 		std::shared_ptr<HttpRequest> request;
 		m_httpRequest.swap(request);
+
 		if (request)
 		{
 			long position = 0;
-			auto body = this->getOutputMsg(&position);
+			const auto body = getOutputMsg(&position);
+
+			// Set response headers with exit code and output position
 			std::map<std::string, std::string> headers;
 			headers[HTTP_HEADER_KEY_exit_code] = std::to_string(AppProcess::returnValue());
 			headers[HTTP_HEADER_KEY_output_pos] = std::to_string(position);
+
 			request->reply(web::http::status_codes::OK, body, headers);
 		}
 	}

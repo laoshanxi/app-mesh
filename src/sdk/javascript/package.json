@@ -1,6 +1,6 @@
 {
   "name": "appmesh",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "JavaScript SDK for App Mesh (https://github.com/laoshanxi/app-mesh)",
   "main": "./src/appmesh.js",
   "module": "./dist/appmesh.esm.js",
@@ -22,6 +22,11 @@
       "node": "./src/appmesh.js",
       "import": "./dist/appmesh.esm.js",
       "default": "./dist/appmesh.esm.js"
+    },
+    "./server": {
+      "node": "./src/server.js",
+      "import": null,
+      "default": null
     }
   },
   "repository": {
@@ -32,7 +37,10 @@
   "keywords": [
     "app-mesh",
     "sdk",
-    "api"
+    "api",
+    "server",
+    "tcp",
+    "client"
   ],
   "author": "laoshanxi",
   "license": "MIT",
@@ -43,6 +51,10 @@
   "dependencies": {
     "axios": "^1.8.4",
     "base-64": ">=1.0.0"
+  },
+  "optionalDependencies": {
+    "msgpack-lite": "^0.1.26",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.23.0",

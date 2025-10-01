@@ -24,16 +24,25 @@
 #include "AppProcess.h"
 #include "LinuxCgroup.h"
 
-constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
+namespace
+{
+	constexpr const char *STDOUT_BAK_POSTFIX = ".bak";
+}
 
 AppProcess::AppProcess(void *owner)
-	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID),
+	: m_owner(owner),
+	  m_timerTerminateId(INVALID_TIMER_ID),
+	  m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0),
 #if defined(_WIN32)
 	  m_job(nullptr, ::CloseHandle),
 #endif
-	  m_lastProcCpuTime(0), m_lastSysCpuTime(0), m_uuid(Utility::createUUID()),
-	  m_key(generatePassword(10, true, true, true, false)), m_pid(ACE_INVALID_PID), m_returnValue(-1)
+	  m_lastProcCpuTime(0),
+	  m_lastSysCpuTime(0),
+	  m_uuid(Utility::createUUID()),
+	  m_key(generatePassword(10, true, true, true, false)),
+	  m_pid(ACE_INVALID_PID),
+	  m_returnValue(-1)
 {
 	const static char fname[] = "AppProcess::AppProcess() ";
 	LOG_DBG << fname << "Entered, ID: " << m_uuid;
@@ -47,68 +56,74 @@ AppProcess::~AppProcess()
 	const static char fname[] = "AppProcess::~AppProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	if (this->running())
+	if (running())
 	{
 		terminate();
 	}
 
-	// Utility::removeFile(m_stdoutFileName);
+	// Keep main stdout file, only remove backup
 	Utility::removeFile(m_stdoutFileName + STDOUT_BAK_POSTFIX);
 }
 
 void AppProcess::attach(int pid, const std::string &stdoutFile)
 {
-	this->m_pid = pid;
+	m_pid.store(pid);
 	m_stdoutFileName = stdoutFile;
 
 #if !defined(_WIN32)
-	std::string stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
-	m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
-	m_stdOutMaxSize = APP_STD_OUT_MAX_FILE_SIZE;
+	if (pid != ACE_INVALID_PID)
+	{
+		const std::string stdOut = Utility::stringFormat("/proc/%d/fd/1", pid);
+		m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
+		if (m_stdoutHandler.valid())
+		{
+			m_stdOutMaxSize = APP_STD_OUT_MAX_FILE_SIZE;
+		}
+	}
 #endif
 }
 
-void AppProcess::detach(void)
+void AppProcess::detach()
 {
-	attach(ACE_INVALID_PID, std::string());
+	m_pid.store(ACE_INVALID_PID);
+	m_stdoutFileName.clear();
+	m_stdoutHandler.reset();
+	m_stdOutMaxSize = 0;
 }
 
-pid_t AppProcess::getpid(void) const
+pid_t AppProcess::getpid() const
 {
-	return m_pid;
+	return m_pid.load();
 }
 
-int AppProcess::returnValue(void) const
+int AppProcess::returnValue() const
 {
-	return m_returnValue;
+	return m_returnValue.load();
 }
 
 void AppProcess::onExit(int exitCode)
 {
 	const static char fname[] = "AppProcess::onExit() ";
 
-	// update PID
-	m_pid = ACE_INVALID_PID;
+	// Update PID and exit code
+	m_pid.store(ACE_INVALID_PID);
+	m_returnValue.store(exitCode);
 
-	// save return code
-	m_returnValue = exitCode;
-
-	// clean OS resource
+	// Clean OS resources
 	cleanResource();
 
-	// notify App exit event
-	this->registerTimer(0, 0, std::bind(&AppProcess::onTimerAppExit, this), fname);
+	// Notify App exit event asynchronously
+	registerTimer(0, 0, std::bind(&AppProcess::onTimerAppExit, this, exitCode), fname);
 }
 
-bool AppProcess::onTimerAppExit()
+bool AppProcess::onTimerAppExit(int exitCode)
 {
 	if (m_owner)
 	{
-		auto app = Configuration::instance()->getApp(m_owner);
-		if (app)
+		if (auto app = Configuration::instance()->getApp(m_owner))
 		{
-			// update app exit information
-			app->onExitUpdate(m_returnValue);
+			// Update application with exit information
+			app->onExitUpdate(exitCode);
 		}
 	}
 	return false;
@@ -116,47 +131,45 @@ bool AppProcess::onTimerAppExit()
 
 bool AppProcess::running() const
 {
-	return running(this->getpid());
+	return running(getpid());
 }
 
 bool AppProcess::running(pid_t pid)
 {
-	// from ACE_Process::running()
-	if (ACE_INVALID_PID == pid)
-		return 0;
-	else
-		return ACE_OS::kill(pid, 0) == 0 || errno != ESRCH;
+	// Check if process exists using kill signal 0
+	return (pid != ACE_INVALID_PID) && (ACE_OS::kill(pid, 0) == 0 || errno != ESRCH);
 }
 
 pid_t AppProcess::wait(const ACE_Time_Value &tv, ACE_exitcode *status)
 {
-	// Not use timed wait for Process_Manager, that will impact ProcessExitHandler::handle_exit
-	const static ACE_Time_Value shortInterval(0, 10000); // 10 milliseconds
+	// Note: Not using timed wait for Process_Manager, which would impact ProcessExitHandler::handle_exit
+	const static ACE_Time_Value SHORT_INTERVAL(0, 10000); // 10 milliseconds
 
 	if (tv != ACE_Time_Value::zero)
 	{
-		const auto endTime = (ACE_OS::gettimeofday() + tv);
-		while (this->running() && ACE_OS::gettimeofday() < endTime)
+		const auto endTime = ACE_OS::gettimeofday() + tv;
+		while (running() && ACE_OS::gettimeofday() < endTime)
 		{
 			{
 				ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
-				auto pid = Process_Manager::instance()->wait(m_pid, ACE_Time_Value::zero, status);
-				if (pid > 0)
+				auto result = Process_Manager::instance()->wait(m_pid.load(), ACE_Time_Value::zero, status);
+				if (result > 0)
 				{
-					return pid;
+					return result;
 				}
 			}
-			ACE_OS::sleep(shortInterval);
+			ACE_OS::sleep(SHORT_INTERVAL);
 		}
 	}
+
 	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
-	return Process_Manager::instance()->wait(m_pid, ACE_Time_Value::zero, status);
+	return Process_Manager::instance()->wait(m_pid.load(), ACE_Time_Value::zero, status);
 }
 
 pid_t AppProcess::wait(ACE_exitcode *status)
 {
 	ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
-	return Process_Manager::instance()->wait(m_pid, status);
+	return Process_Manager::instance()->wait(m_pid.load(), status);
 }
 
 bool AppProcess::onTimerTerminate()
@@ -171,8 +184,8 @@ void AppProcess::cleanResource()
 	m_stdoutHandler.reset();
 	m_stdinHandler.reset();
 	Utility::removeFile(m_stdinFileName);
-	this->cancelTimer(m_timerCheckStdoutId);
-	this->cancelTimer(m_timerTerminateId);
+	cancelTimer(m_timerCheckStdoutId);
+	cancelTimer(m_timerTerminateId);
 }
 
 void AppProcess::terminate()
@@ -181,7 +194,8 @@ void AppProcess::terminate()
 
 	bool terminated = false;
 	pid_t pid = m_pid.exchange(ACE_INVALID_PID);
-	if (this->running(pid))
+
+	if (running(pid))
 	{
 		std::lock_guard<std::recursive_mutex> lock(m_processMutex);
 		terminated = true;
@@ -189,51 +203,57 @@ void AppProcess::terminate()
 
 		ACE_Guard<ACE_Recursive_Thread_Mutex> guard(Process_Manager::instance()->mutex());
 #if defined(_WIN32)
-		if (os::kill_job(m_job))
+		const bool killSuccess = os::kill_job(m_job);
 #else
-		if (ACE_OS::kill(-pid, SIGKILL) == 0)
+		// Kill process group with negative PID
+		const bool killSuccess = (ACE_OS::kill(-pid, SIGKILL) == 0);
 #endif
+
+		if (killSuccess)
 		{
-			// kill group success
+			// Kill group succeeded
 			if (Process_Manager::instance()->remove(pid) == 0)
 			{
-				// removed from Process_Manager, wait outside Process_Manager
+				// Removed from Process_Manager, wait outside Process_Manager lock
 				AttachProcess(pid).wait();
 			}
 		}
 		else
 		{
 			LOG_WAR << fname << "kill process group <" << pid << "> failed with error: " << last_error_msg();
-			// use Process_Manager terminate and wait
+
+			// Use Process_Manager terminate and wait
 			if (Process_Manager::instance()->terminate(pid) == 0)
 			{
 				Process_Manager::instance()->wait(pid);
 			}
-			else
+			else if (Process_Manager::instance()->remove(pid) == 0)
 			{
-				// both terminate failed
-				if (Process_Manager::instance()->remove(pid) == 0)
-				{
-					// removed from Process_Manager, wait outside Process_Manager
-					ACE::terminate_process(pid);
-					AttachProcess(pid).wait();
-				}
+				// Both terminate methods failed, try direct termination
+				ACE::terminate_process(pid);
+				AttachProcess(pid).wait();
 			}
 		}
+
 		LOG_DBG << fname << "process <" << pid << "> killed";
 	}
 
 	cleanResource();
 	if (terminated)
+	{
 		ProcessExitHandler::terminate(pid);
+	}
 }
 
 void AppProcess::setCgroup(std::shared_ptr<ResourceLimitation> &limit)
 {
-	// https://blog.csdn.net/u011547375/article/details/9851455
-	if (limit != nullptr)
+	// Reference: https://blog.csdn.net/u011547375/article/details/9851455
+	if (limit)
 	{
-		m_cgroup = std::make_unique<LinuxCgroup>(limit->m_memoryMb, limit->m_memoryVirtMb - limit->m_memoryMb, limit->m_cpuShares);
+		m_cgroup = std::make_unique<LinuxCgroup>(
+			limit->m_memoryMb,
+			limit->m_memoryVirtMb - limit->m_memoryMb,
+			limit->m_cpuShares);
 		m_cgroup->setCgroup(limit->m_name, getpid(), ++(limit->m_index));
 	}
 }
@@ -254,7 +274,7 @@ void AppProcess::delayKill(std::size_t timeout, const std::string &from)
 
 	if (!IS_VALID_TIMER_ID(m_timerTerminateId))
 	{
-		m_timerTerminateId = this->registerTimer(1000L * timeout, 0, std::bind(&AppProcess::onTimerTerminate, this), from);
+		m_timerTerminateId = registerTimer(1000L * timeout, 0, std::bind(&AppProcess::onTimerTerminate, this), from);
 	}
 	else
 	{
@@ -268,12 +288,13 @@ void AppProcess::registerCheckStdoutTimer()
 
 	if (!IS_VALID_TIMER_ID(m_timerCheckStdoutId))
 	{
-		static const int timeoutSec = STDOUT_FILE_SIZE_CHECK_INTERVAL;
-		m_timerCheckStdoutId = this->registerTimer(1000L * timeoutSec, timeoutSec, std::bind(&AppProcess::onTimerCheckStdout, this), fname);
+		static const int TIMEOUT_SEC = STDOUT_FILE_SIZE_CHECK_INTERVAL;
+		m_timerCheckStdoutId = registerTimer(1000L * TIMEOUT_SEC, TIMEOUT_SEC,
+											 std::bind(&AppProcess::onTimerCheckStdout, this), fname);
 	}
 	else
 	{
-		LOG_ERR << fname << "already registered stdout check timer ID: " << m_timerTerminateId;
+		LOG_ERR << fname << "already registered stdout check timer ID: " << m_timerCheckStdoutId;
 	}
 }
 
@@ -281,96 +302,72 @@ bool AppProcess::onTimerCheckStdout()
 {
 	const static char fname[] = "AppProcess::onTimerCheckStdout() ";
 
+	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
+
+	if (m_stdoutHandler.valid() && m_stdOutMaxSize)
 	{
-		std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-		if (m_stdoutHandler.valid() && m_stdOutMaxSize)
+		ACE_stat stat;
+		if (ACE_OS::fstat(m_stdoutHandler.get(), &stat) == 0)
 		{
-			ACE_stat stat;
-			if (0 == ACE_OS::fstat(m_stdoutHandler.get(), &stat))
+			if (stat.st_size > m_stdOutMaxSize)
 			{
-				if (stat.st_size > m_stdOutMaxSize)
+				// Acquire exclusive lock on the file
+				ACE_File_Lock fileLock(m_stdoutHandler.get(), false);
+				if (fileLock.acquire() == -1)
 				{
-					// Acquire an exclusive lock on the file
-					ACE_File_Lock fileLock(m_stdoutHandler.get(), false);
-					if (fileLock.acquire() == -1)
-					{
-						LOG_WAR << fname << "acquire exclusive lock on the stdout file failed: " << m_stdoutFileName;
-					}
-
-					// https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
-					const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
-					fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
-					ACE_OS::ftruncate(m_stdoutHandler.get(), 0);
-
-					// Release the lock
-					fileLock.release();
-					LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize << ", switched stdout file: " << m_stdoutFileName;
+					LOG_WAR << fname << "acquire exclusive lock on the stdout file failed: " << m_stdoutFileName;
 				}
+
+				// Copy current stdout to backup and truncate original
+				// Reference: https://stackoverflow.com/questions/10195343/copy-a-file-in-a-sane-safe-and-efficient-way
+				const auto backupFile = fs::path(m_stdoutFileName + STDOUT_BAK_POSTFIX);
+				fs::copy_file(fs::path(m_stdoutFileName), backupFile, fs::copy_options::overwrite_existing);
+				ACE_OS::ftruncate(m_stdoutHandler.get(), 0);
+				fileLock.release();
+
+				LOG_INF << fname << "file size: " << stat.st_size << " reached: " << m_stdOutMaxSize
+						<< ", switched stdout file: " << m_stdoutFileName;
 			}
-			else
-			{
-				LOG_ERR << fname << "fstat failed with error : " << last_error_msg();
+		}
+		else
+		{
+			LOG_ERR << fname << "fstat failed with error : " << last_error_msg();
 #if !defined(_WIN32)
-				auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
-				m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
+			// Reopen stdout file descriptor
+			const auto stdOut = Utility::stringFormat("/proc/%d/fd/1", getpid());
+			m_stdoutHandler.reset(ACE_OS::open(stdOut.c_str(), O_RDWR));
 #endif
-			}
 		}
 	}
 
 	return IS_VALID_TIMER_ID(m_timerCheckStdoutId);
 }
 
-int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize)
+int AppProcess::spawnProcess(std::string cmd, std::string user, std::string workDir,
+							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+							 const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
 {
 	const static char fname[] = "AppProcess::spawnProcess() ";
 
 	std::lock_guard<std::recursive_mutex> guard(m_processMutex);
-	// check command file existence & permission
-	auto argv = Utility::str2argv(cmd);
-	auto &cmdRoot = argv.size() > 0 ? argv[0] : cmd;
-	bool checkCmd = true;
-	if (cmdRoot.rfind('/') == std::string::npos && cmdRoot.rfind('\\') == std::string::npos)
+
+	// Validate command
+	if (validateCommand(cmd) != 0)
 	{
-		checkCmd = false;
-	}
-	if (checkCmd && !Utility::isFileExist(cmdRoot))
-	{
-		LOG_WAR << fname << "command file <" << cmdRoot << "> does not exist";
-		startError(Utility::stringFormat("command file <%s> does not exist", cmdRoot.c_str()));
-		return ACE_INVALID_PID;
-	}
-	if (checkCmd && ACE_OS::access(cmdRoot.c_str(), X_OK) != 0)
-	{
-		LOG_WAR << fname << "command file <" << cmdRoot << "> does not have execution permission";
-		startError(Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str()));
 		return ACE_INVALID_PID;
 	}
 
-	// Windows inherit env
-#if defined(_WIN32)
-	// Windows: ACE setenv replaces env, so merge manually
-	const auto currentEnv = Utility::getenvs();
-	for (const auto &kv : currentEnv)
-		if (!envMap.count(kv.first))
-			envMap[kv.first] = kv.second; // merge parent
-#endif
-	// AppMesh build-in env
-	envMap[ENV_APPMESH_PROCESS_KEY] = m_key;
-	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
-	auto app = Configuration::instance()->getApp(m_owner);
-	if (app)
-	{
-		envMap[ENV_APPMESH_APPLICATION_NAME] = app->getName();
-	}
+	// Prepare environment variables
+	prepareEnvironment(envMap);
 
 	std::size_t cmdLength = cmd.length() + ACE_Process_Options::DEFAULT_COMMAND_LINE_BUF_LEN;
-	int totalEnvSize = 0;
-	int totalEnvArgs = 0;
+	int totalEnvSize = 0, totalEnvArgs = 0;
 	Utility::getEnvironmentSize(envMap, totalEnvSize, totalEnvArgs);
+
 	ACE_Process_Options option(true /*inherit_environment*/, cmdLength, totalEnvSize, totalEnvArgs);
 	option.command_line("%s", cmd.c_str());
-	// option.avoid_zombies(1);
+	// option.avoid_zombies(1); // Not used to allow proper wait() handling
+
 #if !defined(_WIN32)
 	if (!user.empty() && user != "root")
 	{
@@ -388,7 +385,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			return ACE_INVALID_PID;
 		}
 	}
-	option.setgroup(0); // set group id with the process id, used to kill process group
+	option.setgroup(0); // Set group id with the process id, used to kill process group
 	option.handle_inheritance(0);
 #else
 	option.handle_inheritance(1);
@@ -398,6 +395,7 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 	{
 		workDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
 	}
+
 	if (fs::exists(workDir))
 	{
 		option.working_directory(workDir.c_str());
@@ -407,35 +405,28 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		startError(Utility::stringFormat("working_directory <%s> does not exist", workDir.c_str()));
 		LOG_WAR << fname << "working_directory <" << workDir << "> does not exist, use default";
 	}
-	std::for_each(envMap.begin(), envMap.end(), [&option](const std::pair<std::string, std::string> &pair)
-				  {
-					  option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
-					  // LOG_DBG << fname << "spawnProcess with env: " << pair.first.c_str() << "=" << pair.second.c_str();
-				  });
+
+	// Set environment variables
+	for (const auto &pair : envMap)
+	{
+		option.setenv(pair.first.c_str(), "%s", pair.second.c_str());
+	}
+
 	option.release_handles();
-	// clean if necessary
+
+	// Clean if necessary
 	m_stdoutHandler.reset();
 	m_stdinHandler.reset();
 	m_stdoutFileName = stdoutFile;
-	if (m_stdoutFileName.length() || stdinFileContent != EMPTY_STR_JSON)
-	{
-		/*
-		*
-			444 r--r--r--
-			600 rw-------
-			644 rw-r--r--
-			666 rw-rw-rw-
-			700 rwx------
-			744 rwxr--r--
-			755 rwxr-xr-x
-			777 rwxrwxrwx
-		*/
 
-		// STDOUT
-		if (m_stdoutFileName.length())
+	if (!m_stdoutFileName.empty() || stdinFileContent != EMPTY_STR_JSON)
+	{
+		// Setup STDOUT
+		if (!m_stdoutFileName.empty())
 		{
 			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_APPEND | O_TRUNC));
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
+
 			if (!m_stdoutHandler.valid())
 			{
 				LOG_ERR << fname << "Failed to open file: <" << m_stdoutFileName << "> with error: " << ACE_OS::last_error();
@@ -446,12 +437,15 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 			m_stdoutHandler.reset(ACE_OS::open(DEV_NULL, O_RDWR));
 		}
 
-		// STDIN
+		// Setup STDIN
 		if (stdinFileContent != EMPTY_STR_JSON)
 		{
-			const std::string content = stdinFileContent.is_string() ? stdinFileContent.get<std::string>() : stdinFileContent.dump();
+			const std::string content = stdinFileContent.is_string()
+											? stdinFileContent.get<std::string>()
+											: stdinFileContent.dump();
 			m_stdinFileName = os::createTmpFile(m_stdinFileName, content);
-			m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY)); // open for reading by child process
+			m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY)); // Open for reading by child process
+
 			if (!m_stdinHandler.valid())
 			{
 				startError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
@@ -462,25 +456,30 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		{
 			m_stdinHandler.reset(ACE_OS::open(DEV_NULL, O_RDONLY));
 		}
+
 		option.set_handles(m_stdinHandler.get(), m_stdoutHandler.get(), m_stdoutHandler.get());
 	}
+
 #if !defined(WIN32)
-	// do not inherit LD_LIBRARY_PATH to child
-	// TODO: windows do not have lib64 dir
+	// Do not inherit LD_LIBRARY_PATH to child
+	// TODO: Windows does not have lib64 directory
 	static const std::string ldEnv = Utility::getenv(ENV_LD_LIBRARY_PATH);
 	if (!ldEnv.empty() && !envMap.count(ENV_LD_LIBRARY_PATH))
 	{
 		std::string env = ldEnv;
-		env = Utility::stringReplace(env, Utility::getHomeDir() + "/lib64:", "");
-		env = Utility::stringReplace(env, Utility::getHomeDir() + "/lib64", "");
+		const auto homeLib = Utility::getHomeDir() + "/lib64";
+		env = Utility::stringReplace(env, homeLib + ":", "");
+		env = Utility::stringReplace(env, homeLib, "");
 		option.setenv(ENV_LD_LIBRARY_PATH, "%s", env.c_str());
 		LOG_DBG << fname << "replace LD_LIBRARY_PATH with " << env.c_str();
 	}
 #endif
-	if (this->spawn(option) >= 0)
+
+	if (spawn(option) >= 0)
 	{
-		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << m_pid << ">.";
-		this->setCgroup(limit);
+		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << m_pid.load() << ">.";
+		setCgroup(limit);
+
 		if (m_stdoutHandler.valid() && maxStdoutSize)
 		{
 			m_stdOutMaxSize = maxStdoutSize;
@@ -491,7 +490,8 @@ int AppProcess::spawnProcess(std::string cmd, std::string user, std::string work
 		LOG_ERR << fname << "Process:<" << cmd << "> start failed with error : " << last_error_msg();
 		startError(Utility::stringFormat("start failed with error <%s>", last_error_msg()));
 	}
-	return m_pid;
+
+	return m_pid.load();
 }
 
 pid_t AppProcess::spawn(ACE_Process_Options &option)
@@ -499,7 +499,8 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 	const static char fname[] = "AppProcess::spawn() ";
 
 	auto pid = Process_Manager::instance()->spawn(option);
-	m_pid = pid;
+	m_pid.store(pid);
+
 	if (pid != ACE_INVALID_PID)
 	{
 		if (Process_Manager::instance()->register_handler(this, pid) == -1)
@@ -507,12 +508,13 @@ pid_t AppProcess::spawn(ACE_Process_Options &option)
 			LOG_ERR << fname << "Failed to register process handler for PID <" << pid << ">: " << last_error_msg();
 		}
 #if defined(_WIN32)
-		// This creates a named job object in the Windows kernel.
-		// This handle must remain in scope (and open) until a running process is assigned to it.
+		// Create Windows job object and assign process to it
+		// This handle must remain in scope until process is assigned
 		m_job = os::create_job(os::name_job(pid));
 		os::assign_job(m_job, pid);
 #endif
 	}
+
 	return pid;
 }
 
@@ -524,7 +526,7 @@ const std::string AppProcess::getOutputMsg(long *position, int maxSize, bool rea
 
 const std::string AppProcess::startError() const
 {
-	auto ptr = this->m_startError.load();
+	auto ptr = m_startError.load();
 	return ptr ? *ptr : std::string();
 }
 
@@ -533,37 +535,94 @@ void AppProcess::startError(const std::string &err)
 	m_startError.store(boost::shared_ptr<std::string>(new std::string(err)));
 }
 
+int AppProcess::validateCommand(const std::string &cmd)
+{
+	const static char fname[] = "AppProcess::validateCommand() ";
+
+	auto argv = Utility::str2argv(cmd);
+	const auto &cmdRoot = argv.empty() ? cmd : argv[0];
+	const bool checkCmd = (cmdRoot.find('/') != std::string::npos || cmdRoot.find('\\') != std::string::npos);
+
+	if (checkCmd && !Utility::isFileExist(cmdRoot))
+	{
+		LOG_WAR << fname << "command file <" << cmdRoot << "> does not exist";
+		startError(Utility::stringFormat("command file <%s> does not exist", cmdRoot.c_str()));
+		return ACE_INVALID_PID;
+	}
+
+	if (checkCmd && ACE_OS::access(cmdRoot.c_str(), X_OK) != 0)
+	{
+		LOG_WAR << fname << "command file <" << cmdRoot << "> does not have execution permission";
+		startError(Utility::stringFormat("command file <%s> does not have execution permission", cmdRoot.c_str()));
+		return ACE_INVALID_PID;
+	}
+
+	return 0;
+}
+
+void AppProcess::prepareEnvironment(std::map<std::string, std::string> &envMap)
+{
+#if defined(_WIN32)
+	// Windows: ACE setenv replaces env, so merge manually with parent environment
+	const auto currentEnv = Utility::getenvs();
+	for (const auto &kv : currentEnv)
+	{
+		if (!envMap.count(kv.first))
+		{
+			envMap[kv.first] = kv.second;
+		}
+	}
+#endif
+
+	// Add AppMesh built-in environment variables
+	envMap[ENV_APPMESH_PROCESS_KEY] = m_key;
+	envMap[ENV_APPMESH_LAUNCH_TIME] = std::to_string(
+		std::chrono::duration_cast<std::chrono::seconds>(
+			std::chrono::system_clock::now().time_since_epoch())
+			.count());
+
+	if (auto app = Configuration::instance()->getApp(m_owner))
+	{
+		envMap[ENV_APPMESH_APPLICATION_NAME] = app->getName();
+	}
+}
+
 std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> AppProcess::getProcessDetails(void *ptree)
 {
-	auto tree = os::pstree(this->getpid(), ptree);
+	auto tree = os::pstree(getpid(), ptree);
 
-	auto totalMemory = tree ? tree->totalRssMemBytes() : 0;
-	auto totalFileDescriptors = tree ? tree->totalFileDescriptors() : 0;
+	const auto totalMemory = tree ? tree->totalRssMemBytes() : 0;
+	const auto totalFileDescriptors = tree ? tree->totalFileDescriptors() : 0;
 	std::string pstreeStr;
 	pid_t leafPid = ACE_INVALID_PID;
+
 	if (tree)
 	{
 		std::stringstream ss;
 		ss << *tree;
 		pstreeStr = ss.str();
-
 		leafPid = tree->findLeafPid();
 	}
 
-	// https://stackoverflow.com/questions/1420426/how-to-calculate-the-cpu-usage-of-a-process-by-pid-in-linux-from-c/1424556
-	auto curSysCpuTime = os::cpuTotalTime();
-	float cpuUsage(0);
-	auto curProcCpuTime = tree ? tree->totalCpuTime() : 0;
-	static auto cpuNumber = os::cpus().size(); // static int cpuNumber = sysconf(_SC_NPROCESSORS_ONLN);
+	// Calculate CPU usage
+	// Reference: https://stackoverflow.com/questions/1420426/how-to-calculate-the-cpu-usage-of-a-process-by-pid-in-linux-from-c/1424556
+	const auto curSysCpuTime = os::cpuTotalTime();
+	const auto curProcCpuTime = tree ? tree->totalCpuTime() : 0;
+	static const auto cpuNumber = os::cpus().size(); // CPU count
+
+	float cpuUsage = 0.0f;
 	std::lock_guard<std::recursive_mutex> guard(m_cpuMutex);
-	// only calculate when there have previous cpu time record
+
+	// Only calculate when we have previous CPU time records
 	if (m_lastSysCpuTime && curSysCpuTime && curProcCpuTime)
 	{
-		auto totalTimeDiff = curSysCpuTime - m_lastSysCpuTime;
-		cpuUsage = 100.0 * cpuNumber * (curProcCpuTime - m_lastProcCpuTime) / totalTimeDiff;
+		const auto totalTimeDiff = curSysCpuTime - m_lastSysCpuTime;
+		cpuUsage = 100.0f * cpuNumber * (curProcCpuTime - m_lastProcCpuTime) / totalTimeDiff;
 	}
+
 	m_lastProcCpuTime = curProcCpuTime;
 	m_lastSysCpuTime = curSysCpuTime;
+
 	return std::make_tuple(true, totalMemory, cpuUsage, totalFileDescriptors, pstreeStr, leafPid);
 }
 
@@ -572,18 +631,12 @@ AttachProcess::AttachProcess(pid_t pid)
 #if defined(_WIN32)
 	process_info_.hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
 	if (process_info_.hProcess)
+	{
 		process_info_.dwProcessId = pid;
+	}
 #else
 	child_id_ = pid;
 #endif
-}
-
-AttachProcess::~AttachProcess()
-{
-}
-
-Process_Manager::~Process_Manager()
-{
 }
 
 ACE_Recursive_Thread_Mutex &Process_Manager::mutex()
@@ -593,17 +646,8 @@ ACE_Recursive_Thread_Mutex &Process_Manager::mutex()
 
 Process_Manager *Process_Manager::instance()
 {
-	static Process_Manager *pm = new Process_Manager();
-	return pm;
-}
-
-ProcessExitHandler::ProcessExitHandler()
-	: m_exitPid(ACE_INVALID_PID), m_exitCode(ACE_INVALID_PID)
-{
-}
-
-ProcessExitHandler::~ProcessExitHandler()
-{
+	static Process_Manager pm;
+	return &pm;
 }
 
 int ProcessExitHandler::handle_exit(ACE_Process *process)
@@ -611,11 +655,11 @@ int ProcessExitHandler::handle_exit(ACE_Process *process)
 	const static char fname[] = "ProcessExitHandler::handle_exit() ";
 	LOG_INF << fname << "Process <" << process->getpid() << "> exited with code <" << process->return_value() << ">";
 
-	// NOTE: here hold the lock: Process_Manager::instance(), avoid access app lock
+	// NOTE: here holds the lock from Process_Manager::instance(), avoid accessing app lock
 
-	m_exitPid = process->getpid();
-	m_exitCode = process->return_value();
-	this->registerTimer(0, 0, std::bind(&ProcessExitHandler::onProcessExit, this), fname);
+	const pid_t exitPid = process->getpid();
+	const int exitCode = process->return_value();
+	registerTimer(0, 0, std::bind(&ProcessExitHandler::onProcessExit, this, exitCode, exitPid), fname);
 	return 0;
 }
 
@@ -626,24 +670,26 @@ void ProcessExitHandler::terminate(pid_t pid)
 
 	if (pid > 1)
 	{
-		m_exitPid = pid;
-		m_exitCode = 9;
-		onProcessExit();
+		const int exitCode = 9;
+		onProcessExit(exitCode, pid);
 	}
 }
 
-bool ProcessExitHandler::onProcessExit()
+bool ProcessExitHandler::onProcessExit(int exitCode, pid_t exitPid)
 {
 	const static char fname[] = "ProcessExitHandler::onProcessExit() ";
 
-	// update exit code
+	// Update exit code
 	if (auto appProcess = dynamic_cast<AppProcess *>(this))
-		appProcess->onExit(m_exitCode);
+	{
+		appProcess->onExit(exitCode);
+	}
 	else
+	{
 		LOG_ERR << fname << "cast ProcessExitHandler to AppProcess failed";
+	}
 
-	// response standby request
-	HttpRequestOutputView::onProcessExitResponse(m_exitPid);
-
+	// Response standby request
+	HttpRequestOutputView::onProcessExitResponse(exitPid);
 	return false;
 }

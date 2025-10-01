@@ -25,10 +25,13 @@ int TimerEvent::handle_timeout(const ACE_Time_Value &current_time, const void *a
 		return -1;
 	}
 
-	// Execute timer callback (true to continue, false to stop)
-	if (!m_handler() || m_isOneShot)
+	// Execute timer callback
+	bool shouldContinue = m_handler();
+
+	// Stop if one-shot or handler returned false
+	if (m_isOneShot || !shouldContinue)
 	{
-		LOG_DBG << fname << "timer <" << this << "> removed due to " << (m_isOneShot ? "one-shot" : "callback return");
+		LOG_DBG << fname << "timer <" << this << "> removed due to " << (m_isOneShot ? "one-shot" : "callback returned false");
 		return -1; // Stop timer - will call handle_close()
 	}
 
@@ -100,11 +103,18 @@ bool TimerManager::cancelTimer(long &timerId)
 	const int canceled = m_timerQueue.cancel(timerId, (const void **)&timer);
 	LOG_DBG << fname << "timer ID <" << timerId << "> cancel result <" << canceled << ">";
 
-	if (canceled > 0 && timer)
+	if (canceled > 0)
 	{
 		// Call handle_close() on successful cancellation
 		// ACE_Thread_Timer_Queue_Adapter::cancel() does not pass proper dont_call_handle_close
-		timer->handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::TIMER_MASK);
+		if (timer)
+		{
+			timer->handle_close(ACE_INVALID_HANDLE, ACE_Event_Handler::TIMER_MASK);
+		}
+		else
+		{
+			LOG_ERR << fname << "timer ID <" << timerId << "> missing TimerEvent instance";
+		}
 		CLEAR_TIMER_ID(timerId);
 		return true;
 	}

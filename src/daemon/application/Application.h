@@ -1,4 +1,5 @@
 #pragma once
+
 #include <atomic>
 #include <chrono>
 #include <map>
@@ -28,15 +29,15 @@ class AppProcess;
 class DailyLimitation;
 class ResourceLimitation;
 class TaskRequest;
+
 namespace prometheus
 {
 	class Counter;
 };
+
 using AppMeshProcess = boost::synchronized_value<std::shared_ptr<AppProcess>, boost::recursive_mutex>;
 
-//////////////////////////////////////////////////////////////////////////
-/// An Application is used to define and manage a process job.
-//////////////////////////////////////////////////////////////////////////
+// An Application defines and manages a process job
 class Application : public TimerHandler, public AppBehavior
 {
 public:
@@ -44,23 +45,27 @@ public:
 	virtual ~Application();
 	virtual bool operator==(const std::shared_ptr<Application> &app);
 
+	// Getters
 	const std::string &getName() const;
 	pid_t getpid() const;
-	void health(bool health);
 	int health() const;
 	const std::string &healthCheckCmd() const;
 	const std::shared_ptr<User> &getOwner() const;
 	int getOwnerPermission() const;
 	STATUS getStatus() const;
 	bool isPersistAble() const;
-	void setUnPersistable();
+	bool isEnabled() const;
 
+	// Setters
+	void health(bool health);
+	void setUnPersistable();
 	void nextLaunchTime(const std::chrono::system_clock::time_point &time);
 
+	// Availability check
 	bool available(const std::chrono::system_clock::time_point &now = std::chrono::system_clock::now());
-	bool isEnabled() const;
 	bool attach(int pid);
 
+	// JSON serialization
 	static void FromJson(const std::shared_ptr<Application> &app, const nlohmann::json &obj) noexcept(false);
 	virtual nlohmann::json AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
 	virtual void save();
@@ -68,13 +73,13 @@ public:
 	virtual void dump();
 	virtual std::string getYamlPath();
 
-	// operate
+	// Operations
 	void execute(void *ptree = nullptr);
 	void enable();
 	void disable();
 	void destroy();
 
-	// behavior
+	// Behavior
 	boost::shared_ptr<std::chrono::system_clock::time_point> scheduleNext(std::chrono::system_clock::time_point startFrom = std::chrono::system_clock::now());
 	void regSuicideTimer(int timeoutSeconds);
 	bool onTimerAppRemove();
@@ -82,27 +87,29 @@ public:
 	void onExitUpdate(int code);
 	void terminate(std::shared_ptr<AppProcess> &process);
 
+	// Run operations
 	std::string runAsyncrize(int timeoutSeconds) noexcept(false);
 	std::string runSyncrize(int timeoutSeconds, std::shared_ptr<void> asyncHttpRequest) noexcept(false);
 	std::tuple<std::string, bool, int> getOutput(long &position, long maxSize, const std::string &processUuid = "", int index = 0, size_t timeout = 0);
 
+	// Task operations
 	void sendTask(std::shared_ptr<void> asyncHttpRequest);
 	bool deleteTask();
 	void fetchTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<void> asyncHttpRequest);
 	std::tuple<int, std::string> taskStatus();
 
-	// prometheus
+	// Prometheus metrics
 	void initMetrics();
 	void initMetrics(std::shared_ptr<Application> fromApp);
 
 protected:
-	// error
+	// Error handling
 	void setLastError(const std::string &error) noexcept(false);
 	const std::string getLastError() const noexcept(false);
 	void setInvalidError() noexcept(false);
 
-	// process
+	// Process management
 	std::shared_ptr<AppProcess> allocProcess(bool monitorProcess, const std::string &dockerImage, const std::string &appName);
 	bool onTimerSpawn();
 	void refresh(void *ptree = nullptr);
@@ -113,6 +120,10 @@ protected:
 	const std::string &getCmdLine() const;
 	std::map<std::string, std::string> getMergedEnvMap() const;
 
+	void handleUnavailable(const std::chrono::system_clock::time_point &now);
+	boost::shared_ptr<std::chrono::system_clock::time_point> handleScheduling(const std::chrono::system_clock::time_point &now);
+	bool hasExited(const std::chrono::system_clock::time_point &now) const;
+
 protected:
 	std::shared_ptr<AppTimer> m_timer;
 	bool m_persistAble;
@@ -120,8 +131,7 @@ protected:
 	std::string m_name;
 	std::string m_commandLine;
 	std::string m_description;
-	/// @brief TODO: when user is removed, need remove associated app, otherwise, app invoke will fail
-	std::shared_ptr<User> m_owner;
+	std::shared_ptr<User> m_owner; // TODO: when user is removed, need remove associated app, otherwise, app invoke will fail
 	int m_ownerPermission;
 	std::string m_workdir;
 	std::string m_stdoutFile;
@@ -136,7 +146,7 @@ protected:
 	std::chrono::system_clock::time_point m_startTime;
 	std::chrono::system_clock::time_point m_endTime;
 
-	// short running
+	// Short running
 	std::string m_startIntervalValue;
 	int m_startInterval;
 	std::string m_bufferTimeValue;
@@ -144,8 +154,8 @@ protected:
 	bool m_startIntervalValueIsCronExpr;
 	std::shared_ptr<AppProcess> m_bufferProcess;
 
-	std::atomic_long m_nextStartTimerId; // use together with m_nextStartTimerIdEvent
-	ACE_Event m_nextStartTimerIdEvent;	 // use together with m_nextStartTimerId
+	std::atomic_long m_nextStartTimerId;
+	ACE_Event m_nextStartTimerIdEvent;
 
 	std::chrono::system_clock::time_point m_regTime;
 	std::string m_healthCheckCmd;
@@ -159,21 +169,23 @@ protected:
 	std::map<std::string, std::string> m_secEnvMap;
 	std::string m_dockerImage;
 
-	// runtime dynamic variables (which will also be read by API)
+	// Runtime dynamic variables
 	AppMeshProcess m_process;
 	std::atomic<pid_t> m_pid;
-	std::atomic<int> m_return; // the exit code of last instance
+	std::atomic<int> m_return; // Exit code of last instance
 	std::atomic_bool m_health;
 	std::atomic<STATUS> m_status;
 	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procStartTime;
 	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_procExitTime;
 	boost::atomic_shared_ptr<std::chrono::system_clock::time_point> m_nextLaunchTime;
-	// error
+
+	// Error message
 	boost::synchronized_value<std::string> m_lastError;
-	// task request <application level>, use std::atomic<std::shared_ptr<T>> after C++20
+
+	// Task request (application level)
 	TaskRequest m_task;
 
-	// Prometheus
+	// Prometheus metrics
 	std::shared_ptr<CounterMetric> m_metricStartCount;
 	std::shared_ptr<GaugeMetric> m_metricMemory;
 	std::shared_ptr<GaugeMetric> m_metricCpu;

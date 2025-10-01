@@ -19,10 +19,10 @@ HttpRequest::HttpRequest(Request &&request, int tcpHandlerId)
 	  m_method(std::move(request.http_method)),
 	  m_relative_uri(std::move(request.request_uri)),
 	  m_remote_address(std::move(request.client_addr)),
-	  m_body(std::make_shared<std::vector<uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the smart_ptr
+	  m_body(std::make_shared<std::vector<uint8_t>>(std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)),
 	  m_headers(std::move(request.headers)),
-	  m_tcpHanlerId(tcpHandlerId)
+	  m_tcpHandlerId(tcpHandlerId)
 {
 }
 
@@ -72,7 +72,6 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const char *input, int inp
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
-	// https://blog.csdn.net/u010601662/article/details/78353206
 	Request req;
 	if (req.deserialize(input, inputSize))
 	{
@@ -114,7 +113,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	LOG_DBG << fname;
 
 	Response response;
-	// fill data
+	// Fill response data
 	response.uuid = uuid;
 	response.request_uri = requestUri;
 	response.body = body;
@@ -124,9 +123,9 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (requestUri == REST_PATH_UPLOAD)
 		response.file_upload_request_headers = m_headers;
 
-	if (m_tcpHanlerId > 0)
+	if (m_tcpHandlerId > 0)
 	{
-		return TcpHandler::replyTcp(m_tcpHanlerId, response);
+		return TcpHandler::replyTcp(m_tcpHandlerId, response);
 	}
 
 	return false;
@@ -134,7 +133,6 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 
 void HttpRequest::verifyHMAC() const
 {
-
 	if (this->m_headers.count(HMAC_HTTP_HEADER) &&
 		HMACVerifierSingleton::instance()->verifyHMAC(this->m_uuid, this->m_headers.find(HMAC_HTTP_HEADER)->second))
 	{
@@ -146,7 +144,7 @@ void HttpRequest::verifyHMAC() const
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HttpRequest with remove app from global map
+// HttpRequestAutoCleanup - automatically removes app from global map on cleanup
 ////////////////////////////////////////////////////////////////////////////////
 HttpRequestAutoCleanup::HttpRequestAutoCleanup(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
 	: HttpRequest(message), m_app(appObj)
@@ -155,14 +153,14 @@ HttpRequestAutoCleanup::HttpRequestAutoCleanup(const HttpRequest &message, const
 
 HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 {
-	// avoid use Application lock access Configuration
+	// Trigger suicide timer to remove app (avoid using Application lock to access Configuration)
 	if (m_app)
 		m_app->regSuicideTimer(0);
 	m_app.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HttpRequest with timeout
+// HttpRequestWithTimeout - HTTP request with timeout support
 ////////////////////////////////////////////////////////////////////////////////
 HttpRequestWithTimeout::HttpRequestWithTimeout(const HttpRequest &message)
 	: HttpRequest(message), m_timerResponseId(INVALID_TIMER_ID), m_httpRequestReplyFlag(false), m_id(0)
@@ -171,7 +169,7 @@ HttpRequestWithTimeout::HttpRequestWithTimeout(const HttpRequest &message)
 
 HttpRequestWithTimeout::~HttpRequestWithTimeout()
 {
-	// avoid request leak (both help for C++ and Golang side)
+	// Prevent request leak (helps both C++ and Golang side)
 	HttpRequest::reply(web::http::status_codes::ServiceUnavailable);
 }
 
@@ -217,7 +215,7 @@ void HttpRequestWithTimeout::id(int id)
 
 int HttpRequestWithTimeout::id()
 {
-	return m_id;
+	return m_id.load();
 }
 
 bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
@@ -235,16 +233,13 @@ bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HttpRequest used to handle view app output
+// HttpRequestOutputView - handles viewing application output with async response
 ////////////////////////////////////////////////////////////////////////////////
 using APP_OUT_MULTI_MAP_TYPE = ACE_Hash_Multi_Map_Manager<pid_t, std::shared_ptr<HttpRequestOutputView>, ACE_Hash<pid_t>, ACE_Equal_To<pid_t>, ACE_Recursive_Thread_Mutex>;
 static APP_OUT_MULTI_MAP_TYPE APP_OUT_VIEW_MAP;
 
 HttpRequestOutputView::HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj)
 	: HttpRequest(message), m_timerResponseId(INVALID_TIMER_ID), m_pid(ACE_INVALID_PID), m_app(appObj)
-{
-}
-HttpRequestOutputView::~HttpRequestOutputView()
 {
 }
 
@@ -286,7 +281,7 @@ bool HttpRequestOutputView::onTimerResponse()
 			long pos = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
 			int index = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
 			long maxSize = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
-			size_t timeout = 0; // getHttpQueryValue(message, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
+			size_t timeout = 0;
 			std::string processUuid = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_process_uuid);
 			bool outputHtml = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_html).length();
 			bool outputJson = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_json).length();
@@ -306,7 +301,8 @@ bool HttpRequestOutputView::onTimerResponse()
 				headers[HTTP_HEADER_KEY_exit_code] = std::to_string(exitCode);
 			if (outputHtml)
 			{
-				// https://github.com/yesoreyeram/grafana-infinity-datasource/blob/main/testdata/users.html
+				// Format output as HTML for Grafana Infinity datasource
+				// Reference: https://github.com/yesoreyeram/grafana-infinity-datasource/blob/main/testdata/users.html
 				// https://sriramajeyam.com/grafana-infinity-datasource/wiki/html
 				static const auto html = Utility::readFileCpp("script/grafana_infinity.html");
 				auto lines = Utility::splitString(output, "\n");
@@ -319,9 +315,9 @@ bool HttpRequestOutputView::onTimerResponse()
 			}
 			else if (outputJson)
 			{
+				// Convert output lines to JSON array format
 				auto lines = Utility::splitString(output, "\n");
 				auto jsonArray = nlohmann::json::array();
-				// Build Json
 				for (std::size_t i = 0; i < lines.size(); ++i)
 				{
 					jsonArray[i] = nlohmann::json{{"index", i + 1}, {"stdout", lines[i]}};
@@ -361,7 +357,7 @@ void HttpRequestOutputView::onProcessExitResponse(pid_t pid)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// TaskRequest
+// TaskRequest - manages task request/response flow between client and server
 ////////////////////////////////////////////////////////////////////////////////
 
 void TaskRequest::terminate()
@@ -378,10 +374,10 @@ void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 	m_taskRequest = taskRequest;
 	m_taskRequest->id(++m_taskId);
 
-	// make sure no response pending
+	// Clear any pending response task
 	m_replyTask.reset();
 
-	// if get message request already here, respond it
+	// If fetch request already waiting, respond immediately with the task
 	if (m_fetchTask)
 	{
 		LOG_INF << fname << "respond: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
@@ -408,18 +404,18 @@ void TaskRequest::fetchTask(std::shared_ptr<void> &serverRequest)
 
 	m_fetchTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 
-	// make sure no response pending
+	// Clear any pending response task
 	m_replyTask.reset();
 
-	// get message request may ahead or after send message request
-	// respond if send message already here
+	// Fetch request may arrive before or after send request
+	// Respond immediately if task is already available
 	cleanupRepliedRequest(m_taskRequest);
 	if (m_taskRequest)
 	{
 		LOG_INF << fname << "respond: " << m_fetchTask->m_method << " " << m_fetchTask->m_relative_uri;
 		m_fetchTask->reply(web::http::status_codes::OK, *m_taskRequest->m_body);
 		m_fetchTask.reset();
-		// allow fetch for multiple times in case of process restarted
+		// Allow fetch for multiple times in case process restarted
 	}
 }
 
@@ -440,9 +436,11 @@ void TaskRequest::replyTask(std::shared_ptr<void> &serverRequest)
 
 	LOG_INF << fname << "respond: " << m_taskRequest->m_method << " " << m_taskRequest->m_relative_uri;
 
+	// Forward reply to original client request
 	m_taskRequest->reply(web::http::status_codes::OK, *m_replyTask->m_body);
 	m_taskRequest.reset();
 
+	// Acknowledge server's reply
 	m_replyTask->reply(web::http::status_codes::OK);
 	m_replyTask.reset();
 }
@@ -464,13 +462,13 @@ std::tuple<int, std::string> TaskRequest::taskStatus()
 
 	if (m_fetchTask)
 	{
-		return std::make_tuple(m_taskId.load(), "idle"); // service is ready and waiting for a task
+		return std::make_tuple(m_taskId.load(), "idle"); // Service is ready and waiting for a task
 	}
 
 	if (m_taskRequest)
 	{
-		return std::make_tuple(m_taskRequest->id(), "busy"); // a task has been dispatched and is still processing
+		return std::make_tuple(m_taskRequest->id(), "busy"); // A task has been dispatched and is still processing
 	}
 
-	return std::make_tuple(m_taskId.load(), ""); // no active message or task, state unavailable
+	return std::make_tuple(m_taskId.load(), ""); // No active message or task, state unavailable
 }

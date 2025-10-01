@@ -27,29 +27,35 @@ DockerApiProcess::~DockerApiProcess()
 	DockerApiProcess::terminate();
 }
 
-// TODO: follow CLI "docker rm -f" to implement stop by REST
 void DockerApiProcess::terminate()
 {
 	const static char fname[] = "DockerApiProcess::terminate() ";
 
-	// get and clean container id
+	// Get and clean container id
 	std::string containerId = this->containerId();
 	this->containerId("");
 
-	// clean docker container
+	// Clean docker container
 	if (!containerId.empty())
 	{
 		try
 		{
 			// POST /containers/{id}/kill
-			auto resp = this->requestDocker(web::http::methods::POST, Utility::stringFormat("/containers/%s/kill", containerId.c_str()), {{"signal", "SIGKILL"}}, {}, nullptr);
+			auto resp = this->requestDocker(web::http::methods::POST,
+											Utility::stringFormat("/containers/%s/kill", containerId.c_str()),
+											{{"signal", "SIGKILL"}}, {}, nullptr);
+
 			if (resp->status_code >= web::http::status_codes::BadRequest)
 			{
 				LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
 				ACE_Process::terminate();
 			}
+
 			// DELETE /containers/{id}?force=true
-			resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerId.c_str()), {{"force", "1"}}, {}, nullptr);
+			resp = this->requestDocker(web::http::methods::DEL,
+									   Utility::stringFormat("/containers/%s", containerId.c_str()),
+									   {{"force", "1"}}, {}, nullptr);
+
 			if (resp->status_code >= web::http::status_codes::BadRequest)
 			{
 				LOG_WAR << fname << "Delete container <" << containerId << "> failed <" << resp->text << ">";
@@ -60,39 +66,47 @@ void DockerApiProcess::terminate()
 			LOG_WAR << fname << "Remove container failed <" << e.what() << ">";
 		}
 	}
-	// detach manually
+
+	// Detach manually
 	this->detach();
 }
 
 // TODO: if need pull image, the first process will be docker pull command, the next start container process need to handle
-int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile, const nlohmann::json &stdinFileContent, const int maxStdoutSize)
+int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::string workDir,
+								   std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
+								   const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
 {
 	const static char fname[] = "DockerApiProcess::spawnProcess() ";
 	LOG_DBG << fname << "Entered";
 
-	// GET /images/{name}/json
-	auto resp = this->requestDocker(web::http::methods::GET, Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr);
-	// Check REST avialability
+	// GET /images/{name}/json - Check if image exists
+	auto resp = this->requestDocker(web::http::methods::GET,
+									Utility::stringFormat("/images/%s/json", m_dockerImage.c_str()), {}, {}, nullptr);
+
+	// Check REST availability
 	if (resp->status_code == web::http::status_codes::BadGateway)
 	{
-		LOG_WAR << fname << "request docker wit code:" << resp->status_code << ", message: " << resp->text;
+		LOG_WAR << fname << "request docker with code: " << resp->status_code << ", message: " << resp->text;
 		return ACE_INVALID_PID;
 	}
+
 	if (resp->status_code != web::http::status_codes::OK)
 	{
-		// pull docker image
+		// Pull docker image
 		return this->execPullDockerImage(envMap, m_dockerImage, stdoutFile, workDir);
 	}
 
-	// TODO: ACE_Process::terminate();
-	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerDelete
-	// DELETE /containers/{id}?force=true
-	resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", m_containerName.c_str()), {{"force", "true"}, {"v", "true"}}, {}, nullptr);
+	// DELETE /containers/{id}?force=true - Clean existing container
+	resp = this->requestDocker(web::http::methods::DEL,
+							   Utility::stringFormat("/containers/%s", m_containerName.c_str()),
+							   {{"force", "true"}, {"v", "true"}}, {}, nullptr);
+
 	if (resp->status_code >= web::http::status_codes::BadRequest)
 	{
 		LOG_WAR << fname << "Delete container <" << m_containerName << "> failed <" << resp->text << ">";
 	}
 
+	// Validate input metadata format
 	if (!stdinFileContent.is_null() && !stdinFileContent.is_object())
 	{
 		auto msg = std::string("input error format of metadata, should be a JSON format for Docker container definition: ") + stdinFileContent.dump();
@@ -101,9 +115,10 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		return ACE_INVALID_PID;
 	}
 
-	// https://docs.docker.com/engine/api/v1.41/#operation/ContainerCreate
-	// POST /containers/create
+	// Build container creation body
 	auto createBody = stdinFileContent;
+
+	// Set command
 	if (cmd.length())
 	{
 		auto argv = Utility::str2argv(cmd);
@@ -115,57 +130,76 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 		createBody["Cmd"] = std::move(array);
 	}
 
+	// Set image
 	if (m_dockerImage.length())
+	{
 		createBody["Image"] = std::string(m_dockerImage);
+	}
+
+	// Set working directory
 	if (workDir.length())
+	{
 		createBody["WorkingDir"] = workDir;
+	}
+
+	// Set environment variables
 	if (envMap.size())
 	{
 		auto array = nlohmann::json::array();
 		for (const auto &env : envMap)
+		{
 			array.push_back(env.first + "=" + env.second);
+		}
 		createBody["Env"] = array;
 	}
 
+	// Configure host settings
 	auto hostConfig = HAS_JSON_FIELD(createBody, "HostConfig") ? createBody["HostConfig"] : nlohmann::json();
-	if (limit != nullptr)
+
+	if (limit)
 	{
 		hostConfig["Memory"] = (limit->m_memoryMb);
 		hostConfig["MemorySwap"] = (limit->m_memoryVirtMb);
 		hostConfig["CpuShares"] = (limit->m_cpuShares);
 	}
+
 	hostConfig["AutoRemove"] = true;
 	hostConfig["RestartPolicy"]["Name"] = "no";
-
 	createBody["HostConfig"] = hostConfig;
 
 	// POST /containers/create
 	LOG_DBG << fname << "Creating Container: " << createBody.dump();
-	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
+	resp = this->requestDocker(web::http::methods::POST, "/containers/create",
+							   {{"name", m_containerName}}, {}, &createBody);
+
 	if (resp->status_code == web::http::status_codes::Created)
 	{
 		this->containerId(nlohmann::json::parse(resp->text).at("Id").get<std::string>());
 
 		// POST /containers/{id}/start
-		resp = this->requestDocker(web::http::methods::POST, Utility::stringFormat("/containers/%s/start", m_containerName.c_str()), {}, {}, nullptr);
+		resp = this->requestDocker(web::http::methods::POST,
+								   Utility::stringFormat("/containers/%s/start", m_containerName.c_str()), {}, {}, nullptr);
+
 		if (resp->status_code < web::http::status_codes::BadRequest)
 		{
 			// GET /containers/{id}/json
-			resp = this->requestDocker(web::http::methods::GET, Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
+			resp = this->requestDocker(web::http::methods::GET,
+									   Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
+
 			if (resp->status_code == web::http::status_codes::OK)
 			{
 				auto pid = nlohmann::json::parse(resp->text)["State"]["Pid"].get<int>();
 				// Success
 				this->attach(pid);
 				ACE_Process::child_id_ = pid;
-				LOG_INF << fname << "started pid <" << pid << "> for container :" << m_containerName;
+				LOG_INF << fname << "started pid <" << pid << "> for container: " << m_containerName;
 				return this->getpid();
 			}
 			else
 			{
 				const auto &errorMsg = resp->text;
 				startError(errorMsg);
-				LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
+				LOG_WAR << fname << "Get container info failed <" << errorMsg << ">";
 			}
 		}
 		else
@@ -179,10 +213,10 @@ int DockerApiProcess::spawnProcess(std::string cmd, std::string execUser, std::s
 	{
 		const auto &errorMsg = resp->text;
 		startError(errorMsg);
-		LOG_WAR << fname << "Start container failed <" << errorMsg << ">";
+		LOG_WAR << fname << "Create container failed <" << errorMsg << ">";
 	}
 
-	// failed
+	// Failed
 	this->detach();
 	terminate();
 	return this->getpid();
@@ -192,36 +226,42 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 {
 	if (this->containerId().length())
 	{
-		// --since: RFC3339 OR UNIX timestamp
+		// Get logs since timestamp (RFC3339 or UNIX timestamp)
 		auto secondsUTC = 0L;
 		if (position)
+		{
 			secondsUTC = *position;
+		}
+
 		auto resp = this->requestDocker(
 			web::http::methods::GET,
 			Utility::stringFormat("/containers/%s/logs", this->containerId().c_str()),
 			{{"stdout", "true"}, {"stderr", "true"}, {"since", std::to_string(secondsUTC)}, {"tail", readLine ? "1" : "all"}},
 			{}, nullptr);
+
 		if (position)
 		{
 			*position = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		}
+
 		return resp->text;
 	}
+
 	return std::string();
 }
 
-int DockerApiProcess::returnValue(void) const
+int DockerApiProcess::returnValue() const
 {
 	const static char fname[] = "DockerApiProcess::returnValue() ";
 
 	if (this->containerId().length())
 	{
-		// https://docs.docker.com/engine/api/v1.41/#operation/ContainerInspect
 		// GET /containers/{id}/json
 		auto resp = const_cast<DockerApiProcess *>(this)->requestDocker(
 			web::http::methods::GET,
 			Utility::stringFormat("/containers/%s/json", this->containerId().c_str()),
 			{}, {}, nullptr);
+
 		if (resp->status_code == web::http::status_codes::OK)
 		{
 			try
@@ -230,8 +270,10 @@ int DockerApiProcess::returnValue(void) const
 			}
 			catch (...)
 			{
+				LOG_WAR << fname << "failed to parse exit code";
 			}
 		}
+
 		LOG_WAR << fname << "failed: " << resp->text;
 		return -200;
 	}
@@ -241,7 +283,8 @@ int DockerApiProcess::returnValue(void) const
 	}
 }
 
-const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path, std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body)
+const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::http::method &mtd, const std::string &path,
+																	std::map<std::string, std::string> query, std::map<std::string, std::string> header, nlohmann::json *body)
 {
 	const static char fname[] = "DockerApiProcess::requestDocker() ";
 
@@ -259,13 +302,16 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 				<< body->dump(2);
 	}
 
-	std::string errorMsg = std::string("exception caught: ").append(path);
 	auto response = std::make_shared<CurlResponse>();
+	std::string errorMsg = std::string("exception caught: ").append(path);
+
 	try
 	{
 		auto resp = RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query);
 		if (resp->status_code != web::http::status_codes::OK)
+		{
 			startError(resp->text);
+		}
 		return resp;
 	}
 	catch (const std::exception &ex)
@@ -277,6 +323,7 @@ const std::shared_ptr<CurlResponse> DockerApiProcess::requestDocker(const web::h
 	{
 		LOG_ERR << fname << path << " exception";
 	}
+
 	response->status_code = web::http::status_codes::ServiceUnavailable;
 	response->text = errorMsg;
 	return response;
