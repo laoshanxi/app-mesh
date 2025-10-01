@@ -34,12 +34,11 @@ public:
     void writeFlag();
     std::string shmName() const;
     void cleanup();
-    void exportEnv(const std::string &envName);
 
 private:
     std::string m_shmName;
     std::shared_ptr<class ACE_Shared_Memory_MM> m_aceShm;
     psk_shared_memory_t *m_shmPtr;
 
-    static std::string GetSharedMemoryName();
+    static std::string GenerateSharedMemoryName();
 };

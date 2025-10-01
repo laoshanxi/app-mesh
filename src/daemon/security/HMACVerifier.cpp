@@ -33,7 +33,7 @@ bool HMACVerifier::verifyHMAC(const std::string &message, const std::string &rec
     return generateHMAC(message) == receivedHmac;
 }
 
-bool HMACVerifier::writePSKToSHM()
+std::string HMACVerifier::writePSKToSHM()
 {
     const static char fname[] = "HMACVerifier::writePSKToSHM() ";
 
@@ -41,14 +41,13 @@ bool HMACVerifier::writePSKToSHM()
     if (m_shmPtr->create())
     {
         m_shmPtr->writeData(m_psk.data());
-        m_shmPtr->exportEnv(ENV_PSK_SHM);
         LOG_INF << fname << "PSK prepared in shared memory successfully";
-        return true;
+        return getShmName();
     }
     else
     {
         LOG_ERR << fname << "Failed to create shared memory for PSK";
-        return false;
+        return "";
     }
 }
 

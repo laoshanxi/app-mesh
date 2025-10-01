@@ -11,7 +11,7 @@
 #include "SharedMemory.h"
 
 SharedMemory::SharedMemory()
-    : m_shmName(GetSharedMemoryName()), m_aceShm(nullptr), m_shmPtr(nullptr)
+    : m_shmName(GenerateSharedMemoryName()), m_aceShm(nullptr), m_shmPtr(nullptr)
 {
 }
 
@@ -187,29 +187,7 @@ void SharedMemory::cleanup()
     }
 }
 
-// Export the shared memory name to an environment variable
-void SharedMemory::exportEnv(const std::string &envName)
-{
-    const static char fname[] = "SharedMemory::exportEnv() ";
-
-    if (envName.empty())
-    {
-        LOG_WAR << fname << "Environment variable name is empty";
-        return;
-    }
-
-    if (ACE_OS::setenv(envName.c_str(), m_shmName.c_str(), 1) != 0)
-    {
-        LOG_WAR << fname << "Failed to export environment variable: " << envName
-                << ", error: " << last_error_msg();
-    }
-    else
-    {
-        LOG_INF << fname << "Environment variable exported: " << envName;
-    }
-}
-
-std::string SharedMemory::GetSharedMemoryName()
+std::string SharedMemory::GenerateSharedMemoryName()
 {
     return "appmesh_shm_" + Utility::createUUID() + "_" + std::to_string(ACE_OS::getpid());
 }
