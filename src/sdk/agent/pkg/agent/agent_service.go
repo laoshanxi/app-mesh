@@ -110,8 +110,10 @@ func MonitorConnectionResponse(conn *Connection, targetHost string, allowError b
 
 		ch, ok := httpRequestMap.LoadAndDelete(response.Uuid)
 		if !ok {
-			handleError("Request ID <%s> not found for response", response.Uuid)
-			return
+			// This is expected when a request was canceled/timed out and already cleaned up
+			// Don't treat as fatal - just log and continue processing other responses
+			logger.Warnf("Request ID <%s> not found for response (likely canceled or timed out)", response.Uuid)
+			continue // Continue to next response instead of returning
 		}
 
 		responseChan, ok := ch.(chan *Response)
@@ -120,7 +122,14 @@ func MonitorConnectionResponse(conn *Connection, targetHost string, allowError b
 			return
 		}
 
-		responseChan <- response
+		// Try to send the response, but don't block if channel is closed
+		select {
+		case responseChan <- response:
+			// Successfully sent response
+		default:
+			// Channel is closed or full (shouldn't happen with buffered channel)
+			logger.Warnf("Failed to send response for request ID <%s> (channel closed)", response.Uuid)
+		}
 	}
 }
 
@@ -403,10 +412,10 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		// Handle timeout or cancellation
 		switch ctx.Err() {
 		case context.DeadlineExceeded:
-			logger.Errorf("Request timeout for UUID: %s", request.Uuid)
+			logger.Warnf("Request timeout for UUID: %s", request.Uuid)
 			http.Error(w, "Request timeout", http.StatusGatewayTimeout)
 		case context.Canceled:
-			logger.Errorf("Request canceled for UUID: %s", request.Uuid)
+			logger.Warnf("Request canceled for UUID: %s", request.Uuid)
 			http.Error(w, "Request canceled", http.StatusRequestTimeout)
 		}
 		// Note: We don't delete the connection on timeout/cancellation

@@ -9,84 +9,43 @@
 #include "../../common/Utility.h"
 #include "protoc/ProtobufHelper.h"
 
-/// <summary>
-/// HttpRequest is wrapper of <web::http::http_request>,
-///    - used for REST server forward request to TCP server and wait TCP result then response REST client
-///    - used for TCP server send result to REST server
-/// serialize between RestTcpServer & RestChildObject
-/// handle across domain reply (headers)
-/// </summary>
+// HttpRequest is a wrapper of <web::http::http_request>
+//   - Used for REST server to forward requests to TCP server and wait for TCP result before responding to REST client
+//   - Used for TCP server to send results to REST server
+//   - Serializes between RestTcpServer & RestChildObject
+//   - Handles cross-domain reply headers
 class HttpRequest
 {
 public:
-	/// <summary>
-	/// Construction for deserialize
-	/// TCP REST Server receive and decode this, m_forwardResponse2RestServer always set to true
-	/// </summary>
+	// Constructor for deserialization
+	// TCP REST Server receives and decodes this
 	explicit HttpRequest(Request &&request, int tcpHandlerId);
 
 	virtual ~HttpRequest();
 
-	/// <summary>
-	/// Always use this function to get http body
-	/// http body will always be extract with string (for serialize purpose) and parse to JSON here
-	/// </summary>
+	// Extracts and parses HTTP body as JSON
+	// Always use this function to get HTTP body for consistent serialization
 	nlohmann::json extractJson() const;
 
-	/// <summary>
-	/// Asynchronously responses to this HTTP request.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
+	// Responds to this HTTP request with status only
 	bool reply(web::http::status_code status) const;
 
-	/// <summary>
-	/// Responds to this HTTP request.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="body_data">Json value to use in the response body.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
+	// Responds to this HTTP request with JSON body
 	bool reply(web::http::status_code status, const nlohmann::json &body_data) const;
 
-	/// <summary>
-	/// Responds to this HTTP request.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="body_data">Raw bytes value to use in the response body.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
+	// Responds to this HTTP request with raw bytes
 	bool reply(web::http::status_code status, const std::vector<uint8_t> &body_data) const;
 
-	/// <summary>
-	/// Responds to this HTTP request.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="body_data">Json value to use in the response body.</param>
-	/// <param name="headers">Headers value in the response header.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
+	// Responds to this HTTP request with JSON body and custom headers
 	bool reply(web::http::status_code status, const nlohmann::json &body_data, const std::map<std::string, std::string> &headers) const;
 
-	/// Responds to this HTTP request with a string.
-	/// Assumes the character encoding of the string is UTF-8.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="body_data">UTF-8 string containing the text to use in the response body.</param>
-	/// <param name="content_type">Content type of the body.</param>
-	/// <returns>An asynchronous operation that is completed once response is sent.</returns>
-	/// <remarks>
-	//  Callers of this function do NOT need to block waiting for the response to be
-	/// sent to before the body data is destroyed or goes out of scope.
-	/// </remarks>
+	// Responds to this HTTP request with a string body
+	// Callers do NOT need to block waiting for the response to be sent before the body data is destroyed or goes out of scope
 	bool reply(web::http::status_code status,
 			   std::string &body_data,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	/// <summary>
-	/// Responds to this HTTP request.
-	/// </summary>
-	/// <param name="status">Response status code.</param>
-	/// <param name="content_type">A string holding the MIME type of the message body.</param>
-	/// <param name="body">An asynchronous stream representing the body data.</param>
-	/// <returns>A task that is completed once a response from the request is received.</returns>
+	// Responds to this HTTP request with string body and custom headers
 	bool reply(web::http::status_code status,
 			   const std::string &body_data,
 			   const std::map<std::string, std::string> &headers,
@@ -101,30 +60,24 @@ public:
 	web::http::method m_method;
 	std::string m_relative_uri;
 	std::string m_remote_address;
-	std::shared_ptr<std::vector<uint8_t>> m_body; // use shared_ptr to avoid user string data copy
+	std::shared_ptr<std::vector<uint8_t>> m_body; // Shared pointer to avoid copying large data
 	std::map<std::string, std::string> m_query;
 	std::map<std::string, std::string> m_headers;
 
 protected:
-	/// <summary>
-	/// Response REST response to client
-	/// </summary>
-	/// <param name="requestUri"></param>
-	/// <param name="uuid"></param>
-	/// <param name="body"></param>
-	/// <param name="headers"></param>
-	/// <param name="status"></param>
-	/// <param name="bodyType"></param>
-	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const;
+	// Sends REST response to client through TCP handler
+	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
+					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
+					   const std::string &bodyType) const;
 
 private:
-	const int m_tcpHanlerId;
+	const int m_tcpHandlerId;
 };
 
 class Application;
-/// <summary>
-/// HttpRequest used to remove Application when finished reply
-/// </summary>
+
+// HttpRequest that automatically removes Application when reply finishes
+// Used to manage Application lifecycle tied to request completion
 class HttpRequestAutoCleanup : public HttpRequest
 {
 public:
@@ -135,9 +88,8 @@ private:
 	std::shared_ptr<Application> m_app;
 };
 
-/// <summary>
-/// HttpRequest with timeout
-/// </summary>
+// HttpRequest with timeout support
+// Automatically responds with timeout status if not replied within specified duration
 class HttpRequestWithTimeout : public HttpRequest, public TimerHandler
 {
 public:
@@ -146,36 +98,45 @@ public:
 	virtual ~HttpRequestWithTimeout();
 
 	bool initTimer(int timeoutSeconds);
+
+	// Timer callback invoked when timeout expires
 	bool onTimerResponse();
 	bool replied() const;
+
+	// Interrupts this request with ExpectationFailed status
 	bool interrupt();
 	void id(int id);
 	int id();
 
 protected:
-	// called by timer or user
-	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body, const std::map<std::string, std::string> &headers, const web::http::status_code &status, const std::string &bodyType) const override;
+	// Overridden reply to ensure single response by canceling timer and checking reply flag
+	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<uint8_t> &body,
+					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
+					   const std::string &bodyType) const override;
 
 private:
 	mutable std::atomic_long m_timerResponseId;
 	mutable std::atomic<bool> m_httpRequestReplyFlag;
-	mutable int m_id;
+	mutable std::atomic_int m_id;
 };
 
-/// <summary>
-/// HttpRequest used to reply app output
-/// </summary>
+// HttpRequest for viewing application output
+// Monitors process and responds with output when ready or on timeout
 class HttpRequestOutputView : public TimerHandler, public HttpRequest
 {
 public:
 	explicit HttpRequestOutputView(const HttpRequest &message, const std::shared_ptr<Application> &appObj);
-	virtual ~HttpRequestOutputView();
+	~HttpRequestOutputView() = default;
 	void init();
 
+	// Triggers immediate response with current output
 	void response();
+
+	// Timer callback to respond with application output
 	bool onTimerResponse();
 
-	// response standby request
+	// Static method to respond to all pending requests for a process
+	// Called when a process exits to respond with final output
 	static void onProcessExitResponse(pid_t pid);
 
 private:
@@ -185,9 +146,8 @@ private:
 	std::atomic_flag m_httpRequestReplyFlag = ATOMIC_FLAG_INIT;
 };
 
-/// <summary>
-/// Used to handle message request from client and server
-/// </summary>
+// Manages task request/response communication between client and server
+// Coordinates message flow for bidirectional task handling
 class TaskRequest
 {
 public:

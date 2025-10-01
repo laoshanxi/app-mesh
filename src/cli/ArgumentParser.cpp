@@ -362,6 +362,7 @@ void ArgumentParser::processLogoff()
 	if (response->status_code == web::http::status_codes::OK)
 	{
 		persistAuthToken(parseUrlHost(m_currentUrl), std::string());
+		RestClient::clearSession();
 		std::cout << "User logoff from " << m_currentUrl << " success." << std::endl;
 	}
 }
@@ -2490,6 +2491,9 @@ const std::string ArgumentParser::getAppMeshUrl()
 					config.m_ca_location = sslConfig[JSON_KEY_SSLCaPath].Scalar();
 				config.ResolveAbsolutePaths(Utility::getHomeDir());
 				RestClient::defaultSslConfiguration(config);
+				// session
+				const auto sessionFilePath = (fs::temp_directory_path() / "appmesh.session").string();
+				RestClient::setSessionConfiguration(SessionConfig::FileSession(sessionFilePath));
 			}
 			url = Utility::stringFormat("https://%s:%d", readPersistLastHost(address).c_str(), port);
 		}

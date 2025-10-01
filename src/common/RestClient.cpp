@@ -148,6 +148,9 @@ size_t HeaderCallback(char *buffer, size_t size, size_t nitems, std::map<std::st
 }
 
 ClientSSLConfig RestClient::m_sslConfig;
+SessionConfig RestClient::m_sessionConfig;
+std::mutex RestClient::m_sessionMutex;
+std::string RestClient::m_memoryCookies;
 
 ClientSSLConfig::ClientSSLConfig()
 	: m_ssl_version(CURL_SSLVERSION_TLSv1_2), m_verify_client(false), m_verify_server(false)
@@ -177,6 +180,79 @@ std::string ClientSSLConfig::ResolveAbsolutePath(const std::string &workingHome,
 		return (fs::path(workingHome) / filePath).lexically_normal().string();
 	}
 	return filePath;
+}
+
+void RestClient::setSessionConfiguration(const SessionConfig &sessionConfig)
+{
+	std::lock_guard<std::mutex> lock(m_sessionMutex);
+	m_sessionConfig = sessionConfig;
+
+	// Clear existing cookies when changing session configuration
+	m_memoryCookies.clear();
+}
+
+SessionConfig RestClient::getSessionConfiguration()
+{
+	std::lock_guard<std::mutex> lock(m_sessionMutex);
+	return m_sessionConfig;
+}
+
+void RestClient::clearSession()
+{
+	std::lock_guard<std::mutex> lock(m_sessionMutex);
+
+	if (m_sessionConfig.use_memory_cookies)
+	{
+		// Clear memory cookies
+		m_memoryCookies.clear();
+		LOG_INF << "Memory session cookies cleared";
+	}
+	else if (!m_sessionConfig.cookie_file.empty())
+	{
+		// Delete cookie file
+		if (Utility::isFileExist(m_sessionConfig.cookie_file))
+		{
+			if (std::remove(m_sessionConfig.cookie_file.c_str()) == 0)
+			{
+				LOG_INF << "Cookie file deleted: " << m_sessionConfig.cookie_file;
+			}
+			else
+			{
+				LOG_ERR << "Failed to delete cookie file: " << m_sessionConfig.cookie_file;
+			}
+		}
+	}
+}
+
+void RestClient::setSessionConfig(CURL *curl)
+{
+	std::lock_guard<std::mutex> lock(m_sessionMutex);
+
+	if (!m_sessionConfig.enable_session)
+	{
+		return; // Session disabled
+	}
+
+	if (m_sessionConfig.use_memory_cookies)
+	{
+		// Use memory-based cookies
+		curl_easy_setopt(curl, CURLOPT_COOKIEFILE, ""); // Enable cookie engine
+
+		// If we have stored cookies, set them
+		if (!m_memoryCookies.empty())
+		{
+			curl_easy_setopt(curl, CURLOPT_COOKIELIST, m_memoryCookies.c_str());
+		}
+
+		// Get cookies after request (will be retrieved separately)
+		curl_easy_setopt(curl, CURLOPT_COOKIELIST, "FLUSH"); // Write cookies to engine
+	}
+	else if (!m_sessionConfig.cookie_file.empty())
+	{
+		// Use file-based cookies (Netscape cookie format)
+		curl_easy_setopt(curl, CURLOPT_COOKIEFILE, m_sessionConfig.cookie_file.c_str()); // Read cookies
+		curl_easy_setopt(curl, CURLOPT_COOKIEJAR, m_sessionConfig.cookie_file.c_str());	 // Write cookies
+	}
 }
 
 std::shared_ptr<CurlResponse> RestClient::request(
@@ -264,6 +340,7 @@ std::shared_ptr<CurlResponse> RestClient::request(
 
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
 	setSslConfig(curl);
+	setSessionConfig(curl); // Configure session/cookie handling
 
 	// Perform the request
 	CURLcode result = curl_easy_perform(curl);
@@ -276,6 +353,26 @@ std::shared_ptr<CurlResponse> RestClient::request(
 	{
 		// Get the HTTP response code
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
+
+		// Save cookies to memory if using memory-based session
+		if (m_sessionConfig.enable_session && m_sessionConfig.use_memory_cookies)
+		{
+			std::lock_guard<std::mutex> lock(m_sessionMutex);
+			struct curl_slist *cookies = nullptr;
+			curl_easy_getinfo(curl, CURLINFO_COOKIELIST, &cookies);
+
+			if (cookies)
+			{
+				m_memoryCookies.clear();
+				struct curl_slist *nc = cookies;
+				while (nc)
+				{
+					m_memoryCookies += std::string(nc->data) + "\n";
+					nc = nc->next;
+				}
+				curl_slist_free_all(cookies);
+			}
+		}
 	}
 	return response;
 }
@@ -331,8 +428,9 @@ std::shared_ptr<CurlResponse> RestClient::upload(
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
 	curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response->header);
 
-	// SSL configuration
+	// SSL and Session configuration
 	setSslConfig(curl);
+	setSessionConfig(curl); // Configure session/cookie handling
 
 	// Perform the request
 	CURLcode result = curl_easy_perform(curl);
@@ -345,6 +443,26 @@ std::shared_ptr<CurlResponse> RestClient::upload(
 	{
 		// Get the HTTP response code
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
+
+		// Save cookies to memory if using memory-based session
+		if (m_sessionConfig.enable_session && m_sessionConfig.use_memory_cookies)
+		{
+			std::lock_guard<std::mutex> lock(m_sessionMutex);
+			struct curl_slist *cookies = nullptr;
+			curl_easy_getinfo(curl, CURLINFO_COOKIELIST, &cookies);
+
+			if (cookies)
+			{
+				m_memoryCookies.clear();
+				struct curl_slist *nc = cookies;
+				while (nc)
+				{
+					m_memoryCookies += std::string(nc->data) + "\n";
+					nc = nc->next;
+				}
+				curl_slist_free_all(cookies);
+			}
+		}
 	}
 	return response;
 }
@@ -410,8 +528,9 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
 	curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response->header);
 
-	// SSL configuration
+	// SSL and Session configuration
 	setSslConfig(curl);
+	setSessionConfig(curl); // Configure session/cookie handling
 
 	// Perform the request
 	CURLcode result = curl_easy_perform(curl);
@@ -424,6 +543,26 @@ std::shared_ptr<CurlResponse> RestClient::download(
 	{
 		// Get the HTTP response code
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
+
+		// Save cookies to memory if using memory-based session
+		if (m_sessionConfig.enable_session && m_sessionConfig.use_memory_cookies)
+		{
+			std::lock_guard<std::mutex> lock(m_sessionMutex);
+			struct curl_slist *cookies = nullptr;
+			curl_easy_getinfo(curl, CURLINFO_COOKIELIST, &cookies);
+
+			if (cookies)
+			{
+				m_memoryCookies.clear();
+				struct curl_slist *nc = cookies;
+				while (nc)
+				{
+					m_memoryCookies += std::string(nc->data) + "\n";
+					nc = nc->next;
+				}
+				curl_slist_free_all(cookies);
+			}
+		}
 	}
 	return response;
 }
