@@ -25,6 +25,8 @@ public:
 	int parse();
 
 private:
+	void initCommandMap();
+
 	void initArgs();
 	void printMainHelp();
 	void processLogon();
@@ -57,33 +59,37 @@ private:
 public:
 	std::shared_ptr<CurlResponse> requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
-	std::string getAuthenToken();
+	std::string acquireAuthToken();
 	std::string getAuthenUser();
-	std::string readPersistAuthToken(const std::string &hostName);
+	std::string getAuthToken();
 	std::string readPersistLastHost(const std::string &defaultAddress);
-	void persistAuthToken(const std::string &hostName, const std::string &token);
+	void persistUserConfig(const std::string &hostName);
 	std::string login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience);
-	static std::string getAppConfigDir();
+	static std::string getAndCreateConfigDir();
+	static std::string getAndCreateCookieDirectory(const std::string &host);
 
 private:
 	bool isAppExist(const std::string &appName);
 	std::map<std::string, bool> getAppList();
 	void printApps(const nlohmann::json &json, bool reduce);
 	void shiftCommandLineArgs(po::options_description &desc, bool allowUnregistered = false);
-	std::string reduceStr(std::string source, int limit);
+	std::string reduceStr(std::string source, size_t limit);
 	bool confirmInput(const char *msg);
 	std::string inputPasswd(const std::string &userNameDesc);
-	size_t inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
-	void regSignal();
-	void unregSignal();
+	int inputSecurePasswd(char **pw, size_t sz, int mask, FILE *fp);
+	void setupInterruptHandler(const std::string &appName);
+	void teardownInterruptHandler();
 	std::string parseOutputMessage(std::shared_ptr<CurlResponse> &resp);
 	int runAsyncApp(nlohmann::json &jsonObj, int timeoutSeconds, int lifeCycleSeconds);
 	const std::string getAppMeshUrl();
 	const std::string getPosixTimezone();
 	const std::string parseUrlHost(const std::string &url);
 	const std::string parseUrlPort(const std::string &url);
+	void setCurrentUrl(const std::string &url);
 
 private:
+	using CommandHandler = std::function<int()>;
+	std::map<std::string, CommandHandler> m_commandMap;
 	po::variables_map m_commandLineVariables;
 	std::vector<po::option> m_parsedOptions;
 	int m_argc;
@@ -94,6 +100,5 @@ private:
 	std::string m_currentUrl;
 	std::string m_username;
 	std::string m_userpwd;
-	std::string m_jwtToken;
 	std::string m_forwardTo;
 };

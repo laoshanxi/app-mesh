@@ -349,7 +349,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			targetConnection, err = EstablishConnection(parsedURL.Host, config.ConfigData.REST.SSL.VerifyServerDelegate, true)
 			if err != nil {
 				logger.Errorf("Failed to connect TCP to target host %s with error: %v", forwardingHost, err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				utils.HttpError(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 		}
@@ -363,7 +363,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	// Body buffer
 	request, err := NewAppMeshRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	request.Headers[HTTP_USER_AGENT_HEADER_NAME] = USER_AGENT_APPMESH_SDK
@@ -395,7 +395,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	sendErr := targetConnection.SendRequestData(request)
 	if sendErr != nil {
 		logger.Errorf("Failed to send request to server with error: %v", sendErr)
-		http.Error(w, sendErr.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, sendErr.Error(), http.StatusInternalServerError)
 		// Only delete connection on send error
 		if targetConnection != localConnection {
 			DeleteConnection(forwardingHost)
@@ -413,10 +413,10 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		switch ctx.Err() {
 		case context.DeadlineExceeded:
 			logger.Warnf("Request timeout for UUID: %s", request.Uuid)
-			http.Error(w, "Request timeout", http.StatusGatewayTimeout)
+			utils.HttpError(w, "Request timeout", http.StatusGatewayTimeout)
 		case context.Canceled:
 			logger.Warnf("Request canceled for UUID: %s", request.Uuid)
-			http.Error(w, "Request canceled", http.StatusRequestTimeout)
+			utils.HttpError(w, "Request canceled", http.StatusRequestTimeout)
 		}
 		// Note: We don't delete the connection on timeout/cancellation
 		// as the connection might still be healthy
@@ -450,7 +450,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	parsedURL, err := appmesh.ParseURL(forwardingHost)
 	if err != nil {
 		logger.Warnf("Failed to parse forward URL: %v", err)
-		http.Error(w, "Failed to parse forward URL: "+err.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, "Failed to parse forward URL: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -460,7 +460,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	req, err := http.NewRequest(r.Method, targetURL, r.Body)
 	if err != nil {
 		logger.Errorf("Failed to create forward request: %v", err)
-		http.Error(w, "Failed to create forward request: "+err.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, "Failed to create forward request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	req.Header = r.Header.Clone() // Copy headers from the original request
@@ -471,7 +471,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	resp, err := delegateClient.Do(req)
 	if err != nil {
 		logger.Errorf("Forward request failed with error: %v", err)
-		http.Error(w, "Failed to forward request: "+err.Error(), http.StatusInternalServerError)
+		utils.HttpError(w, "Failed to forward request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close() // Ensure the response body is closed after use
@@ -489,7 +489,7 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	// Copy the response body to the original response
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
-		http.Error(w, "Failed to copy response body", http.StatusInternalServerError)
+		utils.HttpError(w, "Failed to copy response body", http.StatusInternalServerError)
 	}
 }
 
