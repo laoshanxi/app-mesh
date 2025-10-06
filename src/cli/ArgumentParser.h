@@ -57,13 +57,14 @@ private:
 public:
 	std::shared_ptr<CurlResponse> requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body = nullptr, std::map<std::string, std::string> header = {}, std::map<std::string, std::string> query = {});
 
-	std::string getAuthenToken();
+	std::string acquireAuthToken();
 	std::string getAuthenUser();
-	std::string readPersistAuthToken(const std::string &hostName);
+	std::string getAuthToken();
 	std::string readPersistLastHost(const std::string &defaultAddress);
-	void persistAuthToken(const std::string &hostName, const std::string &token);
+	void persistUserConfig(const std::string &hostName);
 	std::string login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience);
-	static std::string getAppConfigDir();
+	static std::string getAndCreateConfigDir();
+	static std::string getAndCreateCookieDirectory(const std::string &host);
 
 private:
 	bool isAppExist(const std::string &appName);
@@ -94,6 +95,5 @@ private:
 	std::string m_currentUrl;
 	std::string m_username;
 	std::string m_userpwd;
-	std::string m_jwtToken;
 	std::string m_forwardTo;
 };

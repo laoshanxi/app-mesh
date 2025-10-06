@@ -85,9 +85,15 @@
 	m_currentUrl = m_commandLineVariables.count(HOST_URL) == 0 ? m_defaultUrl : m_commandLineVariables[HOST_URL].as<std::string>(); \
 	m_forwardTo = m_commandLineVariables.count(FORWARD_TO) == 0 ? "" : m_commandLineVariables[FORWARD_TO].as<std::string>();
 // Each user should have its own token path
-static std::string m_tokenFile = ArgumentParser::getAppConfigDir() + "/.appmesh.config";
-const static std::string m_shellHistoryFile = ArgumentParser::getAppConfigDir() + "/.appmesh.shell.history";
+static std::string m_tokenFile = ArgumentParser::getAndCreateConfigDir() + "/.appmesh.config";
+const static std::string m_shellHistoryFile = ArgumentParser::getAndCreateConfigDir() + "/.appmesh.shell.history";
 extern char **environ;
+
+const std::string HTTP_HEADER_JWT_set_cookie = "X-Set-Cookie";
+const std::string HTTP_HEADER_NAME_CSRF_TOKEN = "X-CSRF-Token";
+const std::string COOKIE_TOKEN = "appmesh_auth_token";
+const std::string COOKIE_CSRF_TOKEN = "appmesh_csrf_token";
+const std::string COOKIE_FILE = ".cookies";
 
 // Global variable for appc exec
 static std::atomic_bool g_interrupt(false);
@@ -338,12 +344,12 @@ void ArgumentParser::processLogon()
 	}
 
 	// get token from REST
-	m_jwtToken = getAuthenToken();
+	const auto jwtToken = acquireAuthToken();
 
 	// write token to disk
-	if (m_jwtToken.length())
+	if (!jwtToken.empty())
 	{
-		persistAuthToken(parseUrlHost(m_currentUrl), m_jwtToken);
+		persistUserConfig(parseUrlHost(m_currentUrl));
 		std::cout << "User <" << m_username << "> logon to <" << m_currentUrl << "> success." << std::endl;
 	}
 }
@@ -361,7 +367,7 @@ void ArgumentParser::processLogoff()
 	auto response = requestHttp(true, web::http::methods::POST, restPath);
 	if (response->status_code == web::http::status_codes::OK)
 	{
-		persistAuthToken(parseUrlHost(m_currentUrl), std::string());
+		persistUserConfig(parseUrlHost(m_currentUrl));
 		RestClient::clearSession();
 		std::cout << "User logoff from " << m_currentUrl << " success." << std::endl;
 	}
@@ -382,7 +388,7 @@ void ArgumentParser::processLoginfo()
 std::string ArgumentParser::getLoginUser()
 {
 	std::string userName;
-	auto token = getAuthenToken();
+	auto token = acquireAuthToken();
 	if (token.length())
 	{
 		auto decodedToken = jwt::decode(token);
@@ -1359,7 +1365,6 @@ void ArgumentParser::processFileDownload()
 	// header
 	std::map<std::string, std::string> header;
 	header.insert({HTTP_HEADER_KEY_file_path, Utility::encodeURIComponent(file)});
-	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	auto response = RestClient::download(m_currentUrl, restPath, file, local, header);
 
 	if (m_commandLineVariables.count(COPY_ATTR))
@@ -1404,7 +1409,6 @@ void ArgumentParser::processFileUpload()
 	// header
 	std::map<std::string, std::string> header;
 	header.insert({HTTP_HEADER_KEY_file_path, Utility::encodeURIComponent(file)});
-	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_JWT_BearerSpace) + getAuthenToken()});
 	if (m_commandLineVariables.count(COPY_ATTR))
 	{
 		auto fileInfo = os::fileStat(local);
@@ -1734,8 +1738,7 @@ void ArgumentParser::processUserMfa()
 					if (response->status_code == web::http::status_codes::OK)
 					{
 						validating = false;
-						m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
-						persistAuthToken(parseUrlHost(m_currentUrl), m_jwtToken);
+						persistUserConfig(parseUrlHost(m_currentUrl));
 						std::cout << "TOTP setup for " << userName << " success." << std::endl;
 					}
 				}
@@ -1825,14 +1828,16 @@ bool ArgumentParser::confirmInput(const char *msg)
 
 std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, const web::http::method &mtd, const std::string &path, nlohmann::json *body, std::map<std::string, std::string> header, std::map<std::string, std::string> query)
 {
-	// token
-	if (m_jwtToken.empty())
+	// session
+	static std::atomic_flag flag = ATOMIC_FLAG_INIT;
+	if (!flag.test_and_set())
 	{
-		m_jwtToken = getAuthenToken();
+		// first time init
+		const auto sessionFilePath = (fs::path(getAndCreateCookieDirectory(parseUrlHost(m_currentUrl))) / COOKIE_FILE).string();
+		RestClient::setSessionConfiguration(SessionConfig::FileSession(sessionFilePath));
 	}
 
 	// header
-	header[HTTP_HEADER_JWT_Authorization] = std::string(HTTP_HEADER_JWT_BearerSpace) + m_jwtToken;
 	if (m_forwardTo.length())
 	{
 		if (m_forwardTo.find(':') == std::string::npos)
@@ -1840,6 +1845,9 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, cons
 		else
 			header[HTTP_HEADER_KEY_Forwarding_Host] = m_forwardTo;
 	}
+	const auto token = RestClient::getCookie(COOKIE_CSRF_TOKEN);
+	if (!token.empty())
+		header[HTTP_HEADER_NAME_CSRF_TOKEN] = token;
 
 	// body
 	std::string bodyContent = body ? body->dump() : std::string();
@@ -1854,7 +1862,7 @@ std::shared_ptr<CurlResponse> ArgumentParser::requestHttp(bool shouldThrow, cons
 	}
 
 	// locale
-	if (resp->status_code == web::http::status_codes::OK &&
+	if (resp->status_code == web::http::status_codes::OK && resp->header.count(web::http::header_names::content_type) &&
 		resp->header[web::http::header_names::content_type] == web::http::mime_types::text_plain_utf8)
 	{
 		resp->text = Utility::utf8ToLocalEncoding(resp->text);
@@ -1883,7 +1891,7 @@ std::map<std::string, bool> ArgumentParser::getAppList()
 	return apps;
 }
 
-std::string ArgumentParser::getAuthenToken()
+std::string ArgumentParser::acquireAuthToken()
 {
 	std::string token;
 	// 1. try to get from REST
@@ -1894,7 +1902,7 @@ std::string ArgumentParser::getAuthenToken()
 	else
 	{
 		// 2. try to read from token file
-		token = readPersistAuthToken(parseUrlHost(m_currentUrl));
+		token = getAuthToken();
 
 		// 3. try to get get default token from REST
 		if (token.empty())
@@ -1916,7 +1924,7 @@ std::string ArgumentParser::getAuthenUser()
 	else
 	{
 		// 2. try to read from token file
-		token = readPersistAuthToken(parseUrlHost(m_currentUrl));
+		token = getAuthToken();
 		// 3. try to get get default token from REST
 		if (token.empty())
 		{
@@ -1933,29 +1941,9 @@ std::string ArgumentParser::getAuthenUser()
 	}
 }
 
-std::string ArgumentParser::readPersistAuthToken(const std::string &hostName)
+std::string ArgumentParser::getAuthToken()
 {
-	std::string jwtToken;
-	if (Utility::isFileExist(m_tokenFile) && hostName.length())
-	{
-		try
-		{
-			auto configFile = Utility::readFile(m_tokenFile);
-			if (configFile.length() > 0)
-			{
-				auto config = nlohmann::json::parse(configFile);
-				if (config.contains("auths") && config["auths"].contains(hostName))
-				{
-					jwtToken = config.at("auths").at(hostName).at("auth").get<std::string>();
-				}
-			}
-		}
-		catch (const std::exception &e)
-		{
-			std::cerr << "failed to parse " << m_tokenFile << " as json format" << '\n';
-		}
-	}
-	return jwtToken;
+	return RestClient::getCookie(COOKIE_TOKEN);
 }
 
 std::string ArgumentParser::readPersistLastHost(const std::string &defaultAddress)
@@ -1982,7 +1970,7 @@ std::string ArgumentParser::readPersistLastHost(const std::string &defaultAddres
 	return defaultAddress;
 }
 
-void ArgumentParser::persistAuthToken(const std::string &hostName, const std::string &token)
+void ArgumentParser::persistUserConfig(const std::string &hostName)
 {
 	nlohmann::json config;
 	try
@@ -2000,18 +1988,6 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 	catch (const std::exception &e)
 	{
 		std::cerr << "failed to parse " << m_tokenFile << " as json format" << '\n';
-	}
-	if (!config.contains("auths"))
-		config["auths"] = nlohmann::json::object();
-
-	if (token.length())
-	{
-		config["auths"][hostName] = nlohmann::json::object();
-		config["auths"][hostName]["auth"] = std::string(token);
-	}
-	else if (config["auths"].contains(hostName))
-	{
-		config["auths"].erase(hostName);
 	}
 	config["last_host"] = std::string(hostName);
 
@@ -2034,18 +2010,29 @@ void ArgumentParser::persistAuthToken(const std::string &hostName, const std::st
 std::string ArgumentParser::login(const std::string &user, const std::string &passwd, std::string targetHost, std::string audience)
 {
 	auto url = Utility::stdStringTrim(targetHost, '/');
+
+	// session
+	static std::atomic_flag flag = ATOMIC_FLAG_INIT;
+	if (!flag.test_and_set())
+	{
+		// first time init
+		const auto sessionFilePath = (fs::path(getAndCreateCookieDirectory(parseUrlHost(url))) / COOKIE_FILE).string();
+		RestClient::setSessionConfiguration(SessionConfig::FileSession(sessionFilePath));
+		RestClient::clearSession();
+	}
+
 	// header
 	std::map<std::string, std::string> header;
 	header.insert({HTTP_HEADER_JWT_Authorization, std::string(HTTP_HEADER_Auth_BasicSpace) + Utility::encode64(user + ":" + passwd)});
 	header.insert({HTTP_HEADER_JWT_expire_seconds, std::to_string(m_tokenTimeoutSeconds)});
 	header.insert({HTTP_HEADER_JWT_audience, audience});
+	header.insert({HTTP_HEADER_JWT_set_cookie, std::to_string(true)});
 
 	auto response = RestClient::request(url, web::http::methods::POST, "/appmesh/login", "", std::move(header), {});
 	if (response->status_code == web::http::status_codes::OK)
 	{
 		m_currentUrl = url;
-		m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
-		return m_jwtToken;
+		return RestClient::getCookie(COOKIE_TOKEN);
 	}
 	else if (response->status_code == web::http::status_codes::Unauthorized && nlohmann::json::parse(response->text).contains(REST_TEXT_TOTP_CHALLENGE_JSON_KEY))
 	{
@@ -2067,8 +2054,6 @@ std::string ArgumentParser::login(const std::string &user, const std::string &pa
 			if (response->status_code == web::http::status_codes::OK)
 			{
 				m_currentUrl = url;
-				m_jwtToken = nlohmann::json::parse(response->text).at(HTTP_HEADER_JWT_access_token).get<std::string>();
-				return m_jwtToken;
 			}
 			else
 				std::cout << parseOutputMessage(response) << std::endl;
@@ -2491,9 +2476,6 @@ const std::string ArgumentParser::getAppMeshUrl()
 					config.m_ca_location = sslConfig[JSON_KEY_SSLCaPath].Scalar();
 				config.ResolveAbsolutePaths(Utility::getHomeDir());
 				RestClient::defaultSslConfiguration(config);
-				// session
-				const auto sessionFilePath = (fs::temp_directory_path() / "appmesh.session").string();
-				RestClient::setSessionConfiguration(SessionConfig::FileSession(sessionFilePath));
 			}
 			url = Utility::stringFormat("https://%s:%d", readPersistLastHost(address).c_str(), port);
 		}
@@ -2541,24 +2523,49 @@ const std::string ArgumentParser::parseUrlPort(const std::string &url)
 	return port;
 }
 
-std::string ArgumentParser::getAppConfigDir()
+std::string ArgumentParser::getAndCreateConfigDir()
 {
 	boost::filesystem::path dir;
+
 #ifdef _WIN32
-	const char *appData = std::getenv("APPDATA");			// e.g. C:\Users\<User>\AppData\Roaming
-	const char *localAppData = std::getenv("LOCALAPPDATA"); // e.g. C:\Users\<User>\AppData\Local
+	const char *appData = std::getenv("APPDATA");			// C:\Users\<User>\AppData\Roaming
+	const char *localAppData = std::getenv("LOCALAPPDATA"); // C:\Users\<User>\AppData\Local
 
 	std::string base = appData ? appData : (localAppData ? localAppData : ".");
 	dir = boost::filesystem::path(base) / "AppMesh";
+
 #else
-	const char *xdgConfig = std::getenv("XDG_CONFIG_HOME");
-	const char *home = std::getenv("HOME");
+	// Handle sudo: get real user's home
+	std::string home;
+	uid_t targetUid = getuid();
+	gid_t targetGid = getgid();
+
+	if (targetUid == 0)
+	{
+		const auto sudoUser = Utility::getenv("SUDO_USER");
+		if (!sudoUser.empty())
+		{
+			struct passwd *pw = getpwnam(sudoUser.c_str());
+			if (pw)
+			{
+				home = pw->pw_dir;
+				targetUid = pw->pw_uid;
+				targetGid = pw->pw_gid;
+			}
+		}
+	}
+
+	if (home.empty())
+		home = Utility::getenv("HOME");
+
+	// Only use XDG_CONFIG_HOME if not running as root
+	const auto xdgConfig = (targetUid != 0) ? Utility::getenv("XDG_CONFIG_HOME") : std::string();
 
 	std::string base;
-	if (xdgConfig)
+	if (!xdgConfig.empty())
 		base = xdgConfig;
-	else if (home)
-		base = std::string(home) + "/.config";
+	else if (!home.empty())
+		base = home + "/.config";
 	else
 		base = ".";
 
@@ -2575,5 +2582,118 @@ std::string ArgumentParser::getAppConfigDir()
 		return ".";
 	}
 
+#ifndef _WIN32
+	chmod(dir.string().c_str(), 0755);
+
+	// Change ownership of created directories
+	if (getuid() == 0 && targetUid != 0)
+	{
+		boost::filesystem::path p = dir;
+		while (!p.empty() && p != p.root_path())
+		{
+			chown(p.string().c_str(), targetUid, targetGid);
+			p = p.parent_path();
+		}
+	}
+#endif
+
 	return dir.string();
+}
+
+/**
+ * Get and create cookie directory with proper permissions and sudo support
+ *
+ * Platform-specific locations:
+ * - Windows: %LOCALAPPDATA%\AppMesh\cookies
+ * - Linux:   ~/.local/share/appmesh/cookies
+ * - macOS:   ~/Library/Application Support/AppMesh/cookies
+ *
+ * @return Cookie directory path, or empty string on failure
+ */
+std::string ArgumentParser::getAndCreateCookieDirectory(const std::string &host)
+{
+	boost::filesystem::path cookieDir;
+
+#ifdef _WIN32
+	// Windows: Use LOCALAPPDATA
+	const auto localAppData = Utility::getenv("LOCALAPPDATA");
+	const auto appData = Utility::getenv("APPDATA");
+
+	std::string base = !localAppData.empty() ? localAppData : (!appData.empty() ? appData : ".");
+	cookieDir = boost::filesystem::path(base) / "AppMesh" / "cookies";
+
+#else
+	// Unix/Linux/macOS: Get home directory (handle sudo)
+	std::string home;
+	uid_t targetUid = getuid();
+	gid_t targetGid = getgid();
+
+	if (targetUid == 0)
+	{
+		const auto sudoUser = Utility::getenv("SUDO_USER");
+		if (!sudoUser.empty())
+		{
+			struct passwd *pw = getpwnam(sudoUser.c_str());
+			if (pw)
+			{
+				home = pw->pw_dir;
+				targetUid = pw->pw_uid;
+				targetGid = pw->pw_gid;
+			}
+		}
+	}
+
+	if (home.empty())
+	{
+		home = Utility::getenv("HOME");
+		if (home.empty())
+		{
+			struct passwd *pw = getpwuid(getuid());
+			if (pw)
+				home = pw->pw_dir;
+		}
+	}
+
+	if (home.empty())
+		return "";
+
+	// Platform-specific path
+#ifdef __APPLE__
+	cookieDir = boost::filesystem::path(home) / "Library" / "Application Support" / "AppMesh" / "cookies";
+#else
+	const auto xdgData = (targetUid != 0) ? Utility::getenv("XDG_DATA_HOME") : std::string();
+	std::string base = !xdgData.empty() ? xdgData : (home + "/.local/share");
+	cookieDir = boost::filesystem::path(base) / "appmesh" / "cookies";
+#endif
+
+#endif
+
+	// Create directory
+	try
+	{
+		cookieDir /= Utility::stringReplace(host, ":", "_"); // separate per host
+		boost::filesystem::create_directories(cookieDir);
+	}
+	catch (const boost::filesystem::filesystem_error &)
+	{
+		return "";
+	}
+
+#ifndef _WIN32
+	// Set permissions and ownership on Unix
+	chmod(cookieDir.string().c_str(), 0700);
+
+	if (getuid() == 0 && targetUid != 0)
+	{
+		// Change ownership for entire path
+		boost::filesystem::path p = cookieDir;
+		while (!p.empty() && p != p.root_path())
+		{
+			chown(p.string().c_str(), targetUid, targetGid);
+			p = p.parent_path();
+		}
+	}
+#endif
+
+	return cookieDir.string();
 }

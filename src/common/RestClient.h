@@ -60,6 +60,19 @@ struct SessionConfig
 	}
 };
 
+/// @brief Cookie structure
+struct Cookie
+{
+	std::string domain;
+	bool include_subdomains = false;
+	std::string path;
+	bool secure = false;
+	long long expiration = 0; // Unix timestamp, 0 means session cookie
+	std::string name;
+	std::string value;
+	bool httponly = false;
+};
+
 class RestClient
 {
 public:
@@ -143,6 +156,27 @@ public:
 	 */
 	static void clearSession();
 
+	/**
+	 * @brief Gets a specific cookie value by name
+	 * @param cookieName The name of the cookie to retrieve
+	 * @return The cookie value, or empty string if not found
+	 */
+	static std::string getCookie(const std::string &cookieName);
+
+	/**
+	 * @brief Gets all cookies in the current session
+	 * @return Map of cookie names to Cookie structures
+	 */
+	static std::map<std::string, Cookie> getAllCookies();
+
+	/**
+	 * @brief Gets a specific cookie by name with full details
+	 * @param cookieName The name of the cookie to retrieve
+	 * @param cookie Output parameter to store the cookie details
+	 * @return true if cookie was found, false otherwise
+	 */
+	static bool getCookieDetails(const std::string &cookieName, Cookie &cookie);
+
 private:
 	/**
 	 * @brief Configures SSL parameters for a CURL handle
@@ -163,6 +197,26 @@ private:
 	 * @return The URL encoded string
 	 */
 	static const std::string urlEncode(CURL *curl, const std::string &value);
+
+	/**
+	 * @brief Parses a Netscape cookie format line
+	 * @param line Cookie line in Netscape format
+	 * @param cookie Output parameter to store parsed cookie
+	 * @return true if parsing succeeded, false otherwise
+	 */
+	static bool parseNetscapeCookie(const std::string &line, Cookie &cookie);
+
+	/**
+	 * @brief Reads cookies from memory storage
+	 * @return Map of cookie names to Cookie structures
+	 */
+	static std::map<std::string, Cookie> readCookiesFromMemory();
+
+	/**
+	 * @brief Reads cookies from file storage
+	 * @return Map of cookie names to Cookie structures
+	 */
+	static std::map<std::string, Cookie> readCookiesFromFile();
 
 private:
 	static ClientSSLConfig m_sslConfig;
